@@ -102,6 +102,12 @@ app_license = "MIT"
 #		"on_trash": "method"
 #	}
 # }
+doc_events = {
+    "Sales Order": {
+        # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"
+        "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.on_submit"
+    }
+}
 
 # Scheduled Tasks
 # ---------------
@@ -124,6 +130,14 @@ app_license = "MIT"
 #	]
 # }
 
+scheduler_events = {
+	"cron": {
+		# Every five minutes
+		"*/10 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+		]
+	}
+}
 # Testing
 # -------
 
@@ -143,6 +157,10 @@ app_license = "MIT"
 #	"Task": "nj_features.task.get_dashboard_data"
 # }
 
+override_doctype_class = {
+	# "frappe.desk.doctype.event.event.get_events": "customizations_newjaisa.event.get_events"
+	"Amazon SP API Settings": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.Amazonoverride"
+}
 # exempt linked doctypes from being automatically cancelled
 #
 # auto_cancel_exempted_doctypes = ["Auto Repeat"]

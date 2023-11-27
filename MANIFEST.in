@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include nj_features *.css
+recursive-include nj_features *.csv
+recursive-include nj_features *.html
+recursive-include nj_features *.ico
+recursive-include nj_features *.js
+recursive-include nj_features *.json
+recursive-include nj_features *.md
+recursive-include nj_features *.png
+recursive-include nj_features *.py
+recursive-include nj_features *.svg
+recursive-include nj_features *.txt
+recursive-exclude nj_features *.pyc

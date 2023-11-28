@@ -1,0 +1,32 @@
+{
+ "add_total_row": 0,
+ "columns": [],
+ "creation": "2023-11-21 12:08:06.399436",
+ "disable_prepared_report": 1,
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "modified": "2023-11-21 12:13:59.180337",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Item History",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Stock Ledger Entry",
+ "report_name": "Item History",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Administrator"
+  }
+ ]
+}

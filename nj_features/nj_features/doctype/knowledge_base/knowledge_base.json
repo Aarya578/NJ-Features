@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:name1",
+ "creation": "2023-11-28 15:30:23.580678",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "brand",
+  "model",
+  "column_break_blhgx",
+  "part",
+  "department",
+  "section_break_1562o",
+  "name1",
+  "column_break_2au5r",
+  "attach",
+  "active",
+  "section_break_rl8nf",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "label": "Brand",
+   "options": "Brand"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "label": "Model",
+   "options": "Models"
+  },
+  {
+   "fieldname": "column_break_blhgx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "part",
+   "fieldtype": "Link",
+   "label": "Part",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "section_break_1562o",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "name1",
+   "fieldtype": "Data",
+   "label": "Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_2au5r",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "attach",
+   "fieldtype": "Attach",
+   "label": "Attach"
+  },
+  {
+   "default": "0",
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Active"
+  },
+  {
+   "fieldname": "section_break_rl8nf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text Editor",
+   "label": "Description"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2023-11-28 16:12:14.660640",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Knowledge Base",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

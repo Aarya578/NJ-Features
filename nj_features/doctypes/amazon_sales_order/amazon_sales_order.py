@@ -10,6 +10,7 @@ from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api_
 from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings import amazon_sp_api_settings
 from frappe.desk.form.linked_with import get_linked_doctypes
 from frappe.desk.form.linked_with import get_linked_docs
+
 class Amazonoverride(Document):
     @frappe.whitelist()
     def get_order_details(self):
@@ -52,182 +53,6 @@ def enable_auto_amazon_sync():
         for amz_setting in amz_settings:
                 get_orders(amz_setting_name=amz_setting.name, created_after=amz_setting.after_date)
 
-# from __future__ import annotations
-# from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import AmazonRepository
-# import time
-
-# class overrideamazon:
-#     def create_sales_order(self, order) -> str | None:
-#                 def create_customer(order) -> str:
-#                         order_customer_name = ""
-#                         buyer_info = order.get("BuyerInfo")
-
-#                         if buyer_info and buyer_info.get("BuyerEmail"):
-#                                 order_customer_name = buyer_info.get("BuyerEmail")
-#                         else:
-#                                 order_customer_name = f"Buyer - {order.get('AmazonOrderId')}"
-
-#                         existing_customer_name = frappe.db.get_value(
-#                                 "Customer", filters={"name": order_customer_name}, fieldname="name"
-#                         )
-
-#                         if existing_customer_name:
-#                                 filters = [
-#                                         ["Dynamic Link", "link_doctype", "=", "Customer"],
-#                                         ["Dynamic Link", "link_name", "=", existing_customer_name],
-#                                         ["Dynamic Link", "parenttype", "=", "Contact"],
-#                                 ]
-
-#                                 existing_contacts = frappe.get_list("Contact", filters)
-
-#                                 if not existing_contacts:
-#                                         new_contact = frappe.new_doc("Contact")
-#                                         new_contact.first_name = order_customer_name
-#                                         new_contact.append(
-#                                                 "links", {"link_doctype": "Customer", "link_name": existing_customer_name},
-#                                         )
-#                                         new_contact.insert()
-
-#                                 return existing_customer_name
-#                         else:
-#                                 new_customer = frappe.new_doc("Customer")
-#                                 new_customer.customer_name = order_customer_name
-#                                 new_customer.customer_group = self.amz_setting.customer_group
-#                                 new_customer.territory = self.amz_setting.territory
-#                                 new_customer.customer_type = self.amz_setting.customer_type
-#                                 new_customer.save()
-
-#                                 new_contact = frappe.new_doc("Contact")
-#                                 new_contact.first_name = order_customer_name
-#                                 new_contact.append("links", {"link_doctype": "Customer", "link_name": new_customer.name})
-
-#                                 new_contact.insert()
-
-#                                 return new_customer.name
-
-#                 def create_address(order, customer_name) -> str | None:
-#                         shipping_address = order.get("ShippingAddress")
-#                         order_customer_name = ""
-#                         buyer_info = order.get("BuyerInfo")
-
-#                         if buyer_info and buyer_info.get("BuyerEmail"):
-#                                 order_customer_name = buyer_info.get("BuyerEmail")
-#                         else:
-#                                 order_customer_name = f"Buyer - {order.get('AmazonOrderId')}"
-
-
-#                         if not shipping_address:
-#                                 # return
-#                                 make_address = frappe.new_doc("Address")
-#                                 make_address.address_line1 = order_customer_name
-#                                 make_address.city = "to be updated"
-#                                 make_address.state = "to be updated"
-#                                 make_address.pincode = "to be updated"
-
-#                                 filters = [
-#                                         ["Dynamic Link", "link_doctype", "=", "Customer"],
-#                                         ["Dynamic Link", "link_name", "=", customer_name],
-#                                         ["Dynamic Link", "parenttype", "=", "Address"],
-#                                 ]
-#                                 existing_address = frappe.get_list("Address", filters)
-
-#                                 for address in existing_address:
-#                                         address_doc = frappe.get_doc("Address", address["name"])
-#                                         if (
-#                                                 address_doc.address_line1 == make_address.address_line1
-#                                                 and address_doc.pincode == make_address.pincode
-#                                         ):
-#                                                 return address
-
-#                                 make_address.append("links", {"link_doctype": "Customer", "link_name": customer_name})
-#                                 make_address.address_type = "Shipping"
-#                                 make_address.insert(ignore_permissions=True)
-#                         else:
-#                                 make_address = frappe.new_doc("Address")
-#                                 make_address.address_line1 = shipping_address.get("AddressLine1", "Not Provided")
-#                                 make_address.city = shipping_address.get("City", "Not Provided")
-#                                 make_address.state = shipping_address.get("StateOrRegion").title()
-#                                 make_address.pincode = shipping_address.get("PostalCode")
-
-#                                 filters = [
-#                                         ["Dynamic Link", "link_doctype", "=", "Customer"],
-#                                         ["Dynamic Link", "link_name", "=", customer_name],
-#                                         ["Dynamic Link", "parenttype", "=", "Address"],
-#                                 ]
-#                                 existing_address = frappe.get_list("Address", filters)
-
-#                                 for address in existing_address:
-#                                         address_doc = frappe.get_doc("Address", address["name"])
-#                                         if (
-#                                                 address_doc.address_line1 == make_address.address_line1
-#                                                 and address_doc.pincode == make_address.pincode
-#                                         ):
-#                                                 return address
-
-#                                 make_address.append("links", {"link_doctype": "Customer", "link_name": customer_name})
-#                                 make_address.address_type = "Shipping"
-#                                 make_address.insert(ignore_permissions=True)
-
-#                 order_id = order.get("AmazonOrderId")
-#                 so = frappe.db.get_value("Sales Order", filters={"amazon_order_id": order_id}, fieldname="name")
-
-#                 if so:
-#                         return so
-#                 else:
-#                         items = self.get_order_items(order_id)
-
-#                         if not items:
-#                                 return
-
-#                         customer_name = create_customer(order)
-#                         create_address(order, customer_name)
-
-#                         delivery_date = dateutil.parser.parse(order.get("LatestShipDate")).strftime("%Y-%m-%d")
-#                         transaction_date = dateutil.parser.parse(order.get("PurchaseDate")).strftime("%Y-%m-%d")
-
-#                         so = frappe.new_doc("Sales Order")
-#                         so.amazon_order_id = order_id
-#                         so.naming_series = "SO-Amazon-"
-#                         so.marketplace_id = order.get("MarketplaceId")
-#                         so.customer = customer_name
-#                         so.sale_type = "Amazon"
-#                         so.delivery_date = delivery_date
-#                         so.transaction_date = transaction_date
-#                         so.company = self.amz_setting.company
-
-#                         for item in items:
-#                                 so.append("items", item)
-
-#                         taxes_and_charges = self.amz_setting.taxes_charges
-
-#                         if taxes_and_charges:
-#                                 charges_and_fees = self.get_charges_and_fees(order_id)
-
-#                                 for charge in charges_and_fees.get("charges"):
-#                                         so.append("taxes", charge)
-
-#                                 for fee in charges_and_fees.get("fees"):
-#                                         so.append("taxes", fee)
-
-#                         so.insert(ignore_permissions=True)
-#                         # so.submit()
-
-#                         return so.name
-
-#     def create_sales_order(self, order) -> str | None:
-#         print("\n\n\n  this is simple one \n\n\n")
-#         return
-# @frappe.whitelist()
-# def tesing_one(doc, handler=""):
-#     docum = frappe.get_doc("Sales Order", doc.name)
-#     if docum.customer_address:
-#         # crt_amzsl_inv(doc.name)
-#         docum.insert(ignore_permissions=True)
-#         # docum.submit()
-#     else:
-#         docum.insert(ignore_permissions=True)
-#         # docum.submit()
-
 @frappe.whitelist()
 def get(doctype, docname):
 	linked_doctypes = get_linked_doctypes(doctype=doctype)
@@ -237,7 +62,7 @@ def get(doctype, docname):
 def on_submit(doc, handler=""):
     crt_amzsl_inv(doc.name)
     crt_amzdn(doc.name)
-    amazon_shiped_status()
+    # amazon_shiped_status()
     # get_auth()
     # get_unshipped()
 
@@ -320,31 +145,6 @@ def crt_amzdn(sales_order_name):
     else:
         pass
 
-# @frappe.whitelist()
-# def crt_amzdn_credit(sales_order_name):
-#     so = frappe.get_doc("Sales Order", sales_order_name)
-#     if so.naming_series == "SO-Amazon-" and so.order_type == "Sales":
-#         dn = frappe.new_doc("Delivery Note")
-#         dn.update({
-#             "customer": so.customer,
-#             "posting_date": frappe.utils.today(),
-#             "due_date": frappe.utils.add_days(frappe.utils.today(), 30),  # Adjust the due date as needed
-#             "items": []
-#         })
-#         for item in so.items:
-#             dn.append("items", {
-#                 "item_code": item.item_code,
-#                 "rate": item.rate,
-#                 "qty": item.qty,
-#                 "against_sales_order": sales_order_name
-#             })
-#         dn.insert(ignore_permissions=True)
-#         frappe.msgprint(frappe._("Delivery Note created "+dn.name ,dn.name), indicator="green", alert=True)
-#         frappe.db.commit()
-#         return dn.name
-#     else:
-#         pass
-
 @frappe.whitelist()
 def get_si_name(sales_order):
       linked = get("Sales Order", sales_order)
@@ -421,41 +221,6 @@ def get_auth():
     access_token = data.get('access_token')
     return access_token
 
-
-# @frappe.whitelist()
-# def make_api_call(auth,amz_ord):
-#     base_url = "https://sellingpartnerapi-eu.amazon.com/orders/v0/orders/"
-#     order_id = "4406-6662232-9001959"
-#     url = base_url+order_id
-#     headers = {
-#         "x-amz-access-token": auth,
-#     }
-
-#     try:
-#         response = requests.get(url, headers=headers)
-#         response.raise_for_status()  # Raise an HTTPError for bad responses
-#         data = response.json()
-#         order_status = data.get("payload", {}).get("OrderStatus")
-#         if order_status and order_status == "Shipped":
-#              Buyer = "Buyer - "+ order_id+"-Shipping"
-#              shipping_address = data.get("payload", {}).get("ShippingAddress")
-#              if shipping_address:
-#                 print("Order Status:", order_status)
-#                 print("Shipping Address:", shipping_address)
-#                 customer_address = frappe.get_doc("Address", "Buyer - 406-6662232-9001959-Shipping")
-#                 print(customer_address)
-#                 customer_address.city = "testing City"
-#                 customer_address.insert()
-#                 sales_order_name = frappe.get_value('Sales Order', {'amazon_order_id': "406-6662232-9001959"}, 'name')
-#                 print(sales_order_name)
-#                 sales_order_name.shipment_status = order_status
-#              else:
-#                 print("Shipping address not available for this shipped order.")
-#         else:
-#             pass
-#     except requests.exceptions.RequestException as e:
-#         frappe.msgprint(_("Error making API call: {0}").format(e))
-
 def make_api_call(auth, order_id):
     base_url = "https://sellingpartnerapi-eu.amazon.com/orders/v0/orders/"
     order_id = "408-3640642-8125114"
@@ -496,3 +261,20 @@ def make_api_call(auth, order_id):
             print("Order not shipped or order status not available.")
     except requests.exceptions.RequestException as e:
         frappe.msgprint(_("Error making API call: {0}").format(e))
+
+@frappe.whitelist()
+def validate_delivery_note(doc, method):
+     change_status_to_returned(doc)
+    #  get_dn_for_so(doc)
+
+# @frappe.whitelist()
+# def change_status_to_returned(doc):
+@frappe.whitelist()
+def change_status_to_returned(doc):
+    if doc.doctype == "Delivery Note":
+        qty = doc.items[0].qty
+        if qty < 0:
+             sales_order_name = doc.items[0].against_sales_order
+             frappe.set_value('Sales Order', sales_order_name, 'shipment_status', 'Returned')
+             frappe.msgprint(frappe._("Shipment status changed to Returned for Sales Order {0}").format(sales_order_name), indicator="green", alert=True)
+

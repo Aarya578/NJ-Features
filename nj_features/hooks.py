@@ -33,7 +33,7 @@ app_license = "MIT"
 # include js in doctype views
 doctype_js = {
     "Stock Entry" : "public/js/stock_entry.js",
-    "Warehouse": "public/js/warehouse.js",
+    "Warehouse": "public/js/warehouse.js"
 }
 
 doctype_list_js = {"Knowledge Base" : "public/js/knowledge_base_list.js"}
@@ -111,6 +111,10 @@ doc_events = {
     "Sales Order": {
         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"
         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.on_submit"
+    },
+    "Delivery Note": {
+        # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
+        "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
     }
 }
 
@@ -137,9 +141,12 @@ doc_events = {
 
 scheduler_events = {
 	"cron": {
-		# Every five minutes
+		# Every ten minutes
 		"*/10 * * * *": [
 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+		],
+		"0/30 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
 		]
 	}
 }

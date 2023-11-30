@@ -440,6 +440,14 @@ class AmazonRepository:
                         so.naming_series = "SO-Amazon-"
                         so.sale_type = "Amazon"
                         so.marketplace_id = order.get("MarketplaceId")
+                        replace = order.get("IsReplacementOrder")
+                        if replace == "true":
+                                so.is_replacement_order = 1
+                                replacing_order = order.get('ReplacedOrderId')
+                                sales_order_name = frappe.get_value('Sales Order', filters={'amazon_order_id': replacing_order}, fieldname='name')
+                                so.replacing_order = sales_order_name
+                        else:
+                                so.is_replacement_order = 0      
                         so.customer = customer_name
                         so.delivery_date = delivery_date
                         so.transaction_date = transaction_date
@@ -463,6 +471,7 @@ class AmazonRepository:
                         #so.submit()
 
                         return so.name
+
 
         def get_orders(self, created_after) -> list:
                 orders = self.get_orders_instance()

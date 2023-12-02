@@ -1,9 +1,9 @@
 //Racking and Stock Movement
 frappe.ui.form.on('Stock Entry', {
 	refresh(frm) {
-		cur_frm.doc.racking_check;
-        console.log("doc status: ", cur_frm.doc.docstatus, "| is new: ", frm.doc.__islocal, "| Racking: ", cur_frm.doc.racking_check);
         if(frm.doc.__islocal){
+            cur_frm.doc.racking_check;
+            console.log("doc status: ", cur_frm.doc.docstatus, "| is new: ", frm.doc.__islocal, "| Racking: ", cur_frm.doc.racking_check);
             
             const rackingButton = frm.add_custom_button('Racking', function() {
                 frm.set_value('racking_check', 1);

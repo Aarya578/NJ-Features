@@ -115,7 +115,10 @@ doc_events = {
     "Delivery Note": {
         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
-    }
+    },
+    "Purchase Receipt": {
+        "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
+	}
 }
 
 # Scheduled Tasks

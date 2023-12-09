@@ -46,6 +46,18 @@ frappe.ui.form.on('IQC', {
             };
         });
     },
+    serial_no: function(frm) {
+        if (frm.doc.serial_no) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.get_base_rate',
+                args: {'serial_no': frm.doc.serial_no},
+                callback: function(r) {
+                    console.log("base price: ", r.message)
+                    frm.set_value('base_price',r.message)
+                }
+            })
+        }
+    },
     item_group: function(frm) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.iqc.iqc.set_iqc_child_table',
@@ -227,4 +239,3 @@ function fetchOptionsForVariant(docfield, variant, frm, row) {
         }
     });
 }
-

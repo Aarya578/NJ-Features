@@ -1,170 +1,182 @@
 {
- "actions": [],
- "allow_rename": 1,
- "creation": "2023-11-28 16:24:43.994931",
- "doctype": "DocType",
- "editable_grid": 1,
- "engine": "InnoDB",
- "field_order": [
-  "item_group",
-  "variant_1",
-  "variant_2",
-  "variant_3",
-  "variant_4",
-  "variant_5",
-  "variant_6",
-  "variant_7",
-  "variant_8",
-  "variant_9",
-  "variant_10",
-  "variant_11",
-  "variant_12",
-  "variant_13",
-  "variant_14",
-  "variant_15",
-  "variant_16",
-  "active",
-  "attr_data",
-  "item_code",
-  "part_serial_no"
- ],
- "fields": [
-  {
-   "columns": 2,
-   "fieldname": "item_group",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Item Group",
-   "options": "Item Group"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_1",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 01"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_8",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 08"
-  },
-  {
-   "fieldname": "variant_9",
-   "fieldtype": "Select",
-   "label": "Variant 09"
-  },
-  {
-   "fieldname": "variant_10",
-   "fieldtype": "Select",
-   "label": "Variant 10"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_2",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 02"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_3",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 03"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_4",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 04"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_5",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 05"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_6",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 06"
-  },
-  {
-   "columns": 1,
-   "fieldname": "variant_7",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Variant 07"
-  },
-  {
-   "default": "0",
-   "fieldname": "active",
-   "fieldtype": "Check",
-   "label": "Active"
-  },
-  {
-   "fieldname": "item_code",
-   "fieldtype": "Data",
-   "label": "Item Code"
-  },
-  {
-   "fieldname": "attr_data",
-   "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "attr_data"
-  },
-  {
-   "fieldname": "part_serial_no",
-   "fieldtype": "Data",
-   "label": "Part Serial No"
-  },
-  {
-   "fieldname": "variant_11",
-   "fieldtype": "Select",
-   "label": "Variant 11"
-  },
-  {
-   "fieldname": "variant_12",
-   "fieldtype": "Select",
-   "label": "Variant 12"
-  },
-  {
-   "fieldname": "variant_13",
-   "fieldtype": "Select",
-   "label": "Variant 13"
-  },
-  {
-   "fieldname": "variant_14",
-   "fieldtype": "Select",
-   "label": "Variant 14"
-  },
-  {
-   "fieldname": "variant_15",
-   "fieldtype": "Select",
-   "label": "Variant 15"
-  },
-  {
-   "fieldname": "variant_16",
-   "fieldtype": "Select",
-   "label": "Variant 16"
-  }
- ],
- "index_web_pages_for_search": 1,
- "istable": 1,
- "links": [],
- "modified": "2023-12-02 17:01:10.313433",
- "modified_by": "Administrator",
- "module": "NJ Features",
- "name": "IQC Child",
- "owner": "Administrator",
- "permissions": [],
- "sort_field": "modified",
- "sort_order": "DESC"
-}
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2023-11-28 16:24:43.994931",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+     "item_group",
+     "variant_1",
+     "variant_2",
+     "variant_3",
+     "variant_4",
+     "variant_5",
+     "variant_6",
+     "variant_7",
+     "variant_8",
+     "variant_9",
+     "variant_10",
+     "variant_11",
+     "variant_12",
+     "custom_variant_1",
+     "custom_variant_2",
+     "custom_variant_3",
+     "custom_variant_4",
+     "custom_variant_5",
+     "custom_variant_6",
+     "active",
+     "attr_data",
+     "item_code",
+     "part_serial_no"
+    ],
+    "fields": [
+     {
+      "columns": 2,
+      "fieldname": "item_group",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Item Group",
+      "options": "Item Group"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_1",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 01"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_8",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 08"
+     },
+     {
+      "fieldname": "variant_9",
+      "fieldtype": "Select",
+      "label": "Variant 09"
+     },
+     {
+      "fieldname": "variant_10",
+      "fieldtype": "Select",
+      "label": "Variant 10"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_2",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 02"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_3",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 03"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_4",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 04"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_5",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 05"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_6",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 06"
+     },
+     {
+      "columns": 1,
+      "fieldname": "variant_7",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Variant 07"
+     },
+     {
+      "default": "0",
+      "fieldname": "active",
+      "fieldtype": "Check",
+      "label": "Active"
+     },
+     {
+      "fieldname": "item_code",
+      "fieldtype": "Data",
+      "label": "Item Code"
+     },
+     {
+      "fieldname": "attr_data",
+      "fieldtype": "Small Text",
+      "hidden": 1,
+      "label": "attr_data"
+     },
+     {
+      "fieldname": "part_serial_no",
+      "fieldtype": "Data",
+      "label": "Part Serial No"
+     },
+     {
+      "fieldname": "variant_11",
+      "fieldtype": "Select",
+      "label": "Variant 11"
+     },
+     {
+      "fieldname": "variant_12",
+      "fieldtype": "Select",
+      "label": "Variant 12"
+     },
+     {
+      "fieldname": "custom_variant_1",
+      "fieldtype": "Data",
+      "label": "Custom Variant 1"
+     },
+     {
+      "fieldname": "custom_variant_2",
+      "fieldtype": "Data",
+      "label": "Custom Variant 2"
+     },
+     {
+      "fieldname": "custom_variant_3",
+      "fieldtype": "Data",
+      "label": "Custom Variant 3"
+     },
+     {
+      "fieldname": "custom_variant_4",
+      "fieldtype": "Data",
+      "label": "Custom Variant 4"
+     },
+     {
+      "fieldname": "custom_variant_5",
+      "fieldtype": "Data",
+      "label": "Custom Variant 5"
+     },
+     {
+      "fieldname": "custom_variant_6",
+      "fieldtype": "Data",
+      "label": "Custom Variant 6"
+     }
+    ],
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2023-12-05 17:48:06.831587",
+    "modified_by": "Administrator",
+    "module": "NJ Features",
+    "name": "IQC Child",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+   }

@@ -89,7 +89,7 @@
   {
    "columns": 1,
    "fieldname": "variant_5",
-   "fieldtype": "Date",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Variant 05"
   },
@@ -183,7 +183,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-12-22 10:40:14.138760",
+ "modified": "2023-12-22 11:10:43.943718",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC Child",

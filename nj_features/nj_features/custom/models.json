@@ -41,7 +41,7 @@
    "name": "Models-make",
    "no_copy": 0,
    "non_negative": 0,
-   "options": "Make",
+   "options": "Make Child",
    "owner": "Administrator",
    "parent": null,
    "parentfield": null,

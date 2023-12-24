@@ -12,19 +12,16 @@
  "fields": [
   {
    "allow_in_quick_entry": 1,
-   "columns": 10,
    "fieldname": "name1",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Name",
    "unique": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
- "istable": 1,
  "links": [],
- "modified": "2023-12-24 02:41:52.251299",
+ "modified": "2023-12-24 09:28:32.198206",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Make",

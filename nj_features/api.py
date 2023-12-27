@@ -31,11 +31,11 @@ def part_qi_check(serial_no, idx, inspection_type):
                 
                 if nj_qc_check_list:
                     combined_info = {
-                        "Name of the check": nj_qc_check_list[0].get('name_of_check'),
-                        "Type": nj_qc_check_list[0].get('type'),
-                        "Diagnostic Type": nj_qc_check_list[0].get('diagnostic_type'),
-                        "Description": nj_qc_check_list[0].get('description'),
-                        "Options": frappe.db.sql("""
+                        "name_of_the_check": nj_qc_check_list[0].get('name_of_check'),
+                        "type": nj_qc_check_list[0].get('type'),
+                        "diagnostic_type": nj_qc_check_list[0].get('diagnostic_type'),
+                        "description": nj_qc_check_list[0].get('description'),
+                        "options": frappe.db.sql("""
                             SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1;
                         """, (quality_check), as_dict=True)
                     }
@@ -44,9 +44,9 @@ def part_qi_check(serial_no, idx, inspection_type):
                 result[quality_check] = combined_info
 
     output = {
-            "partName": item_group,
+            "part_name": item_group,
             "activity": activity,
-            "Check_name": result
+            "check_name": result
         }
     return output
 
@@ -75,6 +75,6 @@ def get_kb_from_serial_no(serial_no):
         FROM `tabKnowledge Base` 
         WHERE {} 
     """.format(" OR ".join(conditions))
-    
+
     kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
     return kb_doc

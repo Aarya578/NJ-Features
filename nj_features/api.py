@@ -4,6 +4,8 @@ from frappe import _
 @frappe.whitelist()
 def part_qi_check(serial_no, idx, inspection_type):
     result = {}
+    item_group = ''
+    activity = ''
     item_group_query = frappe.db.sql("""
         SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
     """, (serial_no, idx))
@@ -20,29 +22,37 @@ def part_qi_check(serial_no, idx, inspection_type):
             activity = parent_name[0][1]
 
             second_query = frappe.db.sql("""
-                SELECT quality_check FROM `tabNj QC Options` WHERE parent = %s order by idx;
+                SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s order by idx;
             """, (p1), as_dict=True)
             
             for row in second_query:
                 quality_check = row.get('quality_check')
-
+                mandatory = row.get('mandatory')
+                print(f"mandatory: {mandatory}")
                 nj_qc_check_list = frappe.db.sql("""SELECT name_of_check, type, diagnostic_type, description FROM `tabNJ QC Check List` WHERE name = %s
                 """, (quality_check), as_dict=True)
+
+                options = frappe.db.sql("""
+                    SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1;
+                """, (quality_check), as_dict=True)
                 
+                options_dict = {}
+                for opt in options:
+                    options_dict["check_options"] = opt.get('check_options')
+                    options_dict["score"] = opt.get('score')
+
                 if nj_qc_check_list:
                     combined_info = {
                         "name_of_the_check": nj_qc_check_list[0].get('name_of_check'),
                         "type": nj_qc_check_list[0].get('type'),
                         "diagnostic_type": nj_qc_check_list[0].get('diagnostic_type'),
                         "description": nj_qc_check_list[0].get('description'),
-                        "options": frappe.db.sql("""
-                            SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1;
-                        """, (quality_check), as_dict=True)
+                        "mandatory": mandatory,
+                        "options": options_dict
                     }
                 else:
                     combined_info = {}
                 result[quality_check] = combined_info
-
     output = {
             "part_name": item_group,
             "activity": activity,

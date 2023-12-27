@@ -12,23 +12,69 @@ def part_qi_check(serial_no, idx, inspection_type):
         item_group = item_group_query[0][0]
         
         parent_name = frappe.db.sql("""
-            SELECT name FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s;
+            SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s;
         """, (item_group, inspection_type))
 
         if parent_name:
             p1 = parent_name[0][0]
+            activity = parent_name[0][1]
 
             second_query = frappe.db.sql("""
-                SELECT * FROM `tabNj QC Options` WHERE parent = %s;
+                SELECT quality_check FROM `tabNj QC Options` WHERE parent = %s order by idx;
             """, (p1), as_dict=True)
-
+            
             for row in second_query:
                 quality_check = row.get('quality_check')
 
-                third_query = frappe.db.sql("""
-                    SELECT check_options, active, score FROM `tabQC Options` WHERE parent = %s;
+                nj_qc_check_list = frappe.db.sql("""SELECT name_of_check, type, diagnostic_type, description FROM `tabNJ QC Check List` WHERE name = %s
                 """, (quality_check), as_dict=True)
                 
-                result[quality_check] = third_query
+                if nj_qc_check_list:
+                    combined_info = {
+                        "Name of the check": nj_qc_check_list[0].get('name_of_check'),
+                        "Type": nj_qc_check_list[0].get('type'),
+                        "Diagnostic Type": nj_qc_check_list[0].get('diagnostic_type'),
+                        "Description": nj_qc_check_list[0].get('description'),
+                        "Options": frappe.db.sql("""
+                            SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1;
+                        """, (quality_check), as_dict=True)
+                    }
+                else:
+                    combined_info = {}
+                result[quality_check] = combined_info
 
-    return {item_group: result}
+    output = {
+            "partName": item_group,
+            "activity": activity,
+            "Check_name": result
+        }
+    return output
+
+@frappe.whitelist()
+def get_kb_from_serial_no(serial_no):
+    serial_no_doc = frappe.db.sql("""SELECT item_code FROM `tabSerial No` where name = %s""", (serial_no), as_dict=1)
+    if not serial_no_doc:
+        frappe.throw(_("Serial No '{0}' not found.").format(serial_no), title=_("Serial No Not Found"))
+    item_doc = frappe.db.sql("""SELECT brand, item_model from `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
+    conditions = []
+    params = []
+
+    if item_doc and item_doc[0].get('brand'):
+        conditions.append("brand = %s")
+        params.append(item_doc[0].brand)
+
+    if item_doc and item_doc[0].get('item_model'):
+        conditions.append("model = %s")
+        params.append(item_doc[0].item_model)
+
+    if item_doc and item_doc[0].get('active'):
+        conditions.append("active = 1")
+
+    query = """
+        SELECT attach, description 
+        FROM `tabKnowledge Base` 
+        WHERE {} 
+    """.format(" OR ".join(conditions))
+    
+    kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
+    return kb_doc

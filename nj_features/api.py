@@ -36,11 +36,6 @@ def part_qi_check(serial_no, idx, inspection_type):
                     SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1;
                 """, (quality_check), as_dict=True)
                 
-                options_dict = {}
-                for opt in options:
-                    options_dict["check_options"] = opt.get('check_options')
-                    options_dict["score"] = opt.get('score')
-
                 if nj_qc_check_list:
                     combined_info = {
                         "name_of_the_check": nj_qc_check_list[0].get('name_of_check'),
@@ -48,7 +43,7 @@ def part_qi_check(serial_no, idx, inspection_type):
                         "diagnostic_type": nj_qc_check_list[0].get('diagnostic_type'),
                         "description": nj_qc_check_list[0].get('description'),
                         "mandatory": mandatory,
-                        "options": options_dict
+                        "options": options
                     }
                 else:
                     combined_info = {}
@@ -62,10 +57,12 @@ def part_qi_check(serial_no, idx, inspection_type):
 
 @frappe.whitelist()
 def get_kb_from_serial_no(serial_no):
-    serial_no_doc = frappe.db.sql("""SELECT item_code FROM `tabSerial No` where name = %s""", (serial_no), as_dict=1)
+    serial_no_doc = frappe.db.sql("""SELECT item_code FROM `tabSerial No` WHERE name = %s""", (serial_no), as_dict=1)
     if not serial_no_doc:
         frappe.throw(_("Serial No '{0}' not found.").format(serial_no), title=_("Serial No Not Found"))
-    item_doc = frappe.db.sql("""SELECT brand, item_model from `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
+
+    item_doc = frappe.db.sql("""SELECT brand, item_model FROM `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
+
     conditions = []
     params = []
 
@@ -77,14 +74,14 @@ def get_kb_from_serial_no(serial_no):
         conditions.append("model = %s")
         params.append(item_doc[0].item_model)
 
-    if item_doc and item_doc[0].get('active'):
-        conditions.append("active = 1")
-
-    query = """
-        SELECT attach, description 
-        FROM `tabKnowledge Base` 
-        WHERE {} 
-    """.format(" OR ".join(conditions))
-
-    kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
-    return kb_doc
+    if conditions:
+        query = """
+            SELECT attach, description 
+            FROM `tabKnowledge Base` 
+            WHERE {} AND active = 1
+        """.format(" AND ".join(conditions))
+        
+        kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
+        return kb_doc
+    else:
+        frappe.throw(_("No valid conditions found for querying Knowledge Base."), title=_("Invalid Query"))

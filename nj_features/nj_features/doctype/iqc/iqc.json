@@ -9,14 +9,16 @@
  "field_order": [
   "purchase_order",
   "purchase_price",
+  "item_code",
   "column_break_5mcw7",
   "purchase_receipt",
+  "idx",
   "base_price",
   "section_break_6sw2s",
   "serial_no",
-  "item_code",
   "item_group",
   "warehouse",
+  "repack_item_code",
   "original_price",
   "njhat_serialno",
   "raw_data",
@@ -25,7 +27,6 @@
   "model",
   "make",
   "repack_itm_price",
-  "repack_item_code",
   "attr_data",
   "section_break_56eed",
   "iqc_item_component",
@@ -115,9 +116,8 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Link",
-   "label": "Item Code",
-   "options": "Item"
+   "fieldtype": "Data",
+   "label": "PR/Incoming Item Code"
   },
   {
    "fieldname": "item_group",
@@ -140,7 +140,6 @@
   {
    "fieldname": "repack_item_code",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Repack Item Code"
   },
   {
@@ -163,13 +162,18 @@
    "fieldtype": "Link",
    "label": "Make",
    "options": "Make"
+  },
+  {
+   "fieldname": "idx",
+   "fieldtype": "Int",
+   "label": "idx"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2023-12-22 10:43:35.814752",
+ "modified": "2023-12-28 17:02:22.852754",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

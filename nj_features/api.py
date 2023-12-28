@@ -61,7 +61,7 @@ def get_kb_from_serial_no(serial_no):
     if not serial_no_doc:
         frappe.throw(_("Serial No '{0}' not found.").format(serial_no), title=_("Serial No Not Found"))
 
-    item_doc = frappe.db.sql("""SELECT brand, item_model, item_group FROM `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
+    item_doc = frappe.db.sql("""SELECT brand, item_model FROM `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
 
     conditions = []
     params = []
@@ -74,13 +74,9 @@ def get_kb_from_serial_no(serial_no):
         conditions.append("model = %s")
         params.append(item_doc[0].item_model)
 
-    if item_doc and item_doc[0].get('item_group'):
-        conditions.append("part = %s")
-        params.append(item_doc[0].item_group)
-
     if conditions:
         query = f"""
-            SELECT attach, description 
+            SELECT attach, description, priority, action_type 
             FROM `tabKnowledge Base` 
             WHERE {' AND '.join(conditions)} AND active = 1
         """

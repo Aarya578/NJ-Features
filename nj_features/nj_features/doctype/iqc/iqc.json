@@ -17,8 +17,8 @@
   "section_break_6sw2s",
   "serial_no",
   "item_group",
-  "warehouse",
-  "repack_item_code",
+  "source_warehouse",
+  "target_warehouse",
   "original_price",
   "njhat_serialno",
   "raw_data",
@@ -26,8 +26,11 @@
   "brand",
   "model",
   "make",
+  "repack_item_code",
   "repack_itm_price",
   "attr_data",
+  "error_section_section",
+  "error_message",
   "section_break_56eed",
   "iqc_item_component",
   "amended_from"
@@ -72,15 +75,8 @@
   },
   {
    "fieldname": "brand",
-   "fieldtype": "Link",
-   "label": "Brand",
-   "options": "Brand"
-  },
-  {
-   "fieldname": "warehouse",
-   "fieldtype": "Link",
-   "label": "Warehouse",
-   "options": "Warehouse"
+   "fieldtype": "Data",
+   "label": "Brand"
   },
   {
    "fieldname": "original_price",
@@ -127,9 +123,8 @@
   },
   {
    "fieldname": "model",
-   "fieldtype": "Link",
-   "label": "Model",
-   "options": "Models"
+   "fieldtype": "Data",
+   "label": "Model"
   },
   {
    "fieldname": "repack_itm_price",
@@ -159,21 +154,46 @@
   },
   {
    "fieldname": "make",
-   "fieldtype": "Link",
-   "label": "Make",
-   "options": "Make"
+   "fieldtype": "Data",
+   "label": "Make"
   },
   {
    "fieldname": "idx",
    "fieldtype": "Int",
+   "hidden": 1,
    "label": "idx"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "error_section_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Error Section"
+  },
+  {
+   "columns": 6,
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Error Message"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2023-12-28 17:02:22.852754",
+ "modified": "2023-12-28 20:26:35.890733",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

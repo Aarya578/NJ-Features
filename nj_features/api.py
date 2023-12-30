@@ -6,7 +6,7 @@ def part_qi_check(serial_no, idx, inspection_type):
     result = {}
     item_group = ''
     activity = ''
-    item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (serial_no))
+    item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (serial_no), as_dict=True)
     item_group_query = frappe.db.sql("""
         SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
     """, (serial_no, idx))
@@ -50,7 +50,7 @@ def part_qi_check(serial_no, idx, inspection_type):
                     combined_info = {}
                 result[quality_check] = combined_info
     output = {
-            "item_code": item_code,
+            "item_code": item_code[0].item_code,
             "part_name": item_group,
             "activity": activity,
             "check_name": result

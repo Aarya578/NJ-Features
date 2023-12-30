@@ -7,7 +7,7 @@ def part_qi_check(serial_no, idx, inspection_type):
     item_group = ''
     activity = ''
     item_group_query = frappe.db.sql("""
-        SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
+        SELECT item_group, item_code FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
     """, (serial_no, idx))
     
     if item_group_query:
@@ -49,6 +49,7 @@ def part_qi_check(serial_no, idx, inspection_type):
                     combined_info = {}
                 result[quality_check] = combined_info
     output = {
+            "item_code": item_group_query[0][1],
             "part_name": item_group,
             "activity": activity,
             "check_name": result
@@ -57,14 +58,18 @@ def part_qi_check(serial_no, idx, inspection_type):
 
 @frappe.whitelist()
 def get_kb_from_serial_no(serial_no):
+    item_code = ''
     serial_no_doc = frappe.db.sql("""SELECT item_code FROM `tabSerial No` WHERE name = %s""", (serial_no), as_dict=1)
     if not serial_no_doc:
         frappe.throw(_("Serial No '{0}' not found.").format(serial_no), title=_("Serial No Not Found"))
 
-    item_doc = frappe.db.sql("""SELECT brand, item_model FROM `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
+    item_doc = frappe.db.sql("""SELECT brand, item_model, item_code FROM `tabItem` WHERE name = %s""", serial_no_doc[0].item_code, as_dict=1)
 
     conditions = []
     params = []
+
+    if item_doc and item_doc[0].get('item_code'):
+        item_code = item_doc[0].get('item_code')
 
     if item_doc and item_doc[0].get('brand'):
         conditions.append("brand = %s")
@@ -76,11 +81,23 @@ def get_kb_from_serial_no(serial_no):
 
     if conditions:
         query = f"""
-            SELECT attach, description, priority, action_type 
+            SELECT attach, description
             FROM `tabKnowledge Base` 
             WHERE {' AND '.join(conditions)} AND active = 1
         """
         kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
-        return kb_doc
+        return {"item_code":item_code, "kb_doc": kb_doc}
     else:
-        frappe.throw(_("No valid conditions found for querying Knowledge Base."), title=_("Invalid Query"))
+        frappe.throw(_("No valid conditions found for filtering Knowledge Base."), title=_("Invalid Query"))
+
+
+@frappe.whitelist()
+def get_prev_detail(serial_no):
+    quality_inspection = frappe.db.get_value('Quality Inspection', {'barcode': serial_no}, ['barcode', 'name', 'status'], as_dict=True)
+
+    if not quality_inspection:
+        frappe.throw(_("Quality Inspection with barcode '{0}' not found.").format(serial_no), title=_("Quality Inspection Not Found"))
+
+    nj_readings = frappe.db.sql(""" SELECT item_group, check_name, options, score, weightage FROM `tabNJ Checks` WHERE parent = %s """, quality_inspection['name'], as_dict=True)
+
+    return {'quality_inspection': quality_inspection, 'nj_readings': nj_readings}

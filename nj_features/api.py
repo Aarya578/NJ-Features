@@ -99,6 +99,30 @@ def get_prev_detail(serial_no):
     if not quality_inspection:
         frappe.throw(_("Quality Inspection with barcode '{0}' not found.").format(serial_no), title=_("Quality Inspection Not Found"))
 
-    nj_readings = frappe.db.sql(""" SELECT item_group, check_name, options, score, weightage FROM `tabNJ Checks` WHERE parent = %s """, quality_inspection['name'], as_dict=True)
+    nj_readings = frappe.db.sql("""
+        SELECT item_group, check_name, options, score, weightage 
+        FROM `tabNJ Checks` 
+        WHERE parent = %s
+    """, quality_inspection['name'], as_dict=True)
 
-    return {'quality_inspection': quality_inspection, 'nj_readings': nj_readings}
+    formatted_result = {
+        "message": {
+            "quality_inspection": quality_inspection,
+            "nj_readings": [
+                {
+                    "part_name": part_name,
+                    "checks": [
+                        {
+                            "check_name": reading["check_name"],
+                            "result": reading["options"],
+                            "score": reading["score"],
+                            "weightage": reading["weightage"]
+                        } for reading in nj_readings if reading["item_group"] == part_name
+                    ]
+                } for part_name in set(reading["item_group"] for reading in nj_readings)
+            ]
+        }
+    }
+
+    return formatted_result
+

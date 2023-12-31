@@ -124,3 +124,23 @@ def get_prev_detail(serial_no):
 
     return formatted_result
 
+
+@frappe.whitelist()
+def save_qi_data(data):
+    qi_doc = frappe.db.get_value('Quality Inspection', {'barcode': data['serialNo']}, '*', as_dict=True)
+    item_group = data['partName']
+    # idx = data['currentPart']
+    for i in range(len(data["checkName"])):
+        child_table = qi_doc.append("nj_checks", {})
+        child_table.item_group = item_group
+        check_name = data["checkName"][i]
+        check_option = data["checkOption"][i]
+
+
+        child_table.check_name = check_name
+        child_table.options = check_option
+
+        qi_doc.save()
+
+
+

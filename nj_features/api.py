@@ -162,7 +162,6 @@ def get_prev_detail(serial_no):
 
 
 def save_qi_data(data):
-    print(f"data in sqve: {data}")
     qi_doc = frappe.get_doc('Quality Inspection', {'barcode': data['serialNo']})
 
     if not qi_doc:
@@ -173,14 +172,14 @@ def save_qi_data(data):
     item_group = frappe.db.sql("""
                 SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
             """, (data['serialNo'], data['prevPart']))
-
-    for i in range(len(data["checkName"])):
-        child_table = qi_doc.append("nj_quality_checks", {})
-        child_table.item_group = item_group[0][0]
-        check_name = data["checkName"][i]
-        check_option = data["checkOption"][i]
-        child_table.check_name = check_name
-        child_table.options = check_option
+    if data['checkName']:
+        for i in range(len(data["checkName"])):
+            child_table = qi_doc.append("nj_quality_checks", {})
+            child_table.item_group = item_group[0][0]
+            check_name = data["checkName"][i]
+            check_option = data["checkOption"][i]
+            child_table.check_name = check_name
+            child_table.options = check_option
 
     qi_doc.save()
     return qi_doc.name

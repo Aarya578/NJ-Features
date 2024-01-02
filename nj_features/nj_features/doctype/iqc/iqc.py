@@ -35,7 +35,7 @@ class IQC(Document):
             'basic_rate': self.original_price
         })
 
-        stock_entry.submit()
+        stock_entry.save()
         stock_entry_name = stock_entry.name
 
         print(f"Update serial no based on IQC")
@@ -75,12 +75,17 @@ def set_iqc_child_table(item_group):
 
 @frappe.whitelist()
 def get_po_from_pr(pr):
-    po = frappe.get_doc('Purchase Receipt Item', {'parent': pr})
+    query = frappe.db.sql(
+        """SELECT Item_code, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """,
+        (pr), as_dict=True)
 
-    if po:
-        return po
-    else:
-        return None
+    result = {"po": None, "item_code": []}
+
+    for row in query:
+        result["po"] = row["purchase_order"]
+        result["item_code"].append(row["Item_code"]) 
+    return result
+
 
 @frappe.whitelist()
 def get_list_of_variants(item_group):
@@ -118,3 +123,6 @@ def iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price=None):
     return {'original_price': original_price}
 
 
+@frappe.whitelist()
+def get_items_from_pr(pr):
+    return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)

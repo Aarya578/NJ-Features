@@ -112,8 +112,8 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Data",
-   "label": "PR/Incoming Item Code"
+   "fieldtype": "Select",
+   "label": "PR Item"
   },
   {
    "fieldname": "item_group",
@@ -178,10 +178,10 @@
   {
    "fieldname": "error_section_section",
    "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Error Section"
+   "hidden": 1
   },
   {
+   "bold": 1,
    "columns": 6,
    "fieldname": "error_message",
    "fieldtype": "Small Text",
@@ -193,7 +193,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2023-12-28 20:26:35.890733",
+ "modified": "2024-01-02 20:35:04.071562",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

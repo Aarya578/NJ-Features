@@ -1,43 +1,46 @@
+import json
 import frappe
 from frappe import _
 
 @frappe.whitelist()
-def part_qi_check(data):
+def part_qi_check():
     try:
         result = {}
         item_code = ''
         item_group = ''
         activity = ''
+        
+        data_bytes = frappe.request.data
+        data_str = data_bytes.decode('utf-8')
+        data = json.loads(data_str)
+        serial_no = data['serialNo']
 
-        # Access serialNo directly from the input data
-        serial_no = data.get("serialNo", "")
+        item_code_query = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s """, (serial_no), as_dict=True)
 
-        # Query for item_code using serialNo
-        item_code_query = frappe.db.sql("""
-            SELECT item_code FROM `tabSerial No` WHERE name = %s
-        """, (serial_no), as_dict=True)
+        if (data['submit_status'].lower() == 'preview'): return get_prev_detail(serial_no)
+
+        # if (data['submit_status'].lower() == 'accepted' or 'rejected'): 
+        #     data['qi_name'].submit()
+        #     return 
 
         if item_code_query:
             item_code = item_code_query[0].get('item_code')
 
-            # Query for item_group using serialNo and currentPart
             item_group_query = frappe.db.sql("""
                 SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
-            """, (serial_no, data.get('currentPart')))
+            """, (serial_no, data['currentPart']))
 
             if item_group_query:
                 item_group = item_group_query[0][0]
 
-                # Query for parent_name and activity using item_group and inspection_type
                 parent_name_query = frappe.db.sql("""
                     SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
-                """, (item_group, data.get('inspection_type')))
+                """, (item_group, data['inspection_type']))
 
                 if parent_name_query:
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
 
-                    # Query for quality checks and mandatory status
                     second_query = frappe.db.sql("""
                         SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx
                     """, (parent_name), as_dict=True)
@@ -46,12 +49,10 @@ def part_qi_check(data):
                         quality_check = row.get('quality_check')
                         mandatory = row.get('mandatory')
 
-                        # Query for details of each quality check
                         nj_qc_check_list_query = frappe.db.sql("""
                             SELECT name_of_check, type, diagnostic_type, description FROM `tabNJ QC Check List` WHERE name = %s
                         """, (quality_check), as_dict=True)
 
-                        # Query for options related to the quality check
                         options_query = frappe.db.sql("""
                             SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1
                         """, (quality_check), as_dict=True)
@@ -82,7 +83,6 @@ def part_qi_check(data):
         return output
 
     except Exception as e:
-        # Log the exception or handle it appropriately
         print(f"An error occurred: {e}")
         return {"success": False, "message": f"Error: {str(e)}"}
 
@@ -121,7 +121,6 @@ def get_kb_from_serial_no(serial_no):
         frappe.throw(_("No valid conditions found for filtering Knowledge Base."), title=_("Invalid Query"))
 
 
-@frappe.whitelist()
 def get_prev_detail(serial_no):
     quality_inspection = frappe.db.get_value('Quality Inspection', {'barcode': serial_no}, ['barcode', 'name', 'status'], as_dict=True)
 
@@ -155,7 +154,7 @@ def get_prev_detail(serial_no):
 
     return formatted_result
 
-@frappe.whitelist()
+
 def save_qi_data(data):
     qi_doc = frappe.get_doc('Quality Inspection', {'barcode': data['serialNo']})
 
@@ -175,6 +174,3 @@ def save_qi_data(data):
 
     qi_doc.save()
     return qi_doc.name
-
-
-

@@ -9,6 +9,8 @@ def part_qi_check():
         item_code = ''
         item_group = ''
         activity = ''
+        total_part = ''
+        qi_name = ''
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -18,6 +20,8 @@ def part_qi_check():
         item_code_query = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s """, (serial_no), as_dict=True)
 
         if (data['submit_status'].lower() == 'preview'): return get_prev_detail(serial_no)
+
+        if (data['prevPart']): qi_name = save_qi_data(data)
 
         # if (data['submit_status'].lower() == 'accepted' or 'rejected'): 
         #     data['qi_name'].submit()
@@ -34,13 +38,13 @@ def part_qi_check():
                 item_group = item_group_query[0][0]
 
                 parent_name_query = frappe.db.sql("""
-                    SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
+                    SELECT name, activity, count(*) as total_part FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
                 """, (item_group, data['inspection_type']))
 
                 if parent_name_query:
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
-
+                    total_part = parent_name_query[0][2]
                     second_query = frappe.db.sql("""
                         SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx
                     """, (parent_name), as_dict=True)
@@ -77,6 +81,8 @@ def part_qi_check():
             "item_code": item_code,
             "part_name": item_group,
             "activity": activity,
+            "total_part": total_part,
+            "qi_name": qi_name,
             "check_name": result
         }
 
@@ -156,17 +162,21 @@ def get_prev_detail(serial_no):
 
 
 def save_qi_data(data):
+    print(f"data in sqve: {data}")
     qi_doc = frappe.get_doc('Quality Inspection', {'barcode': data['serialNo']})
 
     if not qi_doc:
         qi_doc = frappe.new_doc('Quality Inspection')
         qi_doc.barcode = data['serialNo']
-        qi_doc.item_group = data['partName']
         qi_doc.inspection_type = data['inspection_type']
 
+    item_group = frappe.db.sql("""
+                SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
+            """, (data['serialNo'], data['prevPart']))
+
     for i in range(len(data["checkName"])):
-        child_table = qi_doc.append("nj_checks", {})
-        child_table.item_group = data['partName']
+        child_table = qi_doc.append("nj_quality_checks", {})
+        child_table.item_group = item_group[0][0]
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]
         child_table.check_name = check_name

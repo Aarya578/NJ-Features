@@ -157,20 +157,17 @@ def get_kb_from_serial_no(serial_no):
 
 def get_prev_detail(data):
     #use qi_name to get the qi information
-    qi_name = data['qi_name']
-    print(f"qi_name: {qi_name} for prev detail")
-    if not qi_name or qi_name == "":
-        frappe.throw(_("Quality Inspection with barcode '{0}' not found.").format(data['serial_no']), title=_("Quality Inspection Not Found"))
-        return
+    if 'qi_name' in data:
+        qi_name = data['qi_name']
 
     nj_readings = frappe.db.sql("""
         SELECT item_group, check_name, options, checks, score, weightage 
         FROM `tabNJ Checks` 
         WHERE parent = %s order by idx
     """, qi_name, as_dict=True)
-    status = frappe.db.get_value('Quality Inspection', qi_name, 'qi_status')
+    status = frappe.db.get_value('Quality Inspection', qi_name, 'status')
     formatted_result = {
-        "serial_no": data['serial_no'],
+        "serial_no": data['serialNo'],
         "qi_name": qi_name,
         "status": status,
         "nj_readings": [

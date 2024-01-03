@@ -25,7 +25,10 @@ def part_qi_check():
         if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
         print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
-        qi_name = save_qi_data(data)
+        if not 'qi_name' in data and data['qi_name'] != "":
+            if data['prevPart'] == "":
+                data['prevPart'] = 1
+            qi_name = save_qi_data(data)
 
         #submit qi_doc
         # if (data['submitStatus'].lower() == 'accepted' or 'rejected'):
@@ -186,18 +189,15 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     # qi_name as a primary key - Done
-    if data['prevPart'] == "":
-                data['prevPart'] = 1
     print(f"data from save_qi_data: {data}")
     qi_doc = ''
     # Check if 'qi_name' exists in data
-    if 'qi_name' in data and not data['qi_name'] != "":
+    if 'qi_name' in data or data['qi_name'] != "":
         qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
-
-    print(f"qi_doc: {qi_doc} from qi_name")
+        print(f"qi_doc: {qi_doc} from qi_name")
 
     # not available -> insert - Done
-    if not 'qi_name' in data or data['qi_name'] == "":
+    else:
         item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
         print(item_code[0][0])
         qi_doc = frappe.new_doc('Quality Inspection')

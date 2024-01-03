@@ -220,14 +220,14 @@ def save_qi_data(data):
         print(f"new qi_doc: {qi_doc}")
 
     # update checks and their values
-    item_group = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
+    item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
     """, (data['serialNo'], data['prevPart']))
-    print(f"item_group: {item_group}")
+    item_group = item_group_query[0][0]
 
     for i in range(len(data["checkName"])):
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]
-        child_table = qi_doc.append("nj_checks", {})
+        child_table = qi_doc.append("nj_quality_checks", {})
         child_table.item_group = item_group
         child_table.check_name = check_name
         child_table.options = check_option

@@ -11,6 +11,10 @@ def part_qi_check():
         activity = ''
         total_part = ''
         qi_name = ''
+        submit_status = ''
+
+        if 'submitStatus' in data:
+            submit_status = data['submitStatus']
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -111,7 +115,8 @@ def part_qi_check():
             "activity": activity,
             "total_part": total_part[0][1],
             "qi_name": qi_name,
-            "check_name": result
+            "check_name": result,
+            "submit_status": submit_status
         }
 
         return output

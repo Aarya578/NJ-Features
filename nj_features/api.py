@@ -109,6 +109,11 @@ def part_qi_check():
 
                         result[quality_check] = combined_info
 
+        nj_readings = []
+        if data['submitStatus'].lower() == 'preview':
+            nj_readings1 = get_prev_detail(data)
+            nj_readings = nj_readings1["nj_readings"]
+
         output = {
             "item_code": item_code,
             "part_name": part_name,
@@ -116,7 +121,8 @@ def part_qi_check():
             "total_part": total_part[0][1],
             "qi_name": qi_name,
             "check_name": result,
-            "submit_status": submit_status
+            "submit_status": submit_status,
+            "nj_readings": nj_readings
         }
 
         return output
@@ -171,10 +177,9 @@ def get_prev_detail(data):
         WHERE parent = %s order by idx
     """, qi_name, as_dict=True)
     status = frappe.db.get_value('Quality Inspection', qi_name, 'status')
+    
+
     formatted_result = {
-        "serial_no": data['serialNo'],
-        "qi_name": qi_name,
-        "status": status,
         "nj_readings": [
             {
                 "part_name": part_name,

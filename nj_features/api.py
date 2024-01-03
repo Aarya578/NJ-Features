@@ -25,8 +25,6 @@ def part_qi_check():
         if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
         print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
-        if 'qi_name' in data:
-            qi_name = data['qi_name'] != ""
 
         if 'checkName' in data:
             if data['prevPart'] == "":
@@ -194,12 +192,15 @@ def get_prev_detail(data):
 
 
 def save_qi_data(data):
+    qi_name = ''
     # qi_name as a primary key - Done
     print(f"data from save_qi_data: {data}")
     qi_doc = ''
     # Check if 'qi_name' exists in data
     if 'qi_name' in data:
-        #data['qi_name'] != "":
+        qi_name = data["qi_name"]
+
+    if qi_name != '':
         qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
         print(f"qi_doc: {qi_doc} from qi_name")
 

@@ -37,7 +37,7 @@ def part_qi_check():
         #         qi_doc.submit()
         #         return f"{data['inspection_type']} has been {data['submitStatus']} for the serial no: {data['serialNo']}"
 
-        if item_code_query and data['currentPart'] or data['submitStatus'].lower() == 'inprogress':
+        if 'currentPart' in data or data['submitStatus'].lower() == 'inprogress':
             print(f"inprogress")
             item_code = item_code_query[0].get('item_code')
 
@@ -198,7 +198,7 @@ def save_qi_data(data):
     print(f"qi_doc: {qi_doc} from qi_name")
 
     # not available -> insert - Done
-    if not 'qi_name' in data or data['qi_name'] =="":
+    if not 'qi_name' in data or data['qi_name'] == "":
         item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
         print(item_code[0][0])
         qi_doc = frappe.new_doc('Quality Inspection')
@@ -207,7 +207,7 @@ def save_qi_data(data):
         qi_doc.inspection_type = data['inspection_type']
         qi_doc.machine_made_by = 'itsupport@newjaisa.com'
         qi_doc.inspected_by = 'itsupport@newjaisa.com'
-        qi_doc.reference_name = 'MAT-PRE-2023-00001'
+        qi_doc.reference_name = 'PREC-06175'
         if item_code:
             qi_doc.item_code = item_code[0][0]
         print(f"new qi_doc: {qi_doc}")
@@ -216,7 +216,7 @@ def save_qi_data(data):
     item_group = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
     """, (data['serialNo'], data['prevPart']))
     print(f"item_group: {item_group}")
-    
+
     for i in range(len(data["checkName"])):
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]

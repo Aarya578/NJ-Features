@@ -206,7 +206,7 @@ def save_qi_data(data):
         qi_doc.inspection_type = data['inspection_type']
         qi_doc.machine_made_by = 'itsupport@newjaisa.com'
         qi_doc.inspected_by = 'itsupport@newjaisa.com'
-        qi_doc.reference_name = 'MAT-PRE-2023-00001'
+        qi_doc.reference_name = 'PREC-06175'
         if item_code:
             qi_doc.item_code = item_code[0][0]
         print(f"new qi_doc: {qi_doc}")

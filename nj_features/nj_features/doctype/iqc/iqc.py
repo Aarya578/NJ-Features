@@ -19,14 +19,14 @@ class IQC(Document):
             'uom': 'Nos',
             'conversion_factor': 1,
             'stock_uom': 'Nos',
-            's_warehouse': self.warehouse,
+            's_warehouse': self.source_warehouse,
             'basic_rate': self.base_price
         })
 
         stock_entry.append("items", {
             "item_code": self.repack_item_code,
             "qty": 1,
-            "t_warehouse": self.warehouse,
+            "t_warehouse": self.target_warehouse,
             'uom': 'Nos',
             'conversion_factor': 1,
             'serial_no': self.serial_no,

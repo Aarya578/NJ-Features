@@ -25,10 +25,7 @@ def part_qi_check():
         if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
         print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
-        if 'checkName' in data and data['checkName'] != "":
-            if data['prevPart'] == "":
-                data['prevPart'] = 1
-            qi_name = save_qi_data(data)
+        qi_name = save_qi_data(data)
 
         #submit qi_doc
         # if (data['submitStatus'].lower() == 'accepted' or 'rejected'):
@@ -189,6 +186,8 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     # qi_name as a primary key - Done
+    if data['prevPart'] == "":
+                data['prevPart'] = 1
     print(f"data from save_qi_data: {data}")
     qi_doc = ''
     # Check if 'qi_name' exists in data
@@ -207,7 +206,7 @@ def save_qi_data(data):
         qi_doc.inspection_type = data['inspection_type']
         qi_doc.machine_made_by = 'itsupport@newjaisa.com'
         qi_doc.inspected_by = 'itsupport@newjaisa.com'
-        qi_doc.reference_name = 'PREC-06175'
+        qi_doc.reference_name = 'MAT-PRE-2023-00001'
         if item_code:
             qi_doc.item_code = item_code[0][0]
         print(f"new qi_doc: {qi_doc}")

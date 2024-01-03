@@ -227,6 +227,10 @@ def save_qi_data(data):
     for i in range(len(data["checkName"])):
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]
+        child_table = qi_doc.append("nj_checks", {})
+        child_table.item_group = item_group
+        child_table.check_name = check_name
+        child_table.options = check_option
 
         # existing_entry = next(
         #     (entry for entry in qi_doc.nj_quality_checks if entry.item_group == item_group[0][0] and entry.check_name == check_name), None)
@@ -236,7 +240,7 @@ def save_qi_data(data):
         #     existing_entry.options = check_option
         ##else:
             # If the combination does not exist, append a new record
-            ##qi_doc.append("nj_quality_checks", {'item_group': item_group[0][0], 'check_name': check_name, 'options': check_option})
+        # qi_doc.append("nj_quality_checks", {'item_group': item_group[0][0], 'check_name': check_name, 'options': check_option})
         if qi_doc.docstatus == 0:
             qi_doc.save()
         else: return f"Not able to save {qi_doc.name}"

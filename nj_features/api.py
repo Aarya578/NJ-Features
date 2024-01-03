@@ -25,7 +25,10 @@ def part_qi_check():
         if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
         print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
-        if not 'qi_name' in data and data['qi_name'] != "":
+        if 'qi_name' in data:
+            qi_name = data['qi_name'] != ""
+
+        if 'checkName' in data:
             if data['prevPart'] == "":
                 data['prevPart'] = 1
             qi_name = save_qi_data(data)
@@ -44,19 +47,22 @@ def part_qi_check():
             item_group_query = frappe.db.sql("""
                 SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
             """, (serial_no, data['currentPart']))
-
+            
             if item_group_query:
-                item_group = item_group_query[0][0]
+                part_name = item_group_query[0][0]
+                item_group = part_name
 
                 parent_name_query = frappe.db.sql("""
                     SELECT name, activity, count(*) as total_part FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
                 """, (item_group, data['inspection_type']))
                 print(f"parent_name_query: {parent_name_query}")
+                
                 if parent_name_query:
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
                     item_group_list = frappe.db.sql("""SELECT item_group FROM `tabSerial No Component` WHERE parent = %s order by idx""", (serial_no)) 
                     if item_group_list:
+                        print(f"item_group_list: {item_group_list[0][0]}")
                         item_group = item_group_list[0][0]
 
                         total_part = frappe.db.sql("""
@@ -103,7 +109,7 @@ def part_qi_check():
 
         output = {
             "item_code": item_code,
-            "part_name": item_group,
+            "part_name": part_name,
             "activity": activity,
             "total_part": total_part[0][1],
             "qi_name": qi_name,
@@ -192,7 +198,8 @@ def save_qi_data(data):
     print(f"data from save_qi_data: {data}")
     qi_doc = ''
     # Check if 'qi_name' exists in data
-    if 'qi_name' in data or data['qi_name'] != "":
+    if 'qi_name' in data:
+        #data['qi_name'] != "":
         qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
         print(f"qi_doc: {qi_doc} from qi_name")
 
@@ -220,15 +227,15 @@ def save_qi_data(data):
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]
 
-        existing_entry = next(
-            (entry for entry in qi_doc.nj_quality_checks if entry.item_group == item_group[0][0] and entry.check_name == check_name), None)
-        print(f"existing_entry: {existing_entry}")
-        if existing_entry:
-            # If the combination exists, update the check_option
-            existing_entry.options = check_option
-        else:
+        # existing_entry = next(
+        #     (entry for entry in qi_doc.nj_quality_checks if entry.item_group == item_group[0][0] and entry.check_name == check_name), None)
+        # print(f"existing_entry: {existing_entry}")
+        # if existing_entry:
+        #     # If the combination exists, update the check_option
+        #     existing_entry.options = check_option
+        ##else:
             # If the combination does not exist, append a new record
-            qi_doc.append("nj_quality_checks", {'item_group': item_group[0][0], 'check_name': check_name, 'options': check_option})
+            ##qi_doc.append("nj_quality_checks", {'item_group': item_group[0][0], 'check_name': check_name, 'options': check_option})
         if qi_doc.docstatus == 0:
             qi_doc.save()
         else: return f"Not able to save {qi_doc.name}"

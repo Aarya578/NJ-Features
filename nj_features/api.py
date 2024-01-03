@@ -26,7 +26,7 @@ def part_qi_check():
         # Serial number and qi_name is empty, but QI data for the serial number is in draft (docstatus = 0) then return the current data with a message saying retrieve existing data
         # check for checkname[0] hsa to have data then do a save qi data
         
-        if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
+        #if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
         print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
 

@@ -15,6 +15,7 @@ frappe.ui.form.on('IQC', {
         }
         cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 100;
         cur_frm.refresh_fields('fields');
+        frm.events.purchase_receipt(frm);
     },
     purchase_receipt: function(frm) {
         frappe.call({
@@ -23,7 +24,9 @@ frappe.ui.form.on('IQC', {
             callback: function(r) {
                 console.log("get_po_from_pr: ",r)
                 frm.set_value('purchase_order', r.message.po)
-                frm.set_df_property('item_code','options', r.message.item_code)
+                r.message.item_code.unshift('');
+                var options = r.message.item_code.join('\n');
+                frm.set_df_property('item_code', 'options', options);
             }
         });
     },
@@ -118,20 +121,14 @@ frappe.ui.form.on('IQC', {
    validate: function(frm) {
         var requiredFields = ['purchase_order', 'pr_item', 'purchase_receipt', 'serial_no', 'item_group', 'source_warehouse', 'target_warehouse', 'brand', 'model', 'make', 'repack_item_code'];
         var errorMessages = [];
-    
+        console.log($(frm.layout.wrapper).find('.form-message.red').last())
         for (var i = 0; i < requiredFields.length; i++) {
             var fieldname = requiredFields[i];
             if (!frm.doc[fieldname]) {
                 var fieldLabel = frm.fields_dict[fieldname] ? frm.fields_dict[fieldname].df.label : fieldname;
                 if (frm.fields_dict[fieldname]) {
-                    // Log the fieldname to the console for debugging
-                    console.log('Fieldname found:', fieldname);
                     frm.fields_dict[fieldname].$wrapper.addClass('has-error');
-                } else {
-                    // Log the fieldname to the console for debugging
-                    console.log('Fieldname not found:', fieldname);
                 }
-                errorMessages.push(__("{0}", [fieldLabel]));
             }
         }
     
@@ -145,6 +142,9 @@ frappe.ui.form.on('IQC', {
             frm.set_df_property('error_section_section', 'hidden', 0);
             frm.fields_dict['error_message'].$input.css('height', '50px');
             frappe.validated = false;
+        }
+        if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
+            $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
     },
 

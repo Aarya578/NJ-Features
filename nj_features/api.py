@@ -23,9 +23,11 @@ def part_qi_check():
         # check for checkname[0] hsa to have data then do a save qi data
         
         if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
-        
+
         #save prevPart data
-        if 'checkName' in data and 'prevPart' in data and data['prevPart'] != 0:
+        if 'checkName' in data:
+            if data['prevPart'] == "":
+                data['prevPart'] = 1
             qi_name = save_qi_data(data)
 
         #submit qi_doc
@@ -49,7 +51,7 @@ def part_qi_check():
                 parent_name_query = frappe.db.sql("""
                     SELECT name, activity, count(*) as total_part FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
                 """, (item_group, data['inspection_type']))
-
+                print(f"parent_name_query: {parent_name_query}")
                 if parent_name_query:
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
@@ -196,6 +198,8 @@ def save_qi_data(data):
 
     # not available -> insert - Done
     if not 'qi_name' in data:
+        item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
+        print(item_code[0][0])
         qi_doc = frappe.new_doc('Quality Inspection')
         qi_doc.barcode = data['serialNo']
         qi_doc.bios_serial_number = data['serialNo']
@@ -203,7 +207,8 @@ def save_qi_data(data):
         qi_doc.machine_made_by = 'itsupport@newjaisa.com'
         qi_doc.inspected_by = 'itsupport@newjaisa.com'
         qi_doc.reference_name = 'MAT-PRE-2023-00001'
-        qi_doc.item_code = '121'
+        if item_code:
+            qi_doc.item_code = item_code[0][0]
         print(f"new qi_doc: {qi_doc}")
 
     # update checks and their values

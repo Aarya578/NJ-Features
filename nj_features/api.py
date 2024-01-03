@@ -13,8 +13,6 @@ def part_qi_check():
         qi_name = ''
         submit_status = ''
 
-        if 'submitStatus' in data:
-            submit_status = data['submitStatus']
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -23,6 +21,8 @@ def part_qi_check():
         print(f"data: {data}")
         item_code_query = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s """, (serial_no), as_dict=True)
 
+        if 'submitStatus' in data:
+            submit_status = data['submitStatus']
         # Serial number and qi_name is empty, but QI data for the serial number is in draft (docstatus = 0) then return the current data with a message saying retrieve existing data
         # check for checkname[0] hsa to have data then do a save qi data
         

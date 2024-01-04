@@ -27,16 +27,16 @@ def get_data(filters):
     # SQL query
     query = """
         SELECT DISTINCT
-		ddd.creation AS Creation,
-		bb.serial_no AS 'Machine Serial',
+		ddd.creation,
+		bb.serial_no AS 'machine_serial',
 		aaa.parent AS 'STE No',
-		ccc.item_group AS 'Part Item Group',
-		aaa.item_code AS 'Part Item Code',
+		ccc.item_group AS 'part_item_group',
+		aaa.item_code AS 'part_item_code',
 		aaa.s_warehouse,
 		aaa.t_warehouse,
-		aaa.serial_no AS 'Part Serial No',
-		eee.warehouse AS 'Current Product WH',
-		eee.item_code AS 'Product Item Code'
+		aaa.serial_no AS 'part_serial_no',
+		eee.warehouse AS 'current_product_wh',
+		eee.item_code AS 'product_item_code'
 	FROM
 		`tabStock Entry Detail` AS aaa
 	INNER JOIN

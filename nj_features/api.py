@@ -6,6 +6,7 @@ from frappe import _
 def part_qi_check():
     try:
         result = {}
+        count = []
         item_code = ''
         item_group = ''
         activity = ''
@@ -50,38 +51,30 @@ def part_qi_check():
                 item_group = part_name
 
                 parent_name_query = frappe.db.sql("""
-                    SELECT name, activity, count(*) as total_part FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
+                    SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
                 """, (item_group, data['inspection_type']))
-                print(f"parent_name_query: {parent_name_query}")
                 
                 if parent_name_query:
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
-                    item_group_list = frappe.db.sql("""SELECT item_group FROM `tabSerial No Component` WHERE parent = %s order by idx""", (serial_no)) 
-                    if item_group_list:
-                        print(f"item_group_list: {item_group_list[0][0]}")
-                        item_group = item_group_list[0][0]
 
-                        total_part = frappe.db.sql("""
-                            SELECT name, count(*) as total_part 
-                            FROM `tabNJ Quality Checks` 
-                            WHERE item_group = %s AND inspection_type = %s
-                        """, (item_group, data['inspection_type']))
-                    else:
-                        total_part = []
-
-                    print(f"total_part: {total_part}")
+                    item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (serial_no))
+                    for x in item_group_list:
+                        total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
+                        (x, data['inspection_type']))
+                        count.append(total_part_query[0][0])
+                    print(f"{count}")
                     
-                    second_query = frappe.db.sql("""
-                        SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx
-                    """, (parent_name), as_dict=True)
+                    
+                    second_query = frappe.db.sql("""SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx""", 
+                    (parent_name), as_dict=True)
 
                     for row in second_query:
                         quality_check = row.get('quality_check')
                         mandatory = row.get('mandatory')
 
                         nj_qc_check_list_query = frappe.db.sql("""
-                            SELECT name_of_check, type, diagnostic_type, description FROM `tabNJ QC Check List` WHERE name = %s
+                            SELECT name_of_check, type, diagnostic_type, description, name FROM `tabNJ QC Check List` WHERE name = %s
                         """, (quality_check), as_dict=True)
 
                         options_query = frappe.db.sql("""
@@ -93,12 +86,18 @@ def part_qi_check():
                         else:
                             nj_qc_check_list = {}
 
+                        name = nj_qc_check_list.get('name', '')
+                        selected = frappe.db.sql(""" SELECT options FROM `tabNJ Checks` WHERE 
+                            item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
+                            (part_name, name, qi_name), as_dict=True)
+
                         combined_info = {
                             "name_of_the_check": nj_qc_check_list.get('name_of_check', ''),
                             "type": nj_qc_check_list.get('type', ''),
                             "diagnostic_type": nj_qc_check_list.get('diagnostic_type', ''),
                             "description": nj_qc_check_list.get('description', ''),
                             "mandatory": mandatory,
+                            "selected": selected[0]['options'] if selected else '',
                             "options": options_query
                         }
 
@@ -113,7 +112,7 @@ def part_qi_check():
             "item_code": item_code,
             "part_name": part_name,
             "activity": activity,
-            "total_part": total_part[0][1],
+            "total_part": len(count),
             "qi_name": qi_name,
             "submit_status": submit_status,
             "check_name": result,
@@ -171,8 +170,6 @@ def get_prev_detail(data):
         FROM `tabNJ Checks` 
         WHERE parent = %s ORDER BY idx asc
     """, qi_name, as_dict=True)
-    # status = frappe.db.get_value('Quality Inspection', qi_name, 'status')
-    print(f"nj_readings: {nj_readings}")
 
     formatted_result = {
         "nj_readings": [
@@ -192,7 +189,6 @@ def get_prev_detail(data):
     }
 
     return formatted_result
-
 
 def save_qi_data(data):
     qi_name = ''
@@ -234,7 +230,6 @@ def save_qi_data(data):
 
         existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND options = %s AND parent = %s ORDER BY idx""",
         (item_group, check_name, check_option, qi_name))
-        print(f"existing_child: {existing_child}")
 
         if existing_child:
             frappe.db.sql("""UPDATE `tabNJ Checks` SET options = %s WHERE name = %s """, 

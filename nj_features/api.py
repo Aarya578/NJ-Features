@@ -18,16 +18,12 @@ def part_qi_check():
         data_str = data_bytes.decode('utf-8')
         data = json.loads(data_str)
         serial_no = data['serialNo']
-        print(f"data: {data}")
         item_code_query = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s """, (serial_no), as_dict=True)
 
         if 'submitStatus' in data:
             submit_status = data['submitStatus']
         # Serial number and qi_name is empty, but QI data for the serial number is in draft (docstatus = 0) then return the current data with a message saying retrieve existing data
         # check for checkname[0] hsa to have data then do a save qi data
-        
-        #if data['submitStatus'].lower() == 'preview': return get_prev_detail(data)
-        print(f"'checkName' in data: {'checkName' in data}")
         #save prevPart data
 
         if 'checkName' in data:
@@ -36,14 +32,13 @@ def part_qi_check():
             qi_name = save_qi_data(data)
 
         #submit qi_doc
-        # if (data['submitStatus'].lower() == 'accepted' or 'rejected'):
-        #     qi_doc = frappe.get_doc('Quality Inspection', qi_name)
-        #     if qi_doc.docstatus == 0:
-        #         qi_doc.submit()
-        #         return f"{data['inspection_type']} has been {data['submitStatus']} for the serial no: {data['serialNo']}"
+        if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
+            qi_doc = frappe.get_doc('Quality Inspection', qi_name)
+            if qi_doc.docstatus == 0:
+                qi_doc.submit()
+                return f"{data['inspection_type']} has been {data['submitStatus']} for the serial no: {data['serialNo']}"
 
-        if 'currentPart' in data or data['submitStatus'].lower() == 'inprogress':
-            print(f"inprogress")
+        if 'currentPart' in data:
             item_code = item_code_query[0].get('item_code')
 
             item_group_query = frappe.db.sql("""
@@ -120,8 +115,8 @@ def part_qi_check():
             "activity": activity,
             "total_part": total_part[0][1],
             "qi_name": qi_name,
-            "check_name": result,
             "submit_status": submit_status,
+            "check_name": result,
             "nj_readings": nj_readings
         }
 
@@ -172,17 +167,18 @@ def get_prev_detail(data):
         qi_name = data['qi_name']
 
     nj_readings = frappe.db.sql("""
-        SELECT item_group, check_name, options, checks, score, weightage 
+        SELECT item_group, check_name, options, checks, score, weightage, idx
         FROM `tabNJ Checks` 
-        WHERE parent = %s order by idx
+        WHERE parent = %s ORDER BY idx asc
     """, qi_name, as_dict=True)
-    status = frappe.db.get_value('Quality Inspection', qi_name, 'status')
-    
+    # status = frappe.db.get_value('Quality Inspection', qi_name, 'status')
+    print(f"nj_readings: {nj_readings}")
 
     formatted_result = {
         "nj_readings": [
             {
                 "part_name": part_name,
+                "part_idx": idx,
                 "checks": [
                     {
                         "check_name": reading["check_name"],
@@ -191,7 +187,7 @@ def get_prev_detail(data):
                         "weightage": reading["weightage"]
                     } for reading in nj_readings if reading["item_group"] == part_name
                 ]
-            } for part_name in set(reading["item_group"] for reading in nj_readings)
+            } for part_name, idx in set((reading["item_group"], reading["idx"]) for reading in nj_readings)
         ]
     }
 
@@ -201,7 +197,6 @@ def get_prev_detail(data):
 def save_qi_data(data):
     qi_name = ''
     # qi_name as a primary key - Done
-    print(f"data from save_qi_data: {data}")
     qi_doc = ''
     # Check if 'qi_name' exists in data
     if 'qi_name' in data:
@@ -209,12 +204,10 @@ def save_qi_data(data):
 
     if qi_name != '':
         qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
-        print(f"qi_doc: {qi_doc} from qi_name")
 
     # not available -> insert - Done
     else:
-        item_code = frappe.db.sql(""" SELECT item_code FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
-        print(item_code[0][0])
+        serial_no_doc = frappe.db.sql(""" SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
         qi_doc = frappe.new_doc('Quality Inspection')
         qi_doc.barcode = data['serialNo']
         qi_doc.bios_serial_number = data['serialNo']
@@ -222,34 +215,36 @@ def save_qi_data(data):
         qi_doc.machine_made_by = 'itsupport@newjaisa.com'
         qi_doc.inspected_by = 'itsupport@newjaisa.com'
         qi_doc.reference_name = 'PREC-06175'
-        if item_code:
-            qi_doc.item_code = item_code[0][0]
-        print(f"new qi_doc: {qi_doc}")
+        if serial_no_doc:
+            qi_doc.item_code = serial_no_doc[0][0]
+            qi_doc.item_group = serial_no_doc[0][1]
+            qi_doc.current_warehouse = serial_no_doc[0][2]
+            qi_doc.item_name = serial_no_doc[0][3]
 
     # update checks and their values
-    item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s
-    """, (data['serialNo'], data['prevPart']))
-    item_group = item_group_query[0][0]
+    item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s""", 
+    (data['serialNo'], data['prevPart']))
+
+    if item_group_query:
+        item_group = item_group_query[0][0]
 
     for i in range(len(data["checkName"])):
         check_name = data["checkName"][i]
         check_option = data["checkOption"][i]
-        child_table = qi_doc.append("nj_quality_checks", {})
-        child_table.item_group = item_group
-        child_table.check_name = check_name
-        child_table.options = check_option
 
-        # existing_entry = next(
-        #     (entry for entry in qi_doc.nj_quality_checks if entry.item_group == item_group[0][0] and entry.check_name == check_name), None)
-        # print(f"existing_entry: {existing_entry}")
-        # if existing_entry:
-        #     # If the combination exists, update the check_option
-        #     existing_entry.options = check_option
-        ##else:
-            # If the combination does not exist, append a new record
-        # qi_doc.append("nj_quality_checks", {'item_group': item_group[0][0], 'check_name': check_name, 'options': check_option})
-        if qi_doc.docstatus == 0:
-            qi_doc.save()
-        else: return f"Not able to save {qi_doc.name}"
+        existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND options = %s AND parent = %s ORDER BY idx""",
+        (item_group, check_name, check_option, qi_name))
+        print(f"existing_child: {existing_child}")
+
+        if existing_child:
+            frappe.db.sql("""UPDATE `tabNJ Checks` SET options = %s WHERE name = %s """, 
+            (check_option, existing_child[0][3]))
+        else:
+            child_table = qi_doc.append("nj_quality_checks", {})
+            child_table.item_group = item_group
+            child_table.check_name = check_name
+            child_table.options = check_option
+
+    qi_doc.save()
 
     return qi_doc.name

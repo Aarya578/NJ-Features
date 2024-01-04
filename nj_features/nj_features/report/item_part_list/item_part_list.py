@@ -1,0 +1,67 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe import _
+
+def get_columns():
+    return [
+        _("Creation") + ":Date:60",
+        _("Machine Serial") + ":Link/Serial No:60",
+        _("STE No") + ":Link/Stock Entry Detail:60",
+        _("Part Item Group") + ":Link/Item Group:60",
+        _("Part Item Code") + ":Link/Item:60",
+        _("s_warehouse") + ":Link/Warehouse:60",
+        _("t_warehouse") + ":Link/Warehouse:60",
+        _("Part Serial No") + ":Link/Serial No:60",
+        _("Current Product WH") + ":Link/Warehouse:60",
+        _("Product Item Code") + ":Link/Item:60"
+    ]
+
+def get_data(filters):
+
+    serial_no = filters.get('serial_no')
+
+    values = {'serial_no': serial_no}
+
+    # SQL query
+    query = """
+        SELECT DISTINCT
+		ddd.creation,
+		bb.serial_no AS 'machine serial',
+		aaa.parent AS 'STE No',
+		ccc.item_group AS 'Part Item Group',
+		aaa.item_code AS 'Part Item Code',
+		aaa.s_warehouse,
+		aaa.t_warehouse,
+		aaa.serial_no AS 'Part Serial No',
+		eee.warehouse AS 'Current Product WH',
+		eee.item_code AS 'Product Item Code'
+	FROM
+		`tabStock Entry Detail` AS aaa
+	INNER JOIN
+		(
+			SELECT aaaa.parent, aaaa.serial_no
+			FROM `tabStock Entry Detail` aaaa
+			WHERE aaaa.serial_no = %(serial_no)s
+		) AS bb ON bb.parent = aaa.parent
+	INNER JOIN `tabItem` AS ccc ON ccc.item_code = aaa.item_code
+	INNER JOIN `tabStock Entry` AS ddd ON ddd.name = bb.parent
+	INNER JOIN `tabSerial No` AS eee ON eee.serial_no = bb.serial_no
+	WHERE
+		ddd.purpose = 'Repack'
+		AND aaa.docstatus = 1
+		AND NOT (bb.serial_no = aaa.serial_no)
+	ORDER BY
+		bb.serial_no, aaa.parent;
+    """
+	
+    data = frappe.db.sql(query, values, as_dict=1)
+    print(f"data: {data}, query {query}")
+    return data
+
+def execute(filters):
+    columns = get_columns()
+    data = get_data(filters)
+    return columns, data
+

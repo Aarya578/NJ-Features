@@ -8,7 +8,7 @@ def get_columns():
     return [
         _("Creation") + ":Date:120",
         _("Machine Serial") + ":Link/Serial No:120",
-        _("STE No") + ":Data:120",
+        _("STE No") + ":Link/Stock Entry:120",
         _("Part Item Group") + ":Link/Item Group:120",
         _("Part Item Code") + ":Link/Item:120",
         _("s_warehouse") + ":Link/Warehouse:120",
@@ -29,7 +29,7 @@ def get_data(filters):
         SELECT DISTINCT
 		ddd.creation,
 		bb.serial_no AS 'machine_serial',
-		aaa.parent AS 'STE No',
+		aaa.parent AS 'ste_no',
 		ccc.item_group AS 'part_item_group',
 		aaa.item_code AS 'part_item_code',
 		aaa.s_warehouse,

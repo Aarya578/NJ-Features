@@ -7,6 +7,18 @@ frappe.ui.form.on('IQC', {
         $('.col-lg-2.layout-side-section').hide();
     },
     refresh: function(frm) {
+        frm.add_custom_button(
+            __(`
+                <svg xmlns="http://www.w3.org/2000/svg" height="16" width="14" viewBox="0 0 448 512">
+                    <!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
+                    <path d="M0 80C0 53.5 21.5 32 48 32h96c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V80zM64 96v64h64V96H64zM0 336c0-26.5 21.5-48 48-48h96c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V336zm64 16v64h64V352H64zM304 32h96c26.5 0 48 21.5 48 48v96c0 26.5-21.5 48-48 48H304c-26.5 0-48-21.5-48-48V80c0-26.5 21.5-48 48-48zm80 64H320v64h64V96zM256 304c0-8.8 7.2-16 16-16h64c8.8 0 16 7.2 16 16s7.2 16 16 16h32c8.8 0 16-7.2 16-16s7.2-16 16-16s16 7.2 16 16v96c0 8.8-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s-7.2-16-16-16s-16 7.2-16 16v64c0 8.8-7.2 16-16 16H272c-8.8 0-16-7.2-16-16V304zM368 480a16 16 0 1 1 0-32 16 16 0 1 1 0 32zm64 0a16 16 0 1 1 0-32 16 16 0 1 1 0 32z"/>
+                </svg>
+            `), 
+            function() {
+                frappe.msgprint("QR Code");
+            }
+        );
+        $("button[data-original-title=Print]").hide();
         if (frm.doc.iqc_item_component) {
             frm.doc.iqc_item_component.forEach(function (row) {
                 var child = locals[row.doctype][row.name];
@@ -15,14 +27,15 @@ frappe.ui.form.on('IQC', {
         }
         cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 100;
         cur_frm.refresh_fields('fields');
-        frm.events.purchase_receipt(frm);
+        if(!frm.doc.__islocal){
+            frm.events.purchase_receipt(frm);
+        }
     },
     purchase_receipt: function(frm) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.iqc.iqc.get_po_from_pr',
             args: {'pr': frm.doc.purchase_receipt},
             callback: function(r) {
-                console.log("get_po_from_pr: ",r)
                 frm.set_value('purchase_order', r.message.po)
                 r.message.item_code.unshift('');
                 var options = r.message.item_code.join('\n');
@@ -41,14 +54,17 @@ frappe.ui.form.on('IQC', {
     },
     serial_no: function(frm) {
         if (frm.doc.serial_no) {
-            // frappe.call({
-            //     method: 'nj_features.nj_features.doctype.iqc.iqc.get_base_rate',
-            //     args: {'serial_no': frm.doc.serial_no},
-            //     callback: function(r) {
-            //         console.log("base price: ", r.message)
-            //         frm.set_value('base_price',r.message)
-            //     }
-            // })
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
+                args: {'serial_no': frm.doc.serial_no},
+                callback: function(r) {
+                    frm.set_value('item_code',r.message.item_code);
+                    frm.set_value('item_group',r.message.item_group);
+                    frm.set_value('brand',r.message.brand);
+                    frm.set_value('source_warehouse',r.message.warehouse);
+                    frm.set_value('base_price',r.message.valuation_rate);
+                }
+            })
         }
     },
     item_group: function(frm) {
@@ -67,14 +83,7 @@ frappe.ui.form.on('IQC', {
 // 	before_save: function(frm) {
 // 	    if (frm.doc.model && frm.doc.brand) {
 //             var new_itm_code = frm.doc.brand + '-' + frm.doc.model;
-// 	        if(new_itm_code) {
-// 	            frappe.db.get_value('Item', {'item_code': new_itm_code}, 'valuation_rate', function (r) {
-// 	                if(r && r.valuation_rate) {
-// 	                    console.log('valuation_rate: ',r.valuation_rate)
-// 	                    frm.set_value('repack_itm_price', r.valuation_rate);
-// 	                }
-// 	            });
-// 	        }
+            
 // 	        frappe.call({
 //     	        method: 'nj_features.nj_features.doctype.iqc.iqc.get_list_of_variants',
 //     	        args: {'item_group': frm.doc.item_group},
@@ -111,44 +120,44 @@ frappe.ui.form.on('IQC', {
 //     	            'repack_itm_price': frm.doc.repack_itm_price || null
 //     	        },
 //     	        callback: function(r) {
-//     	            console.log("original_price: ", r.message);
 //     	            frm.set_value('original_price', r.message.original_price);
 //     	        }
 //     	    });
 	        
 // 	    }
 // 	},
-   validate: function(frm) {
-        var requiredFields = ['purchase_order', 'pr_item', 'purchase_receipt', 'serial_no', 'item_group', 'source_warehouse', 'target_warehouse', 'brand', 'model', 'make', 'repack_item_code'];
-        var errorMessages = [];
-        console.log($(frm.layout.wrapper).find('.form-message.red').last())
-        for (var i = 0; i < requiredFields.length; i++) {
-            var fieldname = requiredFields[i];
-            if (!frm.doc[fieldname]) {
-                var fieldLabel = frm.fields_dict[fieldname] ? frm.fields_dict[fieldname].df.label : fieldname;
-                if (frm.fields_dict[fieldname]) {
-                    frm.fields_dict[fieldname].$wrapper.addClass('has-error');
-                }
+  validate: function(frm) {
+    var requiredFields = ['purchase_order', 'pr_item', 'purchase_receipt', 'serial_no', 'item_group', 'source_warehouse', 'target_warehouse', 'brand', 'model', 'make', 'repack_item_code'];
+    var errorMessages = [];
+
+    for (var i = 0; i < requiredFields.length; i++) {
+        var fieldname = requiredFields[i];
+        if (!frm.doc[fieldname]) {
+            var fieldLabel = frm.fields_dict[fieldname] ? frm.fields_dict[fieldname].df.label : fieldname;
+            if (frm.fields_dict[fieldname]) {
+                frm.fields_dict[fieldname].$wrapper.addClass('has-error');
             }
+            errorMessages.push(fieldLabel);  // Push the field label into the array
         }
+    }
     
-        if (errorMessages.length > 0) {
-            var errorMessageString = errorMessages.join(', ') + " not filled";
-            
-            var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-            $(frm.wrapper).find('.form-message.blue').remove();
-            $(frm.layout.wrapper).prepend(errorDiv);
-            frm.set_value('error_message', errorMessageString);
-            frm.set_df_property('error_section_section', 'hidden', 0);
-            frm.fields_dict['error_message'].$input.css('height', '50px');
-            frappe.validated = false;
-        }
-        if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
-            $(frm.layout.wrapper).find('.form-message.red').last().remove();
-        }
-    },
+    if (errorMessages.length > 0) {
+        frappe.utils.play_sound("error");
+        var errorMessageString = errorMessages.join(', ') + " not filled";
 
+        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+        $(frm.wrapper).find('.form-message.blue').remove();
+        $(frm.layout.wrapper).prepend(errorDiv);
+        frm.set_value('error_message', errorMessageString);
+        frm.set_df_property('error_section_section', 'hidden', 0);
+        frm.fields_dict['error_message'].$input.css('height', '50px');
+        frappe.validated = false;
+    }
 
+    if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
+        $(frm.layout.wrapper).find('.form-message.red').last().remove();
+    }
+},
 
 // 	after_save: function (frm) {
 //         frappe.call({
@@ -213,7 +222,11 @@ frappe.ui.form.on('IQC', {
 //             	}
 //             }
 //         });
-//     }
+//     },
+
+    before_submit: function(frm){
+        frm.events.validate(frm);
+    }
 });
 
 frappe.ui.form.on('IQC Child', {

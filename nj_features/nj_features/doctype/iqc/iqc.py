@@ -8,7 +8,6 @@ from erpnext.controllers.item_variant import get_variant
 
 class IQC(Document):
     def on_submit(self):
-        print(f"Repack after submit of IQC")
         stock_entry = frappe.new_doc("Stock Entry")
         stock_entry.stock_entry_type = "Repack"
         stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
@@ -38,17 +37,17 @@ class IQC(Document):
         stock_entry.save()
         stock_entry_name = stock_entry.name
 
-        print(f"Update serial no based on IQC")
-        for row in self.iqc_item_component:
-            if row:
-                serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
-                item_code = get_variant(row.item_group, row.attr_data)
-                row.item_code = item_code
-                serial_no_doc.append('serial_no_component',{
-                    'item_group': row.item_group,
-                    'item': item_code
-                })
-                serial_no_doc.save()
+        # print(f"Update serial no based on IQC")
+        # for row in self.iqc_item_component:
+        #     if row:
+        #         serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
+        #         item_code = get_variant(row.item_group, row.attr_data)
+        #         row.item_code = item_code
+        #         serial_no_doc.append('serial_no_component',{
+        #             'item_group': row.item_group,
+        #             'item': item_code
+        #         })
+        #         serial_no_doc.save()
 
         return {'stock_entry_name': stock_entry_name}
 
@@ -126,3 +125,25 @@ def iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price=None):
 @frappe.whitelist()
 def get_items_from_pr(pr):
     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
+
+@frappe.whitelist()
+def get_info_from_serial_no(serial_no=None):
+    result = {}
+
+    if serial_no:
+        serial_no_doc = frappe.db.sql(""" SELECT item_code, item_group, brand, warehouse FROM `tabSerial No` WHERE name = %s""", 
+        (serial_no), as_dict=1)
+
+        if serial_no_doc:
+            result['item_code'] = serial_no_doc[0].get('item_code', '')
+            result['item_group'] = serial_no_doc[0].get('item_group', '')
+            result['brand'] = serial_no_doc[0].get('brand', '')
+            result['warehouse'] = serial_no_doc[0].get('warehouse', '')
+
+            base_price = frappe.db.sql(""" SELECT valuation_rate FROM `tabItem` WHERE name = %s """, 
+            (result['item_code']), as_dict=1)
+
+            if base_price:
+                result['valuation_rate'] = base_price[0].get('valuation_rate', '')
+
+    return result

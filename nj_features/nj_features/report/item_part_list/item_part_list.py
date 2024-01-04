@@ -6,16 +6,16 @@ from frappe import _
 
 def get_columns():
     return [
-        _("Creation") + ":Date:60",
-        _("Machine Serial") + ":Link/Serial No:60",
-        _("STE No") + ":Link/Stock Entry Detail:60",
-        _("Part Item Group") + ":Link/Item Group:60",
-        _("Part Item Code") + ":Link/Item:60",
-        _("s_warehouse") + ":Link/Warehouse:60",
-        _("t_warehouse") + ":Link/Warehouse:60",
-        _("Part Serial No") + ":Link/Serial No:60",
-        _("Current Product WH") + ":Link/Warehouse:60",
-        _("Product Item Code") + ":Link/Item:60"
+        _("Creation") + ":Date:120",
+        _("Machine Serial") + ":Link/Serial No:120",
+        _("STE No") + ":Link/Stock Entry Detail:120",
+        _("Part Item Group") + ":Link/Item Group:120",
+        _("Part Item Code") + ":Link/Item:120",
+        _("s_warehouse") + ":Link/Warehouse:120",
+        _("t_warehouse") + ":Link/Warehouse:120",
+        _("Part Serial No") + ":Link/Serial No:120",
+        _("Current Product WH") + ":Link/Warehouse:120",
+        _("Product Item Code") + ":Link/Item:120"
     ]
 
 def get_data(filters):
@@ -27,8 +27,8 @@ def get_data(filters):
     # SQL query
     query = """
         SELECT DISTINCT
-		ddd.creation,
-		bb.serial_no AS 'machine serial',
+		ddd.creation AS Creation,
+		bb.serial_no AS 'Machine Serial',
 		aaa.parent AS 'STE No',
 		ccc.item_group AS 'Part Item Group',
 		aaa.item_code AS 'Part Item Code',

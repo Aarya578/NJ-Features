@@ -8,7 +8,7 @@ def get_columns():
     return [
         _("Creation") + ":Date:120",
         _("Machine Serial") + ":Link/Serial No:120",
-        _("STE No") + ":Link/Stock Entry:120",
+        _("STE No") + ":Data:120",
         _("Part Item Group") + ":Link/Item Group:120",
         _("Part Item Code") + ":Link/Item:120",
         _("s_warehouse") + ":Link/Warehouse:120",

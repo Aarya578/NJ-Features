@@ -62,7 +62,8 @@ def part_qi_check():
                     for x in item_group_list:
                         total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
                         (x, data['inspection_type']))
-                        count.append(total_part_query[0][0])
+                        if total_part_query[0][0] == 1:
+                            count.append(total_part_query[0][0])
                     print(f"{count}")
                     
                     

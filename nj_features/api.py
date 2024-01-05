@@ -58,13 +58,12 @@ def part_qi_check():
                     activity = parent_name_query[0][1]
 
                     item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (serial_no), as_dict=1)
+                    print(f"item_group_list: {item_group_list}")
                     for x in item_group_list:
                         total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
-                        (x, data['inspection_type']))
+                        (x.item_group, data['inspection_type']))
                         if total_part_query[0][0] == 1:
                             count.append(total_part_query[0][0])
-                    print(f"{item_group_list}")
-                    
                     
                     second_query = frappe.db.sql("""SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx""", 
                     (parent_name), as_dict=True)
@@ -205,7 +204,6 @@ def save_qi_data(data):
     else:
         serial_no_doc = frappe.db.sql("""SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
         draft_qi = frappe.db.sql("""SELECT name FROM `tabQuality Inspection` WHERE barcode = %s and docstatus = 0 ORDER BY creation desc""", (data['serialNo']))
-        print(f"draft_qi: {draft_qi}")
         if draft_qi:
             qi_doc = frappe.get_doc('Quality Inspection', draft_qi[0][0])
 

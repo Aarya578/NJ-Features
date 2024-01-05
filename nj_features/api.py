@@ -10,7 +10,6 @@ def part_qi_check():
         item_code = ''
         item_group = ''
         activity = ''
-        total_part = ''
         qi_name = ''
         submit_status = ''
 
@@ -58,13 +57,13 @@ def part_qi_check():
                     parent_name = parent_name_query[0][0]
                     activity = parent_name_query[0][1]
 
-                    item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (serial_no))
+                    item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (serial_no), as_dict=1)
                     for x in item_group_list:
                         total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
                         (x, data['inspection_type']))
                         if total_part_query[0][0] == 1:
                             count.append(total_part_query[0][0])
-                    print(f"{count}")
+                    print(f"{item_group_list}")
                     
                     
                     second_query = frappe.db.sql("""SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx""", 
@@ -204,19 +203,25 @@ def save_qi_data(data):
 
     # not available -> insert - Done
     else:
-        serial_no_doc = frappe.db.sql(""" SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
-        qi_doc = frappe.new_doc('Quality Inspection')
-        qi_doc.barcode = data['serialNo']
-        qi_doc.bios_serial_number = data['serialNo']
-        qi_doc.inspection_type = data['inspection_type']
-        qi_doc.machine_made_by = 'itsupport@newjaisa.com'
-        qi_doc.inspected_by = 'itsupport@newjaisa.com'
-        qi_doc.reference_name = 'PREC-06175'
-        if serial_no_doc:
-            qi_doc.item_code = serial_no_doc[0][0]
-            qi_doc.item_group = serial_no_doc[0][1]
-            qi_doc.current_warehouse = serial_no_doc[0][2]
-            qi_doc.item_name = serial_no_doc[0][3]
+        serial_no_doc = frappe.db.sql("""SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
+        draft_qi = frappe.db.sql("""SELECT name FROM `tabQuality Inspection` WHERE barcode = %s and docstatus = 0 ORDER BY creation desc""", (data['serialNo']))
+        print(f"draft_qi: {draft_qi}")
+        if draft_qi:
+            qi_doc = frappe.get_doc('Quality Inspection', draft_qi[0][0])
+
+        else:    
+            qi_doc = frappe.new_doc('Quality Inspection')
+            qi_doc.barcode = data['serialNo']
+            qi_doc.bios_serial_number = data['serialNo']
+            qi_doc.inspection_type = data['inspection_type']
+            qi_doc.machine_made_by = 'itsupport@newjaisa.com'
+            qi_doc.inspected_by = 'itsupport@newjaisa.com'
+            qi_doc.reference_name = 'PREC-06175'
+            if serial_no_doc:
+                qi_doc.item_code = serial_no_doc[0][0]
+                qi_doc.item_group = serial_no_doc[0][1]
+                qi_doc.current_warehouse = serial_no_doc[0][2]
+                qi_doc.item_name = serial_no_doc[0][3]
 
     # update checks and their values
     item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s""", 

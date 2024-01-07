@@ -180,6 +180,7 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     qi_name = ''
+    item_group = ''
     # qi_name as a primary key, if check is null set '' - Done
     qi_doc = ''
     # Check if 'qi_name' exists in data

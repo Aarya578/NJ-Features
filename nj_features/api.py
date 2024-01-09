@@ -18,7 +18,7 @@ def part_qi_check():
         data_str = data_bytes.decode('utf-8')
         data = json.loads(data_str)
         item_code = frappe.db.get_value('Serial No', {'name': data['serialNo']}, 'item_code')
-        print(f"item_code: {item_code}")
+        # print(f"item_code: {item_code}")
 
         if 'submitStatus' in data:
             submit_status = data['submitStatus']
@@ -40,8 +40,8 @@ def part_qi_check():
                 qi_doc.submit()
 
         if 'currentPart' in data:
-            result, activity, part_name = show_current_part_data(data, item_code, result, count, qi_name)
-            print(f"part_name : {show_current_part_data(data, item_code, result, count, qi_name)}")
+            result, part_name = show_current_part_data(data, item_code, result, count, qi_name)
+            # print(f"part_name : {show_current_part_data(data, item_code, result, count, qi_name)}")
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -84,7 +84,7 @@ def show_current_part_data(data, item_code, result, count, qi_name):
         part_name = part_frm_itw
     else:
         part_name = None
-    print(f"part_name: {part_name}")
+    # print(f"part_name: {part_name}")
     return result, part_name
 
 
@@ -145,7 +145,7 @@ def get_current_part_data(data, result, count, part_name, qi_name):
 
             result[quality_check] = combined_info
 
-    return result, activity
+    return result
 
 
 

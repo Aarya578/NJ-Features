@@ -101,7 +101,7 @@ def get_current_part_data(data, result, count, part_name, qi_name):
         activity = parent_name_query[0][1]
 
         item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (data['serialNo']), as_dict=1)
-        print(f"item_group_list: {item_group_list}")
+        # print(f"item_group_list: {item_group_list}")
         for x in item_group_list:
             total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
             (x.item_group, data['inspection_type']))
@@ -230,29 +230,26 @@ def save_qi_data(data):
         item_group = item_group_query[0][0]
 
     if 'checkName' in data:
-        for i in range(len(data["checkName"])):
-            check_name = data["checkName"][i]
-            check_option = data["checkOption"][i]
-            if check_option is not None:
-                existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
-                (item_group, check_name, qi_doc.name))
-                if existing_child:
-                    try:
-                        demo = frappe.db.sql("""
-                            UPDATE `tabNJ Checks` 
-                            SET options = %s 
-                            WHERE name = %s
-                        """, (check_option, existing_child[0][3]))
-                        frappe.db.commit()
-                        print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
-                    except Exception as e:
-                        frappe.db.rollback()
-                        print(f"Error updating record: {existing_child[0][3]} - {e}")
-                else:
-                    child_table = qi_doc.append("nj_quality_checks", {})
-                    child_table.item_group = item_group
-                    child_table.check_name = check_name
-                    child_table.options = check_option
+        for check_name, check_option in zip(data["checkName"], data["checkOption"]):
+            existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
+            (item_group, check_name, qi_doc.name))
+            if existing_child:
+                try:
+                    demo = frappe.db.sql("""
+                        UPDATE `tabNJ Checks` 
+                        SET options = %s 
+                        WHERE name = %s
+                    """, (check_option, existing_child[0][3]))
+                    frappe.db.commit()
+                    print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
+                except Exception as e:
+                    frappe.db.rollback()
+                    print(f"Error updating record: {existing_child[0][3]} - {e}")
+            else:
+                child_table = qi_doc.append("nj_quality_checks", {})
+                child_table.item_group = item_group
+                child_table.check_name = check_name
+                child_table.options = check_option
 
     qi_doc.save()
 

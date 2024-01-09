@@ -41,7 +41,10 @@ def part_qi_check():
 
         if 'currentPart' in data:
             result, part_name = show_current_part_data(data, item_code, result, count, qi_name)
+
             # print(f"part_name : {show_current_part_data(data, item_code, result, count, qi_name)}")
+        is_available = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group': part_name}, 'is_available')
+        if is_available is None: is_available = 0
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -51,6 +54,7 @@ def part_qi_check():
         output = {
             "item_code": item_code,
             "part_name": part_name,
+            "is_available": is_available,
             "activity": activity,
             "total_part": len(count),
             "qi_name": qi_name,
@@ -190,12 +194,15 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     qi_name = ''
+    partIsAvailable = 0
     item_group = ''
     # qi_name as a primary key, if check is null set '' - Done
     qi_doc = ''
     # Check if 'qi_name' exists in data
     if 'qi_name' in data:
         qi_name = data["qi_name"]
+    if 'partIsAvailable' in data:
+        partIsAvailable = data['partIsAvailable']
     if qi_name != '':
         qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
 
@@ -229,7 +236,7 @@ def save_qi_data(data):
     if item_group_query:
         item_group = item_group_query[0][0]
 
-    if 'checkName' in data:
+    if 'checkName' in data and partIsAvailable:
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))

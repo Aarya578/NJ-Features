@@ -30,6 +30,8 @@ def part_qi_check():
             if data['prevPart'] == "":
                 data['prevPart'] = 1
             qi_name = save_qi_data(data)
+        
+        else: qi_name = save_qi_data(data)
 
         #submit qi_doc
         if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
@@ -38,8 +40,8 @@ def part_qi_check():
                 qi_doc.submit()
 
         if 'currentPart' in data:
-            result, part_name = show_current_part_data(data, item_code, result, count)
-            print(f"part_name : {part_name}")
+            result, activity, part_name = show_current_part_data(data, item_code, result, count, qi_name)
+            print(f"part_name : {show_current_part_data(data, item_code, result, count, qi_name)}")
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -64,10 +66,9 @@ def part_qi_check():
         return {"success": False, "message": f"Error: {str(e)}"}
 
 
-def show_current_part_data(data, item_code, result, count):
+def show_current_part_data(data, item_code, result, count, qi_name):
     global part_name, activity
     serial_no = data['serialNo']
-
     # Get Parts from Serial NO
     item_group_query = frappe.db.get_value('Serial No Component', {'parent': serial_no, 'idx': data['currentPart']}, 'item_group')
 
@@ -76,10 +77,10 @@ def show_current_part_data(data, item_code, result, count):
     part_frm_itw = frappe.db.get_value('Component', {'parent': item_group_wizard, 'idx': data['currentPart']}, 'component_type')
 
     if item_group_query:
-        result = get_current_part_data(data, result, count, item_group_query)
+        result = get_current_part_data(data, result, count, item_group_query, qi_name)
         part_name = item_group_query
     elif part_frm_itw:
-        result = get_current_part_data(data, result, count, part_frm_itw)
+        result = get_current_part_data(data, result, count, part_frm_itw, qi_name)
         part_name = part_frm_itw
     else:
         part_name = None
@@ -88,7 +89,7 @@ def show_current_part_data(data, item_code, result, count):
 
 
 
-def get_current_part_data(data, result, count, part_name):
+def get_current_part_data(data, result, count, part_name, qi_name):
     item_group = part_name
 
     parent_name_query = frappe.db.sql("""
@@ -130,7 +131,7 @@ def get_current_part_data(data, result, count, part_name):
             name = nj_qc_check_list.get('name', '')
             selected = frappe.db.sql(""" SELECT options FROM `tabNJ Checks` WHERE 
                 item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
-                (part_name, name, data['qi_name']), as_dict=True)
+                (part_name, name, qi_name if qi_name else data.get('qi_name')), as_dict=True)
 
             combined_info = {
                 "name_of_the_check": nj_qc_check_list.get('name_of_check', ''),
@@ -144,7 +145,7 @@ def get_current_part_data(data, result, count, part_name):
 
             result[quality_check] = combined_info
 
-    return result
+    return result, activity
 
 
 
@@ -228,29 +229,30 @@ def save_qi_data(data):
     if item_group_query:
         item_group = item_group_query[0][0]
 
-    for i in range(len(data["checkName"])):
-        check_name = data["checkName"][i]
-        check_option = data["checkOption"][i]
-        if check_option is not None:
-            existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
-            (item_group, check_name, qi_doc.name))
-            if existing_child:
-                try:
-                    demo = frappe.db.sql("""
-                        UPDATE `tabNJ Checks` 
-                        SET options = %s 
-                        WHERE name = %s
-                    """, (check_option, existing_child[0][3]))
-                    frappe.db.commit()
-                    print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
-                except Exception as e:
-                    frappe.db.rollback()
-                    print(f"Error updating record: {existing_child[0][3]} - {e}")
-            else:
-                child_table = qi_doc.append("nj_quality_checks", {})
-                child_table.item_group = item_group
-                child_table.check_name = check_name
-                child_table.options = check_option
+    if 'checkName' in data:
+        for i in range(len(data["checkName"])):
+            check_name = data["checkName"][i]
+            check_option = data["checkOption"][i]
+            if check_option is not None:
+                existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
+                (item_group, check_name, qi_doc.name))
+                if existing_child:
+                    try:
+                        demo = frappe.db.sql("""
+                            UPDATE `tabNJ Checks` 
+                            SET options = %s 
+                            WHERE name = %s
+                        """, (check_option, existing_child[0][3]))
+                        frappe.db.commit()
+                        print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
+                    except Exception as e:
+                        frappe.db.rollback()
+                        print(f"Error updating record: {existing_child[0][3]} - {e}")
+                else:
+                    child_table = qi_doc.append("nj_quality_checks", {})
+                    child_table.item_group = item_group
+                    child_table.check_name = check_name
+                    child_table.options = check_option
 
     qi_doc.save()
 

@@ -149,34 +149,43 @@ def get_current_part_data(data, result, count, part_name):
 
 
 def get_prev_detail(data):
-    #use qi_name to get the qi information
     if 'qi_name' in data:
         qi_name = data['qi_name']
 
-    nj_readings = frappe.db.sql("""
-        SELECT item_group, check_name, options, checks, score, weightage, idx
-        FROM `tabNJ Checks` 
-        WHERE parent = %s ORDER BY idx asc
-    """, qi_name, as_dict=True)
+        nj_readings = frappe.get_all(
+            'NJ Checks',
+            filters={'parent': qi_name},
+            fields=['item_group', 'check_name', 'options', 'score', 'weightage', 'idx'],
+            order_by='idx ASC'
+        )
 
-    formatted_result = {
-        "nj_readings": [
-            {
-                "part_name": part_name,
-                "part_idx": idx,
-                "checks": [
-                    {
-                        "check_name": reading["check_name"],
-                        "result": reading["options"],
-                        "score": reading["score"],
-                        "weightage": reading["weightage"]
-                    } for reading in nj_readings if reading["item_group"] == part_name
-                ]
-            } for part_name, idx in set((reading["item_group"], reading["idx"]) for reading in nj_readings)
-        ]
-    }
+        formatted_result = {}
+        for reading in nj_readings:
+            part_name = reading['item_group']
+            idx = reading['idx']
 
-    return formatted_result
+            # If part_name not in formatted_result, initialize it with an empty dictionary
+            if part_name not in formatted_result:
+                formatted_result[part_name] = {
+                    'part_name': part_name,
+                    'part_idx': idx,
+                    'checks': []
+                }
+
+            # Append check details to the checks list
+            formatted_result[part_name]['checks'].append({
+                'check_name': reading['check_name'],
+                'result': reading['options'],
+                'score': reading['score'],
+                'weightage': reading['weightage']
+            })
+
+        final_result = list(formatted_result.values())
+
+        return {'nj_readings': final_result}
+
+    return None
+
 
 def save_qi_data(data):
     qi_name = ''

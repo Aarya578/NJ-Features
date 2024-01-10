@@ -54,7 +54,7 @@ def part_qi_check():
         output = {
             "item_code": item_code,
             "part_name": part_name,
-            "is_available": is_available,
+            "is_available": str(is_available),
             "activity": activity,
             "total_part": len(count),
             "qi_name": qi_name,
@@ -194,7 +194,7 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     qi_name = ''
-    partIsAvailable = 0
+    partIsAvailable = ''
     item_group = ''
     # qi_name as a primary key, if check is null set '' - Done
     qi_doc = ''
@@ -235,8 +235,7 @@ def save_qi_data(data):
 
     if item_group_query:
         item_group = item_group_query[0][0]
-
-    if 'checkName' in data and partIsAvailable:
+    if 'checkName' in data and partIsAvailable=='1':
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))

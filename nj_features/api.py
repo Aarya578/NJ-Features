@@ -37,6 +37,7 @@ def part_qi_check():
         if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
             qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
             if qi_doc.docstatus == 0:
+                qi_doc.status = data['submitStatus']
                 qi_doc.submit()
 
         if 'currentPart' in data:
@@ -252,11 +253,9 @@ def save_qi_data(data):
                 child_table.item_group = item_group
                 child_table.check_name = check_name
                 child_table.options = check_option
-
-    qi_doc.save()
+                qi_doc.save()
 
     return qi_doc.name
-
 
 
 @frappe.whitelist()

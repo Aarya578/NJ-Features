@@ -42,10 +42,6 @@ def part_qi_check():
         if 'currentPart' in data:
             result, part_name = show_current_part_data(data, item_code, result, count, qi_name)
 
-            # print(f"part_name : {show_current_part_data(data, item_code, result, count, qi_name)}")
-        is_available = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group': part_name}, 'is_available')
-        if is_available is None: is_available = 0
-
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
             nj_readings1 = get_prev_detail(data)
@@ -54,7 +50,7 @@ def part_qi_check():
         output = {
             "item_code": item_code,
             "part_name": part_name,
-            "is_available": str(is_available),
+            "is_available": "1",
             "activity": activity,
             "total_part": len(count),
             "qi_name": qi_name,

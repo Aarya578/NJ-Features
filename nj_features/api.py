@@ -5,14 +5,9 @@ from frappe import _
 @frappe.whitelist()
 def part_qi_check():
     try:
-        result = {}
+        result, current_data = {}, {}
         count = []
-        item_code = ''
-        activity = ''
-        qi_name = ''
-        part_name = ''
-        submit_status = ''
-
+        item_code, activity, qi_name, part_name, submit_status = '', '', '', '', ''
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -22,8 +17,6 @@ def part_qi_check():
 
         if 'submitStatus' in data:
             submit_status = data['submitStatus']
-        # Serial number and qi_name is empty, but QI data for the serial number is in draft (docstatus = 0) then return the current data with a message saying retrieve existing data
-        # check for checkname[0] hsa to have data then do a save qi data
             
         #save prevPart data
         if 'checkName' in data:
@@ -41,7 +34,15 @@ def part_qi_check():
                 qi_doc.submit()
 
         if 'currentPart' in data:
-            result, part_name = show_current_part_data(data, item_code, result, count, qi_name)
+            current_data = show_current_part_data(data, result, count, qi_name)
+            # print(f"current_data: {current_data}")
+
+        if "result" in current_data:
+            result.update(current_data["result"])
+        if "activity" in current_data:
+            activity = current_data["activity"]
+        if "part" in current_data:
+            part_name = current_data["part"]
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -67,30 +68,37 @@ def part_qi_check():
         return {"success": False, "message": f"Error: {str(e)}"}
 
 
-def show_current_part_data(data, item_code, result, count, qi_name):
-    global part_name, activity
-    serial_no = data['serialNo']
-    # Get Parts from Serial NO
-    item_group_query = frappe.db.get_value('Serial No Component', {'parent': serial_no, 'idx': data['currentPart']}, 'item_group')
+def show_current_part_data(data, result, count, qi_name):
+    part_name, result = '', {}
 
-    # Get Parts from Item Wizard
-    item_group_wizard = frappe.db.get_value('Item', {'name': item_code}, 'reference')
-    part_frm_itw = frappe.db.get_value('Component', {'parent': item_group_wizard, 'idx': data['currentPart']}, 'component_type')
+    try:
+        serial_no = data['serialNo']
+        i = int(data['currentPart'])
+        item_group_list = item_group_list_from_itw(serial_no, data)
+        if item_group_list and 1 <= i <= len(item_group_list):
+            part_name = item_group_list[i - 1][0]
+            result= get_current_part_data(data, result, count, part_name, qi_name)
+            result['part'] = part_name
+        else:
+            raise IndexError("Invalid index for item_group_list")
 
-    if item_group_query:
-        result = get_current_part_data(data, result, count, item_group_query, qi_name)
-        part_name = item_group_query
-    elif part_frm_itw:
-        result = get_current_part_data(data, result, count, part_frm_itw, qi_name)
-        part_name = part_frm_itw
-    else:
-        part_name = None
-    # print(f"part_name: {part_name}")
-    return result, part_name
+    except IndexError:
+        error_msg = "No part available."
+        print(error_msg)
+        return {"error": True, "error_msg": error_msg}
+
+    except Exception as e:
+        error_msg = f"An error occurred in show_current_part_data: {e}"
+        print(error_msg)
+        return {"error": True, "error_msg": error_msg}
+    
+    return result
+
 
 
 
 def get_current_part_data(data, result, count, part_name, qi_name):
+    activity = ''
     item_group = part_name
 
     parent_name_query = frappe.db.sql("""
@@ -146,7 +154,7 @@ def get_current_part_data(data, result, count, part_name, qi_name):
 
             result[quality_check] = combined_info
 
-    return result
+    return {"result": result, "activity": activity}
 
 
 
@@ -311,12 +319,44 @@ def get_kb_from_serial_no(serial_no, action_type=None, part_name=None):
 
 
 @frappe.whitelist()
-def item_group_list_from_itw(serial_no):
-    ser_item_group = frappe.db.sql("""SELECT item_group FROM `tabSerial No Component` WHERE parent = %s ORDER BY idx""", (serial_no), as_dict=1)
+def item_group_list_from_itw(serial_no, data=None):
+    # Get item groups from Serial No Component
+    ser_item_group = frappe.db.sql("""
+        SELECT item_group FROM `tabSerial No Component` WHERE parent = %s ORDER BY idx
+    """, (serial_no), as_dict=1)
 
-    item_code = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'item_code')
+    # Get item code from Serial No
+    item_code = frappe.db.get_value('Serial No', {'serial_no': serial_no}, 'item_code')
+
+    # Get template item code from Item
     template_item_code = frappe.get_value('Item', filters={'item_code': item_code}, fieldname=['variant_of'])
-    itw_item_group = frappe.db.sql("""SELECT component_type FROM `tabComponent` WHERE parent = %s ORDER BY idx""", (template_item_code), as_dict=1)
+    itw_name = frappe.get_value('Item', filters={'item_code': template_item_code}, fieldname=['reference'])
+
+    # Get item groups from Item Wizard Component
+    itw_item_group = frappe.db.sql("""
+        SELECT component_type, idx FROM `tabComponent` WHERE parent = %s ORDER BY idx
+    """, (itw_name), as_dict=1)
+
+    # Combine item groups from both sources
     item_group_list = ser_item_group if ser_item_group else itw_item_group
-    
-    return item_group_list
+
+    # If idx is provided, filter the item group based on idx
+    if data is not None:
+        filtered_item_group = []
+        if ser_item_group:
+            print(f"ser_item_group: {ser_item_group} -------#")
+            for x in ser_item_group:
+                result = frappe.db.sql("""SELECT item_group FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
+                (x.item_group, data['inspection_type']))
+                filtered_item_group.extend(result)
+            # filtered_item_group = [item_group for item_group in item_group_list if item_group.get('idx') == idx]
+        elif itw_item_group:
+            print(f"itw_item_group: {itw_item_group}--------------------##")
+            for x in itw_item_group:
+                result = frappe.db.sql("""SELECT item_group FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
+                (x.component_type, data['inspection_type']))
+                filtered_item_group.extend(result)
+            # filtered_item_group = [component_type for component_type in item_group_list if component_type.get('idx') == idx]
+        return filtered_item_group
+    else:
+        return item_group_list

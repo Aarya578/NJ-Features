@@ -221,7 +221,7 @@ def save_qi_data(data):
             qi_doc.inspection_type = data['inspection_type']
             qi_doc.machine_made_by = 'itsupport@newjaisa.com'
             qi_doc.inspected_by = 'itsupport@newjaisa.com'
-            qi_doc.reference_name = 'PREC-06175'
+            # qi_doc.reference_name = 'PREC-06175'
             qi_name = qi_doc.name
             if serial_no_doc:
                 qi_doc.item_code = serial_no_doc[0][0]
@@ -257,7 +257,6 @@ def save_qi_data(data):
                 child_table.item_group = item_group
                 child_table.check_name = check_name
                 child_table.options = check_option
-                qi_doc.save()
 
     return qi_doc.name
 

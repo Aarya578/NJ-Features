@@ -34,7 +34,7 @@ def part_qi_check():
                 qi_doc.submit()
 
         if 'currentPart' in data:
-            current_data = show_current_part_data(data, result, count, qi_name)
+            current_data = show_current_part_data(data, result, qi_name)
             # print(f"current_data: {current_data}")
 
         if "result" in current_data:
@@ -43,6 +43,8 @@ def part_qi_check():
             activity = current_data["activity"]
         if "part" in current_data:
             part_name = current_data["part"]
+        if "count" in current_data:
+            count = current_data["count"]
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -54,7 +56,7 @@ def part_qi_check():
             "part_name": part_name,
             "is_available": "1",
             "activity": activity,
-            "total_part": len(count),
+            "total_part": count,
             "qi_name": qi_name,
             "submit_status": submit_status,
             "check_name": result,
@@ -68,7 +70,7 @@ def part_qi_check():
         return {"success": False, "message": f"Error: {str(e)}"}
 
 
-def show_current_part_data(data, result, count, qi_name):
+def show_current_part_data(data, result, qi_name):
     part_name, result = '', {}
 
     try:
@@ -77,8 +79,9 @@ def show_current_part_data(data, result, count, qi_name):
         item_group_list = item_group_list_from_itw(serial_no, data)
         if item_group_list and 1 <= i <= len(item_group_list):
             part_name = item_group_list[i - 1][0]
-            result= get_current_part_data(data, result, count, part_name, qi_name)
+            result= get_current_part_data(data, result, part_name, qi_name)
             result['part'] = part_name
+            result['count'] = len(item_group_list)
         else:
             raise IndexError("Invalid index for item_group_list")
 
@@ -97,25 +100,23 @@ def show_current_part_data(data, result, count, qi_name):
 
 
 
-def get_current_part_data(data, result, count, part_name, qi_name):
+def get_current_part_data(data, result, part_name, qi_name):
     activity = ''
     item_group = part_name
 
+    serial_no = data['serialNo']
+    i = int(data['currentPart'])
+    item_group_list = item_group_list_from_itw(serial_no, data)
+    if item_group_list and 1 <= i <= len(item_group_list):
+        part_name = item_group_list[i - 1][0]
+
     parent_name_query = frappe.db.sql("""
         SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
-    """, (item_group, data['inspection_type']))
+    """, (part_name, data['inspection_type']))
 
     if parent_name_query:
         parent_name = parent_name_query[0][0]
         activity = parent_name_query[0][1]
-
-        item_group_list = frappe.db.sql("""SELECT DISTINCT item_group FROM `tabSerial No Component` WHERE parent = %s""", (data['serialNo']), as_dict=1)
-        # print(f"item_group_list: {item_group_list}")
-        for x in item_group_list:
-            total_part_query = frappe.db.sql("""SELECT count(*) FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
-            (x.item_group, data['inspection_type']))
-            if total_part_query[0][0] == 1:
-                count.append(total_part_query[0][0])
 
         second_query = frappe.db.sql("""SELECT quality_check, mandatory FROM `tabNj QC Options` WHERE parent = %s ORDER BY idx""", 
         (parent_name), as_dict=True)
@@ -129,7 +130,7 @@ def get_current_part_data(data, result, count, part_name, qi_name):
             """, (quality_check), as_dict=True)
 
             options_query = frappe.db.sql("""
-                SELECT check_options, score FROM `tabQC Options` WHERE parent = %s AND active=1
+                SELECT check_options, score, active FROM `tabQC Options` WHERE parent = %s AND active=1
             """, (quality_check), as_dict=True)
 
             if nj_qc_check_list_query:
@@ -339,14 +340,12 @@ def item_group_list_from_itw(serial_no, data=None):
     if data is not None:
         filtered_item_group = []
         if ser_item_group:
-            print(f"ser_item_group: {ser_item_group} -------#")
             for x in ser_item_group:
                 result = frappe.db.sql("""SELECT item_group FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
                 (x.item_group, data['inspection_type']))
                 filtered_item_group.extend(result)
             # filtered_item_group = [item_group for item_group in item_group_list if item_group.get('idx') == idx]
         elif itw_item_group:
-            print(f"itw_item_group: {itw_item_group}--------------------##")
             for x in itw_item_group:
                 result = frappe.db.sql("""SELECT item_group FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s""", 
                 (x.component_type, data['inspection_type']))

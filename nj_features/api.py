@@ -257,6 +257,7 @@ def save_qi_data(data):
                 child_table.item_group = item_group
                 child_table.check_name = check_name
                 child_table.options = check_option
+                qi_doc.save()
 
     return qi_doc.name
 

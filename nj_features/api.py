@@ -198,12 +198,7 @@ def get_prev_detail(data):
 
 
 def save_qi_data(data):
-    qi_name = ''
-    partIsAvailable = ''
-    item_group = ''
-    # qi_name as a primary key, if check is null set '' - Done
-    qi_doc = ''
-    # Check if 'qi_name' exists in data
+    qi_name, partIsAvailable, item_group, qi_doc = '', '', '', ''
     if 'qi_name' in data:
         qi_name = data["qi_name"]
     if 'partIsAvailable' in data:
@@ -233,6 +228,7 @@ def save_qi_data(data):
                 qi_doc.item_group = serial_no_doc[0][1]
                 qi_doc.current_warehouse = serial_no_doc[0][2]
                 qi_doc.item_name = serial_no_doc[0][3]
+            qi_doc.save()
 
     # update checks and their values
     item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s""", 

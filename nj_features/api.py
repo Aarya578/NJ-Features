@@ -73,27 +73,14 @@ def part_qi_check():
 def show_current_part_data(data, result, qi_name):
     part_name, result = '', {}
 
-    try:
-        serial_no = data['serialNo']
-        i = int(data['currentPart'])
-        item_group_list = item_group_list_from_itw(serial_no, data)
-        if item_group_list and 1 <= i <= len(item_group_list):
-            part_name = item_group_list[i - 1][0]
-            result= get_current_part_data(data, result, part_name, qi_name)
-            result['part'] = part_name
-            result['count'] = len(item_group_list)
-        else:
-            raise IndexError("Invalid index for item_group_list")
-
-    except IndexError:
-        error_msg = "No part available."
-        print(error_msg)
-        return {"error": True, "error_msg": error_msg}
-
-    except Exception as e:
-        error_msg = f"An error occurred in show_current_part_data: {e}"
-        print(error_msg)
-        return {"error": True, "error_msg": error_msg}
+    serial_no = data['serialNo']
+    i = int(data['currentPart'])
+    item_group_list = item_group_list_from_itw(serial_no, data)
+    if item_group_list and 1 <= i <= len(item_group_list):
+        part_name = item_group_list[i - 1][0]
+        result= get_current_part_data(data, result, part_name, qi_name)
+        result['part'] = part_name
+        result['count'] = len(item_group_list)
     
     return result
 
@@ -139,17 +126,20 @@ def get_current_part_data(data, result, part_name, qi_name):
                 nj_qc_check_list = {}
 
             name = nj_qc_check_list.get('name', '')
-            selected = frappe.db.sql(""" SELECT options FROM `tabNJ Checks` WHERE 
-                item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
-                (part_name, name, qi_name if qi_name else data.get('qi_name')), as_dict=True)
 
+            selected = frappe.db.get_value('NJ Checks', {
+                'item_group': part_name,
+                'check_name': name,
+                'parent': data.get('qi_name')
+            }, 'options', order_by='idx')
+            
             combined_info = {
                 "name_of_the_check": nj_qc_check_list.get('name_of_check', ''),
                 "type": nj_qc_check_list.get('type', ''),
                 "diagnostic_type": nj_qc_check_list.get('diagnostic_type', ''),
                 "description": nj_qc_check_list.get('description', ''),
                 "mandatory": mandatory,
-                "selected": selected[0]['options'] if selected else '',
+                "selected": selected if selected else '',
                 "options": options_query
             }
 
@@ -231,11 +221,11 @@ def save_qi_data(data):
             qi_doc.save()
 
     # update checks and their values
-    item_group_query = frappe.db.sql(""" SELECT item_group FROM `tabSerial No Component` WHERE parent = %s AND idx = %s""", 
-    (data['serialNo'], data['prevPart']))
-
-    if item_group_query:
-        item_group = item_group_query[0][0]
+    serial_no = data['serialNo']
+    i = int(data['prevPart'])
+    item_group_list = item_group_list_from_itw(serial_no, data)
+    if item_group_list and 1 <= i <= len(item_group_list):
+        item_group = item_group_list[i - 1][0]
     if 'checkName' in data and partIsAvailable=='1':
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
@@ -263,15 +253,15 @@ def save_qi_data(data):
 
 
 @frappe.whitelist()
-def get_kb_from_serial_no(serial_no, action_type=None, part_name=None):
+def get_kb_from_serial_no(serialNo, action_type=None, part_name=None):
     item_code = ''
-    item_code = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
+    item_code = frappe.db.get_value('Serial No', {'name': serialNo}, 'item_code')
     if not item_code:
-        frappe.throw(_("Serial No '{0}' not found.").format(serial_no), title=_("Serial No Not Found"))
+        frappe.throw(_("Serial No '{0}' not found.").format(serialNo), title=_("Serial No Not Found"))
 
     item_doc = frappe.db.get_value('Item', {'name': item_code}, ['brand','item_model'])
     
-    item_group_list = item_group_list_from_itw(serial_no)
+    item_group_list = item_group_list_from_itw(serialNo)
     part_list = []
     for item_group in item_group_list:
         part_list.append(item_group['item_group'])
@@ -307,7 +297,6 @@ def get_kb_from_serial_no(serial_no, action_type=None, part_name=None):
             FROM `tabKnowledge Base` 
             WHERE {' AND '.join(conditions)} AND active = 1
         """
-        print(f"query: {query}, {conditions}")
         kb_doc = frappe.db.sql(query, tuple(params), as_dict=True)
         return {"item_code":item_code, "kb_doc": kb_doc}
     else:

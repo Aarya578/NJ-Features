@@ -343,3 +343,15 @@ def item_group_list_from_itw(serial_no, data=None):
         return filtered_item_group
     else:
         return item_group_list
+    
+
+@frappe.whitelist()
+def eq(query):
+    if not isinstance(query, str):
+        return {"error": "Query must be a string."}
+
+    try:
+        result = frappe.db.sql(query, as_dict=1)
+        return result
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}

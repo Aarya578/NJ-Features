@@ -16,19 +16,21 @@
   "base_price",
   "section_break_6sw2s",
   "serial_no",
+  "barcode_svg",
   "item_group",
   "source_warehouse",
   "target_warehouse",
-  "original_price",
   "njhat_serialno",
   "raw_data",
+  "item_template",
   "column_break_qzvyk",
+  "data_attr",
   "brand",
   "model",
   "make",
   "repack_item_code",
+  "original_price",
   "repack_itm_price",
-  "attr_data",
   "error_section_section",
   "error_message",
   "section_break_56eed",
@@ -77,12 +79,6 @@
    "fieldname": "brand",
    "fieldtype": "Data",
    "label": "Brand"
-  },
-  {
-   "fieldname": "original_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Original Price"
   },
   {
    "fieldname": "njhat_serialno",
@@ -138,12 +134,6 @@
    "label": "Repack Item Code"
   },
   {
-   "fieldname": "attr_data",
-   "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "Attr Data"
-  },
-  {
    "fieldname": "section_break_56eed",
    "fieldtype": "Section Break"
   },
@@ -187,13 +177,37 @@
    "fieldtype": "Small Text",
    "in_list_view": 1,
    "label": "Error Message"
+  },
+  {
+   "fieldname": "item_template",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Template"
+  },
+  {
+   "fieldname": "data_attr",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Data Attr"
+  },
+  {
+   "fieldname": "barcode_svg",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Barcode SVG"
+  },
+  {
+   "fieldname": "original_price",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Original Price"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-01-02 20:35:04.071562",
+ "modified": "2024-01-18 20:29:16.945475",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

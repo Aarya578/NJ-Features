@@ -22,7 +22,7 @@ frappe.ui.form.on('Stock Entry', {
                     console.log("Racking clicked so: ", cur_frm.doc.racking_check);
             });
         }
-        if(frappe.user.has_role("Stock Movement")) {
+        if(frappe.user.has_role("Stock Movement") && frappe.session.user !== "Administrator") {
             console.log("User has Stock Movement role");
             const fieldsToHide = [
                 'naming_series', 'posting_date', 'posting_time', 'is_rejected',

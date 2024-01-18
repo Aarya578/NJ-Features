@@ -36,8 +36,6 @@ doctype_js = {
     "Warehouse": "public/js/warehouse.js"
 }
 
-doctype_list_js = {"Knowledge Base" : "public/js/knowledge_base_list.js"}
-
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -116,9 +114,9 @@ doc_events = {
         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
     },
-    "Purchase Receipt": {
-        "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
-	}
+    # "Purchase Receipt": {
+    #     "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
+	# }
 }
 
 # Scheduled Tasks

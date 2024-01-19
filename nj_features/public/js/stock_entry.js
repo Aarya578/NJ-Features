@@ -1,6 +1,6 @@
 //Racking and Stock Movement
 frappe.ui.form.on('Stock Entry', {
-	onload(frm) {
+	refresh(frm) {
         if(frm.doc.__islocal){
             cur_frm.doc.racking_check;
             console.log("doc status: ", cur_frm.doc.docstatus, "| is new: ", frm.doc.__islocal, "| Racking: ", cur_frm.doc.racking_check);

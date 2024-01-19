@@ -1,38 +1,9 @@
 // Copyright (c) 2023, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 
-function openPrintWindow(imageUrl, width, height) {
-    var printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-        <html>
-        <head>
-            <title>Print Barcode</title>
-            <style>
-                body {
-                    margin: 0;
-                }
-                img {
-                    width: ${width}mm;
-                    height: ${height}mm;
-                }
-            </style>
-        </head>
-        <body>
-            <img src="${imageUrl}" alt="Barcode">
-        </body>
-        </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    
-    printWindow.print();
-}
-
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
         frm.get_field('iqc_item_component').grid.cannot_add_rows = true;
-        $('.col-lg-2.layout-side-section').hide();
         
         frm.events.purchase_receipt(frm);
         frappe.call({
@@ -44,9 +15,6 @@ frappe.ui.form.on('IQC', {
         });
     },
     refresh: function(frm) {
-            
-        $("button[data-original-title=Print]").hide();
-        
         cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 110;
         cur_frm.refresh_fields('fields');
         if(!frm.doc.item_code){

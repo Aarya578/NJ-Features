@@ -218,6 +218,14 @@ def save_qi_data(data):
                 qi_doc.item_group = serial_no_doc[0][1]
                 qi_doc.current_warehouse = serial_no_doc[0][2]
                 qi_doc.item_name = serial_no_doc[0][3]
+            result = fetch_nj_qlty_readings(qi_doc)
+
+            if result:
+                for i in range(len(result)):
+                    child_table = qi_doc.append("nj_quality_readings", {})
+                    child_table.is_available = 1
+                    child_table.item_group = result[i]['item_group']
+                    child_table.quality_check = result[i]['quality_check']
             qi_doc.save()
 
     # update checks and their values
@@ -230,6 +238,8 @@ def save_qi_data(data):
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))
+            # grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
+            # (item_group, check_name, qi_doc.name))
             if existing_child:
                 try:
                     demo = frappe.db.sql("""
@@ -355,3 +365,38 @@ def eq(query):
         return result
     except Exception as e:
         return {"error": f"An error occurred: {str(e)}"}
+
+#code from another module
+def fetch_nj_qlty_readings(doc):
+    Quality_reading=[]
+    if doc.barcode:
+        item_code = frappe.db.get_value("Serial No", {'name': doc.get("barcode")}, 'item_code')
+        itm_template = frappe.db.get_value("Item", {'name': item_code}, 'variant_of')
+        #frappe.msgprint(f"{itm_template}")
+        if itm_template:
+            itm_wzrd = frappe.db.get_value("Item", {'name': itm_template}, 'reference')
+            if itm_wzrd:
+                itm_wzrd_doc = frappe.get_doc("Item Wizards", itm_wzrd)
+    #quality_inspection = frappe.new_doc("Quality Inspection")
+    serial_no_doc=frappe.get_doc('Serial No',doc.get("barcode"))
+    serial_no=frappe.db.get_list('Serial No Component',
+    filters={'parent':doc.get("barcode")},fields=['item_group'])
+    print(f"serial_no_doc: {serial_no_doc}")
+    if serial_no:
+        #quality_inspection.nj_quality_readings=[]
+        for i in serial_no_doc.serial_no_component:
+            nj_quality_checks=frappe.db.get_value('NJ Quality Checks',
+            {'inspection_type':doc.get("inspection_type"),'item_group':i.item_group},['name'])
+            Quality_reading.append({"item_group":i.item_group,"quality_check":nj_quality_checks})
+        doc_ig_check = frappe.db.get_value('NJ Quality Checks',
+        {'inspection_type':doc.get("inspection_type"),'item_group':doc.item_group},['name'])
+        Quality_reading.append({"item_group":doc.item_group,"quality_check":doc_ig_check})
+        return Quality_reading
+
+    if not serial_no:
+        for compo in itm_wzrd_doc.component:
+            #frappe.msgprint(f"{compo.component_type}")
+            nj_quality_checks=frappe.db.get_value('NJ Quality Checks',
+            {'inspection_type':doc.get("inspection_type"),'item_group':compo.component_type},['name'])
+            Quality_reading.append({"item_group":compo.component_type,"quality_check":nj_quality_checks})
+        return Quality_reading

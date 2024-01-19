@@ -105,19 +105,19 @@ doctype_js = {
 #		"on_trash": "method"
 #	}
 # }
-doc_events = {
-    "Sales Order": {
-        # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"
-        "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.on_submit"
-    },
-    "Delivery Note": {
-        # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
-        "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
-    },
-    # "Purchase Receipt": {
-    #     "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
-	# }
-}
+# doc_events = {
+#     "Sales Order": {
+#         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"
+#         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.on_submit"
+#     },
+#     "Delivery Note": {
+#         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
+#         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
+#     },
+#     # "Purchase Receipt": {
+#     #     "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
+# 	# }
+# }
 
 # Scheduled Tasks
 # ---------------
@@ -140,17 +140,17 @@ doc_events = {
 #	]
 # }
 
-scheduler_events = {
-	"cron": {
-		# Every ten minutes
-		"*/10 * * * *": [
-			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
-		],
-		"0/30 * * * *": [
-			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
-		]
-	}
-}
+# scheduler_events = {
+# 	"cron": {
+# 		# Every ten minutes
+# 		"*/10 * * * *": [
+# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+# 		],
+# 		"0/30 * * * *": [
+# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
+# 		]
+# 	}
+# }
 # Testing
 # -------
 
@@ -170,10 +170,10 @@ scheduler_events = {
 #	"Task": "nj_features.task.get_dashboard_data"
 # }
 
-override_doctype_class = {
-	# "frappe.desk.doctype.event.event.get_events": "customizations_newjaisa.event.get_events"
-	"Amazon SP API Settings": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.Amazonoverride"
-}
+# override_doctype_class = {
+# 	# "frappe.desk.doctype.event.event.get_events": "customizations_newjaisa.event.get_events"
+# 	"Amazon SP API Settings": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.Amazonoverride"
+# }
 # exempt linked doctypes from being automatically cancelled
 #
 # auto_cancel_exempted_doctypes = ["Auto Repeat"]

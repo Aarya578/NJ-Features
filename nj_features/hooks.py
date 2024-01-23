@@ -36,6 +36,8 @@ doctype_js = {
     "Warehouse": "public/js/warehouse.js"
 }
 
+doctype_list_js = {"Stock Entry" : "public/js/stock_entry_list.js"}
+
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -210,6 +212,10 @@ user_data_fields = [
 	{
 		"doctype": "{doctype_4}"
 	}
+]
+
+website_route_rules = [
+    {"from_route": "/stock-movement/&lt;name&gt;", "to_route": "stock-entry/new"},
 ]
 
 # Authentication and authorization

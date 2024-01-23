@@ -1,64 +1,118 @@
 //Racking and Stock Movement
+function getQueryParamValue(paramName) {
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+    return urlParams.get(paramName);
+}
 frappe.ui.form.on('Stock Entry', {
-	refresh(frm) {
-        if(frm.doc.__islocal){
-            cur_frm.doc.racking_check;
-            console.log("doc status: ", cur_frm.doc.docstatus, "| is new: ", frm.doc.__islocal, "| Racking: ", cur_frm.doc.racking_check);
-            
-            const rackingButton = frm.add_custom_button('Racking', function() {
-                frm.set_value('racking_check', 1);
-                rackingButton.addClass('btn-primary');
-                    const fieldsToHide = [
-                        'naming_series', 'posting_date', 'posting_time', 'is_rejected',
-                        'set_posting_time', 'inspection_required', 'add_to_transit', 'is_customer_return',
-                        'apply_putaway_rule', 'bom_info_section', 'to_warehouse', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
-                        'printing_settings', 'more_info', 'get_stock_and_rate'
-                    ];
-                    fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
-                    frm.set_value('stock_entry_type', 'Material Transfer');
-                    console.log('Racking!!!');
-                    
-                    frm.refresh_field('items');
-                    console.log("Racking clicked so: ", cur_frm.doc.racking_check);
-            });
+    // onload: function(frm) {
+    //     if (frm.doc.racking_check == 1) {
+    //         // Add your relevant functions here
+    //         const fieldsToHide = [
+    //             'naming_series', 'posting_date', 'posting_time', 'is_rejected',
+    //             'set_posting_time', 'inspection_required', 'add_to_transit', 'is_customer_return',
+    //             'apply_putaway_rule', 'bom_info_section', 'to_warehouse', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
+    //             'printing_settings', 'more_info', 'get_stock_and_rate'
+    //         ];
+    //         fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
+    //         frm.set_value('stock_entry_type', 'Material Transfer');
+    //         frm.refresh_field('items');
+    //         console.log('Racking functionality applied!');
+    //     }
+    // },
+    // onload: function(frm) {
+    //     $('.col-lg-2.layout-side-section').hide();
+        
+
+    // },
+    
+    onload(frm) {
+        $('.col-lg-2.layout-side-section').hide();
+        // Needed url has: /app/stock-entry/new-stock-entry-1?stock_type=stock_movement
+        const stock_type = getQueryParamValue('stock_type')
+
+        if (stock_type.toLowerCase() == "stock_movement") {
+            $('.custom-actions.hidden-xs.hidden-md [data-label="Get Items From"]').hide();
+            $('.custom-actions.hidden-xs.hidden-md [data-label="Create"]').hide();
+            $(".title-text").html("New Stock Movement")
+                const fieldsToHide = [
+                    'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
+                    'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'total_additional_costs', 'items_section'
+                ];
+                fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
+                frm.set_value('stock_entry_type', 'Material Transfer');
+                frm.set_df_property('stock_entry_type', 'hidden', 1);
+                frm.refresh_field('items');
+            // });
+
+            // const movement = frm.add_custom_button('Stock Movement', function() {
+            //     const fieldsToHide = [
+            //         'naming_series', 'posting_date', 'posting_time', 'is_rejected',
+            //         'set_posting_time', 'inspection_required', 'add_to_transit', 'is_customer_return',
+            //         'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
+            //         'printing_settings', 'more_info', 'get_stock_and_rate', 'section_break_12'
+            //     ];
+            //     fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
+            //     movement.addClass('btn-primary')
+            //     frm.set_df_property('stock_entry_type', 'hidden', 1);
+            //     rackingButton.addClass('hide')
+            //     frm.doc.stock_movement = 1;
+            //     frm.set_value('stock_entry_type', 'Material Transfer');
+            //     frm.refresh_field('items');
+            // })
         }
-        if(frappe.user.has_role("Stock Movement") && frappe.session.user !== "Administrator") {
-            console.log("User has Stock Movement role");
-            const fieldsToHide = [
-                'naming_series', 'posting_date', 'posting_time', 'is_rejected',
-                'set_posting_time', 'inspection_required', 'add_to_transit', 'is_customer_return',
-                'apply_putaway_rule', 'bom_info_section', 'to_warehouse', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
-                'printing_settings', 'more_info', 'get_stock_and_rate', 'section_break_12'
-            ];
-            fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
-            frm.doc.stock_movement = 1;
-            frm.set_value('stock_entry_type', 'Material Transfer');
-            frm.refresh_field('items');
-        }
+        
 	},
-	scan_barcode: function(frm) {   
-        if(frm.doc.scan_barcode) {
-            frappe.call({
-				method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
-				args: {
-					search_value: frm.doc.scan_barcode
-				}
-			}).then(r => {
-				const data = r && r.message;
-				if (!data || Object.keys(data).length === 0) {
-					frappe.show_alert({
-						message: __('Cannot find Item with this Barcode'),
-						indicator: 'red'
-					});
-					return;
-				}
-				modify_table_after_scan(frm, data);
-			});
-		}
-		return false;
+    before_load: function(frm) {
+        const stock_type = getQueryParamValue('stock_type')
+
+        if (stock_type.toLowerCase() == "stock_movement") {
+            var fieldsToHide = ['t_warehouse', 'basic_rate'];
+        
+            fieldsToHide.forEach(function(field) {
+                var df = frappe.meta.get_docfield("Stock Entry Detail", field, cur_frm.doc.name);
+                df.hidden = 1;
+                df.colsize = 0;
+                df.in_list_view = 0;
+            });
+
+            var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
+            itemCodeField.colsize = 4;
+
+            frm.set_df_property('items', 't_warehouse', 'hidden', 1);
+            cur_frm.fields_dict['items'].grid.refresh();
+        }
+        
+    },
+	scan_barcode: function(frm) { 
+        const stock_type = getQueryParamValue('stock_type')
+
+        if (stock_type.toLowerCase() == "stock_movement") {  
+            if(frm.doc.scan_barcode) {
+                frappe.call({
+                    method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
+                    args: {
+                        search_value: frm.doc.scan_barcode
+                    }
+                }).then(r => {
+                    const data = r && r.message;
+                    if (!data || Object.keys(data).length === 0) {
+                        frappe.show_alert({
+                            message: __('Cannot find Item with this Barcode'),
+                            indicator: 'red'
+                        });
+                        return;
+                    }
+                    modify_table_after_scan(frm, data);
+                });
+            }
+            return false;
+        }
 	},
 	validate: function(frm) {
-        if(cur_frm.doc.racking_check === 1){
+        const stock_type = getQueryParamValue('stock_type')
+
+        if (stock_type.toLowerCase() == "stock_movement") {
             console.log("validate loop");
             for (var i = 0; i < frm.doc.items.length; i++) {
                 (function(index) {
@@ -103,8 +157,11 @@ frappe.ui.form.on('Stock Entry', {
 })
 
 frappe.ui.form.on('Stock Entry Detail', {
+
     item_code: function(frm, cdt, cdn) {
-        if (frm.doc.items && frm.doc.items.length > 0 && cur_frm.doc.racking_check === 1) {
+        const stock_type = getQueryParamValue('stock_type')
+
+        if (stock_type.toLowerCase() == "stock_movement") {
          
             for (let i = 0; i < frm.doc.items.length; i++) {
                 const item = frm.doc.items[i];

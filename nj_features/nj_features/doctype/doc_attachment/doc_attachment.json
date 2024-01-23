@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-01-22 14:25:56.072664",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "doc_type",
+  "doctypename",
+  "quality_inspection_type",
+  "column_break_iemmj",
+  "file_type",
+  "file_location",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "doc_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Doc Type",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "doctypename",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "DocTypeName",
+   "reqd": 1
+  },
+  {
+   "fieldname": "quality_inspection_type",
+   "fieldtype": "Link",
+   "label": "Quality Inspection Type",
+   "options": "Inspection Type"
+  },
+  {
+   "fieldname": "file_type",
+   "fieldtype": "Select",
+   "label": "File Type",
+   "options": "\nimage\nVideo\nYoutube"
+  },
+  {
+   "fieldname": "file_location",
+   "fieldtype": "Data",
+   "label": "File Location"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Doc Attachment",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_iemmj",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-01-22 15:27:46.138474",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Doc Attachment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

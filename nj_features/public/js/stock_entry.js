@@ -4,6 +4,39 @@ function getQueryParamValue(paramName) {
     const urlParams = new URLSearchParams(queryString);
     return urlParams.get(paramName);
 }
+
+function hideFieldsInStockMovement(frm) {
+    var fieldsToHide = ['t_warehouse', 'basic_rate'];
+
+    fieldsToHide.forEach(function(field) {
+        var df = frappe.meta.get_docfield("Stock Entry Detail", field, cur_frm.doc.name);
+        df.hidden = 1;
+        df.colsize = 0;
+        df.in_list_view = 0;
+    });
+
+    var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
+    itemCodeField.colsize = 4;
+
+    frm.set_df_property('items', 't_warehouse', 'hidden', 1);
+    cur_frm.fields_dict['items'].grid.refresh();
+}
+
+function hideOnload(frm) {
+    $('.custom-actions.hidden-xs.hidden-md [data-label="Get Items From"]').hide();
+    $('.custom-actions.hidden-xs.hidden-md [data-label="Create"]').hide();
+    $(".title-text").html("New Stock Movement")
+    const fieldsToHide = [
+        'total_additional_costs', 'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section',
+        'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'items_section',
+        'section_break_19', 'source_warehouse_address', 'target_warehouse_address', 'accounting_dimensions_section'
+    ];
+    fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
+    frm.set_value('stock_entry_type', 'Material Transfer');
+    frm.set_df_property('stock_entry_type', 'hidden', 1);
+    frm.refresh_field('items');
+}
+
 frappe.ui.form.on('Stock Entry', {
     // onload: function(frm) {
     //     if (frm.doc.racking_check == 1) {
@@ -32,17 +65,7 @@ frappe.ui.form.on('Stock Entry', {
         const stock_type = getQueryParamValue('stock_type')
 
         if (stock_type.toLowerCase() == "stock_movement") {
-            $('.custom-actions.hidden-xs.hidden-md [data-label="Get Items From"]').hide();
-            $('.custom-actions.hidden-xs.hidden-md [data-label="Create"]').hide();
-            $(".title-text").html("New Stock Movement")
-                const fieldsToHide = [
-                    'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section', 'accounting_dimensions_section',
-                    'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'total_additional_costs', 'items_section'
-                ];
-                fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
-                frm.set_value('stock_entry_type', 'Material Transfer');
-                frm.set_df_property('stock_entry_type', 'hidden', 1);
-                frm.refresh_field('items');
+            hideOnload(frm)
             // });
 
             // const movement = frm.add_custom_button('Stock Movement', function() {
@@ -66,21 +89,11 @@ frappe.ui.form.on('Stock Entry', {
     before_load: function(frm) {
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "stock_movement") {
-            var fieldsToHide = ['t_warehouse', 'basic_rate'];
-        
-            fieldsToHide.forEach(function(field) {
-                var df = frappe.meta.get_docfield("Stock Entry Detail", field, cur_frm.doc.name);
-                df.hidden = 1;
-                df.colsize = 0;
-                df.in_list_view = 0;
-            });
-
-            var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
-            itemCodeField.colsize = 4;
-
-            frm.set_df_property('items', 't_warehouse', 'hidden', 1);
-            cur_frm.fields_dict['items'].grid.refresh();
+        if (stock_type && stock_type.toLowerCase() === "stock_movement") {
+            hideFieldsInStockMovement(frm);
+        } else if (cur_frm.doc.stock_entry_type == "Material Transfer"){
+            hideFieldsInStockMovement(frm);
+            hideOnload(frm)
         }
         
     },
@@ -112,7 +125,7 @@ frappe.ui.form.on('Stock Entry', {
 	validate: function(frm) {
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "stock_movement") {
+        if (stock_type.toLowerCase() == "racking") {
             console.log("validate loop");
             for (var i = 0; i < frm.doc.items.length; i++) {
                 (function(index) {

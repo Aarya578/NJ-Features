@@ -10,7 +10,7 @@ frappe.listview_settings['Stock Entry'] = {
                 view: window
             });
             anchor.dispatchEvent(event);
-        });
+        }).addClass('btn-primary');
         
 
         // listview.page.add_inner_button('Stock Movement', function() {

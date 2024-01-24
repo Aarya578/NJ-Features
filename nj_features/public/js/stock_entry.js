@@ -2,23 +2,34 @@
 function getQueryParamValue(paramName) {
     const queryString = window.location.search;
     const urlParams = new URLSearchParams(queryString);
-    return urlParams.get(paramName);
+    if (urlParams) {
+        return urlParams.get(paramName);
+    } else {
+        return ''
+    }
 }
 
-function hideFieldsInStockMovement(frm) {
-    var fieldsToHide = ['t_warehouse', 'basic_rate'];
+function hideFieldsInChild(frm) {
+    var fieldsToHide = ['basic_rate', 'uom', 'stock_uom', 'section_break_8', 'transfer_qty',
+    'retain_sample', 'uom', 'stock_uom', 'conversion_factor', 'sample_quantity',
+    'more_info', 'reference_section', 'rates_section', 'is_finished_item', 'is_scrap_item', 'is_process_loss',
+    'accounting', 'accounting_dimensions_section', 'project', 'set_basic_rate_manually'];
 
     fieldsToHide.forEach(function(field) {
         var df = frappe.meta.get_docfield("Stock Entry Detail", field, cur_frm.doc.name);
-        df.hidden = 1;
-        df.colsize = 0;
-        df.in_list_view = 0;
+        if (df) {
+            df.hidden = 1;
+            df.colsize = 0;
+            df.in_list_view = 0;
+        }
     });
+    var t_ware = frappe.meta.get_docfield("Stock Entry Detail", 't_warehouse', cur_frm.doc.name)
+    t_ware.in_list_view = 0
+    t_ware.read_only = 1
 
     var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
     itemCodeField.colsize = 4;
-
-    frm.set_df_property('items', 't_warehouse', 'hidden', 1);
+    
     cur_frm.fields_dict['items'].grid.refresh();
 }
 
@@ -28,8 +39,9 @@ function hideOnload(frm) {
     $(".title-text").html("New Stock Movement")
     const fieldsToHide = [
         'total_additional_costs', 'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section',
-        'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'items_section',
-        'section_break_19', 'source_warehouse_address', 'target_warehouse_address', 'accounting_dimensions_section'
+        'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'items_section', 'sb1',
+        'section_break_19', 'source_warehouse_address', 'target_warehouse_address', 'accounting_dimensions_section',
+        'reason', 'comments', 'workflow_state'
     ];
     fieldsToHide.forEach(field => frm.set_df_property(field, 'hidden', 1));
     frm.set_value('stock_entry_type', 'Material Transfer');
@@ -60,11 +72,12 @@ frappe.ui.form.on('Stock Entry', {
     // },
     
     onload(frm) {
+        console.log("onload")
         $('.col-lg-2.layout-side-section').hide();
         // Needed url has: /app/stock-entry/new-stock-entry-1?stock_type=stock_movement
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "stock_movement") {
+        if (stock_type && stock_type.toLowerCase() == "stock_movement") {
             hideOnload(frm)
             // });
 
@@ -87,20 +100,28 @@ frappe.ui.form.on('Stock Entry', {
         
 	},
     before_load: function(frm) {
+        console.log("before_load")
         const stock_type = getQueryParamValue('stock_type')
 
         if (stock_type && stock_type.toLowerCase() === "stock_movement") {
-            hideFieldsInStockMovement(frm);
+            hideFieldsInChild(frm);
         } else if (cur_frm.doc.stock_entry_type == "Material Transfer"){
-            hideFieldsInStockMovement(frm);
+            hideFieldsInChild(frm);
             hideOnload(frm)
         }
         
     },
+    refresh(frm) {
+        if (cur_frm.doc.stock_entry_type == "Material Transfer"){
+            hideFieldsInChild(frm);
+            console.log("refresh")
+            hideOnload(frm)
+        }
+    },
 	scan_barcode: function(frm) { 
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "stock_movement") {  
+        if (stock_type && stock_type.toLowerCase() == "stock_movement") {  
             if(frm.doc.scan_barcode) {
                 frappe.call({
                     method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
@@ -125,7 +146,7 @@ frappe.ui.form.on('Stock Entry', {
 	validate: function(frm) {
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "racking") {
+        if (stock_type && stock_type.toLowerCase() == "racking") {
             console.log("validate loop");
             for (var i = 0; i < frm.doc.items.length; i++) {
                 (function(index) {
@@ -174,7 +195,7 @@ frappe.ui.form.on('Stock Entry Detail', {
     item_code: function(frm, cdt, cdn) {
         const stock_type = getQueryParamValue('stock_type')
 
-        if (stock_type.toLowerCase() == "stock_movement") {
+        if (stock_type && stock_type.toLowerCase() == "stock_movement") {
          
             for (let i = 0; i < frm.doc.items.length; i++) {
                 const item = frm.doc.items[i];

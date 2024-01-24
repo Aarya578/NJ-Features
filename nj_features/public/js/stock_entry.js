@@ -24,6 +24,9 @@ function hideFieldsInChild(stock_type) {
             df.in_list_view = 0;
         }
     });
+
+    var reason = frappe.meta.get_docfield("Stock Entry Detail", 'reason', cur_frm.doc.name)
+    reason.in_list_view = 0
     
     if (stock_type.toLowerCase() == "racking") {
         var t_ware = frappe.meta.get_docfield("Stock Entry Detail", 't_warehouse', cur_frm.doc.name)

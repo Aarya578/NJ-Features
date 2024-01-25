@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:models",
+ "creation": "2024-01-23 01:36:11.589529",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "models"
+ ],
+ "fields": [
+  {
+   "fieldname": "models",
+   "fieldtype": "Link",
+   "label": "Models",
+   "options": "Models",
+   "unique": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-01-23 01:37:02.152054",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "KB Multi Models",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

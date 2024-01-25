@@ -14,6 +14,8 @@
   "department",
   "section_break_1562o",
   "name1",
+  "action_type",
+  "priority",
   "column_break_2au5r",
   "attach",
   "active",
@@ -29,9 +31,9 @@
   },
   {
    "fieldname": "model",
-   "fieldtype": "Link",
+   "fieldtype": "Table MultiSelect",
    "label": "Model",
-   "options": "Models"
+   "options": "KB Multi Models"
   },
   {
    "fieldname": "column_break_blhgx",
@@ -82,11 +84,22 @@
    "fieldname": "description",
    "fieldtype": "Text Editor",
    "label": "Description"
+  },
+  {
+   "fieldname": "action_type",
+   "fieldtype": "Select",
+   "label": "Action Type",
+   "options": "\nQC\nDisassemble\nAssemble\nRepair"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "label": "Priority"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2023-11-28 16:12:14.660640",
+ "modified": "2024-01-23 01:39:27.013180",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

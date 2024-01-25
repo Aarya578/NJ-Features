@@ -295,7 +295,7 @@ def get_price_for_item_code(item_code=None, pr=None):
 import os
 
 @frappe.whitelist()
-def generate_and_save_barcode(serial_no, format='svg'):
+def generate_and_save_barcode(serial_no, format='png'):
     # Generate Code128 barcode with SVGWriter
     my_code = Code128(serial_no, writer=ImageWriter())
 

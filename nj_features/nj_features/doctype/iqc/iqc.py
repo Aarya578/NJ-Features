@@ -8,8 +8,10 @@ from frappe import _
 from frappe.model.document import Document
 import os
 from barcode import Code128
-from barcode.writer import ImageWriter
+from barcode.writer import ImageWriter, SVGWriter
 from io import BytesIO
+from PIL import Image
+from frappe.utils import get_url
 
 class IQC(Document):   
     def submit(self):
@@ -276,13 +278,87 @@ def get_price_for_item_code(item_code=None, pr=None):
         return None
 
 
-@frappe.whitelist()
-def generate_and_save_barcode(serial_no, format='png'):
-    my_code = Code128(serial_no, writer=ImageWriter())
+import os
 
+@frappe.whitelist()
+def generate_and_save_barcode(serial_no, format='svg'):
+    # Generate Code128 barcode with SVGWriter
+    my_code = Code128(serial_no, writer=SVGWriter())
+
+    # Create BytesIO to store barcode SVG
     barcode_bytes = BytesIO()
     my_code.write(barcode_bytes)
 
-    barcode_base64 = base64.b64encode(barcode_bytes.getvalue()).decode('utf-8')
+    # Set the directory to save the file
+    base_directory = frappe.get_site_path("public", "files")
+    file_path = os.path.join(base_directory, f"{serial_no}.{format}")
 
-    return {'barcode_img': f"data:image/{format};base64,{barcode_base64}"}
+    # Check if the file already exists
+    if os.path.exists(file_path):
+        os.remove(file_path)  # Remove the existing file
+
+    # Save the SVG content to a file
+    with open(file_path, 'wb') as f:
+        f.write(barcode_bytes.getvalue())
+
+    website_url = get_url()
+    return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+
+
+# @frappe.whitelist()
+# def generate_and_save_barcode(serial_no, format='svg'):
+#     my_code = Code128(serial_no, writer=SVGWriter())
+
+#     barcode_bytes = BytesIO()
+#     my_code.write(barcode_bytes)
+
+#     # Open the barcode image using Pillow (PIL Fork)
+#     img = Image.open(barcode_bytes)
+
+#     # Resize the image to the specified dimensions
+#     # target_width = 48  # in mm
+#     # target_height = 36  # in mm
+#     # width, height = img.size
+#     # aspect_ratio = width / height
+#     # new_width = int(target_width * 3.779527559)  # Convert mm to pixels (1mm = 3.779527559 pixels)
+#     # new_height = int(new_width / aspect_ratio)
+
+#     # img = img.resize((new_width, min(new_height, int(target_height * 3.779527559))))
+
+#     base_directory = frappe.get_site_path("public", "files")
+#     file_path = os.path.join(base_directory, f"{serial_no}.svg")
+
+#     img.save(file_path, format="SVG")
+
+#     return {'barcode_img': f'/files/{serial_no}.svg'}
+    
+# @frappe.whitelist()
+# def generate_and_save_barcode(serial_no, format='png'):
+#     # Generate Code128 barcode
+#     my_code = Code128(serial_no, writer=ImageWriter())
+
+#     # Create BytesIO to store barcode image
+#     barcode_bytes = BytesIO()
+#     my_code.write(barcode_bytes)
+
+#     # Open the barcode image using Pillow (PIL Fork)
+#     img = Image.open(barcode_bytes)
+
+#     # Resize the image with improved quality
+#     target_width = 96  # in mm
+#     target_height = 32  # in mm
+#     dpi = 600  # Adjust the DPI value for better quality
+
+#     new_width = int(target_width * dpi / 25.4)  # Convert mm to pixels
+#     new_height = int(target_height * dpi / 25.4)
+
+#     img = img.resize((new_width, new_height), Image.ANTIALIAS)
+
+#     # Set the directory to save the file
+#     base_directory = frappe.get_site_path("public", "files")
+#     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
+
+#     # Save the resized image as a PNG file
+#     img.save(file_path, format="PNG", dpi=(dpi, dpi))
+
+#     return {'barcode_img': f'http://127.0.0.1:8000/files/{serial_no}.{format}'}

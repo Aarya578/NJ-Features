@@ -192,9 +192,8 @@
   },
   {
    "fieldname": "barcode_svg",
-   "fieldtype": "Attach",
-   "label": "Barcode SVG",
-   "hidden": 1
+   "fieldtype": "Data",
+   "label": "Barcode SVG"
   },
   {
    "fieldname": "original_price",
@@ -207,7 +206,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-01-22 12:45:28.937181",
+ "modified": "2024-01-25 20:28:28.560505",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

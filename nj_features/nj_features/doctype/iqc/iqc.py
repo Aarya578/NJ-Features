@@ -316,7 +316,7 @@ def generate_and_save_barcode(serial_no, format='svg'):
         f.write(barcode_bytes.getvalue())
 
     website_url = get_url()
-    return {'barcode_img': f'/files/{serial_no}.{format}'}
+    return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
 
 
 # @frappe.whitelist()

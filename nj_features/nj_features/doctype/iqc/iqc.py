@@ -64,6 +64,7 @@ class IQC(Document):
 @frappe.whitelist()
 def set_value_for_pricing(self):
     self_dict = json.loads(self)
+    print(f":")
     purchase_price = frappe.db.get_value('Purchase Receipt', {'name': self_dict['purchase_receipt']}, 'total')
     base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': self_dict['purchase_receipt'], 
     'item_code': self_dict['item_code']}, 'base_rate')
@@ -233,6 +234,7 @@ def update_attr_data(doc, method):
 @frappe.whitelist()
 def get_variant_from_value(template=None, args=None):
     args_list = frappe.parse_json(args)
+    
     if template:
         conditions = []
 
@@ -241,16 +243,28 @@ def get_variant_from_value(template=None, args=None):
                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
 
         having_clause = " AND ".join(conditions)
+        
+        if having_clause:
+            query = f"""
+                SELECT parent FROM `tabItem Variant Attribute`
+                WHERE variant_of = %s
+                GROUP BY parent
+                HAVING {having_clause}
+            """
+        else:
+            query = f"""
+                SELECT parent FROM `tabItem Variant Attribute`
+                WHERE variant_of = %s
+                GROUP BY parent
+            """
 
-        variant_query = f"""
-            SELECT parent FROM `tabItem Variant Attribute` WHERE variant_of = %s GROUP BY parent
-            HAVING {having_clause}
-        """
-        variants = frappe.db.sql(variant_query, template, as_dict=True)
+        variants = frappe.db.sql(query, template, as_dict=True)
+        
         if variants:
             return variants[0]['parent']
         else:
             return None
+
     
 @frappe.whitelist()
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
@@ -302,7 +316,7 @@ def generate_and_save_barcode(serial_no, format='svg'):
         f.write(barcode_bytes.getvalue())
 
     website_url = get_url()
-    return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+    return {'barcode_img': f'/files/{serial_no}.{format}'}
 
 
 # @frappe.whitelist()

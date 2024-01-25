@@ -193,7 +193,8 @@
   {
    "fieldname": "barcode_svg",
    "fieldtype": "Attach",
-   "label": "Barcode SVG"
+   "label": "Barcode SVG",
+   "hidden": 1
   },
   {
    "fieldname": "original_price",

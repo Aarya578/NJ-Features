@@ -297,7 +297,7 @@ import os
 @frappe.whitelist()
 def generate_and_save_barcode(serial_no, format='svg'):
     # Generate Code128 barcode with SVGWriter
-    my_code = Code128(serial_no, writer=SVGWriter())
+    my_code = Code128(serial_no, writer=ImageWriter())
 
     # Create BytesIO to store barcode SVG
     barcode_bytes = BytesIO()

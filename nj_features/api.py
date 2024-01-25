@@ -28,7 +28,7 @@ def part_qi_check():
 
         #submit qi_doc
         if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
-            qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
+            qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
             if qi_doc.docstatus == 0:
                 qi_doc.status = data['submitStatus']
                 qi_doc.submit()
@@ -195,18 +195,18 @@ def save_qi_data(data):
     if 'partIsAvailable' in data:
         partIsAvailable = data['partIsAvailable']
     if qi_name != '':
-        qi_doc = frappe.get_doc('Quality Inspection', data['qi_name'])
+        qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
 
     # not available -> insert - Done
     else:
         serial_no_doc = frappe.db.sql("""SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
-        draft_qi = frappe.db.sql("""SELECT name FROM `tabQuality Inspection` WHERE barcode = %s and docstatus = 0 ORDER BY creation desc""", (data['serialNo']))
+        draft_qi = frappe.db.sql("""SELECT name FROM `tabNJ Quality Inspection` WHERE barcode = %s and docstatus = 0 ORDER BY creation desc""", (data['serialNo']))
         if draft_qi:
-            qi_doc = frappe.get_doc('Quality Inspection', draft_qi[0][0])
+            qi_doc = frappe.get_doc('NJ Quality Inspection', draft_qi[0][0])
             qi_name = qi_doc.name
 
         else:    
-            qi_doc = frappe.new_doc('Quality Inspection')
+            qi_doc = frappe.new_doc('NJ Quality Inspection')
             qi_doc.barcode = data['serialNo']
             qi_doc.bios_serial_number = data['serialNo']
             qi_doc.inspection_type = data['inspection_type']

@@ -92,6 +92,7 @@ def get_attribute_parent(attribute_value):
 
 @frappe.whitelist()
 def set_iqc_child_table(item_group):
+    item_group = item_group.lower()
     item_group_doc = frappe.get_doc('Item Group', item_group)
     components = []
     for component in item_group_doc.component_list:
@@ -167,13 +168,14 @@ def get_info_from_serial_no(serial_no=None):
             result['item_code'] = serial_no_doc[0].get('item_code', '')
             result['item_group'] = serial_no_doc[0].get('item_group', '')
             result['brand'] = serial_no_doc[0].get('brand', '')
-            result['warehouse'] = serial_no_doc[0].get('warehouse', '')
+            result['source_warehouse'] = serial_no_doc[0].get('warehouse', '')
+            result['target_warehouse'] = serial_no_doc[0].get('warehouse', '')
 
             base_price = frappe.db.sql(""" SELECT valuation_rate FROM `tabItem` WHERE name = %s """, 
             (result['item_code']), as_dict=1)
 
             if base_price:
-                result['valuation_rate'] = base_price[0].get('valuation_rate', '')
+                result['base_price'] = base_price[0].get('valuation_rate', '')
 
     return result
 

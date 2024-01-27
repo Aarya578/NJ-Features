@@ -27,6 +27,8 @@ frappe.ui.form.on('IQC', {
     },
 
     refresh: function(frm) {
+        frm.events.onload_post_render(frm);
+        
         $(frm.layout.wrapper).find('.form-message.red').remove();
         if (cur_frm.doc.iqc_item_component) {
             cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 110;
@@ -51,7 +53,7 @@ frappe.ui.form.on('IQC', {
             frm.events.serial_no(frm)
         }
 
-        if (cur_frm.doc.item_template && cur_frm.doc.data_attr && !cur_frm.doc.repack_item_code) {
+        if (!cur_frm.doc.repack_item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr },
@@ -197,6 +199,7 @@ frappe.ui.form.on('IQC', {
 	},
 
     validate: function(frm) {
+
         if (!cur_frm.doc.repack_item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',

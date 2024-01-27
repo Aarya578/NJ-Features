@@ -8,9 +8,8 @@ from frappe import _
 from frappe.model.document import Document
 import os
 from barcode import Code128
-from barcode.writer import ImageWriter, SVGWriter
+from nj_features.barcode import CustomImgWriter
 from io import BytesIO
-from PIL import Image
 from frappe.utils import get_url
 
 class IQC(Document):   
@@ -64,7 +63,6 @@ class IQC(Document):
 @frappe.whitelist()
 def set_value_for_pricing(self):
     self_dict = json.loads(self)
-    print(f":")
     purchase_price = frappe.db.get_value('Purchase Receipt', {'name': self_dict['purchase_receipt']}, 'total')
     base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': self_dict['purchase_receipt'], 
     'item_code': self_dict['item_code']}, 'base_rate')
@@ -85,8 +83,7 @@ def set_value_for_pricing(self):
 @frappe.whitelist()
 def get_attribute_parent(attribute_value):
     sql_query = f"""
-        SELECT ia.attribute_name
-        FROM `tabItem Attribute` AS ia
+        SELECT ia.attribute_name FROM `tabItem Attribute` AS ia
         JOIN `tabItem Attribute Value` AS iav ON ia.name = iav.parent
         WHERE iav.attribute_value = '{attribute_value}'
     """
@@ -98,24 +95,25 @@ def set_iqc_child_table(item_group):
     item_group_doc = frappe.get_doc('Item Group', item_group)
     components = []
     for component in item_group_doc.component_list:
-        components.append({
-            'component_name': component.component_name
-        })
+        components.append({'component_name': component.component_name})
     return {'components':components}
 
 @frappe.whitelist()
 def get_po_from_pr(pr):
-    query = frappe.db.sql(
-        """SELECT Item_code, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """,
-        (pr), as_dict=True)
-
     result = {"po": None, "item_code": []}
+    query = frappe.db.sql(
+        """SELECT Item_code, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
 
     for row in query:
         result["po"] = row["purchase_order"]
         result["item_code"].append(row["Item_code"]) 
     return result
 
+@frappe.whitelist()
+def brand_model_validation(brand=None, model=None):
+    brand = frappe.db.exists('Brand', {'name': brand})
+    model = frappe.db.exists('Models', {'name': model})
+    return {'brand': brand, 'model': model}
 
 @frappe.whitelist()
 def get_list_of_variants(item_group):
@@ -279,25 +277,10 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
         return templates[0].name
     else:
         return None
-    
-
-@frappe.whitelist()
-def get_price_for_item_code(item_code=None, pr=None):
-    item_unit_prize = "SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s"
-    base_price = frappe.db.sql(item_unit_prize, (item_code, pr), as_dict=True)
-
-    if base_price:
-        return base_price[0].base_rate
-    else:
-        return None
-
-
-import os
 
 @frappe.whitelist()
 def generate_and_save_barcode(serial_no, format='png'):
-    # Generate Code128 barcode with SVGWriter
-    my_code = Code128(serial_no, writer=ImageWriter())
+    my_code = Code128(serial_no, writer=CustomImgWriter())
 
     # Create BytesIO to store barcode SVG
     barcode_bytes = BytesIO()
@@ -317,62 +300,3 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
-
-
-# @frappe.whitelist()
-# def generate_and_save_barcode(serial_no, format='svg'):
-#     my_code = Code128(serial_no, writer=SVGWriter())
-
-#     barcode_bytes = BytesIO()
-#     my_code.write(barcode_bytes)
-
-#     # Open the barcode image using Pillow (PIL Fork)
-#     img = Image.open(barcode_bytes)
-
-#     # Resize the image to the specified dimensions
-#     # target_width = 48  # in mm
-#     # target_height = 36  # in mm
-#     # width, height = img.size
-#     # aspect_ratio = width / height
-#     # new_width = int(target_width * 3.779527559)  # Convert mm to pixels (1mm = 3.779527559 pixels)
-#     # new_height = int(new_width / aspect_ratio)
-
-#     # img = img.resize((new_width, min(new_height, int(target_height * 3.779527559))))
-
-#     base_directory = frappe.get_site_path("public", "files")
-#     file_path = os.path.join(base_directory, f"{serial_no}.svg")
-
-#     img.save(file_path, format="SVG")
-
-#     return {'barcode_img': f'/files/{serial_no}.svg'}
-    
-# @frappe.whitelist()
-# def generate_and_save_barcode(serial_no, format='png'):
-#     # Generate Code128 barcode
-#     my_code = Code128(serial_no, writer=ImageWriter())
-
-#     # Create BytesIO to store barcode image
-#     barcode_bytes = BytesIO()
-#     my_code.write(barcode_bytes)
-
-#     # Open the barcode image using Pillow (PIL Fork)
-#     img = Image.open(barcode_bytes)
-
-#     # Resize the image with improved quality
-#     target_width = 96  # in mm
-#     target_height = 32  # in mm
-#     dpi = 600  # Adjust the DPI value for better quality
-
-#     new_width = int(target_width * dpi / 25.4)  # Convert mm to pixels
-#     new_height = int(target_height * dpi / 25.4)
-
-#     img = img.resize((new_width, new_height), Image.ANTIALIAS)
-
-#     # Set the directory to save the file
-#     base_directory = frappe.get_site_path("public", "files")
-#     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
-
-#     # Save the resized image as a PNG file
-#     img.save(file_path, format="PNG", dpi=(dpi, dpi))
-
-#     return {'barcode_img': f'http://127.0.0.1:8000/files/{serial_no}.{format}'}

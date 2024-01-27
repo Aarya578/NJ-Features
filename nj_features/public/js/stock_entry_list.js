@@ -1,5 +1,5 @@
 frappe.listview_settings['Stock Entry'] = {
-    onload: function(listview) {
+    refresh: function(listview) {
         // Material Transfer button
         listview.page.add_inner_button(__("Material Transfer"), function() {
             var stockType = 'stock_movement';
@@ -15,12 +15,10 @@ frappe.listview_settings['Stock Entry'] = {
 };
 
 function openStockEntryForm(stockType) {
-    var anchor = document.createElement('a');
-    anchor.href = frappe.urllib.get_full_url(`/app/stock-entry/new-stock-entry-1?stock_type=${stockType}`);
-    var event = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window
+    frappe.model.with_doctype('Stock Entry', function() {
+        var doc = frappe.model.get_new_doc('Stock Entry');
+        
+        frappe.model.set_value(doc.doctype, doc.name, 'stock_type', stockType);
+        frappe.set_route('Form', 'Stock Entry', doc.name);
     });
-    anchor.dispatchEvent(event);
 }

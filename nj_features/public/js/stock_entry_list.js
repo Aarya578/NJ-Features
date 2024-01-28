@@ -5,10 +5,10 @@ frappe.listview_settings['Stock Entry'] = {
             openStockEntryForm(1);
         }).addClass('btn-primary');
 
-    //     // Racking button
-    //     listview.page.add_inner_button(__("Racking"), function() {
-    //         openStockEntryForm(0);
-    //     }).addClass('btn-primary');
+        // Racking button
+        listview.page.add_inner_button(__("Racking"), function() {
+            openStockEntryForm(0);
+        }).addClass('btn-primary');
     },
 };
 
@@ -22,6 +22,9 @@ function openStockEntryForm(stockType) {
         }
         frappe.model.with_doctype('Stock Entry Detail', function () {
             var child_table = frappe.model.get_new_doc('Stock Entry Detail');
+            child_table.parent = doc.name;
+            child_table.parenttype = doc.doctype;
+            child_table.parentfield = "items"
             doc.items = [child_table];
             frappe.set_route('Form', 'Stock Entry', doc.name);
         });

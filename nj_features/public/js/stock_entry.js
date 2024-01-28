@@ -177,7 +177,7 @@ frappe.ui.form.on('Stock Entry Detail', {
                             return {
                                 filters: {
                                     item_group: itemGroup,
-                                    brand : brand,
+                                    brand : ['Like', brand],
                                     is_group: 0,
                                     available_capacity: ['>', 0],
                                     company: frm.doc.company

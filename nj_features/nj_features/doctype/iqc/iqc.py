@@ -14,37 +14,41 @@ from frappe.utils import get_url
 
 class IQC(Document):   
     def submit(self):
-        stock_entry = frappe.new_doc("Stock Entry")
-        stock_entry.stock_entry_type = "Repack"
-        stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
+        try:
+            stock_entry = frappe.new_doc("Stock Entry")
+            stock_entry.stock_entry_type = "Repack"
+            stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
 
-        stock_entry.append("items", {
-            "item_code": self.item_code,
-            "qty": 1,
-            'uom': 'Nos',
-            'conversion_factor': 1,
-            'stock_uom': 'Nos',
-            's_warehouse': self.source_warehouse,
-            'basic_rate': self.base_price
-        })
+            stock_entry.append("items", {
+                "item_code": self.item_code,
+                "qty": 1,
+                'uom': 'Nos',
+                'conversion_factor': 1,
+                'stock_uom': 'Nos',
+                's_warehouse': self.source_warehouse,
+                'basic_rate': self.base_price
+            })
 
-        if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
-            stock_entry.items[0].update({'serial_no': self.serial_no})
+            if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
+                stock_entry.items[0].update({'serial_no': self.serial_no})
 
-        stock_entry.append("items", {
-            "item_code": self.repack_item_code,
-            "qty": 1,
-            "t_warehouse": self.target_warehouse if self.target_warehouse else self.source_warehouse,
-            'uom': 'Nos',
-            'conversion_factor': 1,
-            'serial_no': self.serial_no,
-            'stock_uom': 'Nos',
-            'set_basic_rate_manually': 1,
-            'basic_rate': self.original_price
-        })
+            stock_entry.append("items", {
+                "item_code": self.repack_item_code,
+                "qty": 1,
+                "t_warehouse": self.target_warehouse if self.target_warehouse else self.source_warehouse,
+                'uom': 'Nos',
+                'conversion_factor': 1,
+                'serial_no': self.serial_no,
+                'stock_uom': 'Nos',
+                'set_basic_rate_manually': 1,
+                'basic_rate': self.original_price
+            })
 
-        stock_entry.save()
-        stock_entry_name = stock_entry.name
+            stock_entry.save()
+        except Exception as e:
+            frappe.msgprint(f"Error during submission: {e}")
+        
+        # stock_entry_name = stock_entry.name
 
         # print(f"Update serial no based on IQC")
         # for row in self.iqc_item_component:
@@ -58,7 +62,7 @@ class IQC(Document):
         #         })
         #         serial_no_doc.save()
 
-        return {'stock_entry_name': stock_entry_name}
+        # return {'stock_entry_name': stock_entry_name}
     
 @frappe.whitelist()
 def set_value_for_pricing(self):
@@ -157,25 +161,29 @@ def get_items_from_pr(pr):
     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
 
 @frappe.whitelist()
-def get_info_from_serial_no(serial_no=None):
+def get_info_from_serial_no(doc=None):
     result = {}
-
-    if serial_no:
+    doc_json = json.loads(doc)
+    if doc_json:
+        serial_no = doc_json['serial_no']
         serial_no_doc = frappe.db.sql(""" SELECT item_code, item_group, brand, warehouse FROM `tabSerial No` WHERE name = %s""", 
         (serial_no), as_dict=1)
 
         if serial_no_doc:
+
+            repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
+            purchase_price = frappe.db.get_value('Purchase Receipt', {'name': doc_json['purchase_receipt']}, 'total')
+            base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': doc_json['purchase_receipt'], 
+            'item_code': doc_json['item_code']}, 'base_rate')
+
             result['item_code'] = serial_no_doc[0].get('item_code', '')
             result['item_group'] = serial_no_doc[0].get('item_group', '')
             result['brand'] = serial_no_doc[0].get('brand', '')
             result['source_warehouse'] = serial_no_doc[0].get('warehouse', '')
             result['target_warehouse'] = serial_no_doc[0].get('warehouse', '')
-
-            base_price = frappe.db.sql(""" SELECT valuation_rate FROM `tabItem` WHERE name = %s """, 
-            (result['item_code']), as_dict=1)
-
-            if base_price:
-                result['base_price'] = base_price[0].get('valuation_rate', '')
+            result['repack_itm_price'] = repack_itm_price
+            result['purchase_price'] = purchase_price
+            result['base_price'] = base_price
 
     return result
 
@@ -294,7 +302,7 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     # Check if the file already exists
     if os.path.exists(file_path):
-        os.remove(file_path)  # Remove the existing file
+        os.remove(file_path)
 
     # Save the SVG content to a file
     with open(file_path, 'wb') as f:

@@ -3,15 +3,12 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
-        if (cur_frm.doc.iqc_item_component) {
-            frm.get_field('iqc_item_component').grid.cannot_add_rows = true;
-        }
-        
-        if (cur_frm.doc.purchase_receipt) {
+        console.log("onload")
+        if (cur_frm.doc.purchase_receipt && cur_frm.doc.docstatus !=1) {
             frm.events.purchase_receipt(frm);
         }
 
-        if (cur_frm.doc.serial_no) {
+        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1) {
             frm.events.serial_no(frm);
         }
         
@@ -27,19 +24,20 @@ frappe.ui.form.on('IQC', {
     },
 
     refresh: function(frm) {
-        frm.events.onload_post_render(frm);
-        
+        // frm.events.onload_post_render(frm);
+        console.log("refresh")
+
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        if (cur_frm.doc.iqc_item_component) {
+        if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1) {
             cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 110;
             cur_frm.refresh_fields('fields');
         }
         
-        if(!frm.doc.item_code){
+        if(!frm.doc.item_code && cur_frm.doc.docstatus !=1){
             frm.events.purchase_receipt(frm);
         }
         
-        if (!frm.doc.item_template) {
+        if (!frm.doc.item_template && cur_frm.doc.docstatus !=1) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
                 args: {"model": cur_frm.doc.model, "brand": cur_frm.doc.brand, "item_group": cur_frm.doc.item_group},
@@ -53,7 +51,7 @@ frappe.ui.form.on('IQC', {
             frm.events.serial_no(frm)
         }
 
-        if (!cur_frm.doc.repack_item_code) {
+        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr },
@@ -94,9 +92,10 @@ frappe.ui.form.on('IQC', {
         if (frm.doc.serial_no) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
-                args: {'serial_no': frm.doc.serial_no},
+                args: {'doc': frm.doc},
                 callback: function(r) {
-                    const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'source_warehouse', 'target_warehouse', 'base_price'];
+                    const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'source_warehouse', 'target_warehouse', 'base_price'
+                    , 'repack_itm_price', 'purchase_price'];
     
                     fieldsToUpdate.forEach(field => {
                         if (!frm.doc[field]) {
@@ -111,90 +110,93 @@ frappe.ui.form.on('IQC', {
     },
     
 	onload_post_render: function(frm) {
-	    
-        if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
-                args: { 'item_group': cur_frm.doc.item_group },
-                callback: function (r) {
-                    if (r.message) {
-                        var lastVariantValues = {};
-                        r.message.forEach(function (mapping) {
-                            frm.doc.iqc_item_component.forEach(function (row) {
-                                var itemGroup = row.item_group;
-                                var variants = mapping.mappng_fields.split('::');
-                                if (itemGroup === mapping.item_group && variants.every(variant => row.hasOwnProperty(variant))) {
-                                    variants.forEach(function (variant) {
-                                        if (row.hasOwnProperty(variant)) {
-                                            lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
-                                            lastVariantValues[itemGroup][variant] = row[variant];
-                                        }
-                                    });
-                                    
-                                    var attributeValue = lastVariantValues[itemGroup];
-                                    var attributeObject = {};
-                                    
-                                    frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
-                                    
-                                    if (Object.keys(attributeValue).length > 1) {
-                                        // Construct the dictionary directly
-                                        attributeObject[mapping.attribute_name] = Object.values(attributeValue).join(' - ');
-                                        row.attr_data = JSON.stringify(attributeObject);
-                                        // console.log("if attributeObject: ", row.attr_data);
-                                        frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                    } else {
-                                        if (itemGroup.toLowerCase() === 'laptop ram'&& row.variant_1 === 'SYSTEM MEMORY') {
-                                            // console.log("ram row.attr_data laptop ram: ", row.attr_data, row.variant_1);
+        console.log("render")
+
+	    if (cur_frm.doc.docstatus !=1) {
+            if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
+                    args: { 'item_group': cur_frm.doc.item_group },
+                    callback: function (r) {
+                        if (r.message) {
+                            var lastVariantValues = {};
+                            r.message.forEach(function (mapping) {
+                                frm.doc.iqc_item_component.forEach(function (row) {
+                                    var itemGroup = row.item_group;
+                                    var variants = mapping.mappng_fields.split('::');
+                                    if (itemGroup === mapping.item_group && variants.every(variant => row.hasOwnProperty(variant))) {
+                                        variants.forEach(function (variant) {
+                                            if (row.hasOwnProperty(variant)) {
+                                                lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
+                                                lastVariantValues[itemGroup][variant] = row[variant];
+                                            }
+                                        });
+                                        
+                                        var attributeValue = lastVariantValues[itemGroup];
+                                        var attributeObject = {};
+                                        
+                                        frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
+                                        
+                                        if (Object.keys(attributeValue).length > 1) {
                                             // Construct the dictionary directly
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]];
+                                            attributeObject[mapping.attribute_name] = Object.values(attributeValue).join(' - ');
                                             row.attr_data = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                        } else if (itemGroup.toLowerCase() === 'laptop storage' && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
-                                            // console.log("storage row.attr_data: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, !row.variant_1);
-                                            // Construct the dictionary directly
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD";
-                                            row.attr_data = JSON.stringify(attributeObject);
+                                            // console.log("if attributeObject: ", row.attr_data);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
                                         } else {
-                                            // console.log("else row.attr_data: ", row.attr_data);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
+                                            if (itemGroup.toLowerCase() === 'laptop ram'&& row.variant_1 === 'SYSTEM MEMORY') {
+                                                // console.log("ram row.attr_data laptop ram: ", row.attr_data, row.variant_1);
+                                                // Construct the dictionary directly
+                                                attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]];
+                                                row.attr_data = JSON.stringify(attributeObject);
+                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                                            } else if (itemGroup.toLowerCase() === 'laptop storage' && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
+                                                // console.log("storage row.attr_data: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, !row.variant_1);
+                                                // Construct the dictionary directly
+                                                attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD";
+                                                row.attr_data = JSON.stringify(attributeObject);
+                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                                            } else {
+                                                // console.log("else row.attr_data: ", row.attr_data);
+                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
+                                            }
                                         }
                                     }
-                                }
+                                });
                             });
-                        });
-                        frm.refresh_field('iqc_item_component');
+                            frm.refresh_field('iqc_item_component');
+                        }
                     }
-                }
-            });
-        }
-        
-        cur_frm.set_value('data_attr', '');
-        if (cur_frm.doc.iqc_item_component) {
-            var child_attr_data = [];
-            frm.doc.iqc_item_component.forEach(function (row) {
-                // console.log("row: ", row);
-                if (row.attr_data) {
-                    child_attr_data.push(JSON.parse(row.attr_data));
-                }
-            });
-            // console.log("child_attr_data: ", child_attr_data);
-            cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-            cur_frm.refresh_fields('fields');
-        }
-
-        if (cur_frm.doc.repack_item_code) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
-                args: {'self': cur_frm.doc},
-                callback: function(r) {
-                    // console.log("from before_save: ", r.message);
-                    frm.set_value('base_price', r.message.base_price);
-                    frm.set_value('repack_itm_price', r.message.repack_itm_price);
-                    frm.set_value('original_price', r.message.original_price);
-                    cur_frm.refresh_fields('fields');
-                }
-            });
+                });
+            }
+            
+            cur_frm.set_value('data_attr', '');
+            if (cur_frm.doc.iqc_item_component) {
+                var child_attr_data = [];
+                frm.doc.iqc_item_component.forEach(function (row) {
+                    // console.log("row: ", row);
+                    if (row.attr_data) {
+                        child_attr_data.push(JSON.parse(row.attr_data));
+                    }
+                });
+                // console.log("child_attr_data: ", child_attr_data);
+                cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
+                cur_frm.refresh_fields('fields');
+            }
+    
+            if (cur_frm.doc.repack_item_code) {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
+                    args: {'self': cur_frm.doc},
+                    callback: function(r) {
+                        // console.log("from before_save: ", r.message);
+                        frm.set_value('base_price', r.message.base_price);
+                        frm.set_value('repack_itm_price', r.message.repack_itm_price);
+                        frm.set_value('original_price', r.message.original_price);
+                        cur_frm.refresh_fields('fields');
+                    }
+                });
+            }
         }
 	},
 

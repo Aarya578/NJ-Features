@@ -182,7 +182,8 @@
    "fieldname": "item_template",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "Item Template"
+   "label": "Item Template",
+   "permlevel": 1
   },
   {
    "fieldname": "data_attr",
@@ -206,7 +207,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-01-25 20:28:28.560505",
+ "modified": "2024-01-28 14:56:28.811002",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

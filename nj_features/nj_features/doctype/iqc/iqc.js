@@ -51,7 +51,7 @@ frappe.ui.form.on('IQC', {
             frm.events.serial_no(frm)
         }
 
-        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1) {
+        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr },
@@ -144,7 +144,7 @@ frappe.ui.form.on('IQC', {
                                             // console.log("if attributeObject: ", row.attr_data);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
                                         } else {
-                                            if (itemGroup.toLowerCase() === 'laptop ram'&& row.variant_1 === 'SYSTEM MEMORY') {
+                                            if (itemGroup.toLowerCase() === 'laptop ram' && row.variant_1 === 'SYSTEM MEMORY') {
                                                 // console.log("ram row.attr_data laptop ram: ", row.attr_data, row.variant_1);
                                                 // Construct the dictionary directly
                                                 attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]];

@@ -15,8 +15,8 @@
   "section_break_1562o",
   "name1",
   "action_type",
+  "column_break_126gc",
   "priority",
-  "column_break_2au5r",
   "attach",
   "active",
   "section_break_rl8nf",
@@ -47,9 +47,9 @@
   },
   {
    "fieldname": "department",
-   "fieldtype": "Link",
+   "fieldtype": "Table MultiSelect",
    "label": "Department",
-   "options": "Department"
+   "options": "Department Multi Models"
   },
   {
    "fieldname": "section_break_1562o",
@@ -62,16 +62,12 @@
    "unique": 1
   },
   {
-   "fieldname": "column_break_2au5r",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "attach",
    "fieldtype": "Attach",
    "label": "Attach"
   },
   {
-   "default": "0",
+   "default": "1",
    "fieldname": "active",
    "fieldtype": "Check",
    "label": "Active"
@@ -87,19 +83,23 @@
   },
   {
    "fieldname": "action_type",
-   "fieldtype": "Select",
+   "fieldtype": "Table MultiSelect",
    "label": "Action Type",
-   "options": "\nQC\nDisassemble\nAssemble\nRepair"
+   "options": "AC Multi Models"
   },
   {
    "fieldname": "priority",
    "fieldtype": "Int",
    "label": "Priority"
+  },
+  {
+   "fieldname": "column_break_126gc",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-01-23 01:39:27.013180",
+ "modified": "2024-01-29 13:56:26.889056",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

@@ -7,37 +7,38 @@
  "engine": "InnoDB",
  "field_order": [
   "item_group",
-  "mappng_fields",
-  "attribute_name"
+  "attribute_name",
+  "mappng_fields"
  ],
  "fields": [
   {
-   "columns": 5,
+   "columns": 3,
    "fieldname": "item_group",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Item Group",
    "options": "Item Group"
   },
   {
-   "columns": 5,
+   "columns": 4,
    "fieldname": "mappng_fields",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "in_standard_filter": 1,
    "label": "Mapping Fields"
   },
   {
+   "columns": 3,
    "fieldname": "attribute_name",
-   "fieldtype": "Data",
-   "label": "Attribute Name"
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Attribute Name",
+   "options": "Item Attribute"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-01-12 15:31:56.909686",
+ "modified": "2024-01-29 17:11:51.381354",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Part Mapping",

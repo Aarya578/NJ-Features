@@ -17,8 +17,13 @@
   "action_type",
   "column_break_126gc",
   "priority",
-  "attach",
   "active",
+  "section_break_2htot",
+  "attach1",
+  "attach3",
+  "column_break_lfedh",
+  "attach2",
+  "attach4",
   "section_break_rl8nf",
   "description"
  ],
@@ -62,11 +67,6 @@
    "unique": 1
   },
   {
-   "fieldname": "attach",
-   "fieldtype": "Attach",
-   "label": "Attach"
-  },
-  {
    "default": "1",
    "fieldname": "active",
    "fieldtype": "Check",
@@ -95,11 +95,39 @@
   {
    "fieldname": "column_break_126gc",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "attach1",
+   "fieldtype": "Data",
+   "label": "Attach1"
+  },
+  {
+   "fieldname": "attach2",
+   "fieldtype": "Data",
+   "label": "Attach2"
+  },
+  {
+   "fieldname": "section_break_2htot",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_lfedh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "attach4",
+   "fieldtype": "Data",
+   "label": "Attach4"
+  },
+  {
+   "fieldname": "attach3",
+   "fieldtype": "Data",
+   "label": "Attach3"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-01-29 13:56:26.889056",
+ "modified": "2024-01-29 19:36:42.209155",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

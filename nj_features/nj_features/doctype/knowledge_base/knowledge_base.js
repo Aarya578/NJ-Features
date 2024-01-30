@@ -15,6 +15,12 @@ frappe.ui.form.on('Knowledge Base', {
                 addAttachmentButton(frm, 'attach4', attachmentUrl);
             }
         });
+        let smallText = ['attach1', 'attach2', 'attach3', 'attach4'];
+
+smallText.forEach(fieldName => {
+    frm.fields_dict[fieldName].$input.css('height', '40px');
+});
+
     }
 });
 

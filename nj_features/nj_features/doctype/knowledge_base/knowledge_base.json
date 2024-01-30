@@ -98,12 +98,12 @@
   },
   {
    "fieldname": "attach1",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Attach1"
   },
   {
    "fieldname": "attach2",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Attach2"
   },
   {
@@ -116,18 +116,18 @@
   },
   {
    "fieldname": "attach4",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Attach4"
   },
   {
    "fieldname": "attach3",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Attach3"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-01-29 19:36:42.209155",
+ "modified": "2024-01-30 19:00:16.650878",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

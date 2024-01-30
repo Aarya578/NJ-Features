@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "serial_no.-.activity_type._.username.-.##",
  "creation": "2024-01-27 18:53:25.775563",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -9,8 +10,7 @@
   "serial_no",
   "username",
   "activity_type",
-  "time",
-  "amended_from"
+  "time"
  ],
  "fields": [
   {
@@ -23,9 +23,10 @@
   },
   {
    "fieldname": "username",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Username",
+   "options": "User",
    "reqd": 1
   },
   {
@@ -39,21 +40,11 @@
    "fieldtype": "Time",
    "label": "Time",
    "reqd": 1
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "activity_time_log",
-   "print_hide": 1,
-   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2024-01-27 18:54:03.748282",
+ "modified": "2024-01-30 20:24:28.067039",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "activity_time_log",
@@ -68,6 +59,7 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   }

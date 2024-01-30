@@ -2,7 +2,7 @@
 frappe.ui.form.on('Knowledge Base', {
     refresh: function(frm) {
         // Fetch the attachment URL from NJ Settings
-        frappe.db.get_value('NJ Settings', {'parameter': 'asset_url'}, 'value', function(response) {
+        frappe.db.get_value('NJ Settings', {'parameter': 'kb_url'}, 'value', function(response) {
 			// console.log("attachmentUrl", response)
             if (response) {
 				

@@ -1,11 +1,6 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 
-// frappe.ui.form.on('NJ Settings', {
-// 	// refresh: function(frm) {
-
-// 	// }
-// });
 frappe.ui.form.on('NJ Settings', {
     module: function(frm) {
         // Fetch filtered options for the doc_type field based on the selected module

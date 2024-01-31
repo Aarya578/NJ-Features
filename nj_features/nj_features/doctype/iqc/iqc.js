@@ -63,7 +63,7 @@ frappe.ui.form.on('IQC', {
     },
 
     purchase_receipt: function(frm) {
-        if (cur_frm.doc.purchase_order && !cur_frm.doc.item_code) {
+        if (cur_frm.doc.purchase_order) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_po_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},

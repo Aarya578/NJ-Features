@@ -10,7 +10,8 @@
   "serial_no",
   "username",
   "activity_type",
-  "time"
+  "time",
+  "amended_from"
  ],
  "fields": [
   {
@@ -40,11 +41,21 @@
    "fieldtype": "Time",
    "label": "Time",
    "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "activity_time_log",
+   "print_hide": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2024-01-30 20:24:28.067039",
+ "modified": "2024-01-31 11:07:04.720018",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "activity_time_log",
@@ -61,6 +72,7 @@
    "role": "System Manager",
    "select": 1,
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],

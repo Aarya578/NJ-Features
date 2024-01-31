@@ -14,39 +14,37 @@ from frappe.utils import get_url
 
 class IQC(Document):   
     def submit(self):
-        try:
-            stock_entry = frappe.new_doc("Stock Entry")
-            stock_entry.stock_entry_type = "Repack"
-            stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
+        stock_entry = frappe.new_doc("Stock Entry")
+        stock_entry.stock_entry_type = "Repack"
+        stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
 
-            stock_entry.append("items", {
-                "item_code": self.item_code,
-                "qty": 1,
-                'uom': 'Nos',
-                'conversion_factor': 1,
-                'stock_uom': 'Nos',
-                's_warehouse': self.source_warehouse,
-                'basic_rate': self.base_price
-            })
+        stock_entry.append("items", {
+            "item_code": self.item_code,
+            "qty": 1,
+            'uom': 'Nos',
+            'conversion_factor': 1,
+            'stock_uom': 'Nos',
+            's_warehouse': self.source_warehouse,
+            'basic_rate': self.base_price,
+            'set_basic_rate_manually': 1
+        })
 
-            if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
-                stock_entry.items[0].update({'serial_no': self.serial_no})
+        if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
+            stock_entry.items[0].update({'serial_no': self.serial_no})
 
-            stock_entry.append("items", {
-                "item_code": self.repack_item_code,
-                "qty": 1,
-                "t_warehouse": self.target_warehouse if self.target_warehouse else self.source_warehouse,
-                'uom': 'Nos',
-                'conversion_factor': 1,
-                'serial_no': self.serial_no,
-                'stock_uom': 'Nos',
-                'set_basic_rate_manually': 1,
-                'basic_rate': self.original_price
-            })
+        stock_entry.append("items", {
+            "item_code": self.repack_item_code,
+            "qty": 1,
+            "t_warehouse": self.target_warehouse if self.target_warehouse else self.source_warehouse,
+            'uom': 'Nos',
+            'conversion_factor': 1,
+            'serial_no': self.serial_no,
+            'stock_uom': 'Nos',
+            'set_basic_rate_manually': 1,
+            'basic_rate': self.original_price,
+        })
 
-            stock_entry.save()
-        except Exception as e:
-            frappe.msgprint(f"Error during submission: {e}")
+        stock_entry.submit()
         
         # stock_entry_name = stock_entry.name
 
@@ -81,7 +79,7 @@ def set_value_for_pricing(self):
         repack_itm_price = base_price
     original_price = iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price)
 
-    return {"original_price": original_price.get('original_price', 0), "repack_itm_price": repack_itm_price, "base_price": base_price, "purchase_price": purchase_price}
+    return {"original_price": original_price.get('original_price', 0)}
 
 
 @frappe.whitelist()
@@ -241,7 +239,9 @@ def update_attr_data(doc, method):
 
 @frappe.whitelist()
 def get_variant_from_value(template=None, args=None):
-    args_list = frappe.parse_json(args)
+    args_list = []
+    if args:
+        args_list = frappe.parse_json(args)
     
     if template:
         conditions = []
@@ -259,17 +259,10 @@ def get_variant_from_value(template=None, args=None):
                 GROUP BY parent
                 HAVING {having_clause}
             """
-        else:
-            query = f"""
-                SELECT parent FROM `tabItem Variant Attribute`
-                WHERE variant_of = %s
-                GROUP BY parent
-            """
-
-        variants = frappe.db.sql(query, template, as_dict=True)
+            variants = frappe.db.sql(query, template, as_dict=True)
         
-        if variants:
-            return variants[0]['parent']
+            if variants:
+                return variants[0]['parent']
         else:
             return None
 

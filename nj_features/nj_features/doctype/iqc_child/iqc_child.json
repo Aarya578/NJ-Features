@@ -27,9 +27,7 @@
   "variant_18",
   "variant_19",
   "variant_20",
-  "active",
   "attr_data",
-  "item_code",
   "part_serial_no"
  ],
  "fields": [
@@ -108,23 +106,6 @@
    "label": "Variant 07"
   },
   {
-   "default": "0",
-   "fieldname": "active",
-   "fieldtype": "Check",
-   "label": "Active"
-  },
-  {
-   "fieldname": "item_code",
-   "fieldtype": "Data",
-   "label": "Item Code"
-  },
-  {
-   "fieldname": "attr_data",
-   "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "attr_data"
-  },
-  {
    "fieldname": "part_serial_no",
    "fieldtype": "Data",
    "label": "Part Serial No"
@@ -178,12 +159,17 @@
    "fieldname": "variant_20",
    "fieldtype": "Data",
    "label": "Variant 20"
+  },
+  {
+   "fieldname": "attr_data",
+   "fieldtype": "Data",
+   "label": "Attr Data"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2023-12-22 11:10:43.943718",
+ "modified": "2024-01-31 16:51:24.738920",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC Child",

@@ -3,7 +3,6 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
-        console.log("onload")
         if (cur_frm.doc.purchase_receipt && cur_frm.doc.docstatus !=1) {
             frm.events.purchase_receipt(frm);
         }
@@ -12,7 +11,7 @@ frappe.ui.form.on('IQC', {
             frm.events.serial_no(frm);
         }
         
-        if (!cur_frm.doc.barcode_svg) {
+        if (!cur_frm.doc.barcode_svg && cur_frm.doc.docstatus !=1) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
                 args: {"serial_no": cur_frm.doc.serial_no},
@@ -24,8 +23,6 @@ frappe.ui.form.on('IQC', {
     },
 
     refresh: function(frm) {
-        // frm.events.onload_post_render(frm);
-        console.log("refresh")
 
         $(frm.layout.wrapper).find('.form-message.red').remove();
         if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1) {
@@ -47,14 +44,14 @@ frappe.ui.form.on('IQC', {
             });
         }
 
-        if (!cur_frm.doc.source_warehouse) {
+        if (!cur_frm.doc.source_warehouse && cur_frm.doc.docstatus !=1) {
             frm.events.serial_no(frm)
         }
 
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
-                args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr },
+                args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr},
                 callback: function (r) {
                     // console.log("get_variant_from_value: ",r);
                     frm.set_value('repack_item_code', r.message);
@@ -66,7 +63,7 @@ frappe.ui.form.on('IQC', {
     },
 
     purchase_receipt: function(frm) {
-        if (cur_frm.doc.purchase_order) {
+        if (cur_frm.doc.purchase_order && !cur_frm.doc.item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_po_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
@@ -80,13 +77,15 @@ frappe.ui.form.on('IQC', {
         }
     },
     purchase_order: function(frm) {
-        frm.set_query('purchase_receipt', function() {
-            return {
-                filters: {
-                    "purchase_order": frm.doc.purchase_order
-                }
-            };
-        });
+        if(!frm.doc.purchase_order) {
+            frm.set_query('purchase_receipt', function() {
+                return {
+                    filters: {
+                        "purchase_order": frm.doc.purchase_order
+                    }
+                };
+            });
+        }
     },
     serial_no: function(frm) {
         if (frm.doc.serial_no) {
@@ -110,7 +109,7 @@ frappe.ui.form.on('IQC', {
     },
     
 	onload_post_render: function(frm) {
-        console.log("render")
+        console.log("render", cur_frm.doc.docstatus !=1)
 
 	    if (cur_frm.doc.docstatus !=1) {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
@@ -144,13 +143,13 @@ frappe.ui.form.on('IQC', {
                                             // console.log("if attributeObject: ", row.attr_data);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
                                         } else {
-                                            if (itemGroup.toLowerCase() === 'laptop ram' && row.variant_1 === 'SYSTEM MEMORY') {
+                                            if (itemGroup.toLowerCase() == 'laptop ram' && row.variant_1 == 'SYSTEM MEMORY') {
                                                 // console.log("ram row.attr_data laptop ram: ", row.attr_data, row.variant_1);
                                                 // Construct the dictionary directly
                                                 attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]];
                                                 row.attr_data = JSON.stringify(attributeObject);
                                                 frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                            } else if (itemGroup.toLowerCase() === 'laptop storage' && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
+                                            } else if (itemGroup.toLowerCase() == 'laptop storage' && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
                                                 // console.log("storage row.attr_data: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, !row.variant_1);
                                                 // Construct the dictionary directly
                                                 attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD";
@@ -170,8 +169,8 @@ frappe.ui.form.on('IQC', {
                 });
             }
             
-            cur_frm.set_value('data_attr', '');
-            if (cur_frm.doc.iqc_item_component) {
+            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1) {
+                cur_frm.set_value('data_attr', '');
                 var child_attr_data = [];
                 frm.doc.iqc_item_component.forEach(function (row) {
                     // console.log("row: ", row);
@@ -184,14 +183,11 @@ frappe.ui.form.on('IQC', {
                 cur_frm.refresh_fields('fields');
             }
     
-            if (cur_frm.doc.repack_item_code) {
+            if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
                     args: {'self': cur_frm.doc},
                     callback: function(r) {
-                        // console.log("from before_save: ", r.message);
-                        frm.set_value('base_price', r.message.base_price);
-                        frm.set_value('repack_itm_price', r.message.repack_itm_price);
                         frm.set_value('original_price', r.message.original_price);
                         cur_frm.refresh_fields('fields');
                     }

@@ -107,6 +107,7 @@ frappe.ui.form.on('Stock Entry', {
     },
 
     default_target_warehouse: function(frm) {
+        var errorShown = false;
 
         frm.fields_dict.default_target_warehouse.$input.on('blur', function() {
             var value = frm.doc.default_target_warehouse;
@@ -122,6 +123,7 @@ frappe.ui.form.on('Stock Entry', {
                         frm.set_value('default_target_warehouse', '');
                     } else {
                         frm.set_value('to_warehouse', response.name);
+                        errorShown = false;
                     }
                 });
             }

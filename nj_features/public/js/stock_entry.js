@@ -44,7 +44,7 @@ function hideOnload() {
             'total_additional_costs', 'apply_putaway_rule', 'bom_info_section', 'from_bom', 'additional_costs_section',
             'printing_settings', 'more_info', 'get_stock_and_rate', 'additional_costs', 'items_section', 'sb1', 'from_warehouse',
             'section_break_19', 'source_warehouse_address', 'target_warehouse_address', 'accounting_dimensions_section',
-            'reason', 'comments', 'workflow_state'
+            'reason', 'comments', 'workflow_state', 'to_warehouse'
         ];
         fieldsToHide.forEach(field => cur_frm.set_df_property(field, 'hidden', 1));
         cur_frm.set_value('stock_entry_type', 'Material Transfer');
@@ -106,6 +106,23 @@ frappe.ui.form.on('Stock Entry', {
         return false;
     },
 
+    default_target_warehouse: function(frm) {
+        // frm.fields_dict.default_target_warehouse.$input.on('change', function() {
+            var value = frm.doc.default_target_warehouse;
+            
+            if (value) {
+                frappe.db.get_value('Warehouse', {'name': value}, 'name', function(response) {
+                    if (!response.name) {
+                        frappe.msgprint('Warehouse does not exist. Please enter a valid warehouse.');
+                        frm.set_value('default_target_warehouse', '');
+                    } else {
+                        frm.set_value('to_warehouse', response.name);
+                    }
+                });
+            }
+        // });
+    },
+
 	validate: function(frm) {
 
         if (cur_frm.doc.racking_check == 1) {
@@ -152,6 +169,11 @@ frappe.ui.form.on('Stock Entry', {
             hideFieldsInChild();
             hideOnload();
         }
+    },
+    before_submit: function() {
+        if(cur_frm.doc.stock_movement == 1) {
+            cur_frm.set_df_property('to_warehouse', 'reqd', 1 );
+        }
     }
 })
 
@@ -168,6 +190,7 @@ frappe.ui.form.on('Stock Entry Detail', {
                     .then(function (r) {
                         var itemGroup = r.message.item_group;
                         var brand = r.message.brand;
+                        console.log("item group:", item.item_group);
                         if(item.item_group){
 							frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
 						}
@@ -177,7 +200,7 @@ frappe.ui.form.on('Stock Entry Detail', {
                             return {
                                 filters: {
                                     item_group: itemGroup,
-                                    brand : ['Like', brand],
+                                    brand : ['=', brand],
                                     is_group: 0,
                                     available_capacity: ['>', 0],
                                     company: frm.doc.company

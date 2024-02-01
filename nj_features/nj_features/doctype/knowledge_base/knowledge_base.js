@@ -1,11 +1,9 @@
-
 frappe.ui.form.on('Knowledge Base', {
-    refresh: function(frm) {
+    onload: function(frm) {
         // Fetch the attachment URL from NJ Settings
         frappe.db.get_value('NJ Settings', {'parameter': 'kb_url'}, 'value', function(response) {
 			// console.log("attachmentUrl", response)
-            if (response) {
-				
+            if (response) {	
 				var attachmentUrl = response.value;
 				console.log("attachmentUrl", attachmentUrl)
                 // Add attachment buttons with fetched attachment URL
@@ -15,33 +13,38 @@ frappe.ui.form.on('Knowledge Base', {
                 addAttachmentButton(frm, 'attach4', attachmentUrl);
             }
         });
-        let smallText = ['attach1', 'attach2', 'attach3', 'attach4'];
-
-smallText.forEach(fieldName => {
-    frm.fields_dict[fieldName].$input.css('height', '40px');
-});
+       
 
     }
 });
 
 function addAttachmentButton(frm, fieldname, attachmentUrl) {
-    var field = frm.fields_dict[fieldname];
-    var field_row = field.$wrapper.closest('.frappe-control');
+    // Check if the button is already added to the field
+    let smallText = ['attach1', 'attach2', 'attach3', 'attach4'];
 
-    var button_wrapper = $('<div class="btn-attach-wrapper"></div>').appendTo(field_row);
-    var button = $('<button class="btn btn-default btn-xs">View</button>');
-
-    button.appendTo(button_wrapper);
-    button.on('click', function() {
-        var attachment_link = frm.doc[fieldname];
-        if (attachment_link) {
-            var fullAttachmentUrl = attachmentUrl + attachment_link;
-            displayAttachment(fullAttachmentUrl);
-        } else {
-            frappe.msgprint('Attachment link is empty');
-        }
+    smallText.forEach(fieldName => {
+        frm.fields_dict[fieldName].$input.css('height', '40px');
     });
+    if (!frm.fields_dict[fieldname].$wrapper.find('.btn-attach-wrapper').length) {
+        var field = frm.fields_dict[fieldname];
+        var field_row = field.$wrapper.closest('.frappe-control');
+
+        var button_wrapper = $('<div class="btn-attach-wrapper"></div>').appendTo(field_row);
+        var button = $('<button class="btn btn-default btn-xs">View</button>');
+
+        button.appendTo(button_wrapper);
+        button.on('click', function() {
+            var attachment_link = frm.doc[fieldname];
+            if (attachment_link) {
+                var fullAttachmentUrl = attachmentUrl + attachment_link;
+                displayAttachment(fullAttachmentUrl);
+            } else {
+                frappe.msgprint('Attachment link is empty');
+            }
+        });
+    }
 }
+
 
 function displayAttachment(attachment_link) {
     console.log("Displaying attachment:", attachment_link); // Log the URL to check

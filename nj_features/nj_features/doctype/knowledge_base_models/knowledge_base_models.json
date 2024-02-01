@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-02-01 19:55:08.038220",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "models"
+ ],
+ "fields": [
+  {
+   "fieldname": "models",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Models",
+   "options": "Models",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-02-01 20:07:59.802851",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Knowledge Base Models",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

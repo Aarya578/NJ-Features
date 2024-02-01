@@ -47,7 +47,7 @@ function addAttachmentButton(frm, fieldname, attachmentUrl) {
 
 
 function displayAttachment(attachment_link) {
-    console.log("Displaying attachment:", attachment_link); // Log the URL to check
+    console.log("Displaying attachment:", attachment_link);
 
     // Determine the attachment type and display accordingly
     if (isImage(attachment_link)) {
@@ -136,6 +136,7 @@ function displayTextFile(url) {
             </div>
         </div>
     `;
+
 
     $(modal_content).modal('show');
 }

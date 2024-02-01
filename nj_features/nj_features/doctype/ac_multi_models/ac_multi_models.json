@@ -13,8 +13,10 @@
   {
    "fieldname": "action_type",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Action Type",
-   "options": "Action Type"
+   "options": "Action Type",
+   "reqd": 1
   },
   {
    "fieldname": "amended_from",
@@ -30,7 +32,7 @@
  "is_submittable": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-01-29 13:14:49.959064",
+ "modified": "2024-02-01 19:22:33.700516",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "AC Multi Models",

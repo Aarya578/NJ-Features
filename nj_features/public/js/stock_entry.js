@@ -107,20 +107,27 @@ frappe.ui.form.on('Stock Entry', {
     },
 
     default_target_warehouse: function(frm) {
-        // frm.fields_dict.default_target_warehouse.$input.on('change', function() {
+        var errorShown = false;
+
+        frm.fields_dict.default_target_warehouse.$input.on('blur', function() {
             var value = frm.doc.default_target_warehouse;
-            
+
             if (value) {
                 frappe.db.get_value('Warehouse', {'name': value}, 'name', function(response) {
                     if (!response.name) {
-                        frappe.msgprint('Warehouse does not exist. Please enter a valid warehouse.');
+                        if (!errorShown) {
+                            frappe.msgprint('Warehouse does not exist. Please enter a valid warehouse.');
+                            errorShown = true;
+                        }
+
                         frm.set_value('default_target_warehouse', '');
                     } else {
                         frm.set_value('to_warehouse', response.name);
+                        errorShown = false;
                     }
                 });
             }
-        // });
+        });
     },
 
 	validate: function(frm) {

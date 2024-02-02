@@ -272,7 +272,7 @@ def get_variant_from_value(template=None, args=None):
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
     template_query = """
         SELECT name FROM `tabItem` WHERE item_model = %s
-        AND brand = %s AND item_group = %s
+        AND brand = %s AND item_group = %s AND has_variants = 1
     """
 
     templates = frappe.db.sql(template_query, (model, brand, item_group), as_dict=True)

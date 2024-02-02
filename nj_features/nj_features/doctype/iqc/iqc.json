@@ -205,6 +205,7 @@
      {
       "fieldname": "barcode_svg",
       "fieldtype": "Data",
+      "hidden": 1,
       "label": "Barcode SVG"
      },
      {

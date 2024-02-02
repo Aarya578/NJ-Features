@@ -15,6 +15,22 @@ frappe.ui.form.on('Knowledge Base', {
         });
        
 
+    },
+    refresh: function(frm) {
+        if(frm.doc.docstatus == 1) {
+            frappe.db.get_value('NJ Settings', {'parameter': 'kb_url'}, 'value', function(response) {
+                // console.log("attachmentUrl", response)
+                if (response) {	
+                    var attachmentUrl = response.value;
+                    console.log("attachmentUrl", attachmentUrl)
+                    // Add attachment buttons with fetched attachment URL
+                    addAttachmentButton(frm, 'attach1', attachmentUrl);
+                    addAttachmentButton(frm, 'attach2', attachmentUrl);
+                    addAttachmentButton(frm, 'attach3', attachmentUrl);
+                    addAttachmentButton(frm, 'attach4', attachmentUrl);
+                }
+            });
+        }
     }
 });
 

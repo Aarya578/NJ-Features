@@ -3,6 +3,7 @@
 
 import base64
 import json
+import random
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -303,3 +304,17 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+
+@frappe.whitelist()
+def create_serial_no(item_code):
+    is_serial = frappe.get_value('Item', {'name': item_code}, 'has_serial_no')
+    if is_serial == 1:
+        new_serial = generate_random_code()
+        return new_serial
+    else:
+        return None
+
+def generate_random_code():
+    prefix = "NJ"
+    random_code = prefix + str(random.randint(100000, 999999))
+    return random_code

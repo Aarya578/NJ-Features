@@ -3,6 +3,7 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
+
         if (cur_frm.doc.purchase_receipt && cur_frm.doc.docstatus !=1) {
             frm.events.purchase_receipt(frm);
         }
@@ -10,31 +11,17 @@ frappe.ui.form.on('IQC', {
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1) {
             frm.events.serial_no(frm);
         }
-        
-        if (!cur_frm.doc.barcode_svg && cur_frm.doc.docstatus !=1) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
-                args: {"serial_no": cur_frm.doc.serial_no},
-                callback: function(r) {
-                    frm.set_value('barcode_svg', r.message.barcode_img);
-                }
-            });
-        }
     },
 
     refresh: function(frm) {
 
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1) {
-            cur_frm.fields_dict.iqc_item_component.grid.grid_pagination.page_length = 110;
-            cur_frm.refresh_fields('fields');
-        }
         
-        if(!frm.doc.item_code && cur_frm.doc.docstatus !=1){
+        if(!frm.doc.item_code){
             frm.events.purchase_receipt(frm);
         }
         
-        if (!frm.doc.item_template && cur_frm.doc.docstatus !=1) {
+        if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
                 args: {"model": cur_frm.doc.model, "brand": cur_frm.doc.brand, "item_group": cur_frm.doc.item_group},
@@ -44,7 +31,7 @@ frappe.ui.form.on('IQC', {
             });
         }
 
-        if (!cur_frm.doc.source_warehouse && cur_frm.doc.docstatus !=1) {
+        if (!cur_frm.doc.source_warehouse && cur_frm.doc.serial_no) {
             frm.events.serial_no(frm)
         }
 
@@ -60,6 +47,22 @@ frappe.ui.form.on('IQC', {
             });
         }
         cur_frm.set_df_property('original_price', 'hidden', 1);
+
+        if (!cur_frm.doc.serial_no) {
+            const d = frappe.confirm('Are you sure you want to generate serial no?',
+            () => {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
+                    args: { 'item_code': cur_frm.doc.item_code},
+                    callback: function (r) {
+                        // console.log("get_variant_from_value: ",r);
+                        frm.set_value('serial_no', r.message);
+                        cur_frm.refresh_fields('fields');
+                    }
+                });
+            }, () => {
+            })
+        }
     },
 
     purchase_receipt: function(frm) {
@@ -71,6 +74,7 @@ frappe.ui.form.on('IQC', {
                     frm.set_value('purchase_order', r.message.po);
                     r.message.item_code.unshift('');
                     var options = r.message.item_code.join('\n');
+                    console.log("options: ",options);
                     frm.set_df_property('item_code', 'options', options);
                 }
             });
@@ -105,6 +109,14 @@ frappe.ui.form.on('IQC', {
                     cur_frm.refresh_fields('fields');
                 }
             });
+
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
+                args: {"serial_no": cur_frm.doc.serial_no},
+                callback: function(r) {
+                    frm.set_value('barcode_svg', r.message.barcode_img);
+                }
+            });
         }
     },
     
@@ -112,6 +124,7 @@ frappe.ui.form.on('IQC', {
         console.log("render", cur_frm.doc.docstatus !=1)
 
 	    if (cur_frm.doc.docstatus !=1) {
+            var cpu = 'laptop processor', ram = 'laptop ram', storage = 'laptop storage';
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
@@ -119,6 +132,21 @@ frappe.ui.form.on('IQC', {
                     callback: function (r) {
                         if (r.message) {
                             var lastVariantValues = {};
+                            //get value from NJ Settings
+                            // var cpuPromise = frappe.db.get_value('NJ Settings', {'parameter':'cpu'}, 'value');
+                            // var ramPromise = frappe.db.get_value('NJ Settings', {'parameter':'ram'}, 'value');
+                            // var storagePromise = frappe.db.get_value('NJ Settings', {'parameter':'storage'}, 'value');
+
+                            // Promise.all([cpuPromise, ramPromise, storagePromise]).then(function(values) {
+                            //     var cpu = values[0].message.value;
+                            //     var ram = values[1].message.value;
+                            //     var storage = values[2].message.value;
+
+                            //     console.log("cpu: ", cpu, " ram: ", ram, " storage: ", storage);
+                            // }).catch(function(error) {
+                            //     console.error("Error fetching values:", error);
+                            // });
+
                             r.message.forEach(function (mapping) {
                                 frm.doc.iqc_item_component.forEach(function (row) {
                                     var itemGroup = row.item_group;
@@ -134,31 +162,26 @@ frappe.ui.form.on('IQC', {
                                         var attributeValue = lastVariantValues[itemGroup];
                                         var attributeObject = {};
                                         
+
                                         frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
-                                        
-                                        if (Object.keys(attributeValue).length > 1) {
-                                            // Construct the dictionary directly
-                                            attributeObject[mapping.attribute_name] = Object.values(attributeValue).join(' - ');
+
+                                        if (Object.keys(attributeValue).length >= 1 && itemGroup.toLowerCase() == cpu.toLowerCase()) {
+                                            // console.log("cpu: ", row.attr_data, cpu);
+                                            attributeObject[mapping.attribute_name] = Object.values(attributeValue).join(' - ') || "UNKNOWN PROCESSOR";
                                             row.attr_data = JSON.stringify(attributeObject);
-                                            // console.log("if attributeObject: ", row.attr_data);
+                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                                        } else if (itemGroup.toLowerCase() == ram.toLowerCase()  && row.variant_1 == 'SYSTEM MEMORY') {
+                                            // console.log("ram: ", row.attr_data, row.variant_1, ram);
+                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] || "UNKNOWN RAM";
+                                            row.attr_data = JSON.stringify(attributeObject);
+                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                                        } else if (itemGroup.toLowerCase() == storage.toLowerCase()  && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
+                                            // console.log("storage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, storage);
+                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || "UNKNOWN STORAGE";
+                                            row.attr_data = JSON.stringify(attributeObject);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
                                         } else {
-                                            if (itemGroup.toLowerCase() == 'laptop ram' && row.variant_1 == 'SYSTEM MEMORY') {
-                                                // console.log("ram row.attr_data laptop ram: ", row.attr_data, row.variant_1);
-                                                // Construct the dictionary directly
-                                                attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]];
-                                                row.attr_data = JSON.stringify(attributeObject);
-                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                            } else if (itemGroup.toLowerCase() == 'laptop storage' && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
-                                                // console.log("storage row.attr_data: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, !row.variant_1);
-                                                // Construct the dictionary directly
-                                                attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD";
-                                                row.attr_data = JSON.stringify(attributeObject);
-                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                            } else {
-                                                // console.log("else row.attr_data: ", row.attr_data);
-                                                frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
-                                            }
+                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
                                         }
                                     }
                                 });

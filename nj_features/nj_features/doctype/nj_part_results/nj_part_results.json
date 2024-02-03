@@ -7,12 +7,12 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "qi_check_name",
-  "data_value",
-  "serial_no",
-  "column_break_wsdmo",
   "item_group",
-  "date_time"
+  "serial_no",
+  "column_break_4do9l",
+  "qi_check_name",
+  "section_break_g9dcn",
+  "part_results_data"
  ],
  "fields": [
   {
@@ -20,16 +20,9 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "QI Check Name",
-   "options": "NJ Quality Checks",
+   "options": "NJ QC Check List",
    "reqd": 1,
    "unique": 1
-  },
-  {
-   "fieldname": "data_value",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Data Value",
-   "reqd": 1
   },
   {
    "fieldname": "serial_no",
@@ -40,10 +33,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_wsdmo",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "item_group",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -52,15 +41,23 @@
    "reqd": 1
   },
   {
-   "fieldname": "date_time",
-   "fieldtype": "Datetime",
-   "label": "Date Time",
-   "reqd": 1
+   "fieldname": "column_break_4do9l",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "part_results_data",
+   "fieldtype": "Table",
+   "label": "Part Results Data",
+   "options": "Part Results Data"
+  },
+  {
+   "fieldname": "section_break_g9dcn",
+   "fieldtype": "Section Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-02-03 13:10:49.195631",
+ "modified": "2024-02-03 18:25:01.898993",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Part Results",

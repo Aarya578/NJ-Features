@@ -130,6 +130,35 @@ frappe.ui.form.on('Stock Entry', {
         });
     },
 
+
+    scan_grade: function(frm, cdt, cdn) {
+        // Get the child table data
+        if(frm.doc.scan_grade !== '') {
+        var child = locals[cdt][cdn]
+        var child_table_data = frm.fields_dict.items.grid.grid_rows_by_docname;
+        var child_records = Object.values(child_table_data);
+        var last_child_record = child_records[child_records.length - 1].doc;
+        frappe.call({
+            method: 'nj_features.api_files.serializer_or_notserializer',
+            args: {
+                serial_no: last_child_record.serial_no
+            },
+            callback: function(response) {
+                // Handle the response here
+                var has_serial_no = response.message;
+                if (has_serial_no === 0 && child_records && child_records.length > 0) {
+                    cur_frm.set_df_property('items', 'reqd',1,cur_frm.docname,'grade',child.name)
+                    frappe.model.set_value(last_child_record.doctype, last_child_record.name, "grade", frm.doc.scan_grade);
+                    frm.refresh_fields('items');
+
+                } else {
+                    cur_frm.set_df_property('items', 'hidden',1,cur_frm.docname,'grade',last_child_record.name)
+                }
+            }
+        });
+    }
+
+    },
 	validate: function(frm) {
 
         if (cur_frm.doc.racking_check == 1) {
@@ -187,6 +216,7 @@ frappe.ui.form.on('Stock Entry', {
 frappe.ui.form.on('Stock Entry Detail', {
 
     item_code: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn]
         if (cur_frm.doc.racking_check == 1) {
          
             for (let i = 0; i < cur_frm.doc.items.length; i++) {
@@ -197,7 +227,6 @@ frappe.ui.form.on('Stock Entry Detail', {
                     .then(function (r) {
                         var itemGroup = r.message.item_group;
                         var brand = r.message.brand;
-                        console.log("item group:", item.item_group);
                         if(item.item_group){
 							frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
 						}
@@ -219,7 +248,8 @@ frappe.ui.form.on('Stock Entry Detail', {
                     })
                 }
             }
-        }
+        } 
+      
     }
 });
 
@@ -249,13 +279,15 @@ function modify_table_after_scan(frm, data) {
 }
 	
 function set_scanned_values(row_to_modify, data, scan_barcode_field) {
-	frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, {
-		item_code: data.item_code,
-		s_warehouse: data.warehouse,
-		qty: 1
-	});
-	
-	['serial_no', 'batch_no', 'barcode'].forEach(field => {
+    frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, {
+        item_code: data.item_code,
+        s_warehouse: data.warehouse,
+        qty: 1
+
+        
+    });
+    
+   	['serial_no', 'batch_no', 'barcode'].forEach(field => {
 		if (data[field] && frappe.meta.has_field(row_to_modify.doctype, field)) {
 			let value = data[field];
 			frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, field, value);

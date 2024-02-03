@@ -54,12 +54,13 @@
   {
    "fieldname": "date_time",
    "fieldtype": "Datetime",
-   "label": "Date Time"
+   "label": "Date Time",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-02-03 12:53:07.126018",
+ "modified": "2024-02-03 13:10:49.195631",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Part Results",

@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:qi_check_name",
+ "creation": "2024-02-03 12:52:18.224750",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "qi_check_name",
+  "data_value",
+  "serial_no",
+  "column_break_wsdmo",
+  "item_group",
+  "date_time"
+ ],
+ "fields": [
+  {
+   "fieldname": "qi_check_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "QI Check Name",
+   "options": "NJ Quality Checks",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "data_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Data Value",
+   "reqd": 1
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_wsdmo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group",
+   "reqd": 1
+  },
+  {
+   "fieldname": "date_time",
+   "fieldtype": "Datetime",
+   "label": "Date Time"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-02-03 12:53:07.126018",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Part Results",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

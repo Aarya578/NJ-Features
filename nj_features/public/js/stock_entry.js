@@ -2,7 +2,7 @@
 function hideFieldsInChild() {
     // if (!frappe.user.has_role("Administrator")) {
         $('.custom-actions.hidden-xs.hidden-md, .menu-btn-group, .grid-download, .grid-upload').hide();
-        var fieldsToHide = ['basic_rate', 'uom', 'stock_uom', 'section_break_8', 'transfer_qty', ,'reason',
+        var fieldsToHide = ['basic_rate', 'uom', 'stock_uom', 'section_break_8', 'transfer_qty','reason',
         'retain_sample', 'uom', 'stock_uom', 'conversion_factor', 'sample_quantity', 'batch_no',
         'more_info', 'reference_section', 'rates_section', 'is_finished_item', 'is_scrap_item', 'is_process_loss',
         'accounting', 'accounting_dimensions_section', 'project', 'set_basic_rate_manually'];
@@ -79,6 +79,7 @@ frappe.ui.form.on('Stock Entry', {
         if (cur_frm.doc.docstatus == 1) {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
+        
     },
     onload_post_render() {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1) {

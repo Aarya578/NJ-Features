@@ -14,6 +14,20 @@ frappe.ui.form.on('IQC', {
     },
 
     refresh: function(frm) {
+        // console.log("item_code", cur_frm.doc.item_code)
+        if(cur_frm.doc.item_code) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.get_item_code_price',
+                args: {
+                    'item_code': frm.doc.item_code, 'pr': frm.doc.purchase_receipt 
+                },
+                callback: function(r) {
+                    // console.log("get", r);
+                    frm.set_value('purchase_price', r.message.purchase_price)
+                    frm.set_value('base_price', r.message.base_price)
+                }
+            });
+        }
 
         $(frm.layout.wrapper).find('.form-message.red').remove();
         
@@ -48,14 +62,13 @@ frappe.ui.form.on('IQC', {
         }
         cur_frm.set_df_property('original_price', 'hidden', 1);
 
-        if (!cur_frm.doc.serial_no) {
+        if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 1 && cur_frm.doc.item_code) {
             const d = frappe.confirm('Are you sure you want to generate serial no?',
             () => {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
                     args: { 'item_code': cur_frm.doc.item_code},
                     callback: function (r) {
-                        // console.log("get_variant_from_value: ",r);
                         frm.set_value('serial_no', r.message);
                         cur_frm.refresh_fields('fields');
                     }
@@ -74,7 +87,7 @@ frappe.ui.form.on('IQC', {
                     frm.set_value('purchase_order', r.message.po);
                     r.message.item_code.unshift('');
                     var options = r.message.item_code.join('\n');
-                    console.log("options: ",options);
+                    // console.log("options: ",options);
                     frm.set_df_property('item_code', 'options', options);
                 }
             });
@@ -118,13 +131,27 @@ frappe.ui.form.on('IQC', {
                 }
             });
         }
+
+        if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 1) {
+            const d = frappe.confirm('Are you sure you want to generate serial no?',
+            () => {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
+                    args: { 'item_code': cur_frm.doc.item_code},
+                    callback: function (r) {
+                        frm.set_value('serial_no', r.message);
+                        cur_frm.refresh_fields('fields');
+                    }
+                });
+            }, () => {
+            })
+        }
     },
     
 	onload_post_render: function(frm) {
-        console.log("render", cur_frm.doc.docstatus !=1)
+        // console.log("render", cur_frm.doc.docstatus !=1)
 
 	    if (cur_frm.doc.docstatus !=1) {
-            var cpu = 'laptop processor', ram = 'laptop ram', storage = 'laptop storage';
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
@@ -132,31 +159,21 @@ frappe.ui.form.on('IQC', {
                     callback: function (r) {
                         if (r.message) {
                             var lastVariantValues = {};
-                            //get value from NJ Settings
-                            // var cpuPromise = frappe.db.get_value('NJ Settings', {'parameter':'cpu'}, 'value');
-                            // var ramPromise = frappe.db.get_value('NJ Settings', {'parameter':'ram'}, 'value');
-                            // var storagePromise = frappe.db.get_value('NJ Settings', {'parameter':'storage'}, 'value');
 
-                            // Promise.all([cpuPromise, ramPromise, storagePromise]).then(function(values) {
-                            //     var cpu = values[0].message.value;
-                            //     var ram = values[1].message.value;
-                            //     var storage = values[2].message.value;
+                            r.message.values.forEach(function (param) { //get value from NJ Settings
+                                window[param.parameter] = param.value;
+                            });
 
-                            //     console.log("cpu: ", cpu, " ram: ", ram, " storage: ", storage);
-                            // }).catch(function(error) {
-                            //     console.error("Error fetching values:", error);
-                            // });
-
-                            r.message.forEach(function (mapping) {
-                                frm.doc.iqc_item_component.forEach(function (row) {
+                            r.message.mappings.forEach(function (mapping) {   // for each part in Item Group mapping (3)
+                                frm.doc.iqc_item_component.forEach(function (row) {    // iterate elements in iqc child table
                                     var itemGroup = row.item_group;
                                     var variants = mapping.mappng_fields.split('::');
-                                    if (itemGroup === mapping.item_group && variants.every(variant => row.hasOwnProperty(variant))) {
+                                    
+                                    if (itemGroup === mapping.item_group) {
+
                                         variants.forEach(function (variant) {
-                                            if (row.hasOwnProperty(variant)) {
-                                                lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
-                                                lastVariantValues[itemGroup][variant] = row[variant];
-                                            }
+                                            lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
+                                            lastVariantValues[itemGroup][variant] = row[variant];
                                         });
                                         
                                         var attributeValue = lastVariantValues[itemGroup];
@@ -164,23 +181,25 @@ frappe.ui.form.on('IQC', {
                                         
 
                                         frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
-
-                                        if (Object.keys(attributeValue).length >= 1 && itemGroup.toLowerCase() == cpu.toLowerCase()) {
-                                            // console.log("cpu: ", row.attr_data, cpu);
-                                            attributeObject[mapping.attribute_name] = Object.values(attributeValue).join(' - ') || "UNKNOWN PROCESSOR";
+                                        if (itemGroup.toLowerCase() == cpu.toLowerCase()) {
+                                            var anyAttributeUndefined = Object.values(attributeValue).some(value => value === undefined);
+                                            var cpuValue = anyAttributeUndefined ? unk_cpu : Object.values(attributeValue).join(' - ');
+                                            attributeObject[mapping.attribute_name] = cpuValue;
                                             row.attr_data = JSON.stringify(attributeObject);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                        } else if (itemGroup.toLowerCase() == ram.toLowerCase()  && row.variant_1 == 'SYSTEM MEMORY') {
-                                            // console.log("ram: ", row.attr_data, row.variant_1, ram);
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] || "UNKNOWN RAM";
-                                            row.attr_data = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                        } else if (itemGroup.toLowerCase() == storage.toLowerCase()  && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== null) {
-                                            // console.log("storage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3, storage);
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || "UNKNOWN STORAGE";
-                                            row.attr_data = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                        } else {
+                                        } 
+                                        else if (itemGroup.toLowerCase() == ram.toLowerCase()  && row.variant_1 == 'SYSTEM MEMORY') {
+                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] || unk_ram;
+                                            var ramValue = JSON.stringify(attributeObject);
+                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', ramValue);
+                                        } 
+                                        else if (itemGroup.toLowerCase() == storage.toLowerCase() && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== undefined) {
+                                            // console.log("storage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3 ^ !row.variant_1, storage, unk_storage);
+                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || unk_storage;
+                                            var sValue = JSON.stringify(attributeObject);
+                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', sValue);
+                                        } 
+                                        else {
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
                                         }
                                     }

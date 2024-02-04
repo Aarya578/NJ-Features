@@ -36,7 +36,7 @@ class IQC(Document):
         stock_entry.append("items", {
             "item_code": self.repack_item_code,
             "qty": 1,
-            "t_warehouse": self.target_warehouse if self.target_warehouse else self.source_warehouse,
+            "t_warehouse": self.source_warehouse,
             'uom': 'Nos',
             'conversion_factor': 1,
             'serial_no': self.serial_no,
@@ -195,7 +195,12 @@ def get_part_mapping(item_group):
         order_by="idx",
     )
 
-    return mappings
+    values = frappe.get_all(
+        "NJ Settings",
+        filters={"doc_type": "IQC Child"}, fields=["parameter", "value"]
+    )
+
+    return {"mappings": mappings, "values": values}
 
 #Not used
 def update_attr_data(doc, method):
@@ -318,3 +323,9 @@ def generate_random_code():
     prefix = "NJ"
     random_code = prefix + str(random.randint(100000, 999999))
     return random_code
+
+@frappe.whitelist()
+def get_item_code_price(item_code=None, pr=None):
+    purchase_price = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'total')
+    base_price = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'parent':pr}, 'base_rate')
+    return {"purchase_price": purchase_price, "base_price": base_price}

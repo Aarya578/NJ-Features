@@ -1,6 +1,5 @@
 // Copyright (c) 2023, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
-/* eslint-disable */
 
 frappe.query_reports["NJ Stock Balance"] = {
 	"filters": [
@@ -19,7 +18,7 @@ frappe.query_reports["NJ Stock Balance"] = {
 			"fieldtype": "Date",
 			"width": "80",
 			"reqd": 1,
-			"default": frappe.datetime.add_months(frappe.datetime.get_today(), -1),
+			"default": frappe.datetime.add_months(get_today()),
 		},
 		{
 			"fieldname":"to_date",

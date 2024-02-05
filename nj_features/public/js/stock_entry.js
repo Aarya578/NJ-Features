@@ -1,4 +1,5 @@
 //Racking and Stock Movement
+
 function hideFieldsInChild() {
     // if (!frappe.user.has_role("Administrator")) {
         $('.custom-actions.hidden-xs.hidden-md, .menu-btn-group, .grid-download, .grid-upload').hide();
@@ -33,6 +34,13 @@ function hideFieldsInChild() {
         
         cur_frm.fields_dict['items'].grid.refresh();
     // }
+    
+    cur_frm.get_field("items").grid.wrapper.find('.btn-open-row').hide();
+    // cur_frm.fields_dict['items'].grid.toggle_enable(false); 
+    cur_frm.fields_dict['items'].grid.wrapper.find('.grid-row').on('click', function() {
+        $(this).find('.form-link-open').hide();
+    });
+
 }
 
 function hideOnload() {
@@ -54,7 +62,7 @@ function hideOnload() {
 }
 
 frappe.ui.form.on('Stock Entry', {
-    
+   
     onload() {
         $('.col-lg-2.layout-side-section').hide();
 
@@ -79,6 +87,8 @@ frappe.ui.form.on('Stock Entry', {
         if (cur_frm.doc.docstatus == 1) {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
+        var items = frappe.meta.get_docfield("Stock Entry", 'items', cur_frm.doc.name);
+        items.read_only = 1;
         
     },
     onload_post_render() {
@@ -86,26 +96,79 @@ frappe.ui.form.on('Stock Entry', {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
     },
-	scan_barcode: function() {
-
-        if(cur_frm.doc.scan_barcode) {
-            if ((cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1)) {
-                frappe.call({
-                    method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
-                    args: {
-                        search_value: cur_frm.doc.scan_barcode
-                    }
-                }).then(r => {
+	
+    
+    scan_barcode: function() {
+        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+        // Initially hide scan_grade and scan_warehouse
+        
+        if (cur_frm.doc.scan_barcode && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1)) {
+            frappe.call({
+                method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
+                args: {
+                    search_value: cur_frm.doc.scan_barcode
+                },
+                callback: function(r) {
                     const data = r && r.message;
-                    if (!data || Object.keys(data).length === 0) {
-                        return;
+                    if (data && Object.keys(data).length !== 0) {
+                        modify_table_after_scan(cur_frm, data);
+    
+                        // Check if scan_grade should be hidden based on the serial number
+                        var child_table_data = cur_frm.fields_dict.items.grid.grid_rows_by_docname;
+                        var child_records = Object.values(child_table_data);
+                        var last_child_record = child_records[child_records.length - 1].doc;
+    
+                        frappe.call({
+                            method: 'nj_features.api_files.serializer_or_notserializer',
+                            args: {
+                                serial_no: last_child_record.serial_no
+                            },
+                            callback: function(response) {
+                                var has_serial_no = response.message;
+                                if (has_serial_no === 0) { // Check if non-serializable
+                                    // Show scan_grade and scan_warehouse
+                                    cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                                }
+                            }
+                        });
                     }
-                    modify_table_after_scan(cur_frm, data);
-                });
-            }
+                }
+            });
         }
         return false;
     },
+    scan_warehouse:function(frm,cdt,cdn){
+       
+    // Update the s_warehouse field in each row of the items child table
+    if(frm.doc.scan_warehouse !== '' && cur_frm.doc.stock_movement == 1) {
+        var child = locals[cdt][cdn]
+        var child_table_data = frm.fields_dict.items.grid.grid_rows_by_docname;
+        var child_records = Object.values(child_table_data);
+        var last_child_record = child_records[child_records.length - 1].doc;
+        frappe.call({
+            method: 'nj_features.api_files.serializer_or_notserializer',
+            args: {
+                serial_no: last_child_record.serial_no
+            },
+            callback: function(response) {
+                // Handle the response here
+                var has_serial_no = response.message;
+                if (has_serial_no === 0 && child_records && child_records.length > 0) {
+                    cur_frm.set_df_property('items', 'reqd',1,cur_frm.docname,'s_warehouse',child.name)
+                    frappe.model.set_value(last_child_record.doctype, last_child_record.name, "s_warehouse", frm.doc.scan_warehouse);
+                    frm.refresh_fields('items');
+
+                } else {
+                    cur_frm.set_df_property('items', 'hidden',1,cur_frm.docname,'s_warehouse',last_child_record.name)
+                
+                }
+                cur_frm.set_value('scan_warehouse','')
+            }
+        });
+    } 
+    // return false;
+    },
+        
 
     default_target_warehouse: function(frm) {
         var errorShown = false;
@@ -134,7 +197,7 @@ frappe.ui.form.on('Stock Entry', {
 
     scan_grade: function(frm, cdt, cdn) {
         // Get the child table data
-        if(frm.doc.scan_grade !== '') {
+        if(frm.doc.scan_grade !== '' && cur_frm.doc.stock_movement == 1) {
         var child = locals[cdt][cdn]
         var child_table_data = frm.fields_dict.items.grid.grid_rows_by_docname;
         var child_records = Object.values(child_table_data);
@@ -154,11 +217,13 @@ frappe.ui.form.on('Stock Entry', {
 
                 } else {
                     cur_frm.set_df_property('items', 'hidden',1,cur_frm.docname,'grade',last_child_record.name)
+                
                 }
+                cur_frm.set_value('scan_grade','')
             }
         });
-    }
 
+    }
     },
 	validate: function(frm) {
 
@@ -215,7 +280,9 @@ frappe.ui.form.on('Stock Entry', {
 })
 
 frappe.ui.form.on('Stock Entry Detail', {
-
+    refresh:function(frm, cdt, cdn) {
+        cur_frm.fields_dict['items'].grid.wrapper.find('.btn-open-row').hide();
+    },
     item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn]
         if (cur_frm.doc.racking_check == 1) {
@@ -322,4 +389,5 @@ function show_scan_message (idx, exist = null) {
 			indicator: 'green'
 		});
 	}
+   
 }

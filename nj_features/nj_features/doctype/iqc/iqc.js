@@ -14,7 +14,6 @@ frappe.ui.form.on('IQC', {
     },
 
     refresh: function(frm) {
-        // console.log("item_code", cur_frm.doc.item_code)
         frm.events.power_on();
         frm.events.validate(frm);
         $(frm.layout.wrapper).find('.form-message.red').remove();

@@ -1,258 +1,258 @@
 {
- "actions": [],
- "allow_rename": 1,
- "autoname": "IQC-.brand.-.model.-.serial_no.-.##",
- "creation": "2023-11-28 16:31:07.020914",
- "doctype": "DocType",
- "editable_grid": 1,
- "engine": "InnoDB",
- "field_order": [
-  "power_on",
-  "iqc_section",
-  "purchase_order",
-  "purchase_price",
-  "item_code",
-  "column_break_5mcw7",
-  "purchase_receipt",
-  "idx",
-  "base_price",
-  "section_break_6sw2s",
-  "serial_no",
-  "barcode_svg",
-  "item_group",
-  "source_warehouse",
-  "target_warehouse",
-  "njhat_serialno",
-  "raw_data",
-  "item_template",
-  "column_break_qzvyk",
-  "data_attr",
-  "brand",
-  "model",
-  "make",
-  "repack_item_code",
-  "original_price",
-  "repack_itm_price",
-  "error_section_section",
-  "error_message",
-  "section_break_56eed",
-  "iqc_item_component",
-  "amended_from"
- ],
- "fields": [
-  {
-   "fieldname": "purchase_order",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Purchase Order",
-   "options": "Purchase Order"
-  },
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price"
-  },
-  {
-   "fieldname": "column_break_5mcw7",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "purchase_receipt",
-   "fieldtype": "Link",
-   "label": "Purchase Receipt",
-   "options": "Purchase Receipt",
-   "read_only": 1
-  },
-  {
-   "fieldname": "base_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Item Unit Price"
-  },
-  {
-   "fieldname": "section_break_6sw2s",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "serial_no",
-   "fieldtype": "Data",
-   "label": "Serial No",
-   "read_only": 1
-  },
-  {
-   "fieldname": "brand",
-   "fieldtype": "Data",
-   "label": "Brand",
-   "read_only": 1
-  },
-  {
-   "fieldname": "njhat_serialno",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "NJHAT SerialNo"
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "IQC",
-   "print_hide": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "raw_data",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Raw Data",
-   "options": "Raw Data"
-  },
-  {
-   "fieldname": "column_break_qzvyk",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "item_code",
-   "fieldtype": "Select",
-   "hidden": 1,
-   "label": "PR Item"
-  },
-  {
-   "fieldname": "item_group",
-   "fieldtype": "Link",
-   "label": "Item Group",
-   "options": "Item Group",
-   "read_only": 1
-  },
-  {
-   "fieldname": "model",
-   "fieldtype": "Data",
-   "label": "Model"
-  },
-  {
-   "fieldname": "repack_itm_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Preferred Price"
-  },
-  {
-   "fieldname": "repack_item_code",
-   "fieldtype": "Data",
-   "label": "Repack Item Code",
-   "read_only": 1
-  },
-  {
-   "fieldname": "section_break_56eed",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "iqc_item_component",
-   "fieldtype": "Table",
-   "options": "IQC Child"
-  },
-  {
-   "fieldname": "make",
-   "fieldtype": "Data",
-   "label": "Make",
-   "read_only": 1
-  },
-  {
-   "fieldname": "idx",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "idx"
-  },
-  {
-   "fieldname": "source_warehouse",
-   "fieldtype": "Link",
-   "label": "Source Warehouse",
-   "options": "Warehouse",
-   "read_only": 1
-  },
-  {
-   "fieldname": "target_warehouse",
-   "fieldtype": "Link",
-   "label": "Target Warehouse",
-   "options": "Warehouse",
-   "read_only": 1
-  },
-  {
-   "fieldname": "error_section_section",
-   "fieldtype": "Section Break",
-   "hidden": 1
-  },
-  {
-   "bold": 1,
-   "columns": 6,
-   "fieldname": "error_message",
-   "fieldtype": "Small Text",
-   "in_list_view": 1,
-   "label": "Error Message"
-  },
-  {
-   "fieldname": "item_template",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Item Template",
-   "permlevel": 1
-  },
-  {
-   "fieldname": "data_attr",
-   "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "Data Attr"
-  },
-  {
-   "fieldname": "barcode_svg",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Barcode SVG"
-  },
-  {
-   "fieldname": "original_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Original Price"
-  },
-  {
-   "fieldname": "power_on",
-   "fieldtype": "Select",
-   "label": "Is the system not Powering ON?",
-   "options": "\nYes\nNo",
-   "reqd": 1
-  },
-  {
-   "depends_on": "eval: doc.power_on == 'Yes'",
-   "fieldname": "iqc_section",
-   "fieldtype": "Section Break"
-  }
- ],
- "hide_toolbar": 1,
- "index_web_pages_for_search": 1,
- "is_submittable": 1,
- "links": [],
- "modified": "2024-02-05 18:11:52.565116",
- "modified_by": "Administrator",
- "module": "NJ Features",
- "name": "IQC",
- "owner": "Administrator",
- "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "select": 1,
-   "share": 1,
-   "submit": 1,
-   "write": 1
-  }
- ],
- "sort_field": "modified",
- "sort_order": "DESC"
-}
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "IQC-.brand.-.model.-.serial_no.-.##",
+    "creation": "2023-11-28 16:31:07.020914",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+     "power_on",
+     "iqc_section",
+     "purchase_order",
+     "purchase_price",
+     "item_code",
+     "column_break_5mcw7",
+     "purchase_receipt",
+     "idx",
+     "base_price",
+     "section_break_6sw2s",
+     "serial_no",
+     "barcode_svg",
+     "item_group",
+     "source_warehouse",
+     "target_warehouse",
+     "njhat_serialno",
+     "raw_data",
+     "item_template",
+     "column_break_qzvyk",
+     "data_attr",
+     "brand",
+     "model",
+     "make",
+     "repack_item_code",
+     "original_price",
+     "repack_itm_price",
+     "error_section_section",
+     "error_message",
+     "section_break_56eed",
+     "iqc_item_component",
+     "amended_from"
+    ],
+    "fields": [
+     {
+      "fieldname": "purchase_order",
+      "fieldtype": "Link",
+      "hidden": 1,
+      "label": "Purchase Order",
+      "options": "Purchase Order"
+     },
+     {
+      "fieldname": "purchase_price",
+      "fieldtype": "Currency",
+      "hidden": 1,
+      "label": "PR Purchase Price"
+     },
+     {
+      "fieldname": "column_break_5mcw7",
+      "fieldtype": "Column Break"
+     },
+     {
+      "fieldname": "purchase_receipt",
+      "fieldtype": "Link",
+      "label": "Purchase Receipt",
+      "options": "Purchase Receipt",
+      "read_only": 1
+     },
+     {
+      "fieldname": "base_price",
+      "fieldtype": "Currency",
+      "hidden": 1,
+      "label": "Item Unit Price"
+     },
+     {
+      "fieldname": "section_break_6sw2s",
+      "fieldtype": "Section Break"
+     },
+     {
+      "fieldname": "serial_no",
+      "fieldtype": "Data",
+      "label": "Serial No",
+      "read_only": 1
+     },
+     {
+      "fieldname": "brand",
+      "fieldtype": "Data",
+      "label": "Brand",
+      "read_only": 1
+     },
+     {
+      "fieldname": "njhat_serialno",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "NJHAT SerialNo"
+     },
+     {
+      "fieldname": "amended_from",
+      "fieldtype": "Link",
+      "label": "Amended From",
+      "no_copy": 1,
+      "options": "IQC",
+      "print_hide": 1,
+      "read_only": 1
+     },
+     {
+      "fieldname": "raw_data",
+      "fieldtype": "Link",
+      "hidden": 1,
+      "label": "Raw Data",
+      "options": "Raw Data"
+     },
+     {
+      "fieldname": "column_break_qzvyk",
+      "fieldtype": "Column Break"
+     },
+     {
+      "fieldname": "item_code",
+      "fieldtype": "Select",
+      "hidden": 1,
+      "label": "PR Item"
+     },
+     {
+      "fieldname": "item_group",
+      "fieldtype": "Link",
+      "label": "Item Group",
+      "options": "Item Group",
+      "read_only": 1
+     },
+     {
+      "fieldname": "model",
+      "fieldtype": "Data",
+      "label": "Model"
+     },
+     {
+      "fieldname": "repack_itm_price",
+      "fieldtype": "Currency",
+      "hidden": 1,
+      "label": "Preferred Price"
+     },
+     {
+      "fieldname": "repack_item_code",
+      "fieldtype": "Data",
+      "label": "Repack Item Code",
+      "read_only": 1
+     },
+     {
+      "fieldname": "section_break_56eed",
+      "fieldtype": "Section Break"
+     },
+     {
+      "fieldname": "iqc_item_component",
+      "fieldtype": "Table",
+      "options": "IQC Child"
+     },
+     {
+      "fieldname": "make",
+      "fieldtype": "Data",
+      "label": "Make",
+      "read_only": 1
+     },
+     {
+      "fieldname": "idx",
+      "fieldtype": "Int",
+      "hidden": 1,
+      "label": "idx"
+     },
+     {
+      "fieldname": "source_warehouse",
+      "fieldtype": "Link",
+      "label": "Source Warehouse",
+      "options": "Warehouse",
+      "read_only": 1
+     },
+     {
+      "fieldname": "target_warehouse",
+      "fieldtype": "Link",
+      "label": "Target Warehouse",
+      "options": "Warehouse",
+      "read_only": 1
+     },
+     {
+      "fieldname": "error_section_section",
+      "fieldtype": "Section Break",
+      "hidden": 1
+     },
+     {
+      "bold": 1,
+      "columns": 6,
+      "fieldname": "error_message",
+      "fieldtype": "Small Text",
+      "in_list_view": 1,
+      "label": "Error Message"
+     },
+     {
+      "fieldname": "item_template",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Item Template",
+      "permlevel": 1
+     },
+     {
+      "fieldname": "data_attr",
+      "fieldtype": "Small Text",
+      "hidden": 1,
+      "label": "Data Attr"
+     },
+     {
+      "fieldname": "barcode_svg",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Barcode SVG"
+     },
+     {
+      "fieldname": "original_price",
+      "fieldtype": "Currency",
+      "hidden": 1,
+      "label": "Original Price"
+     },
+     {
+      "fieldname": "power_on",
+      "fieldtype": "Select",
+      "label": "Is the system not Powering ON?",
+      "options": "\nYes\nNo",
+      "reqd": 1
+     },
+     {
+      "depends_on": "eval: doc.power_on == 'Yes'",
+      "fieldname": "iqc_section",
+      "fieldtype": "Section Break"
+     }
+    ],
+    "hide_toolbar": 1,
+    "index_web_pages_for_search": 1,
+    "is_submittable": 1,
+    "links": [],
+    "modified": "2024-02-05 18:11:52.565116",
+    "modified_by": "Administrator",
+    "module": "NJ Features",
+    "name": "IQC",
+    "owner": "Administrator",
+    "permissions": [
+     {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "select": 1,
+      "share": 1,
+      "submit": 1,
+      "write": 1
+     }
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+   }

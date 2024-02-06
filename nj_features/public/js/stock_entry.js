@@ -65,7 +65,7 @@ frappe.ui.form.on('Stock Entry', {
    
     onload() {
         $('.col-lg-2.layout-side-section').hide();
-
+        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1) {
             hideOnload()
         }
@@ -96,8 +96,7 @@ frappe.ui.form.on('Stock Entry', {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
     },
-	
-    
+        
     scan_barcode: function() {
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
         // Initially hide scan_grade and scan_warehouse
@@ -137,6 +136,7 @@ frappe.ui.form.on('Stock Entry', {
         }
         return false;
     },
+
     scan_warehouse:function(frm,cdt,cdn){
        
     // Update the s_warehouse field in each row of the items child table

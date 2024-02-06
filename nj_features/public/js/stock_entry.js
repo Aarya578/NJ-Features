@@ -31,7 +31,7 @@ function hideFieldsInChild() {
 
         var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
         itemCodeField.colsize = 3;
-        
+        console.log("itemCodeField",itemCodeField)
         cur_frm.fields_dict['items'].grid.refresh();
     // }
     
@@ -87,55 +87,60 @@ frappe.ui.form.on('Stock Entry', {
         if (cur_frm.doc.docstatus == 1) {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
+        if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1) {
         var items = frappe.meta.get_docfield("Stock Entry", 'items', cur_frm.doc.name);
         items.read_only = 1;
-        
+        }
     },
     onload_post_render() {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1) {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
     },
-        
-    scan_barcode: function() {
-        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-        // Initially hide scan_grade and scan_warehouse
-        
-        if (cur_frm.doc.scan_barcode && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1)) {
-            frappe.call({
-                method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
-                args: {
-                    search_value: cur_frm.doc.scan_barcode
-                },
-                callback: function(r) {
-                    const data = r && r.message;
-                    if (data && Object.keys(data).length !== 0) {
-                        modify_table_after_scan(cur_frm, data);
-    
-                        // Check if scan_grade should be hidden based on the serial number
-                        var child_table_data = cur_frm.fields_dict.items.grid.grid_rows_by_docname;
-                        var child_records = Object.values(child_table_data);
-                        var last_child_record = child_records[child_records.length - 1].doc;
-    
-                        frappe.call({
-                            method: 'nj_features.api_files.serializer_or_notserializer',
-                            args: {
-                                serial_no: last_child_record.serial_no
-                            },
-                            callback: function(response) {
-                                var has_serial_no = response.message;
-                                if (has_serial_no === 0) { // Check if non-serializable
-                                    // Show scan_grade and scan_warehouse
-                                    cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
-                                }
-                            }
-                        });
+   
+    scan_barcode: function() {        
+    if (cur_frm.doc.scan_barcode && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.racking_check == 1)) {
+        frappe.call({
+            method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
+            args: {
+                search_value: cur_frm.doc.scan_barcode
+            },
+            callback: function(r) {
+                const data = r && r.message;
+                console.log("data is ",data)
+                if (data && Object.keys(data).length !== 0) {
+                    modify_table_after_scan(cur_frm, data);
+                    var child_table_data = cur_frm.fields_dict.items.grid.grid_rows_by_docname;
+                    var child_records = Object.values(child_table_data);
+                    var last_child_record = child_records[child_records.length - 1].doc;
+
+                    // Check if the data is a serial number or an item code
+                    if (data.serial_no) {
+                        last_child_record.serial_no = data.serial_no;
+                        last_child_record.item_code = data.item_code;
+                    } else if (data.item_code) {
+                        last_child_record.item_code = data.item_code;
                     }
+
+                    // Check if scan_grade should be hidden based on the serial number
+                    frappe.call({
+                        method: 'nj_features.api_files.serializer_or_notserializer',
+                        args: {
+                            serial_no: last_child_record.serial_no
+                        },
+                        callback: function(response) {
+                            var has_serial_no = response.message;
+                            if (has_serial_no === 0) { // Check if non-serializable
+                                cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                            }
+                        }
+                    });
                 }
-            });
-        }
-        return false;
-    },
+            }
+        });
+    }
+    return false;
+},
 
     scan_warehouse:function(frm,cdt,cdn){
        
@@ -322,72 +327,65 @@ frappe.ui.form.on('Stock Entry Detail', {
 });
 
 function modify_table_after_scan(frm, data) {
-	let scan_barcode_field = frm.fields_dict["scan_barcode"];
-	let cur_grid = frm.fields_dict.items.grid;
-	let row_to_modify = null;
-	let batch_no_scan = Boolean(data.batch_no) && frappe.meta.has_field(cur_grid.doctype, "batch_no");
-	if (batch_no_scan) {
-		row_to_modify = get_batch_row_to_modify(frm, data.batch_no);
-	} else {
-		row_to_modify = get_row_to_modify_on_scan(frm, row_to_modify, data);
-	}
-	if (!row_to_modify) {
-		row_to_modify = frappe.model.add_child(frm.doc, cur_grid.doctype, 'items');
-	} else {
+    let scan_barcode_field = frm.fields_dict["scan_barcode"];
+    let cur_grid = frm.fields_dict.items.grid;
+    let row_to_modify = null;
+    let batch_no_scan = Boolean(data.batch_no) && frappe.meta.has_field(cur_grid.doctype, "batch_no");
+    
+    if (batch_no_scan) {
+        row_to_modify = get_batch_row_to_modify(frm, data.batch_no);
+    } else {
+        row_to_modify = get_row_to_modify_on_scan(frm, row_to_modify, data);
+    }
+    
+    if (!row_to_modify) {
+        row_to_modify = frappe.model.add_child(frm.doc, cur_grid.doctype, 'items');
+    }
+    else {
         if (row_to_modify.serial_no === data.serial_no) {
             frappe.show_alert({
                 message: __('Serial Number already exists in the items list'),
                 indicator: 'orange'
-            });
-        }
-	}
-	show_scan_message(row_to_modify.idx, row_to_modify.item_code);
-	set_scanned_values(row_to_modify, data, scan_barcode_field);
-	
-}
-	
-function set_scanned_values(row_to_modify, data, scan_barcode_field) {
-    frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, {
-        item_code: data.item_code,
-        s_warehouse: data.warehouse,
-        qty: 1
-
-        
-    });
+            });}}
     
-   	['serial_no', 'batch_no', 'barcode'].forEach(field => {
-		if (data[field] && frappe.meta.has_field(row_to_modify.doctype, field)) {
-			let value = data[field];
-			frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, field, value);
-		}
-	});
-	scan_barcode_field.set_value('');
-	refresh_field("items");
+    show_scan_message(row_to_modify.idx, row_to_modify.item_code);
+    set_scanned_values(row_to_modify, data, scan_barcode_field);
 }
 
 function get_row_to_modify_on_scan(frm, row_to_modify, data) {
-	const existing_item_row = frm.doc.items.find(d => d.serial_no === data.serial_no);
-	const blank_item_row = frm.doc.items.find(d => !d.serial_no);
+    // Return null to add a new row for each new item code scanned
+    return null;
+}
 
-	if (existing_item_row) {
-		row_to_modify = existing_item_row;
-	} else if (blank_item_row) {
-		row_to_modify = blank_item_row;
-	}
-	return row_to_modify;
+function set_scanned_values(row_to_modify, data, scan_barcode_field) {
+    // Set values in the correct row
+    frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, {
+        item_code: data.item_code,
+        s_warehouse: data.warehouse,
+        qty: 1 
+    });
+    
+    ['serial_no', 'batch_no', 'barcode'].forEach(field => {
+        if (data[field] && frappe.meta.has_field(row_to_modify.doctype, field)) {
+            let value = data[field];
+            frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, field, value);
+        }
+    });
+    
+    scan_barcode_field.set_value('');
+    refresh_field("items");
 }
 
 function get_batch_row_to_modify(frm, batch_no) {
-	const existing_batch_row = frm.doc.items.find(d => d.batch_no === batch_no);
-	return existing_batch_row || null;
+    const existing_batch_row = frm.doc.items.find(d => d.batch_no === batch_no);
+    return existing_batch_row || null;
 }
 
 function show_scan_message (idx, exist = null) {
-	if (!exist) {
-		frappe.show_alert({
-			message: __('Row #{0}: Item added', [idx]),
-			indicator: 'green'
-		});
-	}
-   
+    if (!exist) {
+        frappe.show_alert({
+            message: __('Row #{0}: Item added', [idx]),
+            indicator: 'green'
+        });
+    }
 }

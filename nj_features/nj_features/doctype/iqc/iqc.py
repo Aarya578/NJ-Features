@@ -170,7 +170,7 @@ def get_info_from_serial_no(doc=None):
 
         if serial_no_doc:
 
-            # repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
+            repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
             purchase_price = frappe.db.get_value('Purchase Receipt', {'name': doc_json['purchase_receipt']}, 'total')
             base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': doc_json['purchase_receipt'], 
             'item_code': doc_json['item_code']}, 'base_rate')
@@ -180,12 +180,22 @@ def get_info_from_serial_no(doc=None):
             result['brand'] = serial_no_doc[0].get('brand', '')
             result['source_warehouse'] = serial_no_doc[0].get('warehouse', '')
             result['target_warehouse'] = serial_no_doc[0].get('warehouse', '')
-            # result['repack_itm_price'] = repack_itm_price
+            result['repack_itm_price'] = repack_itm_price
             result['purchase_price'] = purchase_price
             result['base_price'] = base_price
 
     return result
 
+@frappe.whitelist()
+def get_part_mapping(item_group):
+    mappings = frappe.get_all(
+        "Part Mapping",
+        filters={"parent": item_group},
+        fields=["item_group", "mappng_fields", "attribute_name"],
+        order_by="idx",
+    )
+
+    return mappings
 
 @frappe.whitelist()
 def get_variant_from_value(template=None, args=None):

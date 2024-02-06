@@ -45,7 +45,7 @@ class IQC(Document):
             'basic_rate': self.original_price,
         })
 
-        stock_entry.submit()
+        stock_entry.save()
         
         # stock_entry_name = stock_entry.name
 
@@ -170,7 +170,7 @@ def get_info_from_serial_no(doc=None):
 
         if serial_no_doc:
 
-            repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
+            # repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
             purchase_price = frappe.db.get_value('Purchase Receipt', {'name': doc_json['purchase_receipt']}, 'total')
             base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': doc_json['purchase_receipt'], 
             'item_code': doc_json['item_code']}, 'base_rate')
@@ -180,67 +180,11 @@ def get_info_from_serial_no(doc=None):
             result['brand'] = serial_no_doc[0].get('brand', '')
             result['source_warehouse'] = serial_no_doc[0].get('warehouse', '')
             result['target_warehouse'] = serial_no_doc[0].get('warehouse', '')
-            result['repack_itm_price'] = repack_itm_price
+            # result['repack_itm_price'] = repack_itm_price
             result['purchase_price'] = purchase_price
             result['base_price'] = base_price
 
     return result
-
-@frappe.whitelist()
-def get_part_mapping(item_group):
-    mappings = frappe.get_all(
-        "Part Mapping",
-        filters={"parent": item_group},
-        fields=["item_group", "mappng_fields", "attribute_name"],
-        order_by="idx",
-    )
-
-    values = frappe.get_all(
-        "NJ Settings",
-        filters={"doc_type": "IQC Child"}, fields=["parameter", "value"]
-    )
-
-    return {"mappings": mappings, "values": values}
-
-#Not used
-def update_attr_data(doc, method):
-    part_mappings = get_part_mapping(doc.item_group)
-
-    if part_mappings:
-        last_variant_values = {}
-
-        for mapping in part_mappings:
-            for row in doc.get("iqc_item_component"):
-                item_group = row.item_group
-                variants = mapping.get("mappng_fields").split("::")
-
-                if (
-                    item_group == mapping.get("item_group")
-                    and all(variant in row.fields for variant in variants)
-                ):
-                    for variant in variants:
-                        if variant in row.fields:
-                            last_variant_values[item_group] = last_variant_values.get(
-                                item_group, {}
-                            )
-                            last_variant_values[item_group][variant] = row.get(variant)
-
-                    attribute_value = last_variant_values[item_group]
-                    attribute_object = {}
-
-                    if len(attribute_value) > 1:
-                        attribute_object[mapping.get("attribute_name")] = " - ".join(
-                            attribute_value.values()
-                        )
-                    else:
-                        attribute_object[mapping.get("attribute_name")] = list(
-                            attribute_value.values()
-                        )[0]
-
-                    row.attr_data = frappe.as_json(attribute_object)
-                    print("attribute_object: ", attribute_object)
-
-        doc.save()
 
 
 @frappe.whitelist()

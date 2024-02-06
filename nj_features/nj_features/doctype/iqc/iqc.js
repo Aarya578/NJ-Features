@@ -3,29 +3,20 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
-
-        if (cur_frm.doc.purchase_receipt && cur_frm.doc.docstatus !=1) {
-            frm.events.purchase_receipt(frm);
-        }
-
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1) {
             frm.events.serial_no(frm);
         }
     },
 
     refresh: function(frm) {
-        frm.events.power_on();
-        frm.events.validate(frm);
         $(frm.layout.wrapper).find('.form-message.red').remove();
+        frm.events.power_on();
         
-        if(!frm.doc.item_code){
-            frm.events.purchase_receipt(frm);
-        }
-
-        if (!cur_frm.doc.source_warehouse && cur_frm.doc.serial_no) {
+        if (!cur_frm.doc.source_warehouse ) {
             frm.events.serial_no(frm)
+            cur_frm.refresh_fields('source_warehouse');
         }
-
+        
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
@@ -38,37 +29,6 @@ frappe.ui.form.on('IQC', {
             });
         }
         cur_frm.set_df_property('original_price', 'hidden', 1);
-
-        if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.item_code) {
-            const d = frappe.confirm('Are you sure you want to generate serial no?',
-            () => {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
-                    args: { 'item_code': cur_frm.doc.item_code},
-                    callback: function (r) {
-                        frm.set_value('serial_no', r.message);
-                        cur_frm.refresh_fields('fields');
-                    }
-                });
-            }, () => {
-            })
-        }
-    },
-
-    purchase_receipt: function(frm) {
-        if (cur_frm.doc.purchase_order) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.get_po_from_pr',
-                args: {'pr': frm.doc.purchase_receipt},
-                callback: function(r) {
-                    frm.set_value('purchase_order', r.message.po);
-                    r.message.item_code.unshift('');
-                    var options = r.message.item_code.join('\n');
-                    // console.log("options: ",options);
-                    frm.set_df_property('item_code', 'options', options);
-                }
-            });
-        }
     },
     power_on: function() {
             const isYes = cur_frm.doc.power_on === "Yes";
@@ -99,7 +59,7 @@ frappe.ui.form.on('IQC', {
                 args: {'doc': frm.doc},
                 callback: function(r) {
                     const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'source_warehouse', 'target_warehouse', 'base_price'
-                    , 'repack_itm_price', 'purchase_price'];
+                    , 'purchase_price'];
     
                     fieldsToUpdate.forEach(field => {
                         if (!frm.doc[field]) {
@@ -120,26 +80,27 @@ frappe.ui.form.on('IQC', {
             });
         }
 
-        if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
-            const d = frappe.confirm('Are you sure you want to generate serial no?',
-            () => {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
-                    args: { 'item_code': cur_frm.doc.item_code},
-                    callback: function (r) {
-                        frm.set_value('serial_no', r.message);
-                        cur_frm.refresh_fields('fields');
-                    }
-                });
-            }, () => {
-            })
-        }
+        // if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
+        //     const d = frappe.confirm('Are you sure you want to generate serial no?',
+        //     () => {
+        //         frappe.call({
+        //             method: 'nj_features.nj_features.doctype.iqc.iqc.create_serial_no',
+        //             args: { 'item_code': cur_frm.doc.item_code},
+        //             callback: function (r) {
+        //                 frm.set_value('serial_no', r.message);
+        //                 cur_frm.refresh_fields('fields');
+        //             }
+        //         });
+        //     }, () => {
+        //     })
+        // }
     },
     
 	onload_post_render: function(frm) {
         // console.log("render", cur_frm.doc.docstatus !=1)
+        frm.events.validate(frm);
 
-	    if (cur_frm.doc.docstatus !=1) {
+	    if (cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on != 'No') {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
@@ -238,25 +199,10 @@ frappe.ui.form.on('IQC', {
 
     validate: function(frm) {
 
-        if (!cur_frm.doc.repack_item_code) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
-                args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
-                callback: function(r) {
-                    if (cur_frm.doc.brand && !r.message.brand) {
-                        frappe.msgprint("Brand does not exist");
-                    }
-    
-                    if (cur_frm.doc.model && !r.message.model) {
-                        frappe.msgprint("Model does not exist");
-                    }
-                }
-            })
-        }
         var requiredFields = ['purchase_order', 'item_code', 'purchase_receipt', 'serial_no',
          'item_group', 'source_warehouse', 'brand', 'model', 'make'];
         var errorMessages = [];
-    
+        var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
             var fieldname = requiredFields[i];
             if (!frm.doc[fieldname]) {
@@ -267,21 +213,53 @@ frappe.ui.form.on('IQC', {
                 errorMessages.push(fieldLabel);
             }
         }
-        
-        if (errorMessages.length > 0) {
-            frappe.utils.play_sound("error");
-            var errorMessageString = errorMessages.join(', ') + " not filled";
+        new Promise(function(resolve, reject) {
+            // Resolve immediately for now, but you can add asynchronous operations here if needed
+            resolve();
+        }).then(function() {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
+                args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
+                callback: function(r) {
+                    if (cur_frm.doc.brand && !r.message.brand) {
+                        dbError.push("Brand");
+                    }
+                    console.log("error", dbError);
     
-            var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-            $(frm.wrapper).find('.form-message.blue').remove();
-            $(frm.layout.wrapper).prepend(errorDiv);
-            frm.set_value('error_message', errorMessageString);
-            frm.set_df_property('error_section_section', 'hidden', 0);
-            frm.fields_dict.error_message.$input.css('height', '50px');
-            frappe.validated = false;
-        } else {
-            frm.set_value('error_message', '');
-        }
+                    if (cur_frm.doc.model && !r.message.model) {
+                        dbError.push("Model");
+                    }
+    
+                    // Now check error conditions after frappe.call
+                    if (errorMessages.length > 0 || dbError.length > 0) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = "";
+    
+                        if (errorMessages.length > 0) {
+                            errorMessageString += errorMessages.join(', ') + " not filled<br>";
+                        }
+                        
+                        if (dbError.length > 0) {
+                            errorMessageString += dbError.join(', ') + " does not exist";
+                        }
+                        console.log("errorMessageString", errorMessageString);
+    
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.wrapper).find('.form-message.blue').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_value('error_message', errorMessageString);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.validated = false;
+                    } else {
+                        frm.set_value('error_message', '');
+                    }
+    
+                    if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
+                        $(frm.layout.wrapper).find('.form-message.red').last().remove();
+                    }
+                }
+            });
+        });
     
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();

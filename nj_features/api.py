@@ -1,7 +1,6 @@
 import json
 import frappe
 from frappe import _
-# from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import get_qc_check_details
 
 @frappe.whitelist()
 def part_qi_check():
@@ -401,7 +400,7 @@ def eq(query):
 
 #code from another module
 def fetch_nj_qlty_readings(doc):
-    Quality_reading=[]
+    Quality_reading, itm_wzrd = [], ''
     if doc.barcode:
         item_code = frappe.db.get_value("Serial No", {'name': doc.get("barcode")}, 'item_code')
         itm_template = frappe.db.get_value("Item", {'name': item_code}, 'variant_of')

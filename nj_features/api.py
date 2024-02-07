@@ -400,7 +400,7 @@ def eq(query):
 
 #code from another module
 def fetch_nj_qlty_readings(doc):
-    Quality_reading, itm_wzrd = [], ''
+    Quality_reading, itm_wzrd, itm_wzrd_doc = [], '', ''
     if doc.barcode:
         item_code = frappe.db.get_value("Serial No", {'name': doc.get("barcode")}, 'item_code')
         itm_template = frappe.db.get_value("Item", {'name': item_code}, 'variant_of')

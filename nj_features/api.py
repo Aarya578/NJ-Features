@@ -1,6 +1,7 @@
 import json
 import frappe
 from frappe import _
+# from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import get_qc_check_details
 
 @frappe.whitelist()
 def part_qi_check():
@@ -41,10 +42,14 @@ def part_qi_check():
             result.update(current_data["result"])
         if "activity" in current_data:
             activity = current_data["activity"]
+        if "automatic_count" in current_data:
+            automatic_count = current_data["automatic_count"]
         if "part" in current_data:
             part_name = current_data["part"]
         if "count" in current_data:
             count = current_data["count"]
+
+        is_available = frappe.db.get_value('Nj Quality Readings', {'parent':qi_name}, 'is_available')
 
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
@@ -54,11 +59,12 @@ def part_qi_check():
         output = {
             "item_code": item_code,
             "part_name": part_name,
-            "is_available": "1",
+            "is_available": is_available,
             "activity": activity,
             "total_part": count,
             "qi_name": qi_name,
             "submit_status": submit_status,
+            "automatic_count": automatic_count,
             "check_name": result,
             "nj_readings": nj_readings
         }
@@ -71,36 +77,40 @@ def part_qi_check():
 
 
 def show_current_part_data(data, result, qi_name):
-    part_name, result = '', {}
+    part_name, automatic_count, result, no_of_checks, automatic_list = '', 0, {}, [], []
 
-    serial_no = data['serialNo']
     i = int(data['currentPart'])
-    item_group_list = item_group_list_from_itw(serial_no, data)
+    item_group_list = get_ig_list_nj(qi_name)['results']
+    
     if item_group_list and 1 <= i <= len(item_group_list):
-        part_name = item_group_list[i - 1][0]
-        result= get_current_part_data(data, result, part_name, qi_name)
+        part_name = item_group_list[i - 1].item_group
+        # print(f"count: {len(item_group_list)}------{item_group_list}----------show_current")
+        # print(f"part_name : {part_name}\n")
+        result = get_current_part_data(data, result, part_name, qi_name)
         result['part'] = part_name
         result['count'] = len(item_group_list)
+        check_name = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group':part_name},'quality_check')
+        no_of_checks = frappe.db.get_all('Nj QC Options', {'parent': check_name}, 'quality_check')
+        # print(f"no_of_checks: {no_of_checks}")
+        for i in no_of_checks:
+            automatic_list = frappe.db.sql("""
+                SELECT count(diagnostic_type) as count FROM `tabNJ QC Check List`
+                WHERE name = %s AND diagnostic_type = 'Automatic'
+            """, (i.get('quality_check')), as_dict=True)
+
+            if automatic_list[0].get('count') is not None:
+                automatic_count += automatic_list[0].get('count')
+        result['automatic_count'] = automatic_count
     
     return result
 
 
-
-
 def get_current_part_data(data, result, part_name, qi_name):
-    activity = ''
-    item_group = part_name
-
-    serial_no = data['serialNo']
-    i = int(data['currentPart'])
-    item_group_list = item_group_list_from_itw(serial_no, data)
-    if item_group_list and 1 <= i <= len(item_group_list):
-        part_name = item_group_list[i - 1][0]
+    activity, child = '', []
 
     parent_name_query = frappe.db.sql("""
         SELECT name, activity FROM `tabNJ Quality Checks` WHERE item_group = %s AND inspection_type = %s
     """, (part_name, data['inspection_type']))
-
     if parent_name_query:
         parent_name = parent_name_query[0][0]
         activity = parent_name_query[0][1]
@@ -113,7 +123,8 @@ def get_current_part_data(data, result, part_name, qi_name):
             mandatory = row.get('mandatory')
 
             nj_qc_check_list_query = frappe.db.sql("""
-                SELECT name_of_check, type, diagnostic_type, description, name FROM `tabNJ QC Check List` WHERE name = %s
+                SELECT name_of_check, type, diagnostic_type, description, name, image, image_mandatory, video, video_mandatory,
+                screenshot, screenshot_mandatory, input_type, input_type_data FROM `tabNJ QC Check List` WHERE name = %s
             """, (quality_check), as_dict=True)
 
             options_query = frappe.db.sql("""
@@ -132,6 +143,10 @@ def get_current_part_data(data, result, part_name, qi_name):
                 'check_name': name,
                 'parent': data.get('qi_name')
             }, 'options', order_by='idx')
+
+            # child = frappe.db.get_value('Nj QC Options', {'parent': quality_check}, ['dependant', 'operator', 'options'])
+            # print(f"child: {child}")
+            # child = frappe.db.get_value('')
             
             combined_info = {
                 "name_of_the_check": nj_qc_check_list.get('name_of_check', ''),
@@ -139,7 +154,16 @@ def get_current_part_data(data, result, part_name, qi_name):
                 "diagnostic_type": nj_qc_check_list.get('diagnostic_type', ''),
                 "description": nj_qc_check_list.get('description', ''),
                 "mandatory": mandatory,
+                "input_type": nj_qc_check_list.get('input_type', ''),
+                "input_type_data": nj_qc_check_list.get('input_type_data', ''),
+                "image": nj_qc_check_list.get('image'),
+                "image_mandatory": nj_qc_check_list.get('image_mandatory'),
+                "video": nj_qc_check_list.get('video'),
+                "video_mandatory": nj_qc_check_list.get('video_mandatory'),
+                "screenshot": nj_qc_check_list.get('screenshot'),
+                "screenshot_mandatory": nj_qc_check_list.get('screenshot_mandatory'),
                 "selected": selected if selected else '',
+                "child": child,
                 "options": options_query
             }
 
@@ -152,11 +176,11 @@ def get_current_part_data(data, result, part_name, qi_name):
 def get_prev_detail(data):
     if 'qi_name' in data:
         qi_name = data['qi_name']
-
+        # check_name = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group':part_name},'quality_check')
         nj_readings = frappe.get_all(
             'NJ Checks',
             filters={'parent': qi_name},
-            fields=['item_group', 'check_name', 'options', 'score', 'weightage', 'idx'],
+            fields=['item_group', 'check_name', 'options', 'score', 'weightage', 'idx', 'checks', 'description'],
             order_by='idx ASC'
         )
 
@@ -164,16 +188,16 @@ def get_prev_detail(data):
         for reading in nj_readings:
             part_name = reading['item_group']
             idx = reading['idx']
+            grade = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, "grade")
 
-            # If part_name not in formatted_result, initialize it with an empty dictionary
             if part_name not in formatted_result:
                 formatted_result[part_name] = {
                     'part_name': part_name,
                     'part_idx': idx,
+                    'grade': grade if grade else None,
                     'checks': []
                 }
 
-            # Append check details to the checks list
             formatted_result[part_name]['checks'].append({
                 'check_name': reading['check_name'],
                 'result': reading['options'],
@@ -236,17 +260,17 @@ def save_qi_data(data):
         item_group = item_group_list[i - 1][0]
     if 'checkName' in data and partIsAvailable=='1':
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
-            existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
+            existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name, description, checks, score, weightage FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))
-            # grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
-            # (item_group, check_name, qi_doc.name))
+            grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE check_options = %s AND parent = %s ORDER BY idx""",
+            (check_option, check_name))
             if existing_child:
                 try:
                     demo = frappe.db.sql("""
                         UPDATE `tabNJ Checks` 
-                        SET options = %s 
+                        SET options = %s, weightage = %s, score = %s
                         WHERE name = %s
-                    """, (check_option, existing_child[0][3]))
+                    """, (check_option, grading[0][1], grading[0][2], existing_child[0][3]))
                     frappe.db.commit()
                     print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
                 except Exception as e:
@@ -257,6 +281,8 @@ def save_qi_data(data):
                 child_table.item_group = item_group
                 child_table.check_name = check_name
                 child_table.options = check_option
+                child_table.active = grading[0][1]
+                child_table.score = grading[0][2]
                 qi_doc.save()
 
     return qi_doc.name
@@ -278,7 +304,6 @@ def get_kb_from_serial_no(serialNo, action_type=None, part_name=None):
    
     conditions = []
     params = []
-    print(f"item_group_list: {item_group_list}")
     if item_doc and item_code:
         item_code = item_code
 
@@ -311,6 +336,14 @@ def get_kb_from_serial_no(serialNo, action_type=None, part_name=None):
         return {"item_code":item_code, "kb_doc": kb_doc}
     else:
         frappe.throw(_("No valid conditions found for filtering Knowledge Base."), title=_("Invalid Query"))
+
+@frappe.whitelist()
+def get_ig_list_nj(qi_name):
+    qi_doc = frappe.get_doc('NJ Quality Inspection', qi_name, order_by="idx", as_dict=1)
+    nj_readings = qi_doc.get('nj_quality_readings', [])
+    
+    results = [reading for reading in nj_readings if reading.get('quality_check')]
+    return {'qi_doc_json': qi_doc, 'results': results}
 
 
 @frappe.whitelist()
@@ -381,7 +414,7 @@ def fetch_nj_qlty_readings(doc):
     serial_no_doc=frappe.get_doc('Serial No',doc.get("barcode"))
     serial_no=frappe.db.get_list('Serial No Component',
     filters={'parent':doc.get("barcode")},fields=['item_group'])
-    print(f"serial_no_doc: {serial_no_doc}")
+    # print(f"serial_no_doc: {serial_no_doc}")
     if serial_no:
         #quality_inspection.nj_quality_readings=[]
         for i in serial_no_doc.serial_no_component:

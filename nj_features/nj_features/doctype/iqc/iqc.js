@@ -3,7 +3,7 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
-        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1) {
+        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm);
         }
     },
@@ -12,12 +12,12 @@ frappe.ui.form.on('IQC', {
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
         
-        if (!cur_frm.doc.source_warehouse ) {
+        if (!cur_frm.doc.source_warehouse && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm)
             cur_frm.refresh_fields('source_warehouse');
         }
         
-        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0) {
+        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr},
@@ -39,10 +39,13 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('source_warehouse', 'hidden', !isYes);
             cur_frm.set_df_property('target_warehouse', 'hidden', !isYes);
             cur_frm.set_df_property('make', 'hidden', !isYes);
+            if (isYes) {
+                cur_frm.events.validate(cur_frm)
+            }
             
     },
     purchase_order: function(frm) {
-        if(!frm.doc.purchase_order) {
+        if(!frm.doc.purchase_order && cur_frm.doc.power_on == 'Yes') {
             frm.set_query('purchase_receipt', function() {
                 return {
                     filters: {
@@ -53,7 +56,7 @@ frappe.ui.form.on('IQC', {
         }
     },
     serial_no: function(frm) {
-        if (frm.doc.serial_no) {
+        if (frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
                 args: {'doc': frm.doc},
@@ -98,9 +101,9 @@ frappe.ui.form.on('IQC', {
     
 	onload_post_render: function(frm) {
         // console.log("render", cur_frm.doc.docstatus !=1)
-        frm.events.validate(frm);
+        // frm.events.validate(frm);
 
-	    if (cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on != 'No') {
+	    if (cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
@@ -108,7 +111,7 @@ frappe.ui.form.on('IQC', {
                     callback: function (r) {
                         if (r.message) {
                             var lastVariantValues = {};
-
+                            console.log("get_part_mapping",r.message);
                             r.message.values.forEach(function (param) { //get value from NJ Settings
                                 window[param.parameter] = param.value;
                             });
@@ -160,7 +163,7 @@ frappe.ui.form.on('IQC', {
                 });
             }
             
-            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1) {
+            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
                 cur_frm.set_value('data_attr', '');
                 var child_attr_data = [];
                 frm.doc.iqc_item_component.forEach(function (row) {
@@ -174,7 +177,7 @@ frappe.ui.form.on('IQC', {
                 cur_frm.refresh_fields('fields');
             }
     
-            if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1) {
+            if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
                     args: {'self': cur_frm.doc},
@@ -185,7 +188,7 @@ frappe.ui.form.on('IQC', {
                 });
             }
 
-            if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model) {
+            if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model && cur_frm.doc.power_on == 'Yes') {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
                     args: {"model": cur_frm.doc.model, "brand": cur_frm.doc.brand, "item_group": cur_frm.doc.item_group},
@@ -200,7 +203,7 @@ frappe.ui.form.on('IQC', {
     validate: function(frm) {
 
         var requiredFields = ['purchase_order', 'item_code', 'purchase_receipt', 'serial_no',
-         'item_group', 'source_warehouse', 'brand', 'model', 'make'];
+        'item_group', 'source_warehouse', 'brand', 'model', 'make'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -213,60 +216,62 @@ frappe.ui.form.on('IQC', {
                 errorMessages.push(fieldLabel);
             }
         }
-        new Promise(function(resolve, reject) {
-            // Resolve immediately for now, but you can add asynchronous operations here if needed
-            resolve();
-        }).then(function() {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
-                args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
-                callback: function(r) {
-                    if (cur_frm.doc.brand && !r.message.brand) {
-                        dbError.push("Brand");
-                    }
-                    console.log("error", dbError);
-    
-                    if (cur_frm.doc.model && !r.message.model) {
-                        dbError.push("Model");
-                    }
-    
-                    // Now check error conditions after frappe.call
-                    if (errorMessages.length > 0 || dbError.length > 0) {
-                        frappe.utils.play_sound("error");
-                        var errorMessageString = "";
-    
-                        if (errorMessages.length > 0) {
-                            errorMessageString += errorMessages.join(', ') + " not filled<br>";
+        if (cur_frm.doc.power_on == 'Yes') {
+            new Promise(function(resolve, reject) {
+                // Resolve immediately for now, but you can add asynchronous operations here if needed
+                resolve();
+            }).then(function() {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
+                    args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
+                    callback: function(r) {
+                        if (cur_frm.doc.brand && !r.message.brand) {
+                            dbError.push("Brand");
                         }
-                        
-                        if (dbError.length > 0) {
-                            errorMessageString += dbError.join(', ') + " does not exist";
+                        console.log("error", dbError);
+        
+                        if (cur_frm.doc.model && !r.message.model) {
+                            dbError.push("Model");
                         }
-                        console.log("errorMessageString", errorMessageString);
-    
-                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                        $(frm.wrapper).find('.form-message.blue').remove();
-                        $(frm.layout.wrapper).prepend(errorDiv);
-                        frm.set_value('error_message', errorMessageString);
-                        frm.set_df_property('error_section_section', 'hidden', 0);
-                        frappe.validated = false;
-                    } else {
-                        frm.set_value('error_message', '');
+        
+                        // Now check error conditions after frappe.call
+                        if (errorMessages.length > 0 || dbError.length > 0) {
+                            frappe.utils.play_sound("error");
+                            var errorMessageString = "";
+        
+                            if (errorMessages.length > 0) {
+                                errorMessageString += errorMessages.join(', ') + " not filled<br>";
+                            }
+                            
+                            if (dbError.length > 0) {
+                                errorMessageString += dbError.join(', ') + " does not exist";
+                            }
+                            console.log("errorMessageString", errorMessageString);
+        
+                            var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                            $(frm.wrapper).find('.form-message.blue').remove();
+                            $(frm.layout.wrapper).prepend(errorDiv);
+                            frm.set_value('error_message', errorMessageString);
+                            frm.set_df_property('error_section_section', 'hidden', 0);
+                            frappe.validated = false;
+                        } else {
+                            frm.set_value('error_message', '');
+                        }
+        
+                        if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
+                            $(frm.layout.wrapper).find('.form-message.red').last().remove();
+                        }
                     }
-    
-                    if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
-                        $(frm.layout.wrapper).find('.form-message.red').last().remove();
-                    }
-                }
+                });
             });
-        });
+        }
     
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
         
     },
-    before_submit: function(frm){
-        frm.events.validate(frm);
-    }
+    // before_submit: function(frm){
+    //     frm.events.validate(frm);
+    // }
 });

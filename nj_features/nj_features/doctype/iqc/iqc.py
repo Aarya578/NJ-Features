@@ -15,53 +15,38 @@ from frappe.utils import get_url
 
 class IQC(Document):   
     def submit(self):
-        stock_entry = frappe.new_doc("Stock Entry")
-        stock_entry.stock_entry_type = "Repack"
-        stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
+        if self.power_on == 'Yes':
+            stock_entry = frappe.new_doc("Stock Entry")
+            stock_entry.stock_entry_type = "Repack"
+            stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
 
-        stock_entry.append("items", {
-            "item_code": self.item_code,
-            "qty": 1,
-            'uom': 'Nos',
-            'conversion_factor': 1,
-            'stock_uom': 'Nos',
-            's_warehouse': self.source_warehouse,
-            'basic_rate': self.base_price,
-            'set_basic_rate_manually': 1
-        })
+            stock_entry.append("items", {
+                "item_code": self.item_code,
+                "qty": 1,
+                'uom': 'Nos',
+                'conversion_factor': 1,
+                'stock_uom': 'Nos',
+                's_warehouse': self.source_warehouse,
+                'basic_rate': self.base_price,
+                'set_basic_rate_manually': 1
+            })
 
-        if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
-            stock_entry.items[0].update({'serial_no': self.serial_no})
+            if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
+                stock_entry.items[0].update({'serial_no': self.serial_no})
 
-        stock_entry.append("items", {
-            "item_code": self.repack_item_code,
-            "qty": 1,
-            "t_warehouse": self.source_warehouse,
-            'uom': 'Nos',
-            'conversion_factor': 1,
-            'serial_no': self.serial_no,
-            'stock_uom': 'Nos',
-            'set_basic_rate_manually': 1,
-            'basic_rate': self.original_price,
-        })
+            stock_entry.append("items", {
+                "item_code": self.repack_item_code,
+                "qty": 1,
+                "t_warehouse": self.source_warehouse,
+                'uom': 'Nos',
+                'conversion_factor': 1,
+                'serial_no': self.serial_no,
+                'stock_uom': 'Nos',
+                'set_basic_rate_manually': 1,
+                'basic_rate': self.original_price,
+            })
 
-        stock_entry.save()
-        
-        # stock_entry_name = stock_entry.name
-
-        # print(f"Update serial no based on IQC")
-        # for row in self.iqc_item_component:
-        #     if row:
-        #         serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
-        #         item_code = get_variant(row.item_group, row.attr_data)
-        #         row.item_code = item_code
-        #         serial_no_doc.append('serial_no_component',{
-        #             'item_group': row.item_group,
-        #             'item': item_code
-        #         })
-        #         serial_no_doc.save()
-
-        # return {'stock_entry_name': stock_entry_name}
+            stock_entry.submit()
     
 @frappe.whitelist()
 def set_value_for_pricing(self):
@@ -83,24 +68,24 @@ def set_value_for_pricing(self):
     return {"original_price": original_price.get('original_price', 0)}
 
 
-@frappe.whitelist()
-def get_attribute_parent(attribute_value):
-    sql_query = f"""
-        SELECT ia.attribute_name FROM `tabItem Attribute` AS ia
-        JOIN `tabItem Attribute Value` AS iav ON ia.name = iav.parent
-        WHERE iav.attribute_value = '{attribute_value}'
-    """
-    result = frappe.db.sql(sql_query, as_dict=True)
-    return result
+# @frappe.whitelist()
+# def get_attribute_parent(attribute_value):
+#     sql_query = f"""
+#         SELECT ia.attribute_name FROM `tabItem Attribute` AS ia
+#         JOIN `tabItem Attribute Value` AS iav ON ia.name = iav.parent
+#         WHERE iav.attribute_value = '{attribute_value}'
+#     """
+#     result = frappe.db.sql(sql_query, as_dict=True)
+#     return result
 
-@frappe.whitelist()
-def set_iqc_child_table(item_group):
-    item_group = item_group.lower()
-    item_group_doc = frappe.get_doc('Item Group', item_group)
-    components = []
-    for component in item_group_doc.component_list:
-        components.append({'component_name': component.component_name})
-    return {'components':components}
+# @frappe.whitelist()
+# def set_iqc_child_table(item_group):
+#     item_group = item_group.lower()
+#     item_group_doc = frappe.get_doc('Item Group', item_group)
+#     components = []
+#     for component in item_group_doc.component_list:
+#         components.append({'component_name': component.component_name})
+#     return {'components':components}
 
 @frappe.whitelist()
 def get_po_from_pr(pr):
@@ -119,23 +104,23 @@ def brand_model_validation(brand=None, model=None):
     model = frappe.db.exists('Models', {'name': model})
     return {'brand': brand, 'model': model}
 
-@frappe.whitelist()
-def get_list_of_variants(item_group):
-    item_group_doc = frappe.get_doc('Item Group', item_group)
-    item_attributes = [{'variant': attr.variant} for attr in item_group_doc.variants_of_item_group]
-    return {'variants': item_attributes}
+# @frappe.whitelist()
+# def get_list_of_variants(item_group):
+#     item_group_doc = frappe.get_doc('Item Group', item_group)
+#     item_attributes = [{'variant': attr.variant} for attr in item_group_doc.variants_of_item_group]
+#     return {'variants': item_attributes}
 
-@frappe.whitelist()
-def get_list_of_attributes(variant):
-    variant_doc = frappe.get_doc('Item Attribute', variant)
-    attribute_list = [attr.attribute_value for attr in variant_doc.item_attribute_values]
-    return {'options': attribute_list}
+# @frappe.whitelist()
+# def get_list_of_attributes(variant):
+#     variant_doc = frappe.get_doc('Item Attribute', variant)
+#     attribute_list = [attr.attribute_value for attr in variant_doc.item_attribute_values]
+#     return {'options': attribute_list}
 
-@frappe.whitelist()
-def get_attribute_from_item_code(item_code):
-    item_variant_doc = frappe.get_doc('Item Variant Attribute', {'parent': item_code})
-    values = [{'attribute': attr.attribute, 'attribute_value': attr.attribute_value} for attr in item_variant_doc.attributes]
-    return {'options': values}
+# @frappe.whitelist()
+# def get_attribute_from_item_code(item_code):
+#     item_variant_doc = frappe.get_doc('Item Variant Attribute', {'parent': item_code})
+#     values = [{'attribute': attr.attribute, 'attribute_value': attr.attribute_value} for attr in item_variant_doc.attributes]
+#     return {'options': values}
 
 def iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price=None):
     if purchase_price is not None and base_price is not None:
@@ -165,9 +150,9 @@ def get_info_from_serial_no(doc=None):
     doc_json = json.loads(doc)
     if doc_json:
         serial_no = doc_json['serial_no']
-        serial_no_doc = frappe.db.sql(""" SELECT item_code, item_group, brand, warehouse FROM `tabSerial No` WHERE name = %s""", 
-        (serial_no), as_dict=1)
-
+        serial_no_doc = frappe.db.get_value('Serial No', {'name':serial_no}, ['item_code', 'item_group', 'brand', 'warehouse'])
+        ware = frappe.db.get_value('Purchase')
+        print(serial_no_doc[0])
         if serial_no_doc:
 
             repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
@@ -175,11 +160,11 @@ def get_info_from_serial_no(doc=None):
             base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': doc_json['purchase_receipt'], 
             'item_code': doc_json['item_code']}, 'base_rate')
 
-            result['item_code'] = serial_no_doc[0].get('item_code', '')
-            result['item_group'] = serial_no_doc[0].get('item_group', '')
-            result['brand'] = serial_no_doc[0].get('brand', '')
-            result['source_warehouse'] = serial_no_doc[0].get('warehouse', '')
-            result['target_warehouse'] = serial_no_doc[0].get('warehouse', '')
+            result['item_code'] = serial_no_doc[0]
+            result['item_group'] = serial_no_doc[1]
+            result['brand'] = serial_no_doc[2]
+            result['source_warehouse'] = serial_no_doc[3]
+            result['target_warehouse'] = serial_no_doc[3]
             result['repack_itm_price'] = repack_itm_price
             result['purchase_price'] = purchase_price
             result['base_price'] = base_price
@@ -188,14 +173,15 @@ def get_info_from_serial_no(doc=None):
 
 @frappe.whitelist()
 def get_part_mapping(item_group):
-    mappings = frappe.get_all(
-        "Part Mapping",
-        filters={"parent": item_group},
-        fields=["item_group", "mappng_fields", "attribute_name"],
-        order_by="idx",
+    mappings = frappe.get_all("Part Mapping", filters={"parent": item_group},
+    fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
+
+    values = frappe.get_all(
+        "NJ Settings",
+        filters={"doc_type": "IQC Child"}, fields=["parameter", "value"]
     )
 
-    return mappings
+    return {"mappings": mappings, "values": values}
 
 @frappe.whitelist()
 def get_variant_from_value(template=None, args=None):
@@ -264,19 +250,19 @@ def generate_and_save_barcode(serial_no, format='png'):
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
 
-@frappe.whitelist()
-def create_serial_no(item_code):
-    is_serial = frappe.get_value('Item', {'name': item_code}, 'has_serial_no')
-    if is_serial == 1:
-        new_serial = generate_random_code()
-        return new_serial
-    else:
-        return None
+# @frappe.whitelist()
+# def create_serial_no(item_code):
+#     is_serial = frappe.get_value('Item', {'name': item_code}, 'has_serial_no')
+#     if is_serial == 1:
+#         new_serial = generate_random_code()
+#         return new_serial
+#     else:
+#         return None
 
-def generate_random_code():
-    prefix = "NJ"
-    random_code = prefix + str(random.randint(100000, 999999))
-    return random_code
+# def generate_random_code():
+#     prefix = "NJ"
+#     random_code = prefix + str(random.randint(100000, 999999))
+#     return random_code
 
 @frappe.whitelist()
 def get_item_code_price(item_code=None, pr=None):

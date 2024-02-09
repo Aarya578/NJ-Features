@@ -38,21 +38,27 @@ def crt_amzsl_inv(sales_order_name):
 # for stock entry
 @frappe.whitelist()
 def search_for_serial_or_batch_or_barcode_no(search_value):
-	# search barcode no
+	# Search barcode number
 	barcode_data = frappe.db.get_value(
 		"Item Barcode", {"barcode": search_value}, ["barcode", "parent as item_code"], as_dict=True
 	)
 	if barcode_data:
 		return barcode_data
 
-	# search serial no
+    # Search item code
+	item_code_data = frappe.db.get_value(
+		"Item", {"item_code": search_value}, ["item_code"], as_dict=True
+	)
+	if item_code_data:
+		return {"item_code": item_code_data.item_code}
+	# Search serial number
 	serial_no_data = frappe.db.get_value(
 		"Serial No", search_value, ["name as serial_no", "item_code", "warehouse"], as_dict=True
 	)
 	if serial_no_data:
 		return serial_no_data
 
-	# search batch no
+	# Search batch number
 	batch_no_data = frappe.db.get_value(
 		"Batch", search_value, ["name as batch_no", "item as item_code"], as_dict=True
 	)
@@ -62,12 +68,15 @@ def search_for_serial_or_batch_or_barcode_no(search_value):
 	return {}
 
 @frappe.whitelist()
-def serializer_or_notserializer(serial_no):
-    item_code=frappe.db.get_value(
-        "Serial No",{"name":serial_no},["item_code"],as_dict=True
-    )
-    has_serial_no=frappe.db.get_value(
-        "Item",{"name":item_code.item_code},["has_serial_no"],as_dict=True
-    )
-    return has_serial_no.has_serial_no
+def serializer_or_notserializer(serial_no=None):
+    if serial_no:
+        item_code = frappe.db.get_value(
+            "Serial No", {"name": serial_no}, ["item_code"], as_dict=True
+        )
+        if item_code and item_code.item_code:
+            has_serial_no = frappe.db.get_value(
+                "Item", {"name": item_code.item_code}, ["has_serial_no"], as_dict=True
+            )
+            return has_serial_no.has_serial_no if has_serial_no else 0
+    return 0  # Return 0 if item code or has_serial_no is not found or is None
 

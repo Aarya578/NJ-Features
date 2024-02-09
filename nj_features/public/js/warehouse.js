@@ -9,16 +9,47 @@ frappe.ui.form.on('Warehouse', {
     qty_after_transaction: function(frm) {
         frm.set_value('available_capacity', cur_frm.doc.max_capacity - cur_frm.doc.qty_after_transaction);
         frm.refresh_field('available_capacity');
+    },
+    item_group: function(frm) {
+        const hasItemGroup = frm.doc.item_group;
+        const hasBrand = frm.doc.brand;
+        if (hasItemGroup === "All Item Groups") {
+            frm.set_df_property('max_capacity', 'hidden', 1);
+            frm.set_df_property('available_capacity', 'hidden', 1);
+            frm.set_df_property('brand', 'hidden', 1);
+
+            return;
+        }
+
+        // If item_group is set but brand is not set, display max_capacity
+        if (hasItemGroup && !hasBrand) {
+            frm.set_df_property('max_capacity', 'hidden', 0);
+            frm.set_df_property('available_capacity', 'hidden', 0);
+        
+
+        }
+        
+         else {
+            // If both item_group and brand are set, display max_capacity
+            frm.set_df_property('max_capacity', 'hidden', 0);
+            frm.set_df_property('available_capacity', 'hidden', 0);
+         
+
+        }
     }
 });
 
 async function updateMaxcap(frm) {
     const isGroup = frm.doc.is_group === 1;
+    console.log("frm",frm.doc)
 
+    // console.log("hasItemGroup",hasItemGroup)
     // Store the original value of max_capacity when the form loads
     frm.original_max_capacity = frm.doc.max_capacity;
 
     if (!isGroup) {
+        
+
         try {
             const result = await frappe.db.get_list('Stock Ledger Entry', {
                 filters: {
@@ -57,7 +88,9 @@ async function updateMaxcap(frm) {
         } catch (err) {
             console.log(err);
         }
-    } else {
+        
+    }
+     else{
         frm.set_df_property('max_capacity', 'hidden', 1);
         frm.set_df_property('available_capacity', 'hidden', 1);
     }

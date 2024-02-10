@@ -112,6 +112,16 @@ frappe.ui.form.on('Stock Entry', {
                         var child_records = Object.values(child_table_data);
                         var last_child_record = child_records[child_records.length - 1].doc;
 
+                        if (!last_record.item_code || !last_record.qty || !last_record.s_warehouse || !last_record.t_warehouse) {
+                            frappe.msgprint('Please fill all mandatory fields in the last row before scanning the barcode.');
+                            return false;
+                        }
+                        // Check if grade is required for the last item_code
+                        if (last_record.item_code && !last_record.serial_no && !last_record.grade) {
+                            frappe.msgprint('Grade is mandatory for non-serialized item. Please fill the Grade field.');
+                            return false;
+                        }
+
                         // if (!last_child_record.item_code || !last_child_record.qty || !last_child_record.s_warehouse || !last_child_record.t_warehouse) {
                         //     frappe.msgprint('Please fill all mandatory fields in the last child record before scanning the barcode.');
                         //     return false;
@@ -290,17 +300,17 @@ frappe.ui.form.on('Stock Entry Detail', {
                                 },
                                 callback: function(response) {
                                     var all_emp_ware = response.message;
-                                    console.log("all_emp_ware", response);
+                                    console.log("all_emp_ware", all_emp_ware);
                             
                                         frm.fields_dict.items.grid.get_field('t_warehouse').get_query = function(doc, cdt, cdn) {
                                             return {
                                                 filters: {
-                                                    item_group: itemGroup,
-                                                    brand: ['=', brand],
+                                                    item_group: ['in', itemGroup !== '' ? [itemGroup, ''] : ['']],
+                                                    brand: ['in', brand !== '' ? [brand, ''] : ['']],
                                                     is_group: 0,
-                                                    available_capacity: ['>', 0],
+                                                    // available_capacity: ['>', 0],
                                                     company: frm.doc.company,
-                                                    warehouse: ['in', all_emp_ware]
+                                                    name: ['in', all_emp_ware]
                                                 }
                                             };
                                         };

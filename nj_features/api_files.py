@@ -80,3 +80,16 @@ def serializer_or_notserializer(serial_no=None):
             return has_serial_no.has_serial_no if has_serial_no else 0
     return 0  # Return 0 if item code or has_serial_no is not found or is None
 
+@frappe.whitelist()
+def get_all_emp_warehouse(user):
+    dept = frappe.db.get_value('Employee', {'user_id':user}, 'department')
+    dept_values = frappe.db.get_value('Department', {'name':dept}, ['department_prefix', 'linked_warehouse'])
+    default_ww = dept_values[0] + '-Work-Warehouse - NJ'
+    print(f"dept: {dept}, dept_prefix: {dept_values}, default_ww: {default_ww}")
+    all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1]}, 'name')
+    all_emp_ware_names = [warehouse['name'] for warehouse in all_emp_ware]
+    
+    if default_ww in all_emp_ware_names:
+        all_emp_ware_names.remove(default_ww)
+    
+    return all_emp_ware_names

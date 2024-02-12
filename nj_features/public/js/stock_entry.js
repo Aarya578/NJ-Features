@@ -318,9 +318,9 @@ frappe.ui.form.on('Stock Entry Detail', {
                                     var warehouse_info = response.message;
                                     console.log("warehouse_info", warehouse_info);
                                     var warehouse_list = '';
-                                    // for (var warehouse in warehouse_info) {
-                                    //     warehouse_list += `${warehouse} => ${warehouse_info[warehouse]} qty\n`;
-                                    // }
+                                    for (var warehouse in warehouse_info) {
+                                        warehouse_list += `${warehouse} => ${warehouse_info[warehouse]} qty\n`;
+                                    }
                                     var warehouse_table = '<table class="table table-bordered"><thead><tr><th>Recommended Warehouse</th><th>Quantity</th></tr></thead><tbody>';
                                     for (var warehouse in warehouse_info) {
                                         warehouse_table += `<tr><td>${warehouse}</td><td>${warehouse_info[warehouse]} qty</td></tr>`;
@@ -336,9 +336,9 @@ frappe.ui.form.on('Stock Entry Detail', {
                                             {
                                                 label: 'Recommended Warehouse',
                                                 fieldname: 'req_warehouse',
-                                                fieldtype: 'HTML',
-                                                default: warehouse_table,
-                                                // read_only: 1
+                                                fieldtype: 'Small Text',
+                                                default: warehouse_list,
+                                                read_only: 1
                                             }
                                         ],
                                         size: 'small', // small, large, extra-large 

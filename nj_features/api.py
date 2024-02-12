@@ -191,14 +191,13 @@ def get_prev_detail(data):
         formatted_result = {}
         for reading in nj_readings:
             part_name = reading['item_group']
-            idx = reading['idx']
-            grade = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, "grade")
+            part_result = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, ["grade", "idx"])
 
             if part_name not in formatted_result:
                 formatted_result[part_name] = {
                     'part_name': part_name,
-                    'part_idx': idx,
-                    'grade': grade if grade else None,
+                    'part_idx': part_result[1],
+                    'grade': part_result[0] if part_result else None,
                     'checks': []
                 }
 

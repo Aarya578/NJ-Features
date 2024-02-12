@@ -20,6 +20,7 @@ function hideFieldsInChild() {
         fields_to_modify.forEach(function (field_name) {
             var field = frappe.meta.get_docfield("Stock Entry Detail", field_name, cur_frm.doc.name);
             if (field && cur_frm.doc.stock_movement === 1) {
+                console.log("stock_movent", field)
                 field.in_list_view = 0;
             }
         });
@@ -86,10 +87,18 @@ frappe.ui.form.on('Stock Entry', {
         if (cur_frm.doc.docstatus == 1) {
             cur_frm.set_df_property('additional_costs_section', 'hidden', 1);
         }
-        // if (cur_frm.doc.stock_movement == 1) {
-        //     var items = frappe.meta.get_docfield("Stock Entry", 'items', cur_frm.doc.name);
-        //     items.read_only = 1;
-        // }
+        if (cur_frm.doc.stock_movement == 1) {
+            var t_ware = frappe.meta.get_docfield("Stock Entry Detail", 't_warehouse', cur_frm.doc.name);
+            if (t_ware) {
+                t_ware.read_only = 1;
+            }
+        }
+        if (cur_frm.doc.move_stock == 1) {
+            var s_ware = frappe.meta.get_docfield("Stock Entry Detail", 's_warehouse', cur_frm.doc.name);
+            if (s_ware) {
+                s_ware.read_only = 1;
+            }
+        }
     },
     onload_post_render() {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
@@ -107,20 +116,30 @@ frappe.ui.form.on('Stock Entry', {
                 callback: function(r) {
                     const data = r && r.message;
                     if (data && Object.keys(data).length !== 0) {
-                        modify_table_after_scan(cur_frm, data);
                         var child_table_data = cur_frm.fields_dict.items.grid.grid_rows_by_docname;
                         var child_records = Object.values(child_table_data);
+                        console.log("len:",child_records.length);
                         var last_child_record = child_records[child_records.length - 1].doc;
-
-                        if (!last_record.item_code || !last_record.qty || !last_record.s_warehouse || !last_record.t_warehouse) {
-                            frappe.msgprint('Please fill all mandatory fields in the last row before scanning the barcode.');
-                            return false;
+                        if (child_records.length > 1) {
+                            var last_child_record = child_records[child_records.length - 1].doc;
+                            if (!last_child_record.item_code || !last_child_record.qty) {
+                                frappe.msgprint('Please fill Item Code and Quantity fields in the last row before scanning the barcode.');
+                                return false;
+                            }
+                            if (last_child_record.serial_no) {
+                                if (!last_child_record.item_code || !last_child_record.s_warehouse || !last_child_record.t_warehouse) {
+                                    frappe.msgprint('Please fill Item Code, Source Warehouse, and Target Warehouse fields in the last row when Serial No. is filled.');
+                                    return false;
+                                }
+                            } else if (last_child_record.item_code && !last_child_record.serial_no && !last_child_record.grade) {
+                                frappe.msgprint('Grade is mandatory for non-serialized items. Please fill the Grade field.');
+                                return false;
+                            } else if (last_child_record.item_code && !last_child_record.serial_no && last_child_record.is_stock_item == 1 && !last_child_record.s_warehouse) {
+                                frappe.msgprint('Source Warehouse is mandatory for non-serialized stock items. Please fill the Source Warehouse field.');
+                                return false;
+                            }
                         }
-                        // Check if grade is required for the last item_code
-                        if (last_record.item_code && !last_record.serial_no && !last_record.grade) {
-                            frappe.msgprint('Grade is mandatory for non-serialized item. Please fill the Grade field.');
-                            return false;
-                        }
+                        modify_table_after_scan(cur_frm, data);
 
                         // if (!last_child_record.item_code || !last_child_record.qty || !last_child_record.s_warehouse || !last_child_record.t_warehouse) {
                         //     frappe.msgprint('Please fill all mandatory fields in the last child record before scanning the barcode.');
@@ -308,7 +327,7 @@ frappe.ui.form.on('Stock Entry Detail', {
                                                     item_group: ['in', itemGroup !== '' ? [itemGroup, ''] : ['']],
                                                     brand: ['in', brand !== '' ? [brand, ''] : ['']],
                                                     is_group: 0,
-                                                    // available_capacity: ['>', 0],
+                                                    available_capacity: ['>', 0],
                                                     company: frm.doc.company,
                                                     name: ['in', all_emp_ware]
                                                 }

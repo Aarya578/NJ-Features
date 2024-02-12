@@ -89,7 +89,7 @@ def show_current_part_data(data, result, qi_name):
     if item_group_list and 1 <= i <= len(item_group_list):
         part_name = item_group_list[i - 1].item_group
         # print(f"count: {len(item_group_list)}------{item_group_list}----------show_current")
-        # print(f"part_name : {part_name}\n")
+        print(f"idx: {i}. part_name : {part_name}\n")
         result = get_current_part_data(data, result, part_name, qi_name)
         result['part'] = part_name
         result['count'] = len(item_group_list)
@@ -370,6 +370,7 @@ def save_qi_data(data):
                 child_table.score = grading[0][2]
                 # set_grade_in_quality_readings(qi_doc, item_group)
                 qi_doc.save()
+    
 
     return qi_doc.name
 

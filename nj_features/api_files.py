@@ -68,16 +68,12 @@ def search_for_serial_or_batch_or_barcode_no(search_value):
 	return {}
 
 @frappe.whitelist()
-def serializer_or_notserializer(serial_no=None):
-    if serial_no:
-        item_code = frappe.db.get_value(
-            "Serial No", {"name": serial_no}, ["item_code"], as_dict=True
+def serializer_or_notserializer(item_code=None):
+    if item_code:
+        has_serial_no = frappe.db.get_value(
+            "Item", {"name": item_code}, ["has_serial_no"], as_dict=True
         )
-        if item_code and item_code.item_code:
-            has_serial_no = frappe.db.get_value(
-                "Item", {"name": item_code.item_code}, ["has_serial_no"], as_dict=True
-            )
-            return has_serial_no.has_serial_no if has_serial_no else 0
+        return has_serial_no.has_serial_no if has_serial_no else 0
     return 0  # Return 0 if item code or has_serial_no is not found or is None
 
 @frappe.whitelist()

@@ -89,7 +89,7 @@ def show_current_part_data(data, result, qi_name):
     if item_group_list and 1 <= i <= len(item_group_list):
         part_name = item_group_list[i - 1].item_group
         # print(f"count: {len(item_group_list)}------{item_group_list}----------show_current")
-        print(f"idx: {i}. part_name : {part_name}\n")
+        # print(f"idx: {i}. part_name : {part_name}\n")
         result = get_current_part_data(data, result, part_name, qi_name)
         result['part'] = part_name
         result['count'] = len(item_group_list)
@@ -191,7 +191,8 @@ def get_prev_detail(data):
         formatted_result = {}
         for reading in nj_readings:
             part_name = reading['item_group']
-            idx = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, "idx")
+            idx = get_ig_list_nj(qi_name, part_name)['idx']
+            # idx = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, "idx")
             grade = frappe.db.get_value("Nj Quality Readings", {"item_group": part_name}, "grade")
 
             if part_name not in formatted_result:
@@ -345,6 +346,7 @@ def save_qi_data(data):
         item_group = item_group_list[i - 1][0]
     if 'checkName' in data and partIsAvailable=='1':
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
+            print(f"check_name: {check_name} | check_option: {check_option}")
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name, description, checks, score, weightage FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))
             grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE check_options = %s AND parent = %s ORDER BY idx""",
@@ -425,15 +427,24 @@ def get_kb_from_serial_no(serialNo, action_type=None, part_name=None):
         frappe.throw(_("No valid conditions found for filtering Knowledge Base."), title=_("Invalid Query"))
 
 @frappe.whitelist()
-def get_ig_list_nj(qi_name):
+def get_ig_list_nj(qi_name, item_group=None):
     qi_doc = frappe.get_doc('NJ Quality Inspection', qi_name, order_by="idx", as_dict=1)
     nj_readings = qi_doc.get('nj_quality_readings', [])
     
     results = [reading for reading in nj_readings if reading.get('quality_check')]
-    return {'qi_doc_json': qi_doc, 'results': results}
+    print(f'{type(results)}: {results}')
+    idx = None
+    for i in range(len(results)):
+        print(f"results[i].get('item_group'): {results[i].get('item_group')}")
+        if results[i].get('item_group') == item_group:
+            idx = i+1
+            break
+    # idx =[i for i in results if results['item_group']==item_group]
+    # idx = [i for i, reading in enumerate(results) if reading.get('item_group') == item_group]
+    return {'qi_doc_json': qi_doc, 'results': results, 'idx': idx}
 
 
-@frappe.whitelist()
+@frappe.whitelist() # not used
 def item_group_list_from_itw(serial_no, data=None):
     # Get item groups from Serial No Component
     ser_item_group = frappe.db.sql("""

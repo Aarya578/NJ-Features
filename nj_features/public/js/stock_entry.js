@@ -215,6 +215,7 @@ frappe.ui.form.on('Stock Entry', {
             var child_table_data = frm.fields_dict.items.grid.grid_rows_by_docname;
             var child_records = Object.values(child_table_data);
             var last_child_record = child_records[child_records.length - 1].doc;
+            console.log("last_child_record: ", last_child_record)
             frappe.call({
                 method: 'nj_features.api_files.serializer_or_notserializer',
                 args: {
@@ -222,6 +223,7 @@ frappe.ui.form.on('Stock Entry', {
                 },
                 callback: function (response) {
                     var has_serial_no = response.message;
+                    var new_item_code = "";
                     if (has_serial_no === 0 && child_records && child_records.length > 0) {
                         frappe.db.get_value('Item', { 'name': last_child_record.item_code }, 'has_serial_no').then(function (r) {
                             if (r.has_serial_no === 0) {
@@ -232,12 +234,27 @@ frappe.ui.form.on('Stock Entry', {
                             .then(function (r) {
                                 if (r.message.name) {
                                     frappe.model.set_value(last_child_record.doctype, last_child_record.name, "grade", r.message.name);
+                                    new_item_code = last_child_record.item_code + "-" + r.message.name
+                                    console.log("new_item_code: ", new_item_code)
                                     cur_frm.set_value('scan_grade', '');
                                     frm.refresh_fields('items');
                                 } else {
                                     frappe.msgprint('Grade not found. Please enter a valid Grade.');
                                 }
+                                frappe.db.get_value('Item', { name: new_item_code }, ['name', 'item_name'])
+                                    .then(function (r) {
+                                        console.log("r from new item", r);
+                                        if (r.message.name) {
+                                            frappe.model.set_value(last_child_record.doctype, last_child_record.name, "item_code", r.message.name);
+                                            new_item_code = last_child_record.item_code + "-" + r.message.name
+                                            console.log("new_item_code: ", new_item_code)
+                                            frm.refresh_fields('items');
+                                        } else {
+                                            frappe.msgprint('Item not found. Please enter a valid Item.');
+                                        }
+                                    })
                             })
+                        
 
                     } else {
                         cur_frm.set_df_property('items', 'hidden', 1, cur_frm.docname, 'grade', last_child_record.name)
@@ -321,11 +338,11 @@ frappe.ui.form.on('Stock Entry Detail', {
                                     for (var warehouse in warehouse_info) {
                                         warehouse_list += `${warehouse} => ${warehouse_info[warehouse]} qty\n`;
                                     }
-                                    var warehouse_table = '<table class="table table-bordered"><thead><tr><th>Recommended Warehouse</th><th>Quantity</th></tr></thead><tbody>';
-                                    for (var warehouse in warehouse_info) {
-                                        warehouse_table += `<tr><td>${warehouse}</td><td>${warehouse_info[warehouse]} qty</td></tr>`;
-                                    }
-                                    warehouse_table += '</tbody></table>';
+                                    // var warehouse_table = '<table class="table table-bordered"><thead><tr><th>Recommended Warehouse</th><th>Quantity</th></tr></thead><tbody>';
+                                    // for (var warehouse in warehouse_info) {
+                                    //     warehouse_table += `<tr><td>${warehouse}</td><td>${warehouse_info[warehouse]} qty</td></tr>`;
+                                    // }
+                                    // warehouse_table += '</tbody></table>';
                                     let d = new frappe.ui.Dialog({
                                         fields: [
                                             {
@@ -456,7 +473,7 @@ function get_row_to_modify_on_scan(frm, row_to_modify, data) {
         existing_row = frm.doc.items.find(d => d.serial_no === data.serial_no);
     } else if (data.item_code) {
         // Find an existing row with the same item code
-        existing_row = frm.doc.items.find(d => d.item_code === data.item_code);
+        existing_row = frm.doc.items.find(d => d.item_code);
     }
 
     // If no existing row found, return the first blank row
@@ -469,10 +486,10 @@ function get_row_to_modify_on_scan(frm, row_to_modify, data) {
 
 
 
-function get_batch_row_to_modify(frm, batch_no) {
-    const existing_batch_row = frm.doc.items.find(d => d.batch_no === batch_no);
-    return existing_batch_row || null;
-}
+// function get_batch_row_to_modify(frm, batch_no) {
+//     const existing_batch_row = frm.doc.items.find(d => d.batch_no === batch_no);
+//     return existing_batch_row || null;
+// }
 
 function show_scan_message(idx, exist = null) {
     if (!exist) {

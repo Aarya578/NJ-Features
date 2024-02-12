@@ -5,7 +5,7 @@ frappe.listview_settings['Stock Entry'] = {
             openStockEntryForm(1);
         }).addClass('btn-primary');
         // Move Stock button
-        listview.page.add_inner_button(__("Move Stock"), function() {
+        listview.page.add_inner_button(__("Racking"), function() {
             openStockEntryForm(0);
         }).addClass('btn-primary');
     },

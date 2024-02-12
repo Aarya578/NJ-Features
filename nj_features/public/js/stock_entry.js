@@ -123,24 +123,23 @@ frappe.ui.form.on('Stock Entry', {
                     
                     // if (child_records.length > 1) {
                     //     var last_child_record = child_records[child_records.length - 1].doc;
-
-                    //     if (!last_child_record.item_code || !last_child_record.qty) {
-                    //         frappe.msgprint('Please fill Item Code and Quantity fields in the last row before scanning the barcode.');
-                    //         return false;
-                    //     }
-                    //     if (last_child_record.serial_no) {
-                    //         if (!last_child_record.item_code || !last_child_record.s_warehouse || !last_child_record.t_warehouse) {
-                    //             frappe.msgprint('Please fill Item Code, Source Warehouse, and Target Warehouse fields in the last row when Serial No. is filled.');
-                    //             return false;
-                    //         }
-                    //     } else if (last_child_record.item_code && !last_child_record.serial_no && !last_child_record.grade) {
-                    //         frappe.msgprint('Grade is mandatory for non-serialized items. Please fill the Grade field.');
-                    //         return false;
-                    //     } else if (last_child_record.item_code && !last_child_record.serial_no && last_child_record.is_stock_item == 1 && !last_child_record.s_warehouse) {
-                    //         frappe.msgprint('Source Warehouse is mandatory for non-serialized stock items. Please fill the Source Warehouse field.');
-                    //         return false;
+                    
+                    //     if ((!last_child_record.item_code || !last_child_record.qty) ||
+                    //         (last_child_record.serial_no && (!last_child_record.s_warehouse || !last_child_record.t_warehouse)) ||
+                    //         (last_child_record.item_code && !last_child_record.serial_no && !last_child_record.grade) ||
+                    //         (last_child_record.item_code && !last_child_record.serial_no && last_child_record.is_stock_item == 1 && !last_child_record.s_warehouse)) {
+                    //         var missingFields = [];
+                    //         if (!last_child_record.item_code || !last_child_record.qty) missingFields.push("Item Code and Quantity");
+                    //         if (last_child_record.serial_no && (!last_child_record.s_warehouse || !last_child_record.t_warehouse)) missingFields.push("Item Code, Source Warehouse, and Target Warehouse");
+                    //         if (last_child_record.item_code && !last_child_record.serial_no && !last_child_record.grade) missingFields.push("Grade");
+                    //         if (last_child_record.item_code && !last_child_record.serial_no && last_child_record.is_stock_item == 1 && !last_child_record.s_warehouse) missingFields.push("Source Warehouse");
+                    
+                    //         var message = `Please fill ${missingFields.join(' and ')} fields in the last row before scanning the barcode.`;
+                    //         frappe.msgprint(message);
+                    //         return;
                     //     }
                     // }
+                    
 
                         if (data && Object.keys(data).length !== 0) {
                             modify_table_after_scan(cur_frm, data);
@@ -298,9 +297,10 @@ frappe.ui.form.on('Stock Entry Detail', {
 
             for (let i = 0; i < cur_frm.doc.items.length; i++) {
                 const item = cur_frm.doc.items[i];
-                if (item.serial_no) {
-                    var serialNo = item.serial_no;
-                    frappe.db.get_value('Serial No', { "name": serialNo }, ['item_group', 'brand'])
+                if (item.serial_no || item.item_code) {
+                    var itemCode = item.item_code;
+                    
+                    frappe.db.get_value('Item', { "name": itemCode }, ['item_group', 'brand'])
                         .then(function (r) {
                             var itemGroup = r.message.item_group;
                             var brand = r.message.brand;
@@ -315,33 +315,73 @@ frappe.ui.form.on('Stock Entry Detail', {
                                     'user': frappe.session.user_email
                                 },
                                 callback: function (response) {
-                                    var all_emp_ware = response.message;
-                                    console.log("all_emp_ware", all_emp_ware);
-
-                                    frm.fields_dict.items.grid.get_field('t_warehouse').get_query = function (doc, cdt, cdn) {
-                                        return {
-                                            filters: {
-                                                item_group: ['in', itemGroup !== '' ? [itemGroup, ''] : ['']],
-                                                brand: ['in', brand !== '' ? [brand, ''] : ['']],
-                                                is_group: 0,
-                                                available_capacity: ['>', 0],
-                                                company: frm.doc.company,
-                                                name: ['in', all_emp_ware]
+                                    var warehouse_info = response.message;
+                                    console.log("warehouse_info", warehouse_info);
+                                    var warehouse_list = '';
+                                    // for (var warehouse in warehouse_info) {
+                                    //     warehouse_list += `${warehouse} => ${warehouse_info[warehouse]} qty\n`;
+                                    // }
+                                    var warehouse_table = '<table class="table table-bordered"><thead><tr><th>Recommended Warehouse</th><th>Quantity</th></tr></thead><tbody>';
+                                    for (var warehouse in warehouse_info) {
+                                        warehouse_table += `<tr><td>${warehouse}</td><td>${warehouse_info[warehouse]} qty</td></tr>`;
+                                    }
+                                    warehouse_table += '</tbody></table>';
+                                    let d = new frappe.ui.Dialog({
+                                        fields: [
+                                            {
+                                                label: 'Target Warehouse',
+                                                fieldname: 't_warehouse',
+                                                fieldtype: 'Data'
+                                            },
+                                            {
+                                                label: 'Recommended Warehouse',
+                                                fieldname: 'req_warehouse',
+                                                fieldtype: 'HTML',
+                                                default: warehouse_table,
+                                                // read_only: 1
                                             }
-                                        };
-                                    };
+                                        ],
+                                        size: 'small', // small, large, extra-large 
+                                        // static:true,
+                                    });
+                                    
+                                    d.fields_dict.t_warehouse.$input.on("change", function() {
+                                        let t_warehouse_value = $(this).val();
+                                    
+                                        // Perform validation
+                                        frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function (r) {
+                                            if (r.message && r.message.name) {
+                                                // Set the value in the form
+                                                frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+                                                d.hide();
+                                            } else {
+                                                frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
+                                            }
+                                        });
+                                    });
+                                    
+                                    d.show();
                                 }
                             });
-
 
                             frm.refresh_field('items');
                         })
                 }
             }
         }
-
     }
+    
 });
+// function generateWarehouseRows(warehouse_info) {
+//     let rows = '';
+//     for (let warehouse in warehouse_info) {
+//         rows += `<tr>
+//                     <td>${warehouse}</td>
+//                     <td>${warehouse_info[warehouse]} qty</td>
+//                  </tr>`;
+//     }
+//     return rows;
+// }
 
 function modify_table_after_scan(frm, data) {
     let scan_barcode_field = frm.fields_dict["scan_barcode"];

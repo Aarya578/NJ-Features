@@ -181,6 +181,8 @@ frappe.ui.form.on('Stock Entry', {
                         
                     } else {
                         frappe.msgprint('Grade not found. Please enter a valid Grade.');
+                        cur_frm.set_value('scan_grade', '');
+                        cur_frm.set_value('scan_barcode', '');
                     }
                     
                 if(r.message.name) {
@@ -193,7 +195,6 @@ frappe.ui.form.on('Stock Entry', {
 
                             } else {
                                 frappe.msgprint('Item not found. Please enter a valid Item.');
-                                cur_frm.set_value('scan_grade', '');
                             }
                     })
                 }

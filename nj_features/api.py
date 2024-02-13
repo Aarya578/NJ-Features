@@ -341,7 +341,7 @@ def save_qi_data(data):
     # update checks and their values
     serial_no = data['serialNo']
     i = int(data['prevPart'])
-    item_group_list = item_group_list_from_itw(serial_no, data)
+    item_group_list = get_ig_list_nj(qi_name)['results']
     if item_group_list and 1 <= i <= len(item_group_list):
         item_group = item_group_list[i - 1][0]
     if 'checkName' in data and partIsAvailable=='1':

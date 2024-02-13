@@ -341,9 +341,11 @@ def save_qi_data(data):
     # update checks and their values
     serial_no = data['serialNo']
     i = int(data['prevPart'])
+    print("*********************")
     item_group_list = get_ig_list_nj(qi_name)['results']
     if item_group_list and 1 <= i <= len(item_group_list):
-        item_group = item_group_list[i - 1][0]
+        item_group = item_group_list[i - 1].item_group
+        print(f"item_group: {item_group}")
     if 'checkName' in data and partIsAvailable=='1':
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             print(f"check_name: {check_name} | check_option: {check_option}")
@@ -436,7 +438,7 @@ def get_ig_list_nj(qi_name, item_group=None):
     print(f'{type(results)}: {results}')
     idx = None
     for i in range(len(results)):
-        print(f"results[i].get('item_group'): {results[i].get('item_group')}")
+        # print(f"results[i].get('item_group'): {results[i].get('item_group')}")
         if results[i].get('item_group') == item_group:
             idx = i+1
             break

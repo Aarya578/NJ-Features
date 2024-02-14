@@ -12,14 +12,14 @@ def part_qi_check():
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
         data = json.loads(data_str)
-        # get detaills on qi_name
-        if 'qi_name' in data and 'serialNo' not in data:
+        if 'qi_name' in data:
             if data['qi_name'] != '':
                 existing_qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
                 print(f"existing_qi_doc: {existing_qi_doc}")
                 if existing_qi_doc.name != '':
                     data['serialNo'] = existing_qi_doc.bios_serial_number
                     data['inspection_type'] = existing_qi_doc.inspection_type
+        print(f"data after exisitng qi: {data}")
         
         item_code = frappe.db.get_value('Serial No', {'name': data['serialNo']}, 'item_code')
         

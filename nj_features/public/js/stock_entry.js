@@ -345,7 +345,7 @@ function set_scanned_values(row_to_modify, data) {
     // Set values in the correct row
     let values = {
         item_code: data.item_code,
-        s_warehouse: data.warehouse,
+        s_warehouse: data.s_warehouse,
         qty: 1
     }
     if (data.serial_no) {

@@ -7,7 +7,7 @@ def part_qi_check():
     try:
         result, current_data = {}, {}
         count = []
-        item_code, activity, qi_name, part_name, submit_status, automatic_count = '', '', '', '', '', ''
+        item_code, activity, qi_name, part_name, submit_status, automatic_count, qi_status = '', '', '', '', '', '', ''
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -25,7 +25,6 @@ def part_qi_check():
         
         if 'submitStatus' in data:
             submit_status = data['submitStatus']
-            
         #save prevPart data
         if 'checkName' in data:
             if data['prevPart'] == "":
@@ -35,6 +34,8 @@ def part_qi_check():
         else: qi_name = save_qi_data(data)
         print(f"qi_name: {qi_name}")
         #submit qi_doc
+        qi_status = frappe.db.get_value('NJ Quality Inspection', {'name': qi_name}, ['status'])
+        
         if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
             qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
             if qi_doc.docstatus == 0:
@@ -76,6 +77,7 @@ def part_qi_check():
             "activity": activity,
             "total_part": count,
             "qi_name": qi_name,
+            "qi_status": qi_status,
             "submit_status": submit_status,
             "automatic_count": automatic_count,
             "check_name": result,

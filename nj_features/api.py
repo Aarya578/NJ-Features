@@ -310,12 +310,14 @@ def get_prev_detail(data):
 #     return qi_doc.name
 
 def save_qi_data(data):
-    qi_name, partIsAvailable, item_group, qi_doc = '', '', '', ''
+    qi_name, partIsAvailable, item_group, qi_doc, user_email = '', '', '', '', ''
     print(f"input data: {data}")
     if 'qi_name' in data:
         qi_name = data["qi_name"]
     if 'partIsAvailable' in data:
         partIsAvailable = data['partIsAvailable']
+    if 'user_email' in data:
+        user_email = data['user_email']
     if qi_name != '':
         qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
     # not available -> insert - Done
@@ -332,7 +334,7 @@ def save_qi_data(data):
             qi_doc.bios_serial_number = data['serialNo']
             qi_doc.inspection_type = data['inspection_type']
             qi_doc.machine_made_by = 'itsupport@newjaisa.com'
-            qi_doc.inspected_by = 'itsupport@newjaisa.com' # user 
+            qi_doc.inspected_by = user_email # user 
             qi_name = qi_doc.name
             if serial_no_doc:
                 qi_doc.item_code = serial_no_doc[0][0]

@@ -144,22 +144,14 @@ frappe.ui.form.on('Stock Entry', {
                 if (r.message.name) {
                     console.log("new item code", item_code_init);
                     var ware = r.message.name
-                    frappe.db.get_value('Stock Ledger Entry', {'item_code': item_code_init, 'warehouse': ware}, 'qty_after_transaction', { order_by: 'posting_date desc', limit: 1 }).then(function(r) {
-                        if(r.message.qty_after_transaction > 1) {
-                            console.log("r.message.qty_after_transaction");
-                            data['item_code'] = item_code_init
-                            data['warehouse'] = ware
-                            console.log("data after scan ware: ", data);
-                            modify_table_after_scan(cur_frm, data);
-                        } else {
-                            cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-                            frappe.msgprint(`Stock does not exist for item code: <strong>${item_code_init}</strong>
-                             in warehouse: <strong>${ware}</strong>`);
-                            cur_frm.set_value('scan_warehouse', '');
-                            cur_frm.set_value('scan_grade', '');
-                            cur_frm.set_value('scan_barcode', '');
-                        }
-                    })
+                        data['item_code'] = item_code_init
+                        data['warehouse'] = ware
+                        console.log("data after scan ware: ", data);
+                        modify_table_after_scan(cur_frm, data);
+                        cur_frm.set_value('scan_warehouse', '');
+                        cur_frm.set_value('scan_grade', '');
+                        cur_frm.set_value('scan_barcode', '');
+                        
                 } else {
                     frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
                     cur_frm.set_value('scan_warehouse', '');
@@ -191,10 +183,10 @@ frappe.ui.form.on('Stock Entry', {
                             console.log("r from new item", r);
                             if (r.message.name) {
                                 item_code_init = r.message.name
-                                console.log("new_item_code: ", r.message.name)
+                                console.log("item code in DB: ", r.message.name)
 
                             } else {
-                                frappe.msgprint('Item not found. Please enter a valid Item.');
+                                frappe.msgprint(`Item: <strong>${new_item_code}</strong> doesn't exist. Please enter a valid Item.`);
                             }
                     })
                 }

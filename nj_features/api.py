@@ -13,14 +13,13 @@ def part_qi_check():
         data_str = data_bytes.decode('utf-8')
         data = json.loads(data_str)
         # get detaills on qi_name
-        if 'qi_name' in data:
+        if 'qi_name' in data and 'serialNo' not in data:
             if data['qi_name'] != '':
                 existing_qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
                 print(f"existing_qi_doc: {existing_qi_doc}")
                 if existing_qi_doc.name != '':
                     data['serialNo'] = existing_qi_doc.bios_serial_number
                     data['inspection_type'] = existing_qi_doc.inspection_type
-                    data['submitStatus'] = existing_qi_doc.status    
         
         item_code = frappe.db.get_value('Serial No', {'name': data['serialNo']}, 'item_code')
         
@@ -63,9 +62,10 @@ def part_qi_check():
             count = current_data["count"]
 
         is_available = frappe.db.get_value('Nj Quality Readings', {'parent':qi_name}, 'is_available')
-
+        print(f"part {data['submitStatus']}")
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
+            print(f"submitStatus: {data['submitStatus'].lower()}")
             nj_readings1 = get_prev_detail(data)
             nj_readings = nj_readings1["nj_readings"]
 
@@ -450,7 +450,6 @@ def get_ig_list_nj(qi_name, item_group=None):
     nj_readings = qi_doc.get('nj_quality_readings', [])
     
     results = [reading for reading in nj_readings if reading.get('quality_check')]
-    print(f'{type(results)}: {results}')
     idx = None
     for i in range(len(results)):
         # print(f"results[i].get('item_group'): {results[i].get('item_group')}")

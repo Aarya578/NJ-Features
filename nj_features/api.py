@@ -7,7 +7,7 @@ def part_qi_check():
     try:
         result, current_data = {}, {}
         count = []
-        item_code, activity, qi_name, part_name, submit_status = '', '', '', '', ''
+        item_code, activity, qi_name, part_name, submit_status, automatic_count = '', '', '', '', '', ''
         
         data_bytes = frappe.request.data
         data_str = data_bytes.decode('utf-8')
@@ -25,7 +25,7 @@ def part_qi_check():
             qi_name = save_qi_data(data)
         
         else: qi_name = save_qi_data(data)
-
+        print(f"qi_name: {qi_name}")
         #submit qi_doc
         if (data['submitStatus'].lower() == 'accepted' or data['submitStatus'].lower() == 'rejected'):
             qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
@@ -300,13 +300,13 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     qi_name, partIsAvailable, item_group, qi_doc = '', '', '', ''
+    print(f"input data: {data}")
     if 'qi_name' in data:
         qi_name = data["qi_name"]
     if 'partIsAvailable' in data:
         partIsAvailable = data['partIsAvailable']
     if qi_name != '':
         qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
-
     # not available -> insert - Done
     else:
         serial_no_doc = frappe.db.sql("""SELECT item_code, item_group, warehouse, item_name FROM `tabSerial No` WHERE name = %s""", (data['serialNo']))
@@ -321,7 +321,7 @@ def save_qi_data(data):
             qi_doc.bios_serial_number = data['serialNo']
             qi_doc.inspection_type = data['inspection_type']
             qi_doc.machine_made_by = 'itsupport@newjaisa.com'
-            qi_doc.inspected_by = 'itsupport@newjaisa.com'
+            qi_doc.inspected_by = 'itsupport@newjaisa.com' # user 
             qi_name = qi_doc.name
             if serial_no_doc:
                 qi_doc.item_code = serial_no_doc[0][0]
@@ -337,24 +337,30 @@ def save_qi_data(data):
                     child_table.item_group = result[i]['item_group']
                     child_table.quality_check = result[i]['quality_check']
             qi_doc.save()
+            print(f"qi_doc after save: {qi_doc.inspection_type}")
 
     # update checks and their values
-    serial_no = data['serialNo']
-    i = int(data['prevPart'])
-    print("*********************")
-    item_group_list = get_ig_list_nj(qi_name)['results']
-    if item_group_list and 1 <= i <= len(item_group_list):
-        item_group = item_group_list[i - 1].item_group
-        print(f"item_group: {item_group}")
-    if 'checkName' in data and partIsAvailable=='1':
+    print(f"&&&&&&&&&&&&&&&&&&&&&&&&&& {qi_name}")
+    # serial_no = data['serialNo']
+    if 'checkName' in data and partIsAvailable=='1' and qi_name != '' and qi_name != None:
+        i = int(data['prevPart'])
+        print("&&&&&&&&&&&&&&&&&&&&&&&&&&  346")
+        item_group_list = get_ig_list_nj(qi_name)['results']
+        print(f"item_group_list  348: {item_group_list}")
+        if item_group_list and 1 <= i <= len(item_group_list):
+            item_group = item_group_list[i - 1].item_group
+            print(f"item_group: {item_group}")
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
             print(f"check_name: {check_name} | check_option: {check_option}")
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name, description, checks, score, weightage FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))
             grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE check_options = %s AND parent = %s ORDER BY idx""",
             (check_option, check_name))
+            print(f"359, {check_option}, {check_name}, | grading: {grading}, {len(grading)}")
             if len(grading)>0:
+                print("360")
                 if existing_child:
+                    print("362")
                     try:
                         demo = frappe.db.sql("""
                             UPDATE `tabNJ Checks` 
@@ -375,7 +381,7 @@ def save_qi_data(data):
                     child_table.score = grading[0][2]
                     # set_grade_in_quality_readings(qi_doc, item_group)
                     qi_doc.save()
-    
+    print(f"qi_doc: {qi_doc.name}")
 
     return qi_doc.name
 

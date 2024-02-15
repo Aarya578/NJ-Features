@@ -189,9 +189,10 @@ def get_current_part_data(data, result, part_name, qi_name):
 
 
 def get_prev_detail(data):
+    part_name = ''
     if 'qi_name' in data:
         qi_name = data['qi_name']
-        # check_name = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group':part_name},'quality_check')
+        # nj_readings = frappe.db.get_all('Nj Quality Readings', {'parent': qi_name},['quality_check', 'item_group', 'grade'], order_by='idx ASC')
         nj_readings = frappe.get_all(
             'NJ Checks',
             filters={'parent': qi_name},
@@ -359,7 +360,6 @@ def save_qi_data(data):
         i = int(data['prevPart'])
         print("&&&&&&&&&&&&&&&&&&&&&&&&&&  346")
         item_group_list = get_ig_list_nj(qi_name)['results']
-        print(f"item_group_list  348: {item_group_list}")
         if item_group_list and 1 <= i <= len(item_group_list):
             item_group = item_group_list[i - 1].item_group
             print(f"item_group: {item_group}")
@@ -369,31 +369,35 @@ def save_qi_data(data):
             (item_group, check_name, qi_doc.name))
             grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE check_options = %s AND parent = %s ORDER BY idx""",
             (check_option, check_name))
-            print(f"359, {check_option}, {check_name}, | grading: {grading}, {len(grading)}")
-            if len(grading)>0:
-                print("360")
-                if existing_child:
-                    print("362")
-                    try:
-                        demo = frappe.db.sql("""
-                            UPDATE `tabNJ Checks` 
-                            SET options = %s, weightage = %s, score = %s
-                            WHERE name = %s
-                        """, (check_option, grading[0][1], grading[0][2], existing_child[0][3]))
-                        frappe.db.commit()
-                        print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
-                    except Exception as e:
-                        frappe.db.rollback()
-                        print(f"Error updating record: {existing_child[0][3]} - {e}")
-                else:
-                    child_table = qi_doc.append("nj_quality_checks", {})
-                    child_table.item_group = item_group
-                    child_table.check_name = check_name
-                    child_table.options = check_option
-                    child_table.active = grading[0][1]
-                    child_table.score = grading[0][2]
-                    # set_grade_in_quality_readings(qi_doc, item_group)
-                    qi_doc.save()
+            # if len(grading)>0:
+            if grading:
+                print("grading is on")
+                weightage = grading[0][1]
+                score = grading[0][2] 
+            else:
+                weightage = 1
+                score = 0
+            if existing_child:
+                try:
+                    demo = frappe.db.sql("""
+                        UPDATE `tabNJ Checks` 
+                        SET options = %s, weightage = %s, score = %s
+                        WHERE name = %s
+                    """, (check_option, weightage, score, existing_child[0][3]))
+                    frappe.db.commit()
+                    print(f"Updated record: {existing_child[0][3]} - options: {check_option}, {demo}")
+                except Exception as e:
+                    frappe.db.rollback()
+                    print(f"Error updating record: {existing_child[0][3]} - {e}")
+            else:
+                child_table = qi_doc.append("nj_quality_checks", {})
+                child_table.item_group = item_group
+                child_table.check_name = check_name
+                child_table.options = check_option
+                child_table.active = weightage
+                child_table.score = score
+                # set_grade_in_quality_readings(qi_doc, item_group)
+                qi_doc.save()
     print(f"qi_doc: {qi_doc.name}")
 
     return qi_doc.name

@@ -3,8 +3,9 @@
 function hideFieldsInChild() {
     // if (!frappe.user.has_role("Administrator")) {
     $('.custom-actions.hidden-xs.hidden-md, .menu-btn-group, .grid-download, .grid-upload').hide();
-    var fieldsToHide = ['basic_rate', 'uom', 'stock_uom', 'section_break_8', 'transfer_qty', 'reason',
-        'retain_sample', 'uom', 'stock_uom', 'conversion_factor', 'sample_quantity', 'batch_no',
+    console.log("1");
+    var fieldsToHide = ['basic_rate', 'uom', 'stock_uom', 'section_break_8', 'transfer_qty', 'reason', 'basic_amount',
+        'retain_sample', 'uom', 'stock_uom', 'conversion_factor', 'sample_quantity', 'batch_no', 'additional_cost',
         'more_info', 'reference_section', 'rates_section', 'is_finished_item', 'is_scrap_item', 'is_process_loss',
         'accounting', 'accounting_dimensions_section', 'project', 'set_basic_rate_manually'];
     fieldsToHide.forEach(function (field) {
@@ -21,6 +22,7 @@ function hideFieldsInChild() {
         var field = frappe.meta.get_docfield("Stock Entry Detail", field_name, cur_frm.doc.name);
         if (field && cur_frm.doc.stock_movement === 1) {
             field.in_list_view = 0;
+            field.colsize = 0;
         }
     });
     // hide for Move Stock
@@ -29,13 +31,14 @@ function hideFieldsInChild() {
         var field = frappe.meta.get_docfield("Stock Entry Detail", field_name, cur_frm.doc.name);
         if (field && cur_frm.doc.move_stock === 1) {
             field.in_list_view = 0;
-        }
+        } 
     });
 
     var itemCodeField = frappe.meta.get_docfield("Stock Entry Detail", "item_code", cur_frm.doc.name);
     if (itemCodeField) {
         itemCodeField.colsize = 3;
     }
+    
     cur_frm.refresh_fields('items');
     // }
 
@@ -102,6 +105,7 @@ frappe.ui.form.on('Stock Entry', {
                 s_ware.in_list_view = 1;
             }
         }
+        cur_frm.refresh_fields('items')
     },
     onload_post_render() {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
@@ -125,9 +129,12 @@ frappe.ui.form.on('Stock Entry', {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
                     }
 
-                    if(r.message.serial_no) {
+                    if(r.message.serial_no && r.message.s_warehouse === cur_frm.doc.from_warehouse) {
                         console.log("data from serialiaed: ", data);
                         modify_table_after_scan(cur_frm, data)    
+                    } else {
+                        cur_frm.set_value('scan_barcode', '')
+                        frappe.throw(`You are not allowed to move stock from warehouse: <strong>${r.message.s_warehouse}<\strong>`)
                     }
                 }
             });
@@ -153,7 +160,7 @@ frappe.ui.form.on('Stock Entry', {
                         cur_frm.set_value('scan_barcode', '');
                         
                 } else {
-                    frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
+                    frappe.msgprint(`Warehouse: <strong>${r.message.name}<\strong> does not exist. Please enter a valid Warehouse.`);
                     cur_frm.set_value('scan_warehouse', '');
                 }
             });
@@ -172,7 +179,7 @@ frappe.ui.form.on('Stock Entry', {
                         console.log("new_item_code: ", new_item_code)
                         
                     } else {
-                        frappe.msgprint('Grade not found. Please enter a valid Grade.');
+                        frappe.msgprint(`Grade: <strong>${r.message.name}<\strong> not found. Please enter a valid Grade.`);
                         cur_frm.set_value('scan_grade', '');
                         cur_frm.set_value('scan_barcode', '');
                     }
@@ -262,49 +269,53 @@ frappe.ui.form.on('Stock Entry Detail', {
                                     'user': frappe.session.user_email
                                 },
                                 callback: function (response) {
-                                    var warehouse_info = response.message;
-                                    console.log("warehouse_info", warehouse_info);
-                                    var warehouse_list = '';
-                                    for (var warehouse in warehouse_info) {
-                                        warehouse_list += `${warehouse} => ${warehouse_info[warehouse]} qty\n`;
-                                    }
-                                    let d = new frappe.ui.Dialog({
-                                        fields: [
-                                            {
-                                                label: 'Target Warehouse',
-                                                fieldname: 't_warehouse',
-                                                fieldtype: 'Data'
-                                            },
-                                            {
-                                                label: 'Recommended Warehouse',
-                                                fieldname: 'req_warehouse',
-                                                fieldtype: 'Small Text',
-                                                default: warehouse_list,
-                                                read_only: 1
-                                            }
-                                        ],
-                                        size: 'small', // small, large, extra-large 
-                                        // static:true,
-                                    });
-                                    
-                                    d.fields_dict.t_warehouse.$input.on("change", function() {
-                                        let t_warehouse_value = $(this).val();
-                                    
-                                        // Perform validation
-                                        frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function (r) {
-                                            if (r.message && r.message.name) {
-                                                // Set the value in the form
-                                                frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                                d.hide();
-                                            } else {
-                                                frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
-                                            }
+                                    if (response.message && response.message.error) {
+                                        // frappe.msgprint('Error: ' + response.message.error);
+                                    } else {
+                                        var warehouse_info = response.message;
+                                        console.log("warehouse_info", warehouse_info);
+                                        var warehouse_list = '';
+                                        for (var warehouse in warehouse_info) {
+                                                warehouse_list += `${warehouse} =>   ${warehouse_info[warehouse]} qty\n`;
+                                        }
+                                        let d = new frappe.ui.Dialog({
+                                            fields: [
+                                                {
+                                                    label: 'Target Warehouse',
+                                                    fieldname: 't_warehouse',
+                                                    fieldtype: 'Data'
+                                                },
+                                                {
+                                                    label: 'Recommended Warehouse',
+                                                    fieldname: 'req_warehouse',
+                                                    fieldtype: 'Small Text',
+                                                    default: warehouse_list,
+                                                    read_only: 1
+                                                }
+                                            ],
+                                            size: 'small'
                                         });
-                                    });
-                                    
-                                    d.show();
+                            
+                                        d.fields_dict.t_warehouse.$input.on("change", function() {
+                                            let t_warehouse_value = $(this).val();
+                                            // Perform validation
+                                            frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function (r) {
+                                                if (r.message && r.message.name) {
+                                                    // Set the value in the form
+                                                    frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+                                                    d.hide();
+                                                } else {
+                                                    frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
+                                                }
+                                            });
+                                        });
+                                        if (response.message.error) {
+                                            d.show();
+                                        }
+                                    }
                                 }
                             });
+                            
 
                             frm.refresh_field('items');
                         })
@@ -395,5 +406,3 @@ function show_scan_message(idx, exist = null) {
         });
     }
 }
-
-

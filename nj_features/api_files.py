@@ -59,16 +59,28 @@ def serializer_or_notserializer(item_code=None):
 
 @frappe.whitelist()
 def get_all_emp_warehouse(user):
-    dept = frappe.db.get_value('Employee', {'user_id': user}, 'department')
-    dept_values = frappe.db.get_value('Department', {'name': dept}, ['department_prefix', 'linked_warehouse'])
-    default_ww = dept_values[0] + '-Work-Warehouse - NJ'
-    all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1]}, ['name', 'available_capacity'])
-    
-    warehouse_info = {}
-    for warehouse in all_emp_ware:
-        warehouse_info[warehouse['name']] = warehouse['available_capacity']
-    
-    if default_ww in warehouse_info:
-        del warehouse_info[default_ww]
-    
-    return warehouse_info
+    try:
+        dept = frappe.db.get_value('Employee', {'user_id': user}, 'department')
+        dept_values = frappe.db.get_value('Department', {'name': dept}, ['department_prefix', 'linked_warehouse'])
+        
+        default_ww = ''
+        if not dept_values:
+            frappe.throw('Department values not found')
+            
+        if not dept_values[1]:
+            frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(dept))
+            
+        if dept_values[0]:
+            default_ww = dept_values[0] + '-Work-Warehouse - NJ'
+        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1]}, ['name', 'available_capacity'])
+        
+        warehouse_info = {}
+        for warehouse in all_emp_ware:
+            warehouse_info[warehouse['name']] = warehouse['available_capacity']
+        
+        if default_ww in warehouse_info:
+            del warehouse_info[default_ww]
+        
+        return warehouse_info
+    except Exception as e:
+        return {'error in emp': str(e)}

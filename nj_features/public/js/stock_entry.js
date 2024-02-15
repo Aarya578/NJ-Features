@@ -129,9 +129,14 @@ frappe.ui.form.on('Stock Entry', {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
                     }
 
-                    if(r.message.serial_no && r.message.s_warehouse === cur_frm.doc.from_warehouse) {
-                        console.log("data from serialiaed: ", data);
-                        modify_table_after_scan(cur_frm, data)    
+                    if(r.message.serial_no && cur_frm.doc.stock_movement == 1) {
+                        console.log("serialised data stock movement: ", data);
+                        modify_table_after_scan(cur_frm, data)
+                    }
+
+                    else if(r.message.serial_no && r.message.s_warehouse === cur_frm.doc.from_warehouse && cur_frm.doc.move_stock == 1) {
+                        console.log("serialised data stock movement: ", data);
+                        modify_table_after_scan(cur_frm, data)
                     } else {
                         cur_frm.set_value('scan_barcode', '')
                         frappe.throw(`You are not allowed to move stock from warehouse: <strong>${r.message.s_warehouse}<\strong>`)
@@ -248,7 +253,7 @@ frappe.ui.form.on('Stock Entry Detail', {
     item_code: function (frm, cdt, cdn) {
         var child = locals[cdt][cdn]
         if (cur_frm.doc.move_stock == 1) {
-
+            console.log("move_stock");
             for (let i = 0; i < cur_frm.doc.items.length; i++) {
                 const item = cur_frm.doc.items[i];
                 if (item.serial_no || item.item_code) {

@@ -77,6 +77,8 @@ def part_qi_check():
             "activity": activity,
             "total_part": count,
             "qi_name": qi_name,
+            "serial_no": data['serialNo'],
+            "inspection_type": data['inspection_type'],
             "qi_status": qi_status,
             "submit_status": submit_status,
             "automatic_count": automatic_count,

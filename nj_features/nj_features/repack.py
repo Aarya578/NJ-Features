@@ -2,6 +2,9 @@ import frappe
 
 @frappe.whitelist()
 def repack(inward):
+    unk = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'unk'}, 'value')
+    if unk is None:
+        unk = "unk"
     inward = frappe.get_doc("Inward", inward)
     stock_entry = frappe.new_doc("Stock Entry")
     stock_entry.stock_entry_type = "Repack"
@@ -14,23 +17,42 @@ def repack(inward):
         'conversion_factor': 1,
         'stock_uom': 'Nos',
         's_warehouse': inward.source_warehouse,
-        'basic_rate': inward.base_price,
+        'basic_rate': inward.base_rate,
         'set_basic_rate_manually': 1
     })
 
     if frappe.get_value('Item', {'item_code': inward.item_code}, 'has_serial_no') == 1:
-        stock_entry.items[0].update({'serial_no': inward.serial_no})
-
+        print(f"\n\ninward.serial_no_select: {stock_entry.items[0].item_code}")
+        get_serial_no = frappe.db.sql(
+            """SELECT name 
+            FROM `tabSerial No` 
+            WHERE item_code = %s 
+                AND delivery_document_no IS NULL 
+                AND warehouse = %s """,
+            (inward.item_code, inward.source_warehouse),
+            as_dict=True
+        )
+        print(f"\n\ninward.serial_no_select: {get_serial_no}")
+        stock_entry.items[0].update({'serial_no': get_serial_no[0].name})
+        
+    item_name = f"{inward.brand}-{inward.model}-{unk}-{unk}-{unk}"  
+    item_code = frappe.db.get_value('Item', {'name': item_name }, 'name')
+    
     stock_entry.append("items", {
-        "item_code": f"{inward.brand}-{inward.model}-unknown-unknown-unknown",
+        "item_code": item_code,
         "qty": 1,
         "t_warehouse": inward.target_warehouse,
         'uom': 'Nos',
         'conversion_factor': 1,
         'serial_no': inward.serial_no,
         'stock_uom': 'Nos',
-        'set_basic_rate_manually': 1,
-        'basic_rate': inward.base_price,
+        'set_basic_rate_manually': 0,
+        'basic_rate': inward.base_rate,
     })
 
-    stock_entry.submit()
+    if item_code:
+        stock_entry.submit()
+    else:
+        frappe.msgprint(f"Item: <strong>{item_name}</strong> doesn't exist.")
+        
+    return stock_entry.name

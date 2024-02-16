@@ -1,185 +1,156 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "autoname": "Inward-.brand.-.model.-.serial_no.-.##",
-    "creation": "2024-02-10 06:30:42.884393",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-     "item_code",
-     "column_break_nvgty",
-     "purchase_receipt",
-     "purchase_price",
-     "item_group",
-     "idx",
-     "base_price",
-     "section_break_6sw2s",
-     "barcode_svg",
-     "serial_no",
-     "item_template",
-     "brand",
-     "source_warehouse",
-     "column_break_mcau4",
-     "model",
-     "repack_item_code",
-     "target_warehouse",
-     "error_section_section",
-     "error_message",
-     "amended_from",
-     "base_rate"
-    ],
-    "fields": [
-     {
-      "fieldname": "purchase_price",
-      "fieldtype": "Currency",
-      "hidden": 1,
-      "label": "PR Purchase Price"
-     },
-     {
-      "fieldname": "item_code",
-      "fieldtype": "Select",
-      "label": "Purchase Receipt Item"
-     },
-     {
-      "fieldname": "purchase_receipt",
-      "fieldtype": "Link",
-      "label": "Purchase Receipt",
-      "options": "Purchase Receipt"
-     },
-     {
-      "fieldname": "idx",
-      "fieldtype": "Int",
-      "hidden": 1,
-      "label": "idx"
-     },
-     {
-      "fieldname": "base_price",
-      "fieldtype": "Currency",
-      "hidden": 1,
-      "label": "Item Unit Price"
-     },
-     {
-      "fieldname": "section_break_6sw2s",
-      "fieldtype": "Section Break"
-     },
-     {
-      "fieldname": "barcode_svg",
-      "fieldtype": "Data",
-      "hidden": 1,
-      "label": "Barcode SVG"
-     },
-     {
-      "fieldname": "item_group",
-      "fieldtype": "Link",
-      "label": "Item Group",
-      "options": "Item Group"
-     },
-     {
-      "fieldname": "source_warehouse",
-      "fieldtype": "Link",
-      "label": "Source Warehouse",
-      "options": "Warehouse"
-     },
-     {
-      "fieldname": "target_warehouse",
-      "fieldtype": "Link",
-      "label": "Target Warehouse",
-      "options": "Warehouse"
-     },
-     {
-      "fieldname": "item_template",
-      "fieldtype": "Data",
-      "hidden": 1,
-      "label": "Item Template",
-      "permlevel": 1
-     },
-     {
-      "fieldname": "brand",
-      "fieldtype": "Link",
-      "label": "Brand",
-      "options": "Brand"
-     },
-     {
-      "fieldname": "model",
-      "fieldtype": "Link",
-      "label": "Model",
-      "options": "Models"
-     },
-     {
-      "fieldname": "repack_item_code",
-      "fieldtype": "Data",
-      "label": "Repack Item Code",
-      "read_only": 1
-     },
-     {
-      "fieldname": "error_section_section",
-      "fieldtype": "Section Break",
-      "hidden": 1
-     },
-     {
-      "bold": 1,
-      "columns": 6,
-      "fieldname": "error_message",
-      "fieldtype": "Small Text",
-      "in_list_view": 1,
-      "label": "Error Message",
-      "read_only": 1
-     },
-     {
-      "fieldname": "amended_from",
-      "fieldtype": "Link",
-      "label": "Amended From",
-      "no_copy": 1,
-      "options": "Inward",
-      "print_hide": 1,
-      "read_only": 1
-     },
-     {
-      "fieldname": "serial_no",
-      "fieldtype": "Data",
-      "label": "Serial No",
-      "unique": 1
-     },
-     {
-      "fieldname": "column_break_nvgty",
-      "fieldtype": "Column Break"
-     },
-     {
-      "fieldname": "column_break_mcau4",
-      "fieldtype": "Column Break"
-     },
-     {
-      "fieldname": "base_rate",
-      "fieldtype": "Data",
-      "hidden": 1,
-      "label": "Base Rate"
-     }
-    ],
-    "hide_toolbar": 1,
-    "index_web_pages_for_search": 1,
-    "is_submittable": 1,
-    "links": [],
-    "modified": "2024-02-15 19:29:45.732461",
-    "modified_by": "Administrator",
-    "module": "NJ Features",
-    "name": "Inward",
-    "owner": "Administrator",
-    "permissions": [
-     {
-      "amend": 1,
-      "cancel": 1,
-      "create": 1,
-      "delete": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "System Manager",
-      "select": 1,
-      "submit": 1,
-      "write": 1
-     }
-    ],
-    "sort_field": "modified",
-    "sort_order": "DESC"
-   }
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "Inward-.brand.-.model.-.serial_no.-.##",
+ "creation": "2024-02-10 06:30:42.884393",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "column_break_nvgty",
+  "purchase_receipt",
+  "purchase_price",
+  "item_group",
+  "base_rate",
+  "section_break_6sw2s",
+  "serial_no",
+  "brand",
+  "source_warehouse",
+  "column_break_mcau4",
+  "model",
+  "repack_item_code",
+  "target_warehouse",
+  "error_section_section",
+  "error_message",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "purchase_price",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "PR Purchase Price"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Select",
+   "label": "Purchase Receipt Item"
+  },
+  {
+   "fieldname": "purchase_receipt",
+   "fieldtype": "Link",
+   "label": "Purchase Receipt",
+   "options": "Purchase Receipt"
+  },
+  {
+   "fieldname": "section_break_6sw2s",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "label": "Brand",
+   "options": "Brand"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "label": "Model",
+   "options": "Models"
+  },
+  {
+   "fieldname": "repack_item_code",
+   "fieldtype": "Data",
+   "label": "Repack Item Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_section_section",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "bold": 1,
+   "columns": 6,
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Error Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Inward",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "label": "Serial No",
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_nvgty",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_mcau4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "base_rate",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Base Rate"
+  }
+ ],
+ "hide_toolbar": 1,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-02-16 15:37:28.695066",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Inward",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

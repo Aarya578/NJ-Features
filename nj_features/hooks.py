@@ -32,13 +32,14 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 
 # include js in doctype views
 doctype_js = {
-    "Stock Entry" : "public/js/stock_entry.js",
+    # "Stock Entry" : "public/js/stock_entry.js",
     "Warehouse": "public/js/warehouse.js",
     "Employee": "public/js/employee.js"
 }
 
 doctype_list_js = {
     "Stock Entry" : "public/js/stock_entry_list.js",
+    "Stock Movement" : "public/js/stock_movement_list.js",
     "Prepared Report": "public/js/prepared_report_list.js"
 }
 

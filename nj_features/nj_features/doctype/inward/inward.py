@@ -10,7 +10,6 @@ import os
 from barcode import Code128
 from nj_features.barcode import CustomImgWriter
 from io import BytesIO
-from frappe.utils import get_url
 
 class Inward(Document):
     def on_submit(self):
@@ -43,8 +42,8 @@ def fetch_item_group(item_code):
 def create_serial_no():
     prefix = "NJ"
     serial_no = prefix + str(random.randint(100000, 999999))
-    barcode_url = generate_and_save_barcode(serial_no)
-    return {"serial_no": serial_no, "barcode_url": barcode_url}
+    generate_and_save_barcode(serial_no)
+    return serial_no
 
 def generate_and_save_barcode(serial_no, format='png'):
     my_code = Code128(serial_no, writer=CustomImgWriter())
@@ -64,6 +63,3 @@ def generate_and_save_barcode(serial_no, format='png'):
     # Save the SVG content to a file
     with open(file_path, 'wb') as f:
         f.write(barcode_bytes.getvalue())
-
-    website_url = get_url()
-    return f'{website_url}/files/{serial_no}.{format}'

@@ -1,13 +1,22 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 frappe.ui.form.on('Inward', {
+    refresh(frm) {
+        frm.set_query('purchase_receipt', function() {
+            return {
+                filters: {
+                    "docstatus": ['=', 1]
+                }
+            };
+        });
+    },
     before_save: function(frm) {
         if (!frm.doc.serial_no) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no',
                 callback: function(r) {
                     if (r.message) {
-                        frm.set_value('serial_no', r.message.serial_no);
+                        frm.set_value('serial_no', r.message);
                         console.log("serial no is generated i.e",r.message)
                     }
                 }

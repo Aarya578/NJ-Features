@@ -4,7 +4,7 @@ import frappe
 def repack(inward):
     unk = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'unk'}, 'value')
     if unk is None:
-        unk = "unk"
+        unk = "UNKNOWN"
     inward = frappe.get_doc("Inward", inward)
     stock_entry = frappe.new_doc("Stock Entry")
     stock_entry.stock_entry_type = "Repack"
@@ -32,7 +32,7 @@ def repack(inward):
             (inward.item_code, inward.source_warehouse),
             as_dict=True
         )
-        print(f"\n\ninward.serial_no_select: {get_serial_no}")
+        print(f"\n\ninward.serial_no_select: {get_serial_no[0]}")
         stock_entry.items[0].update({'serial_no': get_serial_no[0].name})
         
     item_name = f"{inward.brand}-{inward.model}-{unk}-{unk}-{unk}"  

@@ -38,7 +38,7 @@ doctype_js = {
 }
 
 doctype_list_js = {
-    "Stock Entry" : "public/js/stock_entry_list.js",
+    # "Stock Entry" : "public/js/stock_entry_list.js",
     "Stock Movement" : "public/js/stock_movement_list.js",
     "Prepared Report": "public/js/prepared_report_list.js"
 }

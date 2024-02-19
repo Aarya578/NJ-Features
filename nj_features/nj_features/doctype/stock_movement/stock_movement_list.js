@@ -43,7 +43,6 @@ function openStockEntryForm(stockType) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;
                 } else {
-                    doc.to_warehouse = response.work_warehouse;
                     doc.default_target_warehouse = response.work_warehouse;
                 }
             } else if (stockType === 0) {
@@ -52,12 +51,12 @@ function openStockEntryForm(stockType) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;
                 } else {
-                    doc.from_warehouse = response.work_warehouse;
+                    doc.default_source_warehouse = response.work_warehouse;
                 }
             }
 
-            frappe.model.with_doctype('Stock Entry Detail', function () {
-                var child_table = frappe.model.get_new_doc('Stock Entry Detail');
+            frappe.model.with_doctype('Stock Movement Detail', function () {
+                var child_table = frappe.model.get_new_doc('Stock Movement Detail');
                 child_table.parent = doc.name;
                 child_table.parenttype = doc.doctype;
                 child_table.parentfield = "items";

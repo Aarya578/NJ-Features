@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "SM-.#####",
- "creation": "2024-02-17 10:32:25.325287",
+ "creation": "2024-02-19 05:05:15.733870",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -24,6 +24,26 @@
   "amended_from"
  ],
  "fields": [
+  {
+   "fieldname": "stock_entry_type",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Stock Entry Type"
+  },
+  {
+   "default": "0",
+   "fieldname": "stock_movement",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Stock Movement"
+  },
+  {
+   "default": "0",
+   "fieldname": "move_stock",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Move Stock"
+  },
   {
    "fieldname": "default_source_warehouse",
    "fieldtype": "Data",
@@ -69,6 +89,16 @@
    "options": "Barcode"
   },
   {
+   "fieldname": "section_break_cw37t",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "items",
+   "options": "Stock Movement Detail"
+  },
+  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -78,41 +108,20 @@
    "read_only": 1
   },
   {
-   "fieldname": "section_break_cw37t",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "items",
-   "fieldtype": "Table",
-   "label": "Items",
-   "options": "Stock Movement Detail"
-  },
-  {
-   "fieldname": "stock_entry_type",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Stock Entry Type"
-  },
-  {
-   "default": "0",
-   "fieldname": "stock_movement",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Stock Movement"
-  },
-  {
-   "default": "0",
-   "fieldname": "move_stock",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Move Stock"
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Stock Movement",
+   "print_hide": 1,
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-17 11:42:13.240687",
+ "modified": "2024-02-19 05:12:25.040497",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",
@@ -127,7 +136,9 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],

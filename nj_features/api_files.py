@@ -43,7 +43,7 @@ def search_for_serial_or_batch_or_barcode_no(search_value):
         "Serial No", search_value, ["name as serial_no", "item_code", "warehouse"], as_dict=True
     )
     if serial_no_data:
-        return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "s_warehouse": serial_no_data.warehouse, "scan": 0}
+        return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 
     return {"scan": 1}
 

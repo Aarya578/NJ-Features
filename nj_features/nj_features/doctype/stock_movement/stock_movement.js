@@ -54,6 +54,12 @@ frappe.ui.form.on('Stock Movement', {
             hideOnload()
             hideFieldsInChild();
         }
+        if (cur_frm.doc.default_source_warehouse) {
+            autofill_warehouse(cur_frm.doc.items, "s_warehouse", cur_frm.doc.default_source_warehouse);
+        }
+        if (cur_frm.doc.default_target_warehouse) {
+            autofill_warehouse(cur_frm.doc.items, "t_warehouse", cur_frm.doc.default_target_warehouse);
+        }
     },
     before_load: function () {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
@@ -103,24 +109,25 @@ frappe.ui.form.on('Stock Movement', {
                     } else {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
                     }
-
+    
                     if(r.message.serial_no && cur_frm.doc.stock_movement == 1) {
                         console.log("serialised data stock movement: ", data);
                         modify_table_after_scan(cur_frm, data)
                     }
-
+    
                     else if(r.message.serial_no && r.message.s_warehouse === cur_frm.doc.from_warehouse && cur_frm.doc.move_stock == 1) {
                         console.log("serialised data stock movement: ", data);
                         modify_table_after_scan(cur_frm, data)
-                    } else {
+                    } 
+                    else if (cur_frm.doc.move_stock == 1){
                         cur_frm.set_value('scan_barcode', '')
-                        frappe.throw(`You are not allowed to move stock from warehouse: <strong>${r.message.s_warehouse}<\strong>`)
+                        frappe.throw(`You are not allowed to move stock from warehouse: <strong>${r.message.s_warehouse}</strong>`);  
                     }
                 }
             });
         }
         return false;
-    },
+    },    
 
 
     scan_warehouse: function(frm) {
@@ -138,9 +145,10 @@ frappe.ui.form.on('Stock Movement', {
                         cur_frm.set_value('scan_warehouse', '');
                         cur_frm.set_value('scan_grade', '');
                         cur_frm.set_value('scan_barcode', '');
+                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
                         
                 } else {
-                    frappe.msgprint(`Warehouse: <strong>${r.message.name}<\strong> does not exist. Please enter a valid Warehouse.`);
+                    frappe.msgprint(`Warehouse: <strong>${frm.doc.scan_warehouse}<\strong> does not exist. Please enter a valid Warehouse.`);
                     cur_frm.set_value('scan_warehouse', '');
                 }
             });
@@ -156,10 +164,18 @@ frappe.ui.form.on('Stock Movement', {
                 .then(function (r) {
                     if (r.message.name) {
                         new_item_code = cur_frm.doc.scan_barcode + "-" + r.message.name
+                        frappe.model.with_doc("Stock Movement", frm.docname, function() {
+                            var table = frappe.model.get_doc("Stock Movement", frm.docname).items;
+                            var child_item = table.find(d => d.idx === frm.selected_child);
+                            if (child_item) {
+                                frappe.model.set_value(child_item.doctype, child_item.name, 'grade', r.message.name);
+                                console.log("new_item_code: ", new_item_code);
+                            }
+                        });
                         console.log("new_item_code: ", new_item_code)
                         
                     } else {
-                        frappe.msgprint(`Grade: <strong>${r.message.name}<\strong> not found. Please enter a valid Grade.`);
+                        frappe.msgprint(`Grade: <strong>${frm.doc.scan_grade}<\strong> not found. Please enter a valid Grade.`);
                         cur_frm.set_value('scan_grade', '');
                         cur_frm.set_value('scan_barcode', '');
                     }
@@ -181,6 +197,13 @@ frappe.ui.form.on('Stock Movement', {
 
         }
     },
+    default_target_warehouse: function(frm) {
+        autofill_warehouse(frm.doc.items, "t_warehouse", frm.doc.default_target_warehouse);
+    },
+    default_source_warehouse: function(frm) {
+        autofill_warehouse(frm.doc.items, "s_warehouse", frm.doc.default_source_warehouse);
+    },
+	
     validate: function (frm) {
 
         if (cur_frm.doc.move_stock == 1) {
@@ -227,6 +250,8 @@ frappe.ui.form.on('Stock Movement', {
 frappe.ui.form.on('Stock Movement Detail', {
     item_code: function (frm, cdt, cdn) {
         var child = locals[cdt][cdn]
+        autofill_warehouse([child], "s_warehouse", child.s_warehouse);
+        autofill_warehouse([child], "t_warehouse", child.t_warehouse);
         if (cur_frm.doc.move_stock == 1) {
             console.log("move_stock");
             for (let i = 0; i < cur_frm.doc.items.length; i++) {
@@ -278,6 +303,11 @@ frappe.ui.form.on('Stock Movement Detail', {
                             
                                         d.fields_dict.t_warehouse.$input.on("change", function() {
                                             let t_warehouse_value = $(this).val();
+                                            if (!warehouse_info[t_warehouse_value]) {
+                                                frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
+                                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                                                return;
+                                            }
                                             // Perform validation
                                             frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function (r) {
                                                 if (r.message && r.message.name) {
@@ -285,11 +315,11 @@ frappe.ui.form.on('Stock Movement Detail', {
                                                     frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
                                                     d.hide();
                                                 } else {
-                                                    frappe.msgprint('Warehouse does not exist. Please enter a valid Warehouse.');
+                                                    frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
                                                 }
                                             });
                                         });
-                                        if (response.message.error) {
+                                        if (!response.message.error) {
                                             d.show();
                                         }
                                     }
@@ -313,31 +343,35 @@ function modify_table_after_scan(frm, data) {
     row_to_modify = cur_frm.doc.items.find(d => !d.item_code);
 
     if (!row_to_modify) {
+        console.log("!row_to_modify")
         row_to_modify = frappe.model.add_child(cur_frm.doc, cur_grid.doctype, 'items');
     }
     
-    var existing_record = cur_frm.doc.items.find(d => d.serial_no === data.serial_no);
-    if (existing_record) {
-        frappe.show_alert({
-            message: __('Serial Number already exists in the items list'),
-            indicator: 'orange'
-        });
-    }
-    console.log("row_to_modify: ", row_to_modify, "data: ", data, "existing_record: ", existing_record)
-    
+	if (data.serial_no != "" && data.serial_no != undefined) {
+        console.log("data.serial_no: ",data.serial_no);
+		var existing_record = cur_frm.doc.items.find(d => d.serial_no === data.serial_no);
+		if (existing_record) {
+			frappe.show_alert({
+				message: __('Serial Number already exists in the items list'),
+				indicator: 'orange'
+			});
+            cur_frm.set_value('scan_barcode', '');
+            return;
+		}
+		console.log("row_to_modify: ", row_to_modify, "data: ", data, "existing_record: ", existing_record)
+	}
 
     show_scan_message(row_to_modify.idx, row_to_modify.item_code);
     set_scanned_values(row_to_modify, data);
-    // if(!existing_record) {
-    // }
 }
 
 function set_scanned_values(row_to_modify, data) {
     // Set values in the correct row
     let values = {
         item_code: data.item_code,
-        s_warehouse: data.s_warehouse,
-        qty: 1
+        s_warehouse: data.warehouse,
+        qty: 1,
+        transfer_qty: 1
     }
     if (data.serial_no) {
         values.serial_no = data.serial_no
@@ -357,6 +391,15 @@ function show_scan_message(idx, exist = null) {
         frappe.show_alert({
             message: __('Row #{0}: Item added', [idx]),
             indicator: 'green'
+        });
+    }
+}
+
+function autofill_warehouse(child_table, warehouse_field, warehouse) {
+    if (warehouse && child_table && child_table.length) {
+        let doctype = child_table[0].doctype;
+        $.each(child_table || [], function(i, item) {
+            frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
         });
     }
 }

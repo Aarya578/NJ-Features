@@ -1,5 +1,11 @@
 frappe.ui.form.on('Warehouse', {
     onload: async function(frm) {
+        if(frm.doc.default_capacity == 1 && !frm.doc.max_capacity) {
+            frappe.db.get_value('NJ Settings', {"doc_type": "Stock Movement", "parameter": "max_capacity"}, "value").then(function(r) {
+                frm.set_value('max_capacity', r.message.value)
+                frm.save()
+            })
+        }
         await updateMaxcap(frm);
     },
     max_capacity: function(frm) {

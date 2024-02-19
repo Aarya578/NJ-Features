@@ -219,9 +219,9 @@ user_data_fields = [
 	}
 ]
 
-website_route_rules = [
-    {"from_route": "/stock-movement/&lt;name&gt;", "to_route": "stock-entry/new"},
-]
+# website_route_rules = [
+#     {"from_route": "/stock-movement/&lt;name&gt;", "to_route": "stock-entry/new"},
+# ]
 
 # Authentication and authorization
 # --------------------------------

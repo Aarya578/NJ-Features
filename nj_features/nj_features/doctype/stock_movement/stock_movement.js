@@ -1,6 +1,8 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 //Racking and Stock Movement
+$('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"], .icon-btn[data-original-title="Print"]')
+    .hide();
 
 function hideFieldsInChild() {
     // if (!frappe.user.has_role("Administrator")) {
@@ -33,15 +35,6 @@ function hideFieldsInChild() {
 
 }
 
-function hideOnload() {
-    // if (!frappe.user.has_role("Administrator")) {
-    $('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"], .icon-btn[data-original-title="Print"]')
-        .hide();
-    cur_frm.set_value('stock_entry_type', 'Material Transfer');
-    cur_frm.refresh_fields();
-    // }
-}
-
 var item_code_init = "";
 
 
@@ -49,25 +42,14 @@ frappe.ui.form.on('Stock Movement', {
     onload() {
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-        if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
-            hideOnload()
-            hideFieldsInChild();
-        }
+        hideFieldsInChild();
     },
     before_load: function () {
-        if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
-            hideFieldsInChild();
-        } else if (cur_frm.doc.stock_entry_type == "Material Transfer") {
-            hideFieldsInChild();
-            hideOnload()
-        }
+        hideFieldsInChild();
 
     },
     refresh() {
-        if (cur_frm.doc.stock_entry_type == "Material Transfer") {
-            hideFieldsInChild();
-            hideOnload();
-        }
+        hideFieldsInChild();
         if (cur_frm.doc.stock_movement == 1) {
 			cur_frm.set_df_property('default_source_warehouse', 'hidden', 1);
             var t_ware = frappe.meta.get_docfield("Stock Movement Detail", 't_warehouse', cur_frm.doc.name);
@@ -280,8 +262,8 @@ function createDialogForLastRecord(child, cdt, cdn) {
                 frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
             }
             frappe.model.set_value(cdt, cdn, 'brand', brand);
-            var userRoles = frappe.user_roles;
-            var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
+            // var userRoles = frappe.user_roles;
+            // var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
             // Get all employee warehouses
             frappe.call({
                 method: 'nj_features.api_files.get_all_emp_warehouse',
@@ -292,7 +274,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         // frappe.msgprint('Error: ' + response.message.error);
                     } else {
                         var recommended = response.message.recommended;
-                        var centralized = response.message.centralized;
+                        // var centralized = response.message.centralized;
 
                         let fields = [
                             {
@@ -310,15 +292,15 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         ];
 
                         // Add the "Centralized Warehouse" field if the user has the role
-                        if (hasCentralizedRole) {
-                            fields.push({
-                                label: 'Centralized Warehouse',
-                                fieldname: 'cen_warehouse',
-                                fieldtype: 'Small Text',
-                                default: centralized,
-                                read_only: 1
-                            });
-                        }
+                        // if (hasCentralizedRole) {
+                        //     fields.push({
+                        //         label: 'Centralized Warehouse',
+                        //         fieldname: 'cen_warehouse',
+                        //         fieldtype: 'Small Text',
+                        //         default: centralized,
+                        //         read_only: 1
+                        //     });
+                        // }
 
                         fields.push({
                             label: 'Close',
@@ -332,19 +314,17 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         let d = new frappe.ui.Dialog({
                             fields: fields,
                             size: 'small',
-                            static: 1
                         });
                         var recommended_list = parseWarehouseList(recommended)
-                        var centralized_list = parseWarehouseList(centralized)
-                        d.fields_dict.t_warehouse.$input.on("mouseout", function() {
+                        // var centralized_list = parseWarehouseList(centralized)
+                        d.fields_dict.t_warehouse.$input.on("change", function() {
                             let t_warehouse_value = $(this).val();
-                            console.log("t_warehouse_value: ", t_warehouse_value, !recommended_list[t_warehouse_value] || (!centralized_list[t_warehouse_value] && hasCentralizedRole));
-                            console.log(!recommended_list[t_warehouse_value]," | centralized_list",centralized_list, centralized_list[t_warehouse_value]," | ", hasCentralizedRole);
-                            // if (!recommended_list[t_warehouse_value] || (!centralized_list[t_warehouse_value] && hasCentralizedRole)) {
-                            //     frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
-                            //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
-                            //     return;
-                            // } else if (centralized_list[t_warehouse_value] && !hasCentralizedRole) {
+                            if (!recommended_list[t_warehouse_value]) { // || (!centralized_list[t_warehouse_value] && hasCentralizedRole)
+                                frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
+                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                                return;
+                            } 
+                            // else if (centralized_list[t_warehouse_value] && !hasCentralizedRole) {
                             //     frappe.msgprint(`You are not allowed to move stock from centralized warehouse: <strong>${t_warehouse_value}</strong>`);
                             //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
                             //     return;

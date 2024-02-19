@@ -62,25 +62,38 @@ def get_all_emp_warehouse(user):
     try:
         dept = frappe.db.get_value('Employee', {'user_id': user}, 'department')
         dept_values = frappe.db.get_value('Department', {'name': dept}, ['department_prefix', 'linked_warehouse'])
-        
-        default_ww = ''
+
         if not dept_values:
             frappe.throw('Department values not found')
-            
+
         if not dept_values[1]:
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(dept))
-            
-        if dept_values[0]:
-            default_ww = dept_values[0] + '-Work-Warehouse - NJ'
+
+        default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1]}, ['name', 'available_capacity'])
-        
-        warehouse_info = {}
+        centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1}, 'name')
+        centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
+        print(f"all_emp_ware: {all_emp_ware} \n centralized_parent: {centralized_parent} \n centralized_ware: {centralized_ware}")
+        recommended_warehouses = {}
+        centralized_warehouses = {}
+
         for warehouse in all_emp_ware:
-            warehouse_info[warehouse['name']] = warehouse['available_capacity']
+            recommended_warehouses[warehouse['name']] = warehouse['available_capacity']
+
+        for warehouse in centralized_ware:
+            centralized_warehouses[warehouse['name']] = warehouse['available_capacity']
+
+        if default_ww in recommended_warehouses:
+            del recommended_warehouses[default_ww]
+
+        formatted_recommended = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
+        formatted_centralized = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in centralized_warehouses.items()])
+
+        print(f"\n\n formatted_recommended:\n {formatted_recommended}, \n formatted_centralized:\n {formatted_centralized}")
+        return {
+            'recommended': formatted_recommended,
+            'centralized': formatted_centralized
+        }
         
-        if default_ww in warehouse_info:
-            del warehouse_info[default_ww]
-        
-        return warehouse_info
     except Exception as e:
         return {'error in emp': str(e)}

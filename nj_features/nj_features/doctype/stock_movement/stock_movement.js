@@ -7,22 +7,21 @@ function hideFieldsInChild() {
     $('.custom-actions.hidden-xs.hidden-md, .menu-btn-group, .grid-download, .grid-upload').hide();
    
     // hide for Stock Accept
-    var fields_to_modify = ['reason', 'basic_rate', 't_warehouse'];
-    fields_to_modify.forEach(function (field_name) {
-        var field = frappe.meta.get_docfield("Stock Movement Detail", field_name, cur_frm.doc.name);
-        if (field && cur_frm.doc.stock_movement === 1) {
-            field.in_list_view = 0;
-            field.colsize = 0;
-        }
-    });
+    var t_ware = frappe.meta.get_docfield("Stock Movement Detail", 't_warehouse', cur_frm.doc.name);
+    if (t_ware && cur_frm.doc.stock_movement === 1) {
+        t_ware.in_list_view = 0;
+        t_ware.read_only = 1;
+        t_ware.colsize = 0;
+    }
     // hide for Move Stock
-    var fields_to_modify = ['reason', 'basic_rate', 's_warehouse'];
-    fields_to_modify.forEach(function (field_name) {
-        var field = frappe.meta.get_docfield("Stock Movement Detail", field_name, cur_frm.doc.name);
-        if (field && cur_frm.doc.move_stock === 1) {
-            field.in_list_view = 0;
-        } 
-    });
+    var s_ware = frappe.meta.get_docfield("Stock Movement Detail", 's_warehouse', cur_frm.doc.name);
+    if (s_ware && cur_frm.doc.move_stock === 1) {
+        s_ware.in_list_view = 0;
+        s_ware.read_only = 1;
+    }
+    if (t_ware && cur_frm.doc.move_stock === 1) {
+        t_ware.read_only = 1;
+    }
 
     var itemCodeField = frappe.meta.get_docfield("Stock Movement Detail", "item_code", cur_frm.doc.name);
     if (itemCodeField) {
@@ -54,12 +53,6 @@ frappe.ui.form.on('Stock Movement', {
             hideOnload()
             hideFieldsInChild();
         }
-        if (cur_frm.doc.default_source_warehouse) {
-            autofill_warehouse(cur_frm.doc.items, "s_warehouse", cur_frm.doc.default_source_warehouse);
-        }
-        if (cur_frm.doc.default_target_warehouse) {
-            autofill_warehouse(cur_frm.doc.items, "t_warehouse", cur_frm.doc.default_target_warehouse);
-        }
     },
     before_load: function () {
         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {
@@ -90,6 +83,15 @@ frappe.ui.form.on('Stock Movement', {
                 s_ware.read_only = 1;
                 s_ware.in_list_view = 1;
             }
+        }
+
+        if (cur_frm.doc.default_target_warehouse) {
+            console.log("default_target_warehouse", cur_frm.doc.default_target_warehouse);
+            autofill_warehouse(cur_frm.doc.items, "t_warehouse", cur_frm.doc.default_target_warehouse);
+        }
+        if (cur_frm.doc.default_source_warehouse) {
+            console.log("default_source_warehouse", cur_frm.doc.default_source_warehouse);
+            autofill_warehouse(cur_frm.doc.items, "s_warehouse", cur_frm.doc.default_source_warehouse);
         }
         cur_frm.refresh_fields('items')
     },
@@ -248,93 +250,138 @@ frappe.ui.form.on('Stock Movement', {
 })
 
 frappe.ui.form.on('Stock Movement Detail', {
-    item_code: function (frm, cdt, cdn) {
-        var child = locals[cdt][cdn]
-        autofill_warehouse([child], "s_warehouse", child.s_warehouse);
+    item_code: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
         autofill_warehouse([child], "t_warehouse", child.t_warehouse);
+        autofill_warehouse([child], "s_warehouse", child.s_warehouse);
+
         if (cur_frm.doc.move_stock == 1) {
             console.log("move_stock");
-            for (let i = 0; i < cur_frm.doc.items.length; i++) {
-                const item = cur_frm.doc.items[i];
-                if (item.serial_no || item.item_code) {
-                    var itemCode = item.item_code;
-                    
-                    frappe.db.get_value('Item', { "name": itemCode }, ['item_group', 'brand'])
-                        .then(function (r) {
-                            var itemGroup = r.message.item_group;
-                            var brand = r.message.brand;
-                            if (item.item_group) {
-                                frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
-                            }
-                            frappe.model.set_value(cdt, cdn, 'brand', brand);
-                            // get all emp_ware
-                            frappe.call({
-                                method: 'nj_features.api_files.get_all_emp_warehouse',
-                                args: {
-                                    'user': frappe.session.user_email
-                                },
-                                callback: function (response) {
-                                    if (response.message && response.message.error) {
-                                        // frappe.msgprint('Error: ' + response.message.error);
-                                    } else {
-                                        var warehouse_info = response.message;
-                                        console.log("warehouse_info", warehouse_info);
-                                        var warehouse_list = '';
-                                        for (var warehouse in warehouse_info) {
-                                                warehouse_list += `${warehouse} =>   ${warehouse_info[warehouse]} qty\n`;
-                                        }
-                                        let d = new frappe.ui.Dialog({
-                                            fields: [
-                                                {
-                                                    label: 'Target Warehouse',
-                                                    fieldname: 't_warehouse',
-                                                    fieldtype: 'Data'
-                                                },
-                                                {
-                                                    label: 'Recommended Warehouse',
-                                                    fieldname: 'req_warehouse',
-                                                    fieldtype: 'Small Text',
-                                                    default: warehouse_list,
-                                                    read_only: 1
-                                                }
-                                            ],
-                                            size: 'small'
-                                        });
-                            
-                                        d.fields_dict.t_warehouse.$input.on("change", function() {
-                                            let t_warehouse_value = $(this).val();
-                                            if (!warehouse_info[t_warehouse_value]) {
-                                                frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
-                                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
-                                                return;
-                                            }
-                                            // Perform validation
-                                            frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function (r) {
-                                                if (r.message && r.message.name) {
-                                                    // Set the value in the form
-                                                    frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                                    d.hide();
-                                                } else {
-                                                    frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
-                                                }
-                                            });
-                                        });
-                                        if (!response.message.error) {
-                                            d.show();
-                                        }
-                                    }
-                                }
-                            });
-                            
 
-                            frm.refresh_field('items');
-                        })
-                }
+            var lastRecordIndex = cur_frm.doc.items.length - 1;
+
+            if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
+                createDialogForLastRecord(child, cdt, cdn);
             }
         }
     }
-    
 });
+
+function createDialogForLastRecord(child, cdt, cdn) {
+    const item = child;
+    if (item.serial_no || item.item_code) {
+        var itemCode = item.item_code;
+
+        frappe.db.get_value('Item', {"name": itemCode}, ['item_group', 'brand']).then(function(r) {
+            var itemGroup = r.message.item_group;
+            var brand = r.message.brand;
+
+            if (item.item_group) {
+                frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
+            }
+            frappe.model.set_value(cdt, cdn, 'brand', brand);
+            var userRoles = frappe.user_roles;
+            var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
+            // Get all employee warehouses
+            frappe.call({
+                method: 'nj_features.api_files.get_all_emp_warehouse',
+                args: {'user': frappe.session.user_email},
+                callback: function(response) {
+                    console.log("get_all_emp_warehouse: ",response.message);
+                    if (response.message && response.message.error) {
+                        // frappe.msgprint('Error: ' + response.message.error);
+                    } else {
+                        var recommended = response.message.recommended;
+                        var centralized = response.message.centralized;
+
+                        let fields = [
+                            {
+                                label: 'Target Warehouse',
+                                fieldname: 't_warehouse',
+                                fieldtype: 'Data'
+                            },
+                            {
+                                label: 'Recommended Warehouse',
+                                fieldname: 'req_warehouse',
+                                fieldtype: 'Small Text',
+                                default: recommended,
+                                read_only: 1
+                            }
+                        ];
+
+                        // Add the "Centralized Warehouse" field if the user has the role
+                        if (hasCentralizedRole) {
+                            fields.push({
+                                label: 'Centralized Warehouse',
+                                fieldname: 'cen_warehouse',
+                                fieldtype: 'Small Text',
+                                default: centralized,
+                                read_only: 1
+                            });
+                        }
+
+                        fields.push({
+                            label: 'Close',
+                            fieldtype: 'Button',
+                            click: function() {
+                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                                d.hide();
+                            }
+                        });
+
+                        let d = new frappe.ui.Dialog({
+                            fields: fields,
+                            size: 'small',
+                            static: 1
+                        });
+                        var recommended_list = parseWarehouseList(recommended)
+                        var centralized_list = parseWarehouseList(centralized)
+                        d.fields_dict.t_warehouse.$input.on("mouseout", function() {
+                            let t_warehouse_value = $(this).val();
+                            console.log("t_warehouse_value: ", t_warehouse_value, !recommended_list[t_warehouse_value] || (!centralized_list[t_warehouse_value] && hasCentralizedRole));
+                            console.log(!recommended_list[t_warehouse_value]," | centralized_list",centralized_list, centralized_list[t_warehouse_value]," | ", hasCentralizedRole);
+                            // if (!recommended_list[t_warehouse_value] || (!centralized_list[t_warehouse_value] && hasCentralizedRole)) {
+                            //     frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
+                            //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                            //     return;
+                            // } else if (centralized_list[t_warehouse_value] && !hasCentralizedRole) {
+                            //     frappe.msgprint(`You are not allowed to move stock from centralized warehouse: <strong>${t_warehouse_value}</strong>`);
+                            //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                            //     return;
+                            // }
+
+                            // Perform validation
+                            frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+                                if (r.message && r.message.name) {
+                                    frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+                                    d.hide();
+                                } else {
+                                    frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                }
+                            });
+                        });
+
+                        if (!response.message.error) {
+                            d.show();
+                        }
+                    }
+                }
+            });
+
+            cur_frm.refresh_field('items');
+        });
+    }
+}
+
+function parseWarehouseList(warehouseList) {
+    let warehouseObject = {};
+    warehouseList.split('\n').forEach(entry => {
+        let [warehouse, qty] = entry.split(' => ');
+        warehouseObject[warehouse.trim()] = parseInt(qty);
+    });
+    return warehouseObject;
+}
+
 
 function modify_table_after_scan(frm, data) {
     let cur_grid = frm.fields_dict.items.grid;
@@ -348,7 +395,6 @@ function modify_table_after_scan(frm, data) {
     }
     
 	if (data.serial_no != "" && data.serial_no != undefined) {
-        console.log("data.serial_no: ",data.serial_no);
 		var existing_record = cur_frm.doc.items.find(d => d.serial_no === data.serial_no);
 		if (existing_record) {
 			frappe.show_alert({

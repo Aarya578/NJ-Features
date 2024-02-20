@@ -2,6 +2,7 @@ $(document).ready(function() {
     $(document.body).addClass('full-width');
     localStorage.setItem('container_fullwidth', true);
     $('.layout-side-section').hide();
+    $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
 });
 
 frappe.ui.form.on('NJ QC Check List', {

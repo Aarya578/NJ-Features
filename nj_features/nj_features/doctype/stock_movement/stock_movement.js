@@ -4,37 +4,6 @@
 $('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"], .icon-btn[data-original-title="Print"]')
     .hide();
 
-function hideFieldsInChild() {
-    // if (!frappe.user.has_role("Administrator")) {
-    $('.custom-actions.hidden-xs.hidden-md, .menu-btn-group, .grid-download, .grid-upload').hide();
-   
-    // hide for Stock Accept
-    var t_ware = frappe.meta.get_docfield("Stock Movement Detail", 't_warehouse', cur_frm.doc.name);
-    if (t_ware && cur_frm.doc.stock_movement === 1) {
-        t_ware.in_list_view = 0;
-        t_ware.read_only = 1;
-        t_ware.colsize = 0;
-    }
-    // hide for Move Stock
-    var s_ware = frappe.meta.get_docfield("Stock Movement Detail", 's_warehouse', cur_frm.doc.name);
-    if (s_ware && cur_frm.doc.move_stock === 1) {
-        s_ware.in_list_view = 0;
-        s_ware.read_only = 1;
-    }
-    if (t_ware && cur_frm.doc.move_stock === 1) {
-        t_ware.read_only = 1;
-    }
-
-    var itemCodeField = frappe.meta.get_docfield("Stock Movement Detail", "item_code", cur_frm.doc.name);
-    if (itemCodeField) {
-        itemCodeField.colsize = 3;
-    }
-    
-    cur_frm.refresh_fields('items');
-    // }
-
-}
-
 var item_code_init = "";
 var default_ware = "";
 
@@ -42,27 +11,9 @@ frappe.ui.form.on('Stock Movement', {
     onload() {
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-        hideFieldsInChild();
     },
     refresh() {
-        hideFieldsInChild();
-        if (cur_frm.doc.stock_movement == 1) {
-			cur_frm.set_df_property('default_source_warehouse', 'hidden', 1);
-            var t_ware = frappe.meta.get_docfield("Stock Movement Detail", 't_warehouse', cur_frm.doc.name);
-            if (t_ware) {
-                t_ware.read_only = 1;
-                t_ware.in_list_view = 1;
-            }
-        }
-        if (cur_frm.doc.move_stock == 1) {
-			cur_frm.set_df_property('default_target_warehouse', 'hidden', 1);
-            var s_ware = frappe.meta.get_docfield("Stock Movement Detail", 's_warehouse', cur_frm.doc.name);
-            if (s_ware) {
-                s_ware.read_only = 1;
-                s_ware.in_list_view = 1;
-            }
-        }
-        cur_frm.refresh_fields('items')
+        $('[data-fieldname="scan_barcode"]').focus();
     },
 
     scan_barcode: function () {
@@ -75,7 +26,11 @@ frappe.ui.form.on('Stock Movement', {
                 callback: function(r) {
                     const data = r && r.message;
                     if (r.message.scan === 1) {
-                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                        if(cur_frm.doc.stock_movement === 1) {
+                            cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                        } else if (cur_frm.doc.move_stock === 1) {
+                            cur_frm.toggle_display(['scan_grade'], true);
+                        }
                         $('[data-fieldname="scan_grade"]').focus();
                     } else {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
@@ -92,7 +47,7 @@ frappe.ui.form.on('Stock Movement', {
 
     scan_grade: function(frm) {
         // Get the child table data
-        if (frm.doc.scan_grade !== '' && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1)) {
+        if (frm.doc.scan_grade != '' && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1)) {
             var new_item_code = ''
             frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
                 .then(function (r) {
@@ -112,6 +67,7 @@ frappe.ui.form.on('Stock Movement', {
                         frappe.msgprint(`Grade: <strong>${frm.doc.scan_grade}<\strong> not found. Please enter a valid Grade.`);
                         cur_frm.set_value('scan_grade', '');
                         cur_frm.set_value('scan_barcode', '');
+                        $('[data-fieldname="scan_barcode"]').focus();
                     }
                     
                     if(r.message.name) {
@@ -120,12 +76,22 @@ frappe.ui.form.on('Stock Movement', {
                             if (r.message.name) {
                                 item_code_init = r.message.name
                                 // console.log("item code in DB: ", r.message.name)
-                                $('[data-fieldname="scan_warehouse"]').focus();
+                                if(frm.doc.move_stock === 1) {
+                                    var data = {}
+                                    data['item_code'] = item_code_init
+                                    data['warehouse'] = frm.doc.default_source_warehouse
+                                    console.log("data after scan ware: ", data);
+                                    modify_table_after_scan(cur_frm, data);
+                                    cur_frm.set_value('scan_grade', '');
+                                    cur_frm.set_value('scan_barcode', '');
+                                    $('[data-fieldname="scan_barcode"]').focus();
+                                }
 
                             } else {
                                 frappe.msgprint(`Item: <strong>${new_item_code}</strong> doesn't exist. Please enter a valid Item.`);
                                 cur_frm.set_value('scan_grade', '');
                                 cur_frm.set_value('scan_barcode', '');
+                                $('[data-fieldname="scan_barcode"]').focus();
                             }
                     })
                 }
@@ -155,8 +121,8 @@ frappe.ui.form.on('Stock Movement', {
                     return false;
                 } else {
                     cur_frm.set_value('scan_warehouse', '');
-                    $('[data-fieldname="scan_warehouse"]').focus();
                     frappe.msgprint(`Warehouse: <strong>${cur_frm.doc.scan_warehouse}<\strong> does not exist. Please enter a valid Warehouse.`);
+                    $('[data-fieldname="scan_warehouse"]').focus();
                 }
             });
         }
@@ -198,12 +164,12 @@ frappe.ui.form.on('Stock Movement', {
                                                 label: "OK"
                                             }
                                         });
-
                                         frappe.validated = false;
                                     }
                                 }
                             }
                         });
+                        $('[data-fieldname="scan_barcode"]').focus();
                     } else {
                         console.log("Warehouse is not found");
                     }
@@ -232,26 +198,27 @@ frappe.ui.form.on('Stock Movement Detail', {
 function createDialogForLastRecord(child, cdt, cdn) {
     const item = child;
     if (item.serial_no || item.item_code) {
-        var itemCode = item.item_code;
+        // var itemCode = item.item_code;
 
-        frappe.db.get_value('Item', {"name": itemCode}, ['item_group', 'brand']).then(function(r) {
-            var itemGroup = r.message.item_group;
-            var brand = r.message.brand;
+        // frappe.db.get_value('Item', {"name": itemCode}, ['item_group', 'brand']).then(function(r) {
+        //     var itemGroup = r.message.item_group;
+        //     var brand = r.message.brand;
 
-            if (item.item_group) {
-                frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
-            }
-            frappe.model.set_value(cdt, cdn, 'brand', brand);
+        //     if (item.item_group) {
+        //         frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
+        //     }
+        //     frappe.model.set_value(cdt, cdn, 'brand', brand);
+
             var userRoles = frappe.user_roles;
             var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
+
             // Get all employee warehouses
             frappe.call({
                 method: 'nj_features.api_files.get_all_emp_warehouse',
                 args: {'user': frappe.session.user_email},
                 callback: function(response) {
-                    // console.log("get_all_emp_warehouse: ",response.message);
                     if (response.message && response.message.error) {
-                        // frappe.msgprint('Error: ' + response.message.error);
+                        // Handle error
                     } else {
                         var recommended = response.message.recommended;
                         var centralized = response.message.centralized;
@@ -286,7 +253,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             label: 'Close',
                             fieldtype: 'Button',
                             click: function() {
-                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                                // cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
                                 d.hide();
                             }
                         });
@@ -294,22 +261,11 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         let d = new frappe.ui.Dialog({
                             fields: fields,
                             size: 'small',
+                            static: 1
                         });
-                        var recommended_list = parseWarehouseList(recommended)
-                        var centralized_list = parseWarehouseList(centralized)
+
                         d.fields_dict.t_warehouse.$input.on("change", function() {
                             let t_warehouse_value = $(this).val();
-                            if (!recommended_list[t_warehouse_value] || !centralized_list[t_warehouse_value]) { // || (!centralized_list[t_warehouse_value] && hasCentralizedRole)
-                                frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
-                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
-                                return;
-                            } 
-                            else if (centralized_list[t_warehouse_value] && !hasCentralizedRole) {
-                                frappe.msgprint(`You are not allowed to move stock from centralized warehouse: <strong>${t_warehouse_value}</strong>`);
-                                cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
-                                return;
-                            }
-
                             // Perform validation
                             frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
                                 if (r.message && r.message.name) {
@@ -317,7 +273,9 @@ function createDialogForLastRecord(child, cdt, cdn) {
                                     d.hide();
                                 } else {
                                     frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                    $('[data-fieldname="scan_barcode"]').focus();
                                 }
+                                cur_frm.toggle_display(['scan_grade'], true);
                             });
                         });
 
@@ -327,23 +285,145 @@ function createDialogForLastRecord(child, cdt, cdn) {
                     }
                 }
             });
-
             cur_frm.refresh_field('items');
-        });
+        // });
     }
 }
 
-function parseWarehouseList(demo) {
-    console.log("demo: ", demo);
-    let warehouseObject = {};
-    if(demo) {
-        demo.split('\n').forEach(entry => {
-            let [warehouse, qty] = entry.split(' => ');
-            warehouseObject[warehouse.trim()] = parseInt(qty);
-        });
-    }
-    return warehouseObject;
-}
+
+// frappe.ui.form.on('Stock Movement Detail', {
+//     item_code: function(frm, cdt, cdn) {
+//         var child = locals[cdt][cdn];
+//         autofill_warehouse([child], "t_warehouse", cur_frm.doc.default_target_warehouse);
+//         autofill_warehouse([child], "s_warehouse", cur_frm.doc.default_source_warehouse);
+
+//         if (cur_frm.doc.move_stock == 1) {
+//             var lastRecordIndex = cur_frm.doc.items.length - 1;
+
+//             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
+//                 createDialogForLastRecord(child, cdt, cdn);
+//             }
+//         }
+//     }
+// });
+
+// function createDialogForLastRecord(child, cdt, cdn) {
+//     const item = child;
+//     if (item.serial_no || item.item_code) {
+//         var itemCode = item.item_code;
+
+//         frappe.db.get_value('Item', {"name": itemCode}, ['item_group', 'brand']).then(function(r) {
+//             var itemGroup = r.message.item_group;
+//             var brand = r.message.brand;
+
+//             if (item.item_group) {
+//                 frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
+//             }
+//             frappe.model.set_value(cdt, cdn, 'brand', brand);
+//             var userRoles = frappe.user_roles;
+//             var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
+//             // Get all employee warehouses
+//             frappe.call({
+//                 method: 'nj_features.api_files.get_all_emp_warehouse',
+//                 args: {'user': frappe.session.user_email},
+//                 callback: function(response) {
+//                     // console.log("get_all_emp_warehouse: ",response.message);
+//                     if (response.message && response.message.error) {
+//                         // frappe.msgprint('Error: ' + response.message.error);
+//                     } else {
+//                         var recommended = response.message.recommended;
+//                         var centralized = response.message.centralized;
+
+//                         let fields = [
+//                             {
+//                                 label: 'Target Warehouse',
+//                                 fieldname: 't_warehouse',
+//                                 fieldtype: 'Data'
+//                             },
+//                             {
+//                                 label: 'Recommended Warehouse',
+//                                 fieldname: 'req_warehouse',
+//                                 fieldtype: 'Small Text',
+//                                 default: recommended,
+//                                 read_only: 1
+//                             }
+//                         ];
+
+//                         // Add the "Centralized Warehouse" field if the user has the role
+//                         if (hasCentralizedRole) {
+//                             fields.push({
+//                                 label: 'Centralized Warehouse',
+//                                 fieldname: 'cen_warehouse',
+//                                 fieldtype: 'Small Text',
+//                                 default: centralized,
+//                                 read_only: 1
+//                             });
+//                         }
+
+//                         fields.push({
+//                             label: 'Close',
+//                             fieldtype: 'Button',
+//                             click: function() {
+//                                 cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+//                                 d.hide();
+//                             }
+//                         });
+
+//                         let d = new frappe.ui.Dialog({
+//                             fields: fields,
+//                             size: 'small',
+//                         });
+//                         // var recommended_list = parseWarehouseList(recommended)
+//                         // var centralized_list = parseWarehouseList(centralized)
+//                         d.fields_dict.t_warehouse.$input.on("change", function() {
+//                             let t_warehouse_value = $(this).val();
+//                             // if (!recommended_list[t_warehouse_value] || !centralized_list[t_warehouse_value]) { // || (!centralized_list[t_warehouse_value] && hasCentralizedRole)
+//                             //     frappe.msgprint(`You are not allowed to move stock from warehouse: <strong>${t_warehouse_value}</strong>`);
+//                             //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+//                             //     $('[data-fieldname=""]').focus();
+//                             //     return;
+//                             // } 
+//                             // else if (centralized_list[t_warehouse_value] && !hasCentralizedRole) {
+//                             //     frappe.msgprint(`You are not allowed to move stock from centralized warehouse: <strong>${t_warehouse_value}</strong>`);
+//                             //     cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+//                             //     return;
+//                             // }
+
+//                             // Perform validation
+//                             frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+//                                 if (r.message && r.message.name) {
+//                                     console.log("cdt", cdt, "cdn", cdn, "name", r.message.name);
+//                                     frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+//                                 } else {
+//                                     frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+//                                     $('[data-fieldname="scan_barcode"]').focus();
+//                                 }
+//                                 d.hide();
+//                             });
+//                         });
+
+//                         if (!response.message.error) {
+//                             d.show();
+//                         }
+//                     }
+//                 }
+//             });
+
+//             cur_frm.refresh_field('items');
+//         });
+//     }
+// }
+
+// function parseWarehouseList(demo) {
+//     let warehouseObject = {};
+//     if(demo) {
+//         demo.split('\n').forEach(entry => {
+//             let [warehouse, qty] = entry.split(' => ');
+//             warehouseObject[warehouse.trim()] = parseInt(qty);
+//         });
+//     }
+//     return warehouseObject;
+// }
 
 
 function modify_table_after_scan(frm, data) {
@@ -390,8 +470,8 @@ function set_scanned_values(row_to_modify, data) {
 
     cur_frm.set_value('scan_barcode', '');
     cur_frm.set_value('scan_warehouse', '');
-    refresh_field("scan_warehouse");
-    refresh_field("items");
+    cur_frm.refresh_field("scan_warehouse");
+    cur_frm.refresh_field("items");
 }
 
 function show_scan_message(idx, exist = null) {

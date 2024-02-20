@@ -16,6 +16,17 @@ frappe.ui.form.on('Warehouse', {
         frm.set_value('available_capacity', cur_frm.doc.max_capacity - cur_frm.doc.qty_after_transaction);
         frm.refresh_field('available_capacity');
     },
+    default_capacity: function(frm){
+        if(frm.doc.default_capacity === 1 && !frm.doc.max_capacity) {
+            frappe.db.get_value('NJ Settings', {'doc_type': 'Warehouse', 'parameter': 'default_capacity'}, 'value').then(function(r) {
+                if(r.message) {
+                    frm.set_value('max_capacity', r.message.value)
+                    frm.refresh_field('max_capacity')
+                    frm.save();
+                }
+            })
+        }
+    },
     item_group: function(frm) {
         const hasItemGroup = frm.doc.item_group;
         const hasBrand = frm.doc.brand;
@@ -95,9 +106,5 @@ async function updateMaxcap(frm) {
             console.log(err);
         }
         
-    }
-     else{
-        frm.set_df_property('max_capacity', 'hidden', 1);
-        frm.set_df_property('available_capacity', 'hidden', 1);
     }
 }

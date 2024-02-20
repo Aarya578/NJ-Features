@@ -44,12 +44,19 @@ def fetch_item_group(item_code):
 
 
 @frappe.whitelist()
-def create_serial_no():
-    prefix = "NJ"
-    serial_no = prefix + str(random.randint(100000, 999999))
-    generate_and_save_barcode(serial_no)
-    return serial_no
-
+def create_serial_no(item_group=None):
+    try:
+        serial_no=''
+        if item_group:
+            serial_no_prefix = frappe.db.get_value("Item Group", {"name":item_group }, "serial_no_prefix")
+            prefix = "NJ-"
+            if serial_no_prefix:
+                serial_no = prefix + serial_no_prefix+str(random.randint(100000, 999999))
+                generate_and_save_barcode(serial_no)
+                return serial_no
+    except Exception as e:
+        return {f"Error while creating Serial No: {e}"}
+        
 def generate_and_save_barcode(serial_no, format='png'):
     my_code = Code128(serial_no, writer=CustomImgWriter())
 

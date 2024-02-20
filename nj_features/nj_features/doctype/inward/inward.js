@@ -10,16 +10,25 @@ frappe.ui.form.on('Inward', {
             };
         });
     },
-    before_save: function(frm) {
+    validate: function(frm) {
         if (!frm.doc.serial_no) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no',
+                args:{
+                    "item_group":frm.doc.item_group || null
+                },
                 callback: function(r) {
                     if (r.message) {
+                        console.log("serial: ", r.message)
                         frm.set_value('serial_no', r.message);
                     }
                 }
             });
+        }
+        if (!frm.doc.serial_no && !frappe.validated) {
+            frappe.msgprint("Serial number generation failed. Document cannot be saved.");
+            frappe.validated = false;
+            return false; // Prevent the form from being saved
         }
     },
     onload: function(frm) {

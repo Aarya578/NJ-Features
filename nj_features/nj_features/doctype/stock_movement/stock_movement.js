@@ -386,7 +386,9 @@ function set_scanned_values(row_to_modify, data) {
     frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
 
     cur_frm.set_value('scan_barcode', '');
-    refresh_field("items");
+    cur_frm.set_value('scan_warehouse', '');
+    console.log("value fte: ", cur_frm.doc.scan_warehouse);
+    refresh_field("scan_warehouse");
 }
 
 function show_scan_message(idx, exist = null) {

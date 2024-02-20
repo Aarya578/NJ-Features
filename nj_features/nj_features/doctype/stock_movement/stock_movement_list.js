@@ -14,7 +14,6 @@ frappe.listview_settings['Stock Movement'] = {
 function viewButton(listview) {
     $('.btn-primary.btn-sm.primary-action').hide();
         $('.custom-btn-group').hide();
-		console.log("Stock Movement");
         // Material Transfer button
         listview.page.add_inner_button(__("Stock Accept"), function() {
             openStockEntryForm(1);
@@ -27,7 +26,6 @@ function viewButton(listview) {
 
 function openStockEntryForm(stockType) {
     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(response) {
-        console.log('name', response.name, 'work', response.work_warehouse)
         if (!response.name) {
             frappe.msgprint('Employee not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
             return;
@@ -38,7 +36,7 @@ function openStockEntryForm(stockType) {
             var doc = frappe.model.get_new_doc('Stock Movement');
             if (stockType === 1) {
                 doc.stock_movement = 1;
-
+                doc.stock_entry_type = "Material Transfer"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;
@@ -47,6 +45,7 @@ function openStockEntryForm(stockType) {
                 }
             } else if (stockType === 0) {
                 doc.move_stock = 1;
+                doc.stock_entry_type = "Material Transfer"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;

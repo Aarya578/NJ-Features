@@ -36,17 +36,13 @@ function hideFieldsInChild() {
 }
 
 var item_code_init = "";
-
+var default_ware = "";
 
 frappe.ui.form.on('Stock Movement', {
     onload() {
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
         hideFieldsInChild();
-    },
-    before_load: function () {
-        hideFieldsInChild();
-
     },
     refresh() {
         hideFieldsInChild();
@@ -66,15 +62,6 @@ frappe.ui.form.on('Stock Movement', {
                 s_ware.in_list_view = 1;
             }
         }
-
-        if (cur_frm.doc.default_target_warehouse) {
-            console.log("default_target_warehouse", cur_frm.doc.default_target_warehouse);
-            autofill_warehouse(cur_frm.doc.items, "t_warehouse", cur_frm.doc.default_target_warehouse);
-        }
-        if (cur_frm.doc.default_source_warehouse) {
-            console.log("default_source_warehouse", cur_frm.doc.default_source_warehouse);
-            autofill_warehouse(cur_frm.doc.items, "s_warehouse", cur_frm.doc.default_source_warehouse);
-        }
         cur_frm.refresh_fields('items')
     },
 
@@ -86,54 +73,17 @@ frappe.ui.form.on('Stock Movement', {
                     search_value: cur_frm.doc.scan_barcode
                 },
                 callback: function(r) {
-                    console.log("search value: ", r.message.scan);
                     const data = r && r.message;
                     if (r.message.scan === 1) {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                        $('[data-fieldname="scan_grade"]').focus();
                     } else {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
                     }
     
-                    if(r.message.serial_no && cur_frm.doc.stock_movement == 1) {
-                        console.log("serialised data stock movement: ", data);
+                    if(r.message.serial_no) {
                         modify_table_after_scan(cur_frm, data)
                     }
-    
-                    else if(r.message.serial_no && r.message.s_warehouse === cur_frm.doc.from_warehouse && cur_frm.doc.move_stock == 1) {
-                        console.log("serialised data stock movement: ", data);
-                        modify_table_after_scan(cur_frm, data)
-                    } 
-                    else if (cur_frm.doc.move_stock == 1){
-                        cur_frm.set_value('scan_barcode', '')
-                        frappe.throw(`You are not allowed to move stock from warehouse: <strong>${r.message.s_warehouse}</strong>`);  
-                    }
-                }
-            });
-        }
-        return false;
-    },    
-
-
-    scan_warehouse: function(frm) {
-        // Update the s_warehouse field in each row of the items child table
-        if (frm.doc.scan_warehouse !== '' && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1)) {
-            var data = {}
-            frappe.db.get_value('Warehouse', { name: frm.doc.scan_warehouse }, 'name').then(function (r) {
-                if (r.message.name) {
-                    console.log("new item code", item_code_init);
-                    var ware = r.message.name
-                        data['item_code'] = item_code_init
-                        data['warehouse'] = ware
-                        console.log("data after scan ware: ", data);
-                        modify_table_after_scan(cur_frm, data);
-                        cur_frm.set_value('scan_warehouse', '');
-                        cur_frm.set_value('scan_grade', '');
-                        cur_frm.set_value('scan_barcode', '');
-                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-                        
-                } else {
-                    frappe.msgprint(`Warehouse: <strong>${frm.doc.scan_warehouse}<\strong> does not exist. Please enter a valid Warehouse.`);
-                    cur_frm.set_value('scan_warehouse', '');
                 }
             });
         }
@@ -153,7 +103,7 @@ frappe.ui.form.on('Stock Movement', {
                             var child_item = table.find(d => d.idx === frm.selected_child);
                             if (child_item) {
                                 frappe.model.set_value(child_item.doctype, child_item.name, 'grade', r.message.name);
-                                console.log("new_item_code: ", new_item_code);
+                                console.log("scan_grade | new_item_code: ", new_item_code);
                             }
                         });
                         console.log("new_item_code: ", new_item_code)
@@ -164,16 +114,18 @@ frappe.ui.form.on('Stock Movement', {
                         cur_frm.set_value('scan_barcode', '');
                     }
                     
-                if(r.message.name) {
-                    frappe.db.get_value('Item', { name: new_item_code }, ['name', 'item_name'])
+                    if(r.message.name) {
+                        frappe.db.get_value('Item', { name: new_item_code }, ['name', 'item_name'])
                         .then(function (r) {
-                            console.log("r from new item", r);
                             if (r.message.name) {
                                 item_code_init = r.message.name
-                                console.log("item code in DB: ", r.message.name)
+                                // console.log("item code in DB: ", r.message.name)
+                                $('[data-fieldname="scan_warehouse"]').focus();
 
                             } else {
                                 frappe.msgprint(`Item: <strong>${new_item_code}</strong> doesn't exist. Please enter a valid Item.`);
+                                cur_frm.set_value('scan_grade', '');
+                                cur_frm.set_value('scan_barcode', '');
                             }
                     })
                 }
@@ -181,6 +133,36 @@ frappe.ui.form.on('Stock Movement', {
 
         }
     },
+
+    scan_warehouse: function(frm) {
+        
+        if (frm.doc.scan_warehouse != '') {
+            var data = {}
+            frappe.db.get_value('Warehouse', { name: frm.doc.scan_warehouse }, 'name').then(function (r) {
+                if (r.message.name) {
+                    console.log("scan warehouse ----------- item code: ", item_code_init, r.message);
+                    var ware = r.message.name
+                    data['item_code'] = item_code_init
+                    data['warehouse'] = ware
+                    console.log("data after scan ware: ", data);
+                    modify_table_after_scan(cur_frm, data);
+                    cur_frm.set_value('scan_warehouse', '');
+                    cur_frm.set_value('scan_grade', '');
+                    cur_frm.set_value('scan_barcode', '');
+                    cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+                    $('[data-fieldname="scan_barcode"]').focus();
+                    frm.refresh_field('scan_warehouse')
+                    return false;
+                } else {
+                    cur_frm.set_value('scan_warehouse', '');
+                    $('[data-fieldname="scan_warehouse"]').focus();
+                    frappe.msgprint(`Warehouse: <strong>${cur_frm.doc.scan_warehouse}<\strong> does not exist. Please enter a valid Warehouse.`);
+                }
+            });
+        }
+        return false;
+    },
+
     default_target_warehouse: function(frm) {
         autofill_warehouse(frm.doc.items, "t_warehouse", frm.doc.default_target_warehouse);
     },
@@ -234,12 +216,10 @@ frappe.ui.form.on('Stock Movement', {
 frappe.ui.form.on('Stock Movement Detail', {
     item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn];
-        autofill_warehouse([child], "t_warehouse", child.t_warehouse);
-        autofill_warehouse([child], "s_warehouse", child.s_warehouse);
+        autofill_warehouse([child], "t_warehouse", cur_frm.doc.default_target_warehouse);
+        autofill_warehouse([child], "s_warehouse", cur_frm.doc.default_source_warehouse);
 
         if (cur_frm.doc.move_stock == 1) {
-            console.log("move_stock");
-
             var lastRecordIndex = cur_frm.doc.items.length - 1;
 
             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
@@ -269,7 +249,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                 method: 'nj_features.api_files.get_all_emp_warehouse',
                 args: {'user': frappe.session.user_email},
                 callback: function(response) {
-                    console.log("get_all_emp_warehouse: ",response.message);
+                    // console.log("get_all_emp_warehouse: ",response.message);
                     if (response.message && response.message.error) {
                         // frappe.msgprint('Error: ' + response.message.error);
                     } else {
@@ -370,7 +350,7 @@ function modify_table_after_scan(frm, data) {
     row_to_modify = cur_frm.doc.items.find(d => !d.item_code);
 
     if (!row_to_modify) {
-        console.log("!row_to_modify")
+        console.log("row_to_modify:  **** ", data)
         row_to_modify = frappe.model.add_child(cur_frm.doc, cur_grid.doctype, 'items');
     }
     
@@ -384,7 +364,6 @@ function modify_table_after_scan(frm, data) {
             cur_frm.set_value('scan_barcode', '');
             return;
 		}
-		console.log("row_to_modify: ", row_to_modify, "data: ", data, "existing_record: ", existing_record)
 	}
 
     show_scan_message(row_to_modify.idx, row_to_modify.item_code);
@@ -403,12 +382,10 @@ function set_scanned_values(row_to_modify, data) {
         values.serial_no = data.serial_no
         // values.item_code = data.item_code
     }
-    console.log("data: ", data, " | values", values );
+    // console.log("data: ", data, " | values", values );
     frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
 
     cur_frm.set_value('scan_barcode', '');
-    cur_frm.set_value('scan_grade', '');
-    cur_frm.set_value('scan_warehouse', '');
     refresh_field("items");
 }
 

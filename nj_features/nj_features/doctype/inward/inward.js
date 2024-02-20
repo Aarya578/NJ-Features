@@ -17,7 +17,6 @@ frappe.ui.form.on('Inward', {
                 callback: function(r) {
                     if (r.message) {
                         frm.set_value('serial_no', r.message);
-                        console.log("serial no is generated i.e",r.message)
                     }
                 }
             });
@@ -33,19 +32,17 @@ frappe.ui.form.on('Inward', {
                 method: 'nj_features.nj_features.doctype.inward.inward.get_items_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
-                    console.log("msg: ", r.message.items);
+                    console.log("msg: ", r.message);
                     if (r.message && r.message.result) {
                         var itemCodes = r.message.result.map(function(item) {
-                            return item.Item_code;
+                            return item.item_code;
                         });
                         var options = itemCodes.join('\n');
-                        console.log("options: ", options);
 
                         frm.set_df_property('item_code', 'options', options);
                         frm.set_value('source_warehouse', r.message.result[0].warehouse);
                         frm.set_df_property('source_warehouse', 'read_only', 1);
                     } else {
-                        console.log("No items found for the purchase receipt.");
                         frm.set_df_property('item_code', 'options', '');
                     }
 
@@ -55,7 +52,6 @@ frappe.ui.form.on('Inward', {
     },
     item_code: function(frm) {
         var selected_item_code = frm.doc.item_code;
-        console.log("selected_item_code",selected_item_code)
         if (selected_item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_item_group',
@@ -67,6 +63,38 @@ frappe.ui.form.on('Inward', {
                     }
                 }
             });
+            if (cur_frm.doc.purchase_receipt) {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.inward.inward.get_items_from_pr',
+                    args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
+                    callback: function(r) {
+                        if (r.message && r.message.result && r.message.result.length > 0) {
+                            console.log("r.message.result  -------warehouse ", r.message.result)
+    
+                            // Find the warehouse corresponding to the selected item_code
+                            var warehouse = '';
+                            for (var i = 0; i < r.message.result.length; i++) {
+                                if (r.message.result[i].item_code === selected_item_code) {
+                                    warehouse = r.message.result[i].warehouse;
+                                    break;
+                                }
+                            }
+    
+                            console.log("Selected warehouse:", warehouse);
+    
+                            // Check if warehouse value is not empty
+                            if (warehouse) {
+                                // Set the source_warehouse field directly
+                                frm.set_value('source_warehouse', warehouse)
+    
+                                refresh_field('source_warehouse');
+                                console.log("Source warehouse set:", warehouse);
+                            }
+                        }
+                    
+                    }
+                });
+            }
         }
         if (cur_frm.doc.purchase_receipt) {
             frappe.call({
@@ -74,10 +102,8 @@ frappe.ui.form.on('Inward', {
                 args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                 callback: function(r) {
                     if (r.message) {
-                        console.log("item_code: ", r.message);
                         frm.set_value('base_rate', r.message.base_rate);
                     } else {
-                        console.log("No items found for the purchase receipt.");
                         frm.set_df_property('item_code', 'options', '');
                     }
               
@@ -90,7 +116,6 @@ frappe.ui.form.on('Inward', {
 
 function warehouse_info(frm) {
     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(response) {
-        console.log('name', response.name, 'work', response.work_warehouse)
         if (!response.name) {
             frappe.msgprint('Employee not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
             return;

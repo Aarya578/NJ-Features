@@ -22,15 +22,20 @@ class Inward(Document):
 @frappe.whitelist()
 def get_items_from_pr(pr,item_code=None):
     base_rate=''
+    key = {}
     if pr:
         result = frappe.db.sql(
-            """SELECT Item_code, warehouse FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
+            """SELECT item_code, warehouse FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
+      
+        for i in result:
+            key[i['item_code']] = i['warehouse']
+         
     if item_code:
         base_rate_result = frappe.db.sql(
             """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
         if base_rate_result:
             base_rate = base_rate_result[0].get('base_rate', '')
-    return {"result":result, "base_rate": base_rate}
+    return {"result":result, "base_rate": base_rate,"key":key}
 
 @frappe.whitelist()
 def fetch_item_group(item_code):

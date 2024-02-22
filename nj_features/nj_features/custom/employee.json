@@ -955,7 +955,7 @@
    "property": "autoname",
    "property_type": "Data",
    "row_name": null,
-   "value": "field:emp_id"
+   "value": "naming_series:"
   },
   {
    "_assign": null,

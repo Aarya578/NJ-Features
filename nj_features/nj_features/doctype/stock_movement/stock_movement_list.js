@@ -12,16 +12,16 @@ frappe.listview_settings['Stock Movement'] = {
 };
 
 function viewButton(listview) {
-    $('.btn-primary.btn-sm.primary-action').hide();
-        $('.custom-btn-group').hide();
-        // Material Transfer button
-        listview.page.add_inner_button(__("Stock Accept"), function() {
+    // $('.btn-primary.btn-sm.primary-action').hide();
+    $('.custom-btn-group').hide();
+        // Materiprimaryal Transfer button
+        listview.page.set_primary_action("Stock Accept", function() {
             openStockEntryForm(1);
-        }).addClass('btn-primary');
+        })
         // Move Stock button
-        listview.page.add_inner_button(__("Racking"), function() {
+        listview.page.set_secondary_action("Racking", function() {
             openStockEntryForm(0);
-        }).addClass('btn-primary');
+        }).addClass('btn-primary')
 }
 
 function openStockEntryForm(stockType) {

@@ -85,7 +85,7 @@ def get_all_emp_warehouse(user):
         if default_ww in recommended_warehouses:
             del recommended_warehouses[default_ww]
 
-        formatted_recommended = '\n'.join([f"{warehouse}  =>  1{capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
+        formatted_recommended = '\n'.join([f"{warehouse}  =>  {capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
         formatted_centralized = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in centralized_warehouses.items()])
 
         return {

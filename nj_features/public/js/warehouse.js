@@ -2,8 +2,12 @@ frappe.ui.form.on('Warehouse', {
     onload: async function(frm) {
         if(frm.doc.default_capacity == 1 && !frm.doc.max_capacity) {
             frappe.db.get_value('NJ Settings', {"doc_type": "Stock Movement", "parameter": "max_capacity"}, "value").then(function(r) {
-                frm.set_value('max_capacity', r.message.value)
-                frm.save()
+                if(r.message) {
+                    frm.set_value('max_capacity', r.message.value)
+                    frm.save()
+                } else {
+                    frappe.throw("NJ Settings for 'max_capacity' is not defined")
+                }
             })
         }
         await updateMaxcap(frm);
@@ -23,6 +27,8 @@ frappe.ui.form.on('Warehouse', {
                     frm.set_value('max_capacity', r.message.value)
                     frm.refresh_field('max_capacity')
                     frm.save();
+                } else {
+                    frappe.throw("NJ Settings for 'default_capacity' is not defined")
                 }
             })
         }
@@ -33,8 +39,7 @@ frappe.ui.form.on('Warehouse', {
         if (hasItemGroup === "All Item Groups") {
             frm.set_df_property('max_capacity', 'hidden', 1);
             frm.set_df_property('available_capacity', 'hidden', 1);
-            frm.set_df_property('brand', 'hidden', 1);
-
+            frm.set_df_property('brand', 'hidden', 1)
             return;
         }
 
@@ -42,31 +47,24 @@ frappe.ui.form.on('Warehouse', {
         if (hasItemGroup && !hasBrand) {
             frm.set_df_property('max_capacity', 'hidden', 0);
             frm.set_df_property('available_capacity', 'hidden', 0);
-        
-
         }
         
          else {
             // If both item_group and brand are set, display max_capacity
             frm.set_df_property('max_capacity', 'hidden', 0);
             frm.set_df_property('available_capacity', 'hidden', 0);
-         
-
         }
     }
 });
 
 async function updateMaxcap(frm) {
     const isGroup = frm.doc.is_group === 1;
-    console.log("frm",frm.doc)
 
     // console.log("hasItemGroup",hasItemGroup)
     // Store the original value of max_capacity when the form loads
     frm.original_max_capacity = frm.doc.max_capacity;
 
     if (!isGroup) {
-        
-
         try {
             const result = await frappe.db.get_list('Stock Ledger Entry', {
                 filters: {

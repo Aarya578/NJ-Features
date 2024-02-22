@@ -14,6 +14,7 @@ frappe.ui.form.on('Stock Movement', {
     },
     refresh() {
         $('[data-fieldname="scan_barcode"]').focus();
+        $("button[data-original-title=Print]").hide();
     },
 
     scan_barcode: function () {

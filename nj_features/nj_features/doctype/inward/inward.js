@@ -2,6 +2,30 @@
 // For license information, please see license.txt
 frappe.ui.form.on('Inward', {
     refresh(frm) {
+        $('[data-fieldname="purchase_receipt"]').focus();
+
+        // $('[data-original-title="Print"]').on('click', function() {
+        //     frappe.call({
+        //         method: 'frappe.www.printview.get_html_and_style',
+        //         args: {
+        //             doc: frm.doc,
+        //             print_format: "Inward Barcode",
+        //             no_letterhead: 1,
+        //         },
+        //         callback: function (r) {
+        //             if (!r.exc) {
+        //                 $preview_wrapper.find(".print-format").html(r.message.html);
+        //                 const style = `
+        //                     .print-format { box-shadow: 0px 0px 5px rgba(0,0,0,0.2); padding: 0.30in; min-height: 80vh; }
+        //                     .print-preview { min-height: 0px; }
+        //                     .modal-dialog { width: 720px; }`;
+        
+        //                 frappe.dom.set_style(style, "custom-print-style");
+        //                 preview_dialog.show();
+        //             }
+        //         }
+        //     });
+        // });
         frm.set_query('purchase_receipt', function() {
             return {
                 filters: {
@@ -25,7 +49,7 @@ frappe.ui.form.on('Inward', {
                 }
             });
         }
-        if (!frm.doc.serial_no && !frappe.validated) {
+        if (!frm.doc.serial_no) {
             frappe.msgprint("Serial number generation failed. Document cannot be saved.");
             frappe.validated = false;
             return false; // Prevent the form from being saved
@@ -78,7 +102,6 @@ frappe.ui.form.on('Inward', {
                     args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
                         if (r.message && r.message.result && r.message.result.length > 0) {
-                            console.log("r.message.result  -------warehouse ", r.message.result)
     
                             // Find the warehouse corresponding to the selected item_code
                             var warehouse = '';
@@ -89,15 +112,12 @@ frappe.ui.form.on('Inward', {
                                 }
                             }
     
-                            console.log("Selected warehouse:", warehouse);
-    
                             // Check if warehouse value is not empty
                             if (warehouse) {
                                 // Set the source_warehouse field directly
                                 frm.set_value('source_warehouse', warehouse)
     
                                 refresh_field('source_warehouse');
-                                console.log("Source warehouse set:", warehouse);
                             }
                         }
                     
@@ -139,3 +159,22 @@ function warehouse_info(frm) {
 
     });
 }
+
+// function printViewMethod(customParam) {
+//     var csrftoken = frappe.csrf_token;
+//     $.ajax({
+//         url: '/api/method/frappe.www.printview.get_html_and_style',
+//         type: 'POST',
+//         dataType: 'json',
+//         data: customParam,
+//         headers: {
+//             'X-Frappe-CSRF-Token': csrftoken
+//         },
+//         success: function(response) {
+//             console.log(response);
+//         },
+//         error: function(xhr, status, error) {
+//             console.error(xhr.responseText);
+//         }
+//     });
+// }

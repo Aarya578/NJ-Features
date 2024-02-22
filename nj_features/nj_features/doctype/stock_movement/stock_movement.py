@@ -12,6 +12,7 @@ class StockMovement(Document):
                 stock_entry_doc = frappe.new_doc('Stock Entry')
                 stock_entry_doc.purpose = "Material Transfer"
                 stock_entry_doc.stock_entry_type = "Material Transfer"
+                stock_entry_doc.transfer_status = self.transfer_status
                 stock_entry_doc.company = frappe.db.get_single_value("Global Defaults", "default_company")
 
                 for item in self.items:

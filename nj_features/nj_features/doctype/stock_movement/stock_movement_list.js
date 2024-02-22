@@ -35,7 +35,7 @@ function openStockEntryForm(stockType) {
         frappe.model.with_doctype('Stock Movement', function () {
             var doc = frappe.model.get_new_doc('Stock Movement');
             if (stockType === 1) {
-                doc.stock_movement = 1;
+                doc.transfer_status = "Stock Accept";
                 doc.stock_entry_type = "Material Transfer"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');
@@ -44,7 +44,7 @@ function openStockEntryForm(stockType) {
                     doc.default_target_warehouse = response.work_warehouse;
                 }
             } else if (stockType === 0) {
-                doc.move_stock = 1;
+                doc.transfer_status = "Racking";
                 doc.stock_entry_type = "Material Transfer"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');

@@ -18,7 +18,7 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     scan_barcode: function () {
-        if (cur_frm.doc.scan_barcode && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1)) {
+        if (cur_frm.doc.scan_barcode) {
             frappe.call({
                 method: "nj_features.api_files.search_for_serial_or_batch_or_barcode_no",
                 args: {
@@ -27,9 +27,9 @@ frappe.ui.form.on('Stock Movement', {
                 callback: function(r) {
                     const data = r && r.message;
                     if (r.message.scan === 1) {
-                        if(cur_frm.doc.stock_movement === 1) {
+                        if(cur_frm.doc.transfer_status == "Stock Accept") {
                             cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
-                        } else if (cur_frm.doc.move_stock === 1) {
+                        } else if (cur_frm.doc.transfer_status == "Racking") {
                             cur_frm.toggle_display(['scan_grade'], true);
                         }
                         $('[data-fieldname="scan_grade"]').focus();
@@ -48,7 +48,7 @@ frappe.ui.form.on('Stock Movement', {
 
     scan_grade: function(frm) {
         // Get the child table data
-        if (frm.doc.scan_grade != '' && (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1)) {
+        if (frm.doc.scan_grade != '') {
             var new_item_code = ''
             frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
                 .then(function (r) {
@@ -77,7 +77,7 @@ frappe.ui.form.on('Stock Movement', {
                             if (r.message.name) {
                                 item_code_init = r.message.name
                                 // console.log("item code in DB: ", r.message.name)
-                                if(frm.doc.move_stock === 1) {
+                                if(frm.doc.transfer_status == "Racking") {
                                     var data = {}
                                     data['item_code'] = item_code_init
                                     data['warehouse'] = frm.doc.default_source_warehouse
@@ -186,7 +186,7 @@ frappe.ui.form.on('Stock Movement Detail', {
         autofill_warehouse([child], "t_warehouse", cur_frm.doc.default_target_warehouse);
         autofill_warehouse([child], "s_warehouse", cur_frm.doc.default_source_warehouse);
 
-        if (cur_frm.doc.move_stock == 1) {
+        if (cur_frm.doc.transfer_status == "Racking") {
             var lastRecordIndex = cur_frm.doc.items.length - 1;
 
             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {

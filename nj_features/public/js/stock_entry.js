@@ -249,7 +249,7 @@ frappe.ui.form.on('Stock Entry', {
     }
 })
 
-frappe.ui.form.on('Stock Entry Detail', {
+frappe.ui.form.on('Stock Movement Detail', {
     item_code: function (frm, cdt, cdn) {
         var child = locals[cdt][cdn]
         if (cur_frm.doc.move_stock == 1) {

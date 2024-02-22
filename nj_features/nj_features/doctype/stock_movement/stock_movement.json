@@ -8,8 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "stock_entry_type",
-  "stock_movement",
-  "move_stock",
+  "transfer_status",
   "default_source_warehouse",
   "column_break_dfjqd",
   "default_target_warehouse",
@@ -29,20 +28,6 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Stock Entry Type"
-  },
-  {
-   "default": "0",
-   "fieldname": "stock_movement",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Stock Movement"
-  },
-  {
-   "default": "0",
-   "fieldname": "move_stock",
-   "fieldtype": "Check",
-   "hidden": 1,
-   "label": "Move Stock"
   },
   {
    "fieldname": "default_source_warehouse",
@@ -116,14 +101,21 @@
    "fieldname": "scan_warehouse",
    "fieldtype": "Data",
    "label": "Scan Warehouse",
-   "options": "Baarcode"
+   "options": "Barcode"
+  },
+  {
+   "fieldname": "transfer_status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Transfer Status",
+   "options": "\nStock Accept\nRacking"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-20 07:00:34.024262",
+ "modified": "2024-02-22 23:28:23.704335",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",
@@ -138,6 +130,20 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
    "select": 1,
    "share": 1,
    "submit": 1,

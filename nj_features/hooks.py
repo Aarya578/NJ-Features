@@ -34,7 +34,8 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 doctype_js = {
     # "Stock Entry" : "public/js/stock_entry.js",
     "Warehouse": "public/js/warehouse.js",
-    "Employee": "public/js/employee.js"
+    "Employee": "public/js/employee.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 
 doctype_list_js = {
@@ -105,13 +106,16 @@ doctype_list_js = {
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-#	"*": {
-#		"on_update": "method",
-#		"on_cancel": "method",
-#		"on_trash": "method"
-#	}
-# }
+doc_events = {
+	# "*": {
+	# 	"on_update": "method",
+	# 	"on_cancel": "method",
+	# 	"on_trash": "method"
+	# }
+	"Purchase Order": {
+		"on_submit": "nj_features.nj_features.doctype.purchase_order.create_batch",
+	}
+}
 # doc_events = {
 #     "Sales Order": {
 #         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"

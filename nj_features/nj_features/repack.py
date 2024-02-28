@@ -21,8 +21,17 @@ def repack(inward):
         'basic_rate': inward.base_rate,
         'set_basic_rate_manually': 1
     })
+    
+    item_doc = frappe.get_doc('Item', inward.item_code)
+    
+    # Check if has_serial_no and has_batch_no are correctly fetched
+    has_serial_no = item_doc.has_serial_no if item_doc else 0
+    has_batch_no = item_doc.has_batch_no if item_doc else 0
 
-    if frappe.get_value('Item', {'item_code': inward.item_code}, 'has_serial_no') == 1:
+    if ((has_batch_no == 1 and has_serial_no == 1) or (has_batch_no == 0 and has_serial_no == 0)):
+        frappe.throw(f"Item: {inward.item_code} doesn't have both 'has_serial_no' and 'has_batch_no'")
+        
+    if has_serial_no == 1:
         # print(f"\n\ninward.serial_no_select: {stock_entry.items[0].item_code}")
         get_serial_no = frappe.db.sql(
             """SELECT name 
@@ -39,6 +48,19 @@ def repack(inward):
         
     item_name = f"S-{inward.brand}-{inward.model}-{unk_pro}-{unk_ram}-{unk_storage}"  
     item_code = frappe.db.get_value('Item', {'name': item_name }, 'name')
+    
+    if has_batch_no == 1:
+        print("has_batch_no")
+        batch_data = frappe.get_all('Stock Ledger Entry',
+            filters={'item_code': inward.item_code, 'warehouse': inward.source_warehouse},
+            fields=['batch_no'],
+            order_by='posting_date desc, posting_time desc',
+            limit=1)
+        print(f"batch_data: {batch_data}")
+        if batch_data:
+            stock_entry.items[0].update({
+                'batch_no': batch_data[0].batch_no
+            })
     
     stock_entry.append("items", {
         "item_code": item_code,

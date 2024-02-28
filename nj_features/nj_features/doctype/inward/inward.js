@@ -49,11 +49,11 @@ frappe.ui.form.on('Inward', {
                 }
             });
         }
-        if (!frm.doc.serial_no) {
-            frappe.msgprint("Serial number generation failed. Document cannot be saved.");
-            frappe.validated = false;
-            return false; // Prevent the form from being saved
-        }
+        // if (!frm.doc.serial_no) {
+        //     frappe.msgprint("Serial number generation failed. Document cannot be saved.");
+        //     frappe.validated = false;
+        //     return false; // Prevent the form from being saved
+        // }
     },
     onload: function(frm) {
         warehouse_info(frm);

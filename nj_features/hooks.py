@@ -34,8 +34,7 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 doctype_js = {
     # "Stock Entry" : "public/js/stock_entry.js",
     "Warehouse": "public/js/warehouse.js",
-    "Employee": "public/js/employee.js",
-    "Purchase Receipt": "public/js/purchase_receipt.js"
+    "Employee": "public/js/employee.js"
 }
 
 doctype_list_js = {
@@ -114,6 +113,9 @@ doc_events = {
 	# }
 	"Purchase Order": {
 		"on_submit": "nj_features.nj_features.doctype.purchase_order.create_batch",
+	},
+	"Purchase Receipt": {
+		"before_save": "nj_features.nj_features.doctype.purchase_receipt.get_batch",
 	}
 }
 # doc_events = {

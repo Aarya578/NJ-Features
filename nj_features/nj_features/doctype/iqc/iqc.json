@@ -8,21 +8,17 @@
  "engine": "InnoDB",
  "field_order": [
   "power_on",
+  "column_break_5mcw7",
   "created",
-  "iqc_section",
-  "purchase_order",
   "purchase_price",
   "item_code",
-  "column_break_5mcw7",
   "purchase_receipt",
-  "idx",
   "base_price",
   "section_break_6sw2s",
   "serial_no",
   "barcode_svg",
   "item_group",
-  "source_warehouse",
-  "target_warehouse",
+  "warehouse",
   "njhat_serialno",
   "raw_data",
   "item_template",
@@ -42,13 +38,6 @@
  ],
  "fields": [
   {
-   "fieldname": "purchase_order",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Purchase Order",
-   "options": "Purchase Order"
-  },
-  {
    "fieldname": "purchase_price",
    "fieldtype": "Currency",
    "hidden": 1,
@@ -61,15 +50,15 @@
   {
    "fieldname": "purchase_receipt",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Purchase Receipt",
-   "options": "Purchase Receipt",
-   "read_only": 1
+   "options": "Purchase Receipt"
   },
   {
    "fieldname": "base_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Item Unit Price"
+   "label": "Base Price"
   },
   {
    "fieldname": "section_break_6sw2s",
@@ -115,8 +104,8 @@
   {
    "fieldname": "item_code",
    "fieldtype": "Data",
-   "label": "PR Item",
-   "read_only": 1
+   "hidden": 1,
+   "label": "Item Code"
   },
   {
    "fieldname": "item_group",
@@ -155,26 +144,6 @@
    "fieldname": "make",
    "fieldtype": "Data",
    "label": "Make",
-   "read_only": 1
-  },
-  {
-   "fieldname": "idx",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "idx"
-  },
-  {
-   "fieldname": "source_warehouse",
-   "fieldtype": "Link",
-   "label": "Source Warehouse",
-   "options": "Warehouse",
-   "read_only": 1
-  },
-  {
-   "fieldname": "target_warehouse",
-   "fieldtype": "Link",
-   "label": "Target Warehouse",
-   "options": "Warehouse",
    "read_only": 1
   },
   {
@@ -224,22 +193,24 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval: doc.power_on == 'Yes'",
-   "fieldname": "iqc_section",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "created",
    "fieldtype": "Link",
    "label": "Created",
    "options": "User"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Source/Target Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-08 19:01:30.572425",
+ "modified": "2024-02-29 06:14:47.697536",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

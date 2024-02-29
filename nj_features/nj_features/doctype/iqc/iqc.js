@@ -4,7 +4,7 @@
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
-            frm.events.serial_no(frm);
+            frm.events.serial_no(frm); 
         }
     },
 
@@ -12,17 +12,28 @@ frappe.ui.form.on('IQC', {
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
         
-        if (!cur_frm.doc.source_warehouse && cur_frm.doc.power_on == 'Yes') {
+        if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm)
-            cur_frm.refresh_fields('source_warehouse');
+            cur_frm.refresh_fields('warehouse');
         }
+
+        // if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model && cur_frm.doc.power_on == 'Yes') {
+        //     frappe.call({
+        //         method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
+        //         args: {"model": cur_frm.doc.model, "brand": cur_frm.doc.brand, "item_group": cur_frm.doc.item_group},
+        //         callback: function(r) {
+        //             frm.set_value('item_template', r.message);
+        //         }
+        //     });
+        // }
         
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
+            let temp = 'S-'+frm.doc.brand+'-'+frm.doc.model 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
-                args: { 'template': cur_frm.doc.item_template, 'args': cur_frm.doc.data_attr},
+                args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
                 callback: function (r) {
-                    // console.log("get_variant_from_value: ",r);
+                    console.log("get_variant_from_value: ",r, frm.doc.item_template, temp);
                     frm.set_value('repack_item_code', r.message);
                     cur_frm.refresh_fields('fields');
                 }
@@ -36,41 +47,47 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('iqc_section', 'hidden', !isYes);
             cur_frm.set_df_property('section_break_6sw2s', 'hidden', isNone || 0);
             cur_frm.set_df_property('section_break_56eed', 'hidden', !isYes);
-            cur_frm.set_df_property('source_warehouse', 'hidden', !isYes);
-            cur_frm.set_df_property('target_warehouse', 'hidden', !isYes);
+            cur_frm.set_df_property('warehouse', 'hidden', !isYes);
             cur_frm.set_df_property('make', 'hidden', !isYes);
             if (isYes) {
                 cur_frm.events.validate(cur_frm)
             }
             
     },
-    purchase_order: function(frm) {
-        if(!frm.doc.purchase_order && cur_frm.doc.power_on == 'Yes') {
-            frm.set_query('purchase_receipt', function() {
-                return {
-                    filters: {
-                        "purchase_order": frm.doc.purchase_order
-                    }
-                };
-            });
-        }
-    },
     serial_no: function(frm) {
         if (frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
+            // console.log("serial_no is triggered");
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
                 args: {'doc': frm.doc},
                 callback: function(r) {
-                    const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'source_warehouse', 'target_warehouse', 'base_price'
-                    , 'purchase_price'];
-    
+                    const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
                     fieldsToUpdate.forEach(field => {
-                        if (!frm.doc[field]) {
+                        // console.log(field, " : ",r.message[field]);
+                        if (frm.doc[field]) {
                             frm.set_value(field, r.message[field]);
                         }
                     });
-    
+                    let ware = r.message.warehouse
+                    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
+                        console.log("work: ", r.work_warehouse, "| ware: ", ware);
+                        if (r.work_warehouse != ware) {
+                            let d = frappe.confirm(
+                                'Do you want to transfer stock to your warehouse?',
+                                    () => {
+                                        makeMaterialTransfer(frm.doc.name, r.work_warehouse)
+                                        frm.set_value('warehouse', r.work_warehouse)
+                                        d.hide()
+                                    },
+                                    () => {
+                                        $('.primary-action').hide()
+                                    }
+                                );
+                            }
+                        })
+                        
                     cur_frm.refresh_fields('fields');
+    
                 }
             });
 
@@ -100,8 +117,6 @@ frappe.ui.form.on('IQC', {
     },
     
 	onload_post_render: function(frm) {
-        // console.log("render", cur_frm.doc.docstatus !=1)
-        // frm.events.validate(frm);
 
 	    if (cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
@@ -177,33 +192,25 @@ frappe.ui.form.on('IQC', {
                 cur_frm.refresh_fields('fields');
             }
     
-            if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
-                    args: {'self': cur_frm.doc},
-                    callback: function(r) {
-                        frm.set_value('original_price', r.message.original_price);
-                        cur_frm.refresh_fields('fields');
-                    }
-                });
-            }
+            // if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
+            //     frappe.call({
+            //         method: 'nj_features.nj_features.doctype.iqc.iqc.set_value_for_pricing',
+            //         args: {'self': cur_frm.doc},
+            //         callback: function(r) {
+            //             frm.set_value('original_price', r.message.original_price);
+            //             cur_frm.refresh_fields('fields');
+            //         }
+            //     });
+            // }
 
-            if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model && cur_frm.doc.power_on == 'Yes') {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
-                    args: {"model": cur_frm.doc.model, "brand": cur_frm.doc.brand, "item_group": cur_frm.doc.item_group},
-                    callback: function(r) {
-                        frm.set_value('item_template', r.message);
-                    }
-                });
-            }
+            
         }
 	},
 
     validate: function(frm) {
 
-        var requiredFields = ['purchase_order', 'item_code', 'purchase_receipt', 'serial_no',
-        'item_group', 'source_warehouse', 'brand', 'model', 'make'];
+        var requiredFields = ['serial_no',
+        'item_group', 'warehouse', 'brand', 'model', 'make'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -228,7 +235,7 @@ frappe.ui.form.on('IQC', {
                         if (cur_frm.doc.brand && !r.message.brand) {
                             dbError.push("Brand");
                         }
-                        console.log("error", dbError);
+                        // console.log("error msg", dbError);
         
                         if (cur_frm.doc.model && !r.message.model) {
                             dbError.push("Model");
@@ -270,8 +277,12 @@ frappe.ui.form.on('IQC', {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
         
-    },
-    // before_submit: function(frm){
-    //     frm.events.validate(frm);
-    // }
+    }
 });
+
+function makeMaterialTransfer(doc, work_warehouse) {
+    frappe.call({
+        method: 'nj_features.nj_features.material_transfer.material_transfer',
+        args: {'doc': doc, 'work_warehouse':work_warehouse}
+    })
+}

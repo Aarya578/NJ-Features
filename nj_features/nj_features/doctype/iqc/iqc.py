@@ -14,7 +14,7 @@ from io import BytesIO
 from frappe.utils import get_url
 
 class IQC(Document):   
-    def submit(self):
+    def on_submit(self):
         if self.power_on == 'Yes':
             stock_entry = frappe.new_doc("Stock Entry")
             stock_entry.stock_entry_type = "Repack"
@@ -26,9 +26,8 @@ class IQC(Document):
                 'uom': 'Nos',
                 'conversion_factor': 1,
                 'stock_uom': 'Nos',
-                's_warehouse': self.source_warehouse,
+                's_warehouse': self.warehouse,
                 'basic_rate': self.base_price,
-                'set_basic_rate_manually': 1
             })
 
             if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
@@ -37,66 +36,20 @@ class IQC(Document):
             stock_entry.append("items", {
                 "item_code": self.repack_item_code,
                 "qty": 1,
-                "t_warehouse": self.source_warehouse,
+                "t_warehouse": self.warehouse,
                 'uom': 'Nos',
                 'conversion_factor': 1,
                 'serial_no': self.serial_no,
                 'stock_uom': 'Nos',
-                'set_basic_rate_manually': 1,
-                'basic_rate': self.original_price,
+                'basic_rate': self.base_price,
             })
 
             stock_entry.submit()
-    
-@frappe.whitelist()
-def set_value_for_pricing(self):
-    self_dict = json.loads(self)
-    purchase_price = frappe.db.get_value('Purchase Receipt', {'name': self_dict['purchase_receipt']}, 'total')
-    base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': self_dict['purchase_receipt'], 
-    'item_code': self_dict['item_code']}, 'base_rate')
-    repack_itm_price = ''
-    # print(f"repack_itm_price: {repack_itm_price}")
-    if self_dict['item_code']:
-        repack_itm_price = frappe.db.get_value('Item', {'item_code': self_dict['item_code']}, 'valuation_rate')
+        serial_no_doc = frappe.get_doc("Serial No", {'barcode': self.serial_no})
+        if serial_no_doc:
+            serial_no_doc.serial_no = self.njhat_serialno
+            serial_no_doc.save()
 
-    elif repack_itm_price is None or self_dict['item_template']:
-        repack_itm_price = frappe.db.get_value('Item', {'item_code': self_dict['item_template']}, 'valuation_rate')
-    else:
-        repack_itm_price = base_price
-    original_price = iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price)
-
-    return {"original_price": original_price.get('original_price', 0)}
-
-
-# @frappe.whitelist()
-# def get_attribute_parent(attribute_value):
-#     sql_query = f"""
-#         SELECT ia.attribute_name FROM `tabItem Attribute` AS ia
-#         JOIN `tabItem Attribute Value` AS iav ON ia.name = iav.parent
-#         WHERE iav.attribute_value = '{attribute_value}'
-#     """
-#     result = frappe.db.sql(sql_query, as_dict=True)
-#     return result
-
-# @frappe.whitelist()
-# def set_iqc_child_table(item_group):
-#     item_group = item_group.lower()
-#     item_group_doc = frappe.get_doc('Item Group', item_group)
-#     components = []
-#     for component in item_group_doc.component_list:
-#         components.append({'component_name': component.component_name})
-#     return {'components':components}
-
-@frappe.whitelist()
-def get_po_from_pr(pr):
-    result = {"po": None, "item_code": []}
-    query = frappe.db.sql(
-        """SELECT Item_code, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
-
-    for row in query:
-        result["po"] = row["purchase_order"]
-        result["item_code"].append(row["Item_code"]) 
-    return result
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
@@ -104,45 +57,6 @@ def brand_model_validation(brand=None, model=None):
     model = frappe.db.exists('Models', {'name': model})
     return {'brand': brand, 'model': model}
 
-# @frappe.whitelist()
-# def get_list_of_variants(item_group):
-#     item_group_doc = frappe.get_doc('Item Group', item_group)
-#     item_attributes = [{'variant': attr.variant} for attr in item_group_doc.variants_of_item_group]
-#     return {'variants': item_attributes}
-
-# @frappe.whitelist()
-# def get_list_of_attributes(variant):
-#     variant_doc = frappe.get_doc('Item Attribute', variant)
-#     attribute_list = [attr.attribute_value for attr in variant_doc.item_attribute_values]
-#     return {'options': attribute_list}
-
-# @frappe.whitelist()
-# def get_attribute_from_item_code(item_code):
-#     item_variant_doc = frappe.get_doc('Item Variant Attribute', {'parent': item_code})
-#     values = [{'attribute': attr.attribute, 'attribute_value': attr.attribute_value} for attr in item_variant_doc.attributes]
-#     return {'options': values}
-
-def iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price=None):
-    if purchase_price is not None and base_price is not None:
-        purchase_price = float(purchase_price)
-        base_price = float(base_price)
-
-        if repack_itm_price is None or repack_itm_price == '':
-            repack_itm_price = base_price
-        else:
-            repack_itm_price = float(repack_itm_price)
-
-        val = purchase_price - base_price + repack_itm_price
-        factor = purchase_price / val
-        original_price = repack_itm_price * factor
-        return {'original_price': original_price}
-    else:
-        return {'error': 'purchase_price and base_price must not be None'}
-
-
-@frappe.whitelist()
-def get_items_from_pr(pr):
-    return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
@@ -150,26 +64,48 @@ def get_info_from_serial_no(doc=None):
     doc_json = json.loads(doc)
     if doc_json:
         serial_no = doc_json['serial_no']
-        serial_no_doc = frappe.db.get_value('Serial No', {'name':serial_no}, ['item_code', 'item_group', 'brand', 'warehouse'])
-        ware = frappe.db.get_value('Purchase')
-        print(serial_no_doc[0])
+        serial_no_doc = frappe.get_doc('Serial No', {'barcode': serial_no}) # NJ - serial_no
+        # get price from Stock Ledger Entry
+        sql_query = """
+            SELECT 
+                item_code, warehouse, stock_value, posting_date, posting_time
+            FROM
+                `tabStock Ledger Entry`
+            WHERE
+                serial_no LIKE %s
+                AND is_cancelled = 0
+            ORDER BY
+                posting_date DESC, posting_time DESC, creation DESC
+            LIMIT 1
+        """
+        sle = frappe.db.sql(sql_query, ('%'+serial_no+'%',), as_dict=1)
+        print(f"sle: {sle}, serial_no: {serial_no}")
+        # purchase_receipt_doc = frappe.db.sql("""
+        #     SELECT name AS purchase_receipt, item_code AS item_code, base_rate AS base_rate 
+        #     FROM `tabPurchase Receipt Item` 
+        #     WHERE serial_no LIKE %s
+        # """, ('%' + serial_no + '%'), as_dict=True)
+        
         if serial_no_doc:
+            repack_itm_price = frappe.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
+            # purchase_price = frappe.get_value('Purchase Receipt', {'name': purchase_receipt_doc[0]['purchase_receipt']}, 'total')
+            sle_entry = sle[0]
 
-            repack_itm_price = frappe.db.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
-            purchase_price = frappe.db.get_value('Purchase Receipt', {'name': doc_json['purchase_receipt']}, 'total')
-            base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': doc_json['purchase_receipt'], 
-            'item_code': doc_json['item_code']}, 'base_rate')
-
-            result['item_code'] = serial_no_doc[0]
-            result['item_group'] = serial_no_doc[1]
-            result['brand'] = serial_no_doc[2]
-            result['source_warehouse'] = serial_no_doc[3]
-            result['target_warehouse'] = serial_no_doc[3]
+            result['item_code'] = sle_entry.get('item_code')
+            result['item_group'] = serial_no_doc.item_group
+            result['brand'] = serial_no_doc.brand
+            result['warehouse'] = sle_entry.get('warehouse')
             result['repack_itm_price'] = repack_itm_price
-            result['purchase_price'] = purchase_price
-            result['base_price'] = base_price
-
+            # result['purchase_price'] = purchase_price
+            result['base_price'] = sle_entry.get('stock_value')
+            # result['purchase_receipt'] = purchase_receipt_doc[0]['purchase_receipt']
+            if not serial_no_doc.serial_no:
+                serial_no_doc.serial_no = doc_json.get('njhat_serialno')
+                # serial_no_doc.barcode = doc_json.get('njhat_serialno')
+                serial_no_doc.save()
+            print(f"\n\n serila_no : {serial_no_doc.serial_no}, \n {serial_no}, {doc_json.get('njhat_serialno')}")
     return result
+
 
 @frappe.whitelist()
 def get_part_mapping(item_group):
@@ -183,13 +119,44 @@ def get_part_mapping(item_group):
 
     return {"mappings": mappings, "values": values}
 
+# @frappe.whitelist()
+# def get_variant_from_value(item_template=None, args=None):
+#     print(f"\n\ntemplate: {item_template}, args: {args}")
+#     args_list = []
+#     if args:
+#         args_list = frappe.parse_json(args)
+    
+#     if item_template:
+#         conditions = []
+
+#         for condition_dict in args_list:
+#             for key, value in condition_dict.items():
+#                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
+
+#         having_clause = " AND ".join(conditions)
+#         print(f"\n\nhaving: {having_clause}")
+#         if having_clause:
+#             query = f"""
+#                 SELECT parent FROM `tabItem Variant Attribute`
+#                 WHERE variant_of = %s
+#                 GROUP BY parent
+#                 HAVING {having_clause}
+#             """
+#             variants = frappe.db.sql(query, item_template, as_dict=True)
+#             print(f"\n\nhaving: {having_clause}, variant: {variants}")
+#             if variants:
+#                 return variants[0]['parent']
+#         else:
+#             return None
+
 @frappe.whitelist()
-def get_variant_from_value(template=None, args=None):
+def get_variant_from_value(item_template=None, args=None):
+    print(f"\n\ntemplate: {item_template}, args: {args}")
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
     
-    if template:
+    if item_template:
         conditions = []
 
         for condition_dict in args_list:
@@ -197,20 +164,43 @@ def get_variant_from_value(template=None, args=None):
                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
 
         having_clause = " AND ".join(conditions)
+        print(f"\n\nhaving: {having_clause}")
         
         if having_clause:
-            query = f"""
+            query = """
                 SELECT parent FROM `tabItem Variant Attribute`
                 WHERE variant_of = %s
                 GROUP BY parent
-                HAVING {having_clause}
-            """
-            variants = frappe.db.sql(query, template, as_dict=True)
-        
-            if variants:
+                HAVING {}
+            """.format(having_clause)
+            variants = frappe.db.sql(query, (item_template,), as_dict=True)
+            print(f"\n\nhaving: {having_clause}, variant: {variants}")
+            if variants and variants[0]['parent']:
                 return variants[0]['parent']
-        else:
-            return None
+            else:
+                item_code = construct_item_code(item_template, args_list)
+                return item_code
+
+    return None
+
+def construct_item_code(item_template, args_list):
+    # Generate the concatenated string
+    concatenated_string = item_template
+    for condition_dict in args_list:
+        for key, value in condition_dict.items():
+            concatenated_string += f"-{value}"
+    print(f"\n\nconcatenated_string: {concatenated_string}")
+    # Query the item_code based on the concatenated string
+    query = """
+        SELECT name FROM `tabItem`
+        WHERE item_code = %s
+    """
+
+    item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
+    if item_code:
+        return item_code[0]['name']
+    return frappe.msgprint(f"Item code: {concatenated_string} is not found")
+
 
     
 @frappe.whitelist()
@@ -264,8 +254,98 @@ def generate_and_save_barcode(serial_no, format='png'):
 #     random_code = prefix + str(random.randint(100000, 999999))
 #     return random_code
 
-@frappe.whitelist()
-def get_item_code_price(item_code=None, pr=None):
-    purchase_price = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'total')
-    base_price = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'parent':pr}, 'base_rate')
-    return {"purchase_price": purchase_price, "base_price": base_price}
+# @frappe.whitelist() # not used
+# def get_item_code_price(item_code=None, pr=None):
+#     purchase_price = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'total')
+#     base_price = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'parent':pr}, 'base_rate')
+#     return {"purchase_price": purchase_price, "base_price": base_price}
+
+# @frappe.whitelist()
+# def get_list_of_variants(item_group):
+#     item_group_doc = frappe.get_doc('Item Group', item_group)
+#     item_attributes = [{'variant': attr.variant} for attr in item_group_doc.variants_of_item_group]
+#     return {'variants': item_attributes}
+
+# @frappe.whitelist()
+# def get_list_of_attributes(variant):
+#     variant_doc = frappe.get_doc('Item Attribute', variant)
+#     attribute_list = [attr.attribute_value for attr in variant_doc.item_attribute_values]
+#     return {'options': attribute_list}
+
+# @frappe.whitelist()
+# def get_attribute_from_item_code(item_code):
+#     item_variant_doc = frappe.get_doc('Item Variant Attribute', {'parent': item_code})
+#     values = [{'attribute': attr.attribute, 'attribute_value': attr.attribute_value} for attr in item_variant_doc.attributes]
+#     return {'options': values}
+
+# def iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price=None): # not used
+#     if purchase_price is not None and base_price is not None:
+#         purchase_price = float(purchase_price)
+#         base_price = float(base_price)
+
+#         if repack_itm_price is None or repack_itm_price == '':
+#             repack_itm_price = base_price
+#         else:
+#             repack_itm_price = float(repack_itm_price)
+
+#         val = purchase_price - base_price + repack_itm_price
+#         factor = purchase_price / val
+#         original_price = repack_itm_price * factor
+#         return {'original_price': original_price}
+#     else:
+#         return {'error': 'purchase_price and base_price must not be None'}
+
+
+# @frappe.whitelist() # not used
+# def get_items_from_pr(pr):
+    
+# @frappe.whitelist() # Not used
+# def set_value_for_pricing(self):
+#     self_dict = json.loads(self)
+#     purchase_price = frappe.db.get_value('Purchase Receipt', {'name': self_dict['purchase_receipt']}, 'total')
+#     base_price = frappe.db.get_value('Purchase Receipt Item', {'parent': self_dict['purchase_receipt'], 
+#     'item_code': self_dict['item_code']}, 'base_rate')
+#     repack_itm_price = ''
+#     # print(f"repack_itm_price: {repack_itm_price}")
+#     if self_dict['item_code']:
+#         repack_itm_price = frappe.db.get_value('Item', {'item_code': self_dict['item_code']}, 'valuation_rate')
+
+#     elif repack_itm_price is None or self_dict['item_template']:
+#         repack_itm_price = frappe.db.get_value('Item', {'item_code': self_dict['item_template']}, 'valuation_rate')
+#     else:
+#         repack_itm_price = base_price
+#     original_price = iqc_to_repack_pricing(purchase_price, base_price, repack_itm_price)
+
+#     return {"original_price": original_price.get('original_price', 0)}
+
+
+# @frappe.whitelist()
+# def get_attribute_parent(attribute_value):
+#     sql_query = f"""
+#         SELECT ia.attribute_name FROM `tabItem Attribute` AS ia
+#         JOIN `tabItem Attribute Value` AS iav ON ia.name = iav.parent
+#         WHERE iav.attribute_value = '{attribute_value}'
+#     """
+#     result = frappe.db.sql(sql_query, as_dict=True)
+#     return result
+
+# @frappe.whitelist()
+# def set_iqc_child_table(item_group):
+#     item_group = item_group.lower()
+#     item_group_doc = frappe.get_doc('Item Group', item_group)
+#     components = []
+#     for component in item_group_doc.component_list:
+#         components.append({'component_name': component.component_name})
+#     return {'components':components}
+
+# @frappe.whitelist() #not used
+# def get_po_from_pr(pr):
+#     result = {"po": None, "item_code": []}
+#     query = frappe.db.sql(
+#         """SELECT Item_code, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
+
+#     for row in query:
+#         result["po"] = row["purchase_order"]
+#         result["item_code"].append(row["Item_code"]) 
+#     return result
+#     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)

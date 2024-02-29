@@ -16,6 +16,12 @@ class Inward(Document):
         stock_entry = repack(self.name)
         if stock_entry:
             self.submit()
+        serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
+        if serial_no_doc:
+            serial_no_doc.purchase_price = self.base_rate
+            serial_no_doc.current_price = self.base_rate
+            serial_no_doc.barcode = self.serial_no
+            serial_no_doc.save()
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
 

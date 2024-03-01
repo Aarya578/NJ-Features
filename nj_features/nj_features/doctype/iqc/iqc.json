@@ -11,21 +11,22 @@
   "column_break_5mcw7",
   "created",
   "purchase_price",
-  "item_code",
   "purchase_receipt",
   "base_price",
   "section_break_6sw2s",
   "serial_no",
+  "item_code",
   "barcode_svg",
   "item_group",
   "warehouse",
-  "njhat_serialno",
+  "bios_serialno",
   "raw_data",
   "item_template",
   "column_break_qzvyk",
   "data_attr",
   "brand",
   "model",
+  "manufacturer_model",
   "make",
   "repack_item_code",
   "original_price",
@@ -76,12 +77,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "njhat_serialno",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "NJHAT SerialNo"
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -102,12 +97,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "item_code",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Item Code"
-  },
-  {
    "fieldname": "item_group",
    "fieldtype": "Link",
    "label": "Item Group",
@@ -116,8 +105,10 @@
   },
   {
    "fieldname": "model",
-   "fieldtype": "Data",
-   "label": "Model"
+   "fieldtype": "Link",
+   "label": "Model",
+   "options": "Models",
+   "read_only": 1
   },
   {
    "fieldname": "repack_itm_price",
@@ -194,9 +185,9 @@
   },
   {
    "fieldname": "created",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Created",
-   "options": "User"
+   "read_only": 1
   },
   {
    "fieldname": "warehouse",
@@ -204,13 +195,31 @@
    "label": "Source/Target Warehouse",
    "options": "Warehouse",
    "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Code"
+  },
+  {
+   "fieldname": "bios_serialno",
+   "fieldtype": "Data",
+   "label": "BIOS SerialNo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manufacturer_model",
+   "fieldtype": "Data",
+   "label": "Manufacturer Model",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-29 06:14:47.697536",
+ "modified": "2024-02-29 20:06:31.703102",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

@@ -4,7 +4,8 @@
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
-            frm.events.serial_no(frm); 
+            frm.events.serial_no(frm);
+            get_model(frm.doc.manufacturer_model, frm.doc.make);
         }
     },
 
@@ -13,7 +14,7 @@ frappe.ui.form.on('IQC', {
         frm.events.power_on();
         
         if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
-            frm.events.serial_no(frm)
+            // frm.events.serial_no(frm)
             cur_frm.refresh_fields('warehouse');
         }
 
@@ -29,6 +30,7 @@ frappe.ui.form.on('IQC', {
         
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             let temp = 'S-'+frm.doc.brand+'-'+frm.doc.model 
+            
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
@@ -61,32 +63,35 @@ frappe.ui.form.on('IQC', {
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
                 args: {'doc': frm.doc},
                 callback: function(r) {
-                    const fieldsToUpdate = ['item_code', 'item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
+                    const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
                     fieldsToUpdate.forEach(field => {
-                        // console.log(field, " : ",r.message[field]);
-                        if (frm.doc[field]) {
+                        console.log(field, " : ",r.message[field]);
+                        // if (!frm.doc[field]) {
                             frm.set_value(field, r.message[field]);
-                        }
+                            cur_frm.refresh_field(field);
+                        // }
                     });
                     let ware = r.message.warehouse
-                    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
+                    frappe.db.get_value('Employee', {'user_id': frm.doc.created}, 'work_warehouse', function(r) {
                         console.log("work: ", r.work_warehouse, "| ware: ", ware);
-                        if (r.work_warehouse != ware) {
+                        if (!r.work_warehouse) {
+                            frappe.msgprint(`Work Warehouse is not set for employee: ${frm.doc.created}`)
+                        }
+                        else if (r.work_warehouse != ware) {
                             let d = frappe.confirm(
-                                'Do you want to transfer stock to your warehouse?',
-                                    () => {
-                                        makeMaterialTransfer(frm.doc.name, r.work_warehouse)
-                                        frm.set_value('warehouse', r.work_warehouse)
-                                        d.hide()
-                                    },
-                                    () => {
-                                        $('.primary-action').hide()
-                                    }
-                                );
-                            }
-                        })
+                            `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
+                                () => {
+                                    makeMaterialTransfer(frm.doc.name, r.work_warehouse)
+                                    frm.set_value('warehouse', r.work_warehouse)
+                                    d.hide()
+                                },
+                                () => {
+                                    $('.primary-action').hide()
+                                }
+                            );
+                        }
+                    })
                         
-                    cur_frm.refresh_fields('fields');
     
                 }
             });
@@ -118,7 +123,7 @@ frappe.ui.form.on('IQC', {
     
 	onload_post_render: function(frm) {
 
-	    if (cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
+	    if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
@@ -285,4 +290,19 @@ function makeMaterialTransfer(doc, work_warehouse) {
         method: 'nj_features.nj_features.material_transfer.material_transfer',
         args: {'doc': doc, 'work_warehouse':work_warehouse}
     })
+}
+
+function get_model(manufacturer_model, make) {
+    frappe.call({
+        method: 'nj_features.nj_features.doctype.iqc.iqc.get_model',
+        args: { 'manufacturer_model': manufacturer_model, 'make': make },
+        callback: function(r) {
+            console.log(r.message);
+            if (r.message) {
+                cur_frm.set_value('model', r.message[0]);
+            } else {
+                frappe.msgprint("Model not found for the given manufacturer_model and make.");
+            }
+        }
+    });
 }

@@ -47,8 +47,11 @@ class IQC(Document):
             stock_entry.submit()
         serial_no_doc = frappe.get_doc("Serial No", {'barcode': self.serial_no})
         if serial_no_doc:
-            serial_no_doc.serial_no = self.njhat_serialno
-            serial_no_doc.save()
+            serial_no_doc.bios_serial_no = self.njhat_serialno
+            if self.njhat_serialno:
+                serial_no_doc.save()
+            else:
+                frappe.throw("NJHAT Serial No is not found.")
 
 
 @frappe.whitelist()
@@ -64,7 +67,7 @@ def get_info_from_serial_no(doc=None):
     doc_json = json.loads(doc)
     if doc_json:
         serial_no = doc_json['serial_no']
-        serial_no_doc = frappe.get_doc('Serial No', {'barcode': serial_no}) # NJ - serial_no
+        serial_no_doc = frappe.get_doc('Serial No', {'name': serial_no}) # NJ - serial_no
         # get price from Stock Ledger Entry
         sql_query = """
             SELECT 
@@ -87,9 +90,9 @@ def get_info_from_serial_no(doc=None):
         # """, ('%' + serial_no + '%'), as_dict=True)
         
         if serial_no_doc:
-            repack_itm_price = frappe.get_value('Item', {'name': doc_json['item_code']}, 'valuation_rate')
-            # purchase_price = frappe.get_value('Purchase Receipt', {'name': purchase_receipt_doc[0]['purchase_receipt']}, 'total')
             sle_entry = sle[0]
+            repack_itm_price = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, 'valuation_rate')
+            # purchase_price = frappe.get_value('Purchase Receipt', {'name': purchase_receipt_doc[0]['purchase_receipt']}, 'total')
 
             result['item_code'] = sle_entry.get('item_code')
             result['item_group'] = serial_no_doc.item_group
@@ -201,7 +204,18 @@ def construct_item_code(item_template, args_list):
         return item_code[0]['name']
     return frappe.msgprint(f"Item code: {concatenated_string} is not found")
 
+@frappe.whitelist()
+def get_model(manufacturer_model, make):
+    models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
 
+    result = []
+    for model in models:
+        makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
+        
+        if makes:
+            result.append(model.name)
+
+    return result
     
 @frappe.whitelist()
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):

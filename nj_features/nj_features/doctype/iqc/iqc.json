@@ -68,7 +68,7 @@
   {
    "fieldname": "serial_no",
    "fieldtype": "Data",
-   "label": "Serial No"
+   "label": "Barcode/Serial No"
   },
   {
    "fieldname": "brand",
@@ -105,10 +105,8 @@
   },
   {
    "fieldname": "model",
-   "fieldtype": "Link",
-   "label": "Model",
-   "options": "Models",
-   "read_only": 1
+   "fieldtype": "Select",
+   "label": "Model"
   },
   {
    "fieldname": "repack_itm_price",
@@ -147,7 +145,6 @@
    "columns": 6,
    "fieldname": "error_message",
    "fieldtype": "Small Text",
-   "in_list_view": 1,
    "label": "Error Message",
    "read_only": 1
   },
@@ -179,6 +176,7 @@
   {
    "fieldname": "power_on",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Is the system not Powering ON?",
    "options": "\nYes\nNo",
    "reqd": 1
@@ -186,6 +184,7 @@
   {
    "fieldname": "created",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "Created",
    "read_only": 1
   },
@@ -205,6 +204,7 @@
   {
    "fieldname": "bios_serialno",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "BIOS SerialNo",
    "read_only": 1
   },
@@ -219,7 +219,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-29 20:06:31.703102",
+ "modified": "2024-03-02 07:36:12.992500",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

@@ -45,7 +45,7 @@ class IQC(Document):
             })
 
             stock_entry.submit()
-        serial_no_doc = frappe.get_doc("Serial No", {'barcode': self.serial_no})
+        serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
         if serial_no_doc:
             serial_no_doc.bios_serial_no = self.njhat_serialno
             if self.njhat_serialno:
@@ -82,7 +82,7 @@ def get_info_from_serial_no(doc=None):
             LIMIT 1
         """
         sle = frappe.db.sql(sql_query, ('%'+serial_no+'%',), as_dict=1)
-        print(f"sle: {sle}, serial_no: {serial_no}")
+        # print(f"sle: {sle}, serial_no: {serial_no}")
         # purchase_receipt_doc = frappe.db.sql("""
         #     SELECT name AS purchase_receipt, item_code AS item_code, base_rate AS base_rate 
         #     FROM `tabPurchase Receipt Item` 
@@ -102,11 +102,10 @@ def get_info_from_serial_no(doc=None):
             # result['purchase_price'] = purchase_price
             result['base_price'] = sle_entry.get('stock_value')
             # result['purchase_receipt'] = purchase_receipt_doc[0]['purchase_receipt']
-            if not serial_no_doc.serial_no:
-                serial_no_doc.serial_no = doc_json.get('njhat_serialno')
-                # serial_no_doc.barcode = doc_json.get('njhat_serialno')
+            if not serial_no_doc.bios_serial_no:
+                serial_no_doc.bios_serial_no = doc_json.get('njhat_serialno')
+                serial_no_doc.barcode = doc_json.get('serialno')
                 serial_no_doc.save()
-            print(f"\n\n serila_no : {serial_no_doc.serial_no}, \n {serial_no}, {doc_json.get('njhat_serialno')}")
     return result
 
 
@@ -154,7 +153,7 @@ def get_part_mapping(item_group):
 
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-    print(f"\n\ntemplate: {item_template}, args: {args}")
+    # print(f"\n\ntemplate: {item_template}, args: {args}")
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -167,7 +166,7 @@ def get_variant_from_value(item_template=None, args=None):
                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
 
         having_clause = " AND ".join(conditions)
-        print(f"\n\nhaving: {having_clause}")
+        # print(f"\n\nhaving: {having_clause}")
         
         if having_clause:
             query = """
@@ -177,7 +176,7 @@ def get_variant_from_value(item_template=None, args=None):
                 HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
-            print(f"\n\nhaving: {having_clause}, variant: {variants}")
+            # print(f"\n\nhaving: {having_clause}, variant: {variants}")
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:
@@ -192,17 +191,19 @@ def construct_item_code(item_template, args_list):
     for condition_dict in args_list:
         for key, value in condition_dict.items():
             concatenated_string += f"-{value}"
-    print(f"\n\nconcatenated_string: {concatenated_string}")
+    print(f"\nconcatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
-        SELECT name FROM `tabItem`
-        WHERE item_code = %s
+        SELECT item_code FROM `tabItem`
+        WHERE item_code = %s and has_serial_no = 1
     """
 
     item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
+    # print(f"\n\n\nitem_code: {item_code}\n")
     if item_code:
-        return item_code[0]['name']
-    return frappe.msgprint(f"Item code: {concatenated_string} is not found")
+        return item_code[0]['item_code']
+    else:
+        frappe.msgprint(f'Serialized Item code: "{concatenated_string}" not found. Please contact NPD Team.')
 
 @frappe.whitelist()
 def get_model(manufacturer_model, make):
@@ -216,6 +217,27 @@ def get_model(manufacturer_model, make):
             result.append(model.name)
 
     return result
+
+@frappe.whitelist()
+def get_model(manufacturer_model, make):
+    models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
+    if len(models) == 1:
+        return models[0]['name']
+    
+    elif len(models) > 1:
+        makes_list = []
+        for model in models:
+            makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
+            if makes:
+                makes_list.append(makes[0].parent)
+        
+        if len(makes_list) > 0:
+            return makes_list
+        
+        else:
+            frappe.throw(f"Match with make: {make} not found")
+    else:
+        frappe.throw("Model not found")
     
 @frappe.whitelist()
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):

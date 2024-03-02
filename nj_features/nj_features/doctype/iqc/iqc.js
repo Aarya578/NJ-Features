@@ -5,6 +5,8 @@ frappe.ui.form.on('IQC', {
     onload: function(frm) {
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm);
+        }
+        if (!cur_frm.doc.model) {
             get_model(frm.doc.manufacturer_model, frm.doc.make);
         }
     },
@@ -18,6 +20,10 @@ frappe.ui.form.on('IQC', {
             cur_frm.refresh_fields('warehouse');
         }
 
+        if(cur_frm.doc.bios_serialno){
+            cur_frm.set_df_property('cur_frm.doc.bios_serialno', 'read_only', 1)
+        }
+
         // if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model && cur_frm.doc.power_on == 'Yes') {
         //     frappe.call({
         //         method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
@@ -28,20 +34,7 @@ frappe.ui.form.on('IQC', {
         //     });
         // }
         
-        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
-            let temp = 'S-'+frm.doc.brand+'-'+frm.doc.model 
-            
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
-                args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
-                callback: function (r) {
-                    console.log("get_variant_from_value: ",r, frm.doc.item_template, temp);
-                    frm.set_value('repack_item_code', r.message);
-                    cur_frm.refresh_fields('fields');
-                }
-            });
-        }
-        cur_frm.set_df_property('original_price', 'hidden', 1);
+
     },
     power_on: function() {
             const isYes = cur_frm.doc.power_on === "Yes";
@@ -50,18 +43,20 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('section_break_6sw2s', 'hidden', isNone || 0);
             cur_frm.set_df_property('section_break_56eed', 'hidden', !isYes);
             cur_frm.set_df_property('warehouse', 'hidden', !isYes);
-            cur_frm.set_df_property('make', 'hidden', !isYes);
+            cur_frm.set_df_property('repack_item_code', 'hidden', !isYes);
+            cur_frm.set_df_property('model', 'hidden', !isYes);
+            cur_frm.set_df_property('bios_serialno', 'hidden', !isYes);
             if (isYes) {
                 cur_frm.events.validate(cur_frm)
             }
             
     },
     serial_no: function(frm) {
-        if (frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
+        if (cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
             // console.log("serial_no is triggered");
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
-                args: {'doc': frm.doc},
+                args: {'doc': cur_frm.doc},
                 callback: function(r) {
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
                     fieldsToUpdate.forEach(field => {
@@ -101,6 +96,10 @@ frappe.ui.form.on('IQC', {
                 args: {"serial_no": cur_frm.doc.serial_no},
                 callback: function(r) {
                     frm.set_value('barcode_svg', r.message.barcode_img);
+                    frappe.show_alert({
+                        message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
+                        indicator: 'green'
+                    });
                 }
             });
         }
@@ -120,8 +119,38 @@ frappe.ui.form.on('IQC', {
         //     })
         // }
     },
+
+    model: function(frm) {
+        frm.set_value('repack_item_code', "")
+        let temp = 'S-'+cur_frm.doc.brand+'-'+cur_frm.doc.model
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+            args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
+            callback: function (r) {
+                // console.log("get_variant_from_value : ", r.message)
+                if (r.message){
+                    frm.set_value('repack_item_code', r.message)
+                }
+                cur_frm.refresh_fields('fields');
+            }
+        });
+    },
     
 	onload_post_render: function(frm) {
+        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' 
+        && cur_frm.doc.brand && cur_frm.doc.model) {
+            let temp = 'S-'+cur_frm.doc.brand+'-'+cur_frm.doc.model
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+                args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
+                callback: function (r) {
+                    if (r.message){
+                        frm.set_value('repack_item_code', r.message)
+                    }
+                    cur_frm.refresh_fields('fields');
+                }
+            });
+        }
 
 	    if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
@@ -206,16 +235,20 @@ frappe.ui.form.on('IQC', {
             //             cur_frm.refresh_fields('fields');
             //         }
             //     });
-            // }
-
-            
+            // } 
+        }
+        frm.events.validate(frm)
+        if (cur_frm.doc.error_message == "") {
+            $(frm.layout.wrapper).find('.form-message.red').remove()
+        }
+        if (cur_frm.doc.model && cur_frm.doc.make && cur_frm.doc.manufacturer_model) {
+            get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
         }
 	},
 
     validate: function(frm) {
-
         var requiredFields = ['serial_no',
-        'item_group', 'warehouse', 'brand', 'model', 'make'];
+        'item_group', 'warehouse', 'brand', 'make'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -230,7 +263,6 @@ frappe.ui.form.on('IQC', {
         }
         if (cur_frm.doc.power_on == 'Yes') {
             new Promise(function(resolve, reject) {
-                // Resolve immediately for now, but you can add asynchronous operations here if needed
                 resolve();
             }).then(function() {
                 frappe.call({
@@ -238,15 +270,13 @@ frappe.ui.form.on('IQC', {
                     args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
                     callback: function(r) {
                         if (cur_frm.doc.brand && !r.message.brand) {
-                            dbError.push("Brand");
+                            dbError.push("Brand: "+cur_frm.doc.brand);
                         }
-                        // console.log("error msg", dbError);
         
                         if (cur_frm.doc.model && !r.message.model) {
-                            dbError.push("Model");
+                            dbError.push("Model: "+cur_frm.doc.model);
                         }
         
-                        // Now check error conditions after frappe.call
                         if (errorMessages.length > 0 || dbError.length > 0) {
                             frappe.utils.play_sound("error");
                             var errorMessageString = "";
@@ -258,7 +288,6 @@ frappe.ui.form.on('IQC', {
                             if (dbError.length > 0) {
                                 errorMessageString += dbError.join(', ') + " does not exist";
                             }
-                            console.log("errorMessageString", errorMessageString);
         
                             var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
                             $(frm.wrapper).find('.form-message.blue').remove();
@@ -281,7 +310,13 @@ frappe.ui.form.on('IQC', {
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
-        
+    },
+
+    before_save: function(frm) {
+        if (cur_frm.doc.repack_item_code == "" || cur_frm.doc.repack_item_code == undefined) {
+            frappe.msgprint("You are not allowed to save IQC without Repack Item")
+            frappe.validated = false;
+        }
     }
 });
 
@@ -297,11 +332,28 @@ function get_model(manufacturer_model, make) {
         method: 'nj_features.nj_features.doctype.iqc.iqc.get_model',
         args: { 'manufacturer_model': manufacturer_model, 'make': make },
         callback: function(r) {
-            console.log(r.message);
+            // console.log("model list: ", r.message);
             if (r.message) {
-                cur_frm.set_value('model', r.message[0]);
-            } else {
-                frappe.msgprint("Model not found for the given manufacturer_model and make.");
+                if (Array.isArray(r.message) && r.message.length > 0) {
+                    if (r.message.length === 1) {
+                        cur_frm.set_value('model', r.message[0]);
+                        cur_frm.set_df_property('model', 'read_only', 1);
+                    } else {
+                        var options = r.message.join('\n');
+                        cur_frm.set_df_property('model', 'options', options);
+                        $('[data-fieldname="model"]').focus().closest('.control-input').css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid rgba(173, 216, 230, 0.2)'
+                        });
+                        
+                        frappe.show_alert({
+                            message: __('Select Model'),
+                            indicator: 'green'
+                        });
+                    }
+                } else {
+                    frappe.msgprint("Model not found for the given manufacturer_model: "+manufacturer_model+" and make: "+make);
+                }
             }
         }
     });

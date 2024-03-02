@@ -12,15 +12,14 @@ from io import BytesIO
 
 class Inward(Document):
     def on_submit(self):
-        serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
-        if serial_no_doc:
-            serial_no_doc.purchase_price = self.base_rate
-            serial_no_doc.current_price = self.base_rate
-            serial_no_doc.barcode = self.serial_no
-            serial_no_doc.save()
         stock_entry = repack(self.name)
         if stock_entry:
-            self.submit()
+            serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
+            if serial_no_doc:
+                serial_no_doc.purchase_price = self.base_rate
+                serial_no_doc.current_price = self.base_rate
+                serial_no_doc.barcode = self.serial_no
+                serial_no_doc.save()
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
 
@@ -28,19 +27,39 @@ class Inward(Document):
 def get_items_from_pr(pr,item_code=None):
     base_rate=''
     key = {}
+    batch_no = ''
+    
     if pr:
-        result = frappe.db.sql(
-            """SELECT item_code, warehouse, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
-      
-        for i in result:
+        sql_query = """
+                SELECT 
+                    item_code, warehouse, stock_value, posting_date, posting_time
+                FROM
+                    `tabStock Ledger Entry`
+                WHERE
+                    batch_no LIKE %s
+                    AND is_cancelled = 0
+                ORDER BY
+                    posting_date DESC, posting_time DESC, creation DESC
+                LIMIT 1
+            """
+        sle = frappe.db.sql(sql_query, ('%'+batch_no+'%',), as_dict=1)
+        for i in sle:
             key[i['item_code']] = i['warehouse']
+    
+    
+    # if pr:
+    #     result = frappe.db.sql(
+    #         """SELECT item_code, warehouse, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
+      
+    #     for i in result:
+    #         key[i['item_code']] = i['warehouse']
          
     if item_code:
         base_rate_result = frappe.db.sql(
             """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
         if base_rate_result:
             base_rate = base_rate_result[0].get('base_rate', '')
-    return {"result":result, "base_rate": base_rate, "key":key}
+    return {"result":sle, "base_rate": base_rate, "key":key}
 
 @frappe.whitelist()
 def fetch_item_group(item_code):

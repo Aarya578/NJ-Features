@@ -207,37 +207,44 @@ def construct_item_code(item_template, args_list):
 
 @frappe.whitelist()
 def get_model(manufacturer_model, make):
-    models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
-
-    result = []
-    for model in models:
-        makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
-        
-        if makes:
-            result.append(model.name)
-
-    return result
-
-@frappe.whitelist()
-def get_model(manufacturer_model, make):
-    models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
-    if len(models) == 1:
-        return models[0]['name']
-    
-    elif len(models) > 1:
-        makes_list = []
-        for model in models:
-            makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
-            if makes:
-                makes_list.append(makes[0].parent)
-        
-        if len(makes_list) > 0:
-            return makes_list
-        
-        else:
-            frappe.throw(f"Match with make: {make} not found")
+    if manufacturer_model and make:
+        query = """SELECT DISTINCT mmc.parent AS model
+                   FROM `tabManufacturer Model Child` AS mmc
+                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
+                   WHERE mmc.manufacturer_model = %s AND mc.make = %s"""
+        params = (manufacturer_model, make)
     else:
-        frappe.throw("Model not found")
+        query = """SELECT DISTINCT mmc.parent AS model
+                   FROM `tabManufacturer Model Child` AS mmc
+                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
+                   WHERE mmc.manufacturer_model = %s"""
+        params = (manufacturer_model,)
+
+    model_list = frappe.db.sql(query, params, as_dict=True)
+
+    return model_list
+
+
+# @frappe.whitelist()
+# def get_model(manufacturer_model, make):
+#     models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
+#     if len(models) == 1:
+#         return models[0]['name']
+    
+#     elif len(models) > 1:
+#         makes_list = []
+#         for model in models:
+#             makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
+#             if makes:
+#                 makes_list.append(makes[0].parent)
+        
+#         if len(makes_list) > 0:
+#             return makes_list
+        
+#         else:
+#             frappe.throw(f"Match with make: {make} not found")
+#     else:
+#         frappe.throw("Model not found")
     
 @frappe.whitelist()
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):

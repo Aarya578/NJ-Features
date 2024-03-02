@@ -47,7 +47,7 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('model', 'hidden', !isYes);
             cur_frm.set_df_property('bios_serialno', 'hidden', !isYes);
             if (isYes) {
-                cur_frm.events.validate(cur_frm)
+                // cur_frm.events.validate(cur_frm)
             }
             
     },
@@ -137,6 +137,10 @@ frappe.ui.form.on('IQC', {
     },
     
 	onload_post_render: function(frm) {
+        if (cur_frm.doc.error_message == "") {
+            $(frm.layout.wrapper).find('.form-message.red').remove()
+        }
+
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' 
         && cur_frm.doc.brand && cur_frm.doc.model) {
             let temp = 'S-'+cur_frm.doc.brand+'-'+cur_frm.doc.model
@@ -237,12 +241,9 @@ frappe.ui.form.on('IQC', {
             //     });
             // } 
         }
-        frm.events.validate(frm)
-        if (cur_frm.doc.error_message == "") {
-            $(frm.layout.wrapper).find('.form-message.red').remove()
-        }
         if (cur_frm.doc.model && cur_frm.doc.make && cur_frm.doc.manufacturer_model) {
             get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
+            frm.events.validate(frm)
         }
 	},
 
@@ -332,29 +333,67 @@ function get_model(manufacturer_model, make) {
         method: 'nj_features.nj_features.doctype.iqc.iqc.get_model',
         args: { 'manufacturer_model': manufacturer_model, 'make': make },
         callback: function(r) {
-            // console.log("model list: ", r.message);
             if (r.message) {
-                if (Array.isArray(r.message) && r.message.length > 0) {
-                    if (r.message.length === 1) {
-                        cur_frm.set_value('model', r.message[0]);
+                var model_list = r.message;
+                if (Array.isArray(model_list) && model_list.length > 0) {
+                    if (model_list.length === 1) {
+                        // Set value and make read-only if only one model
+                        cur_frm.set_value('model', model_list[0].model);
                         cur_frm.set_df_property('model', 'read_only', 1);
                     } else {
-                        var options = r.message.join('\n');
+                        // Set options and focus on model field if multiple models
+                        var options = model_list.map(function(item) {
+                            return item.model;
+                        }).join('\n');
                         cur_frm.set_df_property('model', 'options', options);
                         $('[data-fieldname="model"]').focus().closest('.control-input').css({
                             'border-radius': '0.25rem',
                             'border': '2px solid rgba(173, 216, 230, 0.2)'
                         });
-                        
+                        // Show alert for selecting model
                         frappe.show_alert({
                             message: __('Select Model'),
                             indicator: 'green'
                         });
                     }
                 } else {
-                    frappe.msgprint("Model not found for the given manufacturer_model: "+manufacturer_model+" and make: "+make);
+                    // Show message if no models found
+                    frappe.msgprint("Model not found for the given manufacturer_model: " + manufacturer_model + " and make: " + make);
                 }
             }
         }
     });
 }
+
+
+// function get_model(manufacturer_model, make) {
+//     frappe.call({
+//         method: 'nj_features.nj_features.doctype.iqc.iqc.get_model',
+//         args: { 'manufacturer_model': manufacturer_model, 'make': make },
+//         callback: function(r) {
+//             // console.log("model list: ", r.message);
+//             if (r.message) {
+//                 if (Array.isArray(r.message) && r.message.length > 0) {
+//                     if (r.message.length === 1) {
+//                         cur_frm.set_value('model', r.message[0]);
+//                         cur_frm.set_df_property('model', 'read_only', 1);
+//                     } else {
+//                         var options = r.message.join('\n');
+//                         cur_frm.set_df_property('model', 'options', options);
+//                         $('[data-fieldname="model"]').focus().closest('.control-input').css({
+//                             'border-radius': '0.25rem',
+//                             'border': '2px solid rgba(173, 216, 230, 0.2)'
+//                         });
+                        
+//                         frappe.show_alert({
+//                             message: __('Select Model'),
+//                             indicator: 'green'
+//                         });
+//                     }
+//                 } else {
+//                     frappe.msgprint("Model not found for the given manufacturer_model: "+manufacturer_model+" and make: "+make);
+//                 }
+//             }
+//         }
+//     });
+// }

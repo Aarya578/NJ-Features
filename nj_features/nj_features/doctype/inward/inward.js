@@ -1,31 +1,18 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 frappe.ui.form.on('Inward', {
+    onload: function(frm) {
+        warehouse_info(frm);
+    },
     refresh(frm) {
-        $('[data-fieldname="purchase_receipt"]').focus();
-
-        // $('[data-original-title="Print"]').on('click', function() {
-        //     frappe.call({
-        //         method: 'frappe.www.printview.get_html_and_style',
-        //         args: {
-        //             doc: frm.doc,
-        //             print_format: "Inward Barcode",
-        //             no_letterhead: 1,
-        //         },
-        //         callback: function (r) {
-        //             if (!r.exc) {
-        //                 $preview_wrapper.find(".print-format").html(r.message.html);
-        //                 const style = `
-        //                     .print-format { box-shadow: 0px 0px 5px rgba(0,0,0,0.2); padding: 0.30in; min-height: 80vh; }
-        //                     .print-preview { min-height: 0px; }
-        //                     .modal-dialog { width: 720px; }`;
-        
-        //                 frappe.dom.set_style(style, "custom-print-style");
-        //                 preview_dialog.show();
-        //             }
-        //         }
-        //     });
-        // });
+        if (!cur_frm.doc.purchase_receipt) {
+            $('[data-fieldname="purchase_receipt"]').focus();
+        } else {
+            $('[data-fieldname="brand"]').focus();
+        }
+        if (cur_frm.doc.docstatus == 0) {
+            frm.events.purchase_receipt(frm);
+        }
         frm.set_query('purchase_receipt', function() {
             return {
                 filters: {
@@ -43,29 +30,21 @@ frappe.ui.form.on('Inward', {
                 },
                 callback: function(r) {
                     if (r.message) {
-                        console.log("serial: ", r.message)
+                        // console.log("serial: ", r.message)
                         frm.set_value('serial_no', r.message);
                     }
                 }
             });
         }
-        // if (!frm.doc.serial_no) {
-        //     frappe.msgprint("Serial number generation failed. Document cannot be saved.");
-        //     frappe.validated = false;
-        //     return false; // Prevent the form from being saved
-        // }
-    },
-    onload: function(frm) {
-        warehouse_info(frm);
     },
     purchase_receipt: function(frm) {
-        console.log(cur_frm.doc.purchase_receipt);
+        // console.log(cur_frm.doc.purchase_receipt);
         if (cur_frm.doc.purchase_receipt) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.get_items_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
-                    console.log("msg: ", r.message);
+                    // console.log("msg: ", r.message);
                     if (r.message && r.message.result) {
                         var itemCodes = r.message.result.map(function(item) {
                             return item.item_code;
@@ -140,6 +119,12 @@ frappe.ui.form.on('Inward', {
                 }
             });
         }
+    },
+    before_save: function(frm) {
+        if (!frm.doc.serial_no) {
+            frappe.msgprint("Serial number generation failed. Document cannot be saved.");
+            frappe.validated = false;
+        }
     }
 });
 
@@ -149,7 +134,7 @@ function warehouse_info(frm) {
             frappe.msgprint('Employee not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
             return;
         }
-        console.log("warehouse function")
+        // console.log("warehouse function")
         if (response.work_warehouse) {
             frm.set_value('target_warehouse', response.work_warehouse);
         } else {
@@ -159,22 +144,3 @@ function warehouse_info(frm) {
 
     });
 }
-
-// function printViewMethod(customParam) {
-//     var csrftoken = frappe.csrf_token;
-//     $.ajax({
-//         url: '/api/method/frappe.www.printview.get_html_and_style',
-//         type: 'POST',
-//         dataType: 'json',
-//         data: customParam,
-//         headers: {
-//             'X-Frappe-CSRF-Token': csrftoken
-//         },
-//         success: function(response) {
-//             console.log(response);
-//         },
-//         error: function(xhr, status, error) {
-//             console.error(xhr.responseText);
-//         }
-//     });
-// }

@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import random
-# from apps.backup.nj_features.nj_features.nj_features.doctype.iqc.iqc import generate_random_code
 import frappe
 from nj_features.nj_features.repack import repack
 from frappe.model.document import Document
@@ -13,15 +12,15 @@ from io import BytesIO
 
 class Inward(Document):
     def on_submit(self):
-        stock_entry = repack(self.name)
-        if stock_entry:
-            self.submit()
         serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
         if serial_no_doc:
             serial_no_doc.purchase_price = self.base_rate
             serial_no_doc.current_price = self.base_rate
             serial_no_doc.barcode = self.serial_no
             serial_no_doc.save()
+        stock_entry = repack(self.name)
+        if stock_entry:
+            self.submit()
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
 
@@ -60,6 +59,8 @@ def create_serial_no(item_group=None):
                 serial_no = prefix + serial_no_prefix + '-' +str(random.randint(100000, 999999))
                 print(f"serial_no {serial_no}, {serial_no_prefix}, {prefix}")
                 generate_and_save_barcode(serial_no)
+            else: 
+                frappe.msgprint(f"Serial No Prefix is not set for Item Group: <strong>{item_group} </strong>")
         return serial_no  # Return serial_no even if it's empty
     except Exception as e:
         frappe.log_error(f"Error while creating Serial No: {e}")

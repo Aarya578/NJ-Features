@@ -49,29 +49,34 @@
    "fieldname": "item_group",
    "fieldtype": "Link",
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "read_only": 1
   },
   {
    "fieldname": "source_warehouse",
    "fieldtype": "Link",
    "label": "Source Warehouse",
-   "options": "Warehouse"
+   "options": "Warehouse",
+   "read_only": 1
   },
   {
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Target Warehouse",
    "options": "Warehouse"
   },
   {
    "fieldname": "brand",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Brand",
    "options": "Brand"
   },
   {
    "fieldname": "model",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Model",
    "options": "Models"
   },
@@ -115,7 +120,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-28 19:07:48.479345",
+ "modified": "2024-03-01 12:21:44.774827",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

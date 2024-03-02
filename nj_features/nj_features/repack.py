@@ -5,6 +5,9 @@ def repack(inward):
     unk_ram = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'unk_ram'}, 'value')
     unk_pro = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'unk_pro'}, 'value')
     unk_storage = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'unk_storage'}, 'value')
+    
+    if unk_ram is None and unk_pro is None and unk_storage is None:
+        frappe.throw("NJ settings is required for <strong>'Inward'</strong> doctype")
 
     inward = frappe.get_doc("Inward", inward)
     stock_entry = frappe.new_doc("Stock Entry")
@@ -42,15 +45,15 @@ def repack(inward):
             (inward.item_code, inward.source_warehouse),
             as_dict=True
         )
-        stock_entry.items[0].update({'serial_no': get_serial_no[0].name})
-        if(get_serial_no==None):
+        if get_serial_no==None:
             frappe.msgprint(f"Serial No not found for  {inward.item_code} in {inward.source_warehouse}")
+        else:
+            stock_entry.items[0].update({'serial_no': get_serial_no[0].name})
         
     item_name = f"S-{inward.brand}-{inward.model}-{unk_pro}-{unk_ram}-{unk_storage}"  
     item_code = frappe.db.get_value('Item', {'name': item_name }, 'name')
     
     if has_batch_no == 1:
-        print("has_batch_no")
         batch_data = frappe.get_all('Stock Ledger Entry',
             filters={'item_code': inward.item_code, 'warehouse': inward.source_warehouse},
             fields=['batch_no'],

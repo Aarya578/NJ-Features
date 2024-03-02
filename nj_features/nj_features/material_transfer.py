@@ -20,7 +20,7 @@ def material_transfer(doc, work_warehouse=None):
         """
     sle = frappe.db.sql(sql_query, ('%'+iqc.serial_no+'%',), as_dict=1)
     sle_entry = sle[0]
-    print(f"iqc for stock: {iqc}")
+    print(f"iqc for stock: {iqc}, {iqc.item_code}")
     stock_entry.append("items", {
         "item_code": iqc.item_code,
         "qty": 1,
@@ -37,4 +37,4 @@ def material_transfer(doc, work_warehouse=None):
     if iqc.item_code:
         stock_entry.submit()
     else:
-        frappe.msgprint(f"Item: <strong>{iqc.item_name}</strong> doesn't exist.")
+        frappe.msgprint(f"Item: <strong>{iqc.item_code}</strong> doesn't exist.")

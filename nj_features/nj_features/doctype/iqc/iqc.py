@@ -71,7 +71,7 @@ def get_info_from_serial_no(doc=None):
         # get price from Stock Ledger Entry
         sql_query = """
             SELECT 
-                item_code, warehouse, stock_value, posting_date, posting_time
+                item_code, warehouse, incoming_rate, posting_date, posting_time
             FROM
                 `tabStock Ledger Entry`
             WHERE
@@ -100,7 +100,7 @@ def get_info_from_serial_no(doc=None):
             result['warehouse'] = sle_entry.get('warehouse')
             result['repack_itm_price'] = repack_itm_price
             # result['purchase_price'] = purchase_price
-            result['base_price'] = sle_entry.get('stock_value')
+            result['base_price'] = sle_entry.get('incoming_rate')
             # result['purchase_receipt'] = purchase_receipt_doc[0]['purchase_receipt']
             if not serial_no_doc.bios_serial_no:
                 serial_no_doc.bios_serial_no = doc_json.get('njhat_serialno')
@@ -120,36 +120,6 @@ def get_part_mapping(item_group):
     )
 
     return {"mappings": mappings, "values": values}
-
-# @frappe.whitelist()
-# def get_variant_from_value(item_template=None, args=None):
-#     print(f"\n\ntemplate: {item_template}, args: {args}")
-#     args_list = []
-#     if args:
-#         args_list = frappe.parse_json(args)
-    
-#     if item_template:
-#         conditions = []
-
-#         for condition_dict in args_list:
-#             for key, value in condition_dict.items():
-#                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
-
-#         having_clause = " AND ".join(conditions)
-#         print(f"\n\nhaving: {having_clause}")
-#         if having_clause:
-#             query = f"""
-#                 SELECT parent FROM `tabItem Variant Attribute`
-#                 WHERE variant_of = %s
-#                 GROUP BY parent
-#                 HAVING {having_clause}
-#             """
-#             variants = frappe.db.sql(query, item_template, as_dict=True)
-#             print(f"\n\nhaving: {having_clause}, variant: {variants}")
-#             if variants:
-#                 return variants[0]['parent']
-#         else:
-#             return None
 
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
@@ -223,28 +193,6 @@ def get_model(manufacturer_model, make):
     model_list = frappe.db.sql(query, params, as_dict=True)
 
     return model_list
-
-
-# @frappe.whitelist()
-# def get_model(manufacturer_model, make):
-#     models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
-#     if len(models) == 1:
-#         return models[0]['name']
-    
-#     elif len(models) > 1:
-#         makes_list = []
-#         for model in models:
-#             makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
-#             if makes:
-#                 makes_list.append(makes[0].parent)
-        
-#         if len(makes_list) > 0:
-#             return makes_list
-        
-#         else:
-#             frappe.throw(f"Match with make: {make} not found")
-#     else:
-#         frappe.throw("Model not found")
     
 @frappe.whitelist()
 def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
@@ -282,6 +230,57 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+
+# @frappe.whitelist()
+# def get_variant_from_value(item_template=None, args=None):
+#     print(f"\n\ntemplate: {item_template}, args: {args}")
+#     args_list = []
+#     if args:
+#         args_list = frappe.parse_json(args)
+    
+#     if item_template:
+#         conditions = []
+
+#         for condition_dict in args_list:
+#             for key, value in condition_dict.items():
+#                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
+
+#         having_clause = " AND ".join(conditions)
+#         print(f"\n\nhaving: {having_clause}")
+#         if having_clause:
+#             query = f"""
+#                 SELECT parent FROM `tabItem Variant Attribute`
+#                 WHERE variant_of = %s
+#                 GROUP BY parent
+#                 HAVING {having_clause}
+#             """
+#             variants = frappe.db.sql(query, item_template, as_dict=True)
+#             print(f"\n\nhaving: {having_clause}, variant: {variants}")
+#             if variants:
+#                 return variants[0]['parent']
+#         else:
+#             return None
+
+# @frappe.whitelist()
+# def get_model(manufacturer_model, make):
+#     models = frappe.get_all("Models", filters={"njhat_model": manufacturer_model}, fields=["name"])
+#     if len(models) == 1:
+#         return models[0]['name']
+    
+#     elif len(models) > 1:
+#         makes_list = []
+#         for model in models:
+#             makes = frappe.get_all("Make Child", filters={"parent": model.name, "make": make}, fields=["parent"])
+#             if makes:
+#                 makes_list.append(makes[0].parent)
+        
+#         if len(makes_list) > 0:
+#             return makes_list
+        
+#         else:
+#             frappe.throw(f"Match with make: {make} not found")
+#     else:
+#         frappe.throw("Model not found")
 
 # @frappe.whitelist()
 # def create_serial_no(item_code):

@@ -8,7 +8,7 @@ def material_transfer(doc, work_warehouse=None):
     iqc = frappe.get_doc('IQC', doc)
     sql_query = """
             SELECT 
-                item_code, warehouse, stock_value, posting_date, posting_time
+                item_code, warehouse, incoming_rate, posting_date, posting_time
             FROM
                 `tabStock Ledger Entry`
             WHERE
@@ -29,8 +29,7 @@ def material_transfer(doc, work_warehouse=None):
         'stock_uom': 'Nos',
         's_warehouse': sle_entry.warehouse,
         't_warehouse': work_warehouse,
-        'basic_rate': iqc.base_price,
-        'set_basic_rate_manually': 1,
+        'basic_rate': sle_entry.incoming_rate,
         'serial_no': iqc.serial_no
     })
 

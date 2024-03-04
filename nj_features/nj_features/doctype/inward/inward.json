@@ -8,7 +8,6 @@
  "engine": "InnoDB",
  "field_order": [
   "purchase_receipt",
-  "purchase_price",
   "item_group",
   "column_break_nvgty",
   "item_code",
@@ -24,12 +23,6 @@
   "amended_from"
  ],
  "fields": [
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price"
-  },
   {
    "fieldname": "item_code",
    "fieldtype": "Select",
@@ -120,7 +113,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-01 12:21:44.774827",
+ "modified": "2024-03-04 07:11:22.496712",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

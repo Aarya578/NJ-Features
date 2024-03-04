@@ -76,6 +76,7 @@ def repack(inward):
     })
 
     if item_code:
+        stock_entry.naming_series = "STE-INW-"
         stock_entry.submit()
     else:
         frappe.msgprint(f"Item: <strong>{item_name}</strong> doesn't exist.")

@@ -24,28 +24,44 @@ class Inward(Document):
             frappe.throw("Repack process failed. Cannot submit Inward document.")
 
 @frappe.whitelist()
-def get_items_from_pr(pr,item_code=None):
-    base_rate=''
-    key = {}
-    batch_no = ''
-    
+def get_item_list_from_pr(pr):
+    return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
+
+@frappe.whitelist()
+def get_stock_data_from_pr(pr, item_code=None):
+    get_serial_no = ''
     if pr:
         sql_query = """
                 SELECT 
-                    item_code, warehouse, stock_value, posting_date, posting_time
+                    item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
                 FROM
                     `tabStock Ledger Entry`
                 WHERE
-                    batch_no LIKE %s
-                    AND is_cancelled = 0
+                    voucher_no = %s and item_code = %s
+                    AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
                 ORDER BY
                     posting_date DESC, posting_time DESC, creation DESC
                 LIMIT 1
             """
-        sle = frappe.db.sql(sql_query, ('%'+batch_no+'%',), as_dict=1)
-        for i in sle:
-            key[i['item_code']] = i['warehouse']
+        sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
+        
+        item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
+        
+        if sle and sle[0].get('serial_no'):
+            get_serial_no = frappe.db.sql(
+                """SELECT name FROM `tabSerial No` WHERE item_code = %s 
+                AND delivery_document_no IS NULL AND warehouse = %s """,
+                (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
+            )
+            
+    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
+
     
+    # base_rate=''
+    # key = {}
+    
+        # for i in sle:
+        #     key[i['item_code']] = i['warehouse']
     
     # if pr:
     #     result = frappe.db.sql(
@@ -54,12 +70,12 @@ def get_items_from_pr(pr,item_code=None):
     #     for i in result:
     #         key[i['item_code']] = i['warehouse']
          
-    if item_code:
-        base_rate_result = frappe.db.sql(
-            """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
-        if base_rate_result:
-            base_rate = base_rate_result[0].get('base_rate', '')
-    return {"result":sle, "base_rate": base_rate, "key":key}
+    # if item_code:
+    #     base_rate_result = frappe.db.sql(
+    #         """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
+    #     if base_rate_result:
+    #         base_rate = base_rate_result[0].get('base_rate', '')
+    # return {"result":sle}
 
 @frappe.whitelist()
 def fetch_item_group(item_code):
@@ -80,15 +96,14 @@ def create_serial_no(item_group=None):
                 generate_and_save_barcode(serial_no)
             else: 
                 frappe.msgprint(f"Serial No Prefix is not set for Item Group: <strong>{item_group} </strong>")
-        return serial_no  # Return serial_no even if it's empty
+        return serial_no
     except Exception as e:
         frappe.log_error(f"Error while creating Serial No: {e}")
-        return None  # Return None in case of error
+        return None
     
 @frappe.whitelist()        
 def generate_and_save_barcode(serial_no, format='png'):
     try:
-        print(f"generate_and_save_barcode: {serial_no}")
         my_code = Code128(serial_no, writer=CustomImgWriter())
 
         # Create BytesIO to store barcode SVG

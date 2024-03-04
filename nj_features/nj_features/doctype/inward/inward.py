@@ -25,7 +25,14 @@ class Inward(Document):
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):
-    return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
+    # return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
+    item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
+    pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
+    # Get item codes associated with the given purchase receipt
+    # Filter out only those item codes from purchase receipt which have batch numbers
+    item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
+    return item_codes_in_pr
+
 
 @frappe.whitelist()
 def get_stock_data_from_pr(pr, item_code=None):
@@ -124,3 +131,13 @@ def generate_and_save_barcode(serial_no, format='png'):
     except Exception as e:
         print(f"error in generate barcode {e}")
         return(f"error in generate barcode {e}")
+    
+   
+@frappe.whitelist()
+def fetch_model_description(model):
+    # Fetch the model description based on the selected model
+    model_doc = frappe.get_doc("Models", model)
+    if model_doc:
+        return {"model_description": model_doc.model_description}
+    else:
+        return {"model_description": None}

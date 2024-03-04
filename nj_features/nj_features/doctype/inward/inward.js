@@ -41,23 +41,23 @@ frappe.ui.form.on('Inward', {
     },
 
     purchase_receipt: function(frm) {
-        // console.log(cur_frm.doc.purchase_receipt);
-        if (cur_frm.doc.purchase_receipt) {
+        if (frm.doc.purchase_receipt) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
-                    if (r.message && r.message) {
+                    if (r.message && r.message.length > 0) {
                         var itemCodes = r.message.map(function(item) {
-                            return item.item_code;
+                            console.log("itemCodes",item)
+                            return item;
                         });
-                        var options = itemCodes.join('\n');
 
-                        frm.set_df_property('item_code', 'options', options);
+                        // Set the item codes as options for the item_code field
+                        frm.set_df_property('item_code', 'options', itemCodes);
                     } else {
+                        // Clear options if no item codes are found
                         frm.set_df_property('item_code', 'options', '');
                     }
-
                 }
             });
         }
@@ -128,7 +128,37 @@ frappe.ui.form.on('Inward', {
             frappe.msgprint("Serial number generation failed. Document cannot be saved.");
             frappe.validated = false;
         }
+    },
+    model: function(frm) {
+        console.log("model field is triggered")
+        var selectedModel = frm.doc.model;
+        console.log("selectedModel",selectedModel)
+        if (selectedModel) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
+                args: {
+                    'model': selectedModel
+                },
+                callback: function(r) {
+                    $('.desc').remove();
+                    if (r.message && r.message.model_description) {
+                        console.log("r.message",r.message)
+                        var description = r.message.model_description;
+                        console.log("description of model ",description)
+                        // frappe.msgprint(description);
+                        // frm.set_value('model_description',description)
+                        // frm.fields_dict.model_description.set_input(description);
+                         var htmlContent = `<div class='desc'><strong>Model Description:</strong> ${description}</div>`;
+                        $(frm.fields_dict['model'].wrapper).append(htmlContent);
+
+                    } else {
+                        frappe.msgprint('Model description not set.');
+                    }
+                }
+            });
+        }
     }
+
 });
 
 function warehouse_info(frm) {

@@ -49,7 +49,7 @@ def repack(inward):
         else:
             stock_entry.items[0].update({'serial_no': get_serial_no[0].name})
         
-    item_name = f"S-{inward.brand}-{inward.model}-{unk_pro}-{unk_ram}-{unk_storage}"  
+    item_name = f"S-{inward.brand} {inward.model}-{unk_pro}-{unk_ram}-{unk_storage}"  
     item_code = frappe.db.get_value('Item', {'name': item_name }, 'name')
     
     if has_batch_no == 1:

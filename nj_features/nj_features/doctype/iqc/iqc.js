@@ -318,7 +318,37 @@ frappe.ui.form.on('IQC', {
             frappe.msgprint("You are not allowed to save IQC without Repack Item")
             frappe.validated = false;
         }
+    },
+    model: function(frm) {
+        console.log("model field is triggered")
+        var selectedModel = frm.doc.model;
+        console.log("selectedModel",selectedModel)
+        if (selectedModel) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
+                args: {
+                    'model': selectedModel
+                },
+                callback: function(r) {
+                    $('.desc').remove();
+                    if (r.message && r.message.model_description) {
+                        console.log("r.message",r.message)
+                        var description = r.message.model_description;
+                        console.log("description of model ",description)
+                        // frappe.msgprint(description);
+                        // frm.set_value('model_description',description)
+                        // frm.fields_dict.model_description.set_input(description);
+                         var htmlContent = `<div class='desc'><strong>Model Description:</strong> ${description}</div>`;
+                        $(frm.fields_dict['model'].wrapper).append(htmlContent);
+
+                    } else {
+                        frappe.msgprint('Model description not set.');
+                    }
+                }
+            });
+        }
     }
+
 });
 
 function makeMaterialTransfer(doc, work_warehouse) {

@@ -231,6 +231,15 @@ def generate_and_save_barcode(serial_no, format='png'):
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
 
+@frappe.whitelist()
+def fetch_model_description(model):
+    # Fetch the model description based on the selected model
+    model_doc = frappe.get_doc("Models", model)
+    if model_doc:
+        return {"model_description": model_doc.model_description}
+    else:
+        return {"model_description": None}
+
 # @frappe.whitelist()
 # def get_variant_from_value(item_template=None, args=None):
 #     print(f"\n\ntemplate: {item_template}, args: {args}")

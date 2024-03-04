@@ -34,7 +34,9 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 doctype_js = {
     # "Stock Entry" : "public/js/stock_entry.js",
     "Warehouse": "public/js/warehouse.js",
-    "Employee": "public/js/employee.js"
+    "Employee": "public/js/employee.js",
+    "Inward Barcode":"public/js/printview_override.js",
+    "Machine Part Changes":"public/js/machine_partchanges.js"
 }
 
 doctype_list_js = {

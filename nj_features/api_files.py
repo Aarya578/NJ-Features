@@ -235,24 +235,37 @@ def print_barcode(doc):
         if has_serial_no == 1:
             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
             remaining_qty = qty - len(serial_no_list)
-            
-            new_serial_nos = []
-            for _ in range(remaining_qty):
-                serial_no = create_serial_no(item_code)
-                new_serial_nos.append(serial_no)
-            
-            for idx, serial_no in enumerate(serial_no_list):
-                if not serial_no.strip():  # If there is a space
-                    if new_serial_nos:  # If there are new serial numbers to fill the space
-                        serial_no_list[idx] = new_serial_nos.pop(0)
-            
-            updated_serial_no = '\n'.join(serial_no_list)
-            
-            for serial_no in new_serial_nos:
-                generate_and_save_barcode(serial_no)
-            
-            return updated_serial_no
+            print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
+            if remaining_qty > 0:
+                for _ in range(remaining_qty):
+                    serial_no = create_serial_no(item_code)
+                    serial_no_list.append(serial_no)
+                
+                updated_serial_no = '\n'.join(serial_no_list)
+                print(f"updated_serial_no: {updated_serial_no}")
+                
+                for serial_no in serial_no_list[-remaining_qty:]:
+                    generate_and_save_barcode(serial_no)
+                return updated_serial_no
+                    
+            else:
+                row_idx = doc_dict.get('idx', '')
+                frappe.msgprint(f"All serial numbers are already entered for this row: <strong># {row_idx}</strong>.")
         else:
             frappe.msgprint(f"Serial No can't be generated for Non-Serialized Item Code: <strong>{item_code}</strong>")
     except Exception as e:
         frappe.msgprint(f"Error printing barcode: {e}")
+        
+def update_serial_no_on_pr_submit(doc, method=None):
+    for item in doc.items:
+        if item.item_code and item.qty and serializer_or_notserializer(item.item_code) == 1:
+            serial_nos = item.serial_no.split('\n') if item.serial_no else []
+            for serial_no in serial_nos:
+                update_serial_no_prices(item.rate, serial_no)
+
+def update_serial_no_prices(rate, serial_no):
+    serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    if serial_no_doc:
+        if rate:
+            frappe.db.set_value('Serial No', serial_no_doc.name, 'purchase_price', rate)
+            frappe.db.set_value('Serial No', serial_no_doc.name, 'current_price', rate)

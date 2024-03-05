@@ -30,6 +30,15 @@ frappe.ui.form.on('Purchase Receipt Item', {
             callback: function(r) {
                 console.log("resp: ", r)
                 frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
+                var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
+                                                    "doctype=" + encodeURIComponent("Purchase Receipt") +
+                                                    "&name=" + encodeURIComponent(cur_frm.doc.name) +
+                                                    "&trigger_print=1" +
+                                                    "&format=" + "Purchase Receipt Barcode" +
+                                                    "&no_letterhead=1" +
+                                                    "&_lang=en" 
+                                                    // "&count=" + name
+                                                ));
             }
         });
     }

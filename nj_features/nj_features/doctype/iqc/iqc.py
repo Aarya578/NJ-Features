@@ -176,21 +176,28 @@ def construct_item_code(item_template, args_list):
         frappe.msgprint(f'Serialized Item code: "{concatenated_string}" not found. Please contact NPD Team.')
 
 @frappe.whitelist()
-def get_model(manufacturer_model, make):
+def get_model(manufacturer_model, make=None):
+    query, model_list, new_model_list = '', [], []
     if manufacturer_model and make:
         query = """SELECT DISTINCT mmc.parent AS model
                    FROM `tabManufacturer Model Child` AS mmc
                    LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
                    WHERE mmc.manufacturer_model = %s AND mc.make = %s"""
         params = (manufacturer_model, make)
-    else:
+    model_list = frappe.db.sql(query, params, as_dict=True)
+    # print(f"\n\n if model : {model_list}")
+
+    if model_list == []:
         query = """SELECT DISTINCT mmc.parent AS model
                    FROM `tabManufacturer Model Child` AS mmc
                    LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
                    WHERE mmc.manufacturer_model = %s"""
-        params = (manufacturer_model,)
-
-    model_list = frappe.db.sql(query, params, as_dict=True)
+        params = (manufacturer_model)
+        model_list = frappe.db.sql(query, params, as_dict=True)
+        # print(f"\n\n elif model ----- : {new_model_list}")
+    else:
+        # print(f"\n\n else model ----- : {model_list}")
+        frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
     
@@ -230,15 +237,6 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
-
-@frappe.whitelist()
-def fetch_model_description(model):
-    # Fetch the model description based on the selected model
-    model_doc = frappe.get_doc("Models", model)
-    if model_doc:
-        return {"model_description": model_doc.model_description}
-    else:
-        return {"model_description": None}
 
 # @frappe.whitelist()
 # def get_variant_from_value(item_template=None, args=None):

@@ -46,9 +46,9 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('repack_item_code', 'hidden', !isYes);
             cur_frm.set_df_property('model', 'hidden', !isYes);
             cur_frm.set_df_property('bios_serialno', 'hidden', !isYes);
-            if (isYes) {
+            // if (isYes) {
                 // cur_frm.events.validate(cur_frm)
-            }
+            // }
             
     },
     serial_no: function(frm) {
@@ -90,18 +90,19 @@ frappe.ui.form.on('IQC', {
     
                 }
             });
-
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
-                args: {"serial_no": cur_frm.doc.serial_no},
-                callback: function(r) {
-                    frm.set_value('barcode_svg', r.message.barcode_img);
-                    frappe.show_alert({
-                        message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
-                        indicator: 'green'
-                    });
-                }
-            });
+            if(!cur_frm.doc.barcode_svg) {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
+                    args: {"serial_no": cur_frm.doc.serial_no},
+                    callback: function(r) {
+                        frm.set_value('barcode_svg', r.message.barcode_img);
+                        frappe.show_alert({
+                            message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
+                            indicator: 'green'
+                        });
+                    }
+                });
+            }
         }
 
         // if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
@@ -319,10 +320,10 @@ frappe.ui.form.on('IQC', {
             frappe.validated = false;
         }
     },
+
     model: function(frm) {
-        console.log("model field is triggered")
         var selectedModel = frm.doc.model;
-        console.log("selectedModel",selectedModel)
+        // console.log("selectedModel",selectedModel)
         if (selectedModel) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
@@ -332,9 +333,9 @@ frappe.ui.form.on('IQC', {
                 callback: function(r) {
                     $('.desc').remove();
                     if (r.message && r.message.model_description) {
-                        console.log("r.message",r.message)
+                        // console.log("r.message",r.message)
                         var description = r.message.model_description;
-                        console.log("description of model ",description)
+                        // console.log("description of model ",description)
                         // frappe.msgprint(description);
                         // frm.set_value('model_description',description)
                         // frm.fields_dict.model_description.set_input(description);
@@ -386,9 +387,6 @@ function get_model(manufacturer_model, make) {
                             indicator: 'green'
                         });
                     }
-                } else {
-                    // Show message if no models found
-                    frappe.msgprint("Model not found for the given manufacturer_model: " + manufacturer_model + " and make: " + make);
                 }
             }
         }

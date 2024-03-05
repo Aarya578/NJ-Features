@@ -1,7 +1,6 @@
 frappe.ui.form.on('Purchase Receipt', {
     onload: function(frm) {
         frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(r) {
-            console.log("emp: ", r);
             if (!r.name) {
                 frappe.msgprint('Employee not found for user: <strong>'+frappe.session.user_email+'</strong>. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
                 return;
@@ -28,7 +27,6 @@ frappe.ui.form.on('Purchase Receipt Item', {
                 doc: child_doc
             },
             callback: function(r) {
-                console.log("resp: ", r)
                 frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
                 
             }

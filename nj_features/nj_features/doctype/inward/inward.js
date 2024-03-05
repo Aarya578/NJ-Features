@@ -166,11 +166,9 @@ frappe.ui.form.on('Inward', {
                         // frappe.msgprint(description);
                         // frm.set_value('model_description',description)
                         // frm.fields_dict.model_description.set_input(description);
-                         var htmlContent = `<div class='desc'><strong>Model Description:</strong> ${description}</div>`;
+                         var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
                         $(frm.fields_dict['model'].wrapper).append(htmlContent);
 
-                    } else {
-                        frappe.msgprint('Model description not set.');
                     }
                 }
             });

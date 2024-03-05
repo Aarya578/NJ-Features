@@ -117,8 +117,12 @@ doc_events = {
 	},
 	"Purchase Receipt": {
 		"before_save": "nj_features.nj_features.doctype.purchase_receipt.get_batch",
+	},
+	"Sales Order": {
+		"on_submit": "nj_features.api_files.on_submit"
 	}
 }
+
 # doc_events = {
 #     "Sales Order": {
 #         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"

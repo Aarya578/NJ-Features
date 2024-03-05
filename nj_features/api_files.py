@@ -93,3 +93,115 @@ def get_all_emp_warehouse(user):
         
     except Exception as e:
         return {'error in emp': str(e)}
+    
+# Barcode Printing in Purchase Receipt:
+
+@frappe.whitelist()
+def create_serial_no(item_code=None, attempt=0):
+    MAX_ATTEMPTS = 4
+    
+    try:
+        if attempt >= MAX_ATTEMPTS:
+            frappe.msgprint("Maximum attempts reached. Unable to generate a unique serial number.")
+            return None
+        
+        item_doc = frappe.get_doc('Item', item_code)
+        if item_doc:
+            has_serial_no = item_doc.has_serial_no
+            item_group = item_doc.item_group
+            
+            if has_serial_no and item_group:
+                serial_no_prefix = frappe.db.get_value("Item Group", item_group, "serial_no_prefix")
+                
+                if not serial_no_prefix:
+                    frappe.msgprint(f"Serial No Prefix is not set for Item Group: {item_group}")
+                    return None
+                
+                prefix = "NJ-"
+                serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                frappe.msgprint(f"Generated serial number: {serial_no}")
+
+                if frappe.db.exists("Serial No", {"serial_no": serial_no}):
+                    frappe.msgprint(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
+                    return create_serial_no(item_code, attempt + 1)  # Recursive call with increased attempt count
+                else:
+                    generate_and_save_barcode(serial_no)
+                    return serial_no
+            else:
+                frappe.msgprint(f"Item Group or Serial No status is not defined for Item Code: <strong>{item_code}</strong>.")
+                return None
+        else:
+            frappe.msgprint(f"Item with code <strong>{item_code}</strong> not found.")
+            return None
+    except Exception as e:
+        frappe.msgprint(f"Error while creating Serial No: {e}")
+        return None
+
+def generate_and_save_barcode(serial_no, format='png'):
+    my_code = Code128(serial_no, writer=CustomImgWriter())
+
+    # Create BytesIO to store barcode SVG
+    barcode_bytes = BytesIO()
+    my_code.write(barcode_bytes)
+
+    # Set the directory to save the file
+    base_directory = frappe.get_site_path("public", "files")
+    file_path = os.path.join(base_directory, f"{serial_no}.{format}")
+
+    # Check if the file already exists
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    # Save the SVG content to a file
+    with open(file_path, 'wb') as f:
+        f.write(barcode_bytes.getvalue())
+
+@frappe.whitelist()
+def get_max_cop(item_code, serial_no, print_cpy):
+    item_group = frappe.get_value('Item', {'name': item_code}, 'item_group')
+    
+    # width = frappe.get_value('Item Group', {'name': item_group}, 'width')
+    # height = frappe.get_value('Item Group', {'name': item_group}, 'height')
+    max_cop = frappe.get_value('Item Group', {'name': item_group}, 'maximum_copy')
+    print_format = frappe.get_value('Item Group', {'name': item_group}, 'print_format')
+    
+    # Parse the serial_no string as a JSON array
+    serial_numbers = json.loads(serial_no)
+    
+    # Check if serial_numbers is a list
+    if isinstance(serial_numbers, list):
+        for sn in serial_numbers:
+            serialno_doc = frappe.get_doc("Serial No", sn.strip())  # Strip to remove whitespace
+            print(f"\n\nget_max_copy: {sn}")
+            if serialno_doc:
+                serialno_doc.last_qr_count = int(print_cpy)
+                serialno_doc.save()
+            else:
+                frappe.msgprint(f"Serial No.: <strong>{sn}</strong> not found.")
+    else:  # If only one serial_no is passed
+        serialno_doc = frappe.get_doc("Serial No", serial_no)
+        print(f"\n\nget_max_copy: {serial_no}")
+        if serialno_doc:
+            serialno_doc.last_qr_count = int(print_cpy)
+            serialno_doc.save()
+        else:
+            frappe.msgprint(f"Serial No.: <strong>{serial_no}</strong> not found.")
+    
+    return max_cop, print_format
+
+@frappe.whitelist()
+def create_reason_copy(serial_no, item_code, name, copies,reason, comment,doctype):
+    #max_cop = frappe.get_value('Item', {'name': item_code}, 'maximum_copy')
+    #if float(copies) > float(max_cop):
+        #reason = frappe.get_prompt("Select the Reason", "reason", fieldtype="Link", options="cancel Reason")
+        # comment = frappe.get_prompt("comment: ")
+    new_doc = frappe.new_doc("Deviation History")
+    new_doc.user = frappe.session.user
+    new_doc.reason = reason
+    new_doc.comment = comment
+    new_doc.serial_no = serial_no
+    new_doc.item_code = item_code
+    new_doc.referance_doctype = doctype
+    new_doc.document_name = name
+    new_doc.save()
+    return new_doc.name

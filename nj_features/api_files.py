@@ -1,4 +1,11 @@
 import frappe
+import json
+import random
+import os
+from barcode import Code128
+from nj_features.barcode import CustomImgWriter
+from io import BytesIO
+
 
 @frappe.whitelist()
 def on_submit(doc, handler=""):

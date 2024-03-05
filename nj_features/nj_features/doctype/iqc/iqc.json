@@ -7,27 +7,27 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "njhat_information_section",
   "power_on",
-  "column_break_5mcw7",
-  "created",
-  "purchase_price",
   "purchase_receipt",
   "base_price",
-  "section_break_6sw2s",
-  "serial_no",
   "item_code",
-  "barcode_svg",
   "item_group",
   "warehouse",
   "bios_serialno",
-  "raw_data",
-  "item_template",
-  "column_break_qzvyk",
-  "data_attr",
+  "barcode_svg",
+  "column_break_5mcw7",
+  "created",
   "brand",
-  "model",
   "manufacturer_model",
   "make",
+  "raw_data",
+  "item_template",
+  "section_break_6sw2s",
+  "serial_no",
+  "data_attr",
+  "column_break_qzvyk",
+  "model",
   "repack_item_code",
   "original_price",
   "repack_itm_price",
@@ -38,12 +38,6 @@
   "amended_from"
  ],
  "fields": [
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price"
-  },
   {
    "fieldname": "column_break_5mcw7",
    "fieldtype": "Column Break"
@@ -68,7 +62,7 @@
   {
    "fieldname": "serial_no",
    "fieldtype": "Data",
-   "label": "Barcode/Serial No"
+   "label": "NJ Serial No/Barcode"
   },
   {
    "fieldname": "brand",
@@ -177,7 +171,7 @@
    "fieldname": "power_on",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Is the system not Powering ON?",
+   "label": "Is the system Powering ON?",
    "options": "\nYes\nNo",
    "reqd": 1
   },
@@ -213,13 +207,18 @@
    "fieldtype": "Data",
    "label": "Manufacturer Model",
    "read_only": 1
+  },
+  {
+   "fieldname": "njhat_information_section",
+   "fieldtype": "Section Break",
+   "label": "NJHAT Information"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-02 07:36:12.992500",
+ "modified": "2024-03-05 18:03:15.992313",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

@@ -2,8 +2,6 @@ import frappe
 
 @frappe.whitelist()
 def on_submit(doc, handler=""):
-    print(f"on submit")
-    frappe.throw("ON Submit")
     crt_amzsl_inv(doc.name)
    # crt_amzdn(doc.name)
 
@@ -28,9 +26,9 @@ def crt_amzsl_inv(sales_order_name):
                 "sales_order": sales_order_name
             })
         si.insert(ignore_permissions=True)
-        si.submit()
+        si.save()
         frappe.msgprint(frappe._("Sales invoice created",si.name), indicator="green", alert=True)
-        frappe.db.commit()
+        # frappe.db.commit()
         return si.name
     else:
         pass

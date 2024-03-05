@@ -66,10 +66,11 @@ frappe.ui.form.on('Inward', {
                 method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_po',
                 args: {'po': frm.doc.purchase_order},
                 callback: function(r) {
-                    if (r.message && r.message) {
+                    if (r.message) {
                         var itemCodes = r.message.map(function(item) {
-                            return item.item_code;
+                            return item;
                         });
+                        console.log("r.message", r.message);
                         var options = itemCodes.join('\n');
 
                         frm.set_df_property('item_code', 'options', options);

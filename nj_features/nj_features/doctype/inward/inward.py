@@ -27,10 +27,11 @@ class Inward(Document):
 def get_item_list_from_po(po):
     # return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
     item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
-    pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': po}, ['item_code'])
+    po_item_codes = frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
     # Get item codes associated with the given purchase receipt
     # Filter out only those item codes from purchase receipt which have batch numbers
-    item_codes_in_po = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
+    item_codes_in_po = [item['item_code'] for item in po_item_codes if item['item_code'] in item_codes]
+    print(f"\n\npo_item_codes: {po_item_codes} \n{item_codes} \n{item_codes_in_po}")
     return item_codes_in_po
 
 # @frappe.whitelist()

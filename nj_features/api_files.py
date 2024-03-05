@@ -257,15 +257,17 @@ def print_barcode(doc):
         frappe.msgprint(f"Error printing barcode: {e}")
         
 def update_serial_no_on_pr_submit(doc, method=None):
+    warranty_days = doc.warranty_days
     for item in doc.items:
         if item.item_code and item.qty and serializer_or_notserializer(item.item_code) == 1:
             serial_nos = item.serial_no.split('\n') if item.serial_no else []
             for serial_no in serial_nos:
-                update_serial_no_prices(item.rate, serial_no)
+                update_serial_no_prices(item.rate, serial_no, warranty_days)
 
-def update_serial_no_prices(rate, serial_no):
+def update_serial_no_prices(rate, serial_no, warranty_days):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     if serial_no_doc:
         if rate:
             frappe.db.set_value('Serial No', serial_no_doc.name, 'purchase_price', rate)
             frappe.db.set_value('Serial No', serial_no_doc.name, 'current_price', rate)
+            frappe.db.set_value('Serial No', serial_no_doc.name, 'warranty_period', warranty_days)

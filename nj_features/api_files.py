@@ -172,20 +172,31 @@ def get_max_cop(item_code, serial_no, print_cpy):
     max_cop = frappe.get_value('Item Group', {'name': item_group}, 'maximum_copy')
     print_format = frappe.get_value('Item Group', {'name': item_group}, 'print_format')
     
-    # Parse the serial_no string as a JSON array
-    serial_numbers = json.loads(serial_no)
-    
-    # Check if serial_numbers is a list
-    if isinstance(serial_numbers, list):
-        for sn in serial_numbers:
-            serialno_doc = frappe.get_doc("Serial No", sn.strip())  # Strip to remove whitespace
-            print(f"\n\nget_max_copy: {sn}")
+    try:
+        # Parse the serial_no string as a JSON array
+        serial_numbers = json.loads(serial_no)
+        
+        # Check if serial_numbers is a list
+        if isinstance(serial_numbers, list):
+            for sn in serial_numbers:
+                serialno_doc = frappe.get_doc("Serial No", sn.strip())  # Strip to remove whitespace
+                print(f"\n\nget_max_copy: {sn}")
+                if serialno_doc:
+                    serialno_doc.last_qr_count = int(print_cpy)
+                    serialno_doc.save()
+                else:
+                    frappe.msgprint(f"Serial No.: <strong>{sn}</strong> not found.")
+        else:  # If only one serial_no is passed
+            serialno_doc = frappe.get_doc("Serial No", serial_no)
+            print(f"\n\nget_max_copy: {serial_no}")
             if serialno_doc:
                 serialno_doc.last_qr_count = int(print_cpy)
                 serialno_doc.save()
             else:
-                frappe.msgprint(f"Serial No.: <strong>{sn}</strong> not found.")
-    else:  # If only one serial_no is passed
+                frappe.msgprint(f"Serial No.: <strong>{serial_no}</strong> not found.")
+    except json.JSONDecodeError:
+        # Handle the case where serial_no is not a valid JSON array
+        # Proceed with processing a single serial_no
         serialno_doc = frappe.get_doc("Serial No", serial_no)
         print(f"\n\nget_max_copy: {serial_no}")
         if serialno_doc:
@@ -197,7 +208,7 @@ def get_max_cop(item_code, serial_no, print_cpy):
     return max_cop, print_format
 
 @frappe.whitelist()
-def create_reason_copy(serial_no, item_code, name, copies,reason, comment,doctype):
+def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doctype):
     #max_cop = frappe.get_value('Item', {'name': item_code}, 'maximum_copy')
     #if float(copies) > float(max_cop):
         #reason = frappe.get_prompt("Select the Reason", "reason", fieldtype="Link", options="cancel Reason")
@@ -212,3 +223,35 @@ def create_reason_copy(serial_no, item_code, name, copies,reason, comment,doctyp
     new_doc.document_name = name
     new_doc.save()
     return new_doc.name
+
+@frappe.whitelist()
+def print_barcode(doc):
+    try:
+        doc_dict = frappe.parse_json(doc)
+        item_code = doc_dict.get('item_code')
+        qty = doc_dict.get('qty')
+        has_serial_no = serializer_or_notserializer(item_code)
+        
+        if has_serial_no == 1:
+            serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
+            remaining_qty = qty - len(serial_no_list)
+            print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
+            if remaining_qty > 0:
+                for _ in range(remaining_qty):
+                    serial_no = create_serial_no(item_code)
+                    serial_no_list.append(serial_no)
+                
+                updated_serial_no = '\n'.join(serial_no_list)
+                print(f"updated_serial_no: {updated_serial_no}")
+                
+                for serial_no in serial_no_list[-remaining_qty:]:
+                    generate_and_save_barcode(serial_no)
+                return updated_serial_no
+                    
+            else:
+                row_idx = doc_dict.get('idx', '')
+                frappe.msgprint(f"All serial numbers are already entered for this row: <strong># {row_idx}</strong>.")
+        else:
+            frappe.msgprint(f"Serial No can't be generated for Non-Serialized Item Code: <strong>{item_code}</strong>")
+    except Exception as e:
+        frappe.msgprint(f"Error printing barcode: {e}")

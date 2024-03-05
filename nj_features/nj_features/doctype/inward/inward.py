@@ -33,6 +33,39 @@ def get_item_list_from_pr(pr):
     item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
     return item_codes_in_pr
 
+@frappe.whitelist()
+def get_item_list_from_po(po):
+    return frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
+
+@frappe.whitelist()
+def get_stock_data_from_po(po, item_code=None):
+    get_serial_no = ''
+    if po and item_code:
+        pr = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'purchase_order': po}, 'parent')
+        sql_query = """
+                SELECT 
+                    item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
+                FROM
+                    `tabStock Ledger Entry`
+                WHERE
+                    voucher_no = %s and item_code = %s
+                    AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
+                ORDER BY
+                    posting_date DESC, posting_time DESC, creation DESC
+                LIMIT 1
+            """
+        sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
+        
+        item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
+        
+        if sle and sle[0].get('serial_no'):
+            get_serial_no = frappe.db.sql(
+                """SELECT name FROM `tabSerial No` WHERE item_code = %s 
+                AND delivery_document_no IS NULL AND warehouse = %s """,
+                (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
+            )
+            
+    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
 @frappe.whitelist()
 def get_stock_data_from_pr(pr, item_code=None):
@@ -91,19 +124,33 @@ def fetch_item_group(item_code):
 
 
 @frappe.whitelist()
-def create_serial_no(item_group=None):
+def create_serial_no(item_group=None, attempt=0):
+    MAX_ATTEMPTS = 4
     try:
-        serial_no = ''
+        if attempt >= MAX_ATTEMPTS:
+            frappe.msgprint("Maximum attempts reached. Unable to generate a unique serial number.")
+            return None
+        
         if item_group:
             serial_no_prefix = frappe.db.get_value("Item Group", {"name": item_group}, "serial_no_prefix")
+            if not serial_no_prefix:
+                frappe.msgprint(f"Serial No Prefix is not set for Item Group: <strong>{item_group}</strong>")
+                return None
+            
             prefix = "NJ-"
-            if serial_no_prefix:
-                serial_no = prefix + serial_no_prefix + '-' +str(random.randint(100000, 999999))
-                print(f"serial_no {serial_no}, {serial_no_prefix}, {prefix}")
+            serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+            print(f"Generated serial number: {serial_no}")
+
+            existing_serial = frappe.db.exists("Serial No", {"serial_no": serial_no})
+            if existing_serial:
+                print(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
+                return create_serial_no(item_group, attempt + 1)  # Recursive call with increased attempt count
+            else:
                 generate_and_save_barcode(serial_no)
-            else: 
-                frappe.msgprint(f"Serial No Prefix is not set for Item Group: <strong>{item_group} </strong>")
-        return serial_no
+                return serial_no
+        else:
+            frappe.msgprint("Item Group is not provided.")
+            return None
     except Exception as e:
         frappe.log_error(f"Error while creating Serial No: {e}")
         return None

@@ -6,15 +6,15 @@ frappe.ui.form.on('Inward', {
     },
 
     refresh(frm) {
-        if (!cur_frm.doc.purchase_receipt) {
-            $('[data-fieldname="purchase_receipt"]').focus();
+        if (!cur_frm.doc.purchase_order) {
+            $('[data-fieldname="purchase_order"]').focus();
         } else {
             $('[data-fieldname="brand"]').focus();
         }
         if (cur_frm.doc.docstatus == 0) {
-            frm.events.purchase_receipt(frm);
+            frm.events.purchase_order(frm);
         }
-        frm.set_query('purchase_receipt', function() {
+        frm.set_query('purchase_order', function() {
             return {
                 filters: {
                     "docstatus": ['=', 1]
@@ -40,24 +40,43 @@ frappe.ui.form.on('Inward', {
         }
     },
 
-    purchase_receipt: function(frm) {
-        if (frm.doc.purchase_receipt) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
-                args: {'pr': frm.doc.purchase_receipt},
-                callback: function(r) {
-                    if (r.message && r.message.length > 0) {
-                        var itemCodes = r.message.map(function(item) {
-                            console.log("itemCodes",item)
-                            return item;
-                        });
+    purchase_order: function(frm) {
+        // if (frm.doc.purchase_receipt) {
+        //     frappe.call({
+        //         method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
+        //         args: {'pr': frm.doc.purchase_receipt},
+        //         callback: function(r) {
+        //             if (r.message && r.message.length > 0) {
+        //                 var itemCodes = r.message.map(function(item) {
+        //                     console.log("itemCodes",item)
+        //                     return item;
+        //                 });
 
-                        // Set the item codes as options for the item_code field
-                        frm.set_df_property('item_code', 'options', itemCodes);
+        //                 // Set the item codes as options for the item_code field
+        //                 frm.set_df_property('item_code', 'options', itemCodes);
+        //             } else {
+        //                 // Clear options if no item codes are found
+        //                 frm.set_df_property('item_code', 'options', '');
+        //             }
+        //         }
+        //     });
+        // }
+        if (cur_frm.doc.purchase_order) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_po',
+                args: {'po': frm.doc.purchase_order},
+                callback: function(r) {
+                    if (r.message && r.message) {
+                        var itemCodes = r.message.map(function(item) {
+                            return item.item_code;
+                        });
+                        var options = itemCodes.join('\n');
+
+                        frm.set_df_property('item_code', 'options', options);
                     } else {
-                        // Clear options if no item codes are found
                         frm.set_df_property('item_code', 'options', '');
                     }
+
                 }
             });
         }
@@ -76,12 +95,14 @@ frappe.ui.form.on('Inward', {
             //         }
             //     }
             // });
-            if (cur_frm.doc.purchase_receipt) {
+            if (cur_frm.doc.purchase_order) {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
-                    args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
+                    method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_po',
+                    args: {'po': frm.doc.purchase_order, 'item_code': selected_item_code},
+                    // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
+                    // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
-                        console.log("get_stock_data_from_pr: ", r.message);
+                        console.log("get_stock_data_from_po: ", r.message);
                         if (r.message) {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
@@ -130,9 +151,7 @@ frappe.ui.form.on('Inward', {
         }
     },
     model: function(frm) {
-        console.log("model field is triggered")
         var selectedModel = frm.doc.model;
-        console.log("selectedModel",selectedModel)
         if (selectedModel) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
@@ -142,9 +161,7 @@ frappe.ui.form.on('Inward', {
                 callback: function(r) {
                     $('.desc').remove();
                     if (r.message && r.message.model_description) {
-                        console.log("r.message",r.message)
                         var description = r.message.model_description;
-                        console.log("description of model ",description)
                         // frappe.msgprint(description);
                         // frm.set_value('model_description',description)
                         // frm.fields_dict.model_description.set_input(description);

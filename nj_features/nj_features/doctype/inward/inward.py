@@ -24,18 +24,18 @@ class Inward(Document):
             frappe.throw("Repack process failed. Cannot submit Inward document.")
 
 @frappe.whitelist()
-def get_item_list_from_pr(pr):
+def get_item_list_from_po(po):
     # return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
     item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
-    pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
+    pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': po}, ['item_code'])
     # Get item codes associated with the given purchase receipt
     # Filter out only those item codes from purchase receipt which have batch numbers
-    item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
-    return item_codes_in_pr
+    item_codes_in_po = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
+    return item_codes_in_po
 
-@frappe.whitelist()
-def get_item_list_from_po(po):
-    return frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
+# @frappe.whitelist()
+# def get_item_list_from_po(po):
+#     return frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
 
 @frappe.whitelist()
 def get_stock_data_from_po(po, item_code=None):
@@ -67,34 +67,34 @@ def get_stock_data_from_po(po, item_code=None):
             
     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
-@frappe.whitelist()
-def get_stock_data_from_pr(pr, item_code=None):
-    get_serial_no = ''
-    if pr:
-        sql_query = """
-                SELECT 
-                    item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
-                FROM
-                    `tabStock Ledger Entry`
-                WHERE
-                    voucher_no = %s and item_code = %s
-                    AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
-                ORDER BY
-                    posting_date DESC, posting_time DESC, creation DESC
-                LIMIT 1
-            """
-        sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
+# @frappe.whitelist()
+# def get_stock_data_from_pr(pr, item_code=None):
+#     get_serial_no = ''
+#     if pr:
+#         sql_query = """
+#                 SELECT 
+#                     item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
+#                 FROM
+#                     `tabStock Ledger Entry`
+#                 WHERE
+#                     voucher_no = %s and item_code = %s
+#                     AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
+#                 ORDER BY
+#                     posting_date DESC, posting_time DESC, creation DESC
+#                 LIMIT 1
+#             """
+#         sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
         
-        item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
+#         item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
         
-        if sle and sle[0].get('serial_no'):
-            get_serial_no = frappe.db.sql(
-                """SELECT name FROM `tabSerial No` WHERE item_code = %s 
-                AND delivery_document_no IS NULL AND warehouse = %s """,
-                (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
-            )
+#         if sle and sle[0].get('serial_no'):
+#             get_serial_no = frappe.db.sql(
+#                 """SELECT name FROM `tabSerial No` WHERE item_code = %s 
+#                 AND delivery_document_no IS NULL AND warehouse = %s """,
+#                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
+#             )
             
-    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
+#     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
     
     # base_rate=''

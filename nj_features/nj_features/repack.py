@@ -22,6 +22,8 @@ def repack(inward):
         'stock_uom': 'Nos',
         's_warehouse': inward.source_warehouse,
         'basic_rate': inward.base_rate,
+        'supplier':inward.supplier,
+        
     })
     
     item_doc = frappe.get_doc('Item', inward.item_code)
@@ -73,6 +75,8 @@ def repack(inward):
         'serial_no': inward.serial_no,
         'stock_uom': 'Nos',
         'basic_rate': inward.base_rate,
+        'supplier':inward.supplier,
+    
     })
 
     if item_code:

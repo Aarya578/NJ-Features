@@ -1,10 +1,11 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
+
 frappe.ui.form.on('Inward', {
     onload: function(frm) {
         warehouse_info(frm);
     },
-
+    
     refresh(frm) {
         if (!cur_frm.doc.purchase_order) {
             $('[data-fieldname="purchase_order"]').focus();
@@ -21,6 +22,10 @@ frappe.ui.form.on('Inward', {
                 }
             };
         });
+         frm.add_custom_button(__('Submit&Next'), function() {
+            submitAndNext(frm);   
+            console.log("button is clicked save and subitted")
+             });
     },
 
     validate: function(frm) {
@@ -108,6 +113,9 @@ frappe.ui.form.on('Inward', {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
                             var itemGroup = r.message.item_group;
+                            var batch_no =r.message.result.batch_no;
+                            var supplier=r.message.supplier;
+                            console.log("batch_no is ----",batch_no,"supplier is ----",supplier)
 
                             if(result) {
                                 cur_frm.set_value('item_code', result.item_code);
@@ -121,6 +129,12 @@ frappe.ui.form.on('Inward', {
             
                             if (itemGroup) {
                                 cur_frm.set_value('item_group', itemGroup);
+                            }
+                            if(batch_no){
+                                cur_frm.set_value('batch_no', batch_no);
+                            }
+                            if(supplier){
+                                cur_frm.set_value('supplier',supplier);
                             }
                         }
                     
@@ -150,6 +164,7 @@ frappe.ui.form.on('Inward', {
             frappe.msgprint("Serial number generation failed. Document cannot be saved.");
             frappe.validated = false;
         }
+      
     },
     model: function(frm) {
         var selectedModel = frm.doc.model;
@@ -173,7 +188,25 @@ frappe.ui.form.on('Inward', {
                 }
             });
         }
-    }
+    },
+    // refresh: function(frm) {
+    //     if (cur_frm.doc.purchase_receipt) {
+    //         frappe.call({
+    //             method: 'nj_features.nj_features.doctype.inward.inward.get_supplier_and_batch_from_pr',
+    //             args: {'pr': frm.doc.purchase_receipt},
+    //             callback: function(r) {
+    //                 if (r.message) {
+    //                     // Update the form fields with supplier and batch number
+    //                     frm.set_value('supplier', r.message.supplier);
+    //                     console.log("r.message--------for supplier and batch no",r.message)
+    //                 } else {
+    //                     frappe.msgprint('Supplier and Batch Number not found for the selected Purchase Receipt.');
+    //                 }
+    //             }
+    //         });
+    //     }
+    // },
+    
 
 });
 
@@ -194,3 +227,39 @@ function warehouse_info(frm) {
 
     });
 }
+
+
+function submitAndNext(frm) {
+    console.log("button is clicked save and subitted-----------------------")
+    frm.save(function(r) {
+        if (r.exc) {
+            // Handle save error
+            console.error('Error saving document:', r.exc);
+            return;
+        }
+
+        // Get the saved document object
+        var doc = frm.doc;
+
+        // Create a new 'Inward' document
+        frappe.new_doc('Inward', function(new_doc) {
+            // Set the docstatus to Draft
+            new_doc.docstatus = 0;
+
+            // Copy field values from the saved document to the new document
+            for (var key in doc) {
+                if (key !== 'brand' && key !== 'model') {
+                    new_doc[key] = doc[key];
+                }
+            }
+
+            // Clear Brand and Model fields in the new document
+            new_doc.brand = '';
+            new_doc.model = '';
+
+            // Open the new document in the form view
+            frappe.set_route('Form', 'Inward', new_doc.name);
+        });
+    });
+}
+

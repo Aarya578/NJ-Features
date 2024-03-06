@@ -19,6 +19,8 @@ class Inward(Document):
                 serial_no_doc.purchase_price = self.base_rate
                 serial_no_doc.current_price = self.base_rate
                 serial_no_doc.barcode = self.serial_no
+                serial_no_doc.supplier=self.supplier
+                serial_no_doc.batch_no=self.batch_no
                 serial_no_doc.save()
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
@@ -41,6 +43,7 @@ def get_item_list_from_po(po):
 @frappe.whitelist()
 def get_stock_data_from_po(po, item_code=None):
     get_serial_no = ''
+    supplier=None
     if po and item_code:
         pr = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'purchase_order': po}, 'parent')
         sql_query = """
@@ -65,8 +68,10 @@ def get_stock_data_from_po(po, item_code=None):
                 AND delivery_document_no IS NULL AND warehouse = %s """,
                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
             )
-            
-    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
+    pr_doc = frappe.get_doc('Purchase Receipt', pr)
+    if pr_doc:
+        supplier = pr_doc.supplier
+    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier}
 
 # @frappe.whitelist()
 # def get_stock_data_from_pr(pr, item_code=None):
@@ -189,3 +194,21 @@ def fetch_model_description(model):
         return {"model_description": model_doc.model_description}
     else:
         return {"model_description": None}
+    
+# @frappe.whitelist()
+# def get_supplier_and_batch_from_pr(pr):
+#     try:
+#         pr_doc = frappe.get_doc("Purchase Receipt", pr)
+#         if pr_doc:
+#             return {
+#                 "supplier": pr_doc.supplier
+#             }
+#         else:
+#             return {
+#                 "supplier": None,
+#             }
+#     except Exception as e:
+#         frappe.log_error(f"Error fetching supplier and batch number from Purchase Receipt: {e}")
+#         return {
+#             "supplier": None,
+#         }

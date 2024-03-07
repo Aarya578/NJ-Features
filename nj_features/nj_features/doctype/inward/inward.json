@@ -22,7 +22,6 @@
   "model",
   "model_description",
   "repack_item_code",
-  "supplier",
   "batch_no",
   "amended_from"
  ],
@@ -126,12 +125,6 @@
    "options": "Purchase Order"
   },
   {
-   "fieldname": "supplier",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Supplier"
-  },
-  {
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "hidden": 1,
@@ -142,7 +135,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-07 12:50:37.988006",
+ "modified": "2024-03-07 20:44:37.524894",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

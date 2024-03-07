@@ -1,5 +1,6 @@
 frappe.ui.form.on('Purchase Receipt', {
     onload: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(r) {
             if (!r.name) {
                 frappe.msgprint('Employee not found for user: <strong>'+frappe.session.user_email+'</strong>. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');

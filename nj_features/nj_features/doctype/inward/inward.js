@@ -108,34 +108,32 @@ frappe.ui.form.on('Inward', {
                     // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
                     // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
-                        console.log("get_stock_data_from_pr: ", r.message);
+                        // console.log("get_stock_data_from_pr: ", r.message);
                         if (r.message) {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
                             var itemGroup = r.message.item_group;
                             var batch_no =r.message.result.batch_no;
                             var supplier=r.message.supplier;
-                            console.log("batch_no is ----",batch_no,"supplier is ----",supplier)
+                            // console.log("batch_no is ----",batch_no,"supplier is ----",supplier)
 
                             if(result) {
                                 cur_frm.set_value('item_code', result.item_code);
                                 cur_frm.set_value('base_rate', result.incoming_rate);
                                 cur_frm.set_value('source_warehouse', result.warehouse);
                             }
-
                             if (serialNo) {
                                 cur_frm.set_value('serial_no', serialNo);
                             }
-            
                             if (itemGroup) {
                                 cur_frm.set_value('item_group', itemGroup);
                             }
                             if(batch_no){
                                 cur_frm.set_value('batch_no', batch_no);
                             }
-                            if(supplier){
-                                cur_frm.set_value('supplier',supplier);
-                            }
+                            // if(supplier){
+                            //     cur_frm.set_value('supplier',supplier);
+                            // }
                         }
                     
                     }
@@ -234,25 +232,7 @@ function submitAndNext(frm) {
     frm.save('Submit', function(r) {
         if (!r.exc) {
             // Reload the form to show the submitted document
-            frm.reload_doc();
-
-            // Duplicate the submitted document
-            frappe.call({
-                method: 'frappe.client.get_value',
-                args: {
-                    doctype: frm.doctype,
-                    filters: { name: frm.doc.name },
-                    fieldname: 'name'
-                },
-                callback: function(response) {
-                    if (response && response.message) {
-                        // Open the duplicated document
-                        frappe.set_route('Form', frm.doctype, response.message.name);
-                    } else {
-                        console.error('Error duplicating document.');
-                    }
-                }
-            });
+            frm.copy_doc()
         } else {
             console.error('Error submitting document:', r.exc);
         }

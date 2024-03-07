@@ -14,7 +14,9 @@ class Inward(Document):
     def on_submit(self):
         stock_entry = repack(self.name)
         po_doc = frappe.get_doc('Purchase Receipt', self.purchase_receipt)
+        po = frappe.db.get_value('Purchase Receipt Item', {'parent': self.purchase_receipt, 'item_code': self.item_code}, 'purchase_order')
         warranty_days = po_doc.get('warranty_days')
+        supplier_name = frappe.db.get_value('Supplier', {'name': po_doc.get('supplier')}, 'supplier_name')
         # print(f"\n\nwarranty_days: {warranty_days} -> purchase receipt: {self.purchase_receipt} ===\n {self.brand}")
         if stock_entry:
             serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
@@ -27,10 +29,16 @@ class Inward(Document):
                 serial_no_doc.batch_no = self.batch_no
                 serial_no_doc.warranty_period = warranty_days
                 serial_no_doc.warranty_days = warranty_days
+                serial_no_doc.purchase_order = po
+                serial_no_doc.supplier_name = supplier_name
+                serial_no_doc.purchase_receipt = self.purchase_receipt
                 # print(f"serial_no_doc: {serial_no_doc.warranty_period} --- {type(warranty_days)}")
                 serial_no_doc.save()
+                
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
+        copied_doc = frappe.copy_doc(self)
+        return copied_doc
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):
@@ -106,9 +114,9 @@ def get_stock_data_from_pr(pr, item_code=None):
                 AND delivery_document_no IS NULL AND warehouse = %s """,
                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
             )
-        supplier = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'supplier')
+        # supplier = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'supplier')
         # print(f"sle[0]: {sle[0]}, {get_serial_no[0]['name']} supplier: {supplier}")
-    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier if supplier else None}
+    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
     
     # base_rate=''

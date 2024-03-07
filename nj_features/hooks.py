@@ -113,9 +113,9 @@ doc_events = {
 	# 	"on_cancel": "method",
 	# 	"on_trash": "method"
 	# }
-	"Purchase Order": {
-		"on_submit": "nj_features.nj_features.doctype.purchase_order.create_batch",
-	},
+	# "Purchase Order": {
+	# 	"on_submit": "nj_features.nj_features.doctype.purchase_order.create_batch",
+	# },
 	"Purchase Receipt": {
 		"before_save": "nj_features.nj_features.doctype.purchase_receipt.get_batch",
 		"on_submit": "nj_features.api_files.update_serial_no_on_pr_submit",

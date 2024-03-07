@@ -13,9 +13,9 @@ frappe.ui.form.on('Inward', {
             $('[data-fieldname="brand"]').focus();
         }
         if (cur_frm.doc.docstatus == 0) {
-            frm.events.purchase_order(frm);
+            frm.events.purchase_receipt(frm);
         }
-        frm.set_query('purchase_order', function() {
+        frm.set_query('purchase_receipt', function() {
             return {
                 filters: {
                     "docstatus": ['=', 1]
@@ -45,7 +45,7 @@ frappe.ui.form.on('Inward', {
         }
     },
 
-    purchase_order: function(frm) {
+    purchase_receipt: function(frm) {
         // if (frm.doc.purchase_receipt) {
         //     frappe.call({
         //         method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
@@ -66,10 +66,10 @@ frappe.ui.form.on('Inward', {
         //         }
         //     });
         // }
-        if (cur_frm.doc.purchase_order) {
+        if (cur_frm.doc.purchase_receipt) {
             frappe.call({
-                method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_po',
-                args: {'po': frm.doc.purchase_order},
+                method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
+                args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
                     if (r.message) {
                         var itemCodes = r.message.map(function(item) {
@@ -101,14 +101,14 @@ frappe.ui.form.on('Inward', {
             //         }
             //     }
             // });
-            if (cur_frm.doc.purchase_order) {
+            if (cur_frm.doc.purchase_receipt) {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_po',
-                    args: {'po': frm.doc.purchase_order, 'item_code': selected_item_code},
+                    method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
+                    args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
                     // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
-                        console.log("get_stock_data_from_po: ", r.message);
+                        console.log("get_stock_data_from_pr: ", r.message);
                         if (r.message) {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
@@ -230,36 +230,32 @@ function warehouse_info(frm) {
 
 
 function submitAndNext(frm) {
-    console.log("button is clicked save and subitted-----------------------")
-    frm.save(function(r) {
-        if (r.exc) {
-            // Handle save error
-            console.error('Error saving document:', r.exc);
-            return;
-        }
+    // Submit the current document
+    frm.save('Submit', function(r) {
+        if (!r.exc) {
+            // Reload the form to show the submitted document
+            frm.reload_doc();
 
-        // Get the saved document object
-        var doc = frm.doc;
-
-        // Create a new 'Inward' document
-        frappe.new_doc('Inward', function(new_doc) {
-            // Set the docstatus to Draft
-            new_doc.docstatus = 0;
-
-            // Copy field values from the saved document to the new document
-            for (var key in doc) {
-                if (key !== 'brand' && key !== 'model') {
-                    new_doc[key] = doc[key];
+            // Duplicate the submitted document
+            frappe.call({
+                method: 'frappe.client.get_value',
+                args: {
+                    doctype: frm.doctype,
+                    filters: { name: frm.doc.name },
+                    fieldname: 'name'
+                },
+                callback: function(response) {
+                    if (response && response.message) {
+                        // Open the duplicated document
+                        frappe.set_route('Form', frm.doctype, response.message.name);
+                    } else {
+                        console.error('Error duplicating document.');
+                    }
                 }
-            }
-
-            // Clear Brand and Model fields in the new document
-            new_doc.brand = '';
-            new_doc.model = '';
-
-            // Open the new document in the form view
-            frappe.set_route('Form', 'Inward', new_doc.name);
-        });
+            });
+        } else {
+            console.error('Error submitting document:', r.exc);
+        }
     });
 }
 

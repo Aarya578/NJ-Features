@@ -43,11 +43,13 @@ class IQC(Document):
                 'stock_uom': 'Nos',
                 'basic_rate': self.base_price,
             })
-
+            stock_entry.naming_series = "STE-IQC-"
             stock_entry.submit()
         serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
         if serial_no_doc:
             serial_no_doc.bios_serial_no = self.njhat_serialno
+            serial_no_doc.purchase_price = self.base_price
+            serial_no_doc.current_price = self.base_price
             if self.njhat_serialno:
                 serial_no_doc.save()
             else:
@@ -195,9 +197,8 @@ def get_model(manufacturer_model, make=None):
         params = (manufacturer_model)
         model_list = frappe.db.sql(query, params, as_dict=True)
         # print(f"\n\n elif model ----- : {new_model_list}")
-    else:
-        # print(f"\n\n else model ----- : {model_list}")
-        frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
+        if not model_list:
+            frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
     

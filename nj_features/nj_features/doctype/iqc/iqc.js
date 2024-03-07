@@ -16,7 +16,7 @@ frappe.ui.form.on('IQC', {
         frm.events.power_on();
         
         if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
-            // frm.events.serial_no(frm)
+            frm.events.serial_no(frm)
             cur_frm.refresh_fields('warehouse');
         }
 
@@ -96,10 +96,10 @@ frappe.ui.form.on('IQC', {
                     args: {"serial_no": cur_frm.doc.serial_no},
                     callback: function(r) {
                         frm.set_value('barcode_svg', r.message.barcode_img);
-                        frappe.show_alert({
-                            message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
-                            indicator: 'green'
-                        });
+                        // frappe.show_alert({
+                        //     message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
+                        //     indicator: 'green'
+                        // });
                     }
                 });
             }
@@ -123,7 +123,7 @@ frappe.ui.form.on('IQC', {
 
     model: function(frm) {
         frm.set_value('repack_item_code', "")
-        let temp = 'S-'+cur_frm.doc.brand+'-'+cur_frm.doc.model
+        let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
         frappe.call({
             method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
             args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
@@ -144,7 +144,7 @@ frappe.ui.form.on('IQC', {
 
         if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' 
         && cur_frm.doc.brand && cur_frm.doc.model) {
-            let temp = 'S-'+cur_frm.doc.brand+'-'+cur_frm.doc.model
+            let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
             frappe.call({
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},

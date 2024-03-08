@@ -15,10 +15,10 @@ frappe.ui.form.on('IQC', {
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
         
-        if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
-            frappe.db.get_value('')
-            cur_frm.refresh_fields('warehouse');
-        }
+        // if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
+        //     frm.events.serial_no(frm);
+        //     cur_frm.refresh_fields('warehouse');
+        // }
 
         if(cur_frm.doc.bios_serialno){
             cur_frm.set_df_property('cur_frm.doc.bios_serialno', 'read_only', 1)
@@ -133,7 +133,7 @@ frappe.ui.form.on('IQC', {
                 if (r.message){
                     frm.set_value('repack_item_code', r.message)
                 }
-                cur_frm.refresh_fields('repack_item_code');
+                cur_frm.refresh_field('repack_item_code');
             }
         });
         var selectedModel = frm.doc.model;
@@ -178,7 +178,7 @@ frappe.ui.form.on('IQC', {
                     if (r.message){
                         frm.set_value('repack_item_code', r.message)
                     }
-                    cur_frm.refresh_fields('repack_item_code');
+                    cur_frm.refresh_field('repack_item_code');
                 }
             });
         }
@@ -249,14 +249,14 @@ frappe.ui.form.on('IQC', {
                 var child_attr_data = [];
                 // console.log("set data arg");
                 frm.doc.iqc_item_component.forEach(function (row) {
-                    // console.log("row: ", row);
                     if (row.attr_data) {
+                        // console.log("row: ", row.attr_data);
                         child_attr_data.push(JSON.parse(row.attr_data));
                     }
                 });
-                // console.log("child_attr_data: ", child_attr_data);
+                console.log("child_attr_data: ", child_attr_data);
                 cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-                cur_frm.refresh_fields('data_attr');
+                cur_frm.refresh_field('data_attr');
             }
     
             // if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
@@ -349,14 +349,14 @@ frappe.ui.form.on('IQC', {
             var child_attr_data = [];
             // console.log("set data arg");
             frm.doc.iqc_item_component.forEach(function (row) {
-                console.log("row: ", row);
                 if (row.attr_data) {
+                    // console.log("row: ", row.attr_data);
                     child_attr_data.push(JSON.parse(row.attr_data));
                 }
             });
             console.log("child_attr_data: ", child_attr_data);
             cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-            cur_frm.refresh_fields('data_attr');
+            cur_frm.refresh_field('data_attr');
             if (cur_frm.doc.data_attr) {
                 frm.set_value('repack_item_code', "")
                 let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
@@ -371,7 +371,7 @@ frappe.ui.form.on('IQC', {
                             frappe.msgprint("You are not allowed to save IQC without Repack Item")
                             frappe.validated = false;
                         }
-                        cur_frm.refresh_fields('repack_item_code');
+                        cur_frm.refresh_field('repack_item_code');
                     }
                 });
             } else {

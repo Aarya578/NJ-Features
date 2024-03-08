@@ -13,7 +13,7 @@ def repack(inward):
     stock_entry = frappe.new_doc("Stock Entry")
     stock_entry.stock_entry_type = "Repack"
     stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
-
+    supplier = frappe.db.get_value('Purchase Receipt', {'name': inward.purchase_receipt}, 'supplier')
     stock_entry.append("items", {
         "item_code": inward.item_code,
         "qty": 1,
@@ -23,7 +23,7 @@ def repack(inward):
         's_warehouse': inward.source_warehouse,
         'set_basic_rate_manually': 0,
         'basic_rate': inward.base_rate,
-        'supplier':inward.supplier,
+        'supplier':supplier, 
         
     })
     
@@ -77,7 +77,7 @@ def repack(inward):
         'stock_uom': 'Nos',
         'basic_rate': inward.base_rate,
         'set_basic_rate_manually': 0,
-        'supplier':inward.supplier,
+        'supplier':supplier,
     
     })
 

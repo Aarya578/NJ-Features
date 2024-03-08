@@ -25,9 +25,11 @@ frappe.ui.form.on('Inward', {
             };
         });
 
-        frm.add_custom_button(__('Submit & Next'), function() {
-            submitAndNext(frm);
-        }).addClass('btn-primary');
+        if (frm.doc.docstatus == 0) {
+            frm.add_custom_button(__('Submit & Next'), function() {
+                submitAndNext(frm);
+            }).addClass('btn-primary');
+        }
     },
 
     validate: function(frm) {

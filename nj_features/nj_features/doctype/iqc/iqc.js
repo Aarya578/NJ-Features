@@ -344,17 +344,17 @@ frappe.ui.form.on('IQC', {
 
     before_save: function(frm) {
         if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
-            cur_frm.set_value('data_attr', 'demo');
+            // cur_frm.set_value('data_attr', 'demo');
             cur_frm.set_value('data_attr', '');
             var child_attr_data = [];
             // console.log("set data arg");
             frm.doc.iqc_item_component.forEach(function (row) {
-                // console.log("row: ", row);
+                console.log("row: ", row);
                 if (row.attr_data) {
                     child_attr_data.push(JSON.parse(row.attr_data));
                 }
             });
-            // console.log("child_attr_data: ", child_attr_data);
+            console.log("child_attr_data: ", child_attr_data);
             cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
             cur_frm.refresh_fields('data_attr');
             if (cur_frm.doc.data_attr) {

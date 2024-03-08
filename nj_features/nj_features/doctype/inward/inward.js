@@ -12,9 +12,11 @@ frappe.ui.form.on('Inward', {
         } else {
             $('[data-fieldname="brand"]').focus();
         }
+
         if (cur_frm.doc.docstatus == 0) {
             frm.events.purchase_receipt(frm);
         }
+
         frm.set_query('purchase_receipt', function() {
             return {
                 filters: {
@@ -22,10 +24,10 @@ frappe.ui.form.on('Inward', {
                 }
             };
         });
-         frm.add_custom_button(__('Submit&Next'), function() {
-            submitAndNext(frm);   
-            console.log("button is clicked save and subitted")
-             });
+
+        frm.add_custom_button(__('Submit & Next'), function() {
+            submitAndNext(frm);
+        }).addClass('btn-primary');
     },
 
     validate: function(frm) {
@@ -114,7 +116,7 @@ frappe.ui.form.on('Inward', {
                             var serialNo = r.message.serial_no;
                             var itemGroup = r.message.item_group;
                             var batch_no =r.message.result.batch_no;
-                            var supplier=r.message.supplier;
+                            // var supplier=r.message.supplier;
                             // console.log("batch_no is ----",batch_no,"supplier is ----",supplier)
 
                             if(result) {

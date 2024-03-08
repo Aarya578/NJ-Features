@@ -226,13 +226,16 @@ function warehouse_info(frm) {
     });
 }
 
-
 function submitAndNext(frm) {
     // Submit the current document
     frm.save('Submit', function(r) {
         if (!r.exc) {
             // Reload the form to show the submitted document
-            frm.copy_doc()
+            let new_inward = frappe.model.copy_doc(frm.doc)
+            new_inward.serial_no = ''
+            new_inward.model = ''
+            new_inward.brand = ''
+            frappe.set_route('Form', 'Inward', new_inward.name);
         } else {
             console.error('Error submitting document:', r.exc);
         }

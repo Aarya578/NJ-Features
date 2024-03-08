@@ -16,7 +16,7 @@ frappe.ui.form.on('IQC', {
         frm.events.power_on();
         
         if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
-            frm.events.serial_no(frm)
+            frappe.db.get_value('')
             cur_frm.refresh_fields('warehouse');
         }
 
@@ -119,7 +119,7 @@ frappe.ui.form.on('IQC', {
         //     }, () => {
         //     })
         // }
-        frm.events.validate(frm);
+        // frm.events.validate(frm);
     },
 
     model: function(frm) {
@@ -129,7 +129,7 @@ frappe.ui.form.on('IQC', {
             method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
             args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
             callback: function (r) {
-                console.log("get_variant_from_value : ", r.message)
+                // console.log("get_variant_from_value : ", r.message)
                 if (r.message){
                     frm.set_value('repack_item_code', r.message)
                 }
@@ -163,7 +163,7 @@ frappe.ui.form.on('IQC', {
     },
     
 	onload_post_render: function(frm) {
-        console.log("empty error ", cur_frm.doc.error_message);
+        // console.log("empty error ", cur_frm.doc.error_message);
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
         }
@@ -244,10 +244,10 @@ frappe.ui.form.on('IQC', {
                 });
             }
             
-            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
+            if (cur_frm.doc.data_attr == "") {
                 cur_frm.set_value('data_attr', '');
                 var child_attr_data = [];
-                console.log("set data arg");
+                // console.log("set data arg");
                 frm.doc.iqc_item_component.forEach(function (row) {
                     // console.log("row: ", row);
                     if (row.attr_data) {
@@ -303,7 +303,7 @@ frappe.ui.form.on('IQC', {
                         }
         
                         if (!r.message.model) {
-                            console.log("model ", r.message.model);
+                            console.log("model exist", r.message.model);
                             dbError.push("Model: "+cur_frm.doc.model);
                         }
         
@@ -343,22 +343,42 @@ frappe.ui.form.on('IQC', {
     },
 
     before_save: function(frm) {
-        frm.set_value('repack_item_code', "")
-        let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
-            args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
-            callback: function (r) {
-                console.log("get_variant_from_value : ", r.message, "temp ", frm.doc.item_template || temp, "args ", cur_frm.doc.data_attr)
-                if (r.message){
-                    frm.set_value('repack_item_code', r.message)
-                } else {
-                    frappe.msgprint("You are not allowed to save IQC without Repack Item")
-                    frappe.validated = false;
+        if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
+            cur_frm.set_value('data_attr', 'demo');
+            cur_frm.set_value('data_attr', '');
+            var child_attr_data = [];
+            // console.log("set data arg");
+            frm.doc.iqc_item_component.forEach(function (row) {
+                // console.log("row: ", row);
+                if (row.attr_data) {
+                    child_attr_data.push(JSON.parse(row.attr_data));
                 }
-                cur_frm.refresh_fields('repack_item_code');
+            });
+            // console.log("child_attr_data: ", child_attr_data);
+            cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
+            cur_frm.refresh_fields('data_attr');
+            if (cur_frm.doc.data_attr) {
+                frm.set_value('repack_item_code', "")
+                let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+                    args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
+                    callback: function (r) {
+                        // console.log("get_variant_from_value : ", r.message, "temp ", frm.doc.item_template || temp, "args ", cur_frm.doc.data_attr)
+                        if (r.message){
+                            frm.set_value('repack_item_code', r.message)
+                        } else {
+                            frappe.msgprint("You are not allowed to save IQC without Repack Item")
+                            frappe.validated = false;
+                        }
+                        cur_frm.refresh_fields('repack_item_code');
+                    }
+                });
+            } else {
+                frappe.msgprint("Args is not fetched")
             }
-        });
+        }
+        
     },
 
 });

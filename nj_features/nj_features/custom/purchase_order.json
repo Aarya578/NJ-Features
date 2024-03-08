@@ -92,7 +92,7 @@
    "in_list_view": 0,
    "in_preview": 0,
    "in_standard_filter": 0,
-   "insert_after": "inter_company_order_reference",
+   "insert_after": "warranty_days",
    "label": "Warranty Remarks",
    "length": 0,
    "mandatory_depends_on": null,

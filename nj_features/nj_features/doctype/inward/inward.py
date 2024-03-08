@@ -178,27 +178,45 @@ def create_serial_no(item_group=None, attempt=0):
     
 @frappe.whitelist()        
 def generate_and_save_barcode(serial_no, format='png'):
+    # try:
+    #     my_code = Code128(serial_no, writer=CustomImgWriter())
+
+    #     # Create BytesIO to store barcode SVG
+    #     barcode_bytes = BytesIO()
+    #     my_code.write(barcode_bytes)
+
+    #     # Set the directory to save the file
+    #     base_directory = frappe.get_site_path("public", "files")
+    #     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
+
+    #     # Check if the file already exists
+    #     if os.path.exists(file_path):
+    #         os.remove(file_path)
+
+    #     # Save the SVG content to a file
+    #     with open(file_path, 'wb') as f:
+    #         f.write(barcode_bytes.getvalue())
+    # except Exception as e:
+    #     print(f"error in generate barcode {e}")
+    #     return(f"error in generate barcode {e}")
+    import pyqrcode
+    import png
+    from pyqrcode import QRCode 
+
     try:
-        my_code = Code128(serial_no, writer=CustomImgWriter())
+        url = pyqrcode.create(serial_no) 
 
-        # Create BytesIO to store barcode SVG
-        barcode_bytes = BytesIO()
-        my_code.write(barcode_bytes)
+        url.png(f"{serial_no}.png", scale=8)
 
-        # Set the directory to save the file
         base_directory = frappe.get_site_path("public", "files")
-        file_path = os.path.join(base_directory, f"{serial_no}.{format}")
-
-        # Check if the file already exists
+        file_path = os.path.join(base_directory, f"{serial_no}.png")
+        
         if os.path.exists(file_path):
             os.remove(file_path)
+        url.png(file_path, scale=8)
 
-        # Save the SVG content to a file
-        with open(file_path, 'wb') as f:
-            f.write(barcode_bytes.getvalue())
     except Exception as e:
-        print(f"error in generate barcode {e}")
-        return(f"error in generate barcode {e}")
+        return f"Error in generating QR code: {e}"
     
    
 @frappe.whitelist()

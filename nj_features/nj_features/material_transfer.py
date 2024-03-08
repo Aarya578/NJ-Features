@@ -30,7 +30,8 @@ def material_transfer(doc, work_warehouse=None):
         's_warehouse': sle_entry.warehouse,
         't_warehouse': work_warehouse,
         'basic_rate': sle_entry.incoming_rate,
-        'serial_no': iqc.serial_no
+        'serial_no': iqc.serial_no,
+        'set_basic_rate_manually': 0,
     })
 
     if iqc.item_code:

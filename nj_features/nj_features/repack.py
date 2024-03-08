@@ -21,6 +21,7 @@ def repack(inward):
         'conversion_factor': 1,
         'stock_uom': 'Nos',
         's_warehouse': inward.source_warehouse,
+        'set_basic_rate_manually': 0,
         'basic_rate': inward.base_rate,
         'supplier':inward.supplier,
         
@@ -75,6 +76,7 @@ def repack(inward):
         'serial_no': inward.serial_no,
         'stock_uom': 'Nos',
         'basic_rate': inward.base_rate,
+        'set_basic_rate_manually': 0,
         'supplier':inward.supplier,
     
     })

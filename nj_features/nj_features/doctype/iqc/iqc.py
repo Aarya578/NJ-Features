@@ -28,6 +28,7 @@ class IQC(Document):
                 'stock_uom': 'Nos',
                 's_warehouse': self.warehouse,
                 'basic_rate': self.base_price,
+                'set_basic_rate_manually': 0,
             })
 
             if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
@@ -42,6 +43,7 @@ class IQC(Document):
                 'serial_no': self.serial_no,
                 'stock_uom': 'Nos',
                 'basic_rate': self.base_price,
+                'set_basic_rate_manually': 0,
             })
             stock_entry.naming_series = "STE-IQC-"
             stock_entry.submit()
@@ -163,7 +165,7 @@ def construct_item_code(item_template, args_list):
     for condition_dict in args_list:
         for key, value in condition_dict.items():
             concatenated_string += f"-{value}"
-    print(f"\nconcatenated_string: {concatenated_string}\n")
+    print(f"\n\nconcatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
         SELECT item_code FROM `tabItem`

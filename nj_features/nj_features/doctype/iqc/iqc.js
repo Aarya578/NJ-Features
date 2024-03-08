@@ -119,6 +119,7 @@ frappe.ui.form.on('IQC', {
         //     }, () => {
         //     })
         // }
+        frm.events.validate(frm);
     },
 
     model: function(frm) {
@@ -128,16 +129,41 @@ frappe.ui.form.on('IQC', {
             method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
             args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
             callback: function (r) {
-                // console.log("get_variant_from_value : ", r.message)
+                console.log("get_variant_from_value : ", r.message)
                 if (r.message){
                     frm.set_value('repack_item_code', r.message)
                 }
-                cur_frm.refresh_fields('fields');
+                cur_frm.refresh_fields('repack_item_code');
             }
         });
+        var selectedModel = frm.doc.model;
+        // console.log("selectedModel",selectedModel)
+        if (selectedModel) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
+                args: {
+                    'model': selectedModel
+                },
+                callback: function(r) {
+                    $('.desc').remove();
+                    if (r.message && r.message.model_description) {
+                        // console.log("r.message",r.message)
+                        var description = r.message.model_description;
+                        // console.log("description of model ",description)
+                        // frappe.msgprint(description);
+                        // frm.set_value('model_description',description)
+                        // frm.fields_dict.model_description.set_input(description);
+                         var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
+                        $(frm.fields_dict['model'].wrapper).append(htmlContent);
+
+                    }
+                }
+            });
+        }
     },
     
 	onload_post_render: function(frm) {
+        console.log("empty error ", cur_frm.doc.error_message);
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
         }
@@ -152,7 +178,7 @@ frappe.ui.form.on('IQC', {
                     if (r.message){
                         frm.set_value('repack_item_code', r.message)
                     }
-                    cur_frm.refresh_fields('fields');
+                    cur_frm.refresh_fields('repack_item_code');
                 }
             });
         }
@@ -199,8 +225,9 @@ frappe.ui.form.on('IQC', {
                                             var ramValue = JSON.stringify(attributeObject);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', ramValue);
                                         } 
-                                        else if (itemGroup.toLowerCase() == storage.toLowerCase() && (!row.variant_3 ^ !row.variant_1) && attributeValue[Object.keys(attributeValue)[0]] !== undefined) {
-                                            // console.log("storage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3 ^ !row.variant_1, storage, unk_storage);
+                                        else if (itemGroup.toLowerCase() == storage.toLowerCase() && (!row.variant_3 ^ !row.variant_1) && 
+                                        attributeValue[Object.keys(attributeValue)[0]] !== undefined && attributeValue[Object.keys(attributeValue)[0]] !== "") {
+                                            // console.log("idx: ",row.idx, "\nstorage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3 ^ !row.variant_1, storage, unk_storage);
                                             attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || unk_storage;
                                             var sValue = JSON.stringify(attributeObject);
                                             frappe.model.set_value(row.doctype, row.name, 'attr_data', sValue);
@@ -217,9 +244,10 @@ frappe.ui.form.on('IQC', {
                 });
             }
             
-            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
+            if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
                 cur_frm.set_value('data_attr', '');
                 var child_attr_data = [];
+                console.log("set data arg");
                 frm.doc.iqc_item_component.forEach(function (row) {
                     // console.log("row: ", row);
                     if (row.attr_data) {
@@ -228,7 +256,7 @@ frappe.ui.form.on('IQC', {
                 });
                 // console.log("child_attr_data: ", child_attr_data);
                 cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-                cur_frm.refresh_fields('fields');
+                cur_frm.refresh_fields('data_attr');
             }
     
             // if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
@@ -244,13 +272,12 @@ frappe.ui.form.on('IQC', {
         }
         if (cur_frm.doc.model && cur_frm.doc.make && cur_frm.doc.manufacturer_model) {
             get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
-            frm.events.validate(frm)
+            frm.events.validate(frm);
         }
 	},
 
     validate: function(frm) {
-        var requiredFields = ['serial_no',
-        'item_group', 'warehouse', 'brand', 'make'];
+        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'make', 'manufacturer_model'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -271,11 +298,12 @@ frappe.ui.form.on('IQC', {
                     method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
                     args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
                     callback: function(r) {
-                        if (cur_frm.doc.brand && !r.message.brand) {
+                        if (!r.message.brand) {
                             dbError.push("Brand: "+cur_frm.doc.brand);
                         }
         
-                        if (cur_frm.doc.model && !r.message.model) {
+                        if (!r.message.model) {
+                            console.log("model ", r.message.model);
                             dbError.push("Model: "+cur_frm.doc.model);
                         }
         
@@ -315,38 +343,23 @@ frappe.ui.form.on('IQC', {
     },
 
     before_save: function(frm) {
-        if (cur_frm.doc.repack_item_code == "" || cur_frm.doc.repack_item_code == undefined) {
-            frappe.msgprint("You are not allowed to save IQC without Repack Item")
-            frappe.validated = false;
-        }
-    },
-
-    model: function(frm) {
-        var selectedModel = frm.doc.model;
-        // console.log("selectedModel",selectedModel)
-        if (selectedModel) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
-                args: {
-                    'model': selectedModel
-                },
-                callback: function(r) {
-                    $('.desc').remove();
-                    if (r.message && r.message.model_description) {
-                        // console.log("r.message",r.message)
-                        var description = r.message.model_description;
-                        // console.log("description of model ",description)
-                        // frappe.msgprint(description);
-                        // frm.set_value('model_description',description)
-                        // frm.fields_dict.model_description.set_input(description);
-                         var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
-                        $(frm.fields_dict['model'].wrapper).append(htmlContent);
-
-                    }
+        frm.set_value('repack_item_code', "")
+        let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+            args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
+            callback: function (r) {
+                console.log("get_variant_from_value : ", r.message, "temp ", frm.doc.item_template || temp, "args ", cur_frm.doc.data_attr)
+                if (r.message){
+                    frm.set_value('repack_item_code', r.message)
+                } else {
+                    frappe.msgprint("You are not allowed to save IQC without Repack Item")
+                    frappe.validated = false;
                 }
-            });
-        }
-    }
+                cur_frm.refresh_fields('repack_item_code');
+            }
+        });
+    },
 
 });
 

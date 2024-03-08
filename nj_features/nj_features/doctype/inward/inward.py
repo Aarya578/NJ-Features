@@ -38,8 +38,6 @@ class Inward(Document):
                 
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
-        copied_doc = frappe.copy_doc(self)
-        return copied_doc
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):

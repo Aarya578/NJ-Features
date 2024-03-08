@@ -1927,7 +1927,7 @@
    "property": "depends_on",
    "property_type": "Data",
    "row_name": null,
-   "value": "eval: (doc.item_group != 'Raw Material' && doc.item_group != 'Consumable' && doc.item_group != 'Services' && doc.item_group !='')"
+   "value": ""
   },
   {
    "_assign": null,

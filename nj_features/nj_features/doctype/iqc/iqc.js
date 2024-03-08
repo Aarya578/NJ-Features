@@ -24,6 +24,10 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('cur_frm.doc.bios_serialno', 'read_only', 1)
         }
 
+        if(cur_frm.doc.error_message != ''){
+            cur_frm.set_df_property('error_section_section', 'hidden', 0)
+        }
+
         // if (!frm.doc.item_template && cur_frm.doc.brand && cur_frm.doc.model && cur_frm.doc.power_on == 'Yes') {
         //     frappe.call({
         //         method: 'nj_features.nj_features.doctype.iqc.iqc.get_templates_by_model_and_brand',
@@ -132,7 +136,12 @@ frappe.ui.form.on('IQC', {
                 // console.log("get_variant_from_value : ", r.message)
                 if (r.message){
                     frm.set_value('repack_item_code', r.message)
-                }
+                } 
+                // if (r.message.reqd_item_code) {
+                //     console.log("no");
+                //     error_msg = "Serialized Item code: <strong>"+r.message.reqd_item_code+"</strong> not found. Please contact NPD Team."
+                //     cur_frm.doc.error_message += "\n" + error_msg;
+                // }
                 cur_frm.refresh_field('repack_item_code');
             }
         });
@@ -160,6 +169,9 @@ frappe.ui.form.on('IQC', {
                 }
             });
         }
+        if(cur_frm.doc.error_message != ''){
+            cur_frm.set_df_property('cur_frm.doc.error_message', 'hidden', 0)
+        }
     },
     
 	onload_post_render: function(frm) {
@@ -175,9 +187,16 @@ frappe.ui.form.on('IQC', {
                 method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                 args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
                 callback: function (r) {
+                    // console.log("get_variant_from_value : ", r.message)
                     if (r.message){
                         frm.set_value('repack_item_code', r.message)
-                    }
+                    } 
+                    // if (r.message.reqd_item_code) {
+                    //     let error_msg = "Serialized Item code: <strong>" + r.message.reqd_item_code + "</strong> not found. Please contact NPD Team.";
+                    //     frm.doc.error_message = (frm.doc.error_message ? frm.doc.error_message + "\n" : "") + error_msg;
+                    //     frm.set_df_property('error_section_section', 'hidden', 0);
+                    //     frm.refresh_field('error_message');
+                    // }
                     cur_frm.refresh_field('repack_item_code');
                 }
             });
@@ -274,6 +293,10 @@ frappe.ui.form.on('IQC', {
             get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
             frm.events.validate(frm);
         }
+
+        if(cur_frm.doc.error_message != ''){
+            cur_frm.set_df_property('error_section_section', 'hidden', 0)
+        }
 	},
 
     validate: function(frm) {
@@ -364,12 +387,9 @@ frappe.ui.form.on('IQC', {
                     method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
                     args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
                     callback: function (r) {
-                        // console.log("get_variant_from_value : ", r.message, "temp ", frm.doc.item_template || temp, "args ", cur_frm.doc.data_attr)
+                        // console.log("get_variant_from_value : ", r.message)
                         if (r.message){
                             frm.set_value('repack_item_code', r.message)
-                        } else {
-                            frappe.msgprint("You are not allowed to save IQC without Repack Item")
-                            frappe.validated = false;
                         }
                         cur_frm.refresh_field('repack_item_code');
                     }
@@ -379,8 +399,7 @@ frappe.ui.form.on('IQC', {
             }
         }
         
-    },
-
+    }
 });
 
 function makeMaterialTransfer(doc, work_warehouse) {

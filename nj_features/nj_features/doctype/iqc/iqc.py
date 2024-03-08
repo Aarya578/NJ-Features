@@ -177,7 +177,7 @@ def construct_item_code(item_template, args_list):
     if item_code:
         return item_code[0]['item_code']
     else:
-        frappe.throw(f'Serialized Item code: "{concatenated_string}" not found. Please contact NPD Team.')
+        frappe.msgprint(f'Serialized Item code: "{concatenated_string}" not found. Please contact NPD Team.')
 
 @frappe.whitelist()
 def get_model(manufacturer_model, make=None):

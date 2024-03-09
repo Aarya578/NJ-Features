@@ -7,6 +7,7 @@ import random
 import frappe
 from frappe import _
 from frappe.model.document import Document
+import re
 import os
 from barcode import Code128
 from nj_features.barcode import CustomImgWriter
@@ -15,7 +16,7 @@ from frappe.utils import get_url
 
 class IQC(Document):   
     def on_submit(self):
-        if self.power_on == 'Yes':
+        if self.power_on == 'Yes' and self.repack_item_code != '':
             stock_entry = frappe.new_doc("Stock Entry")
             stock_entry.stock_entry_type = "Repack"
             stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
@@ -47,15 +48,29 @@ class IQC(Document):
             })
             stock_entry.naming_series = "STE-IQC-"
             stock_entry.submit()
-        serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
-        if serial_no_doc:
-            serial_no_doc.bios_serial_no = self.njhat_serialno
-            serial_no_doc.purchase_price = self.base_price
-            serial_no_doc.current_price = self.base_price
-            if self.njhat_serialno:
-                serial_no_doc.save()
-            else:
-                frappe.throw("NJHAT Serial No is not found.")
+            
+            serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
+            if serial_no_doc:
+                serial_no_doc.bios_serial_no = self.njhat_serialno
+                serial_no_doc.purchase_price = self.base_price
+                serial_no_doc.current_price = self.base_price
+                if self.njhat_serialno:
+                    serial_no_doc.save()
+                else:
+                    frappe.throw("NJHAT Serial No is not found.")
+        else:
+            item_template = 'S-'+self.brand+' '+self.model
+            child_attr_data = []
+
+            for row in self.iqc_item_component:
+                if row.attr_data:
+                    child_attr_data.append(frappe.parse_json(row.attr_data))
+
+            # print("child_attr_data:", child_attr_data)
+            data_attr = json.dumps(child_attr_data)
+            
+            get_variant_from_value(item_template, data_attr)
+            frappe.throw("You are not allowed to submit IQC without system powering on and Repack Item Code")
 
 
 @frappe.whitelist()
@@ -125,6 +140,28 @@ def get_part_mapping(item_group):
 
     return {"mappings": mappings, "values": values}
 
+def normalize_gen(gen_str):
+    gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
+
+    match = re.search(gen_pattern, gen_str)
+
+    if match:
+        processor_type = match.group(1)
+        gen_number = match.group(2)
+        # print(f"\n processor_type: {processor_type}, gen_number: {gen_number}")
+        if gen_number == '1':
+            gen_number = '1ST'
+        elif gen_number == '2':
+            gen_number = '2ND'
+        elif gen_number == '3':
+            gen_number = '3RD'
+        else:
+            gen_number += 'TH'
+
+        normalized_gen = f"{processor_type} {gen_number} GEN"
+        return normalized_gen
+    else:
+        return gen_str
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
     # print(f"\n\ntemplate: {item_template}, args: {args}")
@@ -137,7 +174,8 @@ def get_variant_from_value(item_template=None, args=None):
 
         for condition_dict in args_list:
             for key, value in condition_dict.items():
-                conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{value.lower()}') = 1")
+                normalized_value = normalize_gen(value)
+                conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{normalized_value.lower()}') = 1")
 
         having_clause = " AND ".join(conditions)
         # print(f"\n\nhaving: {having_clause}")
@@ -164,8 +202,9 @@ def construct_item_code(item_template, args_list):
     concatenated_string = item_template
     for condition_dict in args_list:
         for key, value in condition_dict.items():
-            concatenated_string += f"-{value}"
-    print(f"\n\nconcatenated_string: {concatenated_string}\n")
+            normalized_value = normalize_gen(value)
+            concatenated_string += f"-{normalized_value}"
+    # print(f"\n\nconcatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
         SELECT item_code FROM `tabItem`

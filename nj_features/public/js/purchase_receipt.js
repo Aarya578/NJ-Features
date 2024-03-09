@@ -21,17 +21,19 @@ frappe.ui.form.on('Purchase Receipt Item', {
 
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
-        console.log("child_doc", child_doc);
-        frappe.call({
-            method: 'nj_features.api_files.print_barcode',
-            args: {
-                doc: child_doc
-            },
-            callback: function(r) {
-                frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
-                
-            }
-        });
+        // console.log("child_doc", child_doc);
+        if(!child_doc.serial_no && frm.doc.docstatus == 0){
+            frappe.call({
+                method: 'nj_features.api_files.print_barcode',
+                args: {
+                    doc: child_doc
+                },
+                callback: function(r) {
+                    frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
+                    
+                }
+            });
+        }
         if(child_doc.serial_no) {
             var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
                                                     "doctype=" + encodeURIComponent("Purchase Receipt") +

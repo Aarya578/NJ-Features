@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "IQC-.brand.-.model.-.serial_no.-.##",
+ "autoname": "IQC-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -218,7 +218,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-05 18:03:15.992313",
+ "modified": "2024-03-09 13:57:59.808294",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "IQC",

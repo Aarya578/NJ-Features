@@ -3,7 +3,7 @@
 
 frappe.ui.form.on('IQC', {
     onload: function(frm) {
-        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
+        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm);
         }
         if (!cur_frm.doc.model) {
@@ -49,7 +49,6 @@ frappe.ui.form.on('IQC', {
             cur_frm.set_df_property('warehouse', 'hidden', !isYes);
             cur_frm.set_df_property('repack_item_code', 'hidden', !isYes);
             cur_frm.set_df_property('model', 'hidden', !isYes);
-            cur_frm.set_df_property('bios_serialno', 'hidden', !isYes);
             // if (isYes) {
                 // cur_frm.events.validate(cur_frm)
             // }
@@ -178,28 +177,6 @@ frappe.ui.form.on('IQC', {
         // console.log("empty error ", cur_frm.doc.error_message);
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
-        }
-
-        if (!cur_frm.doc.repack_item_code && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' 
-        && cur_frm.doc.brand && cur_frm.doc.model) {
-            let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
-                args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
-                callback: function (r) {
-                    // console.log("get_variant_from_value : ", r.message)
-                    if (r.message){
-                        frm.set_value('repack_item_code', r.message)
-                    } 
-                    // if (r.message.reqd_item_code) {
-                    //     let error_msg = "Serialized Item code: <strong>" + r.message.reqd_item_code + "</strong> not found. Please contact NPD Team.";
-                    //     frm.doc.error_message = (frm.doc.error_message ? frm.doc.error_message + "\n" : "") + error_msg;
-                    //     frm.set_df_property('error_section_section', 'hidden', 0);
-                    //     frm.refresh_field('error_message');
-                    // }
-                    cur_frm.refresh_field('repack_item_code');
-                }
-            });
         }
 
 	    if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
@@ -390,6 +367,8 @@ frappe.ui.form.on('IQC', {
                         // console.log("get_variant_from_value : ", r.message)
                         if (r.message){
                             frm.set_value('repack_item_code', r.message)
+                        } else {
+                            frappe.validated = false;
                         }
                         cur_frm.refresh_field('repack_item_code');
                     }

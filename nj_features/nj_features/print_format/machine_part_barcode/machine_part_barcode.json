@@ -13,7 +13,7 @@
  "html": "<html>\n   \n    <body>\n        <img src=\"{{ frappe.utils.get_url() }}/files/{{ doc.serial_no }}.png\" alt=\"{{ doc.serial_no }}.png\"><br>\n\n    </body>\n</html>",
  "idx": 0,
  "line_breaks": 0,
- "modified": "2024-03-02 18:52:15.274405",
+ "modified": "2024-03-09 09:57:52.997714",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Machine Part Barcode",

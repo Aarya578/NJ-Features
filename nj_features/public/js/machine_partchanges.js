@@ -224,94 +224,94 @@ frappe.ui.form.on('Machine Part Changes', {
 
 
 // // // // / Barcode printing
-// frappe.ui.form.on('Component Remove', {
-
-//     print: function(frm, cdt, cdn) {
-//         var child_doc = locals[cdt][cdn];
-//         console.log("child_doc", child_doc);
-//         frappe.call({
-//             method: 'nj_features.api_files.print_barcode',
-//             args: {
-//                 doc: child_doc
-//             },
-//             callback: function(r) {
-//                 frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
-//                 console.log("hiii hello ")
-                
-//             }
-            
-//         });
-//         console.log("child_doc", child_doc);
-//         if(child_doc.serial_no) {
-//             console.log("this is inside function")
-            // var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
-            //                                         "doctype=" + encodeURIComponent("Machine Part Changes") +
-            //                                         "&name=" + encodeURIComponent(cur_frm.doc.name) +
-            //                                         "&trigger_print=1" +
-            //                                         "&format=" + "Machine Part Barcode" +
-            //                                         "&no_letterhead=1" +
-            //                                         "&_lang=en" 
-            //                                         // "&count=" + name
-            //                                     ));
-            // console.log("objWindowOpenResult",objWindowOpenResult)
-                                                
-//         }
-//     }
-// });
-
-
-
-
 frappe.ui.form.on('Component Remove', {
+
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
-        
-        // Call the API to get the serial number
+        console.log("child_doc", child_doc);
         frappe.call({
             method: 'nj_features.api_files.print_barcode',
             args: {
                 doc: child_doc
             },
             callback: function(r) {
-                if (!r.exc) {
-                    // Update the serial number field with the returned value
-                    frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
-                    console.log("serial_no is setting -----")
-                    // Check if the serial number is available
-                    if (child_doc.serial_no) {
-            //             console.log("child_doc.serial_no-----------",child_doc.serial_no)
-            //             // Open the print view
-            //             var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
-            //                                         "doctype=" + encodeURIComponent("Machine Part Changes") +
-            //                                         "&name=" + encodeURIComponent(cur_frm.doc.name) +
-            //                                         "&trigger_print=1" +
-            //                                         "&format=" + "Machine Part Barcode" +
-            //                                         "&no_letterhead=1" +
-            //                                         "&_lang=en" 
-            //                                         // "&count=" + name
-            //                                     ));
-            // console.log("objWindowOpenResult",objWindowOpenResult)
-            //             console.log("inside qr code printer")
-                        
-            setTimeout(function() {
-                var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
-                    "doctype=" + encodeURIComponent("Machine Part Changes") +
-                    "&name=" + encodeURIComponent(cur_frm.doc.name) +
-                    "&trigger_print=1" +
-                    "&format=" + "Machine Part Barcode" +
-                    "&no_letterhead=1" +
-                    "&_lang=en" 
-                ));
-                console.log("objWindowOpenResult",objWindowOpenResult);
-                console.log("inside qr code printer");
-            }, 1000);
-                    } else {
-                        frappe.msgprint("Serial number not found.");
-                    }
-                } else {
-                    frappe.msgprint("Error fetching serial number: " + r.exc);
-                }
+                frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
+                console.log("hiii hello ")
+                
             }
+            
         });
+        console.log("child_doc", child_doc);
+        if(child_doc.serial_no) {
+            console.log("this is inside function")
+            var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
+                                                    "doctype=" + encodeURIComponent("Machine Part Changes") +
+                                                    "&name=" + encodeURIComponent(cur_frm.doc.name) +
+                                                    "&trigger_print=1" +
+                                                    "&format=" + "Machine Part Barcode" +
+                                                    "&no_letterhead=1" +
+                                                    "&_lang=en" 
+                                                    // "&count=" + name
+                                                ));
+            console.log("objWindowOpenResult",objWindowOpenResult)
+                                                
+        }
     }
 });
+
+
+
+
+// frappe.ui.form.on('Component Remove', {
+//     print: function(frm, cdt, cdn) {
+//         var child_doc = locals[cdt][cdn];
+        
+//         // Call the API to get the serial number
+//         frappe.call({
+//             method: 'nj_features.api_files.print_barcode',
+//             args: {
+//                 doc: child_doc
+//             },
+//             callback: function(r) {
+//                 if (!r.exc) {
+//                     // Update the serial number field with the returned value
+//                     frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
+//                     console.log("serial_no is setting -----")
+//                     // Check if the serial number is available
+//                     if (child_doc.serial_no) {
+//             //             console.log("child_doc.serial_no-----------",child_doc.serial_no)
+//             //             // Open the print view
+//             //             var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
+//             //                                         "doctype=" + encodeURIComponent("Machine Part Changes") +
+//             //                                         "&name=" + encodeURIComponent(cur_frm.doc.name) +
+//             //                                         "&trigger_print=1" +
+//             //                                         "&format=" + "Machine Part Barcode" +
+//             //                                         "&no_letterhead=1" +
+//             //                                         "&_lang=en" 
+//             //                                         // "&count=" + name
+//             //                                     ));
+//             // console.log("objWindowOpenResult",objWindowOpenResult)
+//             //             console.log("inside qr code printer")
+                        
+//             setTimeout(function() {
+//                 var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
+//                     "doctype=" + encodeURIComponent("Machine Part Changes") +
+//                     "&name=" + encodeURIComponent(cur_frm.doc.name) +
+//                     "&trigger_print=1" +
+//                     "&format=" + "Machine Part Barcode" +
+//                     "&no_letterhead=1" +
+//                     "&_lang=en" 
+//                 ));
+//                 console.log("objWindowOpenResult",objWindowOpenResult);
+//                 console.log("inside qr code printer");
+//             }, 1000);
+//                     } else {
+//                         frappe.msgprint("Serial number not found.");
+//                     }
+//                 } else {
+//                     frappe.msgprint("Error fetching serial number: " + r.exc);
+//                 }
+//             }
+//         });
+//     }
+// });

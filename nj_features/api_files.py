@@ -3,7 +3,7 @@ import json
 import random
 import os
 from barcode import Code128
-from nj_features.barcode import CustomImgWriter
+from nj_features.qr_code import generate_and_save_qrcode
 from io import BytesIO
 
 
@@ -132,7 +132,7 @@ def create_serial_no(item_code=None, attempt=0):
                     frappe.msgprint(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
                     return create_serial_no(item_code, attempt + 1)  # Recursive call with increased attempt count
                 else:
-                    generate_and_save_barcode(serial_no)
+                    generate_and_save_qrcode(serial_no)
                     return serial_no
             else:
                 frappe.msgprint(f"Item Group or Serial No status is not defined for Item Code: <strong>{item_code}</strong>.")
@@ -144,24 +144,24 @@ def create_serial_no(item_code=None, attempt=0):
         frappe.msgprint(f"Error while creating Serial No: {e}")
         return None
 
-def generate_and_save_barcode(serial_no, format='png'):
-    my_code = Code128(serial_no, writer=CustomImgWriter())
+# def generate_and_save_barcode(serial_no, format='png'):
+#     my_code = Code128(serial_no, writer=CustomImgWriter())
 
-    # Create BytesIO to store barcode SVG
-    barcode_bytes = BytesIO()
-    my_code.write(barcode_bytes)
+#     # Create BytesIO to store barcode SVG
+#     barcode_bytes = BytesIO()
+#     my_code.write(barcode_bytes)
 
-    # Set the directory to save the file
-    base_directory = frappe.get_site_path("public", "files")
-    file_path = os.path.join(base_directory, f"{serial_no}.{format}")
+#     # Set the directory to save the file
+#     base_directory = frappe.get_site_path("public", "files")
+#     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
 
-    # Check if the file already exists
-    if os.path.exists(file_path):
-        os.remove(file_path)
+#     # Check if the file already exists
+#     if os.path.exists(file_path):
+#         os.remove(file_path)
 
-    # Save the SVG content to a file
-    with open(file_path, 'wb') as f:
-        f.write(barcode_bytes.getvalue())
+#     # Save the SVG content to a file
+#     with open(file_path, 'wb') as f:
+#         f.write(barcode_bytes.getvalue())
 
 @frappe.whitelist()
 def get_max_cop(item_code, serial_no, print_cpy):
@@ -235,7 +235,7 @@ def print_barcode(doc):
         if has_serial_no == 1:
             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
             remaining_qty = qty - len(serial_no_list)
-            print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
+            # print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
             if remaining_qty > 0:
                 for _ in range(remaining_qty):
                     serial_no = create_serial_no(item_code)
@@ -245,7 +245,7 @@ def print_barcode(doc):
                 print(f"updated_serial_no: {updated_serial_no}")
                 
                 for serial_no in serial_no_list[-remaining_qty:]:
-                    generate_and_save_barcode(serial_no)
+                    generate_and_save_qrcode(serial_no)
                 return updated_serial_no
                     
             else:
@@ -257,17 +257,25 @@ def print_barcode(doc):
         frappe.msgprint(f"Error printing barcode: {e}")
         
 def update_serial_no_on_pr_submit(doc, method=None):
-    warranty_days = doc.warranty_days
     for item in doc.items:
         if item.item_code and item.qty and serializer_or_notserializer(item.item_code) == 1:
             serial_nos = item.serial_no.split('\n') if item.serial_no else []
             for serial_no in serial_nos:
-                update_serial_no_prices(item.rate, serial_no, warranty_days)
+                update_serial_no(serial_no, doc, item)
 
-def update_serial_no_prices(rate, serial_no, warranty_days):
+def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     if serial_no_doc:
-        if rate:
-            frappe.db.set_value('Serial No', serial_no_doc.name, 'purchase_price', rate)
-            frappe.db.set_value('Serial No', serial_no_doc.name, 'current_price', rate)
-            frappe.db.set_value('Serial No', serial_no_doc.name, 'warranty_period', warranty_days)
+        serial_no_doc.purchase_price = item.base_rate
+        serial_no_doc.current_price = item.base_rate
+        serial_no_doc.barcode = serial_no
+        serial_no_doc.supplier = doc.supplier
+        serial_no_doc.warranty_period = doc.warranty_days
+        serial_no_doc.purchase_warranty_days = doc.warranty_days
+        serial_no_doc.warranty_days = doc.warranty_days
+        serial_no_doc.purchase_order = item.purchase_order
+        serial_no_doc.supplier_name = supplier_name
+        serial_no_doc.purchase_receipt = doc.name
+        serial_no_doc.save()
+            

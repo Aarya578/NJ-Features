@@ -52,7 +52,9 @@ frappe.ui.form.on('Machine Part Changes', {
                                                                 },
                                                                 callback: function(barcode_response) {
                                                                     if (!barcode_response.exc) {
-                                                                        frappe.msgprint('Barcode generated and saved.');
+                                                                        // frappe.msgprint('Barcode generated and saved.');
+                                                                        printBarcode(child_doc.serial_no)
+
                                                                     } else {
                                                                         frappe.msgprint('Error generating barcode.');
                                                                     }
@@ -142,7 +144,7 @@ frappe.ui.form.on('Component Remove', {
                                                         },
                                                         callback: function(barcode_response) {
                                                             if (!barcode_response.exc) {
-                                                                frappe.msgprint('Barcode generated and saved.');
+                                                                // frappe.msgprint('Barcode generated and saved.');
                                                                 // printBarcodes(frm )
                                                                 printBarcode(child_doc.serial_no)
                                                             } else {
@@ -166,7 +168,7 @@ frappe.ui.form.on('Component Remove', {
                         } else {
                             console.log("serialized item_code with serial number ", child_doc.serial_no);
                             // Do something if the component has a serial number
-                            printBarcodes(frm)
+                            printBarcode(frm)
                         }
                     } else {
                         frappe.throw("for Non serialized item_code cannot generate serial_no");
@@ -194,7 +196,7 @@ function printBarcode(serialNo) {
                 "name": cur_frm.doc.name,
                 "serial_no": serialNo
             },
-            trigger_print: 1,
+            // trigger_print: 1,
             print_format: "Machine Part Barcode",
             no_letterhead: 1,
             _lang: "en-US"
@@ -205,6 +207,10 @@ function printBarcode(serialNo) {
             // Open the print view in a popup window
             var popupWindow = window.open("", "_blank", "width=800,height=600,top=100,left=100");
             popupWindow.document.write(print_view_html);
+            setTimeout(function() {
+                popupWindow.print();
+            }, 1000); // Adjust the delay time as needed
+        
         }
     });
 }

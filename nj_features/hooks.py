@@ -36,7 +36,6 @@ doctype_js = {
     "Employee": "public/js/employee.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
-    "Inward Barcode":"public/js/printview_override.js",
     "Machine Part Changes":"public/js/machine_partchanges.js"
 }
 

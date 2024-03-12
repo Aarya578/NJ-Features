@@ -29,12 +29,17 @@ frappe.ui.form.on('Purchase Receipt Item', {
                     doc: child_doc
                 },
                 callback: function(r) {
-                    frappe.model.set_value(cdt, cdn, 'serial_no', r.message);
-                    
+                    if (r.message.serial_no) {
+                        frappe.model.set_value(cdt, cdn, 'serial_no', r.message.serial_no);
+                    }
+                    if (r.message.truncated_item_code) {
+                        frappe.model.set_value(cdt, cdn, 'truncated_item_code', r.message.truncated_item_code);
+                    }
                 }
             });
         }
-        if(child_doc.serial_no) {
+        if(child_doc.serial_no || child_doc.truncated_item_code) {
+            console.log("print");
             var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
                                                     "doctype=" + encodeURIComponent("Purchase Receipt") +
                                                     "&name=" + encodeURIComponent(cur_frm.doc.name) +

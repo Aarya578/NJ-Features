@@ -14,6 +14,12 @@ frappe.ui.form.on('NJ QC Check List', {
     }
 });
 
+frappe.ui.form.on('Serial No', {
+    refresh(frm) {
+        $('.col-lg-2.layout-side-section').hide();
+    }
+});
+
 frappe.ui.form.on('Department', {
     refresh() {
         $('span.sidebar-toggle-btn').hide();

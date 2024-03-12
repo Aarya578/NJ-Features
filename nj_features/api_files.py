@@ -231,7 +231,7 @@ def print_barcode(doc):
         item_code = doc_dict.get('item_code')
         qty = doc_dict.get('qty')
         has_serial_no = serializer_or_notserializer(item_code)
-        
+        has_batch_no = frappe.db.get_value('Item', {'name': item_code}, 'has_batch_no')
         if has_serial_no == 1:
             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
             remaining_qty = qty - len(serial_no_list)
@@ -246,15 +246,62 @@ def print_barcode(doc):
                 
                 for serial_no in serial_no_list[-remaining_qty:]:
                     generate_and_save_qrcode(serial_no)
-                return updated_serial_no
-                    
+                return {"serial_no": updated_serial_no}
+                   
             else:
                 row_idx = doc_dict.get('idx', '')
                 frappe.msgprint(f"All serial numbers are already entered for this row: <strong># {row_idx}</strong>.")
+        elif has_batch_no == 1 and has_serial_no ==0 :
+            frappe.msgprint(f"Serial No can't be generated for Item Code: <strong>{item_code}</strong> with 'Has Batch No'")
         else:
-            frappe.msgprint(f"Serial No can't be generated for Non-Serialized Item Code: <strong>{item_code}</strong>")
+            new_item_code = truncate_grade(item_code)
+            generate_and_save_qrcode(new_item_code)
+            return {"truncated_item_code": new_item_code}
+            # frappe.msgprint(f"QR Code is generated for Non-Serialized Item Code as: <strong>{new_item_code}</strong>")
     except Exception as e:
         frappe.msgprint(f"Error printing barcode: {e}")
+
+def truncate_grade(input_string):
+    parts = input_string.split('-')
+    
+    last_part = parts[-1].strip().upper()
+    if last_part.endswith((' A', ' B', ' C', ' D')) or last_part == 'UNKNOWN':
+        return '-'.join(parts[:-1])
+    else:
+        return input_string
+
+
+# @frappe.whitelist()
+# def print_barcode(doc):
+#     try:
+#         doc_dict = frappe.parse_json(doc)
+#         item_code = doc_dict.get('item_code')
+#         qty = doc_dict.get('qty')
+#         has_serial_no = serializer_or_notserializer(item_code)
+        
+#         if has_serial_no == 1:
+#             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
+#             remaining_qty = qty - len(serial_no_list)
+#             # print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
+#             if remaining_qty > 0:
+#                 for _ in range(remaining_qty):
+#                     serial_no = create_serial_no(item_code)
+#                     serial_no_list.append(serial_no)
+                
+#                 updated_serial_no = '\n'.join(serial_no_list)
+#                 print(f"updated_serial_no: {updated_serial_no}")
+                
+#                 for serial_no in serial_no_list[-remaining_qty:]:
+#                     generate_and_save_qrcode(serial_no)
+#                 return updated_serial_no
+                    
+#             else:
+#                 row_idx = doc_dict.get('idx', '')
+#                 frappe.msgprint(f"All serial numbers are already entered for this row: <strong># {row_idx}</strong>.")
+#         else:
+#             frappe.msgprint(f"Serial No can't be generated for Non-Serialized Item Code: <strong>{item_code}</strong>")
+#     except Exception as e:
+#         frappe.msgprint(f"Error printing barcode: {e}")
         
 def update_serial_no_on_pr_submit(doc, method=None):
     for item in doc.items:

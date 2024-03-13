@@ -83,7 +83,12 @@ def repack(inward):
 
     if item_code:
         stock_entry.naming_series = "STE-INW-"
+        stock_entry.reference_serial_no = inward.serial_no
+        stock_entry.reference_type = "Inward"
+        stock_entry.save()
+        stock_entry.reference = stock_entry.name
         stock_entry.submit()
+        frappe.msgprint(f"Repack: <strong>{stock_entry.name}</strong> has been submitted successfully.")
     else:
         frappe.msgprint(f"Item: <strong>{item_name}</strong> doesn't exist.")
         

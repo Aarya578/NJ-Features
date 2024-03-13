@@ -228,7 +228,7 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 def print_barcode(doc):
     try:
         doc_dict = frappe.parse_json(doc)
-        item_code = doc_dict.get('item_code')
+        item_code = doc_dict.get('item_code') or doc_dict.get('component') 
         qty = doc_dict.get('qty')
         has_serial_no = serializer_or_notserializer(item_code)
         has_batch_no = frappe.db.get_value('Item', {'name': item_code}, 'has_batch_no')

@@ -1,28 +1,26 @@
 $(document).ready(function() {
     $(document.body).addClass('full-width');
     localStorage.setItem('container_fullwidth', true);
-    $('.layout-side-section').hide();
-    $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
+    // $('.layout-side-section').hide();
+    // $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
 });
 
 frappe.ui.form.on('NJ QC Check List', {
     refresh(frm) {
         frm.fields_dict.description.$input.css('height', '80px');
-        $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.page.wrapper.find(".comment-box").css({'display':'none'});
     }
 });
 
 frappe.ui.form.on('Serial No', {
-    refresh(frm) {
+    refresh() {
         $('.col-lg-2.layout-side-section').hide();
     }
 });
 
 frappe.ui.form.on('Department', {
     refresh() {
-        $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
     }
 });
@@ -30,7 +28,6 @@ frappe.ui.form.on('Department', {
 frappe.ui.form.on('NJ Quality Checks', {
     refresh(frm) {
         frm.fields_dict.activity.$input.css('height', '80px');
-        $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.page.wrapper.find(".comment-box").css({'display':'none'});
     }
@@ -53,7 +50,7 @@ frappe.ui.misc.about = function() {
                 Facebook: <a href='https://www.facebook.com/people/NewJaisa-Technologies/100077760237912/' target='_blank'>https://www.facebook.com/people/NewJaisa-Technologies</a></p>\
             <hr>";
 
-        if (frappe.user.has_role('Administrator')) {
+        if (frappe.user.has_role('Administrator') || frappe.user.has_role('Developer')) {
             aboutContent += "<h4>Installed Apps</h4>\
             <div id='about-app-versions'>Loading versions...</div>\
             <hr>";

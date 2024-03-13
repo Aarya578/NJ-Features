@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NewJaisa - IT Team and Contributors
+# Copyright (c) 2023, NewJaisa - IT Team and Contributors
 # See license.txt
 
 # import frappe

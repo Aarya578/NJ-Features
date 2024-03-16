@@ -58,11 +58,23 @@ class NJQCA(Document):
                     serial_no_doc.save()
                 else:
                     frappe.throw("NJHAT Serial No is not found.")
+            for row in self.njqca_item_component:
+            # Check if the row has attr_data and item_code
+                print("row.item_code   ------------------", row.item_code)
+                if row.item_code:
+                    # Find the corresponding Serial No Component entries with matching item_group
+                    serial_no_components = [x for x in serial_no_doc.serial_no_component if x.item_group == row.item_group]
+                    print("serial_no_components---------------",serial_no_components)
+                    # Update item_code for each matching Serial No Component entry
+                    for serial_no_component in serial_no_components:
+                        serial_no_component.item = row.item_code
+                else:
+                    serial_no_component.item=''
         else:
             item_template = 'S-'+self.brand+' '+self.model
             child_attr_data = []
 
-            for row in self.iqc_item_component:
+            for row in self.njqca_item_component:
                 if row.attr_data:
                     child_attr_data.append(frappe.parse_json(row.attr_data))
 
@@ -136,7 +148,7 @@ def get_part_mapping(item_group):
     values = frappe.get_all(
         "NJ Settings",
         
-        filters={"doc_type": "IQC Child"}, fields=["parameter", "value"]
+        filters={"doc_type": "NJQCA Child"}, fields=["parameter", "value"]
     )
 
     return {"mappings": mappings, "values": values}

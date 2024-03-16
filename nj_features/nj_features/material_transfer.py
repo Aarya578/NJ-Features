@@ -5,7 +5,7 @@ def material_transfer(doc, work_warehouse=None):
     stock_entry = frappe.new_doc("Stock Entry")
     stock_entry.stock_entry_type = "Material Transfer"
     stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
-    iqc = frappe.get_doc('IQC', doc)
+    iqc = frappe.get_doc('NJQCA', doc)
     sql_query = """
             SELECT 
                 item_code, warehouse, incoming_rate, posting_date, posting_time

@@ -1,3 +1,4 @@
+
 frappe.listview_settings['NJQCA'] = {
     filters: [["created", "=", frappe.session.user]],
     refresh: function(listview) {

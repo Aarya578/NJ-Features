@@ -7,7 +7,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "njhat_information_section",
+  "njqca_information_section",
   "power_on",
   "column_break_zj4jy",
   "created",
@@ -39,7 +39,7 @@
   "error_section_section",
   "error_message",
   "section_break_56eed",
-  "iqc_item_component",
+  "njqca_item_component",
   "amended_from"
  ],
  "fields": [
@@ -223,11 +223,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "fieldname": "iqc_item_component",
-   "fieldtype": "Table",
-   "options": "IQC Child"
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -237,20 +232,25 @@
    "read_only": 1
   },
   {
-   "fieldname": "njhat_information_section",
+   "fieldname": "column_break_zj4jy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "njqca_information_section",
    "fieldtype": "Section Break",
    "label": "NJQCA Information"
   },
   {
-   "fieldname": "column_break_zj4jy",
-   "fieldtype": "Column Break"
+   "fieldname": "njqca_item_component",
+   "fieldtype": "Table",
+   "options": "NJQCA Child"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-13 13:07:17.149213",
+ "modified": "2024-03-15 21:55:51.297394",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

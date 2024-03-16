@@ -58,7 +58,7 @@ frappe.ui.form.on('NJQCA', {
         if (cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
             // console.log("serial_no is triggered");
             frappe.call({
-                method: 'nj_features.nj_features.doctype.iqc.iqc.get_info_from_serial_no',
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
@@ -95,7 +95,7 @@ frappe.ui.form.on('NJQCA', {
             });
             if(!cur_frm.doc.barcode_svg) {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.generate_and_save_barcode',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.generate_and_save_barcode',
                     args: {"serial_no": cur_frm.doc.serial_no},
                     callback: function(r) {
                         frm.set_value('barcode_svg', r.message.barcode_img);
@@ -129,7 +129,7 @@ frappe.ui.form.on('NJQCA', {
         frm.set_value('repack_item_code', "")
         let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
         frappe.call({
-            method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
             args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
             callback: function (r) {
                 // console.log("get_variant_from_value : ", r.message)
@@ -180,9 +180,9 @@ frappe.ui.form.on('NJQCA', {
         }
 
 	    if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
-            if (cur_frm.doc.iqc_item_component && cur_frm.doc.item_group) {
+            if (cur_frm.doc.njqca_item_component && cur_frm.doc.item_group) {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.get_part_mapping',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
                     args: { 'item_group': cur_frm.doc.item_group },
                     callback: function (r) {
                         if (r.message) {
@@ -193,7 +193,7 @@ frappe.ui.form.on('NJQCA', {
                             });
 
                             r.message.mappings.forEach(function (mapping) {   // for each part in Item Group mapping (3)
-                                frm.doc.iqc_item_component.forEach(function (row) {    // iterate elements in iqc child table
+                                frm.doc.njqca_item_component.forEach(function (row) {    // iterate elements in iqc child table
                                     var itemGroup = row.item_group;
                                     var variants = mapping.mappng_fields.split('::');
                                     
@@ -234,7 +234,7 @@ frappe.ui.form.on('NJQCA', {
                                     }
                                 });
                             });
-                            frm.refresh_field('iqc_item_component');
+                            frm.refresh_field('njqca_item_component');
                         }
                     }
                 });
@@ -244,7 +244,7 @@ frappe.ui.form.on('NJQCA', {
                 cur_frm.set_value('data_attr', '');
                 var child_attr_data = [];
                 // console.log("set data arg");
-                frm.doc.iqc_item_component.forEach(function (row) {
+                frm.doc.njqca_item_component.forEach(function (row) {
                     if (row.attr_data) {
                         // console.log("row: ", row.attr_data);
                         child_attr_data.push(JSON.parse(row.attr_data));
@@ -295,7 +295,7 @@ frappe.ui.form.on('NJQCA', {
                 resolve();
             }).then(function() {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.brand_model_validation',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.brand_model_validation',
                     args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
                     callback: function(r) {
                         if (!r.message.brand) {
@@ -343,12 +343,12 @@ frappe.ui.form.on('NJQCA', {
     },
 
     before_save: function(frm) {
-        if (cur_frm.doc.iqc_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
+        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
             // cur_frm.set_value('data_attr', 'demo');
             cur_frm.set_value('data_attr', '');
             var child_attr_data = [];
             // console.log("set data arg");
-            frm.doc.iqc_item_component.forEach(function (row) {
+            frm.doc.njqca_item_component.forEach(function (row) {
                 if (row.attr_data) {
                     // console.log("row: ", row.attr_data);
                     child_attr_data.push(JSON.parse(row.attr_data));
@@ -361,7 +361,7 @@ frappe.ui.form.on('NJQCA', {
                 frm.set_value('repack_item_code', "")
                 let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.iqc.iqc.get_variant_from_value',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
                     args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
                     callback: function (r) {
                         // console.log("get_variant_from_value : ", r.message)
@@ -390,7 +390,7 @@ function makeMaterialTransfer(doc, work_warehouse) {
 
 function get_model(manufacturer_model, make) {
     frappe.call({
-        method: 'nj_features.nj_features.doctype.iqc.iqc.get_model',
+        method: 'nj_features.nj_features.doctype.njqca.njqca.get_model',
         args: { 'manufacturer_model': manufacturer_model, 'make': make },
         callback: function(r) {
             if (r.message) {

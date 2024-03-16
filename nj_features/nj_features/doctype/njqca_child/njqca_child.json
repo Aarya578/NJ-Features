@@ -28,7 +28,8 @@
   "variant_19",
   "variant_20",
   "attr_data",
-  "part_serial_no"
+  "part_serial_no",
+  "item_code"
  ],
  "fields": [
   {
@@ -164,15 +165,20 @@
    "fieldname": "attr_data",
    "fieldtype": "Data",
    "label": "Attr Data"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "label": "Item Code"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-01-31 16:51:24.738920",
+ "modified": "2024-03-16 13:56:17.809572",
  "modified_by": "Administrator",
  "module": "NJ Features",
- "name": "IQC Child",
+ "name": "NJQCA Child",
  "owner": "Administrator",
  "permissions": [],
  "sort_field": "modified",

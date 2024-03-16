@@ -25,12 +25,14 @@ from pyqrcode import QRCode
 @frappe.whitelist()        
 def generate_and_save_qrcode(data, format='png'):
     try:
-        if data.startswith('NJ-'):  # For serial numbers
+        if data.startswith('NJ'):  # For serial numbers
             url = pyqrcode.create(data) 
             filename = f"{data}.{format}"
+            print("url for serial no ----",url)
         else:  # For item codes
             url = pyqrcode.create(data)
             filename = f"{data}.{format}"
+            print("url for item_code ------",url)
         
         # Define the file path
         base_directory = frappe.get_site_path("public", "files")

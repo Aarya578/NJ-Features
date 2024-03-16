@@ -227,8 +227,18 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 @frappe.whitelist()
 def print_barcode(doc):
     try:
+        print("doc===================",doc)
         doc_dict = frappe.parse_json(doc)
+        print("doc_dict===============",doc_dict)
         item_code = doc_dict.get('item_code') or doc_dict.get('component') 
+        serial_no=doc_dict.get('serial_no')
+        print(serial_no,"======serial no=======")
+        if serial_no:
+            serial_no_list = serial_no.split('\n')
+            for serial in serial_no_list:
+                generate_and_save_qrcode(serial)
+            return {"serial_no": serial_no}
+
         qty = doc_dict.get('qty')
         has_serial_no = serializer_or_notserializer(item_code)
         has_batch_no = frappe.db.get_value('Item', {'name': item_code}, 'has_batch_no')
@@ -240,7 +250,6 @@ def print_barcode(doc):
                 for _ in range(remaining_qty):
                     serial_no = create_serial_no(item_code)
                     serial_no_list.append(serial_no)
-                
                 updated_serial_no = '\n'.join(serial_no_list)
                 print(f"updated_serial_no: {updated_serial_no}")
                 

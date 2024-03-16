@@ -17,12 +17,13 @@ frappe.ui.form.on('Purchase Receipt', {
 });
 
 // Barcode printing
-frappe.ui.form.on('Purchase Receipt Item', {
 
+frappe.ui.form.on('Purchase Receipt Item', {
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
-        // console.log("child_doc", child_doc);
-        if(!child_doc.serial_no && frm.doc.docstatus == 0){
+        console.log("child_doc=============", child_doc);
+        if(!child_doc.serial_no && frm.doc.docstatus == 0 || child_doc.serial_no){
+            console.log("print for not existed in serial no ")
             frappe.call({
                 method: 'nj_features.api_files.print_barcode',
                 args: {
@@ -39,7 +40,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
             });
         }
         if(child_doc.serial_no || child_doc.truncated_item_code) {
-            console.log("print");
+            console.log("print for already existed serial_no -------------");
             var objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
                                                     "doctype=" + encodeURIComponent("Purchase Receipt") +
                                                     "&name=" + encodeURIComponent(cur_frm.doc.name) +

@@ -13,6 +13,8 @@ from barcode import Code128
 from nj_features.barcode import CustomImgWriter
 from io import BytesIO
 from frappe.utils import get_url
+import item_config
+# from nj_features.nj_features.doctype.item_config import ItemConfig
 
 class NJQCA(Document):   
     def on_submit(self):
@@ -292,6 +294,59 @@ def generate_and_save_barcode(serial_no, format='png'):
 
     website_url = get_url()
     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+
+
+@frappe.whitelist()
+def get_item_code():
+    # var=frappe.db.get_doc("NJQCA Child")
+    # print("var -----------",var)
+    parent='NJQCA-Lenovo-model-serial_no-01'
+    details="""SELECT item_group,variant_1,variant_2,variant_3,variant_4,variant_5,variant_6,variant_7,variant_8,variant_9,variant_10,variant_11,variant_12,variant_13,variant_14,variant_15,variant_16,variant_17,variant_18,variant_19,variant_20 FROM `tabNJQCA Child` where item_group in('LAPTOP RAM','LAPTOP STORAGE','LAPTOP PROCESSOR') and parent=%s;
+    """
+    data=frappe.db.sql(details,(parent),as_dict=True)
+    # data=frappe.db.sql(details,as_dict=True)
+
+    # print("data =========",data)
+    print("data:", data)
+    
+    extracted_data = []
+    for item in data:
+        extracted_item = {
+            "item_group": item.get("item_group"),
+            "variant_1": item.get("variant_1"),
+            "variant_2": item.get("variant_2"),
+            "variant_3": item.get("variant_3"),
+            "variant_4": item.get("variant_4"),
+            "variant_5": item.get("variant_5"),
+            "variant_6": item.get("variant_6"),
+            "variant_7": item.get("variant_7"),
+            "variant_8": item.get("variant_8"),
+            "variant_9": item.get("variant_9"),
+            "variant_10": item.get("variant_10"),
+            "variant_11": item.get("variant_11"),
+            "variant_12": item.get("variant_12"),
+            "variant_13": item.get("variant_13"),
+            "variant_14": item.get("variant_14"),
+            "variant_15": item.get("variant_15"),
+            "variant_16": item.get("variant_16"),
+            "variant_17": item.get("variant_17"),
+            "variant_18": item.get("variant_18"),
+            "variant_19": item.get("variant_19"),
+            "variant_20": item.get("variant_20"),
+        }
+        extracted_data.append(extracted_item)
+    # extracted_data = {}
+    # for item in data:
+    #     item_group = item.get("item_group")
+    #     if item_group not in extracted_data:
+    #         extracted_data[item_group] = []
+    #     variants = {
+    #         f"variant{i:02d}": item.get(f"variant_{i}") for i in range(1, 21)
+    #     }
+    #     extracted_data[item_group].append(variants)
+    # print("extracted_data-----------===========",extracted_data)
+    return extracted_data
+
 
 # @frappe.whitelist()
 # def get_variant_from_value(item_template=None, args=None):

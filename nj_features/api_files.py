@@ -238,6 +238,13 @@ def print_barcode(doc):
             for serial in serial_no_list:
                 generate_and_save_qrcode(serial)
             return {"serial_no": serial_no}
+        
+        # if serial_no:
+        #     serial_no_list = serial_no.split('\n')
+        #     for serial in serial_no_list:
+        #         if  serial.startswith("NJ-"):
+        #             frappe.throw("Serial numbers entered manually must not  start with 'Nj'")
+        #         generate_and_save_qrcode(serial)
 
         qty = doc_dict.get('qty')
         has_serial_no = serializer_or_notserializer(item_code)

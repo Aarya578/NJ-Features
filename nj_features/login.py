@@ -31,7 +31,7 @@ def login(usr, pwd):
     }
 
 
-
+@frappe.whitelist()
 def generate_keys(user):
     user_details = frappe.get_doc('User', user)
     api_secret = frappe.generate_hash(length=15)
@@ -43,4 +43,4 @@ def generate_keys(user):
     user_details.api_secret = api_secret
     user_details.save()
 
-    return api_secret
+    return f"{api_key}:{api_secret}"

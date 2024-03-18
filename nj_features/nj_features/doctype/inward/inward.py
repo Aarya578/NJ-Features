@@ -6,9 +6,9 @@ import frappe
 from nj_features.nj_features.repack import repack
 from frappe.model.document import Document
 import os
-from barcode import Code128
-from nj_features.barcode import CustomImgWriter
-from io import BytesIO
+# from barcode import Code128
+# from nj_features.barcode import CustomImgWriter
+# from io import BytesIO
 
 class Inward(Document):
     def on_submit(self):

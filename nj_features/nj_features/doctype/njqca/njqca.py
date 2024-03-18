@@ -8,12 +8,12 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 import re
-import os
-from barcode import Code128
-from nj_features.barcode import CustomImgWriter
-from io import BytesIO
-from frappe.utils import get_url
-import item_config
+# import os
+# from barcode import Code128
+# from nj_features.barcode import CustomImgWriter
+# from io import BytesIO
+# from frappe.utils import get_url
+# import item_config
 # from nj_features.nj_features.doctype.item_config import ItemConfig
 
 class NJQCA(Document):   
@@ -272,28 +272,28 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
     else:
         return None
 
-@frappe.whitelist()
-def generate_and_save_barcode(serial_no, format='png'):
-    my_code = Code128(serial_no, writer=CustomImgWriter())
+# @frappe.whitelist()
+# def generate_and_save_barcode(serial_no, format='png'):
+#     my_code = Code128(serial_no, writer=CustomImgWriter())
 
-    # Create BytesIO to store barcode SVG
-    barcode_bytes = BytesIO()
-    my_code.write(barcode_bytes)
+#     # Create BytesIO to store barcode SVG
+#     barcode_bytes = BytesIO()
+#     my_code.write(barcode_bytes)
 
-    # Set the directory to save the file
-    base_directory = frappe.get_site_path("public", "files")
-    file_path = os.path.join(base_directory, f"{serial_no}.{format}")
+#     # Set the directory to save the file
+#     base_directory = frappe.get_site_path("public", "files")
+#     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
 
-    # Check if the file already exists
-    if os.path.exists(file_path):
-        os.remove(file_path)
+#     # Check if the file already exists
+#     if os.path.exists(file_path):
+#         os.remove(file_path)
 
-    # Save the SVG content to a file
-    with open(file_path, 'wb') as f:
-        f.write(barcode_bytes.getvalue())
+#     # Save the SVG content to a file
+#     with open(file_path, 'wb') as f:
+#         f.write(barcode_bytes.getvalue())
 
-    website_url = get_url()
-    return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
+#     website_url = get_url()
+#     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
 
 
 @frappe.whitelist()

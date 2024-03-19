@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:name1",
  "creation": "2023-11-28 15:30:23.580678",
@@ -135,10 +136,10 @@
    "read_only": 1
   }
  ],
+ "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
- "is_submittable": 1,
  "links": [],
- "modified": "2024-02-07 15:50:36.018142",
+ "modified": "2024-03-19 20:08:55.412410",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",
@@ -149,13 +150,13 @@
    "delete": 1,
    "email": 1,
    "export": 1,
+   "import": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
    "select": 1,
    "share": 1,
-   "submit": 1,
    "write": 1
   }
  ],

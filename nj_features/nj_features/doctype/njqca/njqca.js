@@ -93,19 +93,6 @@ frappe.ui.form.on('NJQCA', {
     
                 }
             });
-            if(!cur_frm.doc.barcode_svg) {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.generate_and_save_barcode',
-                    args: {"serial_no": cur_frm.doc.serial_no},
-                    callback: function(r) {
-                        frm.set_value('barcode_svg', r.message.barcode_img);
-                        // frappe.show_alert({
-                        //     message: __(`Barcode is generated for Barcode/Serial No: ${cur_frm.doc.serial_no}`),
-                        //     indicator: 'green'
-                        // });
-                    }
-                });
-            }
         }
 
         // if (!cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {

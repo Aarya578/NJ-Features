@@ -49,7 +49,7 @@ class NJQCA(Document):
             #     preferred_purchase_price_ = get_model_price + get_attribute_price
             #     serial_no_doc.preferred_purchase_price_ = preferred_purchase_price_
                 
-            serial_no_doc.bios_serial_no = self.njhat_serialno
+            serial_no_doc.bios_serial_no = self.bios_serialno
             serial_no_doc.purchase_price = self.base_price
             serial_no_doc.current_price = self.base_price
             if self.njhat_serialno:

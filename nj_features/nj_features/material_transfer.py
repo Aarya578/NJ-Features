@@ -35,6 +35,12 @@ def material_transfer(doc, work_warehouse=None):
     })
 
     if iqc.item_code:
+        stock_entry.naming_series = "STE-NJQCA-"
+        stock_entry.reference_type = "NJQCA"
+        stock_entry.reference_serial_no = iqc.serial_no
+        stock_entry.save()
+        stock_entry.reference = stock_entry.name
         stock_entry.submit()
+        frappe.msgprint(f"Stock has been transfered: <b>{stock_entry.name}</b>")
     else:
         frappe.msgprint(f"Item: <strong>{iqc.item_code}</strong> doesn't exist.")

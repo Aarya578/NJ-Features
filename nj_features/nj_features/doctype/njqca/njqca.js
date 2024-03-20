@@ -7,6 +7,10 @@ frappe.ui.form.on('NJQCA', {
             frm.events.serial_no(frm);
         }
         if (!cur_frm.doc.model) {
+            if (!frm.doc.manufacturer_model) {
+                frappe.msgprint("Manufacturer Model is not found")
+                return
+            }
             get_model(frm.doc.manufacturer_model, frm.doc.make);
         }
     },
@@ -330,7 +334,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     before_save: function(frm) {
-        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.data_attr == "") {
+        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && !cur_frm.doc.data_attr) {
             // cur_frm.set_value('data_attr', 'demo');
             cur_frm.set_value('data_attr', '');
             var child_attr_data = [];

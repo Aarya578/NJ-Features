@@ -9,33 +9,29 @@
  "field_order": [
   "njqca_information_section",
   "power_on",
-  "column_break_zj4jy",
-  "created",
-  "iqc_section",
   "purchase_order",
   "purchase_price",
-  "item_code",
-  "column_break_5mcw7",
   "purchase_receipt",
-  "idx",
-  "base_price",
-  "section_break_6sw2s",
   "serial_no",
-  "barcode_svg",
   "item_group",
-  "source_warehouse",
-  "target_warehouse",
+  "warehouse",
   "njhat_serialno",
   "raw_data",
+  "base_price",
   "item_template",
-  "column_break_qzvyk",
+  "column_break_5mcw7",
+  "created",
   "data_attr",
   "brand",
-  "model",
   "make",
+  "manufacturer_model",
   "repack_item_code",
-  "original_price",
   "repack_itm_price",
+  "original_price",
+  "section_break_6sw2s",
+  "item_code",
+  "column_break_qzvyk",
+  "model",
   "error_section_section",
   "error_message",
   "section_break_56eed",
@@ -46,7 +42,7 @@
   {
    "fieldname": "power_on",
    "fieldtype": "Select",
-   "label": "Is the system not Powering ON?",
+   "label": "Is the system powering on?",
    "options": "\nYes\nNo",
    "reqd": 1
   },
@@ -55,11 +51,6 @@
    "fieldtype": "Link",
    "label": "Created",
    "options": "User"
-  },
-  {
-   "depends_on": "eval: doc.power_on == 'Yes'",
-   "fieldname": "iqc_section",
-   "fieldtype": "Section Break"
   },
   {
    "fieldname": "purchase_order",
@@ -72,7 +63,8 @@
    "fieldname": "purchase_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "PR Purchase Price"
+   "label": "PR Purchase Price",
+   "precision": "2"
   },
   {
    "fieldname": "item_code",
@@ -92,12 +84,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "idx",
-   "fieldtype": "Int",
-   "hidden": 1,
-   "label": "idx"
-  },
-  {
    "fieldname": "base_price",
    "fieldtype": "Currency",
    "hidden": 1,
@@ -113,30 +99,10 @@
    "label": "Serial No"
   },
   {
-   "fieldname": "barcode_svg",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Barcode SVG"
-  },
-  {
    "fieldname": "item_group",
    "fieldtype": "Link",
    "label": "Item Group",
    "options": "Item Group",
-   "read_only": 1
-  },
-  {
-   "fieldname": "source_warehouse",
-   "fieldtype": "Link",
-   "label": "Source Warehouse",
-   "options": "Warehouse",
-   "read_only": 1
-  },
-  {
-   "fieldname": "target_warehouse",
-   "fieldtype": "Link",
-   "label": "Target Warehouse",
-   "options": "Warehouse",
    "read_only": 1
   },
   {
@@ -164,6 +130,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": " ",
    "fieldname": "data_attr",
    "fieldtype": "Small Text",
    "hidden": 1,
@@ -177,7 +144,7 @@
   },
   {
    "fieldname": "model",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Model"
   },
   {
@@ -196,13 +163,15 @@
    "fieldname": "original_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Original Price"
+   "label": "Original Price",
+   "precision": "2"
   },
   {
    "fieldname": "repack_itm_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Preferred Price"
+   "label": "Preferred Price",
+   "precision": "2"
   },
   {
    "fieldname": "error_section_section",
@@ -232,10 +201,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_zj4jy",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "njqca_information_section",
    "fieldtype": "Section Break",
    "label": "NJQCA Information"
@@ -244,13 +209,26 @@
    "fieldname": "njqca_item_component",
    "fieldtype": "Table",
    "options": "NJQCA Child"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "manufacturer_model",
+   "fieldtype": "Data",
+   "label": "Manufacturer Model",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-15 21:55:51.297394",
+ "modified": "2024-03-20 07:06:37.854061",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

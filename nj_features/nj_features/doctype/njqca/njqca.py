@@ -1,7 +1,6 @@
 # Copyright (c) 2023, NewJaisa - IT Team
 # For license information, please see license.txt
 
-import base64
 import json
 import random
 import frappe
@@ -49,10 +48,27 @@ class NJQCA(Document):
                 'set_basic_rate_manually': 0,
             })
             stock_entry.naming_series = "STE-NJQCA-"
+            print(f"\n\nstock_entry, {stock_entry}")
             stock_entry.submit()
             
+            get_attribute_price, preferred_purchase_price_ = 0, 0
+            get_attribute_value = ''
+            item_doc = frappe.get_doc("Item", {'name': self.repack_item_code})
             serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
             if serial_no_doc:
+                get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
+                if self.item_group:
+                    get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': self.item_group}, 'value')
+                for attr in item_doc.attributes:
+                    attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value, 'value', as_dict=1)
+                    print(f"\n\n attribute_value: {attribute_value}")
+                    # if attribute_value[0].value == 0:
+                    #     get_attribute_price += float(attribute_value[0].value)
+                        
+                        
+                preferred_purchase_price_ = get_model_price + get_attribute_price
+                serial_no_doc.preferred_purchase_price_ = preferred_purchase_price_
+                
                 serial_no_doc.bios_serial_no = self.njhat_serialno
                 serial_no_doc.purchase_price = self.base_price
                 serial_no_doc.current_price = self.base_price
@@ -104,14 +120,14 @@ def get_info_from_serial_no(doc=None):
         # get price from Stock Ledger Entry
         sql_query = """
             SELECT 
-                item_code, warehouse, incoming_rate, posting_date, posting_time
+                item_code, warehouse, incoming_rate
             FROM
                 `tabStock Ledger Entry`
             WHERE
                 serial_no LIKE %s
                 AND is_cancelled = 0
             ORDER BY
-                posting_date DESC, posting_time DESC, creation DESC
+                posting_date DESC, posting_time DESC, creation
             LIMIT 1
         """
         sle = frappe.db.sql(sql_query, ('%'+serial_no+'%',), as_dict=1)
@@ -179,7 +195,7 @@ def normalize_gen(gen_str):
         return gen_str
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-    # print(f"\n\ntemplate: {item_template}, args: {args}")
+    print(f"\n\ntemplate: {item_template}, args: {args}")
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -203,7 +219,7 @@ def get_variant_from_value(item_template=None, args=None):
                 HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
-            # print(f"\n\nhaving: {having_clause}, variant: {variants}")
+            print(f"\n\nhaving: {having_clause}, variant: {variants}")
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:
@@ -219,7 +235,7 @@ def construct_item_code(item_template, args_list):
         for key, value in condition_dict.items():
             normalized_value = normalize_gen(value)
             concatenated_string += f"-{normalized_value}"
-    # print(f"\n\nconcatenated_string: {concatenated_string}\n")
+    print(f"\n\nconcatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
         SELECT item_code FROM `tabItem`
@@ -252,7 +268,7 @@ def get_model(manufacturer_model, make=None):
                    WHERE mmc.manufacturer_model = %s"""
         params = (manufacturer_model)
         model_list = frappe.db.sql(query, params, as_dict=True)
-        # print(f"\n\n elif model ----- : {new_model_list}")
+        # print(f"\n\n elif model ----- : {model_list}")
         if not model_list:
             frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
@@ -508,3 +524,28 @@ def get_item_code():
 #         result["item_code"].append(row["Item_code"]) 
 #     return result
 #     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
+
+
+@frappe.whitelist()
+def demo():
+    self = frappe.get_doc('Serial No', 'NJ946593')
+    get_attribute_price, preferred_purchase_price_, value = 0, 0, 0
+    get_attribute_value = ''
+    item_doc = frappe.get_doc("Item", {'name': self.item_code})
+    njqca_doc = frappe.get_doc("NJQCA",'NJQCA-Lenovo-model-serial_no-02')
+    serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
+    if serial_no_doc:
+        get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
+        print(f"\n\nget_model_price: {get_model_price}")
+        
+    for row in njqca_doc.njqca_item_component:
+        # print(f"\nitem_group: {row}")
+        print(f"\nitem_group: {row.item_group}")
+        get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': item_doc.item_group}, 'value')
+        for attr in item_doc.attributes:
+            # attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value)
+            print(f"\n\n attribute_value: {attribute_value}")
+            # if attribute_value is not None:
+            #     value += attribute_value
+    print(f"\nafter adding model: value is {value + get_model_price}\n\n")
+    return value + get_model_price

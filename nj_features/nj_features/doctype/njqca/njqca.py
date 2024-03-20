@@ -77,7 +77,8 @@ class NJQCA(Document):
                 else:
                     frappe.throw("NJHAT Serial No is not found.")
             for row in self.njqca_item_component:
-            # Check if the row has attr_data and item_code
+                serial_no_components = ''
+                # Check if the row has attr_data and item_code
                 print("row.item_code   ------------------", row.item_code)
                 if row.item_code:
                     # Find the corresponding Serial No Component entries with matching item_group
@@ -87,7 +88,7 @@ class NJQCA(Document):
                     for serial_no_component in serial_no_components:
                         serial_no_component.item = row.item_code
                 else:
-                    serial_no_component.item=''
+                    serial_no_component.item= ''
         else:
             item_template = 'S-'+self.brand+' '+self.model
             child_attr_data = []

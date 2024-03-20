@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "NJQCA-.brand.-.model.-.serial_no.-.##",
+ "autoname": "NJQCA-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -228,7 +228,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-20 07:06:37.854061",
+ "modified": "2024-03-20 07:53:11.875481",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

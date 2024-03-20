@@ -13,7 +13,7 @@ class NJQCA(Document):
     def on_submit(self):
         # Repack
         if self.power_on == 'Yes' and self.repack_item_code != '':
-            accounting_cost_account = 'Stock Adjustment - NJ'
+            accounting_cost_account = frappe.db.get
             stock_data = {
                 "name": self.name,
                 "item_code": self.item_code,
@@ -55,15 +55,15 @@ class NJQCA(Document):
             if self.bios_serialno:
                 serial_no_doc.save()
             else:
-                frappe.throw("NJHAT Serial No is not found.")
+                frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
             serial_no_components = ''
             for row in self.njqca_item_component:
                 # Check if the row has attr_data and item_code
-                print("row.item_code   ------------------", row.item_code)
+                # print("row.item_code   ------------------", row.item_code)
                 if row.item_code:
                     # Find the corresponding Serial No Component entries with matching item_group
                     serial_no_components = [x for x in serial_no_doc.serial_no_component if x.item_group == row.item_group]
-                    print("serial_no_components---------------",serial_no_components)
+                    # print("serial_no_components---------------",serial_no_components)
                     # Update item_code for each matching Serial No Component entry
                     for serial_no_component in serial_no_components:
                         serial_no_component.item = row.item_code
@@ -132,7 +132,7 @@ def get_info_from_serial_no(doc=None):
             result['base_price'] = sle_entry.get('incoming_rate')
             # result['purchase_receipt'] = purchase_receipt_doc[0]['purchase_receipt']
             if not serial_no_doc.bios_serial_no:
-                serial_no_doc.bios_serial_no = doc_json.get('njhat_serialno')
+                serial_no_doc.bios_serial_no = doc_json.get('bios_serialno')
                 serial_no_doc.barcode = doc_json.get('serialno')
                 serial_no_doc.save()
     return result
@@ -559,26 +559,26 @@ def get_item_code(parent):
 #     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
 
 
-@frappe.whitelist()
-def demo():
-    self = frappe.get_doc('Serial No', 'NJ946593')
-    get_attribute_price, preferred_purchase_price_, value = 0, 0, 0
-    get_attribute_value = ''
-    item_doc = frappe.get_doc("Item", {'name': self.item_code})
-    njqca_doc = frappe.get_doc("NJQCA",'NJQCA-Lenovo-model-serial_no-02')
-    serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
-    if serial_no_doc:
-        get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
-        print(f"\n\nget_model_price: {get_model_price}")
+# @frappe.whitelist()
+# def demo():
+#     self = frappe.get_doc('Serial No', 'NJ946593')
+#     get_attribute_price, preferred_purchase_price_, value = 0, 0, 0
+#     get_attribute_value = ''
+#     item_doc = frappe.get_doc("Item", {'name': self.item_code})
+#     njqca_doc = frappe.get_doc("NJQCA",'NJQCA-Lenovo-model-serial_no-02')
+#     serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
+#     if serial_no_doc:
+#         get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
+#         print(f"\n\nget_model_price: {get_model_price}")
         
-    for row in njqca_doc.njqca_item_component:
-        # print(f"\nitem_group: {row}")
-        print(f"\nitem_group: {row.item_group}")
-        get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': item_doc.item_group}, 'value')
-        for attr in item_doc.attributes:
-            # attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value)
-            print(f"\n\n attribute_value: {attribute_value}")
-            # if attribute_value is not None:
-            #     value += attribute_value
-    print(f"\nafter adding model: value is {value + get_model_price}\n\n")
-    return value + get_model_price
+#     for row in njqca_doc.njqca_item_component:
+#         # print(f"\nitem_group: {row}")
+#         print(f"\nitem_group: {row.item_group}")
+#         get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': item_doc.item_group}, 'value')
+#         for attr in item_doc.attributes:
+#             # attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value)
+#             print(f"\n\n attribute_value: {attribute_value}")
+#             # if attribute_value is not None:
+#             #     value += attribute_value
+#     print(f"\nafter adding model: value is {value + get_model_price}\n\n")
+#     return value + get_model_price

@@ -15,7 +15,7 @@ function openStockEntryForm(stockType) {
     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(response) {
         console.log('name', response.name, 'work', response.work_warehouse)
         if (!response.name) {
-            frappe.msgprint('Employee not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
+            frappe.msgprint('Employee not found for User: <b>'+frappe.session.user_email+'</b>. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.');
             return;
         }
 

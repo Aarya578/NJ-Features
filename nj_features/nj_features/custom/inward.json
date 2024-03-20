@@ -26,30 +26,6 @@
    "property_type": "Data",
    "row_name": null,
    "value": "Inward Barcode"
-  },
-  {
-   "_assign": null,
-   "_comments": null,
-   "_liked_by": null,
-   "_user_tags": null,
-   "creation": "2024-02-14 17:35:34.705418",
-   "default_value": null,
-   "doc_type": "Inward",
-   "docstatus": 0,
-   "doctype_or_field": "DocField",
-   "field_name": "serial_no",
-   "idx": 0,
-   "modified": "2024-02-14 17:35:34.705418",
-   "modified_by": "prajwal123@gmail.com",
-   "name": "Inward-serial_no-hidden",
-   "owner": "prajwal123@gmail.com",
-   "parent": null,
-   "parentfield": null,
-   "parenttype": null,
-   "property": "hidden",
-   "property_type": "Check",
-   "row_name": null,
-   "value": "1"
   }
  ],
  "sync_on_migrate": 1

@@ -63,10 +63,10 @@ frappe.ui.form.on('NJQCA', {
                         // }
                     });
                     let ware = r.message.warehouse
-                    frappe.db.get_value('Employee', {'user_id': frm.doc.created}, 'work_warehouse', function(r) {
+                    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
                         console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
                         if (!r.work_warehouse) {
-                            frappe.msgprint(`Work Warehouse is not set for employee: ${frm.doc.created}`)
+                            frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
                         }
                         else if (r.work_warehouse != ware) {
                             let d = frappe.confirm(
@@ -77,7 +77,7 @@ frappe.ui.form.on('NJQCA', {
                                         "serial_no": frm.doc.serial_no,
                                         "stock_entry_type": "Material Transfer",
                                         "t_warehouse": r.work_warehouse,
-                                        "series": "STE-NJQCA",
+                                        "series": "STE-NJQCA-",
                                         "reference_serial_no": frm.doc.serial_no,
                                         "reference_type": "NJQCA"
                                     }

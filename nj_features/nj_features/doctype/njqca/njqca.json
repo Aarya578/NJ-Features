@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "NJQCA-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
@@ -13,9 +14,9 @@
   "purchase_price",
   "purchase_receipt",
   "serial_no",
+  "bios_serialno",
   "item_group",
   "warehouse",
-  "njhat_serialno",
   "raw_data",
   "base_price",
   "item_template",
@@ -50,7 +51,8 @@
    "fieldname": "created",
    "fieldtype": "Link",
    "label": "Created",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "purchase_order",
@@ -106,12 +108,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "njhat_serialno",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "NJHAT SerialNo"
-  },
-  {
    "fieldname": "raw_data",
    "fieldtype": "Link",
    "hidden": 1,
@@ -130,11 +126,10 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": " ",
    "fieldname": "data_attr",
    "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "Data Attr"
+   "label": "Data Attr",
+   "read_only": 1
   },
   {
    "fieldname": "brand",
@@ -222,13 +217,19 @@
    "fieldtype": "Data",
    "label": "Manufacturer Model",
    "read_only": 1
+  },
+  {
+   "fieldname": "bios_serialno",
+   "fieldtype": "Data",
+   "label": "BIOS SerialNo",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-20 07:53:11.875481",
+ "modified": "2024-03-20 17:43:22.374196",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -239,6 +240,7 @@
    "delete": 1,
    "email": 1,
    "export": 1,
+   "import": 1,
    "print": 1,
    "read": 1,
    "report": 1,

@@ -322,7 +322,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     before_save: function(frm) {
-        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes' && !cur_frm.doc.data_attr) {
+        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             cur_frm.set_value('data_attr', '');
             var child_attr_data = [];
             frm.doc.njqca_item_component.forEach(function (row) {

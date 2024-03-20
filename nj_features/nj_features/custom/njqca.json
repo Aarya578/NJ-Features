@@ -1,0 +1,32 @@
+{
+ "custom_fields": [],
+ "custom_perms": [],
+ "doctype": "NJQCA",
+ "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2024-03-19 21:12:41.580249",
+   "default_value": null,
+   "doc_type": "NJQCA",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "power_on",
+   "idx": 0,
+   "modified": "2024-03-19 21:12:41.580249",
+   "modified_by": "Administrator",
+   "name": "NJQCA-power_on-label",
+   "owner": "Administrator",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "label",
+   "property_type": "Data",
+   "row_name": null,
+   "value": "Is the system powering on?"
+  }
+ ],
+ "sync_on_migrate": 1
+}

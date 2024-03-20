@@ -7,77 +7,57 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 import re
-# import os
-# from barcode import Code128
-# from nj_features.barcode import CustomImgWriter
-# from io import BytesIO
-# from frappe.utils import get_url
-# import item_config
-# from nj_features.nj_features.doctype.item_config import ItemConfig
+from nj_lib.utils.stock_entry import stock_entry
 
 class NJQCA(Document):   
     def on_submit(self):
+        # Repack
         if self.power_on == 'Yes' and self.repack_item_code != '':
-            stock_entry = frappe.new_doc("Stock Entry")
-            stock_entry.stock_entry_type = "Repack"
-            stock_entry.company = frappe.db.get_single_value("Global Defaults", "default_company")
-
-            stock_entry.append("items", {
+            accounting_cost_account = 'Stock Adjustment - NJ'
+            stock_data = {
+                "name": self.name,
                 "item_code": self.item_code,
-                "qty": 1,
-                'uom': 'Nos',
-                'conversion_factor': 1,
-                'stock_uom': 'Nos',
-                's_warehouse': self.warehouse,
-                'basic_rate': self.base_price,
-                'set_basic_rate_manually': 0,
-            })
-
-            if frappe.get_value('Item', {'item_code': self.item_code}, 'has_serial_no') == 1:
-                stock_entry.items[0].update({'serial_no': self.serial_no})
-
-            stock_entry.append("items", {
-                "item_code": self.repack_item_code,
-                "qty": 1,
-                "t_warehouse": self.warehouse,
-                'uom': 'Nos',
-                'conversion_factor': 1,
-                'serial_no': self.serial_no,
-                'stock_uom': 'Nos',
-                'basic_rate': self.base_price,
-                'set_basic_rate_manually': 0,
-            })
-            stock_entry.naming_series = "STE-NJQCA-"
-            print(f"\n\nstock_entry, {stock_entry}")
-            stock_entry.submit()
+                "stock_entry_type": "Repack",
+                "doctype": "NJQCA",
+                "series": "STE-NJQCA-",
+                "repack_item_code": self.item_code,
+                "repack_base_price": self.base_price,
+                "serial_no": self.serial_no,
+                "expense_account": accounting_cost_account
+            }
+            str_data = json.dumps(stock_data)
+            try:
+                stock_entry(str_data)
+            except Exception as e:
+                frappe.throw(f"Error while Stock Entry(Repack): {e}")
             
-            get_attribute_price, preferred_purchase_price_ = 0, 0
-            get_attribute_value = ''
-            item_doc = frappe.get_doc("Item", {'name': self.repack_item_code})
+            # get_attribute_price, preferred_purchase_price_ = 0, 0
+            # get_attribute_value = ''
+            # item_doc = frappe.get_doc("Item", {'name': self.repack_item_code})
             serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
-            if serial_no_doc:
-                get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
-                if self.item_group:
-                    get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': self.item_group}, 'value')
-                for attr in item_doc.attributes:
-                    attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value, 'value', as_dict=1)
-                    print(f"\n\n attribute_value: {attribute_value}")
-                    # if attribute_value[0].value == 0:
-                    #     get_attribute_price += float(attribute_value[0].value)
+            # if serial_no_doc:
+            #     get_model_price = frappe.db.get_value('Models', {'name': self.model}, 'model_price')
+            #     if self.item_group:
+            #         get_attribute_value = frappe.db.get_value('NJ Settings', {'parameter': self.item_group}, 'value')
+            #     for attr in item_doc.attributes:
+            #         attribute_value = frappe.db.get_value('Item Attribute Value', {'parent': attr.attribute, 'attribute_value': attr.attribute_value}, get_attribute_value, 'value', as_dict=1)
+            #         print(f"\n\n attribute_value: {attribute_value}")
+            #         # if attribute_value[0].value == 0:
+            #         #     get_attribute_price += float(attribute_value[0].value)
                         
                         
-                preferred_purchase_price_ = get_model_price + get_attribute_price
-                serial_no_doc.preferred_purchase_price_ = preferred_purchase_price_
+            #     preferred_purchase_price_ = get_model_price + get_attribute_price
+            #     serial_no_doc.preferred_purchase_price_ = preferred_purchase_price_
                 
-                serial_no_doc.bios_serial_no = self.njhat_serialno
-                serial_no_doc.purchase_price = self.base_price
-                serial_no_doc.current_price = self.base_price
-                if self.njhat_serialno:
-                    serial_no_doc.save()
-                else:
-                    frappe.throw("NJHAT Serial No is not found.")
+            serial_no_doc.bios_serial_no = self.njhat_serialno
+            serial_no_doc.purchase_price = self.base_price
+            serial_no_doc.current_price = self.base_price
+            if self.njhat_serialno:
+                serial_no_doc.save()
+            else:
+                frappe.throw("NJHAT Serial No is not found.")
+            serial_no_components = ''
             for row in self.njqca_item_component:
-                serial_no_components = ''
                 # Check if the row has attr_data and item_code
                 print("row.item_code   ------------------", row.item_code)
                 if row.item_code:
@@ -87,8 +67,8 @@ class NJQCA(Document):
                     # Update item_code for each matching Serial No Component entry
                     for serial_no_component in serial_no_components:
                         serial_no_component.item = row.item_code
-                else:
-                    serial_no_component.item= ''
+                # else:
+                #     serial_no_component.item= ''
         else:
             item_template = 'S-'+self.brand+' '+self.model
             child_attr_data = []
@@ -125,10 +105,9 @@ def get_info_from_serial_no(doc=None):
             FROM
                 `tabStock Ledger Entry`
             WHERE
-                serial_no LIKE %s
-                AND is_cancelled = 0
+                serial_no LIKE %s AND is_cancelled = 0
             ORDER BY
-                posting_date DESC, posting_time DESC, creation
+                posting_date DESC, posting_time DESC, creation DESC
             LIMIT 1
         """
         sle = frappe.db.sql(sql_query, ('%'+serial_no+'%',), as_dict=1)
@@ -194,6 +173,7 @@ def normalize_gen(gen_str):
         return normalized_gen
     else:
         return gen_str
+    
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
     print(f"\n\ntemplate: {item_template}, args: {args}")
@@ -289,81 +269,133 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
     else:
         return None
 
-# @frappe.whitelist()
-# def generate_and_save_barcode(serial_no, format='png'):
-#     my_code = Code128(serial_no, writer=CustomImgWriter())
 
-#     # Create BytesIO to store barcode SVG
-#     barcode_bytes = BytesIO()
-#     my_code.write(barcode_bytes)
+# Config_array={'Processor':{"variant01":"i5","variant02":"4thGen"},"RAM":{"variant01":"4GB","variant02":"DDR4"}}
+#lap_def={'Processor':["variant01","variant02"],"RAM":["variant01"]}
+#i5 4thGen - 4GB
+part_mapping={'LAPTOP PROCESSOR':["variant06","variant07"],"LAPTOP RAM":["variant06"],"LAPTOP STORAGE":["variant10"]}
 
-#     # Set the directory to save the file
-#     base_directory = frappe.get_site_path("public", "files")
-#     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
-
-#     # Check if the file already exists
-#     if os.path.exists(file_path):
-#         os.remove(file_path)
-
-#     # Save the SVG content to a file
-#     with open(file_path, 'wb') as f:
-#         f.write(barcode_bytes.getvalue())
-
-#     website_url = get_url()
-#     return {'barcode_img': f'{website_url}/files/{serial_no}.{format}'}
-
+class ItemConfig:
+    def __init__(self,config,part_mapping):
+        self.config=config
+        self.part_mapping=part_mapping
+        
+    def get_part_config(self,type_data):
+        data_list=[]
+        for i in self.part_mapping[type_data]:
+            data_list.append(self.config[type_data][i])
+        return ' '.join(data_list)
+    
+    def get_item_code(self):
+        item_code=[]
+        for part in self.part_mapping:
+            print(f"\npart:  {part}")
+            data=self.get_part_config(part)
+            item_code.append(data)
+        item_code_str='-'.join(item_code)
+        print(f"294 \n\n - item_code_str: {item_code_str}")
 
 @frappe.whitelist()
-def get_item_code():
-    # var=frappe.db.get_doc("NJQCA Child")
-    # print("var -----------",var)
-    parent='NJQCA-Lenovo-model-serial_no-01'
-    details="""SELECT item_group,variant_1,variant_2,variant_3,variant_4,variant_5,variant_6,variant_7,variant_8,variant_9,variant_10,variant_11,variant_12,variant_13,variant_14,variant_15,variant_16,variant_17,variant_18,variant_19,variant_20 FROM `tabNJQCA Child` where item_group in('LAPTOP RAM','LAPTOP STORAGE','LAPTOP PROCESSOR') and parent=%s;
-    """
-    data=frappe.db.sql(details,(parent),as_dict=True)
-    # data=frappe.db.sql(details,as_dict=True)
-
-    # print("data =========",data)
-    print("data:", data)
+def get_item_code(parent):
     
-    extracted_data = []
-    for item in data:
-        extracted_item = {
-            "item_group": item.get("item_group"),
-            "variant_1": item.get("variant_1"),
-            "variant_2": item.get("variant_2"),
-            "variant_3": item.get("variant_3"),
-            "variant_4": item.get("variant_4"),
-            "variant_5": item.get("variant_5"),
-            "variant_6": item.get("variant_6"),
-            "variant_7": item.get("variant_7"),
-            "variant_8": item.get("variant_8"),
-            "variant_9": item.get("variant_9"),
-            "variant_10": item.get("variant_10"),
-            "variant_11": item.get("variant_11"),
-            "variant_12": item.get("variant_12"),
-            "variant_13": item.get("variant_13"),
-            "variant_14": item.get("variant_14"),
-            "variant_15": item.get("variant_15"),
-            "variant_16": item.get("variant_16"),
-            "variant_17": item.get("variant_17"),
-            "variant_18": item.get("variant_18"),
-            "variant_19": item.get("variant_19"),
-            "variant_20": item.get("variant_20"),
-        }
-        extracted_data.append(extracted_item)
+    # details="""SELECT item_group, variant_1, variant_2, variant_3, variant_4, variant_5,
+    #                 variant_6, variant_7, variant_8, variant_9, variant_10, variant_11,
+    #                 variant_12, variant_13, variant_14, variant_15, variant_16, variant_17, variant_18, variant_19, variant_20 
+    #             FROM `tabNJQCA Child` WHERE item_group IN ('LAPTOP RAM','LAPTOP STORAGE','LAPTOP PROCESSOR') AND parent = %s
+    # """
+    # data=frappe.db.sql(details,(parent),as_dict=True)
+    
+    # print(f"\n\ndata in njqca child: {data}")
+    
     # extracted_data = {}
     # for item in data:
     #     item_group = item.get("item_group")
-    #     if item_group not in extracted_data:
-    #         extracted_data[item_group] = []
     #     variants = {
     #         f"variant{i:02d}": item.get(f"variant_{i}") for i in range(1, 21)
     #     }
+    #     if item_group not in extracted_data:
+    #         extracted_data[item_group] = []
     #     extracted_data[item_group].append(variants)
-    # print("extracted_data-----------===========",extracted_data)
-    return extracted_data
+    
+    # final_output = {}
+    # for key, values in extracted_data.items():
+    #     for idx, value in enumerate(values, start=1):
+    #         item_key = f"{key}_{idx:02}"
+    #         final_output[item_key] = value
+    
+    final_output = {
+        "LAPTOP STORAGE":{
+            "variant01":"NVME DISK",
+            "variant02":"None",
+            "variant03":"None",
+            "variant04":"1",
+            "variant05":"/DEV/NVME0N1",
+            "variant06":"None",
+            "variant07":"GUID:1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
+            "variant08":"NVME@0:1",
+            "variant09":"None",
+            "variant10":"256 GB",
+            "variant11":"512",
+            "variant12":"512",
+            "variant13":"EUI.002538B571BCC023",
+            "variant14":"1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
+            "variant15":"None",
+            "variant16":"None",
+            "variant17":"None",
+            "variant18":"None",
+            "variant19":"None",
+            "variant20":"None"
+        },
+        "LAPTOP RAM":{
+            "variant01":"SYSTEM MEMORY",
+            "variant02":"None",
+            "variant03":"None",
+            "variant04":"3",
+            "variant05":"DMI:0003",
+            "variant06":"8 GB",
+            "variant07":"MEMORY",
+            "variant08":"None",
+            "variant09":"SLOT SYSTEM BOARD OR MOTHERBOARD",
+            "variant10":"None",
+            "variant11":"None",
+            "variant12":"None",
+            "variant13":"None",
+            "variant14":"None",
+            "variant15":"None",
+            "variant16":"None",
+            "variant17":"None",
+            "variant18":"None",
+            "variant19":"None",
+            "variant20":"None"
+        },
+        "LAPTOP PROCESSOR":{
+            "variant01":"CPU",
+            "variant02":"INTEL(R) CORE(TM) I5-7300U CPU @ 2.60GHZ",
+            "variant03":"INTEL",
+            "variant04":"A",
+            "variant05":"6.142.9",
+            "variant06":"CORE I5",
+            "variant07":"7 GEN",
+            "variant08":"7300U",
+            "variant09":"2",
+            "variant10":"2.60GHZ",
+            "variant11":"2",
+            "variant12":"4",
+            "variant13":"None",
+            "variant14":"3",
+            "variant15":"100000000",
+            "variant16":"U3E1",
+            "variant17":"None",
+            "variant18":"None",
+            "variant19":"None",
+            "variant20":"None"
+        }
+    }
+    
+    print("\n\nfinal_output:", final_output)
 
+    a=ItemConfig(final_output, part_mapping)
+    a.get_item_code()
 
 # @frappe.whitelist()
 # def get_variant_from_value(item_template=None, args=None):

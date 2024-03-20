@@ -52,7 +52,7 @@ class NJQCA(Document):
             serial_no_doc.bios_serial_no = self.bios_serialno
             serial_no_doc.purchase_price = self.base_price
             serial_no_doc.current_price = self.base_price
-            if self.njhat_serialno:
+            if self.bios_serialno:
                 serial_no_doc.save()
             else:
                 frappe.throw("NJHAT Serial No is not found.")

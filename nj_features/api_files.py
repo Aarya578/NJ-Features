@@ -227,16 +227,16 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 @frappe.whitelist()
 def print_barcode(doc):
     try:
-        print("doc===================",doc)
+        # print("doc===================",doc)
         doc_dict = frappe.parse_json(doc)
-        print("doc_dict===============",doc_dict)
+        # print("doc_dict===============",doc_dict)
         item_code = doc_dict.get('item_code') or doc_dict.get('component') 
         serial_no=doc_dict.get('serial_no')
-        print(serial_no,"======serial no=======")
+        # print(serial_no,"======serial no=======")
         if serial_no:
             serial_no_list = serial_no.split('\n')
-            for serial in serial_no_list:
-                generate_and_save_qrcode(serial)
+            # for serial in serial_no_list:
+            #     generate_and_save_qrcode(serial)
             return {"serial_no": serial_no}
         
         # if serial_no:
@@ -260,8 +260,8 @@ def print_barcode(doc):
                 updated_serial_no = '\n'.join(serial_no_list)
                 print(f"updated_serial_no: {updated_serial_no}")
                 
-                for serial_no in serial_no_list[-remaining_qty:]:
-                    generate_and_save_qrcode(serial_no)
+                # for serial_no in serial_no_list[-remaining_qty:]:
+                    # generate_and_save_qrcode(serial_no)
                 return {"serial_no": updated_serial_no}
                    
             else:
@@ -271,7 +271,7 @@ def print_barcode(doc):
             frappe.msgprint(f"Serial No can't be generated for Item Code: <strong>{item_code}</strong> with 'Has Batch No'")
         else:
             new_item_code = truncate_grade(item_code)
-            generate_and_save_qrcode(new_item_code)
+            # generate_and_save_qrcode(new_item_code)
             return {"truncated_item_code": new_item_code}
             # frappe.msgprint(f"QR Code is generated for Non-Serialized Item Code as: <strong>{new_item_code}</strong>")
     except Exception as e:

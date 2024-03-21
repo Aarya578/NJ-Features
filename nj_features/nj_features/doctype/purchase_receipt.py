@@ -1,4 +1,5 @@
 import frappe
+from nj_features.qr_code import generate_and_save_qrcode
 
 def get_batch(doc, method=None):
     for item in doc.items:
@@ -9,3 +10,12 @@ def get_batch(doc, method=None):
             batch_doc.batch_id = item.purchase_order +'-'+ str(item.idx)
             batch_doc.item = item.item_code
             batch_doc.save()
+        
+        if item.serial_no:
+            serial_numbers = item.serial_no.split('\n')
+            for serial_number in serial_numbers:
+                stripped_serial_number = serial_number.strip()
+                if stripped_serial_number:
+                    generate_and_save_qrcode(stripped_serial_number)
+        elif item.truncated_item_code:
+            generate_and_save_qrcode(item.truncated_item_code)

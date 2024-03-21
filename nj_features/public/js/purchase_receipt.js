@@ -51,7 +51,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
         var child_doc = locals[cdt][cdn];
         console.log("child_doc=============", child_doc);
         
-        if(!child_doc.serial_no && frm.doc.docstatus == 0){
+        if(frm.doc.docstatus == 0){
             console.log("print for not existed in serial no ")
             frappe.call({
                 method: 'nj_features.api_files.print_barcode',

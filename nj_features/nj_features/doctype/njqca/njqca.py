@@ -101,16 +101,13 @@ def get_info_from_serial_no(doc=None):
         # get price from Stock Ledger Entry
         sql_query = """
             SELECT 
-                item_code, warehouse, incoming_rate
+                item_code, warehouse, purchase_rate
             FROM
-                `tabStock Ledger Entry`
+                `tabSerial No`
             WHERE
-                serial_no LIKE %s AND is_cancelled = 0
-            ORDER BY
-                posting_date DESC, posting_time DESC, creation DESC
-            LIMIT 1
+                serial_no = %s
         """
-        sle = frappe.db.sql(sql_query, ('%'+serial_no+'%',), as_dict=1)
+        sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
         # print(f"sle: {sle}, serial_no: {serial_no}")
         # purchase_receipt_doc = frappe.db.sql("""
         #     SELECT name AS purchase_receipt, item_code AS item_code, base_rate AS base_rate 
@@ -129,7 +126,7 @@ def get_info_from_serial_no(doc=None):
             result['warehouse'] = sle_entry.get('warehouse')
             result['repack_itm_price'] = repack_itm_price
             # result['purchase_price'] = purchase_price
-            result['base_price'] = sle_entry.get('incoming_rate')
+            result['base_price'] = sle_entry.get('purchase_rate')
             # result['purchase_receipt'] = purchase_receipt_doc[0]['purchase_receipt']
             if not serial_no_doc.bios_serial_no:
                 serial_no_doc.bios_serial_no = doc_json.get('bios_serialno')

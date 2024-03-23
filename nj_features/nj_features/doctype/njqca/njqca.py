@@ -13,7 +13,7 @@ class NJQCA(Document):
     def on_submit(self):
         # Repack
         if self.power_on == 'Yes' and self.repack_item_code != '':
-            accounting_cost_account = frappe.db.get
+            accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
             stock_data = {
                 "name": self.name,
                 "item_code": self.item_code,
@@ -56,32 +56,32 @@ class NJQCA(Document):
                 serial_no_doc.save()
             else:
                 frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
-            serial_no_components = ''
-            for row in self.njqca_item_component:
-                # Check if the row has attr_data and item_code
-                # print("row.item_code   ------------------", row.item_code)
-                if row.item_code:
-                    # Find the corresponding Serial No Component entries with matching item_group
-                    serial_no_components = [x for x in serial_no_doc.serial_no_component if x.item_group == row.item_group]
-                    # print("serial_no_components---------------",serial_no_components)
-                    # Update item_code for each matching Serial No Component entry
-                    for serial_no_component in serial_no_components:
-                        serial_no_component.item = row.item_code
+            # serial_no_components = ''
+            # for row in self.njqca_item_component:
+            #     # print("row.item_code   ------------------", row.item_code)
+            #     if row.item_code:
+            #         serial_no_components = [x for x in serial_no_doc.serial_no_component if x.item_group == row.item_group]
+            #         # print("serial_no_components---------------",serial_no_components)
+            #         # Update item_code for each matching Serial No Component entry
+            #         for serial_no_component in serial_no_components:
+            #             if serial_no_component.default.item_code:
+            #                 row.item_code = serial_no_component.default_item_code
+            #                 continue
                 # else:
                 #     serial_no_component.item= ''
-        else:
-            item_template = 'S-'+self.brand+' '+self.model
-            child_attr_data = []
+        # else:
+            # item_template = 'S-'+self.brand+' '+self.model
+            # child_attr_data = []
 
-            for row in self.njqca_item_component:
-                if row.attr_data:
-                    child_attr_data.append(frappe.parse_json(row.attr_data))
+            # for row in self.njqca_item_component:
+            #     if row.attr_data:
+            #         child_attr_data.append(frappe.parse_json(row.attr_data))
 
-            # print("child_attr_data:", child_attr_data)
-            data_attr = json.dumps(child_attr_data)
+            # # print("child_attr_data:", child_attr_data)
+            # data_attr = json.dumps(child_attr_data)
             
-            get_variant_from_value(item_template, data_attr)
-            frappe.throw("You are not allowed to submit NJQCA without system powering on and Repack Item Code")
+            # get_variant_from_value(item_template, data_attr)
+            # frappe.throw("You are not allowed to submit NJQCA without system powering on and Repack Item Code")
 
 
 @frappe.whitelist()
@@ -139,17 +139,110 @@ def get_info_from_serial_no(doc=None):
 
 
 @frappe.whitelist()
-def get_part_mapping(item_group):
-    mappings = frappe.get_all("Part Mapping", filters={"parent": item_group},
-    fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
+def get_part_mapping(item_group, docname):
+    doc = frappe.get_doc("NJQCA", docname)
+    item_template = f"S-{doc.brand} {doc.model}"
+    if doc.njqca_item_component and doc.item_group:
+        part_mapping = frappe.get_all("Part Mapping", filters={"parent": doc.item_group}, 
+        fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
 
-    values = frappe.get_all(
-        "NJ Settings",
-        
-        filters={"doc_type": "NJQCA Child"}, fields=["parameter", "value"]
-    )
+        nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
+        fields=["parameter", "value"])
 
-    return {"mappings": mappings, "values": values}
+        last_variant_values = {}
+        for param in nj_settings:
+            globals()[param.parameter] = param.value
+
+        # List to store attribute data for each row
+        child_attr_data = []
+
+
+        for mapping in part_mapping:
+            for row in doc.njqca_item_component:
+                row.variant_16 = 'demo' 
+                accept = frappe.db.exists("Serial No", row.variant_2)
+                print(f"Row: {row.name}, accept: {accept}, variant_2: {row.variant_2}") 
+                if accept is None:
+                    row.accept = 'No'
+                    
+                item_group = row.item_group
+                variants = mapping.mappng_fields.split('::')
+
+                if item_group == mapping.item_group:
+                    for variant in variants:
+                        last_variant_values[item_group] = last_variant_values.get(item_group, {})
+                        last_variant_values[item_group][variant] = row.get(variant)
+
+                    attribute_value = last_variant_values[item_group]
+                    attribute_object = {}
+                    # getting value from NJ Settings
+                    if item_group.lower() == cpu.lower():
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
+                        normalize_cpu = normalize_gen(cpu_value)
+                        print(f"\n\nnormalize_cpu: {normalize_cpu}")
+                        attribute_object[mapping.attribute_name] = normalize_cpu
+                    # getting value from NJ Settings
+                    elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
+                        attribute_object[mapping.attribute_name] = ram_value
+                    # getting value from NJ Settings
+                    elif item_group.lower() == storage.lower() and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]):
+                        attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
+                    print(f"\n\nrow.attr_data: {row.attr_data}, attribute_object: {attribute_object}")
+                    # row.attr_data = json.dumps(attribute_object)
+                    child_attr_data.append(attribute_object)
+
+        consolidated = consolidate_ram_capacities(child_attr_data)
+        print(f"\n\nconsolidated: {consolidated}")
+        doc.data_attr = json.dumps(consolidated)
+        repack_item_code = get_variant_from_value(item_template, consolidated)
+        print(f'repack_item_code: {repack_item_code}')
+        return repack_item_code
+
+def consolidate_ram_capacities(data):
+    consolidated_data = {}
+
+    for obj in data:
+        for key, value in obj.items():
+            if key == ram_capacity: # getting value from NJ Settings
+                ram_value = value
+                
+                print("RAM Capacity value:", ram_value)
+
+                match = re.match(r'^(\d+)\s*GB\s*(\w+)', ram_value, re.IGNORECASE)
+
+                if match:
+                    amount, type_ = match.groups()
+                    total_amount = int(amount)
+
+                    if key in consolidated_data:
+                        existing_parts = consolidated_data[key].split(' ', 1)
+                        if len(existing_parts) == 2:
+                            existing_amount, existing_type = existing_parts
+                            
+                            existing_type_without_unit = existing_type.replace('GB', '').strip()
+                            
+                            
+                            if existing_type_without_unit.upper() == type_.upper():
+                                consolidated_data[key] = f"{int(existing_amount) + total_amount} {existing_type}"
+                            else:
+                                frappe.msgprint(f"Different RAM Type is not allowed")
+                                return
+                        else:
+                            consolidated_data[key] = f"{existing_parts[0]} GB, {amount} GB {type_.upper()}"
+                    else:
+                        consolidated_data[key] = ram_value
+            else:
+                consolidated_data[key] = value
+
+    result = [{key: value} for key, value in consolidated_data.items()]
+    
+    print("Final Result:", result)
+
+    return result
+
 
 def normalize_gen(gen_str):
     gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
@@ -186,7 +279,7 @@ def get_variant_from_value(item_template=None, args=None):
 
         for condition_dict in args_list:
             for key, value in condition_dict.items():
-                normalized_value = normalize_gen(value)
+                normalized_value = value
                 conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{normalized_value.lower()}') = 1")
 
         having_clause = " AND ".join(conditions)
@@ -214,8 +307,8 @@ def construct_item_code(item_template, args_list):
     concatenated_string = item_template
     for condition_dict in args_list:
         for key, value in condition_dict.items():
-            normalized_value = normalize_gen(value)
-            concatenated_string += f"-{normalized_value}"
+            # normalized_value = normalize_gen(value)
+            concatenated_string += f"-{value}"
     print(f"\n\nconcatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
@@ -228,7 +321,7 @@ def construct_item_code(item_template, args_list):
     if item_code:
         return item_code[0]['item_code']
     else:
-        frappe.msgprint(f'Serialized Item code: "{concatenated_string}" not found. Please contact NPD Team.')
+        return {'error': concatenated_string}
 
 @frappe.whitelist()
 def get_model(manufacturer_model, make=None):

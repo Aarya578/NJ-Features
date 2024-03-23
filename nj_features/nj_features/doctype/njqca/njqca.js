@@ -7,22 +7,20 @@ frappe.ui.form.on('NJQCA', {
             frm.events.serial_no(frm);
         }
         if (!cur_frm.doc.model) {
+            console.log("model");
             if (!frm.doc.manufacturer_model) {
                 frappe.msgprint("Manufacturer Model is not found")
                 return
             }
             get_model(frm.doc.manufacturer_model, frm.doc.make);
+        } else {
+            frm.set_df_property('model', 'read_only', 1)
         }
     },
 
     refresh: function(frm) {
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
-        
-        // if (!cur_frm.doc.warehouse && cur_frm.doc.power_on == 'Yes') {
-        //     frm.events.serial_no(frm);
-        //     cur_frm.refresh_fields('warehouse');
-        // }
 
         if(cur_frm.doc.bios_serialno){
             cur_frm.set_df_property('cur_frm.doc.bios_serialno', 'read_only', 1)
@@ -105,26 +103,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     model: function(frm) {
-        frm.set_value('repack_item_code', "")
-        let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
-            args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
-            callback: function (r) {
-                // console.log("get_variant_from_value : ", r.message)
-                if (r.message){
-                    frm.set_value('repack_item_code', r.message)
-                } 
-                // if (r.message.reqd_item_code) {
-                //     console.log("no");
-                //     error_msg = "Serialized Item code: <strong>"+r.message.reqd_item_code+"</strong> not found. Please contact NPD Team."
-                //     cur_frm.doc.error_message += "\n" + error_msg;
-                // }
-                cur_frm.refresh_field('repack_item_code');
-            }
-        });
         var selectedModel = frm.doc.model;
-        // console.log("selectedModel",selectedModel)
         if (selectedModel) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
@@ -134,12 +113,7 @@ frappe.ui.form.on('NJQCA', {
                 callback: function(r) {
                     $('.desc').remove();
                     if (r.message && r.message.model_description) {
-                        // console.log("r.message",r.message)
                         var description = r.message.model_description;
-                        // console.log("description of model ",description)
-                        // frappe.msgprint(description);
-                        // frm.set_value('model_description',description)
-                        // frm.fields_dict.model_description.set_input(description);
                          var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
                         $(frm.fields_dict['model'].wrapper).append(htmlContent);
 
@@ -158,81 +132,90 @@ frappe.ui.form.on('NJQCA', {
             $(frm.layout.wrapper).find('.form-message.red').remove()
         }
 
-	    if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
-            if (cur_frm.doc.njqca_item_component && cur_frm.doc.item_group) {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
-                    args: { 'item_group': cur_frm.doc.item_group },
-                    callback: function (r) {
-                        if (r.message) {
-                            var lastVariantValues = {};
-                            console.log("get_part_mapping",r.message);
-                            r.message.values.forEach(function (param) { //get value from NJ Settings
-                                window[param.parameter] = param.value;
-                            });
+	    // if (cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
+            // if (cur_frm.doc.njqca_item_component && cur_frm.doc.item_group) {
+            //     frappe.call({
+            //         method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
+            //         args: { 
+            //             'item_group': cur_frm.doc.item_group,
+            //             'docname': cur_frm.doc.name
+            //         },
+            //         callback: function (r) {
+                        // if (r.message) {
+                        //     var lastVariantValues = {};
+                        //     console.log("get_part_mapping",r.message);
+                        //     r.message.values.forEach(function (param) { //get value from NJ Settings
+                        //         window[param.parameter] = param.value;
+                        //     });
 
-                            r.message.mappings.forEach(function (mapping) {   // for each part in Item Group mapping (3)
-                                frm.doc.njqca_item_component.forEach(function (row) {    // iterate elements in iqc child table
-                                    var itemGroup = row.item_group;
-                                    var variants = mapping.mappng_fields.split('::');
+                        //     r.message.mappings.forEach(function (mapping) {   // for each part in Item Group mapping (3)
+                        //         frm.doc.njqca_item_component.forEach(function (row) {    // iterate elements in iqc child table
+                        //             var itemGroup = row.item_group;
+                        //             var variants = mapping.mappng_fields.split('::');
                                     
-                                    if (itemGroup === mapping.item_group) {
+                        //             if (itemGroup === mapping.item_group) {
 
-                                        variants.forEach(function (variant) {
-                                            lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
-                                            lastVariantValues[itemGroup][variant] = row[variant];
-                                        });
+                        //                 variants.forEach(function (variant) {
+                        //                     lastVariantValues[itemGroup] = lastVariantValues[itemGroup] || {};
+                        //                     lastVariantValues[itemGroup][variant] = row[variant];
+                        //                 });
                                         
-                                        var attributeValue = lastVariantValues[itemGroup];
-                                        var attributeObject = {};
+                        //                 var attributeValue = lastVariantValues[itemGroup];
+                        //                 var attributeObject = {};
                                         
 
-                                        frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
-                                        if (itemGroup.toLowerCase() == cpu.toLowerCase()) {
-                                            var anyAttributeUndefined = Object.values(attributeValue).some(value => value === undefined);
-                                            var cpuValue = anyAttributeUndefined ? unk_cpu : Object.values(attributeValue).join(' - ');
-                                            attributeObject[mapping.attribute_name] = cpuValue;
-                                            row.attr_data = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
-                                        } 
-                                        else if (itemGroup.toLowerCase() == ram.toLowerCase()  && row.variant_1 == 'SYSTEM MEMORY') {
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] || unk_ram;
-                                            var ramValue = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', ramValue);
-                                        } 
-                                        else if (itemGroup.toLowerCase() == storage.toLowerCase() && (!row.variant_3 ^ !row.variant_1) && 
-                                        attributeValue[Object.keys(attributeValue)[0]] !== undefined && attributeValue[Object.keys(attributeValue)[0]] !== "") {
-                                            // console.log("idx: ",row.idx, "\nstorage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3 ^ !row.variant_1, storage, unk_storage);
-                                            attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || unk_storage;
-                                            var sValue = JSON.stringify(attributeObject);
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', sValue);
-                                        } 
-                                        else {
-                                            frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
-                                        }
-                                    }
-                                });
-                            });
-                            frm.refresh_field('njqca_item_component');
-                        }
-                    }
-                });
-            }
+                        //                 frappe.model.set_value(row.doctype, row.name, 'attr_data', {});
+                        //                 if (itemGroup.toLowerCase() == cpu.toLowerCase()) {
+                        //                     var anyAttributeUndefined = Object.values(attributeValue).some(value => value === undefined);
+                        //                     var cpuValue = anyAttributeUndefined ? unk_cpu : Object.values(attributeValue).join(' - ');
+                        //                     attributeObject[mapping.attribute_name] = cpuValue;
+                        //                     row.attr_data = JSON.stringify(attributeObject);
+                        //                     frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                        //                 } 
+                        //                 else if (itemGroup.toLowerCase() == ram.toLowerCase()  && (row.variant_1 !== 'SYSTEM MEMORY' && row.variant_1 !== '[EMPTY]')) {
+                        //                     let anyAttributeUndefined = Object.values(attributeValue).some(value => value === undefined);
+                        //                     let ramValue = anyAttributeUndefined ? unk_ram : Object.values(attributeValue).join(' ');
+                        //                     attributeObject[mapping.attribute_name] = ramValue;
+                        //                     row.attr_data = JSON.stringify(attributeObject);
+                        //                     console.log("ram : ",ramValue, row.idx, row);
+                        //                     frappe.model.set_value(row.doctype, row.name, 'attr_data', row.attr_data);
+                        //                 }
+                        //                 else if (itemGroup.toLowerCase() == storage.toLowerCase() && (!row.variant_3 ^ !row.variant_1) && 
+                        //                 attributeValue[Object.keys(attributeValue)[0]] !== undefined && attributeValue[Object.keys(attributeValue)[0]] !== "") {
+                        //                     // console.log("idx: ",row.idx, "\nstorage: ", row.attr_data, "variant_1", row.variant_1, !row.variant_3 ^ !row.variant_1, storage, unk_storage);
+                        //                     attributeObject[mapping.attribute_name] = attributeValue[Object.keys(attributeValue)[0]] + " SSD" || unk_storage;
+                        //                     var sValue = JSON.stringify(attributeObject);
+                        //                     frappe.model.set_value(row.doctype, row.name, 'attr_data', sValue);
+                        //                 } 
+                        //                 else {
+                        //                     frappe.model.set_value(row.doctype, row.name, 'attr_data', '');
+                        //                 }
+                        //             }
+                        //         });
+                        //     });
+                        //     frm.refresh_field('njqca_item_component');
+                        // }
+            //         }
+            //     });
+            // }
             
-            if (cur_frm.doc.data_attr == "") {
-                cur_frm.set_value('data_attr', '');
-                var child_attr_data = [];
-                // console.log("set data arg");
-                frm.doc.njqca_item_component.forEach(function (row) {
-                    if (row.attr_data) {
-                        // console.log("row: ", row.attr_data);
-                        child_attr_data.push(JSON.parse(row.attr_data));
-                    }
-                });
-                console.log("child_attr_data: ", child_attr_data);
-                cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-                cur_frm.refresh_field('data_attr');
-            }
+            // if (cur_frm.doc.data_attr == "") {
+            //     cur_frm.set_value('data_attr', '');
+            //     var child_attr_data = [];
+            //     // console.log("set data arg");
+            //     frm.doc.njqca_item_component.forEach(function (row) {
+            //         if (row.attr_data) {
+            //             // console.log("row: ", row.attr_data);
+            //             child_attr_data.push(JSON.parse(row.attr_data));
+            //         }
+            //     });
+            //     console.log("child_attr_data: ", JSON.stringify(child_attr_data));
+            //     const consolidated = consolidateRamCapacities(child_attr_data);
+            //     console.log("consolidated",consolidated);
+            //     console.log("2", JSON.stringify(consolidated));
+            //     cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
+            //     cur_frm.refresh_field('data_attr');
+            // }
     
             // if (cur_frm.doc.repack_item_code && cur_frm.doc.docstatus !=1 && cur_frm.doc.power_on == 'Yes') {
             //     frappe.call({
@@ -244,11 +227,11 @@ frappe.ui.form.on('NJQCA', {
             //         }
             //     });
             // } 
-        }
-        if (cur_frm.doc.model && cur_frm.doc.make && cur_frm.doc.manufacturer_model) {
-            get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
-            frm.events.validate(frm);
-        }
+        // }
+        // if (cur_frm.doc.model && cur_frm.doc.make && cur_frm.doc.manufacturer_model) {
+        //     get_model(cur_frm.doc.manufacturer_model, cur_frm.doc.make)
+        //     frm.events.validate(frm);
+        // }
 
         if(cur_frm.doc.error_message != ''){
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
@@ -321,47 +304,25 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save: function(frm) {
-        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
-            cur_frm.set_value('data_attr', '');
-            var child_attr_data = [];
-            frm.doc.njqca_item_component.forEach(function (row) {
-                if (row.attr_data) {
-                    child_attr_data.push(JSON.parse(row.attr_data));
-                }
-            });
-            cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
-            cur_frm.refresh_field('data_attr');
-
-            if (cur_frm.doc.data_attr) {
-                frm.set_value('repack_item_code', "")
-                let temp = 'S-'+cur_frm.doc.brand+' '+cur_frm.doc.model
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
-                    args: { 'item_template': frm.doc.item_template || temp, 'args': cur_frm.doc.data_attr},
-                    callback: function (r) {
-                        // console.log("get_variant_from_value : ", r.message)
-                        if (r.message){
-                            frm.set_value('repack_item_code', r.message)
-                        } else {
-                            frappe.validated = false;
-                        }
-                        cur_frm.refresh_field('repack_item_code');
+    before_save: function() {
+        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
+                args: { 
+                    'item_group': cur_frm.doc.item_group,
+                    'docname': cur_frm.doc.name,
+                },
+                callback: function (r) {
+                    console.log("on save", r);
+                    if (r.message.error) {
+                        frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
+                        frappe.validated = false
+                    } else {
+                        cur_frm.set_value('repack_item_code', r.message)
                     }
-                });
-            } else {
-                frappe.msgprint("Args is not fetched")
-            }
+                }
+            })
         }
-        
-
-        // frappe.call({
-        //     method: 'nj_features.nj_features.doctype.njqca.njqca.get_item_code',
-        //     args: {'parent': frm.doc.name},
-        //     callback: function(r) {
-        //         console.log("r from get_item_code in njqca child: ", r.message);
-        //     }
-        // })
     }
 });
 

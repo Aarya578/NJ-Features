@@ -29,7 +29,8 @@
   "variant_20",
   "attr_data",
   "part_serial_no",
-  "item_code"
+  "item_code",
+  "accept"
  ],
  "fields": [
   {
@@ -170,12 +171,20 @@
    "fieldname": "item_code",
    "fieldtype": "Data",
    "label": "Item Code"
+  },
+  {
+   "default": "Yes",
+   "fieldname": "accept",
+   "fieldtype": "Select",
+   "label": "Accept",
+   "options": "Yes\nNo",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-03-16 13:56:17.809572",
+ "modified": "2024-03-22 13:40:45.222719",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Child",

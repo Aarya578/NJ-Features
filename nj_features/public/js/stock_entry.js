@@ -79,9 +79,14 @@ frappe.ui.form.on('Stock Entry', {
                         return {
                             filters: {
                                 'name': ['in', r.message.stock_entry_type_query]
-                            }}
+                            }
+                        }
                     });
                 }
+                // if (r.message && !r.message.stock_entry_type) {
+                //     console.log("!r.message.stock_entry_type========>>>>>>inside read only fields",!r.message.stock_entry_type)
+                //     frm.set_df_property('stock_entry_type', 'read_only', 1);
+                // }
             }
         });
     }

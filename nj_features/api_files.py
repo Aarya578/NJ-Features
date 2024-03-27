@@ -235,8 +235,8 @@ def print_barcode(doc):
         # print(serial_no,"======serial no=======")
         if serial_no:
             serial_no_list = serial_no.split('\n')
-            # for serial in serial_no_list:
-            #     generate_and_save_qrcode(serial)
+            for serial in serial_no_list:
+                generate_and_save_qrcode(serial)
             return {"serial_no": serial_no}
         
         # if serial_no:

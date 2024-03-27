@@ -229,14 +229,14 @@ def print_barcode(doc):
     try:
         # print("doc===================",doc)
         doc_dict = frappe.parse_json(doc)
-        # print("doc_dict===============",doc_dict)
+        print("doc_dict===============",doc_dict)
         item_code = doc_dict.get('item_code') or doc_dict.get('component') 
         serial_no=doc_dict.get('serial_no')
-        # print(serial_no,"======serial no=======")
+        print(serial_no,"======serial no=======")
         if serial_no:
-            serial_no_list = serial_no.split('\n')
-            for serial in serial_no_list:
-                generate_and_save_qrcode(serial)
+            print("inside qrcode function====")
+            generate_and_save_qrcode(serial_no)
+            print("outside qrcode function====")
             return {"serial_no": serial_no}
         
         # if serial_no:
@@ -261,7 +261,7 @@ def print_barcode(doc):
                 print(f"updated_serial_no: {updated_serial_no}")
                 
                 # for serial_no in serial_no_list[-remaining_qty:]:
-                    # generate_and_save_qrcode(serial_no)
+                #     generate_and_save_qrcode(serial_no)
                 return {"serial_no": updated_serial_no}
                    
             else:

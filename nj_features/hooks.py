@@ -37,7 +37,7 @@ doctype_js = {
     "Employee": "public/js/employee.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
-    "Machine Part Changes":"public/js/machine_partchanges.js"
+    # "Machine Part Changes":"public/js/machine_partchanges.js"
 }
 
 doctype_list_js = {

@@ -145,23 +145,45 @@ def get_part_mapping(item_group, docname):
 
         nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
         fields=["parameter", "value"])
-
+        user_email = frappe.session.user
+        print("user_email=====",user_email)
+        user = frappe.db.get_value("User", user_email, ["email"], as_dict=True)
+        user=user['email']
+        print("user ======>",user)
+        if user:
+                sql="""SELECT employee_asset_warehouse from `tabEmployee` where prefered_email =%s """
+                asset_warehouse=frappe.db.sql(sql,(user),as_dict=True)
+                asset_warehouse=asset_warehouse[0]['employee_asset_warehouse']
+                # show error msg
+                print("asset_warehouse====>>",asset_warehouse)
+                sql_query="""SELECT name from `tabSerial No` where warehouse=%s
+                """
+                is_serial_no=frappe.db.sql(sql_query,(asset_warehouse),as_list=True)
+                is_serial_no = [item for sublist in is_serial_no for item in sublist]
+                print("is_serial_no===>",is_serial_no)
+        else:
+            frappe.throw(f"User's Asset Warehouse {asset_warehouse} is not found ")
+        # error message for not existing user
         last_variant_values = {}
         for param in nj_settings:
             globals()[param.parameter] = param.value
-
+            # user = frappe.db.get_value("User", {"email": user_email}, ["name"])
+        # Fetching employee's asset warehouse from Employee doctype based on user's name
+        
         # List to store attribute data for each row
         child_attr_data = []
-
-
         for mapping in part_mapping:
             for row in doc.njqca_item_component:
                 row.variant_16 = 'demo' 
-                accept = frappe.db.exists("Serial No", row.variant_2)
-                print(f"Row: {row.name}, accept: {accept}, variant_2: {row.variant_2}") 
-                if accept is None:
-                    row.accept = 'No'
+                # print("row.variant_2,,,,,,,,,,,,,,,,,,,",row.variant_2)
+                # if row.variant_2 in is_serial_no:
                     
+                # accept = frappe.db.exists("Serial No", row.variant_2)
+                # print(f"Row: {row.name}, accept: {accept}, variant_2: {row.variant_2}") 
+                # is_serial_no_available=frappe.db.exists('Serial No',)
+                # if accept is None:
+                #     row.accept = 'No'
+                   
                 item_group = row.item_group
                 variants = mapping.mappng_fields.split('::')
 
@@ -169,27 +191,43 @@ def get_part_mapping(item_group, docname):
                     for variant in variants:
                         last_variant_values[item_group] = last_variant_values.get(item_group, {})
                         last_variant_values[item_group][variant] = row.get(variant)
-
                     attribute_value = last_variant_values[item_group]
+                    print("attribute_value---------",attribute_value,"item_group-=-=-=--",item_group)
                     attribute_object = {}
-                    # getting value from NJ Settings
+                    # getting value from NJ Settings - - creating cpu by concating "Core I5" and "7 GEN" as "Core I5 - 7TH GEN"
+                        
                     if item_group.lower() == cpu.lower():
-                        any_attribute_undefined = any(value is None for value in attribute_value.values())
-                        cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
-                        normalize_cpu = normalize_gen(cpu_value)
-                        print(f"\n\nnormalize_cpu: {normalize_cpu}")
-                        attribute_object[mapping.attribute_name] = normalize_cpu
-                    # getting value from NJ Settings
+                        if row.variant_2 in is_serial_no:
+                            print("row.variant_2:::::no processor ",row.variant_2)
+                            attribute_object[mapping.attribute_name] = "No Processor"
+                        else:  
+                            any_attribute_undefined = any(value is None for value in attribute_value.values())
+                            cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
+                            normalize_cpu = normalize_gen(cpu_value)
+                            print(f"\n\nnormalize_cpu: {normalize_cpu}")
+                            attribute_object[mapping.attribute_name] = normalize_cpu
+                            
+                    # getting value from NJ Settings - creating ram by concating "16 GB" and "DDR4" as "16 GB DDR4"
                     elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
-                        any_attribute_undefined = any(value is None for value in attribute_value.values())
-                        ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
-                        attribute_object[mapping.attribute_name] = ram_value
+                        if row.variant_2 in is_serial_no:
+                            print("row.variant_2:::::no ram ",row.variant_2)
+                            attribute_object[mapping.attribute_name] = "No Ram"
+                        else:
+                            any_attribute_undefined = any(value is None for value in attribute_value.values())
+                            ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
+                            attribute_object[mapping.attribute_name] = ram_value
+                            
                     # getting value from NJ Settings
-                    elif item_group.lower() == storage.lower() and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]):
-                        attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
-                    print(f"\n\nrow.attr_data: {row.attr_data}, attribute_object: {attribute_object}")
-                    # row.attr_data = json.dumps(attribute_object)
+                    elif item_group.lower() == storage.lower()  and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]) :
+                        if row.variant_2 in is_serial_no:
+                            print("row.variant_2:::::no storage ",row.variant_2)
+                            attribute_object[mapping.attribute_name] = "No Storage"
+                        else:
+                            attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
+                    print(f"\n\n 223 row.attr_data: {row.attr_data}, attribute_object: {attribute_object}")
+                        # row.attr_data = json.dumps(attribute_object)
                     child_attr_data.append(attribute_object)
+                    print("\n\n attribute_object--->>>>",attribute_object,"child_attr_data----->>>",child_attr_data)
 
         consolidated = consolidate_ram_capacities(child_attr_data)
         print(f"\n\nconsolidated: {consolidated}")
@@ -240,6 +278,21 @@ def consolidate_ram_capacities(data):
 
     return result
 
+def consolidate_storage(data):
+    total_storage_capacity = 0
+    
+    # Iterate through the data to sum up storage capacities
+    for obj in data:
+        for key, value in obj.items():
+            if key.lower() == 'storage capacity':
+                if value.lower() != 'no storage':
+                    # Extract numerical value from the string (e.g., '512 GB SSD')
+                    match = re.match(r'^(\d+)\s*GB', value, re.IGNORECASE)
+                    if match:
+                        storage_amount = int(match.group(1))
+                        total_storage_capacity += storage_amount
+    
+    return total_storage_capacity
 
 def normalize_gen(gen_str):
     gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
@@ -285,12 +338,10 @@ def get_variant_from_value(item_template=None, args=None):
         if having_clause:
             query = """
                 SELECT parent FROM `tabItem Variant Attribute`
-                WHERE variant_of = %s
-                GROUP BY parent
-                HAVING {}
+                WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
-            print(f"\n\nhaving: {having_clause}, variant: {variants}")
+            # print(f"\n\nhaving: {having_clause}, variant: {variants}")
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:
@@ -306,7 +357,7 @@ def construct_item_code(item_template, args_list):
         for key, value in condition_dict.items():
             # normalized_value = normalize_gen(value)
             concatenated_string += f"-{value}"
-    print(f"\n\nconcatenated_string: {concatenated_string}\n")
+    print(f"\n\n concatenated_string: {concatenated_string}\n")
     # Query the item_code based on the concatenated string
     query = """
         SELECT item_code FROM `tabItem`
@@ -363,30 +414,30 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
 # Config_array={'Processor':{"variant01":"i5","variant02":"4thGen"},"RAM":{"variant01":"4GB","variant02":"DDR4"}}
 #lap_def={'Processor':["variant01","variant02"],"RAM":["variant01"]}
 #i5 4thGen - 4GB
-part_mapping={'LAPTOP PROCESSOR':["variant06","variant07"],"LAPTOP RAM":["variant06"],"LAPTOP STORAGE":["variant10"]}
+# part_mapping={'LAPTOP PROCESSOR':["variant06","variant07"],"LAPTOP RAM":["variant06"],"LAPTOP STORAGE":["variant10"]}
 
-class ItemConfig:
-    def __init__(self,config,part_mapping):
-        self.config=config
-        self.part_mapping=part_mapping
+# class ItemConfig:
+#     def __init__(self,config,part_mapping):
+#         self.config=config
+#         self.part_mapping=part_mapping
         
-    def get_part_config(self,type_data):
-        data_list=[]
-        for i in self.part_mapping[type_data]:
-            data_list.append(self.config[type_data][i])
-        return ' '.join(data_list)
+#     def get_part_config(self,type_data):
+#         data_list=[]
+#         for i in self.part_mapping[type_data]:
+#             data_list.append(self.config[type_data][i])
+#         return ' '.join(data_list)
     
-    def get_item_code(self):
-        item_code=[]
-        for part in self.part_mapping:
-            print(f"\npart:  {part}")
-            data=self.get_part_config(part)
-            item_code.append(data)
-        item_code_str='-'.join(item_code)
-        print(f"294 \n\n - item_code_str: {item_code_str}")
+#     def get_item_code(self):
+#         item_code=[]
+#         for part in self.part_mapping:
+#             print(f"\npart:  {part}")
+#             data=self.get_part_config(part)
+#             item_code.append(data)
+#         item_code_str='-'.join(item_code)
+#         print(f"294 \n\n - item_code_str: {item_code_str}")
 
-@frappe.whitelist()
-def get_item_code(parent):
+# @frappe.whitelist()
+# def get_item_code(parent):
     
     # details="""SELECT item_group, variant_1, variant_2, variant_3, variant_4, variant_5,
     #                 variant_6, variant_7, variant_8, variant_9, variant_10, variant_11,
@@ -413,79 +464,79 @@ def get_item_code(parent):
     #         item_key = f"{key}_{idx:02}"
     #         final_output[item_key] = value
     
-    final_output = {
-        "LAPTOP STORAGE":{
-            "variant01":"NVME DISK",
-            "variant02":"None",
-            "variant03":"None",
-            "variant04":"1",
-            "variant05":"/DEV/NVME0N1",
-            "variant06":"None",
-            "variant07":"GUID:1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
-            "variant08":"NVME@0:1",
-            "variant09":"None",
-            "variant10":"256 GB",
-            "variant11":"512",
-            "variant12":"512",
-            "variant13":"EUI.002538B571BCC023",
-            "variant14":"1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
-            "variant15":"None",
-            "variant16":"None",
-            "variant17":"None",
-            "variant18":"None",
-            "variant19":"None",
-            "variant20":"None"
-        },
-        "LAPTOP RAM":{
-            "variant01":"SYSTEM MEMORY",
-            "variant02":"None",
-            "variant03":"None",
-            "variant04":"3",
-            "variant05":"DMI:0003",
-            "variant06":"8 GB",
-            "variant07":"MEMORY",
-            "variant08":"None",
-            "variant09":"SLOT SYSTEM BOARD OR MOTHERBOARD",
-            "variant10":"None",
-            "variant11":"None",
-            "variant12":"None",
-            "variant13":"None",
-            "variant14":"None",
-            "variant15":"None",
-            "variant16":"None",
-            "variant17":"None",
-            "variant18":"None",
-            "variant19":"None",
-            "variant20":"None"
-        },
-        "LAPTOP PROCESSOR":{
-            "variant01":"CPU",
-            "variant02":"INTEL(R) CORE(TM) I5-7300U CPU @ 2.60GHZ",
-            "variant03":"INTEL",
-            "variant04":"A",
-            "variant05":"6.142.9",
-            "variant06":"CORE I5",
-            "variant07":"7 GEN",
-            "variant08":"7300U",
-            "variant09":"2",
-            "variant10":"2.60GHZ",
-            "variant11":"2",
-            "variant12":"4",
-            "variant13":"None",
-            "variant14":"3",
-            "variant15":"100000000",
-            "variant16":"U3E1",
-            "variant17":"None",
-            "variant18":"None",
-            "variant19":"None",
-            "variant20":"None"
-        }
-    }
+    # final_output = {
+    #     "LAPTOP STORAGE":{
+    #         "variant01":"NVME DISK",
+    #         "variant02":"None",
+    #         "variant03":"None",
+    #         "variant04":"1",
+    #         "variant05":"/DEV/NVME0N1",
+    #         "variant06":"None",
+    #         "variant07":"GUID:1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
+    #         "variant08":"NVME@0:1",
+    #         "variant09":"None",
+    #         "variant10":"256 GB",
+    #         "variant11":"512",
+    #         "variant12":"512",
+    #         "variant13":"EUI.002538B571BCC023",
+    #         "variant14":"1415D7B5-49D3-40AA-BC24-4CC8A9E2224E",
+    #         "variant15":"None",
+    #         "variant16":"None",
+    #         "variant17":"None",
+    #         "variant18":"None",
+    #         "variant19":"None",
+    #         "variant20":"None"
+    #     },
+    #     "LAPTOP RAM":{
+    #         "variant01":"SYSTEM MEMORY",
+    #         "variant02":"None",
+    #         "variant03":"None",
+    #         "variant04":"3",
+    #         "variant05":"DMI:0003",
+    #         "variant06":"8 GB",
+    #         "variant07":"MEMORY",
+    #         "variant08":"None",
+    #         "variant09":"SLOT SYSTEM BOARD OR MOTHERBOARD",
+    #         "variant10":"None",
+    #         "variant11":"None",
+    #         "variant12":"None",
+    #         "variant13":"None",
+    #         "variant14":"None",
+    #         "variant15":"None",
+    #         "variant16":"None",
+    #         "variant17":"None",
+    #         "variant18":"None",
+    #         "variant19":"None",
+    #         "variant20":"None"
+    #     },
+    #     "LAPTOP PROCESSOR":{
+    #         "variant01":"CPU",
+    #         "variant02":"INTEL(R) CORE(TM) I5-7300U CPU @ 2.60GHZ",
+    #         "variant03":"INTEL",
+    #         "variant04":"A",
+    #         "variant05":"6.142.9",
+    #         "variant06":"CORE I5",
+    #         "variant07":"7 GEN",
+    #         "variant08":"7300U",
+    #         "variant09":"2",
+    #         "variant10":"2.60GHZ",
+    #         "variant11":"2",
+    #         "variant12":"4",
+    #         "variant13":"None",
+    #         "variant14":"3",
+    #         "variant15":"100000000",
+    #         "variant16":"U3E1",
+    #         "variant17":"None",
+    #         "variant18":"None",
+    #         "variant19":"None",
+    #         "variant20":"None"
+    #     }
+    # }
     
-    print("\n\nfinal_output:", final_output)
+    # print("\n\nfinal_output:", final_output)
 
-    a=ItemConfig(final_output, part_mapping)
-    a.get_item_code()
+    # a=ItemConfig(final_output, part_mapping)
+    # a.get_item_code()
 
 # @frappe.whitelist()
 # def get_variant_from_value(item_template=None, args=None):

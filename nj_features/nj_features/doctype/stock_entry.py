@@ -1,30 +1,30 @@
-import frappe
-import json
-@frappe.whitelist()
-def stockaccess(doc):
-    # print("doc======",doc)
-    if isinstance(doc, str):
-        doc = json.loads(doc)
-    user_roles = tuple(frappe.get_roles(frappe.session.user))
+# import frappe
+# import json
+# @frappe.whitelist()
+# def stockaccess(doc):
+#     # print("doc======",doc)
+#     if isinstance(doc, str):
+#         doc = json.loads(doc)
+#     user_roles = tuple(frappe.get_roles(frappe.session.user))
     
-    print("user_roles==========",user_roles)
-    sql="""SELECT permission_1,permission_2,permission_3,permission_4 from `tabCustom DocPerm` where parent='stock entry' and role IN %s;
-    """
-    permisssions=frappe.db.sql(sql,(user_roles,),as_dict=True)
-    print("=================permisssions=======",permisssions)
-    response = {}
-    response['stock_entry_type_query'] = []
+#     print("user_roles==========",user_roles)
+#     sql="""SELECT permission_1,permission_2,permission_3,permission_4 from `tabCustom DocPerm` where parent='stock entry' and role IN %s;
+#     """
+#     permisssions=frappe.db.sql(sql,(user_roles,),as_dict=True)
+#     print("=================permisssions=======",permisssions)
+#     response = {}
+#     response['stock_entry_type_query'] = []
 
-    # Extract permission values from the first row of permissions list
-    if permisssions :
-        permission_row = permisssions[0]
-        for key, value in permission_row.items():
-            if value and value != '0':
-                response['stock_entry_type_query'].append(value)
-    else:
-        response['stock_entry_type_query']=[]
-    print("===============response==========",response)
-    return response
+#     # Extract permission values from the first row of permissions list
+#     if permisssions :
+#         permission_row = permisssions[0]
+#         for key, value in permission_row.items():
+#             if value and value != '0':
+#                 response['stock_entry_type_query'].append(value)
+#     else:
+#         response['stock_entry_type_query']=[]
+#     print("===============response==========",response)
+#     return response
     
 
     

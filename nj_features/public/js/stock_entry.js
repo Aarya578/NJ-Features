@@ -67,30 +67,30 @@
 // nj_features.nj_features.doctype.stock_entry.stockaccess
 
 
-frappe.ui.form.on('Stock Entry', {
-    onload: function(frm) {
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.stock_entry.stockaccess',
-            args: {'doc': frm.doc},
-            callback: function(r) {
-                if (r.message && r.message.stock_entry_type_query) {
-                    console.log("r.message.stock_entry_type_query==",r.message.stock_entry_type_query)
-                    frm.set_query('stock_entry_type', function() {
-                        return {
-                            filters: {
-                                'name': ['in', r.message.stock_entry_type_query]
-                            }
-                        }
-                    });
-                }
-                // if (r.message && !r.message.stock_entry_type) {
-                //     console.log("!r.message.stock_entry_type========>>>>>>inside read only fields",!r.message.stock_entry_type)
-                //     frm.set_df_property('stock_entry_type', 'read_only', 1);
-                // }
-            }
-        });
-    }
-});
+// frappe.ui.form.on('Stock Entry', {
+//     onload: function(frm) {
+//         frappe.call({
+//             method: 'nj_features.nj_features.doctype.stock_entry.stockaccess',
+//             args: {'doc': frm.doc},
+//             callback: function(r) {
+//                 if (r.message && r.message.stock_entry_type_query) {
+//                     console.log("r.message.stock_entry_type_query==",r.message.stock_entry_type_query)
+//                     frm.set_query('stock_entry_type', function() {
+//                         return {
+//                             filters: {
+//                                 'name': ['in', r.message.stock_entry_type_query]
+//                             }
+//                         }
+//                     });
+//                 }
+//                 // if (r.message && !r.message.stock_entry_type) {
+//                 //     console.log("!r.message.stock_entry_type========>>>>>>inside read only fields",!r.message.stock_entry_type)
+//                 //     frm.set_df_property('stock_entry_type', 'read_only', 1);
+//                 // }
+//             }
+//         });
+//     }
+// });
 
 //     before_load: function () {
 //         if (cur_frm.doc.stock_movement == 1 || cur_frm.doc.move_stock == 1) {

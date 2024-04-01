@@ -5,10 +5,12 @@ frappe.ui.form.on('Purchase Receipt', {
             frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(r) {
                 if (!r.name) {
                     frappe.msgprint('Employee not found for user: <strong>'+frappe.session.user_email+'</strong>. Please mail IT Infra Team at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.');
+                    frm.disable_save();
                     return;
                 }
                 if (!r.work_warehouse) {
-                    frappe.msgprint('Work Warehouse does not exist for Employee: <strong>'+frappe.session.user_email+'</strong>.');
+                    frappe.throw('Work Warehouse does not exist for Employee: <strong>'+frappe.session.user_email+'</strong>.');
+                    frm.disable_save();
                     return;
                 } else {
                     cur_frm.set_value('set_warehouse', r.work_warehouse)
@@ -49,7 +51,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
     // },
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
-        console.log("child_doc=============", child_doc);
+        // console.log("child_doc=============", child_doc);
         
         if(frm.doc.docstatus == 0){
             console.log("print for not existed in serial no ")

@@ -20,7 +20,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Serial No",
-   "options": "Serial No"
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "columns": 2,
@@ -36,7 +37,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Target Warehouse"
+   "label": "Target Warehouse",
+   "read_only": 1
   },
   {
    "columns": 3,
@@ -44,7 +46,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Item Code"
+   "label": "Item Code",
+   "read_only": 1
   },
   {
    "columns": 1,
@@ -53,13 +56,14 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Qty",
-   "non_negative": 1
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-03-11 01:11:25.025125",
+ "modified": "2024-04-07 21:45:21.207568",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement Detail",

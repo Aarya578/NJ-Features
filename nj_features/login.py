@@ -3,7 +3,7 @@ from frappe import auth
 
 @frappe.whitelist( allow_guest=True )
 def login(usr, pwd):
-    print(f"user: {usr}, pwd: {pwd}")
+    print(f"user 6 in login api : {usr}, pwd: {pwd}")
     try:
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=usr, pwd=pwd)
@@ -19,7 +19,10 @@ def login(usr, pwd):
 
     api_generate = generate_keys(frappe.session.user)
     user = frappe.get_doc('User', frappe.session.user)
-
+  
+    sql="""SELECT department from `tabEmployee` where prefered_email =%s """
+    department=frappe.db.sql(sql,(usr),as_dict=True)
+    department = department[0]['department']
     frappe.response["message"] = {
         "success_key":1,
         "message":"Authentication success",
@@ -27,7 +30,8 @@ def login(usr, pwd):
         "api_key":user.api_key,
         "api_secret":api_generate,
         "username":user.username,
-        "email":user.email
+        "email":user.email,
+        "department":department
     }
 
 
@@ -35,6 +39,7 @@ def login(usr, pwd):
 def generate_keys(user):
     api_key = ''
     user_details = frappe.get_doc('User', user)
+    print("user_details====38 user details")
     api_secret = frappe.generate_hash(length=15)
 
     if not user_details.api_key:

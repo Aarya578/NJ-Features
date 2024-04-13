@@ -11,6 +11,11 @@
   "username",
   "activity_type",
   "time",
+  "column_break_ldbjl",
+  "link_name",
+  "from",
+  "to",
+  "total",
   "amended_from"
  ],
  "fields": [
@@ -50,12 +55,36 @@
    "options": "NJ Activity Time Log",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "link_name",
+   "fieldtype": "Data",
+   "label": "Link Name"
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Time",
+   "label": "From Time"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Time",
+   "label": "To Time"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Data",
+   "label": "Total Time"
+  },
+  {
+   "fieldname": "column_break_ldbjl",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-16 18:12:25.424237",
+ "modified": "2024-04-13 16:19:29.874688",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log",

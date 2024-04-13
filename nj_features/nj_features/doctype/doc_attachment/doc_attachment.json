@@ -12,6 +12,7 @@
   "column_break_iemmj",
   "file_type",
   "file_location",
+  "linked_data",
   "amended_from"
  ],
  "fields": [
@@ -59,12 +60,18 @@
   {
    "fieldname": "column_break_iemmj",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "linked_data",
+   "fieldtype": "Data",
+   "label": "Linked Data"
   }
  ],
+ "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-02-08 14:41:59.811020",
+ "modified": "2024-04-13 16:17:48.433922",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Doc Attachment",

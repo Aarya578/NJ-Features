@@ -6,7 +6,6 @@ from frappe.model.document import Document
 
 class StockMovement(Document):
     def on_submit(self):
-        print(f"\n\nStockMovement: {self}")
         try:
             if self.stock_entry_type == "Material Transfer":
                 stock_entry_doc = frappe.new_doc('Stock Entry')
@@ -24,7 +23,6 @@ class StockMovement(Document):
                     stock_entry_item.qty = item.qty
                     # stock_entry_item.grade = item.grade
                 stock_entry_doc.insert()
-                print(f"stock_entry_doc: {stock_entry_doc}")
                 stock_entry_doc.submit()
         except Exception as e:
             frappe.throw(f"Error in Stock Entry: {e}")

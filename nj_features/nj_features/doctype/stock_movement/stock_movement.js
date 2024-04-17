@@ -59,10 +59,8 @@ frappe.ui.form.on('Stock Movement', {
                             var child_item = table.find(d => d.idx === frm.selected_child);
                             if (child_item) {
                                 frappe.model.set_value(child_item.doctype, child_item.name, 'grade', r.message.name);
-                                console.log("scan_grade | new_item_code: ", new_item_code);
                             }
                         });
-                        console.log("new_item_code: ", new_item_code)
                         
                     } else {
                         frappe.msgprint(`Grade: <strong>${frm.doc.scan_grade}<\strong> not found. Please enter a valid Grade.`);
@@ -76,12 +74,10 @@ frappe.ui.form.on('Stock Movement', {
                         .then(function (r) {
                             if (r.message.name) {
                                 item_code_init = r.message.name
-                                // console.log("item code in DB: ", r.message.name)
                                 if(frm.doc.transfer_status == "Racking") {
                                     var data = {}
                                     data['item_code'] = item_code_init
                                     data['warehouse'] = frm.doc.default_source_warehouse
-                                    console.log("data after scan ware: ", data);
                                     modify_table_after_scan(cur_frm, data);
                                     cur_frm.set_value('scan_grade', '');
                                     cur_frm.set_value('scan_barcode', '');
@@ -107,11 +103,9 @@ frappe.ui.form.on('Stock Movement', {
             var data = {}
             frappe.db.get_value('Warehouse', { name: frm.doc.scan_warehouse }, 'name').then(function (r) {
                 if (r.message.name) {
-                    console.log("scan warehouse ----------- item code: ", item_code_init, r.message);
                     var ware = r.message.name
                     data['item_code'] = item_code_init
                     data['warehouse'] = ware
-                    console.log("data after scan ware: ", data);
                     modify_table_after_scan(cur_frm, data);
                     cur_frm.set_value('scan_warehouse', '');
                     cur_frm.set_value('scan_grade', '');
@@ -434,7 +428,6 @@ function modify_table_after_scan(frm, data) {
     row_to_modify = cur_frm.doc.items.find(d => !d.item_code);
 
     if (!row_to_modify) {
-        console.log("row_to_modify:  **** ", data)
         row_to_modify = frappe.model.add_child(cur_frm.doc, cur_grid.doctype, 'items');
     }
     
@@ -466,7 +459,6 @@ function set_scanned_values(row_to_modify, data) {
         values.serial_no = data.serial_no
         // values.item_code = data.item_code
     }
-    console.log("data: ", data, " | values", values );
     frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
 
     cur_frm.set_value('scan_barcode', '');

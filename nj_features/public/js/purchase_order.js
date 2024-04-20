@@ -6,7 +6,7 @@ frappe.ui.form.on('Purchase Order', {
         frm.events.has_warranty(frm)
     },
     has_warranty: function(frm) {
-        if (frm.doc.has_warranty == 0) {
+        if (frm.doc.has_warranty == 0 && frm.doc.docstatus == 0) {
             frm.set_value('warranty_days', 0);
         }
     },

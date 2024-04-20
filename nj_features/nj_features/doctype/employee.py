@@ -34,6 +34,7 @@ def create_user(self):
         self = json.loads(self)
     # Check if the warehouses already exist
     try:
+        work_ware = ''
         if self.get('status') == 'Active':
             user = frappe.db.exists("User", {"email": self.get('prefered_email')})
             if not user:
@@ -59,6 +60,7 @@ def create_user(self):
                 if not work_warehouse_in_db:
                     work_ware = create_warehouse(user, self.get('department'), self.get('emp_id'))
                 else:
+                    work_ware = work_warehouse_in_db
                     get_parent_warehouse_for_worK_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "parent_warehouse")
                     get_depts_linked_warehouse = frappe.db.get_value("Department", {'name': self.get('department')}, "linked_warehouse")
                     # check get_parent_warehouse_for_worK_warehouse with dept's linked warehouse
@@ -70,11 +72,7 @@ def create_user(self):
                             get_work_warehouse_doc.parent_warehouse = dept_work_ware
                             get_work_warehouse_doc.warehouse = self.get('department')
                             get_work_warehouse_doc.save(ignore_permissions=True)
-                            work_ware = dept_work_ware
-                        else:
-                            work_ware = work_warehouse_in_db
-                    else:
-                        work_ware = work_warehouse_in_db
+                            
                 
             is_emp_warehouse = 'EMP - ' + self.get('employee_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name':is_emp_warehouse}, "name")

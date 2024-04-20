@@ -68,6 +68,7 @@ def create_user(self):
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
                         if dept_work_ware:
                             get_work_warehouse_doc.parent_warehouse = dept_work_ware
+                            get_work_warehouse_doc.warehouse = self.get('department')
                             get_work_warehouse_doc.save(ignore_permissions=True)
                             work_ware = dept_work_ware
                         else:
@@ -107,6 +108,7 @@ def create_warehouse(user, department=None, emp_id=None):
         else: #emp warehouse
             parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')
             warehouse.warehouse_name = 'EMP - ' + user_full_name
+            warehouse.department = department
         warehouse.parent_warehouse = parent_warehouse
         warehouse.warehouse_owner = user
         warehouse.save()

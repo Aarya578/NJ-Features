@@ -5,14 +5,6 @@ $(document).ready(function() {
     // $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
 });
 
-frappe.ui.form.on('NJ QC Check List', {
-    refresh(frm) {
-        frm.fields_dict.description.$input.css('height', '80px');
-        $('.col-lg-2.layout-side-section').hide();
-        cur_frm.page.wrapper.find(".comment-box").css({'display':'none'});
-    }
-});
-
 frappe.ui.form.on('Serial No', {
     refresh() {
         $('.col-lg-2.layout-side-section').hide();
@@ -22,14 +14,6 @@ frappe.ui.form.on('Serial No', {
 frappe.ui.form.on('Department', {
     refresh() {
         $('.col-lg-2.layout-side-section').hide();
-    }
-});
-
-frappe.ui.form.on('NJ Quality Checks', {
-    refresh(frm) {
-        frm.fields_dict.activity.$input.css('height', '80px');
-        $('.col-lg-2.layout-side-section').hide();
-        cur_frm.page.wrapper.find(".comment-box").css({'display':'none'});
     }
 });
 

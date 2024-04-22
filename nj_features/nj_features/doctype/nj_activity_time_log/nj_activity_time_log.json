@@ -16,6 +16,7 @@
   "from",
   "to",
   "total",
+  "category",
   "amended_from"
  ],
  "fields": [
@@ -63,12 +64,12 @@
   },
   {
    "fieldname": "from",
-   "fieldtype": "Time",
+   "fieldtype": "Datetime",
    "label": "From Time"
   },
   {
    "fieldname": "to",
-   "fieldtype": "Time",
+   "fieldtype": "Datetime",
    "label": "To Time"
   },
   {
@@ -79,12 +80,17 @@
   {
    "fieldname": "column_break_ldbjl",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "label": "Category"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-04-13 16:19:29.874688",
+ "modified": "2024-04-22 15:52:25.330592",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log",

@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 import re
-from nj_lib.utils.stock_entry import stock_entry
+from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class NJQCA(Document):   
     def on_submit(self):
@@ -27,7 +27,7 @@ class NJQCA(Document):
             }
             str_data = json.dumps(stock_data)
             try:
-                stock_entry(str_data)
+                stock_entry_using_nj_lib(str_data)
             except Exception as e:
                 frappe.throw(f"Error while Stock Entry(Repack): {e}")
             

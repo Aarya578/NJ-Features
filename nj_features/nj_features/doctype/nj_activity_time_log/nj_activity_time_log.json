@@ -10,13 +10,12 @@
   "serial_no",
   "username",
   "activity_type",
-  "time",
-  "column_break_ldbjl",
+  "category",
   "link_name",
+  "column_break_ldbjl",
   "from",
   "to",
   "total",
-  "category",
   "amended_from"
  ],
  "fields": [
@@ -43,12 +42,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "time",
-   "fieldtype": "Time",
-   "label": "Time",
-   "reqd": 1
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -65,12 +58,12 @@
   {
    "fieldname": "from",
    "fieldtype": "Datetime",
-   "label": "From Time"
+   "label": "From Date Time"
   },
   {
    "fieldname": "to",
    "fieldtype": "Datetime",
-   "label": "To Time"
+   "label": "To Date Time"
   },
   {
    "fieldname": "total",
@@ -90,7 +83,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-04-22 15:52:25.330592",
+ "modified": "2024-04-23 12:04:55.566819",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log",

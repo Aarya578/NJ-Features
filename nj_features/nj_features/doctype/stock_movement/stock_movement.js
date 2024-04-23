@@ -78,10 +78,17 @@ frappe.ui.form.on('Stock Movement', {
                                     var data = {}
                                     data['item_code'] = item_code_init
                                     data['warehouse'] = frm.doc.default_source_warehouse
-                                    modify_table_after_scan(cur_frm, data);
-                                    cur_frm.set_value('scan_grade', '');
-                                    cur_frm.set_value('scan_barcode', '');
-                                    $('[data-fieldname="scan_barcode"]').focus();
+                                    frappe.prompt({
+                                        label: 'Enter Qty for Non-serialized Item',
+                                        fieldname: 'qty',
+                                        fieldtype: 'Int'
+                                    }, (values) => {
+                                        data['qty'] = values.qty;
+                                        modify_table_after_scan(cur_frm, data);
+                                        cur_frm.set_value('scan_grade', '');
+                                        cur_frm.set_value('scan_barcode', '');
+                                        $('[data-fieldname="scan_barcode"]').focus();
+                                    })
                                 }
 
                             } else {
@@ -104,16 +111,24 @@ frappe.ui.form.on('Stock Movement', {
             frappe.db.get_value('Warehouse', { name: frm.doc.scan_warehouse }, 'name').then(function (r) {
                 if (r.message.name) {
                     var ware = r.message.name
+                    let qty = 0
                     data['item_code'] = item_code_init
                     data['warehouse'] = ware
-                    modify_table_after_scan(cur_frm, data);
-                    cur_frm.set_value('scan_warehouse', '');
-                    cur_frm.set_value('scan_grade', '');
-                    cur_frm.set_value('scan_barcode', '');
-                    cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
-                    $('[data-fieldname="scan_barcode"]').focus();
-                    frm.refresh_field('scan_warehouse')
-                    return false;
+                    frappe.prompt({
+                        label: 'Enter Qty for Non-serialized Item',
+                        fieldname: 'qty',
+                        fieldtype: 'Int'
+                    }, (values) => {
+                        data['qty'] = values.qty;
+                        modify_table_after_scan(cur_frm, data);
+                        cur_frm.set_value('scan_warehouse', '');
+                        cur_frm.set_value('scan_grade', '');
+                        cur_frm.set_value('scan_barcode', '');
+                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+                        $('[data-fieldname="scan_barcode"]').focus();
+                        frm.refresh_field('scan_warehouse')
+                        return false;
+                    })
                 } else {
                     cur_frm.set_value('scan_warehouse', '');
                     frappe.msgprint(`Warehouse: <strong>${cur_frm.doc.scan_warehouse}<\strong> does not exist. Please enter a valid Warehouse.`);
@@ -212,6 +227,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                 method: 'nj_features.api_files.get_all_emp_warehouse',
                 args: {'user': frappe.session.user_email},
                 callback: function(response) {
+                    console.log("response.message", response.message);
                     if (response.message && response.message.error) {
                         // Handle error
                     } else {
@@ -261,22 +277,32 @@ function createDialogForLastRecord(child, cdt, cdn) {
 
                         d.fields_dict.t_warehouse.$input.on("change", function() {
                             let t_warehouse_value = $(this).val();
-                            // Perform validation
-                            frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
-                                if (r.message && r.message.name) {
-                                    frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                    d.hide();
-                                } else {
-                                    frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
-                                    $('[data-fieldname="scan_barcode"]').focus();
-                                }
-                                cur_frm.toggle_display(['scan_grade'], true);
-                            });
+                            let isValidWarehouse = false;
+                        
+                            // Check if t_warehouse_value matches with recommended or centralized warehouse
+                            if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {
+                                isValidWarehouse = true;
+                            }
+                        
+                            if (isValidWarehouse) {
+                                // Perform validation
+                                frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+                                    if (r.message && r.message.name) {
+                                        frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+                                        d.hide();
+                                    } else {
+                                        frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                        $('[data-fieldname="scan_barcode"]').focus();
+                                    }
+                                    cur_frm.toggle_display(['scan_grade'], true);
+                                });
+                            } else {
+                                frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not match with recommended or centralized warehouse.`);
+                                $('[data-fieldname="t_warehouse"]').val(''); // Clear the field value
+                                $('[data-fieldname="t_warehouse"]').focus();
+                            }
                         });
-
-                        if (!response.message.error) {
-                            d.show();
-                        }
+                        
                     }
                 }
             });
@@ -448,23 +474,38 @@ function modify_table_after_scan(frm, data) {
 }
 
 function set_scanned_values(row_to_modify, data) {
-    // Set values in the correct row
-    let values = {
-        item_code: data.item_code,
-        s_warehouse: data.warehouse,
-        qty: 1,
-        transfer_qty: 1
-    }
-    if (data.serial_no) {
-        values.serial_no = data.serial_no
-        // values.item_code = data.item_code
-    }
-    frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
+    // Fetch item details from the backend
+    frappe.call({
+        method: 'frappe.client.get',
+        args: {
+            doctype: 'Item',
+            name: data.item_code
+        },
+        callback: function(response) {
+            let item_details = response.message;
+            console.log("data", data);
+            let quantity = data.qty ? data.qty : 1;
+            // if (item_details && item_details.has_serial_no === 1) {
+            //     frappe.msgprint('Item code: <b>'+data.item_code+'</b> is serialized.');
+            // } else {
+                let values = {
+                    item_code: data.item_code,
+                    s_warehouse: data.warehouse,
+                    qty: quantity,
+                    transfer_qty: 1
+                };
+                if (data.serial_no) {
+                    values.serial_no = data.serial_no;
+                }
+                frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
+            // }
+        }
+    });
 
     cur_frm.set_value('scan_barcode', '');
     cur_frm.set_value('scan_warehouse', '');
-    cur_frm.refresh_field("scan_warehouse");
-    cur_frm.refresh_field("items");
+    cur_frm.refresh_field('scan_warehouse');
+    cur_frm.refresh_field('items');
 }
 
 function show_scan_message(idx, exist = null) {

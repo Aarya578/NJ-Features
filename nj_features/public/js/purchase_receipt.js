@@ -2,18 +2,30 @@ frappe.ui.form.on('Purchase Receipt', {
     onload: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
-            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(r) {
-                if (!r.name) {
-                    frappe.msgprint('Employee not found for user: <strong>'+frappe.session.user_email+'</strong>. Please mail IT Infra Team at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.');
-                    frm.disable_save();
-                    return;
-                }
-                if (!r.work_warehouse) {
-                    frappe.throw('Work Warehouse does not exist for Employee: <strong>'+frappe.session.user_email+'</strong>.');
-                    frm.disable_save();
-                    return;
-                } else {
-                    cur_frm.set_value('set_warehouse', r.work_warehouse)
+            frm.doc.items.forEach(function(item) {
+                frappe.db.get_list('NJ Settings', {
+                    filters: {'doc_type':'Warehouse'},
+                    fields: ['parameter', 'value']
+                }).then(function(result) {
+                    console.log("nj sett", result);
+                    result.forEach(function(setting) {
+                        if (setting.parameter === item.item_group) {
+                            item.warehouse = setting.value;
+                        }
+                    });
+                });
+
+                // If the item_group is not found in NJ Settings, set the default warehouse
+                if (!item.warehouse) {
+                    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse').then(function(r) {
+                        console.log("work_ware", r);
+                        if (!r || !r.work_warehouse) {
+                            frappe.msgprint('Work Warehouse not found for the current user.');
+                            frm.disable_save();
+                        } else {
+                            frm.set_value('set_warehouse', r.work_warehouse);
+                        }
+                    });
                 }
             });
         }
@@ -51,7 +63,6 @@ frappe.ui.form.on('Purchase Receipt Item', {
     // },
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
-        // console.log("child_doc=============", child_doc);
         
         if(frm.doc.docstatus == 0){
             console.log("print for not existed in serial no ")

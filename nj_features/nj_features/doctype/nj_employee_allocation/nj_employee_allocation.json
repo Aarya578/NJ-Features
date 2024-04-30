@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-04-30 10:56:36.612146",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "column_break_8rqnc",
+  "date",
+  "section_break_y0ua7",
+  "section_break_9ehwg",
+  "nj_employee_allocation_child"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Data",
+   "label": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "column_break_8rqnc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_y0ua7",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_9ehwg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "nj_employee_allocation_child",
+   "fieldtype": "Table",
+   "label": "NJ Employee Allocation Child",
+   "options": "NJ Employee Allocation Child"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-04-30 11:20:39.740754",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Employee Allocation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

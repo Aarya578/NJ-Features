@@ -6,29 +6,29 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "employee",
+  "username",
   "department"
  ],
  "fields": [
-  {
-   "fieldname": "employee",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Employee",
-   "options": "Employee"
-  },
   {
    "fieldname": "department",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Department",
    "options": "Department"
+  },
+  {
+   "fieldname": "username",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Username",
+   "options": "User"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-04-30 11:05:53.841488",
+ "modified": "2024-05-03 13:08:02.568647",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Employee Allocation Child",

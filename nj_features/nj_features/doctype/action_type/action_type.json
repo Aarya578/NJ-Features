@@ -1,54 +1,79 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "autoname": "field:action_type",
-    "creation": "2024-01-29 13:03:44.708516",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-     "action_type",
-     "amended_from"
-    ],
-    "fields": [
-     {
-      "fieldname": "action_type",
-      "fieldtype": "Data",
-      "label": "Action Type",
-      "unique": 1
-     },
-     {
-      "fieldname": "amended_from",
-      "fieldtype": "Link",
-      "label": "Amended From",
-      "no_copy": 1,
-      "options": "Action Type",
-      "print_hide": 1,
-      "read_only": 1
-     }
-    ],
-    "index_web_pages_for_search": 1,
-    "links": [],
-    "modified": "2024-01-29 13:20:29.526312",
-    "modified_by": "Administrator",
-    "module": "NJ Features",
-    "name": "Action Type",
-    "owner": "Administrator",
-    "permissions": [
-     {
-      "create": 1,
-      "delete": 1,
-      "email": 1,
-      "export": 1,
-      "print": 1,
-      "read": 1,
-      "report": 1,
-      "role": "System Manager",
-      "share": 1,
-      "write": 1
-     }
-    ],
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "track_changes": 1
-   }
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:action_type",
+ "creation": "2024-01-29 13:03:44.708516",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "action_type",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "action_type",
+   "fieldtype": "Data",
+   "label": "Action Type",
+   "unique": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Action Type",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "hide_toolbar": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-05-07 23:52:54.275039",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Action Type",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "NJPulse",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Developer",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

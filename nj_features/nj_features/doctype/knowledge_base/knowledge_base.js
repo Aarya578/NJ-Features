@@ -17,6 +17,7 @@ frappe.ui.form.on('Knowledge Base', {
 
     },
     refresh: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         if(frm.doc.docstatus == 1) {
             frappe.db.get_value('NJ Settings', {'parameter': 'kb_url'}, 'value', function(response) {
                 // console.log("attachmentUrl", response)

@@ -7,6 +7,7 @@ frappe.ui.form.on('Inward', {
     },
     
     refresh(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         if (!cur_frm.doc.purchase_order) {
             $('[data-fieldname="purchase_order"]').focus();
         } else {
@@ -41,12 +42,57 @@ frappe.ui.form.on('Inward', {
                 },
                 callback: function(r) {
                     if (r.message) {
-                        // console.log("serial: ", r.message)
                         frm.set_value('serial_no', r.message);
                     }
                 }
             });
         }
+        if (frm.doc.brand && frm.doc.model) {
+            // Fetch NJ Settings data where doc_type is "Inward"
+            frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'NJ Settings',
+                    filters: {
+                        doc_type: 'Inward'
+                    },
+                    fields: ['parameter', 'value']
+                },
+                callback: function(r) {
+                    if (r.message && r.message.length > 0) {
+                        // Initialize repack item code with brand and model
+                        let repack_item_code = "S-" + frm.doc.brand + "-" + frm.doc.model;
+        
+                        // Define the order of parameters
+                        let parameter_order = ['unk_pro', 'unk_ram', 'unk_storage'];
+        
+                        // Array to hold parameter values
+                        let parameter_values = [];
+        
+                        // Iterate through the NJ Settings data
+                        parameter_order.forEach(function(parameter_name) {
+                            // Find the setting for the current parameter
+                            let setting = r.message.find(function(setting) {
+                                return setting.parameter === parameter_name;
+                            });
+        
+                            // Add parameter value to array if found
+                            if (setting) {
+                                parameter_values.push(setting.value);
+                            }
+                        });
+        
+                        // Concatenate parameter values with '-' separator and append to repack item code
+                        repack_item_code += '-' + parameter_values.join('-');
+        
+                        frm.set_value("repack_item_code", repack_item_code);
+                        // Further actions with the repack item code if needed
+                    } else {
+                        console.log("No NJ Settings found for Inward doc_type");
+                    }
+                }
+            });
+        }           
     },
 
     purchase_receipt: function(frm) {
@@ -79,7 +125,6 @@ frappe.ui.form.on('Inward', {
                         var itemCodes = r.message.map(function(item) {
                             return item;
                         });
-                        console.log("r.message", r.message);
                         var options = itemCodes.join('\n');
 
                         frm.set_df_property('item_code', 'options', options);
@@ -112,14 +157,12 @@ frappe.ui.form.on('Inward', {
                     // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
                     // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
-                        // console.log("get_stock_data_from_pr: ", r.message);
                         if (r.message) {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
                             var itemGroup = r.message.item_group;
                             var batch_no =r.message.result.batch_no;
                             // var supplier=r.message.supplier;
-                            // console.log("batch_no is ----",batch_no,"supplier is ----",supplier)
 
                             if(result) {
                                 cur_frm.set_value('item_code', result.item_code);
@@ -208,7 +251,6 @@ frappe.ui.form.on('Inward', {
     //         });
     //     }
     // },
-    
 
 });
 

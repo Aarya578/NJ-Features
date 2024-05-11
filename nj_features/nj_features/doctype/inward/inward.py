@@ -1,43 +1,85 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
-import random
 import frappe
-from nj_features.nj_features.repack import repack
+import random
 from frappe.model.document import Document
-import os
+from nj_features.qr_code import generate_and_save_qrcode
+from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+# import os
 # from barcode import Code128
 # from nj_features.barcode import CustomImgWriter
 # from io import BytesIO
 
 class Inward(Document):
     def on_submit(self):
-        stock_entry = repack(self.name)
-        po_doc = frappe.get_doc('Purchase Receipt', self.purchase_receipt)
-        po = frappe.db.get_value('Purchase Receipt Item', {'parent': self.purchase_receipt, 'item_code': self.item_code}, 'purchase_order')
-        warranty_days = po_doc.get('warranty_days')
-        supplier_name = frappe.db.get_value('Supplier', {'name': po_doc.get('supplier')}, 'supplier_name')
-        # print(f"\n\nwarranty_days: {warranty_days} -> purchase receipt: {self.purchase_receipt} ===\n {self.brand}")
+        self.make_stock_entry_using_nj_lib()
+
+    def make_stock_entry_using_nj_lib(self):
+        stock_data = {
+            "name": self.name,
+            "item_code": self.item_code,
+            "stock_entry_type": "Repack",
+            "doctype": self.doctype,
+            "series": "NJ-STE-INW-",
+            "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
+            "repack_items": get_repack_items(self)
+        }
+
+        stock_entry = stock_entry_using_nj_lib(stock_data)
+        
         if stock_entry:
-            serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
-            if serial_no_doc:
-                serial_no_doc.brand = self.brand
-                serial_no_doc.purchase_price = self.base_rate
-                serial_no_doc.current_price = self.base_rate
-                serial_no_doc.barcode = self.serial_no
-                serial_no_doc.supplier = po_doc.get('supplier')
-                serial_no_doc.batch_no = self.batch_no
-                serial_no_doc.warranty_period = warranty_days
-                serial_no_doc.purchase_warranty_days = warranty_days
-                serial_no_doc.warranty_days = warranty_days
-                serial_no_doc.purchase_order = po
-                serial_no_doc.supplier_name = supplier_name
-                serial_no_doc.purchase_receipt = self.purchase_receipt
-                # print(f"serial_no_doc: {serial_no_doc.warranty_period} --- {type(warranty_days)}")
-                serial_no_doc.save()
-                
+            self.update_serial_no_details()
         else:
             frappe.throw("Repack process failed. Cannot submit Inward document.")
+
+    def update_serial_no_details(self):
+        serial_no_doc = frappe.get_doc('Serial No', self.serial_no)
+        
+        if serial_no_doc:
+            po_doc = frappe.get_doc('Purchase Receipt', self.purchase_receipt)
+            warranty_days = po_doc.get('warranty_days')
+            supplier_name = frappe.db.get_value('Supplier', {'name': po_doc.get('supplier')}, 'supplier_name')
+            po = frappe.db.get_value('Purchase Receipt Item', {'parent': self.purchase_receipt, 'item_code': self.item_code}, 'purchase_order')
+            
+            serial_no_doc.brand = self.brand
+            serial_no_doc.purchase_price = self.base_rate
+            serial_no_doc.current_price = self.base_rate
+            serial_no_doc.barcode = self.serial_no
+            serial_no_doc.supplier = po_doc.get('supplier')
+            serial_no_doc.batch_no = self.batch_no
+            serial_no_doc.warranty_period = warranty_days
+            serial_no_doc.purchase_warranty_days = warranty_days
+            serial_no_doc.warranty_days = warranty_days
+            serial_no_doc.purchase_order = po
+            serial_no_doc.supplier_name = supplier_name
+            serial_no_doc.purchase_receipt = self.purchase_receipt
+            serial_no_doc.save()
+        else:
+            frappe.throw("Serial No document not found for the given serial number.")
+
+
+def stock_entry_for_material_transfer_or_repack_items_data(self):
+	stock_entry_for_material_transfer_or_repack_items_list = []
+	stock_entry_for_material_transfer_or_repack_items_dict = {
+		"item_code": self.item_code,
+		"basic_rate": self.base_rate,
+        "s_warehouse": self.source_warehouse
+	}
+	stock_entry_for_material_transfer_or_repack_items_list.append(stock_entry_for_material_transfer_or_repack_items_dict)
+	return stock_entry_for_material_transfer_or_repack_items_list
+
+def get_repack_items(self):
+    get_repack_items_list = []
+    get_repack_items_dict = {
+		"repack_item_code": self.repack_item_code,
+		"serial_no": self.serial_no,
+		"repack_base_price": self.base_rate,
+        "repack_warehouse": self.target_warehouse
+	}
+    get_repack_items_list.append(get_repack_items_dict)
+    
+    return get_repack_items_list
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):
@@ -47,7 +89,6 @@ def get_item_list_from_pr(pr):
     # Get item codes associated with the given purchase receipt
     # Filter out only those item codes from purchase receipt which have batch numbers
     item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
-    # print(f"\n\npo_item_codes: {pr_item_codes} \n{item_codes} \n{item_codes_in_pr}")
     return item_codes_in_pr
 
 # @frappe.whitelist()
@@ -114,7 +155,6 @@ def get_stock_data_from_pr(pr, item_code=None):
                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
             )
         # supplier = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'supplier')
-        # print(f"sle[0]: {sle[0]}, {get_serial_no[0]['name']} supplier: {supplier}")
     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
     
@@ -167,7 +207,7 @@ def create_serial_no(item_group=None, attempt=0):
                 print(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
                 return create_serial_no(item_group, attempt + 1)  # Recursive call with increased attempt count
             else:
-                generate_and_save_barcode(serial_no)
+                generate_and_save_qrcode(serial_no)
                 return serial_no
         else:
             frappe.msgprint("Item Group is not provided.")
@@ -176,49 +216,7 @@ def create_serial_no(item_group=None, attempt=0):
         frappe.log_error(f"Error while creating Serial No: {e}")
         return None
     
-@frappe.whitelist()        
-def generate_and_save_barcode(serial_no, format='png'):
-    # try:
-    #     my_code = Code128(serial_no, writer=CustomImgWriter())
 
-    #     # Create BytesIO to store barcode SVG
-    #     barcode_bytes = BytesIO()
-    #     my_code.write(barcode_bytes)
-
-    #     # Set the directory to save the file
-    #     base_directory = frappe.get_site_path("public", "files")
-    #     file_path = os.path.join(base_directory, f"{serial_no}.{format}")
-
-    #     # Check if the file already exists
-    #     if os.path.exists(file_path):
-    #         os.remove(file_path)
-
-    #     # Save the SVG content to a file
-    #     with open(file_path, 'wb') as f:
-    #         f.write(barcode_bytes.getvalue())
-    # except Exception as e:
-    #     print(f"error in generate barcode {e}")
-    #     return(f"error in generate barcode {e}")
-    import pyqrcode
-    import png
-    from pyqrcode import QRCode 
-
-    try:
-        url = pyqrcode.create(serial_no) 
-
-        url.png(f"{serial_no}.png", scale=8)
-
-        base_directory = frappe.get_site_path("public", "files")
-        file_path = os.path.join(base_directory, f"{serial_no}.png")
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        url.png(file_path, scale=8)
-
-    except Exception as e:
-        return f"Error in generating QR code: {e}"
-    
-   
 @frappe.whitelist()
 def fetch_model_description(model):
     # Fetch the model description based on the selected model

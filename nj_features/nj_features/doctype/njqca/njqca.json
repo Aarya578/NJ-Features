@@ -27,6 +27,7 @@
   "make",
   "manufacturer_model",
   "repack_item_code",
+  "manual_repack_item_code",
   "repack_itm_price",
   "original_price",
   "section_break_6sw2s",
@@ -223,13 +224,18 @@
    "fieldtype": "Data",
    "label": "BIOS SerialNo",
    "read_only": 1
+  },
+  {
+   "fieldname": "manual_repack_item_code",
+   "fieldtype": "Link",
+   "label": "Manual Repack Item Code",
+   "options": "Item"
   }
  ],
- "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-20 17:43:22.374196",
+ "modified": "2024-05-11 07:33:26.266416",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -237,7 +243,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "import": 1,
@@ -245,6 +250,19 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Tech MR & Transfer Access",
    "select": 1,
    "share": 1,
    "submit": 1,

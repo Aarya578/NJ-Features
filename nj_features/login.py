@@ -17,8 +17,11 @@ def login(usr, pwd):
 
         return
 
-    api_generate = generate_keys(frappe.session.user)
     user = frappe.get_doc('User', frappe.session.user)
+    generated_secret = frappe.utils.password.get_decrypted_password(
+			"User", frappe.session.user, fieldname="api_secret"
+		)
+    api_generate = generated_secret
   
     sql="""SELECT department from `tabEmployee` where prefered_email =%s """
     department=frappe.db.sql(sql,(usr),as_dict=True)

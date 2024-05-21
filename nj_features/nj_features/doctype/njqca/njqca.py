@@ -31,9 +31,9 @@ def update_serial_no_componont_for_grade(self):
             row = serial_no_doc.append('serial_no_component', {})
             row.item = reading.part_item_code
             row.item_group = reading.item_group
-            # row.grade = reading.grade
-            # row.is_available = reading.is_available
-            # row.quantity = reading.is_available if reading.is_available else 0
+            row.grade = Grade
+            row.is_available = 1
+            row.quantity = 1
             # row.reference_doctype = self.doctype
             # row.reference_doctype_no = self.namer
             

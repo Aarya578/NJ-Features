@@ -412,7 +412,7 @@ def get_part_mapping(item_group, docname):
                    
                 item_group = row.item_group
                 variants = mapping.mappng_fields.split('::')
-                is_serial_no = ''
+                
                 if item_group == mapping.item_group:
                     for variant in variants:
                         last_variant_values[item_group] = last_variant_values.get(item_group, {})
@@ -422,29 +422,23 @@ def get_part_mapping(item_group, docname):
                     # getting value from NJ Settings - - creating cpu by concating "Core I5" and "7 GEN" as "Core I5 - 7TH GEN"
                         
                     if item_group.lower() == cpu.lower():
-                        if row.variant_2 in is_serial_no:
-                            attribute_object[mapping.attribute_name] = "No Processor"
-                        else:  
-                            any_attribute_undefined = any(value is None for value in attribute_value.values())
-                            cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
-                            normalize_cpu = normalize_gen(cpu_value)
-                            attribute_object[mapping.attribute_name] = normalize_cpu
+
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
+                        normalize_cpu = normalize_gen(cpu_value)
+                        attribute_object[mapping.attribute_name] = normalize_cpu
                             
                     # getting value from NJ Settings - creating ram by concating "16 GB" and "DDR4" as "16 GB DDR4"
                     elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
-                        if row.variant_2 in is_serial_no:
-                            attribute_object[mapping.attribute_name] = "No Ram"
-                        else:
-                            any_attribute_undefined = any(value is None for value in attribute_value.values())
-                            ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
-                            attribute_object[mapping.attribute_name] = ram_value
-                            
+
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
+                        attribute_object[mapping.attribute_name] = ram_value
+                        
                     # getting value from NJ Settings
                     elif item_group.lower() == storage.lower()  and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]) :
-                        if row.variant_2 in is_serial_no:
-                            attribute_object[mapping.attribute_name] = "No Storage"
-                        else:
-                            attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
+                            
+                        attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
                         # row.attr_data = json.dumps(attribute_object)
                     child_attr_data.append(attribute_object)
 

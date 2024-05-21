@@ -183,6 +183,7 @@ frappe.ui.form.on('NJQCA', {
                                         let data = {
                                             "serial_no": frm.doc.serial_no,
                                             "stock_entry_type": "Material Transfer",
+                                            "s_warehouse": frm.doc.warehouse,
                                             "t_warehouse": r.work_warehouse,
                                             "series": "NJ-STE-NJQCA-",
                                             "reference_serial_no": frm.doc.serial_no,

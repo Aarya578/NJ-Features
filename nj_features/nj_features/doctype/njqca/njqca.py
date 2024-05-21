@@ -9,7 +9,7 @@ import datetime
 from frappe.model.document import Document
 import re
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
+# from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 
 def update_serial_no_componont_for_grade(self):
@@ -31,7 +31,7 @@ def update_serial_no_componont_for_grade(self):
             row = serial_no_doc.append('serial_no_component', {})
             row.item = reading.part_item_code
             row.item_group = reading.item_group
-            row.grade = Grade
+            row.grade = 'UNKNOWN'
             row.is_available = 1
             row.quantity = 1
             # row.reference_doctype = self.doctype
@@ -46,7 +46,7 @@ def update_serial_no_componont_for_grade(self):
                     # sn.Item = reading.part_item_code 
                     # sn.grade = reading.grade
                     # sn.is_available = reading.is_available
-                    # sn.quantity = reading.is_available if reading.is_available else 0
+                    # sn.quantity = reading.is_available 
                     # sn.reference_doctype = self.doctype
                     # sn.reference_doctype_no = self.name
     serial_no_doc.save()

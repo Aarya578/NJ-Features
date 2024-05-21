@@ -153,10 +153,15 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
+                    
                     console.log("r value is ",r);
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
+                    if(!r.message.brand){
+                        
+                        frappe.throw(`Brand is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
+                    } 
                     fieldsToUpdate.forEach(field => {
-                        console.log(field, " : ",r.message[field]);
+                        console.log(field, " : ",r.message[field]);                      
                         if (!frm.doc[field]) {
                             frm.set_value(field, r.message[field]);
                             cur_frm.refresh_field(field);
@@ -164,6 +169,7 @@ frappe.ui.form.on('NJQCA', {
                     });
                     let ware = r.message.warehouse
                     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
+                       
                         console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
                         if (!r.work_warehouse) {
                             frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
@@ -418,7 +424,7 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save: function() {
+    after_save: function() {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',

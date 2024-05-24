@@ -1,8 +1,9 @@
-import pyqrcode
-import png
-import frappe
 import os
-from pyqrcode import QRCode 
+import png
+import base64
+import frappe
+import pyqrcode
+# from pyqrcode import QRCode 
 
 # @frappe.whitelist()        
 # def generate_and_save_qrcode(serial_no, format='png'):
@@ -25,14 +26,13 @@ from pyqrcode import QRCode
 @frappe.whitelist()        
 def generate_and_save_qrcode(data, format='png'):
     try:
-        if data:  # For serial numbers
-            url = pyqrcode.create(data) 
-            filename = f"{data}.{format}"
-            print("url for serial no ----",url)
-        else:  # For item codes
-            url = pyqrcode.create(data)
-            filename = f"{data}.{format}"
-            print("url for item_code ------",url,"filename====",filename)
+        # For item codes
+        encoded_data = data
+        
+        if '/' in data or '"' in data:
+            encoded_data = base64.b64encode(data.encode()).decode()
+        url = pyqrcode.create(encoded_data)
+        filename = f"{encoded_data}.{format}"
         
         # Define the file path
         base_directory = frappe.get_site_path("public", "files")
@@ -40,11 +40,11 @@ def generate_and_save_qrcode(data, format='png'):
 
         # Remove the existing file if it exists
         if os.path.exists(file_path):
-            return file_path
+            return filename
 
         # Generate and save the QR code image
         url.png(file_path, scale=8)
-        print("file_path============>>>>>>>>>",file_path)
-        return file_path
+        return filename
+    
     except Exception as e:
         return f"Error in generating QR code: {e}"

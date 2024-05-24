@@ -24,7 +24,7 @@ frappe.ui.form.on('NJQCA', {
             var row = locals[cdt][cdn];
 
             console.log('row value is ',row);
-            if(!row.variant_1 || row.variant_1 != '[EMPTY]' || row.variant_1 != 'SYSTEM MEMORY'){
+            if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
                 return {
                     filters: {
                         item_group: row.item_group,
@@ -32,10 +32,10 @@ frappe.ui.form.on('NJQCA', {
                     }
                     
                 };
+            }            
+            else{
+                frm.refresh_field("part_item_code");
             }
-            // else{
-            //     row.
-            // }
            
 		};
 
@@ -49,14 +49,6 @@ frappe.ui.form.on('NJQCA', {
             }
         });
     },
-    // part_item_code: function(frm, cdt, cdn) {
-    //     var row = locals[cdt][cdn];
-    //     console.log('23', row);
-    //     if (row.variant_1 == '[EMPTY]' || row.variant_1 == 'SYSTEM MEMORY'){
-    //         frm.set_df_property('njqca_item_component', 'hidden', 1, frm.docname, 'part_item_code', row.name)
-    //     }
-    // },
-
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();

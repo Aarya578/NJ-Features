@@ -5,6 +5,12 @@ $(document).ready(function() {
     // $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
 });
 
+frappe.listview_settings['Non Compliance'] = {
+    onload() {
+        $('.col-lg-2.layout-side-section').hide();
+    }
+};
+
 frappe.ui.form.on('Serial No', {
     refresh() {
         $('.col-lg-2.layout-side-section').hide();
@@ -16,6 +22,14 @@ frappe.ui.form.on('Department', {
         $('.col-lg-2.layout-side-section').hide();
     }
 });
+
+frappe.listview_settings['Prepared Report'] = {
+    onload: function(listview) {
+        filters: [['created_by', '=', frappe.session.user_email]],
+        listview.refresh();
+        $('.col-lg-2.layout-side-section').hide();
+    }
+};
 
 frappe.provide('frappe.ui.misc');
 frappe.ui.misc.about = function() {

@@ -4,6 +4,7 @@
 
 frappe.listview_settings['Stock Movement'] = {
     onload: function(listview) {
+        $('.col-lg-2.layout-side-section').hide();
         viewButton(listview)
     },
     refresh: function(listview) {
@@ -27,7 +28,7 @@ function viewButton(listview) {
 function openStockEntryForm(stockType) {
     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, ['name', 'work_warehouse'], function(response) {
         if (!response.name) {
-            frappe.msgprint('Employee not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
+            frappe.msgprint(`Employee not found for User: `+$(frappe.session.user_email)+`. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.`);
             return;
         }
 

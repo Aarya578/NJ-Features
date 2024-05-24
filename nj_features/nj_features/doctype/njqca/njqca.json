@@ -40,6 +40,7 @@
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
+  "njqca_result_parameters",
   "amended_from"
  ],
  "fields": [
@@ -242,12 +243,17 @@
    "fieldtype": "Data",
    "label": "Inspection Type",
    "read_only": 1
+  },
+  {
+   "fieldname": "njqca_result_parameters",
+   "fieldtype": "Table",
+   "options": "NJQCA Result Parameters"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-18 16:28:04.451814",
+ "modified": "2024-05-24 10:49:43.297599",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

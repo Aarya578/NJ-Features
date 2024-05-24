@@ -9,7 +9,7 @@ import datetime
 from frappe.model.document import Document
 import re
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-# from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
+from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 
 def update_serial_no_componont_for_grade(self):
@@ -51,160 +51,163 @@ def update_serial_no_componont_for_grade(self):
                     # sn.reference_doctype_no = self.name
     serial_no_doc.save()
 
-# def open_draft_qi(self):
-#     inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
-#     print('The inspectio type value is ',inspection_type)
-#     new_qi = frappe.new_doc('NJ Quality Inspection')
-#     new_qi.inspection_type = inspection_type    
-#     new_qi.barcode = self.serial_no
-#     result = get_itm_code_on_barcode(new_qi)
-#     print("chicken 65 new qi is ")
-#     for k,v in new_qi.__dict__.items():
-#         print(k,"::::",v) if v else print("",end='')
+def open_draft_qi(self):
+    inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
+    self.inspection_type = inspection_type
+    print('The inspectio type value is ',inspection_type)
+    new_qi = frappe.new_doc('NJ Quality Inspection')
+    new_qi.inspection_type = inspection_type    
+    new_qi.barcode = self.serial_no
+    new_qi.njqca_laptop_name = self.name
+    new_qi.inspected_by = new_qi.owner
+    print("The 62 self name is ",self.name)
+    result = get_itm_code_on_barcode(new_qi)
+    print("chicken 65 new qi is ")
+    for k,v in new_qi.__dict__.items():
+        print(k,"::::",v) if v else print("",end='')
 
-
-    # hello()
-    # The get_itm_code_on_barcode is returning ****  {'item_code': 'S-Lenovo-ThinkPad P53-CORE I7 - 9TH GEN-16 GB DDR4-512 GB SSD', 
-    # 'bios_serial_number': 'PF29E3G4', 'item_group': 'Laptops', 'item_name': 'S-Lenovo-ThinkPad P53-CORE I7 - 9TH GEN-16 GB DDR4-512 GB SSD', 
-    #          'warehouse': 'WK-Post Man-EMP879 - NJ', 'base_price': 7643.82, 'preferred_a_grade_price': 2105.0, 
-    #  'attribute_values': {'model_price': 2.0, 'attribute_1': 2050.0, 'attribute_2': 20.0, 'attribute_3': 33.0}}
+    fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective=None)
+    print("Success")
     
-    # result2 = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi.barcode, inspection_type, is_defective=None)
+    # hello()
     # print("Final result 71 is ",result2)
     # new_qi.save()
     
 
 
-# @frappe.whitelist()
-# def get_itm_code_on_barcode(new_qi):
-#     barcode = new_qi.barcode
-#     if not barcode:
-#         return {"error":"barcode not found"}
+@frappe.whitelist()
+def get_itm_code_on_barcode(new_qi):
+    barcode = new_qi.barcode
+    if not barcode:
+        return {"error":"barcode not found"}
 
-#     # Fetch Serial No details
-#     serial_no_data = frappe.db.get_value("Serial No", {"name": barcode},["item_code", "bios_serial_no", "item_group", "item_name", "warehouse", "purchase_rate", "purchase_date"],
-#                                          as_dict=True)
-#     if not serial_no_data:
-#         frappe.throw(_("Serial No '{0}' not found. Please select an existing Serial No.").format(barcode))
-#     print("87 serial no data is ",serial_no_data)
+    # Fetch Serial No details
+    serial_no_data = frappe.db.get_value("Serial No", {"name": barcode},["item_code", "bios_serial_no", "item_group", "item_name", "warehouse", "purchase_rate", "purchase_date"],
+                                         as_dict=True)
+    if not serial_no_data:
+        frappe.throw(_("Serial No '{0}' not found. Please select an existing Serial No.").format(barcode))
+    print("87 serial no data is ",serial_no_data)
     
-#     result = {
-#         "item_code": serial_no_data.item_code,
-#         "bios_serial_number": serial_no_data.bios_serial_no,
-#         "item_group": serial_no_data.item_group,
-#         "item_name": serial_no_data.item_name,
-#         "warehouse": serial_no_data.warehouse,
-#         "base_price": serial_no_data.purchase_rate
-#     }
+    result = {
+        "item_code": serial_no_data.item_code,
+        "bios_serial_number": serial_no_data.bios_serial_no,
+        "item_group": serial_no_data.item_group,
+        "item_name": serial_no_data.item_name,
+        "warehouse": serial_no_data.warehouse,
+        "base_price": serial_no_data.purchase_rate
+    }
 
-#     for key,value in result.items():
-#         new_qi.set(key,value)
-    
-
-#     # Check if the item group is a component
-#     is_component = frappe.db.get_value('Item Group', serial_no_data.item_group, 'is_component')
-
-#     if is_component == 0:
-#         preferred_prices = update_total_preferred_grade_a(barcode)
-#         attribute_values = preferred_prices.get("attribute_values")
-#         new_qi.set("preferred_a_grade_price",preferred_prices.get("preferred_a_grade_price"))
-#         for key in attribute_values:
-#             new_qi.set(key,attribute_values.get(key))
-#         result.update(preferred_prices)
-
-#     current_date = datetime.date.today()
-#     serial_item_date = serial_no_data.purchase_date
-#     print("curretn date is ",current_date," and the item date is ",serial_item_date )
-#     difference = (current_date - serial_item_date).days
-
-#     if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > datetime.strptime("2024-03-20", "%Y-%m-%d"):
-#         if serial_no_data.bios_serial_no and serial_no_data.bios_serial_no.startswith('nj') and serial_no_data.bios_serial_no == barcode:
-#             frappe.msgprint(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
-#             return {"disable_save": True}
-#         elif serial_no_data.bios_serial_no and serial_no_data.bios_serial_no != barcode:
-#             return {"enable_save": True}
-#         elif not serial_no_data.bios_serial_no or serial_no_data.bios_serial_no != barcode:
-#             frappe.msgprint(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
-#             return {"disable_save": True}
-
-#     if serial_no_data.warehouse:
-#         work_warehouse = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'work_warehouse')
-#         if not work_warehouse:
-#             frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
-#         elif work_warehouse != serial_no_data.warehouse:
-#             # Logic to handle stock transfer
-#             stock_entry_items = [{
-#                 'item_code': serial_no_data.item_code,
-#                 'basic_rate': serial_no_data.purchase_rate,
-#                 'serial_no': barcode
-#             }]
-#             data = {
-#                 "serial_no": barcode,
-#                 "stock_entry_type": "Material Transfer",
-#                 "t_warehouse": work_warehouse,
-#                 "series": "STE-NJ-QI-",
-#                 "reference_serial_no": barcode,
-#                 "doctype": "Stock Entry",
-#                 "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
-#             }
-#             stock_entry_using_nj_lib(data)
-#             result['warehouse'] = work_warehouse
-#             new_qi.set('warehouse',work_warehouse)
-
-#     else:
-#         frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
-#         return {"disable_save": True}
-#     print("The get_itm_code_on_barcode is returning **** ",result)
-#     return result
-
-
-
+    for key,value in result.items():
+        new_qi.set(key,value)
     
 
-# @frappe.whitelist()
-# def fill_nj_quality_reading_from_serial_or_itm_wizard(barcode, inspection_type, is_defective="0"):
-#     if not barcode or not inspection_type:
-#         frappe.throw("Error: Barcode or Inspection Type is not found.")
-    
-#     response = frappe._dict()
-    
-#     try:
-#         # Assuming validation_for_nj_readings_in_nj_qi is the method being called
-#         response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
-#         print('210 The response I"m getting --> ',response)
-#     except Exception as e:
-#         frappe.throw(str(e))
-    
-#     if response.get('sequence_list_for_nj_readings_data'):
-#         nj_quality_readings = []
-#         for nj_readings_data in response.sequence_list_for_nj_readings_data:
-#             if nj_readings_data.get('quality_check'):
-#                 nj_quality_readings.append({
-#                     'item_group': nj_readings_data.get('item_group'),
-#                     'quality_check': nj_readings_data.get('quality_check'),
-#                     'item': nj_readings_data.get('item'),
-#                     'part_serial_no': nj_readings_data.get('part_serial_no'),
-#                     'previous_grade': nj_readings_data.get('previous_grade'),
-#                     'available_qty': nj_readings_data.get('available_qty'),
-#                     'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
-#                     'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no')
-#                 })
+    # Check if the item group is a component
+    is_component = frappe.db.get_value('Item Group', serial_no_data.item_group, 'is_component')
 
-#         # Clear existing table entries and add new ones
-#         doc = frappe.get_doc('YourDoctype', your_docname)  # Replace 'YourDoctype' and 'your_docname' appropriately
-#         doc.set('nj_quality_readings', [])
-#         for reading in nj_quality_readings:
-#             doc.append('nj_quality_readings', reading)
-#         doc.save()
+    if is_component == 0:
+        preferred_prices = update_total_preferred_grade_a(barcode)
+        attribute_values = preferred_prices.get("attribute_values")
+        new_qi.set("preferred_a_grade_price",preferred_prices.get("preferred_a_grade_price"))
+        for key in attribute_values:
+            new_qi.set(key,attribute_values.get(key))
+        result.update(preferred_prices)
+
+    current_date = datetime.date.today()
+    serial_item_date = serial_no_data.purchase_date
+    print("curretn date is ",current_date," and the item date is ",serial_item_date )
+    difference = (current_date - serial_item_date).days
+
+    if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > datetime.strptime("2024-03-20", "%Y-%m-%d"):
+        if serial_no_data.bios_serial_no and serial_no_data.bios_serial_no.startswith('nj') and serial_no_data.bios_serial_no == barcode:
+            frappe.msgprint(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
+            return {"disable_save": True}
+        elif serial_no_data.bios_serial_no and serial_no_data.bios_serial_no != barcode:
+            return {"enable_save": True}
+        elif not serial_no_data.bios_serial_no or serial_no_data.bios_serial_no != barcode:
+            frappe.msgprint(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
+            return {"disable_save": True}
+
+    if serial_no_data.warehouse:
+        work_warehouse = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'work_warehouse')
+        if not work_warehouse:
+            frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
+        elif work_warehouse != serial_no_data.warehouse:
+            # Logic to handle stock transfer
+            stock_entry_items = [{
+                'item_code': serial_no_data.item_code,
+                'basic_rate': serial_no_data.purchase_rate,
+                'serial_no': barcode
+            }]
+            data = {
+                "serial_no": barcode,
+                "stock_entry_type": "Material Transfer",
+                "t_warehouse": work_warehouse,
+                "series": "STE-NJ-QI-",
+                "reference_serial_no": barcode,
+                "doctype": "Stock Entry",
+                "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
+            }
+            stock_entry_using_nj_lib(data)
+            result['warehouse'] = work_warehouse
+            new_qi.set('warehouse',work_warehouse)
+
+    else:
+        frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
+        return {"disable_save": True}
+    print("The get_itm_code_on_barcode is returning **** ",result)
+    return new_qi
+
+
+
     
-#     if response.get('initial_mandatory_rows'):
-#         doc.set('mandatory_rows', response.initial_mandatory_rows)
+
+@frappe.whitelist()
+def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
+    barcode = new_qi.barcode
+    if not barcode or not inspection_type:
+        frappe.throw("Error: Barcode or Inspection Type is not found.")
     
-#     if response.get('item_wizard'):
-#         doc.set('item_wizard', response.item_wizard)
+    response = frappe._dict()
     
-#     doc.save()
-#     frappe.msgprint("Quality readings updated successfully.")
+    try:
+        # Assuming validation_for_nj_readings_in_nj_qi is the method being called
+        response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
+        print('210 The response I"m getting --> ',response)
+    except Exception as e:
+        frappe.throw(str(e))
+    
+    if response.get('sequence_list_for_nj_readings_data'):
+        nj_quality_readings = []
+        for nj_readings_data in response.get('sequence_list_for_nj_readings_data'):
+            if nj_readings_data.get('quality_check'):
+                nj_quality_readings.append({
+                    'item_group': nj_readings_data.get('item_group'),
+                    'quality_check': nj_readings_data.get('quality_check'),
+                    'item': nj_readings_data.get('item'),
+                    'part_serial_no': nj_readings_data.get('part_serial_no'),
+                    'previous_grade': nj_readings_data.get('previous_grade'),
+                    'available_qty': nj_readings_data.get('available_qty'),
+                    'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
+                    'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no')
+                })
+        print('193 The nj readings are ',nj_quality_readings)
+        # Clear existing table entries and add new ones
+        new_qi.set('nj_quality_readings', [])
+        for reading in nj_quality_readings:
+            new_qi.append('nj_quality_readings', reading)
+        new_qi.save()
+    
+    if response.get('initial_mandatory_rows'):
+        new_qi.set('mandatory_rows', response.get('initial_mandatory_rows'))
+    
+    if response.get('item_wizard'):
+        new_qi.set('item_wizard', response.get('item_wizard'))
+    
+    new_qi.save()
+    frappe.msgprint("Quality readings updated successfully.")
+    for k,v in new_qi.__dict__.items():
+        print(k," :: ",v) if v else print("",end='')
+    return True
 
 
 class NJQCA(Document):   
@@ -234,7 +237,7 @@ class NJQCA(Document):
                 
             if self.bios_serialno:
                 update_serial_no_componont_for_grade(self)
-                # open_draft_qi(self)
+                open_draft_qi(self)
             else:
                 frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
             
@@ -434,12 +437,15 @@ def get_part_mapping(item_group, docname):
                         any_attribute_undefined = any(value is None for value in attribute_value.values())
                         ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
                         attribute_object[mapping.attribute_name] = ram_value
-                        
+                    
+                                            
                     # getting value from NJ Settings
                     elif item_group.lower() == storage.lower()  and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]) :
                             
                         attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
-                        # row.attr_data = json.dumps(attribute_object)
+                    
+                    
+                    row.attr_data = json.dumps(attribute_object)            
                     child_attr_data.append(attribute_object)
 
         consolidated = consolidate_ram_capacities(child_attr_data)

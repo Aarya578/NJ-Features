@@ -1,8 +1,9 @@
 frappe.ui.form.on('Knowledge Base', {
     onload: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         // Fetch the attachment URL from NJ Settings
         frappe.db.get_value('NJ Settings', {'parameter': 'kb_url'}, 'value', function(response) {
-			// console.log("attachmentUrl", response)
+			
             if (response) {	
 				var attachmentUrl = response.value;
 				console.log("attachmentUrl", attachmentUrl)

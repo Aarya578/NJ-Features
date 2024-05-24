@@ -1,6 +1,6 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
-
+import json
 import frappe
 import random
 from frappe.model.document import Document
@@ -10,6 +10,9 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 # from barcode import Code128
 # from nj_features.barcode import CustomImgWriter
 # from io import BytesIO
+# frappe.utils.logger.set_log_level("DEBUG")
+logger = frappe.logger("inward", allow_site=True, file_count=1)
+debug = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'debug'}, 'value')
 
 class Inward(Document):
     def on_submit(self):
@@ -25,8 +28,11 @@ class Inward(Document):
             "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
             "repack_items": get_repack_items(self)
         }
-
-        stock_entry = stock_entry_using_nj_lib(stock_data)
+        if debug == "1":
+            print("debugging", self.name)
+            logger.debug(f"Inward: {self.name}\n {stock_data}")
+        stock_data_str = json.dumps(stock_data)
+        stock_entry = stock_entry_using_nj_lib(stock_data_str)
         
         if stock_entry:
             self.update_serial_no_details()
@@ -50,6 +56,7 @@ class Inward(Document):
             serial_no_doc.batch_no = self.batch_no
             serial_no_doc.warranty_period = warranty_days
             serial_no_doc.purchase_warranty_days = warranty_days
+            serial_no_doc.reference_doctype_no = self.purchase_receipt
             serial_no_doc.warranty_days = warranty_days
             serial_no_doc.purchase_order = po
             serial_no_doc.supplier_name = supplier_name

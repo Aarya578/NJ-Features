@@ -2,7 +2,7 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Doc Attachment', {
-	// refresh: function(frm) {
-
-	// }
+	onload: function(frm) {
+		$('.col-lg-2.layout-side-section').hide();
+	}
 });

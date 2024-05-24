@@ -11,6 +11,7 @@
 
 frappe.ui.form.on('NJ Employee Allocation', {
     onload: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         // Get current session user details
         var currentUserEmail = frappe.session.user;
         

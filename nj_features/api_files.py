@@ -2,9 +2,9 @@ import frappe
 import json
 import random
 import os
-from barcode import Code128
+# from barcode import Code128
 from nj_features.qr_code import generate_and_save_qrcode
-from io import BytesIO
+# from io import BytesIO
 
 
 @frappe.whitelist()
@@ -77,7 +77,7 @@ def get_all_emp_warehouse(user):
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0)}, ['name', 'available_capacity', 'max_capacity'])
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
-        print(f"all_emp_ware: {all_emp_ware} \n centralized_parent: {centralized_parent} \n centralized_ware: {centralized_ware}")
+        # print(f"all_emp_ware: {all_emp_ware} \n centralized_parent: {centralized_parent} \n centralized_ware: {centralized_ware}")
         recommended_warehouses = {}
         centralized_warehouses = {}
 
@@ -92,10 +92,11 @@ def get_all_emp_warehouse(user):
 
         formatted_recommended = '\n'.join([f"{warehouse}  =>  {capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
         formatted_centralized = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in centralized_warehouses.items()])
-
+        warehouse = ','.join(recommended_warehouses.keys())
         return {
             'recommended': formatted_recommended,
-            'centralized': formatted_centralized
+            'centralized': formatted_centralized,
+            'warehouse': warehouse
         }
         
     except Exception as e:
@@ -180,7 +181,7 @@ def get_max_cop(item_code, serial_no, print_cpy):
         if isinstance(serial_numbers, list):
             for sn in serial_numbers:
                 serialno_doc = frappe.get_doc("Serial No", sn.strip())  # Strip to remove whitespace
-                print(f"\n\nget_max_copy: {sn}")
+                # print(f"\n\nget_max_copy: {sn}")
                 if serialno_doc:
                     serialno_doc.last_qr_count = int(print_cpy)
                     serialno_doc.save()
@@ -188,17 +189,15 @@ def get_max_cop(item_code, serial_no, print_cpy):
                     frappe.msgprint(f"Serial No.: <strong>{sn}</strong> not found.")
         else:  # If only one serial_no is passed
             serialno_doc = frappe.get_doc("Serial No", serial_no)
-            print(f"\n\nget_max_copy: {serial_no}")
+            # print(f"\n\nget_max_copy: {serial_no}")
             if serialno_doc:
                 serialno_doc.last_qr_count = int(print_cpy)
                 serialno_doc.save()
             else:
                 frappe.msgprint(f"Serial No.: <strong>{serial_no}</strong> not found.")
     except json.JSONDecodeError:
-        # Handle the case where serial_no is not a valid JSON array
-        # Proceed with processing a single serial_no
+        
         serialno_doc = frappe.get_doc("Serial No", serial_no)
-        print(f"\n\nget_max_copy: {serial_no}")
         if serialno_doc:
             serialno_doc.last_qr_count = int(print_cpy)
             serialno_doc.save()
@@ -227,17 +226,11 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 @frappe.whitelist()
 def print_barcode(doc):
     try:
-        # print("doc===================",doc)
         doc_dict = frappe.parse_json(doc)
-        print("doc_dict===============",doc_dict)
         item_code = doc_dict.get('item_code') or doc_dict.get('component') 
         serial_no=doc_dict.get('serial_no')
-        print(serial_no,"======serial no=======")
         if serial_no:
-            print("inside qrcode function====")
             generate_and_save_qrcode(serial_no)
-            print("outside qrcode function====")
-            return {"serial_no": serial_no}
         
         # if serial_no:
         #     serial_no_list = serial_no.split('\n')
@@ -258,7 +251,6 @@ def print_barcode(doc):
                     serial_no = create_serial_no(item_code)
                     serial_no_list.append(serial_no)
                 updated_serial_no = '\n'.join(serial_no_list)
-                print(f"updated_serial_no: {updated_serial_no}")
                 
                 # for serial_no in serial_no_list[-remaining_qty:]:
                 #     generate_and_save_qrcode(serial_no)
@@ -271,8 +263,9 @@ def print_barcode(doc):
             frappe.msgprint(f"Serial No can't be generated for Item Code: <strong>{item_code}</strong> with 'Has Batch No'")
         else:
             new_item_code = truncate_grade(item_code)
-            # generate_and_save_qrcode(new_item_code)
-            return {"truncated_item_code": new_item_code}
+            if new_item_code:
+                decoded_item_code = generate_and_save_qrcode(new_item_code)
+                return {"truncated_item_code": new_item_code, "decoded_item_code": decoded_item_code}
             # frappe.msgprint(f"QR Code is generated for Non-Serialized Item Code as: <strong>{new_item_code}</strong>")
     except Exception as e:
         frappe.msgprint(f"Error printing barcode: {e}")
@@ -281,7 +274,7 @@ def truncate_grade(input_string):
     parts = input_string.split('-')
     
     last_part = parts[-1].strip().upper()
-    if last_part.endswith((' A', ' B', ' C', ' D')) or last_part == 'UNKNOWN':
+    if last_part.endswith(('GRADE A', 'GRADE B', 'GRADE C', 'GRADE D')) or last_part == 'UNKNOWN':
         return '-'.join(parts[:-1])
     else:
         return input_string
@@ -338,6 +331,7 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days
         serial_no_doc.purchase_order = item.purchase_order
+        serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name
         serial_no_doc.purchase_receipt = doc.name
         serial_no_doc.save()

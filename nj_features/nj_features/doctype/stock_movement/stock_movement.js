@@ -12,7 +12,7 @@ frappe.ui.form.on('Stock Movement', {
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
     },
-    refresh() {
+    refresh(frm) {
         $('[data-fieldname="scan_barcode"]').focus();
         $("button[data-original-title=Print]").hide();
     },
@@ -196,6 +196,7 @@ frappe.ui.form.on('Stock Movement Detail', {
         autofill_warehouse([child], "s_warehouse", cur_frm.doc.default_source_warehouse);
 
         if (cur_frm.doc.transfer_status == "Racking") {
+            frm.set_df_property('items', 'read_only', 1, frm.docname, 's_warehouse', child.name)
             var lastRecordIndex = cur_frm.doc.items.length - 1;
 
             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
@@ -208,108 +209,105 @@ frappe.ui.form.on('Stock Movement Detail', {
 function createDialogForLastRecord(child, cdt, cdn) {
     const item = child;
     if (item.serial_no || item.item_code) {
-        // var itemCode = item.item_code;
+        var userRoles = frappe.user_roles;
+        var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
 
-        // frappe.db.get_value('Item', {"name": itemCode}, ['item_group', 'brand']).then(function(r) {
-        //     var itemGroup = r.message.item_group;
-        //     var brand = r.message.brand;
+        // Get all employee warehouses
+        frappe.call({
+            method: 'nj_features.api_files.get_all_emp_warehouse',
+            args: {'user': frappe.session.user_email},
+            callback: function(response) {
+                if (response.message && response.message.error) {
+                    // Handle error
+                } else {
+                    var recommended = response.message.recommended;
+                    var centralized = response.message.centralized;
+                    var warehouse_list = response.message.warehouse;
 
-        //     if (item.item_group) {
-        //         frappe.model.set_value(cdt, cdn, 'item_group', itemGroup);
-        //     }
-        //     frappe.model.set_value(cdt, cdn, 'brand', brand);
-
-            var userRoles = frappe.user_roles;
-            var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
-
-            // Get all employee warehouses
-            frappe.call({
-                method: 'nj_features.api_files.get_all_emp_warehouse',
-                args: {'user': frappe.session.user_email},
-                callback: function(response) {
-                    console.log("response.message", response.message);
-                    if (response.message && response.message.error) {
-                        // Handle error
-                    } else {
-                        var recommended = response.message.recommended;
-                        var centralized = response.message.centralized;
-
-                        let fields = [
-                            {
-                                label: 'Target Warehouse',
-                                fieldname: 't_warehouse',
-                                fieldtype: 'Data'
-                            },
-                            {
-                                label: 'Recommended Warehouse',
-                                fieldname: 'req_warehouse',
-                                fieldtype: 'Small Text',
-                                default: recommended,
-                                read_only: 1
+                    let fields = [
+                        {
+                            label: 'Target Warehouse',
+                            fieldname: 't_warehouse',
+                            fieldtype: 'Link',
+                            options: 'Warehouse',
+                            get_query: function(doc) {
+                                return {
+                                    filters: [
+                                        ['Warehouse', 'name', 'in', warehouse_list]
+                                    ]
+                                };
                             }
-                        ];
+                        },
+                        {
+                            label: 'Recommended Warehouse',
+                            fieldname: 'req_warehouse',
+                            fieldtype: 'Small Text',
+                            default: recommended,
+                            read_only: 1
+                        }
+                    ];
 
-                        // Add the "Centralized Warehouse" field if the user has the role
-                        if (hasCentralizedRole) {
-                            fields.push({
-                                label: 'Centralized Warehouse',
-                                fieldname: 'cen_warehouse',
-                                fieldtype: 'Small Text',
-                                default: centralized,
-                                read_only: 1
-                            });
+                    // Add the "Centralized Warehouse" field if the user has the role
+                    if (hasCentralizedRole) {
+                        fields.push({
+                            label: 'Centralized Warehouse',
+                            fieldname: 'cen_warehouse',
+                            fieldtype: 'Small Text',
+                            default: centralized,
+                            read_only: 1
+                        });
+                    }
+
+                    fields.push({
+                        label: 'Close',
+                        fieldtype: 'Button',
+                        click: function() {
+                            // cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                            d.hide();
+                        }
+                    });
+
+                    let d = new frappe.ui.Dialog({
+                        fields: fields,
+                        size: 'small',
+                        static: 1
+                    });
+                    d.fields_dict.t_warehouse.$input.on("blur", function() {
+                        let t_warehouse_value = $(this).val();
+                        let isValidWarehouse = false;
+                        // Check if t_warehouse_value matches with recommended or centralized warehouse
+                        if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {
+                            isValidWarehouse = true;
                         }
 
-                        fields.push({
-                            label: 'Close',
-                            fieldtype: 'Button',
-                            click: function() {
-                                // cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
-                                d.hide();
-                            }
-                        });
+                        if (isValidWarehouse) {
+                            // Perform validation
+                            frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+                                if (r.message && r.message.name) {
+                                    frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
+                                    d.hide();
+                                } else {
+                                    frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                    $('[data-fieldname="scan_barcode"]').focus();
+                                }
+                                
+                            });
+                        } else {
+                            frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not match with recommended or centralized warehouse.`);
+                            $('[data-fieldname="t_warehouse"]').val(''); // Clear the field value
+                            $('[data-fieldname="t_warehouse"]').focus();
+                        }
+                    });
 
-                        let d = new frappe.ui.Dialog({
-                            fields: fields,
-                            size: 'small',
-                            static: 1
-                        });
-
-                        d.fields_dict.t_warehouse.$input.on("change", function() {
-                            let t_warehouse_value = $(this).val();
-                            let isValidWarehouse = false;
-                        
-                            // Check if t_warehouse_value matches with recommended or centralized warehouse
-                            if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {
-                                isValidWarehouse = true;
-                            }
-                        
-                            if (isValidWarehouse) {
-                                // Perform validation
-                                frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
-                                    if (r.message && r.message.name) {
-                                        frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                        d.hide();
-                                    } else {
-                                        frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
-                                        $('[data-fieldname="scan_barcode"]').focus();
-                                    }
-                                    cur_frm.toggle_display(['scan_grade'], true);
-                                });
-                            } else {
-                                frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not match with recommended or centralized warehouse.`);
-                                $('[data-fieldname="t_warehouse"]').val(''); // Clear the field value
-                                $('[data-fieldname="t_warehouse"]').focus();
-                            }
-                        });
-                        
-                    }
+                    // Show the dialog
+                    d.show();
                 }
-            });
-            cur_frm.refresh_field('items');
-        // });
+            }
+        });
+        cur_frm.refresh_field('items');
     }
 }
+
 
 
 // frappe.ui.form.on('Stock Movement Detail', {
@@ -348,7 +346,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
 //                 method: 'nj_features.api_files.get_all_emp_warehouse',
 //                 args: {'user': frappe.session.user_email},
 //                 callback: function(response) {
-//                     // console.log("get_all_emp_warehouse: ",response.message);
 //                     if (response.message && response.message.error) {
 //                         // frappe.msgprint('Error: ' + response.message.error);
 //                     } else {
@@ -413,7 +410,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
 //                             // Perform validation
 //                             frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
 //                                 if (r.message && r.message.name) {
-//                                     console.log("cdt", cdt, "cdn", cdn, "name", r.message.name);
 //                                     frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
 //                                 } else {
 //                                     frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
@@ -483,7 +479,6 @@ function set_scanned_values(row_to_modify, data) {
         },
         callback: function(response) {
             let item_details = response.message;
-            console.log("data", data);
             let quantity = data.qty ? data.qty : 1;
             // if (item_details && item_details.has_serial_no === 1) {
             //     frappe.msgprint('Item code: <b>'+data.item_code+'</b> is serialized.');

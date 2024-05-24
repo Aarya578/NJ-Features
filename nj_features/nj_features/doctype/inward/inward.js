@@ -31,6 +31,32 @@ frappe.ui.form.on('Inward', {
                 submitAndNext(frm);
             }).addClass('btn-primary');
         }
+
+        if (frm.doc.docstatus == 1) {
+
+            frm.add_custom_button(__('Print QR Code'), function() {
+                var docname = encodeURIComponent(frm.doc.name);
+                var format = "Inward Barcode";
+                var print_trigger = 1;
+    
+                frappe.call({
+                    method: 'nj_features.qr_code.generate_and_save_qrcode',
+                    args: {
+                        data: frm.doc.name
+                    }
+                });
+    
+                window.open(frappe.urllib.get_full_url("/printview?" +
+                "doctype=" + encodeURIComponent("Inward") +
+                "&name=" + docname +
+                "&trigger_print=" + print_trigger +
+                "&format=" + format +
+                "&no_letterhead=0" +
+                "&_lang=" + (frappe.boot.lang || "en")));
+                    
+            }).addClass('btn-primary');
+        }
+
     },
 
     validate: function(frm) {
@@ -61,7 +87,7 @@ frappe.ui.form.on('Inward', {
                 callback: function(r) {
                     if (r.message && r.message.length > 0) {
                         // Initialize repack item code with brand and model
-                        let repack_item_code = "S-" + frm.doc.brand + "-" + frm.doc.model;
+                        let repack_item_code = "S-" + frm.doc.brand + " " + frm.doc.model;
         
                         // Define the order of parameters
                         let parameter_order = ['unk_pro', 'unk_ram', 'unk_storage'];

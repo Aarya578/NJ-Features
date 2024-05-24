@@ -5,12 +5,11 @@ frappe.ui.form.on('Employee', {
         frm.set_df_property('company', 'hidden', 1);
     },
     before_save(frm) {
-        console.log("frm", frm.doc);
+        // console.log("frm", frm.doc);
         frappe.call({
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
-                console.log("13 response");
                 if (r.exception) {
                     console.log("exception");
                     var error_message = "Server Error: " + r.exception;
@@ -24,13 +23,14 @@ frappe.ui.form.on('Employee', {
                     frm.comment_box.submit();
                 } 
                 else {
-                    console.log('employee',r.message,"r.message.user_id");
                     frm.set_value('user_id', r.message.user_email);
                     frm.set_value('employee_asset_warehouse', r.message.emp_ware);
-                    frm.set_value('work_warehouse', r.message.work_ware);
+                    if (!frm.doc.work_warehouse) {
+                        frm.set_value('work_warehouse', r.message.work_ware);
+                    }
                     frm.refresh_field('user_id');
                     frm.refresh_field('employee_asset_warehouse');
-                    frm.refresh_field('user_work_warehouseid');
+                    frm.refresh_field('work_warehouse');
                 }
                 // frm.refresh();
 

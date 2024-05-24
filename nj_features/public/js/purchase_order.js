@@ -1,3 +1,6 @@
+frappe.provide("erpnext.buying");
+{% include 'erpnext/public/js/controllers/buying.js' %};
+
 frappe.ui.form.on('Purchase Order', {
     onload(frm) {
         $('.col-lg-2.layout-side-section').hide();
@@ -18,4 +21,44 @@ frappe.ui.form.on('Purchase Order', {
         var warrantyDate = frappe.datetime.add_days(postingDate, numberOfDays);
         cur_frm.set_value('warrenty_till_date', warrantyDate)
     }
+    
 });
+
+const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
+    close_purchase_order: function(){
+        var me = this;
+        frappe.db.get_list('NJ Settings', {
+            filters: {'module': 'NJ Features', 'doc_type': 'Purchase Order'},
+            fields: ['parameter', 'value'],
+        }).then(doc => {
+            console.log("NJ Settings", doc);
+            for (let i = 0; i < doc.length; i++) {
+                let parameter = doc[i].parameter;
+                let value = doc[i].value;
+                
+                window[parameter] = value;
+                
+                console.log(parameter, value);
+            }
+            let toleranceAmount = flt(cur_frm.doc.grand_total, 6) * (flt(purchase_receipt_value, 6)/100)
+            let billedAmount = flt(cur_frm.doc.grand_total, 6) * (flt(cur_frm.doc.per_billed, 6)/100)
+            let receivedAmount = flt(cur_frm.doc.grand_total, 6) * (flt(cur_frm.doc.per_received, 6)/100)
+            console.log("Grand Total: ", cur_frm.doc.grand_total);
+            console.log("toleranceAmount: ", toleranceAmount, "[ ",cur_frm.doc.grand_total ," x ",purchase_receipt_value,"% ]");
+            console.log("billedAmount: ", billedAmount, "[ ",cur_frm.doc.grand_total ," x ",cur_frm.doc.per_billed,"% ]");
+            console.log("receivedAmount: ", receivedAmount, "[ ",cur_frm.doc.grand_total ," x ",cur_frm.doc.per_received,"% ]");
+            if (receivedAmount + toleranceAmount >= billedAmount) {
+                console.log("Yes", receivedAmount + toleranceAmount ,">", billedAmount);
+                // this._super();
+                erpnext.buying.PurchaseOrderController.prototype.close_purchase_order.call(me);
+            } else {
+                console.log("No",receivedAmount + toleranceAmount ," <> ", billedAmount);
+                frappe.throw("PO can not be Closed because 'Received Amount' is <= 'Billed Amount'.");
+            }
+        }).catch(err => {
+            console.error(err);
+        });
+    }
+});
+
+$.extend(cur_frm.cscript, new purchaseOrderValidation({frm: cur_frm}));

@@ -32,17 +32,17 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 
 # include js in doctype views
 doctype_js = {
+    "Item": "public/js/item.js",
+    "Employee": "public/js/employee.js",
     "Warehouse": "public/js/warehouse.js",
     "Serial No": "public/js/serial_no.js",
-    "Employee": "public/js/employee.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 
-doctype_list_js = {
-    "Stock Movement" : "public/js/stock_movement_list.js",
-    "Prepared Report": "public/js/prepared_report_list.js"
-}
+# doctype_list_js = {
+#     "Stock Movement" : "public/js/stock_movement_list.js"
+# }
 
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}

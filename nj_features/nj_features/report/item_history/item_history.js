@@ -50,7 +50,7 @@ frappe.query_reports["Item History"] = {
                 "fieldname": "department",
                 "label": __("Department"),
                 "fieldtype": "Link",
-                "hidden": 1,
+                "hidden": 0,
                 "options": "Department"
             }
         ],

@@ -6,6 +6,7 @@ import random
 import frappe
 from frappe import _
 import datetime
+# import frappe.frappe
 from frappe.model.document import Document
 import re
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -237,7 +238,12 @@ class NJQCA(Document):
                 
             if self.bios_serialno:
                 update_serial_no_componont_for_grade(self)
-                open_draft_qi(self)
+                department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+                print("242 The department value is ",department)
+                if department == "BG - Core IQC - NJ":
+                    open_draft_qi(self)
+                else:
+                    print("QI draft will not open \nBecause you not belonging to the IQC Department")
             else:
                 frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
             

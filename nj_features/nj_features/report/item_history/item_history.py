@@ -6,10 +6,13 @@ def get_columns():
     return [
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 160},
         {"label": _("STE Number"), "fieldname": "ste_number", "fieldtype": "Data", "width": 120},
-        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 380},
         {"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
+        {"label": _("Parent Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
+        {"label": _("Department"), "fieldname": "department", "fieldtype": "Link", "options": "Department", "width": 180},
+        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 380},
         {"label": _("Warehouse Owner"), "fieldname": "warehouse_owner", "fieldtype": "Link", "options": "User", "width": 180},
-        {"label": _("Created By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User", "width": 180}
+        {"label": _("Record Entry By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User", "width": 180},
+
     ]
 
 # Define the data retrieval logic
@@ -61,7 +64,7 @@ def get_data(filters):
         # Filter the data in Python based on serial_no
         serial_no_filter = filters["serial_no"].upper()
         data = [entry for entry in data if any(serial_no_filter in sn for sn in entry["serial_no"].split('\n'))]
-
+    print(f'data ===============> {data}')
     return data
 
 def execute(filters):

@@ -32,7 +32,12 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 
 # include js in doctype views
 doctype_js = {
+<<<<<<< Updated upstream
     "Item": "public/js/item.js",
+=======
+    "Warehouse": "public/js/warehouse.js",
+    "Stock Entry": "public/js/stock_entry.js",
+>>>>>>> Stashed changes
     "Employee": "public/js/employee.js",
     "Warehouse": "public/js/warehouse.js",
     "Serial No": "public/js/serial_no.js",

@@ -3,19 +3,18 @@ from frappe import _
 
 # Define the columns for the report
 def get_columns():
-    columns = [
+    return [
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 160},
         {"label": _("STE Number"), "fieldname": "ste_number", "fieldtype": "Data", "width": 120},
         {"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
         {"label": _("Parent Warehouse"), "fieldname": "parent_warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
         {"label": _("Department"), "fieldname": "department", "fieldtype": "Link", "options": "Department", "width": 180},
+        # {"label": _("Department Name"), "fieldname": "department_name", "fieldtype": "Data", "width": 180},
         {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 380},
-        {"label": _("Department Name"), "fieldname": "department_name", "fieldtype": "Data", "width": 180},
         {"label": _("Warehouse Owner"), "fieldname": "warehouse_owner", "fieldtype": "Link", "options": "User", "width": 180},
         {"label": _("Record Entry By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User", "width": 180},
+        {"label": _("Voucher Type"), "fieldname": "voucher_type", "fieldtype": "Data", "width": 180},
     ]
-    print('columns =============> {columns}')
-    return columns
 
 # Define the data retrieval logic
 def get_data(filters):
@@ -31,6 +30,8 @@ def get_data(filters):
         conditions.append(f"AND sle.item_code = '{filters['item']}'")
     if filters.get("Doctype"):
         conditions.append(f"AND sle.voucher_type = '{filters['Doctype']}'")
+    if filters.get("department"):
+        conditions.append(f"AND d.name = '{filters['department']}'")
 
     conditions_sql = " ".join(conditions)
 
@@ -63,9 +64,8 @@ def get_data(filters):
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
     """
-
+    # print(f'query ===============> {query}')
     data = frappe.db.sql(query, filters, as_dict=True)
-
     if filters.get("serial_no"):
         # Filter the data in Python based on serial_no
         serial_no_filter = filters["serial_no"].upper()

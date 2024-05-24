@@ -281,8 +281,9 @@ frappe.ui.form.on('Inward', {
 });
 
 function warehouse_info(frm) {
-    let userEmail = frappe.session.user_email;
-    frappe.db.get_value('Employee', {'user_id': userEmail}, ['name', 'work_warehouse'], function(response) {
+    if(frm.doc.docstatus == 0){
+        let userEmail = frappe.session.user_email;
+        frappe.db.get_value('Employee', {'user_id': userEmail}, ['name', 'work_warehouse'], function(response) {
         if (!response.name) {
             frappe.msgprint('Employee with <strong>'+userEmail+'</strong> not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
             return;
@@ -296,6 +297,8 @@ function warehouse_info(frm) {
         frm.set_df_property('target_warehouse', 'read_only', 1);
 
     });
+    }
+    
 }
 
 function submitAndNext(frm) {

@@ -33,7 +33,7 @@ def generate_and_save_qrcode(data, format='png'):
             encoded_data = base64.b64encode(data.encode()).decode()
         url = pyqrcode.create(encoded_data)
         filename = f"{encoded_data}.{format}"
-        
+        print(f'url: {url}, filename: {filename}')
         # Define the file path
         base_directory = frappe.get_site_path("public", "files")
         file_path = os.path.join(base_directory, filename)

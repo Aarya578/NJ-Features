@@ -18,7 +18,7 @@
   },
   {
    "fieldname": "json_data",
-   "fieldtype": "Small Text",
+   "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Processed JSON",
    "reqd": 1
@@ -26,7 +26,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-05-24 10:43:15.038586",
+ "modified": "2024-05-24 11:16:48.819976",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Raw Data",

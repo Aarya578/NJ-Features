@@ -9,10 +9,12 @@
   "doc_type",
   "doctypename",
   "quality_inspection_type",
+  "media_size",
   "column_break_iemmj",
   "file_type",
   "file_location",
   "linked_data",
+  "time_taken_to_upload",
   "amended_from"
  ],
  "fields": [
@@ -65,43 +67,28 @@
    "fieldname": "linked_data",
    "fieldtype": "Data",
    "label": "Linked Data"
+  },
+  {
+   "fieldname": "media_size",
+   "fieldtype": "Data",
+   "label": "Media Size"
+  },
+  {
+   "fieldname": "time_taken_to_upload",
+   "fieldtype": "Data",
+   "label": "Time Taken To Upload"
   }
  ],
+ "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-24 09:23:45.102206",
+ "modified": "2024-05-24 15:54:44.763966",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Doc Attachment",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "select": 1,
-   "share": 1,
-   "submit": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "NJPulse",
-   "select": 1,
-   "share": 1,
-   "submit": 1,
-   "write": 1
-  },
   {
    "create": 1,
    "delete": 1,
@@ -110,7 +97,7 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Developer",
+   "role": "System Manager",
    "select": 1,
    "share": 1,
    "submit": 1,

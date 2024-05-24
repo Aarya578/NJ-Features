@@ -2,7 +2,7 @@ import frappe
 import json
 import random
 import os
-from barcode import Code128
+# from barcode import Code128
 from nj_features.qr_code import generate_and_save_qrcode
 from io import BytesIO
 

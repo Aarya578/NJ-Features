@@ -36,12 +36,15 @@ doctype_js = {
     "Employee": "public/js/employee.js",
     "Serial No": "public/js/serial_no.js",
     "Warehouse": "public/js/warehouse.js",
-    "Sales Order": "public/js/sales_order.js",
     "Stock Entry": "public/js/stock_entry.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Purchase Receipt": "public/js/purchase_receipt.js"
 }
-
+doctype_list_js = {
+    "Sales Order": "public/js/sales_order.js",
+    # "Stock Movement" : "public/js/stock_movement_list.js",
+    # "Prepared Report": "public/js/prepared_report_list.js"
+}
 # doctype_list_js = {
 #     "Stock Movement" : "public/js/stock_movement_list.js"
 # }

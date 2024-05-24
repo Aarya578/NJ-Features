@@ -35,9 +35,12 @@
   "column_break_qzvyk",
   "model",
   "error_section_section",
+  "inspection_type",
+  "section_break_aggsk",
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
+  "njqca_result_parameters",
   "amended_from"
  ],
  "fields": [
@@ -171,7 +174,7 @@
   },
   {
    "fieldname": "error_section_section",
-   "fieldtype": "Section Break",
+   "fieldtype": "Column Break",
    "hidden": 1
   },
   {
@@ -230,12 +233,27 @@
    "fieldtype": "Link",
    "label": "Manual Repack Item Code",
    "options": "Item"
+  },
+  {
+   "fieldname": "section_break_aggsk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "inspection_type",
+   "fieldtype": "Data",
+   "label": "Inspection Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "njqca_result_parameters",
+   "fieldtype": "Table",
+   "options": "NJQCA Result Parameters"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-11 07:33:26.266416",
+ "modified": "2024-05-24 10:49:43.297599",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

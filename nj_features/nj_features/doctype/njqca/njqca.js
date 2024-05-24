@@ -5,9 +5,9 @@ frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
         if (cur_frm.doc.serial_no && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
             frm.events.serial_no(frm);
+         
         }
         if (!cur_frm.doc.model) {
-            console.log("model");
             if (!frm.doc.manufacturer_model) {
                 frappe.msgprint("Manufacturer Model is not found")
                 return
@@ -16,9 +16,41 @@ frappe.ui.form.on('NJQCA', {
         } else {
             frm.set_df_property('model', 'read_only', 1)
         }
-    },
 
+
+        frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
+            
+            
+            var row = locals[cdt][cdn];
+
+            console.log('row value is ',row);
+            if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
+                return {
+                    filters: {
+                        item_group: row.item_group,
+                        has_variants: 0
+                    }
+                    
+                };
+            }            
+            else{
+                frm.refresh_field("part_item_code");
+            }
+           
+		};
+
+        frm.set_query('manual_repack_item_code', function(r) {
+            return {
+                filters: {
+                    item_group : frm.doc.item_group,
+                    has_variants: 0
+                }
+                
+            }
+        });
+    },
     refresh: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
 
@@ -29,8 +61,69 @@ frappe.ui.form.on('NJQCA', {
         if(cur_frm.doc.error_message != ''){
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
+        // frm.fields_dict['njqca_item_components'].grid.grid_rows.forEach(function(row) {
+        //     var child_doc = row.doc;
+        //     console.log('47 working ',child_doc);
+        //     // Check if the variant_1 field is empty
+        //     // if () {
+        //     //     // Set the read-only property for the part_item_code field
+        //     //     row.fields_dict['part_item_code'].set_read_only(true);
+        //     // } else {
+        //     //     // Set the part_item_code field as editable
+        //     //     row.fields_dict['part_item_code'].set_read_only(false);
+        //     // }
+        // });
 
     },
+    // barcode:function(frm){
+	// 	$("input[data-fieldname='barcode']").on('blur', function() {
+	// 		var inputValue = $(this).val();
+	// 		if ((inputValue)) {
+	// 			get_itm_code_on_barcode(frm)
+	// 			// fill_nj_quality_reading_from_serial_or_itm_wizard(frm)
+	// 		} 
+	// 		else{ $(this).val(''); }
+	// 	});
+	// },
+    // :function(frm){
+    //     $("input[data-fieldname='serial_no']").on('blur', function() {
+    //         var inputValue = $(this).val();
+    //         if (inputValue) {
+    //             frappe.call({
+    //                 method: "nj_features.doctype.njqca.njqca.get_itm_code_on_barcode",
+    //                 args: {
+    //                     barcode: inputValue
+    //                 },
+    //                 callback: function(r) {
+    //                     if (r.message) {
+    //                         var data = r.message;
+    //                         frm.set_value("item_code", data.item_code);
+    //                         frm.set_value("bios_serial_number", data.bios_serial_number);
+    //                         frm.set_value("item_group", data.item_group);
+    //                         frm.set_value("item_name", data.item_name);
+    //                         frm.set_value("warehouse", data.warehouse);
+    //                         frm.set_value("base_price", data.base_price);
+    //                         frm.set_value("preferred_a_grade_price", data.preferred_a_grade_price);
+    
+    //                         for (var key in data.attribute_values) {
+    //                             if (data.attribute_values.hasOwnProperty(key)) {
+    //                                 frm.set_value(key, data.attribute_values[key]);
+    //                             }
+    //                         }
+    
+    //                         if (data.disable_save) {
+    //                             frm.disable_save();
+    //                         } else if (data.enable_save) {
+    //                             frm.enable_save();
+    //                         }
+    //                     }
+    //                 }
+    //             });
+    //         } else {
+    //             $(this).val('');
+    //         }
+    //     });    
+    // },
     power_on: function() {
             const isYes = cur_frm.doc.power_on === "Yes";
             const isNone = cur_frm.doc.power_on === "";
@@ -52,41 +145,60 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
+                    
+                    console.log("r value is ",r);
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
+                    if(!r.message.brand){
+                        
+                        frappe.throw(`Brand is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
+                    } 
                     fieldsToUpdate.forEach(field => {
-                        console.log(field, " : ",r.message[field]);
-                        // if (!frm.doc[field]) {
+                        console.log(field, " : ",r.message[field]);                      
+                        if (!frm.doc[field]) {
                             frm.set_value(field, r.message[field]);
                             cur_frm.refresh_field(field);
-                        // }
+                        }
                     });
                     let ware = r.message.warehouse
                     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
+                       
                         console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
                         if (!r.work_warehouse) {
                             frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
                         }
                         else if (r.work_warehouse != ware) {
+                            console.log("79 work warehouse: ", r.work_warehouse)
                             let d = frappe.confirm(
                             `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
                                 () => {
-                                    let data = {
-                                        "name": frm.doc.name,
-                                        "serial_no": frm.doc.serial_no,
-                                        "stock_entry_type": "Material Transfer",
-                                        "t_warehouse": r.work_warehouse,
-                                        "series": "STE-NJQCA-",
-                                        "reference_serial_no": frm.doc.serial_no,
-                                        "reference_type": "NJQCA"
-                                    }
-                                    frappe.call({
-                                        method: 'nj_lib.utils.stock_entry.stock_entry',
-                                        args: {'data': JSON.stringify(data)},
-                                        error: function(err) {
-                                            console.log(err);
+
+                                        let stock_repack_item = [{
+                                            'item_code': frm.doc.item_code,
+                                            'basic_rate': frm.doc.base_price,
+                                            'serial_no': frm.doc.serial_no
+                                        }];
+    
+                                        let data = {
+                                            "serial_no": frm.doc.serial_no,
+                                            "stock_entry_type": "Material Transfer",
+                                            "s_warehouse": frm.doc.warehouse,
+                                            "t_warehouse": r.work_warehouse,
+                                            "series": "NJ-STE-NJQCA-",
+                                            "reference_serial_no": frm.doc.serial_no,
+                                            "doctype": frm.doc.doctype,
+                                            "stock_entry_for_material_transfer_or_repack_items": stock_repack_item,
                                         }
-                                    })
-                                    frm.set_value('warehouse', r.work_warehouse)
+                                        console.log("data", data);
+                                        frappe.call({
+                                            method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+                                            args: { 'data': JSON.stringify(data) },
+                                            error: function(err) {
+                                                console.log(err);
+                                            }
+                                        })
+                                        console.log('r value is ', r)
+                                        console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
+                                        frm.set_value('warehouse', r.work_warehouse)
                                     d.hide()
                                 },
                                 () => {
@@ -304,7 +416,7 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save: function() {
+    after_save: function() {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
@@ -319,12 +431,137 @@ frappe.ui.form.on('NJQCA', {
                         frappe.validated = false
                     } else {
                         cur_frm.set_value('repack_item_code', r.message)
+                        cur_frm.set_value('manual_repack_item_code',r.message)
+                        cur_frm.set_value("created",cur_frm.doc.owner);
+                        console.log("The created user value is done ");
                     }
                 }
             })
         }
     }
 });
+
+// function get_itm_code_on_barcode(frm) {
+//     frm.set_value("bios_serial_number", '');
+//     if (frm.doc.barcode) {
+
+//         frappe.call({
+//             method: "frappe.client.get",
+//             args: {
+//                 doctype: "Serial No",
+//                 filters: { name: frm.doc.barcode },
+//             },
+//             callback: function(r) {
+//                 if (r.message) {
+//                     let serial_no_data = r.message;
+//                     // console.log("serial no data: ", serial_no_data);
+//                     frm.set_value("item_code", serial_no_data.item_code);
+//                     frm.set_value("bios_serial_number", serial_no_data.bios_serial_no);
+//                     frm.set_value("item_group", serial_no_data.item_group);
+//                     frm.set_value("item_name", serial_no_data.item_name);
+//                     frm.set_value("warehouse", serial_no_data.warehouse);
+//                     frm.set_value("base_price", serial_no_data.purchase_rate);
+
+// 					// console.log("frm.doc.barcode", cur_frm.doc.barcode);
+// 					frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component', function(r) {
+// 						// console.log("is_component: ", r, frm.doc.item_group );
+// 						if (r.is_component == 0) {
+			
+// 							frappe.call({
+// 								method: "nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection.update_total_preferred_grade_a",
+// 								args: { barcode: frm.doc.barcode },
+// 								callback: function(r) {
+// 									// console.log("----------==", r.message.attribute_values);
+// 									let attribute_values = r.message.attribute_values
+// 									frm.set_value('preferred_a_grade_price', r.message.preferred_a_grade_price)
+// 									for (let key in attribute_values) {
+// 										frm.set_value(key, attribute_values[key]);
+// 									}
+// 								}
+// 							})
+// 						}
+// 					})
+
+//                     let current_date = new Date();
+//                     let serial_item_date = new Date(r.message.purchase_date);
+//                     let difference = current_date.getTime() - serial_item_date.getTime();
+
+//                     if (((r.message.item_group == "laptops" || r.message.item_group == "desktops" || r.message.item_group == "chromebooks" ||
+//                             r.message.item_group == "chromeboxes") && difference < 0) && r.message.purchase_date > "2024-03-20"
+//                     ) {
+//                         if (r.message.bios_serial_no && r.message.bios_serial_no.startsWith('nj') && r.message.bios_serial_no === frm.doc.barcode) {
+//                             frappe.msgprint("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run.");
+//                             frm.disable_save();
+//                         } else if (r.message.bios_serial_no && r.message.bios_serial_no != frm.doc.barcode) {
+//                             frm.enable_save();
+//                         } else if (!r.message.bios_serial_no && r.message.bios_serial_no != frm.doc.barcode) {
+//                             frappe.msgprint("BIOS serial number not found for Serial No: <b>" + frm.doc.barcode + "</b>. Please insert Dongle and run.");
+//                             frm.disable_save();
+//                         }
+//                     }
+
+//                     if (r.message.warehouse) {
+//                         let ware = r.message.warehouse
+//                         frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(r) {
+//                             console.log("work: ", r.work_warehouse, "| ware: ", ware);
+//                             if (!r.work_warehouse) {
+//                                 frappe.msgprint(`Work Warehouse is not set for Employee: <b>${frappe.session.user_email}</b>`)
+//                             } else if (r.work_warehouse != ware) {
+//                                 let d = frappe.confirm(
+//                                     `Do you want to transfer stock to your Work Warehouse: <b>${r.work_warehouse}?</b>`,
+//                                     () => {
+// 										let stock_entry_items = [{
+// 											'item_code': frm.doc.item_code,
+// 											'basic_rate': frm.doc.base_price,
+// 											'serial_no': frm.doc.barcode
+// 										}];
+
+//                                         let data = {
+//                                             "serial_no": frm.doc.barcode,
+//                                             "stock_entry_type": "Material Transfer",
+//                                             "t_warehouse": r.work_warehouse,
+//                                             "series": "STE-NJ-QI-",
+//                                             "reference_serial_no": frm.doc.serial_no,
+//                                             "doctype": frm.doc.doctype,
+// 											"stock_entry_for_material_transfer_or_repack_items": stock_entry_items
+//                                         }
+//                                         frappe.call({
+//                                             method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+//                                             args: { 'data': JSON.stringify(data) },
+//                                             error: function(err) {
+//                                                 console.log(err);
+//                                             }
+//                                         })
+//                                         frm.set_value('warehouse', r.work_warehouse)
+//                                         d.hide()
+//                                     },
+//                                     () => {
+//                                         $('.primary-action').hide()
+//                                     }
+//                                 );
+//                             }
+//                         })
+//                     } else {
+//                         frappe.msgprint("Warehouse is not updated in Serial No: <b>" + frm.doc.barcode + "</b>");
+//                         frm.disable_save();
+//                     }
+
+//                 } else {
+//                     frm.set_value("barcode", null);
+//                     frappe.msgprint(`Serial No <b>'${frm.doc.barcode}'</b> not found. Please select an existing Serial No.`);
+//                 }
+//             },
+//             error: function(r) {
+//                 frm.set_value("item_group", null);
+//             }
+
+//         });
+    
+        
+
+//     }
+// }
+
 
 function get_model(manufacturer_model, make) {
     frappe.call({

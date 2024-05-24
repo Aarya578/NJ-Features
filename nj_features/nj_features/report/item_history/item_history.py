@@ -14,6 +14,7 @@ def get_columns():
         {"label": _("Warehouse Owner"), "fieldname": "warehouse_owner", "fieldtype": "Link", "options": "User", "width": 180},
         {"label": _("Record Entry By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User", "width": 180},
     ]
+    print('columns =============> {columns}')
     return columns
 
 # Define the data retrieval logic

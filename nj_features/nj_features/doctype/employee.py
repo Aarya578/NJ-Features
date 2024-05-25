@@ -52,6 +52,7 @@ def create_user(self):
                 user.role_profile_name = self.get('role_profile')
                 user.restrict_ip = restrict_ip
                 user.save(ignore_permissions=True)
+            print("user is ",user)
             work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
             if work_ware_reqd == 'Yes':
                 warehouse_name = "WK-"+ self.get('first_name') + "-" + self.get('emp_id')
@@ -63,16 +64,16 @@ def create_user(self):
                     work_ware = work_warehouse_in_db
                     get_parent_warehouse_for_worK_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "parent_warehouse")
                     get_depts_linked_warehouse = frappe.db.get_value("Department", {'name': self.get('department')}, "linked_warehouse")
+                    print("the self details ",self)
                     # check get_parent_warehouse_for_worK_warehouse with dept's linked warehouse
-                
+                    print("get_parent_warehouse_for_worK_warehouse is ",get_parent_warehouse_for_worK_warehouse," and get_depts_linked_warehouse is ", get_depts_linked_warehouse)
                     if get_parent_warehouse_for_worK_warehouse != get_depts_linked_warehouse:
                         get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse_in_db)
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
                         if dept_work_ware:
                             get_work_warehouse_doc.parent_warehouse = dept_work_ware
-                            get_work_warehouse_doc.warehouse = self.get('department')
+                            get_work_warehouse_doc.department = self.get('department')
                             get_work_warehouse_doc.save(ignore_permissions=True)
-                            
                 
             is_emp_warehouse = 'EMP - ' + self.get('employee_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name':is_emp_warehouse}, "name")
@@ -81,7 +82,7 @@ def create_user(self):
                 emp_ware = create_warehouse(user, department)
             else:
                 emp_ware = emp_work_warehouse_in_db
-
+            print("\nuser details are ",user)
             return {"user_email": user, "work_ware": work_ware, "emp_ware": emp_ware}
         
         else:

@@ -19,8 +19,8 @@ def get_columns():
 def get_data(filters):
     conditions = []
 
-    if filters.get("warehouse"):
-        conditions.append(f"AND WH.name = '{filters['warehouse']}'")
+    if filters.get("warehouse_owner"):
+        conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
 
     conditions_sql = " ".join(conditions)
 

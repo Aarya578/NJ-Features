@@ -4,28 +4,38 @@ frappe.ui.form.on('Purchase Receipt', {
         if (frm.doc.docstatus == 0) {
             frm.doc.items.forEach(function(item) {
                 frappe.db.get_list('NJ Settings', {
-                    filters: {'doc_type':'Warehouse'},
+                    filters: {'doc_type':'Warehouse', 'module': 'NJ Features'},
                     fields: ['parameter', 'value']
                 }).then(function(result) {
                     result.forEach(function(setting) {
                         if (setting.parameter === item.item_group) {
                             item.warehouse = setting.value;
+                        } else {
+                            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse').then(function(r) {
+                                if (r && r.message.work_warehouse) {
+                                    // frm.model.set_value('warehouse', r.work_warehouse);
+                                    item.warehouse = r.message.work_warehouse
+                                } else {
+                                    frappe.msgprint('Work Warehouse not found for User: <b>'+$(frappe.session.user_email)+'</b>. Please contact IT Infra to create an Employee.');
+                                    frm.disable_save();
+                                }
+                            });
                         }
                     });
                 });
 
                 // If the item_group is not found in NJ Settings, set the default warehouse
-                if (!item.warehouse) {
-                    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse').then(function(r) {
+                // if (!item.warehouse) {
+                //     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse').then(function(r) {
                         
-                        if (!r || !r.work_warehouse) {
-                            frappe.msgprint('Work Warehouse not found for User: <b>'+$(frappe.session.user_email)+'</b>. Please contact IT Infra to create an Employee.');
-                            frm.disable_save();
-                        } else {
-                            frm.set_value('set_warehouse', r.work_warehouse);
-                        }
-                    });
-                }
+                //         if (!r || !r.work_warehouse) {
+                //             frappe.msgprint('Work Warehouse not found for User: <b>'+$(frappe.session.user_email)+'</b>. Please contact IT Infra to create an Employee.');
+                //             frm.disable_save();
+                //         } else {
+                //             frm.set_value('set_warehouse', r.work_warehouse);
+                //         }
+                //     });
+                // }
             });
         }
     },

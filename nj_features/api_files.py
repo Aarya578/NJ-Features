@@ -230,7 +230,6 @@ def print_barcode(doc):
         item_code = doc_dict.get('item_code') or doc_dict.get('component') 
         serial_no=doc_dict.get('serial_no')
         if serial_no:
-            print(f'serial_no ===============> {serial_no}')
             generate_and_save_qrcode(serial_no)
         
         # if serial_no:
@@ -252,7 +251,6 @@ def print_barcode(doc):
                     serial_no = create_serial_no(item_code)
                     serial_no_list.append(serial_no)
                     unique_serial_no = list(set(serial_no_list))
-                    print(f'unique_serial_no ===============> {unique_serial_no}')
                 updated_serial_no = '\n'.join(unique_serial_no)
                 
                 # for serial_no in serial_no_list[-remaining_qty:]:

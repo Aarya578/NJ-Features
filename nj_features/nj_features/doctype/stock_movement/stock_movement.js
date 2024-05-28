@@ -47,13 +47,16 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     scan_grade: function(frm) {
+        let changed_item_code = (function() {
+            return cur_frm.doc.scan_barcode.replaceAll('@', '/')
+        })();
         // Get the child table data
         if (frm.doc.scan_grade != '') {
             var new_item_code = ''
             frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
                 .then(function (r) {
                     if (r.message.name) {
-                        new_item_code = cur_frm.doc.scan_barcode + "-" + r.message.name
+                        new_item_code = changed_item_code + "-" + r.message.name
                         frappe.model.with_doc("Stock Movement", frm.docname, function() {
                             var table = frappe.model.get_doc("Stock Movement", frm.docname).items;
                             var child_item = table.find(d => d.idx === frm.selected_child);
@@ -186,7 +189,12 @@ frappe.ui.form.on('Stock Movement', {
                 })(i);
             }
         }
-    }
+    },
+    // after_submit(frm) {
+    //     setTimeout(function(){
+    //         frappe.set_route('List', frm.doc.doctype);
+    //     }, 5000)
+    // }
 })
 
 frappe.ui.form.on('Stock Movement Detail', {
@@ -228,15 +236,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         {
                             label: 'Target Warehouse',
                             fieldname: 't_warehouse',
-                            fieldtype: 'Link',
-                            options: 'Warehouse',
-                            get_query: function(doc) {
-                                return {
-                                    filters: [
-                                        ['Warehouse', 'name', 'in', warehouse_list]
-                                    ]
-                                };
-                            }
+                            fieldtype: 'Data'
                         },
                         {
                             label: 'Recommended Warehouse',

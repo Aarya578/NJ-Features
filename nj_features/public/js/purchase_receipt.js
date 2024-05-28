@@ -82,7 +82,6 @@ frappe.ui.form.on('Purchase Receipt Item', {
                 },
                 callback: function(r) {
                     if (r.message.serial_no) {
-                        console.log(r.message.serial_no);
                         frappe.model.set_value(cdt, cdn, 'serial_no', r.message.serial_no);
                     }
                     if (r.message.truncated_item_code) {

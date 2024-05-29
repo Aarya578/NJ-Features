@@ -11,7 +11,7 @@ from frappe.model.document import Document
 import re
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
-
+from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 
 def update_serial_no_componont_for_grade(self):
     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
@@ -375,6 +375,14 @@ def get_info_from_serial_no(doc=None):
     return result
 
 
+
+
+# get_item_code_for_each_part()
+
+
+
+
+
 @frappe.whitelist()
 def get_part_mapping(item_group, docname):
     doc = frappe.get_doc("NJQCA", docname)
@@ -408,8 +416,8 @@ def get_part_mapping(item_group, docname):
         
         # List to store attribute data for each row
         child_attr_data = []
-        for mapping in part_mapping:
-            for row in doc.njqca_item_component:
+        for row in doc.njqca_item_component:
+            for mapping in part_mapping:
                 # print("row.variant_2,,,,,,,,,,,,,,,,,,,",row.variant_2)
                 # if row.variant_2 in is_serial_no:
                     
@@ -423,15 +431,19 @@ def get_part_mapping(item_group, docname):
                 variants = mapping.mappng_fields.split('::')
                 
                 if item_group == mapping.item_group:
+                    print("now item_group is ",item_group, " mapping.item_group ",mapping.item_group)
                     for variant in variants:
                         last_variant_values[item_group] = last_variant_values.get(item_group, {})
                         last_variant_values[item_group][variant] = row.get(variant)
                     attribute_value = last_variant_values[item_group]
                     attribute_object = {}
                     # getting value from NJ Settings - - creating cpu by concating "Core I5" and "7 GEN" as "Core I5 - 7TH GEN"
-                        
+                    print("441 item_group.lower() == cpu.lower() is ",item_group.lower(), cpu.lower())
                     if item_group.lower() == cpu.lower():
-
+                        # if row.variant_2 in is_serial_no:
+                        #     print("row.variant_2:::::no processor ",row.variant_2)
+                        #     attribute_object[mapping.attribute_name] = "No Processor"
+                        # else:  
                         any_attribute_undefined = any(value is None for value in attribute_value.values())
                         cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
                         normalize_cpu = normalize_gen(cpu_value)
@@ -439,7 +451,10 @@ def get_part_mapping(item_group, docname):
                             
                     # getting value from NJ Settings - creating ram by concating "16 GB" and "DDR4" as "16 GB DDR4"
                     elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
-
+                        # if row.variant_2 in is_serial_no:
+                        #     print("row.variant_2:::::no ram ",row.variant_2)
+                        #     attribute_object[mapping.attribute_name] = "No Ram"
+                        # else:
                         any_attribute_undefined = any(value is None for value in attribute_value.values())
                         ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
                         attribute_object[mapping.attribute_name] = ram_value
@@ -447,16 +462,22 @@ def get_part_mapping(item_group, docname):
                                             
                     # getting value from NJ Settings
                     elif item_group.lower() == storage.lower()  and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]) :
-                            
+                        #  if row.variant_2 in is_serial_no:
+                        #     print("row.variant_2:::::no storage ",row.variant_2)
+                        #     attribute_object[mapping.attribute_name] = "No Storage"
+                        # else:
                         attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
                     
                     
-                    row.attr_data = json.dumps(attribute_object)            
+                    row.attr_data = json.dumps(attribute_object)   
+                    print("472 row.attr_Data is ",row.attr_data)         
                     child_attr_data.append(attribute_object)
+                    print("Child attr data is ",child_attr_data)
 
         consolidated = consolidate_ram_capacities(child_attr_data)
         doc.data_attr = json.dumps(consolidated)
         repack_item_code = get_variant_from_value(item_template, consolidated)
+        print("  doc.data_attr is ",  doc.data_attr," and the repack item code is ",repack_item_code)
         return repack_item_code
 
 def consolidate_ram_capacities(data):
@@ -464,7 +485,7 @@ def consolidate_ram_capacities(data):
 
     for obj in data:
         for key, value in obj.items():
-            if key == ram_capacity: # getting value from NJ Settings
+            if key.lower() == ram_capacity.lower(): # getting value from NJ Settings
                 ram_value = value
                 
                 match = re.match(r'^(\d+)\s*GB\s*(\w+)', ram_value, re.IGNORECASE)

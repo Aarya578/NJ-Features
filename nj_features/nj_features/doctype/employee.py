@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 import json
 import frappe
+from frappe import _
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
@@ -62,18 +63,49 @@ def create_user(self):
                     work_ware = create_warehouse(user, self.get('department'), self.get('emp_id'))
                 else:
                     work_ware = work_warehouse_in_db
-                    get_parent_warehouse_for_worK_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "parent_warehouse")
-                    get_depts_linked_warehouse = frappe.db.get_value("Department", {'name': self.get('department')}, "linked_warehouse")
+                    get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "department")
+                    # get_depts_linked_warehouse = frappe.db.get_value("Department", {'name': self.get('department')}, "linked_warehouse")
                     print("the self details ",self)
                     # check get_parent_warehouse_for_worK_warehouse with dept's linked warehouse
-                    print("get_parent_warehouse_for_worK_warehouse is ",get_parent_warehouse_for_worK_warehouse," and get_depts_linked_warehouse is ", get_depts_linked_warehouse)
-                    if get_parent_warehouse_for_worK_warehouse != get_depts_linked_warehouse:
+                    print("get_parent_warehouse_for_worK_warehouse is ",get_dept_from_warehouse," and get_depts_linked_warehouse is ", self.get('department'))
+                    if get_dept_from_warehouse != self.get('department'):
                         get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse_in_db)
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
                         if dept_work_ware:
-                            get_work_warehouse_doc.parent_warehouse = dept_work_ware
-                            get_work_warehouse_doc.department = self.get('department')
-                            get_work_warehouse_doc.save(ignore_permissions=True)
+                            filters = {"warehouse_owner":get_work_warehouse_doc.warehouse_owner}
+                            print("The filters are 20 , ", filters)
+                            conditions = []
+
+                            if filters.get("warehouse_owner"):
+                                conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
+
+                            conditions_sql = " ".join(conditions)
+
+                            # SQL query to fetch data without serial_no filter
+                            query = f"""
+                               SELECT 
+                                    SUM(Bin.actual_qty) AS total_qty
+                                FROM 
+                                    tabBin Bin
+                                INNER JOIN 
+                                    tabWarehouse WH ON Bin.warehouse = WH.name
+                                WHERE 
+                                    WH.disabled = 0
+                                    AND Bin.actual_qty > 0
+                                    {conditions_sql}
+                                GROUP BY
+                                    WH.warehouse_owner;
+                                """
+
+                            print(f"query: {query}")
+                            data = frappe.db.sql(query, filters, as_dict=1)
+                            print("The data is ", data)
+                            if data:
+                                frappe.throw(_("Please Transfer the stock {0} quantity to the {1} department").format(data[0].get("total_qty"),get_dept_from_warehouse))
+                            else:
+                                get_work_warehouse_doc.parent_warehouse = dept_work_ware
+                                get_work_warehouse_doc.department = self.get('department')
+                                get_work_warehouse_doc.save(ignore_permissions=True)
                 
             is_emp_warehouse = 'EMP - ' + self.get('employee_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name':is_emp_warehouse}, "name")

@@ -418,11 +418,12 @@ frappe.ui.form.on('NJQCA', {
 
     after_save: function() {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
+            // cur_frm.set_value('model',)
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
                 args: { 
                     'item_group': cur_frm.doc.item_group,
-                    'docname': cur_frm.doc.name,
+                    'docname': cur_frm.doc.name
                 },
                 callback: function (r) {
                     console.log("on save", r);
@@ -432,6 +433,7 @@ frappe.ui.form.on('NJQCA', {
                     } else {
                         cur_frm.set_value('repack_item_code', r.message)
                         cur_frm.set_value('manual_repack_item_code',r.message)
+                        // cur_frm.set_value('data_attr',r.message)
                         cur_frm.set_value("created",cur_frm.doc.owner);
                         console.log("The created user value is done ");
                     }

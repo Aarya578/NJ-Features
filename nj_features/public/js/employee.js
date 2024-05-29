@@ -15,12 +15,14 @@ frappe.ui.form.on('Employee', {
                     var error_message = "Server Error: " + r.exception;
                     frm.comment_box.set_input(error_message);
                     frm.comment_box.submit();
+                    frappe.validated = false;
                 } 
                 else if (r.message['Error while creating User']) {
                     console.log("else if in error",r.message);
                     var error_message = "Error: " + r.message['Error while creating User'];
                     frm.comment_box.set_input(error_message);
                     frm.comment_box.submit();
+                    // frappe.validated = false;
                 } 
                 else {
                     frm.set_value('user_id', r.message.user_email);

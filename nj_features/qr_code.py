@@ -29,8 +29,9 @@ def generate_and_save_qrcode(data, format='png'):
         # For item codes
         encoded_data = data
         
-        if '/' in data or '"' in data:
-            encoded_data = base64.b64encode(data.encode()).decode()
+        if '/' in data:
+            encoded_data = data.replace('/', '@')
+            # encoded_data = base64.b64encode(data.encode()).decode()
         url = pyqrcode.create(encoded_data)
         filename = f"{encoded_data}.{format}"
         print(f'url: {url}, filename: {filename}')

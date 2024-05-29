@@ -42,12 +42,7 @@ doctype_js = {
 }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order.js",
-    # "Stock Movement" : "public/js/stock_movement_list.js",
-    # "Prepared Report": "public/js/prepared_report_list.js"
 }
-# doctype_list_js = {
-#     "Stock Movement" : "public/js/stock_movement_list.js"
-# }
 
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}

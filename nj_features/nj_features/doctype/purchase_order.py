@@ -29,8 +29,10 @@ def check_billed_and_closed_amount(purchase_order, po_grand_total):
             parameters_dict[param.parameter] = float(param.value)
         else:
             parameters_dict[param.parameter] = param.value
-        
-    tolerance_amount = po_grand_total * (parameters_dict.get('purchase_receipt_value', 0) / 100)
+            
+    tolerance_amount = parameters_dict.get('purchase_receipt_value', 0)
+    if parameters_dict.get('purchase_receipt_type').lower() == 'percentage':
+        tolerance_amount = po_grand_total * (parameters_dict.get('purchase_receipt_value', 0) / 100)
     
     return {'po_grand_total':po_grand_total, 'tolerance_amount': tolerance_amount,
         'total_billed_amount': total_billed_amount[0].total_billed_amount, 'total_closed_amount': total_closed_amount[0].total_closed_amount}

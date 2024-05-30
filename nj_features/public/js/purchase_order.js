@@ -36,11 +36,12 @@ const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
                 let billedAmount = r.message.total_billed_amount
                 let toleranceAmount = r.message.tolerance_amount
                 if (closedAmount + toleranceAmount >= billedAmount) {
-                    console.log("Yes", closedAmount + toleranceAmount ,">", billedAmount);
+                    console.log("Yes", closedAmount + toleranceAmount ,">=", billedAmount);
                     erpnext.buying.PurchaseOrderController.prototype.close_purchase_order.call(me);
                 } else {
                     console.log("No",closedAmount + toleranceAmount ," <> ", billedAmount);
-                    frappe.throw("PO can not be Closed because 'Received Amount' is <= 'Billed Amount'.");
+                    frappe.throw("PO cannot be closed because 'Received Amount: " + closedAmount + 
+                    "' <= 'Billed Amount: " + billedAmount + "'.");
                 }
             }
         })

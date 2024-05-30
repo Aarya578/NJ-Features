@@ -4,7 +4,7 @@ frappe.ui.form.on('Employee', {
         $('.col-lg-2.layout-side-section').hide();
         frm.set_df_property('company', 'hidden', 1);
     },
-    before_save(frm) {
+    validate(frm) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
@@ -24,6 +24,7 @@ frappe.ui.form.on('Employee', {
                     frappe.validated = false;
                 } 
                 else {
+                    console.log("else part", r);
                     frm.set_value('user_id', r.message.user);
                     frm.set_value('employee_asset_warehouse', r.message.employee_asset_warehouse);
                     if (!frm.doc.work_warehouse) {
@@ -37,5 +38,6 @@ frappe.ui.form.on('Employee', {
 
             }
         })
+        return frappe.validated;
     }
 })

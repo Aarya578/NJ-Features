@@ -32,15 +32,20 @@ const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
             args: {'purchase_order': cur_frm.doc.name, 'po_grand_total': cur_frm.doc.grand_total},
             callback: function(r) {
                 console.log('check_billed_and_closed_amount: ', r.message);
-                let closedAmount = r.message.total_closed_amount
-                let billedAmount = r.message.total_billed_amount
+                let closedAmount = r.message.total_closed_amount ?? 0.0
+                let billedAmount = r.message.total_billed_amount ?? 0.0
                 let toleranceAmount = r.message.tolerance_amount
-                if (closedAmount + toleranceAmount >= billedAmount) {
-                    console.log("Yes", closedAmount + toleranceAmount ,">=", billedAmount);
+                let diffAmount = closedAmount - billedAmount
+                if (closedAmount == 0 && billedAmount == 0) {
+                    console.log("No, closedAmount is ",closedAmount," and billedAmount is ", billedAmount);
+                    frappe.throw("PO cannot be closed because both 'Closed Amount' and 'Billed Amount' are 0.0. Instead you can cancel the PO.");
+                }
+                if ((diffAmount + toleranceAmount) >= -1 && (diffAmount + toleranceAmount) <= 1) {
+                    console.log("Yes, Closed Amount: ", closedAmount + toleranceAmount ," >= Billed Amount: ", billedAmount);
                     erpnext.buying.PurchaseOrderController.prototype.close_purchase_order.call(me);
                 } else {
                     console.log("No",closedAmount + toleranceAmount ," <> ", billedAmount);
-                    frappe.throw("PO cannot be closed because 'Received Amount: " + closedAmount + 
+                    frappe.throw("PO cannot be closed because 'Closed Amount: " + closedAmount + 
                     "' <= 'Billed Amount: " + billedAmount + "'.");
                 }
             }

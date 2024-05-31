@@ -15,23 +15,22 @@ def create_user_and_warehouse(self):
 
             if isinstance(self, str):
                 self = json.loads(self)
-            emp = frappe.get_doc("Employee", self.get('name'))
-            if emp:
-                return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
+            return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
         except Exception as e:
             return {"error": str(e)}
 
 def create_user(self):
     if isinstance(self, str):
         self = json.loads(self)
-    # Check if the warehouses already exist
     try:
+        # Check if the warehouses already exist
         work_ware = ''
         if self.get('status') == 'Active':
             user = frappe.db.exists("User", {"email": self.get('prefered_email')})
             if not user:
                 restrict_ip = frappe.db.get_value('NJ Settings', {'doc_type': 'User', 'parameter': 'restrict_ip'}, 'value')
                 user = frappe.new_doc('User')
+
                 user.first_name = self.get('first_name')
                 if 'middle_name' in self:
                     user.middle_name = self.get('middle_name')
@@ -40,18 +39,20 @@ def create_user(self):
                 user.email = self.get('prefered_email')
                 user.gender = self.get('gender')
                 user.birth_date = self.get('date_of_birth')
-                user.send_welcome_address = 1
+                user.send_welcome_email = 0
+                user.threads_notify = 0
+                user.allowed_in_mentions = 0
                 user.role_profile_name = self.get('role_profile')
                 user.restrict_ip = restrict_ip
                 user.save(ignore_permissions=True)
-                
+
             work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
             if work_ware_reqd == 'Yes':
                 warehouse_name = "WK-" + self.get('first_name') + "-" + self.get('emp_id')
                 work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': warehouse_name}, "name")
                 # if Employee wants to change the department then change the warehouse parent based on specified dept else create a new warehouse
                 if not work_warehouse_in_db:
-                    work_ware = create_warehouse(user, self.get('department'), self.get('emp_id'))
+                    work_ware = create_warehouse(user.name, self.get('department'), self.get('emp_id'))
                 else:
                     work_ware = work_warehouse_in_db
                     get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "department")
@@ -60,6 +61,7 @@ def create_user(self):
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
                         if dept_work_ware:
                             filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
+                
                             conditions = []
                             if filters.get("warehouse_owner"):
                                 conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
@@ -80,7 +82,7 @@ def create_user(self):
 
                             data = frappe.db.sql(query, filters, as_dict=1)
                             if data:
-                                raise frappe.ValidationError(_("Please Transfer the stock of {0} quantity(s) to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                                frappe.throw(_("Please Transfer the stock of {0} quantity(s) to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
                             else:
                                 get_work_warehouse_doc.parent_warehouse = dept_work_ware
                                 get_work_warehouse_doc.department = self.get('department')
@@ -90,16 +92,16 @@ def create_user(self):
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': is_emp_warehouse}, "name")
             if not emp_work_warehouse_in_db:
                 department = self.get('department')
+                user = user.name
                 emp_ware = create_warehouse(user, department)
             else:
                 emp_ware = emp_work_warehouse_in_db
             return {"user_email": user, "work_ware": work_ware, "emp_ware": emp_ware}
         
         else:
-            raise frappe.ValidationError(f"Employee status is <b>{self.get('status')}</b>")
+            frappe.throw(f"Employee status is <b>{self.get('status')}</b>")
     except Exception as e:
         frappe.throw(f"Error while creating User: {str(e)}")
-        return False
 
 
 def create_warehouse(user, department, emp_id=None):

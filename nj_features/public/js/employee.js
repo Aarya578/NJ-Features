@@ -4,27 +4,32 @@ frappe.ui.form.on('Employee', {
         $('.col-lg-2.layout-side-section').hide();
         frm.set_df_property('company', 'hidden', 1);
     },
-    validate(frm) {
+    before_save(frm) {
+        // Prevent form submission initially
+        frappe.validated = false;
+
+        // Perform server-side call
         frappe.call({
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
-                if (r.exception) {
-                    console.log("exception");
-                    var error_message = "Server Error: " + r.exception;
+                if (r.message.error) {
+                    // Handle server error
+                    console.log("Server Error:", r.message.error);
+                    var error_message = "Server Error: " + r.message.error;
                     frm.comment_box.set_input(error_message);
                     frm.comment_box.submit();
                     frappe.validated = false;
-                } 
-                else if (r.message['Error while creating User']) {
-                    console.log("else if in error",r.message);
+                } else if (r.message['Error while creating User']) {
+                    // Handle user creation error
+                    console.log("Error while creating User:", r.message['Error while creating User']);
                     var error_message = "Error: " + r.message['Error while creating User'];
                     frm.comment_box.set_input(error_message);
                     frm.comment_box.submit();
                     frappe.validated = false;
-                } 
-                else {
-                    console.log("else part", r);
+                } else if (r.message.user && r.message.employee_asset_warehouse && r.message.work_warehouse) {
+                    // Handle successful response
+                    console.log("Success:", r.message);
                     frm.set_value('user_id', r.message.user);
                     frm.set_value('employee_asset_warehouse', r.message.employee_asset_warehouse);
                     if (!frm.doc.work_warehouse) {
@@ -33,11 +38,16 @@ frappe.ui.form.on('Employee', {
                     frm.refresh_field('user_id');
                     frm.refresh_field('employee_asset_warehouse');
                     frm.refresh_field('work_warehouse');
+                    // Allow form to save
+                    frappe.validated = true;
+                } else {
+                    console.log("Unexpected response:", r.message);
+                    frappe.validated = false;
                 }
-                frm.refresh();
-
             }
-        })
-        return frappe.validated;
+        });
+
+        // Prevent form submission initially
+        return false;
     }
-})
+});

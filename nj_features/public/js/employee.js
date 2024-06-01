@@ -13,6 +13,9 @@ frappe.ui.form.on('Employee', {
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
+                if (!r.message.work_warehouse){
+                    frappe.msgprint(__("Please create Department 's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ"));
+                }
                 if (r.message.error) {
                     // Handle server error
                     console.log("Server Error:", r.message.error);
@@ -27,7 +30,7 @@ frappe.ui.form.on('Employee', {
                     frm.comment_box.set_input(error_message);
                     frm.comment_box.submit();
                     frappe.validated = false;
-                } else if (r.message.user && r.message.employee_asset_warehouse && r.message.work_warehouse) {
+                } else if (r.message.user ) {
                     // Handle successful response
                     console.log("Success:", r.message);
                     frm.set_value('user_id', r.message.user);
@@ -42,9 +45,6 @@ frappe.ui.form.on('Employee', {
                     frappe.validated = true;
                 } else {
                     console.log("Unexpected response:", r.message);
-                    if(!r.message.work_warehouse){
-                        frappe.throw("Warehouse is not present in department")
-                    }
                     frappe.validated = false;
                 }
             }

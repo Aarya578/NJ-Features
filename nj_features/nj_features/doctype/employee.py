@@ -54,10 +54,11 @@ def create_user(self):
                 work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': warehouse_name}, "name")
                 # if Employee wants to change the department then change the warehouse parent based on specified dept else create a new warehouse
                 if not work_warehouse_in_db:
-                    work_ware = create_warehouse(user.name, self.get('department'), self.get('emp_id'))
+                    work_ware = create_warehouse(user, self.get('department'), self.get('emp_id'))
                 else:
                     work_ware = work_warehouse_in_db
                     get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "department")
+                    
                     
                     # Check for previous dept and current dept, if dept is changed now, Check the stock is available in his ware house or not 
                     if get_dept_from_warehouse != self.get('department'):
@@ -92,12 +93,14 @@ def create_user(self):
                                 get_work_warehouse_doc.parent_warehouse = dept_work_ware
                                 get_work_warehouse_doc.department = self.get('department')
                                 get_work_warehouse_doc.save(ignore_permissions=True)
+                            else:
+                                frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
 
             is_emp_warehouse = 'EMP - ' + self.get('first_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': is_emp_warehouse}, "name")
             if not emp_work_warehouse_in_db:
                 department = self.get('department')
-                if user.name:
+                if str(type(user)) != "<class 'str'>":
                     user = user.name
                 emp_ware = create_warehouse(user, department)
             else:
@@ -114,13 +117,15 @@ def create_warehouse(user, department, emp_id=None):
     try:
         parent_warehouse, user_full_name = '', ''
         warehouse = frappe.new_doc('Warehouse')
+        if str(type(user)) != "<class 'str'>":
+            user = user.name
         user_full_name = frappe.db.get_value('User', {'name':user}, 'full_name')
         if department and emp_id: #dept emp work warehouse
             prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
             parent_warehouse = prefix + '-Work-Warehouse - NJ'
             existing_parent = frappe.db.exists('Warehouse', {'name': parent_warehouse})
             if not existing_parent:
-                frappe.msgprint("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
+                frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
             warehouse.warehouse_name = 'WK-' + user_full_name + '-' + emp_id
             warehouse.warehouse_owner = user
             warehouse.department = department

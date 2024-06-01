@@ -12,10 +12,12 @@ def create_user_and_warehouse(self):
             user_email = user_data.get("user_email")
             work_ware = user_data.get("work_ware")
             emp_ware = user_data.get("emp_ware")
-
+            
             if isinstance(self, str):
                 self = json.loads(self)
+
             return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
+        
         except Exception as e:
             return {"error": str(e)}
 
@@ -56,43 +58,47 @@ def create_user(self):
                 else:
                     work_ware = work_warehouse_in_db
                     get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "department")
+                    
+                    # Check for previous dept and current dept, if dept is changed now, Check the stock is available in his ware house or not 
                     if get_dept_from_warehouse != self.get('department'):
                         get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse_in_db)
-                        dept_work_ware = get_dept_work_warehouse(self.get('department'))
-                        if dept_work_ware:
-                            filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
+                        
+                        filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
                 
-                            conditions = []
-                            if filters.get("warehouse_owner"):
-                                conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
-                            conditions_sql = " ".join(conditions)
+                        conditions = []
+                        if filters.get("warehouse_owner"):
+                            conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
+                        conditions_sql = " ".join(conditions)
 
-                            query = f"""
-                                SELECT 
-                                    SUM(Bin.actual_qty) AS total_qty
-                                FROM 
-                                    tabBin Bin
-                                INNER JOIN 
-                                    tabWarehouse WH ON Bin.warehouse = WH.name
-                                WHERE 
-                                    WH.disabled = 0 AND Bin.actual_qty > 0 {conditions_sql}
-                                GROUP BY
-                                    WH.warehouse_owner;
-                                """
+                        query = f"""
+                            SELECT 
+                                SUM(Bin.actual_qty) AS total_qty
+                            FROM 
+                                tabBin Bin
+                            INNER JOIN 
+                                tabWarehouse WH ON Bin.warehouse = WH.name
+                            WHERE 
+                                WH.disabled = 0 AND Bin.actual_qty > 0 {conditions_sql}
+                            GROUP BY
+                                WH.warehouse_owner;
+                            """
 
-                            data = frappe.db.sql(query, filters, as_dict=1)
-                            if data:
-                                frappe.throw(_("Please Transfer the stock of {0} quantity(s) to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
-                            else:
+                        data = frappe.db.sql(query, filters, as_dict=1)
+                        if data:
+                            frappe.throw(_("Please Transfer the stock of {0} quantity(s) to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                        else:
+                            dept_work_ware = get_dept_work_warehouse(self.get('department'))
+                            if dept_work_ware:
                                 get_work_warehouse_doc.parent_warehouse = dept_work_ware
                                 get_work_warehouse_doc.department = self.get('department')
                                 get_work_warehouse_doc.save(ignore_permissions=True)
-                
+
             is_emp_warehouse = 'EMP - ' + self.get('first_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': is_emp_warehouse}, "name")
             if not emp_work_warehouse_in_db:
                 department = self.get('department')
-                user = user.name
+                if user.name:
+                    user = user.name
                 emp_ware = create_warehouse(user, department)
             else:
                 emp_ware = emp_work_warehouse_in_db

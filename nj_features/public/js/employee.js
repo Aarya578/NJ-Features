@@ -42,6 +42,9 @@ frappe.ui.form.on('Employee', {
                     frappe.validated = true;
                 } else {
                     console.log("Unexpected response:", r.message);
+                    if(!r.message.work_warehouse){
+                        frappe.throw("Warehouse is not present in department")
+                    }
                     frappe.validated = false;
                 }
             }

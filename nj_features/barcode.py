@@ -1,14 +1,18 @@
 try:
-    from barcode.writer import BaseWriter
+    from barcode.writer import BaseWriter, SVGWriter
     from typing import BinaryIO
     from PIL import Image, ImageDraw, ImageFont
 except ImportError:
     import logging
-
+    
     log = logging.getLogger("pyBarcode")
     log.info("Pillow not found. Image output disabled")
     Image = ImageDraw = ImageFont = None  # lint:ok
 
+import os
+import frappe
+from barcode import Code128
+from io import BytesIO
 
 def mm2px(mm, dpi=300):
     return (mm * dpi) / 25.4
@@ -85,3 +89,32 @@ class CustomImgWriter(BaseWriter):  # type: ignore[no-redef]
         Content should be a barcode rendered by this writer.
         """
         content.save(fp, format=self.format)
+        
+@frappe.whitelist()
+def generate_and_save_barcode(data, format='svg'):
+    encoded_data = data
+        
+    if '/' in data:
+        encoded_data = data.replace('/', '@')
+            
+    # my_code = Code128(encoded_data, writer=CustomImgWriter())
+    my_code = Code128(encoded_data, writer=SVGWriter())
+    file_name = f"{encoded_data}.{format}"
+
+    # Create BytesIO to store barcode SVG
+    barcode_bytes = BytesIO()
+    my_code.write(barcode_bytes)
+
+    # Set the directory to save the file
+    base_directory = frappe.get_site_path("public", "files")
+    file_path = os.path.join(base_directory, file_name)
+
+    # Check if the file already exists
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    # Save the SVG content to a file
+    with open(file_path, 'wb') as f:
+        f.write(barcode_bytes.getvalue())
+        
+    return file_name

@@ -32,7 +32,7 @@ frappe.ui.form.on('Employee', {
                     frappe.validated = false;
                 } else if (r.message.user ) {
                     // Handle successful response
-                    console.log("Success:", r.message);
+                    console.log("Success:", r);
                     frm.set_value('user_id', r.message.user);
                     frm.set_value('employee_asset_warehouse', r.message.employee_asset_warehouse);
                     if (!frm.doc.work_warehouse) {
@@ -43,8 +43,12 @@ frappe.ui.form.on('Employee', {
                     frm.refresh_field('work_warehouse');
                     // Allow form to save
                     frappe.validated = true;
-                } else {
-                    console.log("Unexpected response:", r.message);
+                }else if (r.message.user_status){
+                    console.log("User status is ",r.message);
+                    frappe.validated = true;
+                }
+                 else {
+                    console.log("Unexpected response:", r);
                     frappe.validated = false;
                 }
             }

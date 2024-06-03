@@ -6,19 +6,22 @@ from frappe import _
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-    if isinstance(self, str):
-        self = json.loads(self)
-    user_data = create_user(self)
-    if user_data:
-        # try:
-        user_email = user_data.get("user_email")
-        work_ware = user_data.get("work_ware")
-        emp_ware = user_data.get("emp_ware")
-        
-
-        return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
-    
+    try:
+        if isinstance(self, str):
+            self = json.loads(self)
+        user_data = create_user(self)
+        print("13 user data is ",user_data)
+        if "user_email" in user_data:
+            user_email = user_data.get("user_email")
+            work_ware = user_data.get("work_ware")
+            emp_ware = user_data.get("emp_ware")
+            return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
+        elif "status" in user_data:
+            return {"user_status" : str(user_data.get('status'))}
+    except Exception as e:
+        return {"Error" : str(e)}
     #     # except Exception as e:
+
     # else:
     #     return {"error": str(e)}
 
@@ -113,9 +116,7 @@ def create_user(self):
         except Exception as e:
             frappe.throw(f"Error while creating User: {str(e)}")
     else:
-        frappe.msgprint(f"Employee status is <b>{self.get('status')}</b>")
-
-
+        return {"status" : self.get('status')}
 def create_warehouse(user, department, emp_id=None):
     try:
         parent_warehouse, user_full_name = '', ''

@@ -13,9 +13,9 @@ frappe.ui.form.on('Employee', {
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
-                if (!r.message.work_warehouse){
-                    frappe.msgprint(__("Please create Department 's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ"));
-                }
+                // if (!r.message.work_warehouse){
+                //     frappe.msgprint(__("Please create Department 's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ"));
+                // }
                 if (r.message.error) {
                     // Handle server error
                     console.log("Server Error:", r.message.error);

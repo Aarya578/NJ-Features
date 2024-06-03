@@ -113,7 +113,7 @@ def create_user(self):
         except Exception as e:
             frappe.throw(f"Error while creating User: {str(e)}")
     else:
-        frappe.throw(f"Employee status is <b>{self.get('status')}</b>")
+        frappe.msgprint(f"Employee status is <b>{self.get('status')}</b>")
 
 
 def create_warehouse(user, department, emp_id=None):

@@ -26,7 +26,7 @@ def create_user(self):
         self = json.loads(self)
     try:
         # Check if the warehouses already exist
-        work_ware = ''
+        work_ware, user_email = '', ''
         if self.get('status') == 'Active':
             user = frappe.db.exists("User", {"email": self.get('prefered_email')})
             if not user:
@@ -47,6 +47,9 @@ def create_user(self):
                 user.role_profile_name = self.get('role_profile')
                 user.restrict_ip = restrict_ip
                 user.save(ignore_permissions=True)
+                user_email = user.email
+            else:
+                user_email = user
 
             work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
             if work_ware_reqd == 'Yes':
@@ -95,17 +98,15 @@ def create_user(self):
                                 get_work_warehouse_doc.save(ignore_permissions=True)
                             else:
                                 frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
-
+            # if str(type(user)) != "<class 'str'>":
             is_emp_warehouse = 'EMP - ' + self.get('first_name')
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': is_emp_warehouse}, "name")
             if not emp_work_warehouse_in_db:
                 department = self.get('department')
-                if str(type(user)) != "<class 'str'>":
-                    user = user.name
                 emp_ware = create_warehouse(user, department)
             else:
                 emp_ware = emp_work_warehouse_in_db
-            return {"user_email": user, "work_ware": work_ware, "emp_ware": emp_ware}
+            return {"user_email": user_email, "work_ware": work_ware, "emp_ware": emp_ware}
         
         else:
             frappe.throw(f"Employee status is <b>{self.get('status')}</b>")

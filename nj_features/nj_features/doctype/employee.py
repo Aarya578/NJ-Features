@@ -10,20 +10,18 @@ def create_user_and_warehouse(self):
         if isinstance(self, str):
             self = json.loads(self)
         user_data = create_user(self)
-        print("13 user data is ",user_data)
+        print("\n\n13 user data is ",user_data)
+        print("self is ", self)
         if "user_email" in user_data:
             user_email = user_data.get("user_email")
             work_ware = user_data.get("work_ware")
             emp_ware = user_data.get("emp_ware")
-            return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware}
+            first_name = user_data.get('first_name')
+            return {"user": user_email, "work_warehouse": work_ware, "employee_asset_warehouse": emp_ware,"first_name":first_name}
         elif "status" in user_data:
             return {"user_status" : str(user_data.get('status'))}
     except Exception as e:
         return {"Error" : str(e)}
-    #     # except Exception as e:
-
-    # else:
-    #     return {"error": str(e)}
 
 def create_user(self):
     if isinstance(self, str):
@@ -37,11 +35,11 @@ def create_user(self):
                 restrict_ip = frappe.db.get_value('NJ Settings', {'doc_type': 'User', 'parameter': 'restrict_ip'}, 'value')
                 user = frappe.new_doc('User')
 
-                user.first_name = self.get('first_name')
+                user.first_name = self['first_name'] = self.get('first_name').title()
                 if 'middle_name' in self:
-                    user.middle_name = self.get('middle_name')
+                    user.middle_name = self['middle_name'] = self.get('middle_name').title()
                 if 'last_name' in self:
-                    user.last_name = self.get('last_name')
+                    user.last_name = self['last_name'] = self.get('last_name').title()
                 user.email = self.get('prefered_email')
                 user.gender = self.get('gender')
                 user.birth_date = self.get('date_of_birth')
@@ -52,10 +50,10 @@ def create_user(self):
                 user.restrict_ip = restrict_ip
                 user.save(ignore_permissions=True)
                 user_email = user.email
-
+                
             work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
             if work_ware_reqd == 'Yes':
-                warehouse_name = "WK-" + self.get('first_name') + "-" + self.get('emp_id')
+                warehouse_name = "WK-" + self.get('first_name').title() + "-" + self.get('emp_id')
                 work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': warehouse_name}, "name")
                 # if Employee wants to change the department then change the warehouse parent based on specified dept else create a new warehouse
                 if not work_warehouse_in_db:
@@ -104,17 +102,20 @@ def create_user(self):
                 frappe.msgprint("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
 
             # if str(type(user)) != "<class 'str'>":
-            is_emp_warehouse = 'EMP - ' + self.get('first_name')
+            is_emp_warehouse = 'EMP - ' + self.get('first_name').title()
             emp_work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': is_emp_warehouse}, "name")
             if not emp_work_warehouse_in_db:
                 department = self.get('department')
                 emp_ware = create_warehouse(user_email, department)
             else:
                 emp_ware = emp_work_warehouse_in_db
-            return {"user_email": user_email, "work_ware": work_ware , "emp_ware": emp_ware}
+            return {"user_email": user_email, "work_ware": work_ware , "emp_ware": emp_ware,'first_name':self.get("first_name")}
         
+        except frappe.ValidationError as e:
+            raise e
         except Exception as e:
             frappe.throw(f"Error while creating User: {str(e)}")
+
     else:
         return {"status" : self.get('status')}
 def create_warehouse(user, department, emp_id=None):

@@ -33,11 +33,14 @@ frappe.ui.form.on('Employee', {
                 } else if (r.message.user ) {
                     // Handle successful response
                     console.log("Success:", r);
+                    frm.set_value('first_name',r.message.first_name);
                     frm.set_value('user_id', r.message.user);
                     frm.set_value('employee_asset_warehouse', r.message.employee_asset_warehouse);
                     if (!frm.doc.work_warehouse) {
                         frm.set_value('work_warehouse', r.message.work_warehouse);
                     }
+                    
+                    frm.refresh_field('first_name');
                     frm.refresh_field('user_id');
                     frm.refresh_field('employee_asset_warehouse');
                     frm.refresh_field('work_warehouse');

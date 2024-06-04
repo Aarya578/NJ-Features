@@ -8,10 +8,10 @@ frappe.ui.form.on('Item', {
             frm.add_custom_button(__('Print QR Code'), function() {
                 var docname = encodeURIComponent(frm.doc.name);
                 var format = "Item Barcode";
-                var print_trigger = 0;
+                var print_trigger = 1;
     
                 frappe.call({
-                    method: 'nj_features.barcode.generate_and_save_barcode',
+                    method: 'nj_features.qr_code.generate_and_save_qrcode',
                     args: {
                         data: frm.doc.name
                     },

@@ -386,7 +386,7 @@ def get_info_from_serial_no(doc=None):
 @frappe.whitelist()
 def get_part_mapping(item_group, docname):
     doc = frappe.get_doc("NJQCA", docname)
-    item_template = f"S-{doc.brand}-{doc.model}"
+    item_template = f"S-{doc.brand} {doc.model}"
     if doc.njqca_item_component and doc.item_group:
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": doc.item_group}, 
         fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")

@@ -28,13 +28,21 @@ def generate_and_save_qrcode(data, format='png'):
     try:
         # For item codes
         encoded_data = data
+        template_item_code = frappe.db.exists('Item', encoded_data)
+        qr_code_mapping_name = frappe.db.exists('Non Serialized QR Code Mapping', {'item_code': encoded_data})
         
-        if '/' in data:
-            encoded_data = data.replace('/', '@')
-            # encoded_data = base64.b64encode(data.encode()).decode()
+        if template_item_code:
+            if not qr_code_mapping_name:
+                qr_code_mapping_doc = frappe.new_doc('Non Serialized QR Code Mapping')
+                qr_code_mapping_doc.item_code = encoded_data
+                qr_code_mapping_doc.save()
+                encoded_data = qr_code_mapping_doc.name
+            else:
+                encoded_data = qr_code_mapping_name
+        
         url = pyqrcode.create(encoded_data)
         filename = f"{encoded_data}.{format}"
-        print(f'url: {url}, filename: {filename}')
+        
         # Define the file path
         base_directory = frappe.get_site_path("public", "files")
         file_path = os.path.join(base_directory, filename)

@@ -47,9 +47,12 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     scan_grade: function(frm) {
-        let changed_item_code = (function() {
-            return cur_frm.doc.scan_barcode.replaceAll('@', '/')
-        })();
+        let changed_item_code = ''
+        frappe.db.get_value('Non Serialized QR Code Mapping', {'name': frm.doc.scan_barcode}, 'item_code')
+        .then(function(r) {
+            changed_item_code = r.message.item_code;
+        });
+        
         // Get the child table data
         if (frm.doc.scan_grade != '') {
             var new_item_code = ''

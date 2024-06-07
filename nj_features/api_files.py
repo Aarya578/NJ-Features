@@ -323,6 +323,7 @@ def update_serial_no_on_pr_submit(doc, method=None):
 def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
+    print(f"supplier_name ============> {supplier_name}")
     if serial_no_doc:
         serial_no_doc.purchase_price = item.base_rate
         serial_no_doc.current_price = item.base_rate
@@ -331,6 +332,8 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.warranty_period = doc.warranty_days
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days
+        serial_no_doc.warranty_till_date = doc.warrenty_till_date
+        serial_no_doc.warranty_date = doc.warrenty_till_date
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name

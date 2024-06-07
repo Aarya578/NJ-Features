@@ -6,7 +6,7 @@ frappe.ui.form.on('Serial No', {
         frm.add_custom_button(__('Print QR Code'), function() {
             var docname = encodeURIComponent(frm.doc.name);
             var format = "Serial No Barcode";
-            var print_trigger = 1;
+            var print_trigger = 0;
 
             frappe.call({
                 method: 'nj_features.qr_code.generate_and_save_qrcode',

@@ -9,18 +9,25 @@ def login(usr, pwd):
         login_manager.post_login()
     except frappe.exceptions.AuthenticationError:
         frappe.clear_messages()
-        frappe.local.response["message"] = {
-            "success_key":0,
-            "message":"Authentication Error!"
+        return {
+            "success_key": 0,
+            "message": "Authentication Error!"
         }
-        return
 
+    api_key, api_generate = '', ''
     user = frappe.get_doc('User', frappe.session.user)
-    generated_secret = frappe.utils.password.get_decrypted_password(
-        "User", frappe.session.user, fieldname="api_secret"
-    )
-    api_generate = generated_secret
-  
+    
+    if not user.api_key:
+        api_generated_secret = frappe.get_attr("frappe.core.doctype.user.user.generate_keys")(frappe.session.user)
+        api_generate = api_generated_secret.get('api_secret')
+        api_key = frappe.db.get_value('User', {'name': frappe.session.user}, 'api_key')
+    else:
+        generated_secret = frappe.utils.password.get_decrypted_password(
+            "User", frappe.session.user, fieldname="api_secret"
+        )
+        api_generate = generated_secret
+        api_key = user.api_key
+        
     get_dept_query = "SELECT department FROM `tabEmployee` WHERE user_id = %s"
     department=frappe.db.sql(get_dept_query,(usr), as_dict=True)
     
@@ -30,7 +37,7 @@ def login(usr, pwd):
             "success_key":1,
             "message":"Authentication success",
             "sid":frappe.session.sid,
-            "api_key":user.api_key,
+            "api_key":api_key,
             "api_secret":api_generate,
             "username":user.username,
             "email":user.email,

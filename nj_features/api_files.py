@@ -245,7 +245,7 @@ def print_barcode(doc):
         if has_serial_no == 1:
             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
             remaining_qty = qty - len(serial_no_list)
-            print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
+            # print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
             if remaining_qty > 0:
                 for _ in range(remaining_qty):
                     serial_no = create_serial_no(item_code)
@@ -279,7 +279,6 @@ def truncate_grade(input_string):
         return '-'.join(parts[:-1])
     else:
         return input_string
-
 
 # @frappe.whitelist()
 # def print_barcode(doc):
@@ -323,20 +322,17 @@ def update_serial_no_on_pr_submit(doc, method=None):
 def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
-    print(f"supplier_name ============> {supplier_name}")
     if serial_no_doc:
         serial_no_doc.purchase_price = item.base_rate
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
         serial_no_doc.supplier = doc.supplier
-        serial_no_doc.warranty_period = doc.warranty_days
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days
-        serial_no_doc.warranty_till_date = doc.warrenty_till_date
+        serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date
         serial_no_doc.warranty_date = doc.warrenty_till_date
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name
         serial_no_doc.purchase_receipt = doc.name
         serial_no_doc.save()
-            

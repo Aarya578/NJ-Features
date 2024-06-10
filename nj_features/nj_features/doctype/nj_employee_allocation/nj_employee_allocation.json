@@ -12,7 +12,8 @@
   "date",
   "section_break_y0ua7",
   "section_break_9ehwg",
-  "nj_employee_allocation_child"
+  "nj_employee_allocation_child",
+  "amended_from"
  ],
  "fields": [
   {
@@ -43,11 +44,21 @@
    "fieldtype": "Table",
    "label": "NJ Employee Allocation Child",
    "options": "NJ Employee Allocation Child"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "NJ Employee Allocation",
+   "print_hide": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2024-05-24 09:42:07.756080",
+ "modified": "2024-06-10 14:06:12.812765",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Employee Allocation",
@@ -55,6 +66,7 @@
  "permissions": [
   {
    "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -63,6 +75,7 @@
    "role": "System Manager",
    "select": 1,
    "share": 1,
+   "submit": 1,
    "write": 1
   },
   {
@@ -75,9 +88,24 @@
    "role": "User Access Modification",
    "select": 1,
    "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Tech Modular Leads",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "track_changes": 1
 }

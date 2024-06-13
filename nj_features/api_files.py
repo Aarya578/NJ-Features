@@ -77,7 +77,6 @@ def get_all_emp_warehouse(user):
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0)}, ['name', 'available_capacity', 'max_capacity'])
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
-        # print(f"all_emp_ware: {all_emp_ware} \n centralized_parent: {centralized_parent} \n centralized_ware: {centralized_ware}")
         recommended_warehouses = {}
         centralized_warehouses = {}
 
@@ -103,7 +102,6 @@ def get_all_emp_warehouse(user):
         return {'error in emp': str(e)}
     
 # Barcode Printing in Purchase Receipt:
-
 @frappe.whitelist()
 def create_serial_no(item_code=None, attempt=0):
     MAX_ATTEMPTS = 4
@@ -181,7 +179,6 @@ def get_max_cop(item_code, serial_no, print_cpy):
         if isinstance(serial_numbers, list):
             for sn in serial_numbers:
                 serialno_doc = frappe.get_doc("Serial No", sn.strip())  # Strip to remove whitespace
-                # print(f"\n\nget_max_copy: {sn}")
                 if serialno_doc:
                     serialno_doc.last_qr_count = int(print_cpy)
                     serialno_doc.save()
@@ -189,7 +186,6 @@ def get_max_cop(item_code, serial_no, print_cpy):
                     frappe.msgprint(f"Serial No.: <strong>{sn}</strong> not found.")
         else:  # If only one serial_no is passed
             serialno_doc = frappe.get_doc("Serial No", serial_no)
-            # print(f"\n\nget_max_copy: {serial_no}")
             if serialno_doc:
                 serialno_doc.last_qr_count = int(print_cpy)
                 serialno_doc.save()
@@ -245,7 +241,6 @@ def print_barcode(doc):
         if has_serial_no == 1:
             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
             remaining_qty = qty - len(serial_no_list)
-            # print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
             if remaining_qty > 0:
                 for _ in range(remaining_qty):
                     serial_no = create_serial_no(item_code)
@@ -291,14 +286,12 @@ def truncate_grade(input_string):
 #         if has_serial_no == 1:
 #             serial_no_list = doc_dict.get('serial_no').split('\n') if doc_dict.get('serial_no') else []
 #             remaining_qty = qty - len(serial_no_list)
-#             # print(f"remaining_qty: {remaining_qty} list: {serial_no_list}  rem: {remaining_qty} qty: {qty}")
 #             if remaining_qty > 0:
 #                 for _ in range(remaining_qty):
 #                     serial_no = create_serial_no(item_code)
 #                     serial_no_list.append(serial_no)
                 
 #                 updated_serial_no = '\n'.join(serial_no_list)
-#                 print(f"updated_serial_no: {updated_serial_no}")
                 
 #                 for serial_no in serial_no_list[-remaining_qty:]:
 #                     generate_and_save_qrcode(serial_no)
@@ -330,7 +323,6 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days
         serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date
-        serial_no_doc.warranty_date = doc.warrenty_till_date
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name

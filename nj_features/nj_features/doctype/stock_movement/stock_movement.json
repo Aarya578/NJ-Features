@@ -11,6 +11,7 @@
   "transfer_status",
   "default_source_warehouse",
   "column_break_dfjqd",
+  "is_default_target_warehouse",
   "default_target_warehouse",
   "section_break_vwv0s",
   "scan_barcode",
@@ -109,12 +110,19 @@
    "hidden": 1,
    "label": "Transfer Status",
    "options": "\nStock Accept\nRacking"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval: doc.transfer_status === 'Racking'",
+   "fieldname": "is_default_target_warehouse",
+   "fieldtype": "Check",
+   "label": "Is Default Target Warehouse"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-07 23:53:28.730827",
+ "modified": "2024-06-04 14:07:20.170358",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",

@@ -1,12 +1,10 @@
 frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
-
-        
         frm.add_custom_button(__('Print QR Code'), function() {
             var docname = encodeURIComponent(frm.doc.name);
             var format = "Serial No Barcode";
-            var print_trigger = 0;
+            var print_trigger = 1;
 
             frappe.call({
                 method: 'nj_features.qr_code.generate_and_save_qrcode',
@@ -45,7 +43,6 @@ frappe.ui.form.on('Serial No', {
             //             //       comment_email: frappe.session.user,
             //             //       comment_by: frappe.session.user_fullname,
             //             //     }
-                            
             //             // });
             //             window.open(frappe.urllib.get_full_url("/printview?" +
             //             "doctype=" + encodeURIComponent("Serial No") +
@@ -55,7 +52,6 @@ frappe.ui.form.on('Serial No', {
             //             "&no_letterhead=0" +
             //             "&_lang=" + (frappe.boot.lang || "en")));
             //         })
-                    
             //     } else {
                     window.open(frappe.urllib.get_full_url("/printview?" +
                     "doctype=" + encodeURIComponent("Serial No") +

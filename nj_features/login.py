@@ -7,6 +7,7 @@ def login(usr, pwd):
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()
+        
     except frappe.exceptions.AuthenticationError:
         frappe.clear_messages()
         return {

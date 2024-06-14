@@ -98,9 +98,9 @@ doctype_list_js = {
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-#	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Stock Ledger Entry": "nj_features.nj_features.doctype.stock_ledger_entry.CustomStockLedgerEntry"
+}
 
 # Document Events
 # ---------------
@@ -112,9 +112,6 @@ doc_events = {
 	# 	"on_cancel": "method",
 	# 	"on_trash": "method"
 	# }
-	# "Purchase Order": {
-	# 	"on_submit": "nj_features.nj_features.doctype.purchase_order.create_batch",
-	# },
 	"Purchase Receipt": {
 		"before_save": "nj_features.nj_features.doctype.purchase_receipt.get_batch",
 		"on_submit": "nj_features.api_files.update_serial_no_on_pr_submit",
@@ -133,9 +130,6 @@ doc_events = {
 #         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
 #         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
 #     },
-#     # "Purchase Receipt": {
-#     #     "on_submit": "nj_features.doctypes.purchase_receipt.purchase_receipt.check_existing_item"
-# 	# }
 # }
 
 # Scheduled Tasks

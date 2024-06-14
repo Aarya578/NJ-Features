@@ -36,7 +36,7 @@ def update_serial_no_componont_for_grade(self):
             row.is_available = 1
             row.quantity = 1
             # row.reference_doctype = self.doctype
-            # row.reference_doctype_no = self.namer
+                # row.reference_doctype_no = self.namer
             
         else:
             for sn in serial_no_doc.serial_no_component :
@@ -44,7 +44,7 @@ def update_serial_no_componont_for_grade(self):
                     # print('sn value is ', sn,'\n',dir(sn))
                     sn.item = reading.part_item_code
                     # sn.part_serial_no = reading.part_serial_no
-                    # sn.Item = reading.part_item_code 
+                    # sn.Item = reading.part_item_code  
                     # sn.grade = reading.grade
                     # sn.is_available = reading.is_available
                     # sn.quantity = reading.is_available 
@@ -52,30 +52,45 @@ def update_serial_no_componont_for_grade(self):
                     # sn.reference_doctype_no = self.name
     serial_no_doc.save()
 
+
+# def fill_automated_data_to_checks(self):
+    # qc_check.
+    
+    
+    
+
 def open_draft_qi(self):
     inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
     self.inspection_type = inspection_type
     print('The inspectio type value is ',inspection_type)
     new_qi = frappe.new_doc('NJ Quality Inspection')
+    
     new_qi.inspection_type = inspection_type    
     new_qi.barcode = self.serial_no
     new_qi.njqca_laptop_name = self.name
     new_qi.inspected_by = new_qi.owner
-    print("The 62 self name is ",self.name)
+    
     result = get_itm_code_on_barcode(new_qi)
     print("chicken 65 new qi is ")
     for k,v in new_qi.__dict__.items():
         print(k,"::::",v) if v else print("",end='')
 
-    fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective=None)
-    print("Success")
+    fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
     
-    # hello()
-    # print("Final result 71 is ",result2)
-    # new_qi.save()
+   
+    for data in self.njqca_result_parameters:
+        child_table = new_qi.append("nj_quality_checks", {})
+        child_table.item_group  = data.get("item_group")
+        field_name_check_sql = """
+        SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
+        field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
+        print("field_name_data====109",field_name_data)
+        child_table.options = data.get("value")
+        if field_name_data:
+            child_table.check_name = field_name_data[0]['name_of_check']
+            child_table.checks = field_name_data[0]['field_name']
+    new_qi.save()
     
-
-
 @frappe.whitelist()
 def get_itm_code_on_barcode(new_qi):
     barcode = new_qi.barcode
@@ -165,18 +180,22 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
+    print("barcode===",barcode)
     if not barcode or not inspection_type:
         frappe.throw("Error: Barcode or Inspection Type is not found.")
     
     response = frappe._dict()
-    
-    try:
+    print("response===192",response)
+    print("inspection_type===186",inspection_type)
+    # try:
         # Assuming validation_for_nj_readings_in_nj_qi is the method being called
-        response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
-        print('210 The response I"m getting --> ',response)
-    except Exception as e:
-        frappe.throw(str(e))
-    
+        
+    response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
+    print('210 The response I"m getting --> ',response)
+    # except Exception as e:
+    #     frappe.throw(str(e))
+    # print("e====",e)
+    print("response===195",response)
     if response.get('sequence_list_for_nj_readings_data'):
         nj_quality_readings = []
         for nj_readings_data in response.get('sequence_list_for_nj_readings_data'):
@@ -214,6 +233,9 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 class NJQCA(Document):   
     def on_submit(self):
         # Repack
+        print("self==220",self.njqca_result_parameters)
+       
+            
         if self.power_on == 'Yes' and self.repack_item_code != '':
             self.make_stock_entry_using_nj_lib()
             
@@ -241,7 +263,8 @@ class NJQCA(Document):
                 department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
                 print("242 The department value is ",department)
                 if department == "BG - Core IQC - NJ":
-                    open_draft_qi(self)
+                    open_draft_qi(self) 
+                    # self.save()
                 else:
                     print("QI draft will not open \nBecause you not belonging to the IQC Department")
             else:
@@ -349,6 +372,7 @@ def get_info_from_serial_no(doc=None):
         """
         sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
         # print(f"sle: {sle}, serial_no: {serial_no}")
+        
         # purchase_receipt_doc = frappe.db.sql("""
         #     SELECT name AS purchase_receipt, item_code AS item_code, base_rate AS base_rate 
         #     FROM `tabPurchase Receipt Item` 

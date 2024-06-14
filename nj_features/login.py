@@ -14,7 +14,6 @@ def login(usr, pwd):
             "success_key": 0,
             "message": "Authentication Error!"
         }
-<<<<<<< HEAD
 
     api_key, api_generate = '', ''
     user = frappe.get_doc('User', frappe.session.user)
@@ -51,7 +50,6 @@ def login(usr, pwd):
             "success_key":2,
             "message":error_message,
         }
-=======
         return
 
     user = frappe.get_doc('User', frappe.session.user)
@@ -81,7 +79,6 @@ def login(usr, pwd):
         "message":error_message,
     }
 
->>>>>>> 548a9e6 (added error message in login file)
 
 @frappe.whitelist()
 def generate_keys(user):

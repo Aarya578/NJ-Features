@@ -3,6 +3,7 @@
 import json
 import frappe
 import random
+from frappe import _
 from frappe.model.document import Document
 from nj_features.qr_code import generate_and_save_qrcode
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -250,3 +251,26 @@ def fetch_model_description(model):
 #         return {
 #             "supplier": None,
 #         }
+
+
+@frappe.whitelist()
+def get_item_template(brand,model):
+    print("brand is ",brand," model is ",model)
+    query = """
+            SELECT name 
+            FROM `tabItem`
+            WHERE name LIKE %s
+    """
+
+    like_pattern = f'%{model}'
+    item_templates = frappe.db.sql(query, (like_pattern,), as_dict=True)
+    print("item templates are ",item_templates)
+    if item_templates:
+        return item_templates 
+    else:
+        return {"error":f"S-{brand} {model}"}
+
+
+
+
+

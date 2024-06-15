@@ -4,6 +4,26 @@
 frappe.ui.form.on('Inward', {
     onload: function(frm) {
         warehouse_info(frm);
+        console.log("Hi");
+
+        // Check if both fields are already filled on load
+        // if (frm.doc.brand && frm.doc.model) {
+        //     call_get_item_template(frm);
+        // }
+
+        // Monitor changes to the brand field
+        frm.fields_dict['brand'].df.onchange = function() {
+            if (frm.doc.brand && frm.doc.model) {
+                call_get_item_template(frm);
+            }
+        };
+
+        // Monitor changes to the model field
+        frm.fields_dict['model'].df.onchange = function() {
+            if (frm.doc.brand && frm.doc.model) {
+                call_get_item_template(frm);
+            }
+        };
     },
     
     refresh(frm) {
@@ -60,6 +80,7 @@ frappe.ui.form.on('Inward', {
     },
 
     validate: function(frm) {
+        console.log("Validation")
         if (!frm.doc.serial_no) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no',
@@ -231,6 +252,7 @@ frappe.ui.form.on('Inward', {
     },
     
     before_save: function(frm) {
+        console.log("BEfore save")
         if (!frm.doc.serial_no) {
             frappe.msgprint("Serial number generation failed. Document cannot be saved.");
             frappe.validated = false;
@@ -300,6 +322,54 @@ function warehouse_info(frm) {
     }
     
 }
+
+function call_get_item_template(frm) {
+    console.log("Brand and Model are filled.");
+    frappe.call({
+        method: "nj_features.nj_features.doctype.inward.inward.get_item_template",
+        args: {
+            "brand": frm.doc.brand,
+            "model": frm.doc.model
+        },
+        callback: function(r) {
+            if(r.message.error){
+                frappe.throw(__(`<h5>Item Template: ${r.message.error} is not found</h5>`));
+                frappe.validated = false ;
+            }
+            else if(r.message) {
+                console.log("Response from the onload", r.message);
+                update_dropdown_and_set_readonly(frm, r.message);
+            }
+            else{
+                console.log("Response is ",r)
+            }
+        }
+    });
+}
+
+function update_dropdown_and_set_readonly(frm, items) {
+    var field = frm.fields_dict['item_template']; // Assuming the field name is 'item_template'
+    var dropdown = field.$input.get(0);
+    $(dropdown).empty(); // Clear existing options
+
+    // Add options to dropdown
+    items.forEach(function(item) {
+        var option = new Option(item.name, item.name);
+        dropdown.add(option);
+    });
+
+    // Set to read-only if only one item
+    if (items.length === 1) {
+        frm.set_value('item_template', items[0].name);
+        frm.set_df_property('item_template', 'read_only', 1);
+    } else {
+        frm.set_df_property('item_template', 'read_only', 0);
+    }
+}
+
+
+
+
 
 function submitAndNext(frm) {
     // Submit the current document

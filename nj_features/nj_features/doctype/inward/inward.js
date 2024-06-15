@@ -108,8 +108,8 @@ frappe.ui.form.on('Inward', {
                 callback: function(r) {
                     if (r.message && r.message.length > 0) {
                         // Initialize repack item code with brand and model
-                        let repack_item_code = "S-" + frm.doc.brand + " " + frm.doc.model;
-        
+                        let repack_item_code = "S-" + cur_frm.doc.brand + " " + cur_frm.doc.model;
+                        console.log("112 repack item code is ",repack_item_code);
                         // Define the order of parameters
                         let parameter_order = ['unk_pro', 'unk_ram', 'unk_storage'];
         

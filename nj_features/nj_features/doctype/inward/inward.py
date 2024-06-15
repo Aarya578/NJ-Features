@@ -262,7 +262,7 @@ def get_item_template(brand,model):
             WHERE name LIKE %s
     """
 
-    like_pattern = f'%{model}'
+    like_pattern = f'S-%{model}'
     item_templates = frappe.db.sql(query, (like_pattern,), as_dict=True)
     print("item templates are ",item_templates)
     if item_templates:

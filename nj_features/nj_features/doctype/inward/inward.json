@@ -20,6 +20,7 @@
   "target_warehouse",
   "column_break_mcau4",
   "model",
+  "item_template",
   "model_description",
   "repack_item_code",
   "batch_no",
@@ -131,12 +132,19 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Batch No"
+  },
+  {
+   "fieldname": "item_template",
+   "fieldtype": "Select",
+   "label": "Item Template",
+   "options": "Item",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-11 07:04:22.296061",
+ "modified": "2024-06-15 12:23:58.847290",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

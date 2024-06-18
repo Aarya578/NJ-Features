@@ -63,12 +63,18 @@ def open_draft_qi(self):
     inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
     self.inspection_type = inspection_type
     print('The inspectio type value is ',inspection_type)
-    new_qi = frappe.new_doc('NJ Quality Inspection')
-    
-    new_qi.inspection_type = inspection_type    
-    new_qi.barcode = self.serial_no
-    new_qi.njqca_laptop_name = self.name
-    new_qi.inspected_by = new_qi.owner
+    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no,'inspection_type':inspection_type}, limit=1)
+    if existing_qi:
+        # Get the existing document
+        new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
+        print('Existing QI document found:', new_qi.name)
+    else:
+        new_qi = frappe.new_doc('NJ Quality Inspection')
+        
+        new_qi.inspection_type = inspection_type    
+        new_qi.barcode = self.serial_no
+        new_qi.njqca_laptop_name = self.name
+        new_qi.inspected_by = new_qi.owner
     
     result = get_itm_code_on_barcode(new_qi)
     print("chicken 65 new qi is ")
@@ -76,19 +82,23 @@ def open_draft_qi(self):
         print(k,"::::",v) if v else print("",end='')
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
+    print("new_qi=====>",new_qi.get('nj_quality_readings',''))
     
-   
     for data in self.njqca_result_parameters:
-        child_table = new_qi.append("nj_quality_checks", {})
-        child_table.item_group  = data.get("item_group")
         field_name_check_sql = """
         SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
         field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
         print("field_name_data====109",field_name_data)
-        child_table.options = data.get("value")
-        if field_name_data:
-            child_table.check_name = field_name_data[0]['name_of_check']
-            child_table.checks = field_name_data[0]['field_name']
+        child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
+        print("child_exists===",child_exists)
+        if not child_exists:
+            child_table = new_qi.append("nj_quality_checks", {})
+            
+            if field_name_data :
+                child_table.check_name = field_name_data[0]['name_of_check']
+                child_table.checks = field_name_data[0]['field_name']
+                child_table.item_group  = data.get("item_group")
+                child_table.options = data.get("value")
     new_qi.save()
     
 @frappe.whitelist()
@@ -230,7 +240,21 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
     return True
 
 
-class NJQCA(Document):   
+class NJQCA(Document):  
+    def before_save(self):
+        print("save method")
+        if self.bios_serialno:
+            update_serial_no_componont_for_grade(self)
+            department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+            print("242 The department value is ",department)
+            if department == "BG - Core IQC - NJ":
+                open_draft_qi(self) 
+                # self.save()
+            else:
+                print("QI draft will not open \nBecause you not belonging to the IQC Department")
+        else:
+            frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
+            
     def on_submit(self):
         # Repack
         print("self==220",self.njqca_result_parameters)
@@ -258,17 +282,17 @@ class NJQCA(Document):
             #     preferred_purchase_price_ = get_model_price + get_attribute_price
             #     serial_no_doc.preferred_purchase_price_ = preferred_purchase_price_
                 
-            if self.bios_serialno:
-                update_serial_no_componont_for_grade(self)
-                department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-                print("242 The department value is ",department)
-                if department == "BG - Core IQC - NJ":
-                    open_draft_qi(self) 
-                    # self.save()
-                else:
-                    print("QI draft will not open \nBecause you not belonging to the IQC Department")
-            else:
-                frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
+            # if self.bios_serialno:
+            #     update_serial_no_componont_for_grade(self)
+            #     department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+            #     print("242 The department value is ",department)
+            #     if department == "BG - Core IQC - NJ":
+            #         open_draft_qi(self) 
+            #         # self.save()
+            #     else:
+            #         print("QI draft will not open \nBecause you not belonging to the IQC Department")
+            # else:
+            #     frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
             
             
             

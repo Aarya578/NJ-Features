@@ -57,7 +57,7 @@ class Inward(Document):
             serial_no_doc.supplier = po_doc.get('supplier')
             serial_no_doc.batch_no = self.batch_no
             serial_no_doc.purchase_warranty_days = warranty_days
-            serial_no_doc.vendor_warranty_expiry_date = warranty_days
+            serial_no_doc.vendor_warranty_expiry_date = po_doc.get('warranty_till_date')
             serial_no_doc.reference_doctype_no = self.purchase_receipt
             serial_no_doc.warranty_days = warranty_days
             serial_no_doc.purchase_order = po

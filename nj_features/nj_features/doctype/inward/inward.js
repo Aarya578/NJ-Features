@@ -11,7 +11,6 @@ frappe.ui.form.on('Inward', {
         
         if (cur_frm.doc.docstatus == 0) {
             frm.events.purchase_receipt(frm);
-            frm.set_value('repack_item_code', '')
             if (!cur_frm.doc.purchase_receipt) {
                 $('[data-fieldname="purchase_receipt"]').focus();
             } else {
@@ -56,10 +55,6 @@ frappe.ui.form.on('Inward', {
                     
             }).addClass('btn-primary');
         }
-    },
-
-    validate: function(frm) {
-        get_item_template(frm)        
     },
 
     purchase_receipt: function(frm) {

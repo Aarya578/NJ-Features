@@ -3,7 +3,9 @@
 import json
 import frappe
 import random
+from frappe import _
 from frappe.model.document import Document
+from erpnext.controllers.item_variant import get_variant
 from nj_features.qr_code import generate_and_save_qrcode
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 # import os
@@ -17,6 +19,7 @@ debug = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': '
 class Inward(Document):
     def on_submit(self):
         self.make_stock_entry_using_nj_lib()
+        generate_and_save_qrcode(self.serial_no)
 
     def make_stock_entry_using_nj_lib(self):
         stock_data = {
@@ -29,7 +32,6 @@ class Inward(Document):
             "repack_items": get_repack_items(self)
         }
         if debug == "1":
-            print("debugging", self.name)
             logger.debug(f"Inward: {self.name}\n {stock_data}")
         stock_data_str = json.dumps(stock_data)
         stock_entry = stock_entry_using_nj_lib(stock_data_str)
@@ -54,8 +56,8 @@ class Inward(Document):
             serial_no_doc.barcode = self.serial_no
             serial_no_doc.supplier = po_doc.get('supplier')
             serial_no_doc.batch_no = self.batch_no
-            serial_no_doc.warranty_period = warranty_days
             serial_no_doc.purchase_warranty_days = warranty_days
+            serial_no_doc.vendor_warranty_expiry_date = po_doc.get('warranty_till_date')
             serial_no_doc.reference_doctype_no = self.purchase_receipt
             serial_no_doc.warranty_days = warranty_days
             serial_no_doc.purchase_order = po
@@ -136,6 +138,20 @@ def get_item_list_from_pr(pr):
 #     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier}
 
 @frappe.whitelist()
+def get_repack_item_code(pr, item_template):
+    args = {}
+    item_code_attributes = []
+    item_code_attributes_data = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'item_code_attributes'}, 'value')
+    item_code_attributes = item_code_attributes_data.split(',')
+    
+    attributes_list = frappe.db.get_list('NJ Settings', {'doc_type': 'Inward', 'parameter': ['in', item_code_attributes]},
+                                        ['parameter', 'value'])
+    attributes_dict = {attr['parameter']: attr['value'] for attr in attributes_list}
+    repack_item_code = get_variant(item_template, attributes_dict)
+    
+    return {"repack_item_code": repack_item_code}
+
+@frappe.whitelist()
 def get_stock_data_from_pr(pr, item_code=None):
     get_serial_no = ''
     if pr:
@@ -164,7 +180,6 @@ def get_stock_data_from_pr(pr, item_code=None):
         # supplier = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'supplier')
     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
 
-    
     # base_rate=''
     # key = {}
     
@@ -174,10 +189,8 @@ def get_stock_data_from_pr(pr, item_code=None):
     # if pr:
     #     result = frappe.db.sql(
     #         """SELECT item_code, warehouse, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
-      
     #     for i in result:
     #         key[i['item_code']] = i['warehouse']
-         
     # if item_code:
     #     base_rate_result = frappe.db.sql(
     #         """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
@@ -185,13 +198,45 @@ def get_stock_data_from_pr(pr, item_code=None):
     #         base_rate = base_rate_result[0].get('base_rate', '')
     # return {"result":sle}
 
-@frappe.whitelist()
-def fetch_item_group(item_code):
-    item_group = frappe.db.get_value("Item", {"name": item_code}, "item_group")
-    return {"item_group": item_group}
+# @frappe.whitelist()  -- not used
+# def fetch_item_group(item_code):
+#     item_group = frappe.db.get_value("Item", {"name": item_code}, "item_group")
+#     return {"item_group": item_group}
 
 
 @frappe.whitelist()
+def create_serial_no_and_get_item_code(item_group, brand, model, serial_no=None):
+    wizard_list = ''
+    if serial_no is None:
+        serial_no = create_serial_no(item_group)
+    item_template = get_item_template(brand, model, item_group)
+    if item_template:
+        wizard_list = has_item_wizards(item_template)
+    return {'serial_no': serial_no, 'item_template': item_template, 'wizard_list': wizard_list}
+
+def get_item_template(brand, model, item_group):
+    item_template = frappe.db.get_list('Item', {'brand': brand, 'item_model':model, 'has_variants': 1, 'item_group': item_group}, 'name')
+    if item_template:
+        return item_template
+    return None
+    
+def has_item_wizards(item_template):
+    wizard_list = []
+    for item in item_template:
+        available_wizard = get_item_wizard_from_item_code(item.get('name'))
+        if available_wizard:
+            wizard_list.append(item.get('name'))
+    return wizard_list
+
+def get_item_wizard_from_item_code(item_template):
+    
+    latest_item_wizard = ''
+    if item_template:
+        latest_item_wizard = frappe.db.get_value('Item Wizards', filters={'item_template': item_template}, 
+                                    fieldname='name', order_by='creation DESC, modified DESC')
+    if latest_item_wizard:
+        return latest_item_wizard
+
 def create_serial_no(item_group=None, attempt=0):
     MAX_ATTEMPTS = 4
     try:
@@ -202,19 +247,16 @@ def create_serial_no(item_group=None, attempt=0):
         if item_group:
             serial_no_prefix = frappe.db.get_value("Item Group", {"name": item_group}, "serial_no_prefix")
             if not serial_no_prefix:
-                frappe.msgprint(f"Serial No Prefix is not set for Item Group: <strong>{item_group}</strong>")
+                frappe.msgprint(f"<b>Serial No Prefix</b> is not set for Item Group: <strong>{item_group}</strong>. Please contact <b>NPD Team</b>.")
                 return None
             
             prefix = "NJ-"
             serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
-            print(f"Generated serial number: {serial_no}")
 
             existing_serial = frappe.db.exists("Serial No", {"serial_no": serial_no})
             if existing_serial:
-                print(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
                 return create_serial_no(item_group, attempt + 1)  # Recursive call with increased attempt count
             else:
-                generate_and_save_qrcode(serial_no)
                 return serial_no
         else:
             frappe.msgprint("Item Group is not provided.")
@@ -226,12 +268,10 @@ def create_serial_no(item_group=None, attempt=0):
 
 @frappe.whitelist()
 def fetch_model_description(model):
-    # Fetch the model description based on the selected model
-    model_doc = frappe.get_doc("Models", model)
-    if model_doc:
-        return {"model_description": model_doc.model_description}
-    else:
-        return {"model_description": None}
+    model_description = frappe.db.get_value('Models', {'name':model}, 'model_description')
+    if model_description:
+        return {"model_description": model_description}
+    return {"model_description": None}
     
 # @frappe.whitelist()
 # def get_supplier_and_batch_from_pr(pr):

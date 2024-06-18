@@ -4,52 +4,32 @@
 frappe.ui.form.on('Inward', {
     onload: function(frm) {
         warehouse_info(frm);
-        console.log("Hi");
-
-        // Check if both fields are already filled on load
-        // if (frm.doc.brand && frm.doc.model) {
-        //     call_get_item_template(frm);
-        // }
-
-        // Monitor changes to the brand field
-        frm.fields_dict['brand'].df.onchange = function() {
-            if (frm.doc.brand && frm.doc.model) {
-                call_get_item_template(frm);
-            }
-        };
-
-        // Monitor changes to the model field
-        frm.fields_dict['model'].df.onchange = function() {
-            if (frm.doc.brand && frm.doc.model) {
-                call_get_item_template(frm);
-            }
-        };
     },
     
     refresh(frm) {
         $('.col-lg-2.layout-side-section').hide();
-        if (!cur_frm.doc.purchase_order) {
-            $('[data-fieldname="purchase_order"]').focus();
-        } else {
-            $('[data-fieldname="brand"]').focus();
-        }
-
+        
         if (cur_frm.doc.docstatus == 0) {
             frm.events.purchase_receipt(frm);
-        }
+            frm.set_value('repack_item_code', '')
+            if (!cur_frm.doc.purchase_receipt) {
+                $('[data-fieldname="purchase_receipt"]').focus();
+            } else {
+                $('[data-fieldname="brand"]').focus();
+            }
 
-        frm.set_query('purchase_receipt', function() {
-            return {
-                filters: {
-                    "docstatus": ['=', 1]
-                }
-            };
-        });
+            frm.set_query('purchase_receipt', function() {
+                return {
+                    filters: {
+                        "docstatus": ['=', 1]
+                    }
+                };
+            });
 
-        if (frm.doc.docstatus == 0) {
             frm.add_custom_button(__('Submit & Next'), function() {
                 submitAndNext(frm);
             }).addClass('btn-primary');
+
         }
 
         if (frm.doc.docstatus == 1) {
@@ -76,70 +56,10 @@ frappe.ui.form.on('Inward', {
                     
             }).addClass('btn-primary');
         }
-
     },
 
     validate: function(frm) {
-        console.log("Validation")
-        if (!frm.doc.serial_no) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no',
-                args:{
-                    "item_group":frm.doc.item_group || null
-                },
-                callback: function(r) {
-                    if (r.message) {
-                        frm.set_value('serial_no', r.message);
-                    }
-                }
-            });
-        }
-        if (frm.doc.brand && frm.doc.model) {
-            // Fetch NJ Settings data where doc_type is "Inward"
-            frappe.call({
-                method: 'frappe.client.get_list',
-                args: {
-                    doctype: 'NJ Settings',
-                    filters: {
-                        doc_type: 'Inward'
-                    },
-                    fields: ['parameter', 'value']
-                },
-                callback: function(r) {
-                    if (r.message && r.message.length > 0) {
-                        // Initialize repack item code with brand and model
-                        let repack_item_code = "S-" + cur_frm.doc.brand + " " + cur_frm.doc.model;
-                        console.log("112 repack item code is ",repack_item_code);
-                        // Define the order of parameters
-                        let parameter_order = ['unk_pro', 'unk_ram', 'unk_storage'];
-        
-                        // Array to hold parameter values
-                        let parameter_values = [];
-        
-                        // Iterate through the NJ Settings data
-                        parameter_order.forEach(function(parameter_name) {
-                            // Find the setting for the current parameter
-                            let setting = r.message.find(function(setting) {
-                                return setting.parameter === parameter_name;
-                            });
-        
-                            // Add parameter value to array if found
-                            if (setting) {
-                                parameter_values.push(setting.value);
-                            }
-                        });
-        
-                        // Concatenate parameter values with '-' separator and append to repack item code
-                        repack_item_code += '-' + parameter_values.join('-');
-        
-                        frm.set_value("repack_item_code", repack_item_code);
-                        // Further actions with the repack item code if needed
-                    } else {
-                        console.log("No NJ Settings found for Inward doc_type");
-                    }
-                }
-            });
-        }           
+        get_item_template(frm)        
     },
 
     purchase_receipt: function(frm) {
@@ -150,14 +70,10 @@ frappe.ui.form.on('Inward', {
         //         callback: function(r) {
         //             if (r.message && r.message.length > 0) {
         //                 var itemCodes = r.message.map(function(item) {
-        //                     console.log("itemCodes",item)
         //                     return item;
         //                 });
-
-        //                 // Set the item codes as options for the item_code field
         //                 frm.set_df_property('item_code', 'options', itemCodes);
         //             } else {
-        //                 // Clear options if no item codes are found
         //                 frm.set_df_property('item_code', 'options', '');
         //             }
         //         }
@@ -184,9 +100,27 @@ frappe.ui.form.on('Inward', {
         }
     },
 
+    item_template: function(frm) {
+        if (frm.doc.item_template) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.inward.inward.get_repack_item_code',
+                args: {'item_template': frm.doc.item_template, 'pr': frm.doc.purchase_receipt},
+                callback: function(r) {
+                    if (r.message.repack_item_code) {
+                        frm.set_value('repack_item_code', r.message.repack_item_code)
+                    } else {
+                        frm.set_value('repack_item_code', '')
+                        frappe.msgprint("Item Code is not found for brand: <b>"+frm.doc.brand+"</b>, model: <b>"+frm.doc.model+"</b> with unknown attribute. Please contact <b>NPD Team</b>.")
+                        frappe.validated = false
+                    }
+                }
+            })
+            frm.refresh_field("repack_item_code")
+        }
+    },
+
     item_code: function(frm) {
-        var selected_item_code = frm.doc.item_code;
-        if (selected_item_code) {
+        if (frm.doc.item_code) {
             // frappe.call({
             //     method: 'nj_features.nj_features.doctype.inward.inward.fetch_item_group',
             //     args: {'item_code': selected_item_code},
@@ -200,7 +134,7 @@ frappe.ui.form.on('Inward', {
             if (cur_frm.doc.purchase_receipt) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
-                    args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
+                    args: {'pr': frm.doc.purchase_receipt, 'item_code': frm.doc.item_code},
                     // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
                     // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
@@ -244,28 +178,24 @@ frappe.ui.form.on('Inward', {
         //             } else {
         //                 frm.set_df_property('item_code', 'options', '');
         //             }
-              
-
         //         }
         //     });
         // }
     },
-    
+
     before_save: function(frm) {
-        console.log("BEfore save")
         if (!frm.doc.serial_no) {
             frappe.msgprint("Serial number generation failed. Document cannot be saved.");
             frappe.validated = false;
         }
-      
     },
+
     model: function(frm) {
-        var selectedModel = frm.doc.model;
-        if (selectedModel) {
+        if (frm.doc.model) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
                 args: {
-                    'model': selectedModel
+                    'model': frm.doc.model
                 },
                 callback: function(r) {
                     $('.desc').remove();
@@ -276,114 +206,99 @@ frappe.ui.form.on('Inward', {
                         // frm.fields_dict.model_description.set_input(description);
                          var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
                         $(frm.fields_dict['model'].wrapper).append(htmlContent);
-
                     }
                 }
             });
         }
-    },
-    // refresh: function(frm) {
-    //     if (cur_frm.doc.purchase_receipt) {
-    //         frappe.call({
-    //             method: 'nj_features.nj_features.doctype.inward.inward.get_supplier_and_batch_from_pr',
-    //             args: {'pr': frm.doc.purchase_receipt},
-    //             callback: function(r) {
-    //                 if (r.message) {
-    //                     // Update the form fields with supplier and batch number
-    //                     frm.set_value('supplier', r.message.supplier);
-    //                     console.log("r.message--------for supplier and batch no",r.message)
-    //                 } else {
-    //                     frappe.msgprint('Supplier and Batch Number not found for the selected Purchase Receipt.');
-    //                 }
-    //             }
-    //         });
-    //     }
-    // },
-
+        if (frm.doc.model && frm.doc.brand) {
+            get_item_template(frm)
+        }
+    }
 });
+
+function get_item_template(frm) {
+    frm.set_value('repack_item_code', '')
+    frm.set_value('item_template', '')
+    frappe.call({
+        method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no_and_get_item_code',
+        args:{
+            "item_group":frm.doc.item_group,
+            "brand": frm.doc.brand,
+            "model": frm.doc.model,
+            "serial_no": frm.doc.serial_no
+        },
+        callback: function(r) {
+            if (r.message.serial_no && !frm.doc.serial_no) {
+                frm.set_value('serial_no', r.message.serial_no);
+                frm.refresh_field('serial_no')
+            }
+            if (r.message.item_template){
+
+                var template_list = r.message.item_template;
+                if (Array.isArray(template_list) && template_list.length > 0) {
+                    cur_frm.set_value('item_template', '');
+                    if (template_list.length === 1) {
+                        cur_frm.set_value('item_template', template_list[0].name);
+                        cur_frm.set_df_property('item_template', 'read_only', 1);
+                        frm.trigger("item_template");
+                    } else {
+                        let wizard_list = r.message.wizard_list || [];
+                        let options = template_list.map(function(item) {
+                            let itemName = item.name;
+                            let isSelected = wizard_list.includes(itemName);
+                            let optionColor = isSelected ? 'green' : 'red';
+                            return itemName
+                            // return `<option value="${itemName}" data-color="${optionColor}">${itemName}</option>`;
+                        }).join('\n');
+                        
+                        cur_frm.set_df_property('item_template', 'options', options);
+                        $('[data-fieldname="item_template"]').focus().closest('.control-input').css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid rgba(173, 216, 230, 0.5)'
+                        });
+                        frappe.show_alert({
+                            message: __('Select Item Template'),
+                            indicator: 'green'
+                        });
+                    }
+                }
+                frm.refresh_field('item_template')
+            } else {
+                frappe.msgprint("<b>Item Template</b> is not found using <br><b>Brand: "+frm.doc.brand+"</b>,<br><b>Model: "+frm.doc.model+"</b>,<br><b>Item Group: "+frm.doc.item_group+"</b>.<br>Please contact <b>NPD Team.</b>")
+                frappe.validated = false
+            }
+        }
+    });
+}
 
 function warehouse_info(frm) {
     if(frm.doc.docstatus == 0){
         let userEmail = frappe.session.user_email;
         frappe.db.get_value('Employee', {'user_id': userEmail}, ['name', 'work_warehouse'], function(response) {
-        if (!response.name) {
-            frappe.msgprint('Employee with <strong>'+userEmail+'</strong> not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
-            return;
-        }
-        // console.log("warehouse function")
-        if (response.work_warehouse) {
-            frm.set_value('target_warehouse', response.work_warehouse);
-        } else {
-            frappe.msgprint('Work Warehouse does not exist.');
-        }
-        frm.set_df_property('target_warehouse', 'read_only', 1);
-
-    });
-    }
-    
-}
-
-function call_get_item_template(frm) {
-    console.log("Brand and Model are filled.");
-    frappe.call({
-        method: "nj_features.nj_features.doctype.inward.inward.get_item_template",
-        args: {
-            "brand": frm.doc.brand,
-            "model": frm.doc.model
-        },
-        callback: function(r) {
-            if(r.message.error){
-                frappe.throw(__(`<h5>Item Template: ${r.message.error} is not found</h5>`));
-                frappe.validated = false ;
+            if (!response.name) {
+                frappe.msgprint('Employee with <strong>'+userEmail+'</strong> not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
+                return;
             }
-            else if(r.message) {
-                console.log("Response from the onload", r.message);
-                update_dropdown_and_set_readonly(frm, r.message);
+            if (response.work_warehouse) {
+                frm.set_value('target_warehouse', response.work_warehouse);
+            } else {
+                frappe.msgprint('Work Warehouse does not exist.');
             }
-            else{
-                console.log("Response is ",r)
-            }
-        }
-    });
-}
-
-function update_dropdown_and_set_readonly(frm, items) {
-    var field = frm.fields_dict['item_template']; // Assuming the field name is 'item_template'
-    var dropdown = field.$input.get(0);
-    $(dropdown).empty(); // Clear existing options
-
-    // Add options to dropdown
-    items.forEach(function(item) {
-        var option = new Option(item.name, item.name);
-        dropdown.add(option);
-    });
-
-    // Set to read-only if only one item
-    if (items.length === 1) {
-        frm.set_value('item_template', items[0].name);
-        frm.set_df_property('item_template', 'read_only', 1);
-    } else {
-        frm.set_df_property('item_template', 'read_only', 0);
+            frm.set_df_property('target_warehouse', 'read_only', 1);
+        });
     }
 }
-
-
-
-
 
 function submitAndNext(frm) {
-    // Submit the current document
     frm.save('Submit', function(r) {
         if (!r.exc) {
-            // Reload the form to show the submitted document
             let new_inward = frappe.model.copy_doc(frm.doc)
             new_inward.serial_no = ''
             new_inward.model = ''
             new_inward.brand = ''
             frappe.set_route('Form', 'Inward', new_inward.name);
         } else {
-            console.error('Error submitting document:', r.exc);
+            frappe.throw('Error submitting document:', r.exc);
         }
     });
 }
-

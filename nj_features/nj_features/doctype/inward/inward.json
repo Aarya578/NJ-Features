@@ -136,15 +136,13 @@
   {
    "fieldname": "item_template",
    "fieldtype": "Select",
-   "label": "Item Template",
-   "options": "Item",
-   "read_only": 1
+   "label": "Item Template"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-06-15 12:23:58.847290",
+ "modified": "2024-06-18 06:54:55.913796",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

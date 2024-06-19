@@ -241,20 +241,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
 
 class NJQCA(Document):  
-    def before_save(self):
-        print("save method")
-        if self.bios_serialno:
-            update_serial_no_componont_for_grade(self)
-            department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-            print("242 The department value is ",department)
-            if department == "BG - Core IQC - NJ":
-                open_draft_qi(self) 
-                # self.save()
-            else:
-                print("QI draft will not open \nBecause you not belonging to the IQC Department")
-        else:
-            frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
-            
+  
     def on_submit(self):
         # Repack
         print("self==220",self.njqca_result_parameters)
@@ -369,7 +356,23 @@ def get_repack_items(self):
     return get_repack_items_list
 
 
+@frappe.whitelist()
+def after_save(docname):
+    print("save method")
+    doc = frappe.get_doc("NJQCA", docname)
 
+    if doc.bios_serialno:
+        update_serial_no_componont_for_grade(doc)
+        department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+        print("242 The department value is ",department)
+        if department == "BG - Core IQC - NJ":
+            open_draft_qi(doc) 
+            # self.save()
+        else:
+            print("QI draft will not open \nBecause you not belonging to the IQC Department")
+    else:
+        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+            
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):

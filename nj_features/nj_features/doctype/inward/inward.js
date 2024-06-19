@@ -19,16 +19,13 @@ frappe.ui.form.on('Inward', {
 
             frm.set_query('purchase_receipt', function() {
                 return {
-                    filters: {
-                        "docstatus": ['=', 1]
-                    }
+                    filters: { "docstatus": ['=', 1] }
                 };
             });
 
             frm.add_custom_button(__('Submit & Next'), function() {
                 submitAndNext(frm);
             }).addClass('btn-primary');
-
         }
 
         if (frm.doc.docstatus == 1) {
@@ -40,9 +37,7 @@ frappe.ui.form.on('Inward', {
     
                 frappe.call({
                     method: 'nj_features.qr_code.generate_and_save_qrcode',
-                    args: {
-                        data: frm.doc.name
-                    }
+                    args: { data: frm.doc.name }
                 });
     
                 window.open(frappe.urllib.get_full_url("/printview?" +
@@ -89,7 +84,6 @@ frappe.ui.form.on('Inward', {
                     } else {
                         frm.set_df_property('item_code', 'options', '');
                     }
-
                 }
             });
         }
@@ -138,10 +132,8 @@ frappe.ui.form.on('Inward', {
                             var serialNo = r.message.serial_no;
                             var itemGroup = r.message.item_group;
                             var batch_no =r.message.result.batch_no;
-                            // var supplier=r.message.supplier;
 
                             if(result) {
-                                cur_frm.set_value('item_code', result.item_code);
                                 cur_frm.set_value('base_rate', result.incoming_rate);
                                 cur_frm.set_value('source_warehouse', result.warehouse);
                             }
@@ -154,11 +146,7 @@ frappe.ui.form.on('Inward', {
                             if(batch_no){
                                 cur_frm.set_value('batch_no', batch_no);
                             }
-                            // if(supplier){
-                            //     cur_frm.set_value('supplier',supplier);
-                            // }
                         }
-                    
                     }
                 });
             }
@@ -189,17 +177,12 @@ frappe.ui.form.on('Inward', {
         if (frm.doc.model) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
-                args: {
-                    'model': frm.doc.model
-                },
+                args: { 'model': frm.doc.model },
                 callback: function(r) {
                     $('.desc').remove();
                     if (r.message && r.message.model_description) {
                         var description = r.message.model_description;
-                        // frappe.msgprint(description);
-                        // frm.set_value('model_description',description)
-                        // frm.fields_dict.model_description.set_input(description);
-                         var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
+                        var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
                         $(frm.fields_dict['model'].wrapper).append(htmlContent);
                     }
                 }
@@ -213,7 +196,6 @@ frappe.ui.form.on('Inward', {
 
 function get_item_template(frm) {
     frm.set_value('repack_item_code', '')
-    frm.set_value('item_template', '')
     frappe.call({
         method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no_and_get_item_code',
         args:{
@@ -228,29 +210,38 @@ function get_item_template(frm) {
                 frm.refresh_field('serial_no')
             }
             if (r.message.item_template){
-
+                cur_frm.set_df_property('item_template', 'read_only', 0);
                 var template_list = r.message.item_template;
                 if (Array.isArray(template_list) && template_list.length > 0) {
                     cur_frm.set_value('item_template', '');
-                    if (template_list.length === 1) {
+                    if (template_list.length == 1) {
                         cur_frm.set_value('item_template', template_list[0].name);
                         cur_frm.set_df_property('item_template', 'read_only', 1);
                         frm.trigger("item_template");
                     } else {
-                        let wizard_list = r.message.wizard_list || [];
+                        var wizard_list = r.message.wizard_list || [];
                         let options = template_list.map(function(item) {
                             let itemName = item.name;
-                            let isSelected = wizard_list.includes(itemName);
-                            let optionColor = isSelected ? 'green' : 'red';
                             return itemName
-                            // return `<option value="${itemName}" data-color="${optionColor}">${itemName}</option>`;
-                        }).join('\n');
-                        
+                        });
+                    
                         cur_frm.set_df_property('item_template', 'options', options);
                         $('[data-fieldname="item_template"]').focus().closest('.control-input').css({
                             'border-radius': '0.25rem',
                             'border': '2px solid rgba(173, 216, 230, 0.5)'
                         });
+
+                        frm.fields_dict.item_template.$input.on('change', function () {
+                            var selectedOption = $(this).val();
+                        
+                            $('[data-fieldname="item_template"]').closest('.control-input').css('border-color', 'rgba(173, 216, 230, 0.5)');
+                            if ($(this).val() == selectedOption && wizard_list.includes(selectedOption)) {
+                                $(this).closest('.control-input').css('border-color', 'green');
+                            } else {
+                                $(this).closest('.control-input').css('border-color', 'red');
+                            }
+                        });
+
                         frappe.show_alert({
                             message: __('Select Item Template'),
                             indicator: 'green'

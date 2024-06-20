@@ -363,8 +363,11 @@ def after_save(docname):
     if doc.bios_serialno:
         update_serial_no_componont_for_grade(doc)
         department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+        department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
+        print("department_setting==",department_setting)
         print("242 The department value is ",department)
-        if department == "BG - Core IQC - NJ":
+        
+        if department in department_setting:
             open_draft_qi(doc) 
             # self.save()
         else:

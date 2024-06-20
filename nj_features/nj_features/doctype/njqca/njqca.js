@@ -438,7 +438,19 @@ frappe.ui.form.on('NJQCA', {
                         console.log("The created user value is done ");
                     }
                 }
+
             })
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save',
+                args: {
+                    'docname': cur_frm.doc.name
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        console.log("after_save method executed successfully.");
+                    }
+                }
+            });
         }
     }
 });

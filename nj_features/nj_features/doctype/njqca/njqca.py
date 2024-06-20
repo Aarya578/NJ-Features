@@ -62,12 +62,12 @@ def update_serial_no_componont_for_grade(self):
 def open_draft_qi(self):
     inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
     self.inspection_type = inspection_type
-    print('The inspectio type value is ',inspection_type)
+    # print('The inspectio type value is ',inspection_type)
     existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no,'inspection_type':inspection_type}, limit=1)
     if existing_qi:
         # Get the existing document
         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
-        print('Existing QI document found:', new_qi.name)
+        # print('Existing QI document found:', new_qi.name)
     else:
         new_qi = frappe.new_doc('NJ Quality Inspection')
         
@@ -77,20 +77,20 @@ def open_draft_qi(self):
         new_qi.inspected_by = new_qi.owner
     
     result = get_itm_code_on_barcode(new_qi)
-    print("chicken 65 new qi is ")
-    for k,v in new_qi.__dict__.items():
-        print(k,"::::",v) if v else print("",end='')
+    # print("chicken 65 new qi is ")
+    # for k,v in new_qi.__dict__.items():
+    #     print(k,"::::",v) if v else print("",end='')
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
-    print("new_qi=====>",new_qi.get('nj_quality_readings',''))
+    # print("new_qi=====>",new_qi.get('nj_quality_readings',''))
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
         SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
         field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
-        print("field_name_data====109",field_name_data)
+        # print("field_name_data====109",field_name_data)
         child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
-        print("child_exists===",child_exists)
+        # print("child_exists===",child_exists)
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
             
@@ -112,7 +112,7 @@ def get_itm_code_on_barcode(new_qi):
                                          as_dict=True)
     if not serial_no_data:
         frappe.throw(_("Serial No '{0}' not found. Please select an existing Serial No.").format(barcode))
-    print("87 serial no data is ",serial_no_data)
+    # print("87 serial no data is ",serial_no_data)
     
     result = {
         "item_code": serial_no_data.item_code,
@@ -140,7 +140,7 @@ def get_itm_code_on_barcode(new_qi):
 
     current_date = datetime.date.today()
     serial_item_date = serial_no_data.purchase_date
-    print("curretn date is ",current_date," and the item date is ",serial_item_date )
+    # print("curretn date is ",current_date," and the item date is ",serial_item_date )
     difference = (current_date - serial_item_date).days
 
     if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > datetime.strptime("2024-03-20", "%Y-%m-%d"):
@@ -180,7 +180,7 @@ def get_itm_code_on_barcode(new_qi):
     else:
         frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
         return {"disable_save": True}
-    print("The get_itm_code_on_barcode is returning **** ",result)
+    # print("The get_itm_code_on_barcode is returning **** ",result)
     return new_qi
 
 
@@ -190,22 +190,21 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
-    print("barcode===",barcode)
+    # print("barcode===",barcode)
     if not barcode or not inspection_type:
         frappe.throw("Error: Barcode or Inspection Type is not found.")
     
     response = frappe._dict()
-    print("response===192",response)
-    print("inspection_type===186",inspection_type)
+    
     # try:
         # Assuming validation_for_nj_readings_in_nj_qi is the method being called
         
     response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
-    print('210 The response I"m getting --> ',response)
+    # print('210 The response I"m getting --> ',response)
     # except Exception as e:
     #     frappe.throw(str(e))
     # print("e====",e)
-    print("response===195",response)
+    # print("response===195",response)
     if response.get('sequence_list_for_nj_readings_data'):
         nj_quality_readings = []
         for nj_readings_data in response.get('sequence_list_for_nj_readings_data'):
@@ -220,7 +219,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                     'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
                     'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no')
                 })
-        print('193 The nj readings are ',nj_quality_readings)
+        # print('193 The nj readings are ',nj_quality_readings)
         # Clear existing table entries and add new ones
         new_qi.set('nj_quality_readings', [])
         for reading in nj_quality_readings:
@@ -241,23 +240,10 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
 
 class NJQCA(Document):  
-    def before_save(self):
-        print("save method")
-        if self.bios_serialno:
-            update_serial_no_componont_for_grade(self)
-            department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-            print("242 The department value is ",department)
-            if department == "BG - Core IQC - NJ":
-                open_draft_qi(self) 
-                # self.save()
-            else:
-                print("QI draft will not open \nBecause you not belonging to the IQC Department")
-        else:
-            frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{self.serial_no}</b>.")
-            
+  
     def on_submit(self):
         # Repack
-        print("self==220",self.njqca_result_parameters)
+        # print("self==220",self.njqca_result_parameters)
        
             
         if self.power_on == 'Yes' and self.repack_item_code != '':
@@ -367,9 +353,25 @@ def get_repack_items(self):
     get_repack_items_list.append(get_repack_items_dict)
     
     return get_repack_items_list
+ 
 
+@frappe.whitelist()
+def after_save(docname):
+    print("save method")
+    doc = frappe.get_doc("NJQCA", docname)
 
-
+    if doc.bios_serialno:
+        update_serial_no_componont_for_grade(doc)
+        department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+        print("242 The department value is ",department)
+        if department == "BG - Core IQC - NJ":
+            open_draft_qi(doc) 
+            # self.save()
+        else:
+            print("QI draft will not open \nBecause you not belonging to the IQC Department")
+    else:
+        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+            
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
@@ -479,14 +481,14 @@ def get_part_mapping(item_group, docname):
                 variants = mapping.mappng_fields.split('::')
                 
                 if item_group == mapping.item_group:
-                    print("now item_group is ",item_group, " mapping.item_group ",mapping.item_group)
+                    # print("now item_group is ",item_group, " mapping.item_group ",mapping.item_group)
                     for variant in variants:
                         last_variant_values[item_group] = last_variant_values.get(item_group, {})
                         last_variant_values[item_group][variant] = row.get(variant)
                     attribute_value = last_variant_values[item_group]
                     attribute_object = {}
                     # getting value from NJ Settings - - creating cpu by concating "Core I5" and "7 GEN" as "Core I5 - 7TH GEN"
-                    print("441 item_group.lower() == cpu.lower() is ",item_group.lower(), cpu.lower())
+                    # print("441 item_group.lower() == cpu.lower() is ",item_group.lower(), cpu.lower())
                     if item_group.lower() == cpu.lower():
                         # if row.variant_2 in is_serial_no:
                         #     print("row.variant_2:::::no processor ",row.variant_2)
@@ -518,14 +520,14 @@ def get_part_mapping(item_group, docname):
                     
                     
                     row.attr_data = json.dumps(attribute_object)   
-                    print("472 row.attr_Data is ",row.attr_data)         
+                    # print("472 row.attr_Data is ",row.attr_data)         
                     child_attr_data.append(attribute_object)
-                    print("Child attr data is ",child_attr_data)
+                    # print("Child attr data is ",child_attr_data)
 
         consolidated = consolidate_ram_capacities(child_attr_data)
         doc.data_attr = json.dumps(consolidated)
         repack_item_code = get_variant_from_value(item_template, consolidated)
-        print("  doc.data_attr is ",  doc.data_attr," and the repack item code is ",repack_item_code)
+        # print("  doc.data_attr is ",  doc.data_attr," and the repack item code is ",repack_item_code)
         return repack_item_code
 
 def consolidate_ram_capacities(data):

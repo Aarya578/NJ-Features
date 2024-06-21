@@ -86,11 +86,18 @@ def open_draft_qi(self):
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
-        SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
+        SELECT field_name,name_of_check,parameter from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
         field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
-        # print("field_name_data====109",field_name_data)
+        print("field_name_data====109",field_name_data)
+        
+        if field_name_data ==[] or field_name_data is  None:
+            frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+
         child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
         # print("child_exists===",child_exists)
+        # if field_name_data==[] or field_name_data is None :
+        #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
             
@@ -99,6 +106,8 @@ def open_draft_qi(self):
                 child_table.checks = field_name_data[0]['field_name']
                 child_table.item_group  = data.get("item_group")
                 child_table.options = data.get("value")
+            # elif data.get('parameter') not in field_name_data[0]['parameter'] or field_name_data ==[]:
+            #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
     new_qi.save()
     
 @frappe.whitelist()
@@ -371,7 +380,7 @@ def after_save(docname):
             open_draft_qi(doc) 
             # self.save()
         else:
-            print("QI draft will not open \nBecause you not belonging to the IQC Department")
+            frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
             

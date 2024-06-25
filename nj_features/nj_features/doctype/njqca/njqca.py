@@ -75,6 +75,10 @@ def open_draft_qi(self):
         new_qi.barcode = self.serial_no
         new_qi.njqca_laptop_name = self.name
         new_qi.inspected_by = new_qi.owner
+        if self.manual_repack_item_code :
+            print("manual repak item_code setting====79",self.manual_repack_item_code)
+            new_qi.item_code = self.manual_repack_item_code
+            new_qi.item_name = self.manual_repack_item_code
     
     result = get_itm_code_on_barcode(new_qi)
     # print("chicken 65 new qi is ")
@@ -258,7 +262,7 @@ class NJQCA(Document):
         if self.power_on == 'Yes' and self.repack_item_code != '':
             self.make_stock_entry_using_nj_lib()
             
-            
+            open_draft_qi(self)
             # get_attribute_price, preferred_purchase_price_ = 0, 0
             # get_attribute_value = ''
             # item_doc = frappe.get_doc("Item", {'name': self.repack_item_code})

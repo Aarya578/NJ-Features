@@ -67,7 +67,6 @@ def open_draft_qi(self):
     if existing_qi:
         # Get the existing document
         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
-        # print('Existing QI document found:', new_qi.name)
     else:
         new_qi = frappe.new_doc('NJ Quality Inspection')
         
@@ -76,31 +75,31 @@ def open_draft_qi(self):
         new_qi.njqca_laptop_name = self.name
         new_qi.inspected_by = new_qi.owner
         if self.manual_repack_item_code :
-            print("manual repak item_code setting====79",self.manual_repack_item_code)
             new_qi.item_code = self.manual_repack_item_code
             new_qi.item_name = self.manual_repack_item_code
     
     result = get_itm_code_on_barcode(new_qi)
-    # print("chicken 65 new qi is ")
-    # for k,v in new_qi.__dict__.items():
-    #     print(k,"::::",v) if v else print("",end='')
+  
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
-    # print("new_qi=====>",new_qi.get('nj_quality_readings',''))
+    item_wizard_name = new_qi.get('item_wizard')
+    if item_wizard_name :
+        component_type = """
+        SELECT component_type from `tabComponent` where parent = %s"""
+        component_type_data = frappe.db.sql(component_type,(item_wizard_name,),as_dict= True)
+        item_group_data = [a['component_type'] for a in component_type_data]
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
         SELECT field_name,name_of_check,parameter from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
         field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
-        print("field_name_data====109",field_name_data)
+        # print("field_name_data====109",field_name_data)
         
         if field_name_data ==[] or field_name_data is  None:
             frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
 
         child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
-        # print("child_exists===",child_exists)
-        # if field_name_data==[] or field_name_data is None :
-        #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+       
 
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
@@ -110,8 +109,10 @@ def open_draft_qi(self):
                 child_table.checks = field_name_data[0]['field_name']
                 child_table.item_group  = data.get("item_group")
                 child_table.options = data.get("value")
-            # elif data.get('parameter') not in field_name_data[0]['parameter'] or field_name_data ==[]:
-            #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+        if data.get("item_group") not in item_group_data :
+            # print("item==group======120",data.get("item_group"))
+            frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
+          
     new_qi.save()
     
 @frappe.whitelist()
@@ -246,9 +247,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-    frappe.msgprint("Quality readings updated successfully.")
-    for k,v in new_qi.__dict__.items():
-        print(k," :: ",v) if v else print("",end='')
+    frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI <b> {new_qi.name}</b>")
+   
     return True
 
 
@@ -377,7 +377,7 @@ def after_save(docname):
         update_serial_no_componont_for_grade(doc)
         department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
         department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
-        print("department_setting==",department_setting)
+        # print("department_setting==",department_setting)
         print("242 The department value is ",department)
         
         if department in department_setting:

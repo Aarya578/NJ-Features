@@ -367,7 +367,7 @@ def update_serial_no(serial_no, doc, item):
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     
     if serial_no_doc:
-        # warranty expiry date check 
+        # warranty expiry date check for serial_no 
         has_warrenty = frappe.db.get_value('Purchase Receipt', {'name': doc.name}, 'has_warranty')
         if has_warrenty:
            serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date

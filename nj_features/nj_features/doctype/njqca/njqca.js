@@ -14,6 +14,7 @@ frappe.ui.form.on('NJQCA', {
             }
             get_model(frm.doc.manufacturer_model, frm.doc.make);
         } else {
+            get_model(frm.doc.manufacturer_model, frm.doc.make);
             frm.set_df_property('model', 'read_only', 1)
         }
 
@@ -435,7 +436,9 @@ frappe.ui.form.on('NJQCA', {
                         cur_frm.set_value('manual_repack_item_code',r.message)
                         // cur_frm.set_value('data_attr',r.message)
                         cur_frm.set_value("created",cur_frm.doc.owner);
-                        console.log("The created user value is done ");
+                        cur_frm.refresh_field('repack_item_code');
+                        cur_frm.refresh_field('manual_repack_item_code');
+                        cur_frm.refresh_field('created');
                     }
                 }
 
@@ -453,6 +456,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
     }
+    
 });
 
 // function get_itm_code_on_barcode(frm) {

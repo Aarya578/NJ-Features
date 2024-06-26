@@ -195,21 +195,21 @@ frappe.ui.form.on('Inward', {
 });
 
 function get_item_template(frm) {
-    frm.set_value('repack_item_code', '')
+    frm.set_value('repack_item_code', '');
     frappe.call({
         method: 'nj_features.nj_features.doctype.inward.inward.create_serial_no_and_get_item_code',
-        args:{
-            "item_group":frm.doc.item_group,
+        args: {
+            "item_group": frm.doc.item_group,
             "brand": frm.doc.brand,
             "model": frm.doc.model,
             "serial_no": frm.doc.serial_no
         },
-        callback: function(r) {
+        callback: function (r) {
             if (r.message.serial_no && !frm.doc.serial_no) {
                 frm.set_value('serial_no', r.message.serial_no);
-                frm.refresh_field('serial_no')
+                frm.refresh_field('serial_no');
             }
-            if (r.message.item_template){
+            if (r.message.item_template) {
                 cur_frm.set_df_property('item_template', 'read_only', 0);
                 var template_list = r.message.item_template;
                 if (Array.isArray(template_list) && template_list.length > 0) {
@@ -217,28 +217,42 @@ function get_item_template(frm) {
                     if (template_list.length == 1) {
                         cur_frm.set_value('item_template', template_list[0].name);
                         cur_frm.set_df_property('item_template', 'read_only', 1);
+
+                        // Apply CSS styling
+                        $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid rgba(173, 216, 230, 0.5)'
+                        });
+
+                        var selectedOption = template_list[0].name;
+                        var wizard_list = r.message.wizard_list || [];
+
+                        if (wizard_list.includes(selectedOption)) {
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'green');
+                        } else {
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
+                        }
+
                         frm.trigger("item_template");
                     } else {
                         var wizard_list = r.message.wizard_list || [];
-                        let options = template_list.map(function(item) {
-                            let itemName = item.name;
-                            return itemName
+                        let options = template_list.map(function (item) {
+                            return item.name;
                         });
-                    
+
                         cur_frm.set_df_property('item_template', 'options', options);
-                        $('[data-fieldname="item_template"]').focus().closest('.control-input').css({
+                        $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
                             'border-radius': '0.25rem',
                             'border': '2px solid rgba(173, 216, 230, 0.5)'
                         });
 
                         frm.fields_dict.item_template.$input.on('change', function () {
                             var selectedOption = $(this).val();
-                        
-                            $('[data-fieldname="item_template"]').closest('.control-input').css('border-color', 'rgba(173, 216, 230, 0.5)');
-                            if ($(this).val() == selectedOption && wizard_list.includes(selectedOption)) {
-                                $(this).closest('.control-input').css('border-color', 'green');
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+                            if (wizard_list.includes(selectedOption)) {
+                                $(this).closest('.control-input-wrapper').css('border-color', 'green');
                             } else {
-                                $(this).closest('.control-input').css('border-color', 'red');
+                                $(this).closest('.control-input-wrapper').css('border-color', 'red');
                             }
                         });
 
@@ -247,15 +261,16 @@ function get_item_template(frm) {
                             indicator: 'green'
                         });
                     }
+                    frm.refresh_field('item_template');
                 }
-                frm.refresh_field('item_template')
             } else {
-                frappe.msgprint("<b>Item Template</b> is not found using <br><b>Brand: "+frm.doc.brand+"</b>,<br><b>Model: "+frm.doc.model+"</b>,<br><b>Item Group: "+frm.doc.item_group+"</b>.<br>Please contact <b>NPD Team.</b>")
-                frappe.validated = false
+                frappe.msgprint(__("Item Template is not found using <b>Brand: {0}</b>,<br><b>Model: {1}</b>,<br><b>Item Group: {2}</b>.<br>Please contact <b>NPD Team.</b>", [frm.doc.brand, frm.doc.model, frm.doc.item_group]));
+                frappe.validated = false;
             }
         }
     });
 }
+
 
 function warehouse_info(frm) {
     if(frm.doc.docstatus == 0){

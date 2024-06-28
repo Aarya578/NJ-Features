@@ -1,6 +1,3 @@
-# Copyright (c) 2023, NewJaisa - IT Team
-# For license information, please see license.txt
-
 import json
 import random
 import frappe
@@ -63,7 +60,7 @@ def open_draft_qi(self):
     inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
     self.inspection_type = inspection_type
     # print('The inspectio type value is ',inspection_type)
-    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no,'inspection_type':inspection_type}, limit=1)
+    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
     if existing_qi:
         # Get the existing document
         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
@@ -447,8 +444,8 @@ def get_item_code_for_each_part(part_item_group,doc):
     part_mapping = frappe.get_all("Part Mapping", filters={"parent": part_item_group}, 
     fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
     
-    if not part_mapping:
-        frappe.throw(f"Part mapping is not present for the {part_item_group}.<br><b>Please contact NPD team</b>")
+    # if not part_mapping:
+    #     frappe.throw(f"Part mapping is not present for the {part_item_group}.<br><b>Please contact NPD team</b>")
 
     need_to_update_grade = 0
 
@@ -519,8 +516,8 @@ def get_item_code_for_each_part(part_item_group,doc):
             if part_item_code and 'error' not in part_item_code:
                 frappe.db.set_value("NJQCA Child",row.name,'attr_data',str(part_attr_data))
                 frappe.db.set_value("NJQCA Child",row.name,'part_item_code',part_item_code)
-            else :
-                frappe.throw(f"Item code {part_item_code} is not present.<br><b>Please contact NPD team</b>")
+            # else :
+            #     frappe.msgprint(f"Item code {part_item_code} is not present.<br><b>Please contact NPD team</b>")
             print(attribute_value,'\n',attribute_object,'\n',part_attr_data,'\n',consolidated,'\n',part_item_code)
 
 
@@ -528,12 +525,10 @@ def get_item_code_for_each_part(part_item_group,doc):
         item_template = f"S-{doc.brand} {doc.model}"
         consolidated = consolidate_ram_capacities(child_attr_data)
         repack_item_code = get_variant_from_value(item_template, consolidated)
-        doc.set('data_attr',json.dumps(consolidated))
-        doc.set('created',doc.owner)
+        # doc.set('data_attr',json.dumps(consolidated))
         doc.set('repack_item_code',repack_item_code)
         doc.set('manual_repack_item_code',repack_item_code)
-        doc.save()
-        return repack_item_code 
+        return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
 
 
 @frappe.whitelist()
@@ -1033,4 +1028,3 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
 #         result["item_code"].append(row["Item_code"]) 
 #     return result
 #     return frappe.db.sql("""SELECT item_code from `tabPurchase Receipt Item` where parent = %s""", (pr), as_dict=1)
-

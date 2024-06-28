@@ -19,26 +19,26 @@ frappe.ui.form.on('NJQCA', {
         }
 
 
-        frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
+        // frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
             
             
-            var row = locals[cdt][cdn];
+        //     var row = locals[cdt][cdn];
 
-            console.log('row value is ',row);
-            if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
-                return {
-                    filters: {
-                        item_group: row.item_group,
-                        has_variants: 0
-                    }
+        //     console.log('row value is ',row);
+        //     if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
+        //         return {
+        //             filters: {
+        //                 item_group: row.item_group,
+        //                 has_variants: 0
+        //             }
                     
-                };
-            }            
-            else{
-                frm.refresh_field("part_item_code");
-            }
+        //         };
+        //     }            
+        //     else{
+        //         frm.refresh_field("part_item_code");
+        //     }
            
-		};
+		// };
 
         frm.set_query('manual_repack_item_code', function(r) {
             return {
@@ -432,13 +432,12 @@ frappe.ui.form.on('NJQCA', {
                         frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
                         frappe.validated = false
                     } else {
-                        cur_frm.set_value('repack_item_code', r.message)
-                        cur_frm.set_value('manual_repack_item_code',r.message)
-                        // cur_frm.set_value('data_attr',r.message)
-                        cur_frm.set_value("created",cur_frm.doc.owner);
+                        cur_frm.set_value('repack_item_code', r.message.repack_item_code)
+                        cur_frm.set_value('manual_repack_item_code',r.message.repack_item_code)
+                        cur_frm.set_value('data_attr',r.message.data_attr)
                         cur_frm.refresh_field('repack_item_code');
                         cur_frm.refresh_field('manual_repack_item_code');
-                        cur_frm.refresh_field('created');
+                        cur_frm.refresh_field('data_attr');
                     }
                 }
 
@@ -458,6 +457,7 @@ frappe.ui.form.on('NJQCA', {
     }
     
 });
+
 
 // function get_itm_code_on_barcode(frm) {
 //     frm.set_value("bios_serial_number", '');

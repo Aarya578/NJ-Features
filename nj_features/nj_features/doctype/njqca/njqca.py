@@ -439,120 +439,102 @@ def get_info_from_serial_no(doc=None):
                 serial_no_doc.save()
     return result
 
+import json
+import traceback
 
+def get_item_code_for_each_part(part_item_group, doc):
+    try:
+        item_template = ''
+        part_mapping = frappe.get_all("Part Mapping", filters={"parent": part_item_group},
+                                      fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
+        need_to_update_grade = 0
 
-def get_item_code_for_each_part(part_item_group,doc):
-    item_template = ''
-    part_mapping = frappe.get_all("Part Mapping", filters={"parent": part_item_group}, 
-    fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
-    
-    # if not part_mapping:
-    #     frappe.throw(f"Part mapping is not present for the {part_item_group}.<br><b>Please contact NPD team</b>")
+        child_attr_data = []
+        for row in doc.njqca_item_component:
+            attribute_object = {}
+            for mapping in part_mapping:
+                last_variant_values = {}
+                item_group = row.item_group
 
-    need_to_update_grade = 0
+                if item_group == mapping.item_group:
+                    part_attr_data = []
+                    if mapping.mappng_fields:
+                        variants = mapping.mappng_fields.split('::')
+                        for variant in variants:
+                            last_variant_values[item_group] = last_variant_values.get(item_group, {})
+                            last_variant_values[item_group][variant] = row.get(variant)
+                        attribute_value = last_variant_values[item_group]
+                    elif mapping.get("attribute_name") not in attribute_object and mapping.get('attribute_name').lower() == 'grade':
+                        need_to_update_grade = 1
 
+                    if item_group.lower() == cpu.lower():
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
+                        normalize_cpu = normalize_gen(cpu_value)
+                        attribute_object[mapping.attribute_name] = normalize_cpu
 
-    child_attr_data = []
-    for row in doc.njqca_item_component:
-        attribute_object = {}
-        for mapping in part_mapping:
-            
-            last_variant_values = {}
-            item_group = row.item_group
+                    elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
+                        any_attribute_undefined = any(value is None for value in attribute_value.values())
+                        ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
+                        attribute_object[mapping.attribute_name] = ram_value
 
-            if item_group == mapping.item_group :
-                part_attr_data = []
-                if mapping.mappng_fields:
-                    variants = mapping.mappng_fields.split('::')
+                    elif item_group.lower() == storage.lower() and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]):
+                        attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
 
-                    for variant in variants:
-                        last_variant_values[item_group] = last_variant_values.get(item_group, {})
-                        last_variant_values[item_group][variant] = row.get(variant)
-                    attribute_value = last_variant_values[item_group]
-                elif item_group == part_item_group and mapping.get("attribute_name") not in attribute_object  and mapping.get('attribute_name').lower() == 'grade':
-                    
-                    need_to_update_grade = 1
-                
-                # getting value from NJ Settings - - creating cpu by concating "Core I5" and "7 GEN" as "Core I5 - 7TH GEN"
-                if item_group.lower() == cpu.lower():
-                    # if row.variant_2 in is_serial_no:
-                    #     print("row.variant_2:::::no processor ",row.variant_2)
-                    #     attribute_object[mapping.attribute_name] = "No Processor"
-                    # else:  
-                    any_attribute_undefined = any(value is None for value in attribute_value.values())
-                    cpu_value = unk_cpu if any_attribute_undefined else ' - '.join(attribute_value.values())
-                    normalize_cpu = normalize_gen(cpu_value)
-                    attribute_object[mapping.attribute_name] = normalize_cpu
-        
+                    if attribute_object:
+                        if part_item_group == item_group:
+                            if need_to_update_grade:
+                                attribute_object['Grade'] = Grade
+                            item_template = frappe.db.get_value('Item', {'item_group': part_item_group, 'has_variants': 1}, 'name')
+                            part_attr_data.append(attribute_object)
+                        else:
+                            child_attr_data.append(attribute_object)
 
-                # getting value from NJ Settings - creating ram by concating "16 GB" and "DDR4" as "16 GB DDR4"
-                elif item_group.lower() == ram.lower() and (row.variant_1 != 'SYSTEM MEMORY' and row.variant_1 != '[EMPTY]'):
-                    # if row.variant_2 in is_serial_no:
-                    #     print("row.variant_2:::::no ram ",row.variant_2)
-                    #     attribute_object[mapping.attribute_name] = "No Ram"
-                    # else:
-                    any_attribute_undefined = any(value is None for value in attribute_value.values())
-                    ram_value = unk_ram if any_attribute_undefined else ' '.join(attribute_value.values())
-                    attribute_object[mapping.attribute_name] = ram_value
-                                        
-                # getting value from NJ Settings
-                elif item_group.lower() == storage.lower()  and (not row.variant_3 or not row.variant_1) and attribute_value.get(list(attribute_value.keys())[0]) :
-                    #  if row.variant_2 in is_serial_no:
-                    #     print("row.variant_2:::::no storage ",row.variant_2)
-                    #     attribute_object[mapping.attribute_name] = "No Storage"
-                    # else:
-                    attribute_object[mapping.attribute_name] = attribute_value[list(attribute_value.keys())[0]] + " SSD" or unk_storage
-                        
-                if attribute_object:
-                    if part_item_group == item_group:
-                        if need_to_update_grade :
-                            attribute_object['Grade'] = Grade
-                        item_template = frappe.db.get_value('Item',{'item_group':part_item_group,'has_variants':1},'name')
-                        part_attr_data.append(attribute_object)
-                    else:
-                        child_attr_data.append(attribute_object)
+            if part_item_group == item_group:
+                consolidated = consolidate_ram_capacities(part_attr_data)
+                part_item_code = get_variant_from_value(item_template, consolidated)
+                if part_item_code and 'error' not in part_item_code:
+                    frappe.db.set_value("NJQCA Child", row.name, 'attr_data', str(part_attr_data))
+                    frappe.db.set_value("NJQCA Child", row.name, 'part_item_code', part_item_code)
+                    print(attribute_value, '\n', attribute_object, '\n', part_attr_data, '\n', consolidated, '\n', part_item_code)
 
-        if part_item_group == item_group:
-            consolidated = consolidate_ram_capacities(part_attr_data)
-            part_item_code = get_variant_from_value(item_template, consolidated)
-            if part_item_code and 'error' not in part_item_code:
-                frappe.db.set_value("NJQCA Child",row.name,'attr_data',str(part_attr_data))
-                frappe.db.set_value("NJQCA Child",row.name,'part_item_code',part_item_code)
-            # else :
-            #     frappe.msgprint(f"Item code {part_item_code} is not present.<br><b>Please contact NPD team</b>")
-            print(attribute_value,'\n',attribute_object,'\n',part_attr_data,'\n',consolidated,'\n',part_item_code)
+        if part_item_group == doc.item_group:
+            item_template = f"S-{doc.brand} {doc.model}"
+            consolidated = consolidate_ram_capacities(child_attr_data)
+            repack_item_code = get_variant_from_value(item_template, consolidated)
+            return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
 
-
-    if part_item_group == doc.item_group :
-        item_template = f"S-{doc.brand} {doc.model}"
-        consolidated = consolidate_ram_capacities(child_attr_data)
-        repack_item_code = get_variant_from_value(item_template, consolidated)
-        # doc.set('data_attr',json.dumps(consolidated))
-        # doc.set('repack_item_code',repack_item_code)
-        # doc.set('manual_repack_item_code',repack_item_code)
-        return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
-
+    except Exception as e:
+        frappe.logger().error(f"Error in get_item_code_for_each_part: {str(e)}\n{traceback.format_exc()}")
+        frappe.throw(f"An error occurred: {str(e)}")
 
 @frappe.whitelist()
 def get_part_mapping(item_group, docname):
-    doc = frappe.get_doc("NJQCA", docname)
-    if doc.njqca_item_component and doc.item_group:
-        part_mapping = frappe.get_all("Part Mapping", filters={"parent": doc.item_group}, 
-        fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
+    try:
+        frappe.logger().info(f"get_part_mapping called with item_group: {item_group}, docname: {docname}")
+        doc = frappe.get_doc("NJQCA", docname)
+        if doc.njqca_item_component and doc.item_group:
+            part_mapping = frappe.get_all("Part Mapping", filters={"parent": doc.item_group},
+                                          fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
+            nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
+                                         fields=["parameter", "value"])
+            for param in nj_settings:
+                globals()[param.parameter] = param.value
 
-        nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
-        fields=["parameter", "value"])
+            repack_item_code = get_item_code_for_each_part(item_group, doc)
+            frappe.logger().info(f"repack_item_code: {repack_item_code}")
 
-        for param in nj_settings:
-            globals()[param.parameter] = param.value
-        
-        repack_item_code = get_item_code_for_each_part(item_group,doc)
+            for part in part_mapping:
+                if part['item_group'].lower() != 'laptop storage':
+                    get_item_code_for_each_part(part.get("item_group"), doc)
 
-        for part in part_mapping:
-            if part['item_group'].lower() != 'laptop storage':
-                get_item_code_for_each_part(part.get("item_group"),doc)
+            return repack_item_code
+        else:
+            frappe.logger().info("No njqca_item_component or item_group in doc")
+    except Exception as e:
+        frappe.logger().error(f"Error in get_part_mapping: {str(e)}\n{traceback.format_exc()}")
+        frappe.throw(f"An error occurred: {str(e)}")
 
-        return repack_item_code
 
         # user_email = frappe.session.user
         # user = frappe.db.get_value("User", user_email, ["email"], as_dict=True)

@@ -9,6 +9,8 @@ import re
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
+logger = frappe.logger('NJQCA logger',allow_site = True,file_count = 1)
+logger.debug('Message')
 
 def update_serial_no_componont_for_grade(self):
     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
@@ -366,7 +368,7 @@ def get_repack_items(self):
  
 
 @frappe.whitelist()
-def after_save(docname):
+def after_save_njqca(docname):
     print("save method")
     doc = frappe.get_doc("NJQCA", docname)
 
@@ -526,8 +528,8 @@ def get_item_code_for_each_part(part_item_group,doc):
         consolidated = consolidate_ram_capacities(child_attr_data)
         repack_item_code = get_variant_from_value(item_template, consolidated)
         # doc.set('data_attr',json.dumps(consolidated))
-        doc.set('repack_item_code',repack_item_code)
-        doc.set('manual_repack_item_code',repack_item_code)
+        # doc.set('repack_item_code',repack_item_code)
+        # doc.set('manual_repack_item_code',repack_item_code)
         return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
 
 

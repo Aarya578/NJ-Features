@@ -19,26 +19,26 @@ frappe.ui.form.on('NJQCA', {
         }
 
 
-        // frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
+        frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
             
             
-        //     var row = locals[cdt][cdn];
+            var row = locals[cdt][cdn];
 
-        //     console.log('row value is ',row);
-        //     if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
-        //         return {
-        //             filters: {
-        //                 item_group: row.item_group,
-        //                 has_variants: 0
-        //             }
+            console.log('row value is ',row);
+            if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
+                return {
+                    filters: {
+                        item_group: row.item_group,
+                        has_variants: 0
+                    }
                     
-        //         };
-        //     }            
-        //     else{
-        //         frm.refresh_field("part_item_code");
-        //     }
+                };
+            }            
+            else{
+                frm.refresh_field("part_item_code");
+            }
            
-		// };
+		};
 
         frm.set_query('manual_repack_item_code', function(r) {
             return {
@@ -420,6 +420,7 @@ frappe.ui.form.on('NJQCA', {
     after_save: function() {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
             // cur_frm.set_value('model',)
+            console.log("Calling the get_part_mapping function");
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
                 args: { 
@@ -442,8 +443,9 @@ frappe.ui.form.on('NJQCA', {
                 }
 
             })
+            console.log("Calling the after_save_njqca function");
             frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save',
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
                 args: {
                     'docname': cur_frm.doc.name
                 },

@@ -432,6 +432,9 @@ frappe.ui.form.on('NJQCA', {
                         console.log("Error came");
                         frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
                         frappe.validated = false
+                    } else if(r.message.repack_item_code.error){
+                        console.log("Error came while creating of Repack Item Code") ;
+                        
                     } else {
                         console.log("came to print repack item code");
                         cur_frm.set_value('repack_item_code', r.message.repack_item_code)

@@ -506,13 +506,14 @@ def get_item_code_for_each_part(part_item_group,doc):
             item_template = frappe.db.get_value('Item',{'item_group':part_item_group,'has_variants':1},'name')
             attribute_object['Grade'] = Grade 
             print("attribute_object is ",attribute_object)
-            part_item_code = get_variant_from_value(item_template, [attribute_object])
-            if part_item_code and 'error' not in part_item_code:
-                part_item_code_from_db = frappe.db.get_value("Item",{'item_name':part_item_code,'has_variants':0,'item_group':part_item_group},'name')
-                print("515 the part item code is ",part_item_code_from_db)
-                if part_item_code_from_db:
-                    part_data.append({'name':row.name,'attr_data':attribute_object,'part_item_code':part_item_code})
-                    return part_data
+            if len(attribute_object.items()) > 1:
+                part_item_code = get_variant_from_value(item_template, [attribute_object])
+                if part_item_code and 'error' not in part_item_code:
+                    part_item_code_from_db = frappe.db.get_value("Item",{'item_name':part_item_code,'has_variants':0,'item_group':part_item_group},'name')
+                    print("515 the part item code is ",part_item_code_from_db)
+                    if part_item_code_from_db:
+                        part_data.append({'name':row.name,'attr_data':attribute_object,'part_item_code':part_item_code})
+                        return part_data
                 
     if part_item_group == doc.item_group :
         item_template = f"S-{doc.brand} {doc.model}"

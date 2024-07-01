@@ -354,6 +354,7 @@ def truncate_grade(input_string):
 #         frappe.msgprint(f"Error printing barcode: {e}")
         
 def update_serial_no_on_pr_submit(doc, method=None):
+    print(f'update_serial_no_on_pr_submit ====> {doc}')
     for item in doc.items:
         if item.item_code and item.qty and serializer_or_notserializer(item.item_code) == 1:
             serial_nos = item.serial_no.split('\n') if item.serial_no else []
@@ -361,16 +362,24 @@ def update_serial_no_on_pr_submit(doc, method=None):
                 update_serial_no(serial_no, doc, item)
 
 def update_serial_no(serial_no, doc, item):
+    print(f'doc ===> {doc}')
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
+    
     if serial_no_doc:
+        # warranty expiry date check for serial_no 
+        has_warrenty = frappe.db.get_value('Purchase Receipt', {'name': doc.name}, 'has_warranty')
+        if has_warrenty:
+           serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date
+        else:
+           serial_no_doc.vendor_warranty_expiry_date = None
+        
         serial_no_doc.purchase_price = item.base_rate
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
         serial_no_doc.supplier = doc.supplier
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days
-        serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name

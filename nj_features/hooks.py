@@ -236,3 +236,6 @@ user_data_fields = [
 #	"nj_features.auth.validate"
 # ]
 
+override_whitelisted_methods = {
+    "nj_features.date_time_api.current_date_time": "nj_features.date_time_api.current_date_time"
+}

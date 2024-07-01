@@ -499,7 +499,6 @@ def get_item_code_for_each_part(part_item_group,doc):
                     if part_item_group == item_group :
                         item_group_validation = row.item_group
                 
-                # print("507 attribute obj is ",attribute_object)
                 if attribute_object and item_group != part_item_group:
                     child_attr_data.append(attribute_object)
 
@@ -514,21 +513,11 @@ def get_item_code_for_each_part(part_item_group,doc):
                 if part_item_code_from_db:
                     part_data.append({'name':row.name,'attr_data':attribute_object,'part_item_code':part_item_code})
                     return part_data
-            
-        
-                # frappe.db.set_value("NJQCA Child",row.name,'attr_data',str(part_attr_data))
-                # frappe.db.set_value("NJQCA Child",row.name,'part_item_code',part_item_code)
-            # else :
-            #     frappe.msgprint(f"Item code {part_item_code} is not present.<br><b>Please contact NPD team</b>")
-
-
+                
     if part_item_group == doc.item_group :
         item_template = f"S-{doc.brand} {doc.model}"
         consolidated = consolidate_ram_capacities(child_attr_data)
         repack_item_code = get_variant_from_value(item_template, consolidated)
-        # doc.set('data_attr',json.dumps(consolidated))
-        # doc.set('repack_item_code',repack_item_code)
-        # doc.set('manual_repack_item_code',repack_item_code)
         return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
 
 
@@ -549,13 +538,10 @@ def get_part_mapping(item_group, docname):
         for part in part_mapping:
             if part['item_group'].lower() != 'laptop storage':
                 result = get_item_code_for_each_part(part.get("item_group"),doc)
-                part_data.extend(result)
-            
+                if result :
+                    part_data.extend(result)
         repack_item_code = get_item_code_for_each_part(item_group,doc)
-
         repack_item_code['part_data'] = json.dumps(part_data)
-        
-
         print('562 repack_item_code is ',repack_item_code)
         return repack_item_code
 

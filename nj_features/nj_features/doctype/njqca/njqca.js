@@ -467,11 +467,8 @@ frappe.ui.form.on('NJQCA', {
                 'docname': cur_frm.doc.name
             },
             callback: function(r) {
-                if (r.message.error) {
-                    console.log("Error came");
-                    frappe.throw(r.message.error)
-                    frappe.validated = false
-                } else if (r.message) {
+                console.log("After save response",r);
+                if (r.message) {
                     console.log("after save njqca method executed successfully.");
                 }
             }

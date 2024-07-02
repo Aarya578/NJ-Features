@@ -424,15 +424,19 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
                 args: { 
                     'item_group': cur_frm.doc.item_group,
-                    'docname': cur_frm.doc.name
+                    'docname': cur_frm.doc.name,
+                    'model':cur_frm.doc.model
                 },
                 callback: function (r) {
                     console.log("on save", r);
                     if (r.message.error) {
                         console.log("Error came");
                         frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
-                        frappe.validated = false
-                    } else if(r.message.repack_item_code.error){
+                        frappe.validated = false ;
+                    } else if (r.message.repack_item_code.Error){
+                        frappe.throw("Error" + r.message.repack_item_code.Error);
+                        frappe.validated = false;
+                    } else if(r.message.repack_item_code.error ){
                         console.log("Error came while creating of Repack Item Code") ;
                         
                     } else {

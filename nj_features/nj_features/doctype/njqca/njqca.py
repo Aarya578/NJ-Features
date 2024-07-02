@@ -517,14 +517,18 @@ def get_item_code_for_each_part(part_item_group,doc):
                 
     if part_item_group == doc.item_group :
         item_template = f"S-{doc.brand} {doc.model}"
-        consolidated = consolidate_ram_capacities(child_attr_data)
-        repack_item_code = get_variant_from_value(item_template, consolidated)
-        return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
-
+        item_template_exists = frappe.db.get_value('Item',{'item_name':item_template,'item_group':part_item_group,'has_variants':1},'name')
+        if item_template_exists:
+            consolidated = consolidate_ram_capacities(child_attr_data)
+            repack_item_code = get_variant_from_value(item_template, consolidated)
+            return {'data_attr': json.dumps(consolidated), 'repack_item_code': repack_item_code}
+        else:
+            return {"Error" : f'Item Template {item_template} not found' }
 
 @frappe.whitelist()
-def get_part_mapping(item_group, docname):
+def get_part_mapping(item_group, docname,model):
     doc = frappe.get_doc("NJQCA", docname)
+    doc.model = model
     part_data = []
     if doc.njqca_item_component and doc.item_group:
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": item_group}, 

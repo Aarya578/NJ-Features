@@ -3312,30 +3312,6 @@
    "property_type": null,
    "row_name": null,
    "value": "54"
-  },
-  {
-   "_assign": null,
-   "_comments": null,
-   "_liked_by": null,
-   "_user_tags": null,
-   "creation": "2018-10-06 12:00:45.853442",
-   "default_value": null,
-   "doc_type": "Serial No",
-   "docstatus": 0,
-   "doctype_or_field": "DocField",
-   "field_name": "delivery_document_type",
-   "idx": 0,
-   "modified": "2018-10-06 12:00:45.853442",
-   "modified_by": "visheshhanda@vanshya.com",
-   "name": "Serial No-delivery_document_type-width",
-   "owner": "visheshhanda@vanshya.com",
-   "parent": null,
-   "parentfield": null,
-   "parenttype": null,
-   "property": "width",
-   "property_type": null,
-   "row_name": null,
-   "value": "61"
   }
  ],
  "sync_on_migrate": 1

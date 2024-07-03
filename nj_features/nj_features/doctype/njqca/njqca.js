@@ -436,18 +436,20 @@ frappe.ui.form.on('NJQCA', {
                     } else if (r.message.repack_item_code.Error){
                         frappe.throw("Error" + r.message.repack_item_code.Error);
                         frappe.validated = false;
-                    } else if(r.message.repack_item_code.error ){
-                        console.log("Error came while creating of Repack Item Code") ;
-                        
                     } else {
-                        console.log("came to print repack item code");
-                        cur_frm.set_value('repack_item_code', r.message.repack_item_code)
-                        cur_frm.set_value('manual_repack_item_code',r.message.repack_item_code)
-                        cur_frm.set_value('data_attr',r.message.data_attr)
-                        cur_frm.refresh_field('repack_item_code');
-                        cur_frm.refresh_field('manual_repack_item_code');
-                        cur_frm.refresh_field('data_attr');
-
+                        if(r.message.repack_item_code.error ){
+                            console.log("Error came while creating of Repack Item Code" + r.message.repack_item_code.error) ;
+                            
+                        } else {
+                            console.log("came to print repack item code");
+                            cur_frm.set_value('repack_item_code', r.message.repack_item_code)
+                            cur_frm.set_value('manual_repack_item_code',r.message.repack_item_code)
+                            cur_frm.set_value('data_attr',r.message.data_attr)
+                            cur_frm.refresh_field('repack_item_code');
+                            cur_frm.refresh_field('manual_repack_item_code');
+                            cur_frm.refresh_field('data_attr');
+    
+                        }
                         const partData = JSON.parse(r.message.part_data);
 
                         // Iterate over child table rows and update them
@@ -462,6 +464,7 @@ frappe.ui.form.on('NJQCA', {
                         frm.refresh_field('njqca_item_component'); // Refresh the child table
 
                     }
+
                 }
             });
         }

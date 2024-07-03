@@ -19,7 +19,7 @@ def check_order_id(order_id):
                 is_order_id_exists = frappe.db.exists('Sales Order', {fieldname: order_id, 'docstatus': 1})
                 
                 if is_order_id_exists:
-                    items = frappe.db.get_list('Delivery Note Item', {'sales_order': is_order_id_exists, 'docstatus': 1}, 'serial_no')
+                    items = frappe.db.get_list('Delivery Note Item', {'against_sales_order': is_order_id_exists, 'docstatus': 1}, 'serial_no')
                     for item in items:
                         if item.get('serial_no'):
                             serial_no_set.add(item.get('serial_no'))
@@ -28,7 +28,7 @@ def check_order_id(order_id):
             is_order_id_exists = frappe.db.exists('Sales Order', {fieldname: order_id, 'docstatus': 1})
             
             if is_order_id_exists:
-                items = frappe.db.get_list('Delivery Note Item', {'sales_order': is_order_id_exists, 'docstatus': 1}, 'serial_no')
+                items = frappe.db.get_list('Delivery Note Item', {'against_sales_order': is_order_id_exists, 'docstatus': 1}, 'serial_no')
                 for item in items:
                     if item.get('serial_no'):
                         serial_no_set.add(item.get('serial_no'))

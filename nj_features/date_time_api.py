@@ -9,7 +9,7 @@ def current_date_time():
         if response.status_code == 200:
             data = response.json()
             current_date = data['datetime'][:10]  # Extract date part
-            current_time = data['datetime'][11:23]  # Extract time part with milliseconds
+            current_time = data['datetime'][11:19]  
 
             return {
                 "current_date": current_date,

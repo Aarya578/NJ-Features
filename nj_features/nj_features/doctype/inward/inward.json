@@ -35,8 +35,10 @@
   {
    "fieldname": "purchase_receipt",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Purchase Receipt",
-   "options": "Purchase Receipt"
+   "options": "Purchase Receipt",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_6sw2s",
@@ -45,9 +47,11 @@
   {
    "fieldname": "item_group",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Item Group",
    "options": "Item Group",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "source_warehouse",
@@ -59,23 +63,28 @@
   {
    "fieldname": "brand",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Brand",
-   "options": "Brand"
+   "options": "Brand",
+   "reqd": 1
   },
   {
    "fieldname": "model",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Model",
-   "options": "Models"
+   "options": "Models",
+   "reqd": 1
   },
   {
    "fieldname": "repack_item_code",
    "fieldtype": "Link",
    "label": "Repack Item Code",
    "options": "Item",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "amended_from",
@@ -136,13 +145,14 @@
   {
    "fieldname": "item_template",
    "fieldtype": "Select",
-   "label": "Item Template"
+   "label": "Item Template",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-06-18 06:54:55.913796",
+ "modified": "2024-07-05 13:08:39.854803",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

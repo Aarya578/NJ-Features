@@ -26,6 +26,10 @@ frappe.ui.form.on('Inward', {
             frm.add_custom_button(__('Submit & Next'), function() {
                 submitAndNext(frm);
             }).addClass('btn-primary');
+
+            if (frm.doc.brand && frm.doc.model) {
+                get_item_template(frm)
+            }
         }
 
         if (frm.doc.docstatus == 1) {
@@ -53,34 +57,34 @@ frappe.ui.form.on('Inward', {
     },
 
     purchase_receipt: function(frm) {
-        // if (frm.doc.purchase_receipt) {
-        //     frappe.call({
-        //         method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
-        //         args: {'pr': frm.doc.purchase_receipt},
-        //         callback: function(r) {
-        //             if (r.message && r.message.length > 0) {
-        //                 var itemCodes = r.message.map(function(item) {
-        //                     return item;
-        //                 });
-        //                 frm.set_df_property('item_code', 'options', itemCodes);
-        //             } else {
-        //                 frm.set_df_property('item_code', 'options', '');
-        //             }
-        //         }
-        //     });
-        // }
         if (cur_frm.doc.purchase_receipt) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
                     if (r.message) {
-                        var itemCodes = r.message.map(function(item) {
-                            return item;
-                        });
-                        var options = itemCodes.join('\n');
+                        
+                        if (r.message.length == 1) {
+                            frm.set_value('item_code', r.message[0])
+                            frm.set_df_property('item_code', 'read_only', 1);
+                        } else {
+                            var itemCodes = r.message.map(function(item) {
+                                return item;
+                            });
 
-                        frm.set_df_property('item_code', 'options', options);
+                            var options = itemCodes.join('\n');
+                            frm.set_df_property('item_code', 'options', options);
+    
+                            $('[data-fieldname="serial_no"]').focus().closest('.control-input').css({
+                                'border-radius': '0.25rem',
+                                'border': '2px solid rgba(173, 216, 230, 0.7)'
+                            });
+                            
+                            frappe.show_alert({
+                                message: __('Select Item Code(s)'),
+                                indicator: 'green'
+                            });
+                        }
                     } else {
                         frm.set_df_property('item_code', 'options', '');
                     }
@@ -93,7 +97,7 @@ frappe.ui.form.on('Inward', {
         if (frm.doc.item_template) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.inward.inward.get_repack_item_code',
-                args: {'item_template': frm.doc.item_template, 'pr': frm.doc.purchase_receipt},
+                args: {'item_template': frm.doc.item_template},
                 callback: function(r) {
                     if (r.message.repack_item_code) {
                         frm.set_value('repack_item_code', r.message.repack_item_code)
@@ -110,22 +114,10 @@ frappe.ui.form.on('Inward', {
 
     item_code: function(frm) {
         if (frm.doc.item_code) {
-            // frappe.call({
-            //     method: 'nj_features.nj_features.doctype.inward.inward.fetch_item_group',
-            //     args: {'item_code': selected_item_code},
-            //     callback: function(r) {
-            //         if (r.message && r.message.item_group) {
-            //             frm.set_value('item_group', r.message.item_group);
-            //             frm.set_df_property('item_group', 'read_only', 1);
-            //         }
-            //     }
-            // });
             if (cur_frm.doc.purchase_receipt) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
                     args: {'pr': frm.doc.purchase_receipt, 'item_code': frm.doc.item_code},
-                    // method: 'nj_features.nj_features.doctype.inward.inward.get_stock_data_from_pr',
-                    // args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
                     callback: function(r) {
                         if (r.message) {
                             var result = r.message.result;
@@ -151,19 +143,6 @@ frappe.ui.form.on('Inward', {
                 });
             }
         }
-        // if (cur_frm.doc.purchase_receipt) {
-        //     frappe.call({
-        //         method: 'nj_features.nj_features.doctype.inward.inward.get_items_from_pr',
-        //         args: {'pr': frm.doc.purchase_receipt, 'item_code': selected_item_code},
-        //         callback: function(r) {
-        //             if (r.message) {
-        //                 frm.set_value('base_rate', r.message.base_rate);
-        //             } else {
-        //                 frm.set_df_property('item_code', 'options', '');
-        //             }
-        //         }
-        //     });
-        // }
     },
 
     before_save: function(frm) {
@@ -218,7 +197,6 @@ function get_item_template(frm) {
                         cur_frm.set_value('item_template', template_list[0].name);
                         cur_frm.set_df_property('item_template', 'read_only', 1);
 
-                        // Apply CSS styling
                         $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
                             'border-radius': '0.25rem',
                             'border': '2px solid rgba(173, 216, 230, 0.5)'
@@ -270,7 +248,6 @@ function get_item_template(frm) {
         }
     });
 }
-
 
 function warehouse_info(frm) {
     if(frm.doc.docstatus == 0){

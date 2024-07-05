@@ -8,13 +8,6 @@ from frappe.model.document import Document
 from erpnext.controllers.item_variant import get_variant
 from nj_features.qr_code import generate_and_save_qrcode
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-# import os
-# from barcode import Code128
-# from nj_features.barcode import CustomImgWriter
-# from io import BytesIO
-# frappe.utils.logger.set_log_level("DEBUG")
-logger = frappe.logger("inward", allow_site=True, file_count=1)
-debug = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'debug'}, 'value')
 
 class Inward(Document):
     def on_submit(self):
@@ -27,12 +20,10 @@ class Inward(Document):
             "item_code": self.item_code,
             "stock_entry_type": "Repack",
             "doctype": self.doctype,
-            "series": "NJ-STE-INW-",
+            "series": "STE-INW-",
             "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
             "repack_items": get_repack_items(self)
         }
-        if debug == "1":
-            logger.debug(f"Inward: {self.name}\n {stock_data}")
         stock_data_str = json.dumps(stock_data)
         stock_entry = stock_entry_using_nj_lib(stock_data_str)
         
@@ -67,7 +58,7 @@ class Inward(Document):
             serial_no_doc.purchase_receipt = self.purchase_receipt
             serial_no_doc.save()
         else:
-            frappe.throw("Serial No document not found for the given serial number.")
+            frappe.throw(f"Serial No document not found for the given <b>Serial No. : {self.serial_no}</b>")
 
 
 def stock_entry_for_material_transfer_or_repack_items_data(self):
@@ -97,9 +88,8 @@ def get_item_list_from_pr(pr):
     # return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
     item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
     pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
-    # Get item codes associated with the given purchase receipt
-    # Filter out only those item codes from purchase receipt which have batch numbers
     item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
+    
     return item_codes_in_pr
 
 # @frappe.whitelist()
@@ -140,8 +130,7 @@ def get_item_list_from_pr(pr):
 #     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier}
 
 @frappe.whitelist()
-def get_repack_item_code(pr, item_template):
-    args = {}
+def get_repack_item_code(item_template):
     item_code_attributes = []
     item_code_attributes_data = frappe.db.get_value('NJ Settings', {'doc_type': 'Inward', 'parameter': 'item_code_attributes'}, 'value')
     item_code_attributes = item_code_attributes_data.split(',')
@@ -150,6 +139,10 @@ def get_repack_item_code(pr, item_template):
                                         ['parameter', 'value'])
     attributes_dict = {attr['parameter']: attr['value'] for attr in attributes_list}
     repack_item_code = get_variant(item_template, attributes_dict)
+    
+    if repack_item_code is None or repack_item_code == '':
+        attributes_dict = {attr['parameter']: attr['value'].upper() for attr in attributes_list}
+        repack_item_code = get_variant(item_template, attributes_dict)
     
     return {"repack_item_code": repack_item_code}
 
@@ -179,31 +172,8 @@ def get_stock_data_from_pr(pr, item_code=None):
                 AND delivery_document_no IS NULL AND warehouse = %s """,
                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
             )
-        # supplier = frappe.db.get_value('Purchase Receipt', {'name': pr}, 'supplier')
+            
     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
-
-    # base_rate=''
-    # key = {}
-    
-        # for i in sle:
-        #     key[i['item_code']] = i['warehouse']
-    
-    # if pr:
-    #     result = frappe.db.sql(
-    #         """SELECT item_code, warehouse, purchase_order FROM `tabPurchase Receipt Item` WHERE parent = %s """, (pr), as_dict=True)
-    #     for i in result:
-    #         key[i['item_code']] = i['warehouse']
-    # if item_code:
-    #     base_rate_result = frappe.db.sql(
-    #         """SELECT base_rate FROM `tabPurchase Receipt Item` WHERE item_code = %s AND parent = %s """, (item_code, pr), as_dict=True)
-    #     if base_rate_result:
-    #         base_rate = base_rate_result[0].get('base_rate', '')
-    # return {"result":sle}
-
-# @frappe.whitelist()  -- not used
-# def fetch_item_group(item_code):
-#     item_group = frappe.db.get_value("Item", {"name": item_code}, "item_group")
-#     return {"item_group": item_group}
 
 
 @frappe.whitelist()
@@ -214,6 +184,7 @@ def create_serial_no_and_get_item_code(item_group, brand, model, serial_no=None)
     item_template = get_item_template(brand, model, item_group)
     if item_template:
         wizard_list = has_item_wizards(item_template)
+        
     return {'serial_no': serial_no, 'item_template': item_template, 'wizard_list': wizard_list}
 
 def get_item_template(brand, model, item_group):
@@ -257,7 +228,7 @@ def create_serial_no(item_group=None, attempt=0):
 
             existing_serial = frappe.db.exists("Serial No", {"serial_no": serial_no})
             if existing_serial:
-                return create_serial_no(item_group, attempt + 1)  # Recursive call with increased attempt count
+                return create_serial_no(item_group, attempt + 1)
             else:
                 return serial_no
         else:
@@ -274,21 +245,3 @@ def fetch_model_description(model):
     if model_description:
         return {"model_description": model_description}
     return {"model_description": None}
-    
-# @frappe.whitelist()
-# def get_supplier_and_batch_from_pr(pr):
-#     try:
-#         pr_doc = frappe.get_doc("Purchase Receipt", pr)
-#         if pr_doc:
-#             return {
-#                 "supplier": pr_doc.supplier
-#             }
-#         else:
-#             return {
-#                 "supplier": None,
-#             }
-#     except Exception as e:
-#         frappe.log_error(f"Error fetching supplier and batch number from Purchase Receipt: {e}")
-#         return {
-#             "supplier": None,
-#         }

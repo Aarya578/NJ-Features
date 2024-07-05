@@ -27,8 +27,12 @@ frappe.ui.form.on('Inward', {
                 submitAndNext(frm);
             }).addClass('btn-primary');
 
-            if (frm.doc.brand && frm.doc.model) {
+            if (frm.doc.brand && frm.doc.model && !frm.doc.item_template) {
                 get_item_template(frm)
+            }
+
+            if (frm.doc.item_template) {
+                frm.set_df_property('item_template', 'read_only', 1);
             }
         }
 

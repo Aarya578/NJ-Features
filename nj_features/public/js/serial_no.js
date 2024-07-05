@@ -12,56 +12,72 @@ frappe.ui.form.on('Serial No', {
                     data: frm.doc.name
                 }
             });
-            
-            // frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
-            //     console.log("frm.doc.qr_print_count", frm.doc.qr_print_count, "max", r.message.value);
-            //     if (frm.doc.qr_print_count > r.message.value) {
-            //         frappe.prompt([
-            //             {
-            //                 fieldname: 'reason',
-            //                 label: 'Reason',
-            //                 fieldtype: 'Link',
-            //                 reqd: 1,
-            //                 options: 'Master Reasons'
-            //             },
-            //             {
-            //                 fieldname: 'comment',
-            //                 label: 'Comment',
-            //                 fieldtype: 'Data',
-            //                 reqd: 1
-            //             }
-            //         ], function(values) {
-            //             let reason = values.reason;
-            //             let comment = values.comment;
-            //             cur_frm.timeline.insert_comment(frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment)
-            //             // frappe.call({
-            //             //     "method": "frappe.desk.form.utils.add_comment",
-            //             //     "args": {
-            //             //       reference_doctype: frm.doctype,
-            //             //       reference_name: frm.docname,
-            //             //       content: frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment,
-            //             //       comment_email: frappe.session.user,
-            //             //       comment_by: frappe.session.user_fullname,
-            //             //     }
-            //             // });
-            //             window.open(frappe.urllib.get_full_url("/printview?" +
-            //             "doctype=" + encodeURIComponent("Serial No") +
-            //             "&name=" + docname +
-            //             "&trigger_print=" + print_trigger +
-            //             "&format=" + format +
-            //             "&no_letterhead=0" +
-            //             "&_lang=" + (frappe.boot.lang || "en")));
-            //         })
-            //     } else {
-                    window.open(frappe.urllib.get_full_url("/printview?" +
-                    "doctype=" + encodeURIComponent("Serial No") +
-                    "&name=" + docname +
-                    "&trigger_print=" + print_trigger +
-                    "&format=" + format +
-                    "&no_letterhead=0" +
-                    "&_lang=" + (frappe.boot.lang || "en")));
-                // }
-            // })
+
+            frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
+                console.log("frm.doc.qr_print_count", frm.doc.qr_print_count, "max", r.message.value);
+
+                frm.doc.qr_print_count = frm.doc.qr_print_count ? frm.doc.qr_print_count + 1 : 1;
+
+                frappe.call({
+                    method: "frappe.client.set_value",
+                    args: {
+                        doctype: "Serial No",
+                        name: frm.doc.name,
+                        fieldname: "qr_print_count",
+                        value: frm.doc.qr_print_count
+                    },
+                    callback: function(response) {
+                        if (frm.doc.qr_print_count > r.message.value) {
+                            frappe.prompt([
+                                {
+                                    fieldname: 'reason',
+                                    label: 'Reason',
+                                    fieldtype: 'Link',
+                                    reqd: 1,
+                                    options: 'Master Reasons'
+                                },
+                                {
+                                    fieldname: 'comment',
+                                    label: 'Comment',
+                                    fieldtype: 'Text',
+                                    reqd: 1
+                                }
+                            ], function(values) {
+                                let reason = values.reason;
+                                let comment = values.comment;
+                                cur_frm.timeline.insert_comment(frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment);
+                                frappe.call({
+                                    method: "frappe.desk.form.utils.add_comment",
+                                    args: {
+                                        reference_doctype: frm.doctype,
+                                        reference_name: frm.docname,
+                                        content: frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment,
+                                        comment_email: frappe.session.user,
+                                        comment_by: frappe.session.user_fullname,
+                                    }
+                                });
+                                window.open(frappe.urllib.get_full_url("/printview?" +
+                                "doctype=" + encodeURIComponent("Serial No") +
+                                "&name=" + docname +
+                                "&trigger_print=" + print_trigger +
+                                "&format=" + format +
+                                "&no_letterhead=0" +
+                                "&_lang=" + (frappe.boot.lang || "en")));
+                                frm.reload_doc(); 
+                            });
+                        } else {
+                            window.open(frappe.urllib.get_full_url("/printview?" +
+                            "doctype=" + encodeURIComponent("Serial No") +
+                            "&name=" + docname +
+                            "&trigger_print=" + print_trigger +
+                            "&format=" + format +
+                            "&no_letterhead=0" +
+                            "&_lang=" + (frappe.boot.lang || "en")));
+                            frm.reload_doc(); 
+                        }
+                    }
+                });
+            });
         }).addClass('btn-primary');
     }
 });

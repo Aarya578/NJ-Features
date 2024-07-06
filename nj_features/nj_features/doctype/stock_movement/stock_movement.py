@@ -23,9 +23,11 @@ class StockMovement(Document):
                     stock_entry_item.t_warehouse = item.t_warehouse
                     stock_entry_item.item_code = item.item_code
                     stock_entry_item.qty = item.qty
+                    if item.reason is not None or item.reason != '':
+                        stock_entry_item.reason = item.reason
                     # stock_entry_item.grade = item.grade
             
-                stock_entry_doc.insert()
+                stock_entry_doc.save()
                 stock_entry_doc.submit()
                 if stock_entry_doc.name:
                     base_url = frappe.utils.get_url()

@@ -10,6 +10,7 @@
   "s_warehouse",
   "t_warehouse",
   "item_code",
+  "reason",
   "qty"
  ],
  "fields": [
@@ -43,7 +44,7 @@
    "reqd": 1
   },
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -61,11 +62,18 @@
    "label": "Qty",
    "non_negative": 1,
    "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "reason",
+   "fieldtype": "Text",
+   "in_list_view": 1,
+   "label": "Reason"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-05-24 09:18:28.143387",
+ "modified": "2024-07-06 16:21:57.779606",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement Detail",

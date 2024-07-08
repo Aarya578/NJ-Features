@@ -40,7 +40,9 @@ def check_order_id(order_id):
 @frappe.whitelist()
 def find_laptop_registration(serial_no):
     registrated_serial_no = frappe.db.exists('Laptop Registration', {'serial_no': serial_no})
-    return registrated_serial_no
+    if registrated_serial_no:
+        return serial_no
+    return "LR not found for Serial No."
 
 @frappe.whitelist()
 def validate_phone_no(phone_no):

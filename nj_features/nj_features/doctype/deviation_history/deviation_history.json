@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2023-06-27 01:37:22.986782",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user_and_document_info_section",
+  "user",
+  "user_name",
+  "activity_type",
+  "column_break_dxrff",
+  "referance_doctype",
+  "document_name",
+  "serial_no",
+  "section_break_sztcr",
+  "reason",
+  "comment"
+ ],
+ "fields": [
+  {
+   "fieldname": "user_and_document_info_section",
+   "fieldtype": "Section Break",
+   "label": "User and Document Info"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User"
+  },
+  {
+   "fieldname": "user_name",
+   "fieldtype": "Data",
+   "label": "User Name"
+  },
+  {
+   "fieldname": "activity_type",
+   "fieldtype": "Select",
+   "label": "Activity Type",
+   "options": "\nQR Print\nDocument Cancellation"
+  },
+  {
+   "fieldname": "column_break_dxrff",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "referance_doctype",
+   "fieldtype": "Link",
+   "label": "Referance Doctype",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "document_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Document name",
+   "options": "referance_doctype"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "section_break_sztcr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Link",
+   "label": "Reason",
+   "options": "Master Reasons"
+  },
+  {
+   "fieldname": "comment",
+   "fieldtype": "Small Text",
+   "label": "Comment"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-07-09 12:45:13.745282",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Deviation History",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

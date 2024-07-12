@@ -757,7 +757,23 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
         return templates[0].name
     else:
         return None
+    
+@frappe.whitelist()
+def get_manual_repack_item_code_filtered_data(item_group, brand, model=None):
+    if model:
+        manual_repack_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND brand = %(brand)s AND item_model = %(model)s"
+        manual_repack_item_code = frappe.db.sql(manual_repack_item_code_query, {'item_group': item_group, 'brand': brand, 'model': model})
+    else:
+        manual_repack_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND brand = %(brand)s"
+        manual_repack_item_code = frappe.db.sql(manual_repack_item_code_query, {'item_group': item_group, 'brand': brand})
+    
+    return manual_repack_item_code
 
+
+@frappe.whitelist()
+def get_part_item_code_filtered_data(item_group):
+    get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s"
+    return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 # Config_array={'Processor':{"variant01":"i5","variant02":"4thGen"},"RAM":{"variant01":"4GB","variant02":"DDR4"}}
 #lap_def={'Processor':["variant01","variant02"],"RAM":["variant01"]}

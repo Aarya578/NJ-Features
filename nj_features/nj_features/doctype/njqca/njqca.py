@@ -86,6 +86,48 @@ def open_draft_qi(self):
         SELECT component_type from `tabComponent` where parent = %s"""
         component_type_data = frappe.db.sql(component_type,(item_wizard_name,),as_dict= True)
         item_group_data = [a['component_type'] for a in component_type_data]
+        
+    config_data_2_qi = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"config"},"value")
+
+    print("config_data_2_qi=====93",config_data_2_qi)
+    # for data in self.njqca_item_component:
+    #     if data.get("item_group") in config_data_2_qi:
+    #         field_name_check_sql_1 = """
+    #         SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
+    #         field_name_data_1 = frappe.db.sql(field_name_check_sql_1,(data.get("item_group")),as_dict=True)
+    #         print("field_name_data_1====98",field_name_data_1)
+    #         if field_name_data_1 ==[] or field_name_data_1 is  None:
+    #             frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+                
+                
+    #         child_exists_1= any(child.item_group == data.get("item_group") and child.check_name == field_name_data_1[0]['name_of_check'] for child in new_qi.nj_quality_checks)
+            
+
+    #         if not child_exists_1:
+    #             child_table = new_qi.append("nj_quality_checks", {})
+                
+    #             if field_name_data_1 :
+    #                 child_table.check_name = field_name_data_1[0]['name_of_check']
+    #                 child_table.checks = field_name_data_1[0]['field_name']
+    #                 child_table.item_group  = data.get("item_group")
+    #                 child_table.options = data.get("variant_9")
+    #         if data.get("item_group") not in item_group_data :
+    #             # print("item==group======120",data.get("item_group"))
+    #             frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
+    field_name_check_sql_1 = """
+            SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
+    field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
+    print("field_name_data_1====98",field_name_data_1)
+    njqca_config_query = """
+    SELECT variant_9 from `tabNJQCA Child` where item_group = %s"""
+    njqca_config_query_data = frappe.db.sql(njqca_config_query,config_data_2_qi,as_dict=True)
+    print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
+    
+    child_table = new_qi.append("nj_quality_checks", {})
+    child_table.check_name = field_name_data_1[0]['name_of_check']
+    child_table.checks = field_name_data_1[0]['field_name']
+    child_table.item_group  = config_data_2_qi
+    child_table.options =  njqca_config_query_data[0]['variant_9']
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
@@ -97,7 +139,7 @@ def open_draft_qi(self):
             frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
 
         child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
-       
+        
 
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
@@ -106,7 +148,7 @@ def open_draft_qi(self):
                 child_table.check_name = field_name_data[0]['name_of_check']
                 child_table.checks = field_name_data[0]['field_name']
                 child_table.item_group  = data.get("item_group")
-                child_table.options = data.get("value")
+                child_table.options = data.get("value") 
         if data.get("item_group") not in item_group_data :
             # print("item==group======120",data.get("item_group"))
             frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')

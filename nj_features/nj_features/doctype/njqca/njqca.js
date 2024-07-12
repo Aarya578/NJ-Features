@@ -41,12 +41,26 @@ frappe.ui.form.on('NJQCA', {
 		};
 
         frm.set_query('manual_repack_item_code', function(r) {
-            return {
-                filters: {
-                    item_group : frm.doc.item_group,
-                    has_variants: 0
+            if (frm.doc.model) {
+                return {
+                    filters: {
+                        item_group : frm.doc.item_group,
+                        has_variants: 0,
+                        brand: frm.doc.brand,
+                        item_group: frm.doc.item_group,
+                        item_model: frm.doc.model
+                    } 
                 }
-                
+            } else {
+                return {
+                    filters: {
+                        item_group : frm.doc.item_group,
+                        has_variants: 0,
+                        brand: frm.doc.brand,
+                        item_group: frm.doc.item_group
+                    }
+                    
+                }
             }
         });
     },

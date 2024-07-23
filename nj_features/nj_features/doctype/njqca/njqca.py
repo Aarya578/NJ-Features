@@ -378,9 +378,12 @@ def after_save_njqca(docname):
         # print("department_setting==",department_setting)
         print("242 The department value is ",department)
         
-        if department in department_setting:
+        if department in department_setting and doc.power_on == 'Yes':
+            print('before open qi draft')
             open_draft_qi(doc) 
             # self.save()
+        elif doc.power_on == 'No':
+            frappe.throw("QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
         else:
             frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
     else:
@@ -761,18 +764,20 @@ def get_templates_by_model_and_brand(model=None, brand=None, item_group=None):
 @frappe.whitelist()
 def get_manual_repack_item_code_filtered_data(item_group, brand, model=None):
     if model:
-        manual_repack_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND brand = %(brand)s AND item_model = %(model)s"
+        manual_repack_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND brand = %(brand)s AND item_model = %(model)s AND has_variants = 0"
         manual_repack_item_code = frappe.db.sql(manual_repack_item_code_query, {'item_group': item_group, 'brand': brand, 'model': model})
     else:
         manual_repack_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND brand = %(brand)s"
         manual_repack_item_code = frappe.db.sql(manual_repack_item_code_query, {'item_group': item_group, 'brand': brand})
     
+    manual_repack_item_code = [item[0] for item in manual_repack_item_code]
+
     return manual_repack_item_code
 
 
 @frappe.whitelist()
 def get_part_item_code_filtered_data(item_group):
-    get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s"
+    get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND has_variants = 0"
     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 # Config_array={'Processor':{"variant01":"i5","variant02":"4thGen"},"RAM":{"variant01":"4GB","variant02":"DDR4"}}

@@ -136,8 +136,8 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
     else:
         parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')
         emp_warehouse_name = 'EMP - ' + user_full_name
-        is_emp_warehouse_name_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name}, 'name')
-        if is_emp_warehouse_name_exists:
+        is_emp_warehouse_name_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
+        if is_emp_warehouse_name_exists is None:
             emp_warehouse_name = 'EMP - ' + user_full_name+ ' - ' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
         if is_main_warehouse_exists:

@@ -5,14 +5,13 @@ frappe.ui.form.on('Purchase Order', {
     onload(frm) {
         $('.col-lg-2.layout-side-section').hide();
     },
+    
     refresh(frm) {
-        frm.events.has_warranty(frm)
-    },
-    has_warranty: function(frm) {
         if (frm.doc.has_warranty == 0 && frm.doc.docstatus == 0) {
             frm.set_value('warranty_days', 0);
         }
     },
+
     validate: function(frm) {
         // Get the posting date and number of days from the form
         var postingDate = frm.doc.transaction_date; // Assuming the field name is 'posting_date'
@@ -21,7 +20,6 @@ frappe.ui.form.on('Purchase Order', {
         var warrantyDate = frappe.datetime.add_days(postingDate, numberOfDays);
         cur_frm.set_value('warrenty_till_date', warrantyDate)
     }
-    
 });
 
 const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
@@ -39,14 +37,14 @@ const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
                 if (closedAmount == 0 && billedAmount == 0) {
                     console.log("No, closedAmount is ",closedAmount," and billedAmount is ", billedAmount);
                     frappe.throw("PO cannot be closed because both 'Closed Amount' and 'Billed Amount' are 0.0. Instead you can cancel the PO.");
-                }
-                if ((diffAmount + toleranceAmount) >= -1 && (diffAmount + toleranceAmount) <= 1) {
-                    console.log("Yes, Closed Amount: ", closedAmount + toleranceAmount ," >= Billed Amount: ", billedAmount);
+                }// (diffAmount + toleranceAmount) >= -1 &&  - Removed
+                if ((diffAmount + toleranceAmount) <= 1) {
+                    console.log("Yes, Closed Amount: ", closedAmount + toleranceAmount ," <= Billed Amount: ", billedAmount);
                     erpnext.buying.PurchaseOrderController.prototype.close_purchase_order.call(me);
                 } else {
                     console.log("No",closedAmount + toleranceAmount ," <> ", billedAmount);
                     frappe.throw("PO cannot be closed because 'Closed Amount: " + closedAmount + 
-                    "' <= 'Billed Amount: " + billedAmount + "'.");
+                    "' > 'Billed Amount: " + billedAmount + "'.");
                 }
             }
         })

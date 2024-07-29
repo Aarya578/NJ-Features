@@ -124,8 +124,9 @@ def open_draft_qi(self):
     print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
     
     child_table = new_qi.append("nj_quality_checks", {})
-    child_table.check_name = field_name_data_1[0]['name_of_check']
-    child_table.checks = field_name_data_1[0]['field_name']
+    if field_name_data_1 != [] and field_name_data_1 is not None:
+        child_table.check_name = field_name_data_1[0]['name_of_check']
+        child_table.checks = field_name_data_1[0]['field_name']
     child_table.item_group  = config_data_2_qi
     child_table.options =  njqca_config_query_data[0]['variant_9']
     
@@ -412,7 +413,7 @@ def get_repack_items(self):
 def after_save_njqca(docname):
     print("save method")
     doc = frappe.get_doc("NJQCA", docname)
-
+    # print('******doc********',doc.as_dict())
     if doc.bios_serialno:
         update_serial_no_componont_for_grade(doc)
         department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
@@ -580,7 +581,6 @@ def get_part_mapping(item_group, docname,model):
     if doc.njqca_item_component and doc.item_group:
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": item_group}, 
         fields=["item_group", "mappng_fields", "attribute_name"], order_by="idx")
-
         nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
         fields=["parameter", "value"])
 
@@ -594,7 +594,7 @@ def get_part_mapping(item_group, docname,model):
                 part_data.extend(result)
         repack_item_code = get_item_code_for_each_part(item_group,doc)
         repack_item_code['part_data'] = json.dumps(part_data)
-        print('562 repack_item_code is ',repack_item_code)
+        # print('562 repack_item_code is ',repack_item_code)
         return repack_item_code
 
         # user_email = frappe.session.user

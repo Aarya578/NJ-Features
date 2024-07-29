@@ -119,8 +119,9 @@ def open_draft_qi(self):
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
     print("field_name_data_1====98",field_name_data_1)
     njqca_config_query = """
-    SELECT variant_9 from `tabNJQCA Child` where item_group = %s"""
-    njqca_config_query_data = frappe.db.sql(njqca_config_query,config_data_2_qi,as_dict=True)
+    SELECT variant_9 from `tabNJQCA Child` where item_group = %s and parent =%s"""
+    njqca_config_query_data = frappe.db.sql(njqca_config_query,(config_data_2_qi,self.name),as_dict=True)
+    print("njqca_config_query_data------123",njqca_config_query_data)
     print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
     
     child_table = new_qi.append("nj_quality_checks", {})
@@ -436,7 +437,12 @@ def after_save_njqca(docname):
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
     brand = frappe.db.exists('Brand', {'name': brand})
+    
     model = frappe.db.exists('Models', {'name': model})
+    # if not model_exists:
+    #     model_template = frappe.db.get_value('Models', {'model_template': model}, 'name')
+    #     model_exists = model_template if model_template else False
+
     return {'brand': brand, 'model': model}
 
 

@@ -508,6 +508,7 @@ def get_info_from_serial_no(doc=None):
             # purchase_price = frappe.get_value('Purchase Receipt', {'name': purchase_receipt_doc[0]['purchase_receipt']}, 'total')
 
             result['item_code'] = sle_entry.get('item_code')
+            result['model'] = serial_no_doc.model
             result['item_group'] = serial_no_doc.item_group
             result['brand'] = serial_no_doc.brand
             result['warehouse'] = sle_entry.get('warehouse')

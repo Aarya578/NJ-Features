@@ -12,7 +12,12 @@ frappe.ui.form.on('NJQCA', {
                 frappe.msgprint("Manufacturer Model is not found")
                 return
             }
-            get_model(frm.doc.manufacturer_model);
+
+            if (!frm.doc.model){
+                get_model(frm.doc.manufacturer_model);
+            } else {
+                frm.set_df_property('model', 'read_only', 1);
+            }
         }
 
 

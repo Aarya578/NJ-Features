@@ -58,9 +58,12 @@ def update_serial_no_componont_for_grade(self):
     
 
 def open_draft_qi(self):
-    inspection_type = frappe.db.get_value('NJ Settings', {'doc_type': 'NJQCA', 'parameter': 'qi_inspection_type'}, 'value')
+    # user_email = frappe.session
+    department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
+    print("department------63",department)
+    inspection_type= frappe.db.get_value('Department', {'name': department}, 'inspection_type')
     self.inspection_type = inspection_type
-    # print('The inspectio type value is ',inspection_type)
+    print('The inspectio type value is ',inspection_type)
     existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
     if existing_qi:
         # Get the existing document
@@ -81,6 +84,7 @@ def open_draft_qi(self):
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
     item_wizard_name = new_qi.get('item_wizard')
+    item_group_data =''
     if item_wizard_name :
         component_type = """
         SELECT component_type from `tabComponent` where parent = %s"""
@@ -165,9 +169,9 @@ def open_draft_qi(self):
                 child_table.checks = field_name_data[0]['field_name']
                 child_table.item_group  = data.get("item_group")
                 child_table.options = data.get("value") 
-        if data.get("item_group") not in item_group_data :
-            # print("item==group======120",data.get("item_group"))
-            frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
+    if data.get("item_group") not in item_group_data :
+        # print("item==group======120",data.get("item_group"))
+        frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
           
     new_qi.save()
     

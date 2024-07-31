@@ -63,7 +63,6 @@ def stock_movement_draft(data, owner_warehouse, has_serial_no, submit_status):
         
         print(f'STOCK_MOVEMENT_DRAFT ===16=== {stock_movement.as_dict()}')
         return stock_movement.as_dict()
-    
     return {}
 
 def update_item_reasons(stock_movement, row_name, reason):
@@ -176,7 +175,12 @@ def handle_serialized_item(data, stock_movement, has_serial_no, owner_warehouse)
         print(f'SERIAL_NO_DATA ===28=== {serial_no_data}')
         
         existing_item = next((item for item in stock_movement.items if item.serial_no == serial_no_data['serial_no']), None)
-        
+
+        print('EXISTING ITEM: ', existing_item)
+
+        if existing_item:
+            raise frappe.ValidationError(_("<b>Serial No : {}</b> already exist. Please enter a valid one.".format(serial_no_data['serial_no'])))
+
         if not existing_item:
             stock_movement.append('items', {
                 'serial_no': serial_no_data['serial_no'],
@@ -196,12 +200,18 @@ def handle_non_serialized_item(data, stock_movement, has_serial_no, owner_wareho
     non_serialized_data = search_for_non_serialized_item(scan_barcode, scan_grade, scan_warehouse)
     print(f'NON_SERIALIZED_DATA ===30=== {non_serialized_data}')
     
-    item_code_from_non_serialized_data  = f'{non_serialized_data}-{scan_grade}'
+    item_code_from_non_serialized_data = f'{non_serialized_data}-{scan_grade}'
     print(f'item_code_from_non_serialized_data ===31=== {item_code_from_non_serialized_data}')
 
     database_item_codes = get_all_item_codes()
 
     if item_code_from_non_serialized_data in database_item_codes:
+        # Check if item already exists in stock_movement items
+        existing_item = next((item for item in stock_movement.items if item.item_code == item_code_from_non_serialized_data), None)
+        
+        if existing_item:
+            raise frappe.throw(f"<b>Item code : {item_code_from_non_serialized_data}</b> already exists.")
+        
         if non_serialized_data and data.get('qty'):
             print(f'\n\n**************QUANTITY ENTERED INSIDE NON_SERIALIZED_DATA***************\n\n')
             has_serial_no['has_serial_no'] = 1
@@ -228,7 +238,8 @@ def handle_non_serialized_item(data, stock_movement, has_serial_no, owner_wareho
         reset_scan_fields(stock_movement)
         stock_movement.save()
         print(f'=========={stock_movement.scan_grade}==========={stock_movement.scan_barcode}')
-        raise frappe.ValidationError(_("Item: {} doesn't exist. Please enter a valid Item.".format(item_code_from_non_serialized_data)))
+        raise frappe.ValidationError(_("<b>Item code : {}</b> doesn't exist. Please enter a valid Item.".format(item_code_from_non_serialized_data)))
+
 
 def get_all_item_codes():
     database_items = frappe.get_all("Item", fields=["item_code"])

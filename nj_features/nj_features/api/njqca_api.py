@@ -11,42 +11,44 @@ def process_njqca_data():
     data = frappe.request.data
     data_json = data.decode('utf-8')
     data = json.loads(data_json)
-    # print('**14**data*****process_njqca_data****',data)
+    print('**14**data*****process_njqca_data****',data)
     njqca_doc = frappe.get_doc('NJQCA', data['njqca_name'])
     part_mapping_data = {}
     part_item_code_update_child_data = njqca_doc.as_dict().njqca_item_component
+
     if 'email' in data and data['email'] is not None:
         work_warehouse = frappe.db.get_value('Employee', {'user_id': data['email']}, 'work_warehouse')
-        # print('***********work_warehouse************',work_warehouse)
         njqca_doc.warehouse = work_warehouse
-        # njqca_doc.save()
+
     if 'serial_no' in data and data['serial_no'] is not None:
         njqca_doc.serial_no = data['serial_no']
         njqca_doc_str = frappe.as_json(njqca_doc)
         Info_from_serial_no = get_info_from_serial_no(njqca_doc_str)
-        # print('************Info_from_serial_no**************',Info_from_serial_no)
-        print('25')
+        print('Info_from_serial_no==========',Info_from_serial_no)
+
         if Info_from_serial_no['warehouse'] != data['warehouse']:
             frappe.throw(
 						("Please Transfer This Serial No <b>{0}</b> To This Warehouse <b>{1}</b>.").format(
 							data['serial_no'], data['warehouse']
 						)
 					)
-            print('31')
-        elif data['model'] is None or data['model'] == 'None':
+            
+        elif data['model'] is None or data['model'] == 'None' or data['model'] == '':
             frappe.throw("Please Fill The Model. If Model is not there Please Contact NPD Team")
-            print('34')
-        elif data['brand'] == Info_from_serial_no['brand']:
+
+        elif data['brand'] != Info_from_serial_no['brand']:
             frappe.throw("Please Check the Brand is Not Matched")
-            print('38')
+
         elif data['power_on'] == 'Yes':
-            print('43')
             njqca_doc.item_code = Info_from_serial_no['item_code']
             part_mapping_data = get_part_mapping(data['item_group'],data['njqca_name'],data['model'])
-            print('\n*******************Part_mapping_data***********************',part_mapping_data['part_data'])
+
             if 'repack_item_code' in part_mapping_data:
                 njqca_doc.repack_item_code = part_mapping_data['repack_item_code']
-                njqca_doc.manual_repack_item_code = part_mapping_data['repack_item_code']
+
+                if njqca_doc.manual_repack_item_code == '' or njqca_doc.manual_repack_item_code is None:
+                    njqca_doc.manual_repack_item_code = part_mapping_data['repack_item_code']
+
                 if 'part_data' in part_mapping_data and part_mapping_data['part_data'] != ['error'] or part_mapping_data['part_data'] != []:
                     l=json.loads(part_mapping_data['part_data'])
                     for i in l:
@@ -58,27 +60,29 @@ def process_njqca_data():
                                 child_data_for_part_item_code = njqca_doc.njqca_item_component[int(part_idx)-1]
                                 child_data_for_part_item_code.update({
                                     "part_item_code": part_item_code_filter,
-                                    
                                 })
-
             after_save_njqca(data['njqca_name'])
+
+        elif data['power_on'] == 'No':
+            njqca_doc.power_on = data['power_on']
+
     if 'model' in data and data['model'] is not None:
         njqca_doc.model = data['model']
+
     if 'manual_repack_item_code' in data and data['manual_repack_item_code'] is not None:
         njqca_doc.manual_repack_item_code = data['manual_repack_item_code']
+
     manual_item_codes = []
     if 'item_group' in data and 'brand' in data:
         manual_item_codes = get_manual_repack_item_code_filtered_data(data['item_group'],data['brand'],data['model'])
-        # print('===========manual_item_codes================',manual_item_codes)
+
     part_item_codes = ()
     if 'part_item_group' in data:
         part_item_codes = get_part_item_code_filtered_data(data['part_item_group'])
         part_item_codes = [item[0] for item in part_item_codes]
 
-        # print('*****************part_item_codes************************',part_item_codes)
     if 'njqca_name' in data and 'idx' in data and 'part_config_id' in data and 'part_item_code' in data:
         if data['idx'] is not None and data['part_config_id'] is not None and data['part_item_code'] is not None and data['njqca_name'] is not None:
-            print('\n\n=============inside part_item_code update query ==============, ',data['part_item_code'], data['njqca_name'], data['idx'], data['part_config_id'])
             child_data_idx = njqca_doc.njqca_item_component[int(data['idx'])-1]
             print("child_data_idx",child_data_idx.as_dict())
             child_data_idx.update({
@@ -106,14 +110,20 @@ def process_njqca_data():
     njqca_parent_data['item_code'] = njqca_doc.get('item_code','')
     njqca_parent_data['repack_item_code'] = njqca_doc.get('repack_item_code','')
     njqca_parent_data['manual_repack_item_code'] = njqca_doc.get('manual_repack_item_code','')
+
     for item in njqca_doc.as_dict().njqca_item_component:
         child_data = {}
         for key,value in item.items():
             if key in ['idx','name','item_group','part_config_id','part_item_code','variant_1','variant_2','variant_6','variant_7','variant_8','variant_10']:
                 child_data[key] = value
         njqca_child_data.append(child_data)
+
     njqca_result_parameter = njqca_doc.njqca_result_parameters
-    # part_item_codes = [item[0] for item in part_item_codes]
+
+    if 'submit_status' in data and data['submit_status'] is not None:
+        njqca_doc.docstatus = '1'
+        njqca_doc.submit()
+    
     output ={
         'njqca_parent_data':njqca_parent_data,
         'njqca_child_data' : njqca_child_data,
@@ -123,6 +133,6 @@ def process_njqca_data():
         'model_list' : model_list,
         'part_mapping_data' : part_mapping_data
     }
-    # print('****************output*********************',output)
+    
     return output
 

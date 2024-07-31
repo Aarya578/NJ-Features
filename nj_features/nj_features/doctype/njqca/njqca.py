@@ -136,9 +136,20 @@ def open_draft_qi(self):
     child_table.options =  njqca_config_query_data[0]['variant_9']
     
     for data in self.njqca_result_parameters:
-        field_name_check_sql = """
-        SELECT field_name,name_of_check,parameter from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
-        field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
+        field_name_check_sql ="""
+            SELECT options.quality_check, qc_check.field_name
+            FROM `tabNJ Quality Checks` qc
+            LEFT JOIN `tabNj QC Options` options
+	        ON qc.name = options.parent
+            INNER JOIN `tabNJ QC Check List` qc_check
+            ON options.quality_check = qc_check.name
+            AND qc_check.diagnostic_type = 'Automatic'
+            WHERE qc.item_group = %s AND qc.inspection_type = %s"""
+        field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),inspection_type),as_dict=True)
+        # print("get_checknamequery_data-------149--------",field_name_data)
+        # field_name_check_sql = """
+        # SELECT field_name,name_of_check,parameter from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
+        # field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
         # print("field_name_data====109",field_name_data)
         
         # if field_name_data ==[] or field_name_data is  None:
@@ -148,7 +159,7 @@ def open_draft_qi(self):
         #     child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
         if field_name_data:
             
-            name_of_check = field_name_data[0]['name_of_check'] if field_name_data else None
+            name_of_check = field_name_data[0]['quality_check'] if field_name_data else None
             child_exists = any(
                 child.item_group == data.get("item_group") and child.check_name == name_of_check
                 for child in new_qi.nj_quality_checks
@@ -165,7 +176,7 @@ def open_draft_qi(self):
             child_table = new_qi.append("nj_quality_checks", {})
             
             if field_name_data :
-                child_table.check_name = field_name_data[0]['name_of_check']
+                child_table.check_name = field_name_data[0]['quality_check']
                 child_table.checks = field_name_data[0]['field_name']
                 child_table.item_group  = data.get("item_group")
                 child_table.options = data.get("value") 

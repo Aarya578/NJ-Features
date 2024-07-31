@@ -137,11 +137,25 @@ def open_draft_qi(self):
         field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
         # print("field_name_data====109",field_name_data)
         
-        if field_name_data ==[] or field_name_data is  None:
-            frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+        # if field_name_data ==[] or field_name_data is  None:
+        #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
+        # if field_name_data:
+            
+        #     child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
+        if field_name_data:
+            
+            name_of_check = field_name_data[0]['name_of_check'] if field_name_data else None
+            child_exists = any(
+                child.item_group == data.get("item_group") and child.check_name == name_of_check
+                for child in new_qi.nj_quality_checks
+            )
+        else:
+            # Handle the case when field_name_data is empty or None
+            child_exists = any(
+                child.item_group == data.get("item_group")
+                for child in new_qi.nj_quality_checks
+            )
 
-        child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
-        
 
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
@@ -289,9 +303,11 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-    frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI <b> {new_qi.name}</b>")
+    base_url = frappe.utils.get_url()
+    njqi_link = f"{base_url}/app/nj-quality-inspection/{new_qi.name}"
+    frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    
-    return True
+    return True 
 
 
 class NJQCA(Document):  

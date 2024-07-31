@@ -91,7 +91,7 @@ def process_njqca_data():
             })
             
 
-    model_list = get_model(njqca_doc.get('manufacturer_model'),njqca_doc.get('make'))
+    model_list = get_model(njqca_doc.get('manufacturer_model'))
     njqca_doc.save()
     njqca_parent_data = {}
     njqca_child_data = []
@@ -133,6 +133,6 @@ def process_njqca_data():
         'model_list' : model_list,
         'part_mapping_data' : part_mapping_data
     }
-    
+
     return output
 

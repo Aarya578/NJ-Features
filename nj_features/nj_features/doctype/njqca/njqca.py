@@ -791,16 +791,8 @@ def construct_item_code(item_template, args_list):
         return {'error': concatenated_string}
 
 @frappe.whitelist()
-def get_model(manufacturer_model, make=None):
-    query, model_list, new_model_list = '', [], []
-    if manufacturer_model and make:
-        query = """SELECT DISTINCT mmc.parent AS model
-                   FROM `tabManufacturer Model Child` AS mmc
-                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
-                   WHERE mmc.manufacturer_model = %s AND mc.make = %s"""
-        params = (manufacturer_model, make)
-    model_list = frappe.db.sql(query, params, as_dict=True)
-    # print(f"\n\n if model : {model_list}")
+def get_model(manufacturer_model):
+    query, model_list = '', []
 
     if model_list == []:
         query = """SELECT DISTINCT mmc.parent AS model
@@ -809,7 +801,6 @@ def get_model(manufacturer_model, make=None):
                    WHERE mmc.manufacturer_model = %s"""
         params = (manufacturer_model)
         model_list = frappe.db.sql(query, params, as_dict=True)
-        # print(f"\n\n elif model ----- : {model_list}")
         if not model_list:
             frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 

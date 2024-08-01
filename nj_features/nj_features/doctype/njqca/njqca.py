@@ -119,22 +119,22 @@ def open_draft_qi(self):
     #         if data.get("item_group") not in item_group_data :
     #             # print("item==group======120",data.get("item_group"))
     #             frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
-    # field_name_check_sql_1 = """
-    #         SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
-    # field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
-    # print("field_name_data_1====98",field_name_data_1)
-    # njqca_config_query = """
-    # SELECT variant_9 from `tabNJQCA Child` where item_group = %s and parent =%s"""
-    # njqca_config_query_data = frappe.db.sql(njqca_config_query,(config_data_2_qi,self.name),as_dict=True)
-    # print("njqca_config_query_data------123",njqca_config_query_data)
-    # print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
+    field_name_check_sql_1 = """
+            SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
+    field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
+    print("field_name_data_1====98",field_name_data_1)
+    njqca_config_query = """
+    SELECT variant_9 from `tabNJQCA Child` where item_group = %s and parent =%s"""
+    njqca_config_query_data = frappe.db.sql(njqca_config_query,(config_data_2_qi,self.name),as_dict=True)
+    print("njqca_config_query_data------123",njqca_config_query_data)
+    print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
     
-    # child_table = new_qi.append("nj_quality_checks", {})
-    # if field_name_data_1 != [] and field_name_data_1 is not None:
-    #     child_table.check_name = field_name_data_1[0]['name_of_check']
-    #     child_table.checks = field_name_data_1[0]['field_name']
-    # child_table.item_group  = config_data_2_qi
-    # child_table.options =  njqca_config_query_data[0]['variant_9']
+    child_table = new_qi.append("nj_quality_checks", {})
+    if field_name_data_1 != [] and field_name_data_1 is not None:
+        child_table.check_name = field_name_data_1[0]['name_of_check']
+        child_table.checks = field_name_data_1[0]['field_name']
+    child_table.item_group  = config_data_2_qi
+    child_table.options =  njqca_config_query_data[0]['variant_9']
     
     for data in self.njqca_result_parameters:
         print("itemgroup---------------------139", data.get("item_group"))
@@ -165,8 +165,8 @@ def open_draft_qi(self):
                 child_table.item_group = data.get("item_group")
                 child_table.options = data.get("value")
 
-        if data.get("item_group") not in item_group_data:
-            frappe.msgprint(f'{data.get("item_group")} not added in Item Wizards {item_wizard_name}. Please contact the NPD Team.')
+    if data.get("item_group") not in item_group_data:
+        frappe.msgprint(f'{data.get("item_group")} not added in Item Wizards {item_wizard_name}. Please contact the NPD Team.')
 
     new_qi.save()
     

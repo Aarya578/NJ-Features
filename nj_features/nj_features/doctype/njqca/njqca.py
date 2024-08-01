@@ -94,6 +94,7 @@ def open_draft_qi(self):
     config_data_2_qi = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"config"},"value")
 
     print("config_data_2_qi=====93",config_data_2_qi)
+    
     # for data in self.njqca_item_component:
     #     if data.get("item_group") in config_data_2_qi:
     #         field_name_check_sql_1 = """
@@ -118,72 +119,55 @@ def open_draft_qi(self):
     #         if data.get("item_group") not in item_group_data :
     #             # print("item==group======120",data.get("item_group"))
     #             frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
-    field_name_check_sql_1 = """
-            SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
-    field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
-    print("field_name_data_1====98",field_name_data_1)
-    njqca_config_query = """
-    SELECT variant_9 from `tabNJQCA Child` where item_group = %s and parent =%s"""
-    njqca_config_query_data = frappe.db.sql(njqca_config_query,(config_data_2_qi,self.name),as_dict=True)
-    print("njqca_config_query_data------123",njqca_config_query_data)
-    print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
+    # field_name_check_sql_1 = """
+    #         SELECT field_name,name_of_check from  `tabNJ QC Check List` where item_group=%s and njqca_parameter = 'Config' """
+    # field_name_data_1 = frappe.db.sql(field_name_check_sql_1,config_data_2_qi,as_dict=True)
+    # print("field_name_data_1====98",field_name_data_1)
+    # njqca_config_query = """
+    # SELECT variant_9 from `tabNJQCA Child` where item_group = %s and parent =%s"""
+    # njqca_config_query_data = frappe.db.sql(njqca_config_query,(config_data_2_qi,self.name),as_dict=True)
+    # print("njqca_config_query_data------123",njqca_config_query_data)
+    # print("njqca_config_query_data====120",njqca_config_query_data[0]['variant_9'])
     
-    child_table = new_qi.append("nj_quality_checks", {})
-    if field_name_data_1 != [] and field_name_data_1 is not None:
-        child_table.check_name = field_name_data_1[0]['name_of_check']
-        child_table.checks = field_name_data_1[0]['field_name']
-    child_table.item_group  = config_data_2_qi
-    child_table.options =  njqca_config_query_data[0]['variant_9']
+    # child_table = new_qi.append("nj_quality_checks", {})
+    # if field_name_data_1 != [] and field_name_data_1 is not None:
+    #     child_table.check_name = field_name_data_1[0]['name_of_check']
+    #     child_table.checks = field_name_data_1[0]['field_name']
+    # child_table.item_group  = config_data_2_qi
+    # child_table.options =  njqca_config_query_data[0]['variant_9']
     
     for data in self.njqca_result_parameters:
-        field_name_check_sql ="""
+        print("itemgroup---------------------139", data.get("item_group"))
+        field_name_check_sql = """
             SELECT options.quality_check, qc_check.field_name
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
-	        ON qc.name = options.parent
+            ON qc.name = options.parent
             INNER JOIN `tabNJ QC Check List` qc_check
             ON options.quality_check = qc_check.name
             AND qc_check.diagnostic_type = 'Automatic'
-            WHERE qc.item_group = %s AND qc.inspection_type = %s"""
-        field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),inspection_type),as_dict=True)
-        # print("get_checknamequery_data-------149--------",field_name_data)
-        # field_name_check_sql = """
-        # SELECT field_name,name_of_check,parameter from  `tabNJ QC Check List` where item_group=%s and parameter=%s"""
-        # field_name_data = frappe.db.sql(field_name_check_sql,(data.get("item_group"),data.get("parameter")),as_dict=True)
-        # print("field_name_data====109",field_name_data)
-        
-        # if field_name_data ==[] or field_name_data is  None:
-        #     frappe.throw(f"Automated checks are not created for this Parameter {data.get('parameter')} and Item Group {data.get('item_group')} ,Please contact Your Team Lead")
-        # if field_name_data:
-            
-        #     child_exists = any(child.item_group == data.get("item_group") and child.check_name == field_name_data[0]['name_of_check'] for child in new_qi.nj_quality_checks)
-        if field_name_data:
-            
-            name_of_check = field_name_data[0]['quality_check'] if field_name_data else None
+            WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.parameter = %s """
+        field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
+        print("get_checknamequery_data-------149--------", field_name_data)
+
+        for field in field_name_data:
+            name_of_check = field['quality_check']
+            field_name = field['field_name']
             child_exists = any(
                 child.item_group == data.get("item_group") and child.check_name == name_of_check
                 for child in new_qi.nj_quality_checks
             )
-        else:
-            # Handle the case when field_name_data is empty or None
-            child_exists = any(
-                child.item_group == data.get("item_group")
-                for child in new_qi.nj_quality_checks
-            )
 
+            if not child_exists:
+                child_table = new_qi.append("nj_quality_checks", {})
+                child_table.check_name = field['quality_check']
+                child_table.checks = field_name
+                child_table.item_group = data.get("item_group")
+                child_table.options = data.get("value")
 
-        if not child_exists:
-            child_table = new_qi.append("nj_quality_checks", {})
-            
-            if field_name_data :
-                child_table.check_name = field_name_data[0]['quality_check']
-                child_table.checks = field_name_data[0]['field_name']
-                child_table.item_group  = data.get("item_group")
-                child_table.options = data.get("value") 
-    if data.get("item_group") not in item_group_data :
-        # print("item==group======120",data.get("item_group"))
-        frappe.msgprint(f'{data.get("item_group")} not added in Item WIzards {item_wizard_name} Please Contact NPD Team ')
-          
+        if data.get("item_group") not in item_group_data:
+            frappe.msgprint(f'{data.get("item_group")} not added in Item Wizards {item_wizard_name}. Please contact the NPD Team.')
+
     new_qi.save()
     
 @frappe.whitelist()

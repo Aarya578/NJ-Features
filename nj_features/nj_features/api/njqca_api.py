@@ -34,8 +34,14 @@ def process_njqca_data():
 					)
             
         elif data['model'] is None or data['model'] == 'None' or data['model'] == '':
-            frappe.throw("Please Fill The Model. If Model is not there Please Contact NPD Team")
+            model_specific_query ="""select model_specific from `tabItem Group` where name = %s"""
+            model_specific_value =frappe.db.sql(model_specific_query, data['item_group'], as_dict=True)
+            if model_specific_value[0]['model_specific'] == 1 :
+                frappe.throw("Please Fill The Model. If Model is not there Please Contact NPD Team")
 
+        elif data['model'] != Info_from_serial_no['model'] :
+            print('trueeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+            
         elif data['brand'] != Info_from_serial_no['brand']:
             frappe.throw("Please Check the Brand is Not Matched")
 
@@ -91,7 +97,7 @@ def process_njqca_data():
             })
             
 
-    model_list = get_model(njqca_doc.get('manufacturer_model'),njqca_doc.get('make'))
+    model_list = get_model(njqca_doc.get('manufacturer_model'))
     njqca_doc.save()
     njqca_parent_data = {}
     njqca_child_data = []
@@ -133,6 +139,6 @@ def process_njqca_data():
         'model_list' : model_list,
         'part_mapping_data' : part_mapping_data
     }
-    
+
     return output
 

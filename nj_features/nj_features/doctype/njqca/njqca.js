@@ -12,10 +12,12 @@ frappe.ui.form.on('NJQCA', {
                 frappe.msgprint("Manufacturer Model is not found")
                 return
             }
-            get_model(frm.doc.manufacturer_model, frm.doc.make);
-        } else {
-            get_model(frm.doc.manufacturer_model, frm.doc.make);
-            frm.set_df_property('model', 'read_only', 1)
+
+            if (!frm.doc.model){
+                get_model(frm.doc.manufacturer_model);
+            } else {
+                frm.set_df_property('model', 'read_only', 1);
+            }
         }
 
 
@@ -628,7 +630,7 @@ frappe.ui.form.on('NJQCA', {
 function get_model(manufacturer_model, make) {
     frappe.call({
         method: 'nj_features.nj_features.doctype.njqca.njqca.get_model',
-        args: { 'manufacturer_model': manufacturer_model, 'make': make },
+        args: { 'manufacturer_model': manufacturer_model },
         callback: function(r) {
             if (r.message) {
                 var model_list = r.message;

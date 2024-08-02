@@ -1,22 +1,30 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
+import json
 import frappe
 from frappe import _
 
-# Define the columns for the report
 def get_columns():
     return [
-        {"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 160},
-        {"label": _("STE Number"), "fieldname": "ste_number", "fieldtype": "Data", "width": 120},
-        {"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
-        {"label": _("Parent Warehouse"), "fieldname": "parent_warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 180},
-        {"label": _("Department"), "fieldname": "department", "fieldtype": "Link", "options": "Department", "width": 180},
-        # {"label": _("Department Name"), "fieldname": "department_name", "fieldtype": "Data", "width": 180},
-        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 380},
-        {"label": _("Warehouse Owner"), "fieldname": "warehouse_owner", "fieldtype": "Link", "options": "User", "width": 180},
-        {"label": _("Record Entry By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User", "width": 180},
-        {"label": _("Voucher Type"), "fieldname": "voucher_type", "fieldtype": "Data", "width": 180},
+        {"label": _("Date"), "fieldname": "date", "fieldtype": "Date"},
+        {"label": _("STE Number"), "fieldname": "ste_number", "fieldtype": "Data"},
+        {"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse"},
+        {"label": _("Parent Warehouse"), "fieldname": "parent_warehouse", "fieldtype": "Link", "options": "Warehouse"},
+        {"label": _("Department"), "fieldname": "department", "fieldtype": "Link", "options": "Department"},
+        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
+        {"label": _("Warehouse Owner"), "fieldname": "warehouse_owner", "fieldtype": "Link", "options": "User"},
+        {"label": _("Record Entry By"), "fieldname": "created_by", "fieldtype": "Link", "options": "User"},
+        {"label": _("Voucher Type"), "fieldname": "voucher_type", "fieldtype": "Data"},
     ]
 
-# Define the data retrieval logic
+@frappe.whitelist()
+def get_data():
+    data = frappe.request.data
+    data_json = data.decode('utf-8')
+    filters = json.loads(data_json)
+    get_data(filters)
+    
 def get_data(filters):
     conditions = []
 
@@ -35,7 +43,6 @@ def get_data(filters):
 
     conditions_sql = " ".join(conditions)
 
-    # SQL query to fetch data with serial_no filter
     query = f"""
     SELECT
         concat_ws(" ", sle.posting_date, sle.posting_time) AS date,
@@ -64,19 +71,16 @@ def get_data(filters):
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
     """
-    # print(f'query ===============> {query}')
     data = frappe.db.sql(query, filters, as_dict=True)
     if filters.get("serial_no"):
-        # Filter the data in Python based on serial_no
         serial_no_filter = filters["serial_no"].upper()
         data = [entry for entry in data if any(serial_no_filter in sn for sn in entry["serial_no"].split('\n'))]
 
     for entry in data:
-        # Convert voucher_type to lowercase and replace spaces with hyphens
         entry["voucher_type_link"] = entry["voucher_type"].lower().replace(" ", "-")
     return data
 
-def execute(filters):
+def execute(filters): 
     columns = get_columns()
     data = get_data(filters)
     return columns, data

@@ -1,3 +1,7 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
+import json
 import frappe
 from frappe import _
 
@@ -15,6 +19,12 @@ def get_columns():
     ]
 
 @frappe.whitelist()
+def get_data():
+    data = frappe.request.data
+    data_json = data.decode('utf-8')
+    filters = json.loads(data_json)
+    get_data(filters)
+    
 def get_data(filters):
     conditions = []
 
@@ -70,7 +80,7 @@ def get_data(filters):
         entry["voucher_type_link"] = entry["voucher_type"].lower().replace(" ", "-")
     return data
 
-def execute(filters):
+def execute(filters): 
     columns = get_columns()
     data = get_data(filters)
     return columns, data

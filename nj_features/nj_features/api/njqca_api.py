@@ -2,7 +2,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from nj_features.nj_features.doctype.njqca.njqca import get_info_from_serial_no, brand_model_validation, get_part_mapping, after_save_njqca, get_model, get_part_item_code_filtered_data, get_manual_repack_item_code_filtered_data
+from nj_features.nj_features.doctype.njqca.njqca import model_change_for_serial_no,get_info_from_serial_no, brand_model_validation, get_part_mapping, after_save_njqca, get_model, get_part_item_code_filtered_data, get_manual_repack_item_code_filtered_data
     
 @frappe.whitelist()
 def process_njqca_data():
@@ -38,16 +38,24 @@ def process_njqca_data():
             model_specific_value =frappe.db.sql(model_specific_query, data['item_group'], as_dict=True)
             if model_specific_value[0]['model_specific'] == 1 :
                 frappe.throw("Please Fill The Model. If Model is not there Please Contact NPD Team")
+        elif Info_from_serial_no['model'] is None:
+            frappe.throw(
+						("Model is not there for Serial No <b>{0}</b>. Please contact NPD Team").format(
+							data['serial_no']
+						)
+					)
+        # elif data['model'] != Info_from_serial_no['model'] :
+        #     model_change_for_serial_no(data['model'],data['serial_no'])
+        #     frappe.throw("serialno model and njqca model is different")
 
-        elif data['model'] != Info_from_serial_no['model'] :
-            print('trueeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-            
+
         elif data['brand'] != Info_from_serial_no['brand']:
             frappe.throw("Please Check the Brand is Not Matched")
 
         elif data['power_on'] == 'Yes':
             njqca_doc.item_code = Info_from_serial_no['item_code']
             part_mapping_data = get_part_mapping(data['item_group'],data['njqca_name'],data['model'])
+            print('part_mapping_data==============',part_mapping_data)
 
             if 'repack_item_code' in part_mapping_data:
                 njqca_doc.repack_item_code = part_mapping_data['repack_item_code']
@@ -90,7 +98,6 @@ def process_njqca_data():
     if 'njqca_name' in data and 'idx' in data and 'part_config_id' in data and 'part_item_code' in data:
         if data['idx'] is not None and data['part_config_id'] is not None and data['part_item_code'] is not None and data['njqca_name'] is not None:
             child_data_idx = njqca_doc.njqca_item_component[int(data['idx'])-1]
-            print("child_data_idx",child_data_idx.as_dict())
             child_data_idx.update({
                 "part_item_code": data['part_item_code'],
                 

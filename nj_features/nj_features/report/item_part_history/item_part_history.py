@@ -1,6 +1,7 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
+import json
 import frappe
 from frappe import _
 
@@ -18,43 +19,47 @@ def get_columns():
         _("Product Item Code") + ":Link/Item:120"
     ]
 
+@frappe.whitelist()
+def get_data():
+    data = frappe.request.data
+    data_json = data.decode('utf-8')
+    filters = json.loads(data_json)
+    get_data(filters)
+    
 def get_data(filters):
 
     serial_no = filters.get('serial_no')
-
     values = {'serial_no': serial_no}
 
-    # SQL query
     query = """
         SELECT DISTINCT
-		ddd.creation,
-		bb.serial_no AS 'machine_serial',
-		aaa.parent AS 'ste_no',
-		ccc.item_group AS 'part_item_group',
-		aaa.item_code AS 'part_item_code',
-		aaa.s_warehouse,
-		aaa.t_warehouse,
-		aaa.serial_no AS 'part_serial_no',
-		eee.warehouse AS 'current_product_wh',
-		eee.item_code AS 'product_item_code'
+		stock_entry_1.creation,
+		stock_entry.serial_no AS 'machine_serial',
+		ledger.parent AS 'ste_no',
+		item.item_group AS 'part_item_group',
+		ledger.item_code AS 'part_item_code',
+		ledger.s_warehouse,
+		ledger.t_warehouse,
+		ledger.serial_no AS 'part_serial_no',
+		serial_no.warehouse AS 'current_product_wh',
+		serial_no.item_code AS 'product_item_code'
 	FROM
-		`tabStock Entry Detail` AS aaa
+		`tabStock Entry Detail` AS ledger
 	INNER JOIN
-		(SELECT aaaa.parent, aaaa.serial_no
-		FROM `tabStock Entry Detail` aaaa
-		WHERE aaaa.serial_no = %(serial_no)s) AS bb ON bb.parent = aaa.parent
+		(SELECT stock_entry_detail.parent, stock_entry_detail.serial_no
+		FROM `tabStock Entry Detail` stock_entry_detail
+		WHERE stock_entry_detail.serial_no = %(serial_no)s) AS stock_entry ON stock_entry.parent = ledger.parent
 	INNER JOIN
-		`tabItem` AS ccc ON ccc.item_code = aaa.item_code
+		`tabItem` AS item ON item.item_code = ledger.item_code
 	INNER JOIN
-		`tabStock Entry` AS ddd ON ddd.name = bb.parent
+		`tabStock Entry` AS stock_entry_1 ON stock_entry_1.name = stock_entry.parent
 	INNER JOIN
-		`tabSerial No` AS eee ON eee.serial_no = bb.serial_no
+		`tabSerial No` AS serial_no ON serial_no.serial_no = stock_entry.serial_no
 	WHERE
-		ddd.purpose = 'Repack' AND aaa.docstatus = 1
+		stock_entry_1.purpose = 'Repack' AND ledger.docstatus = 1
 	ORDER BY
-		ddd.creation, aaa.parent, aaa.s_warehouse DESC,
-		aaa.t_warehouse, aaa.basic_rate ASC;
-
+		stock_entry_1.creation, ledger.parent, ledger.s_warehouse DESC,
+		ledger.t_warehouse, ledger.basic_rate ASC;
     """
 	
     data = frappe.db.sql(query, values, as_dict=1)

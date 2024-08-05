@@ -24,7 +24,6 @@ def process_njqca_data():
         njqca_doc.serial_no = data['serial_no']
         njqca_doc_str = frappe.as_json(njqca_doc)
         Info_from_serial_no = get_info_from_serial_no(njqca_doc_str)
-        print('Info_from_serial_no==========',Info_from_serial_no)
 
         if Info_from_serial_no['warehouse'] != data['warehouse']:
             frappe.throw(
@@ -55,7 +54,6 @@ def process_njqca_data():
         elif data['power_on'] == 'Yes':
             njqca_doc.item_code = Info_from_serial_no['item_code']
             part_mapping_data = get_part_mapping(data['item_group'],data['njqca_name'],data['model'])
-            print('part_mapping_data==============',part_mapping_data)
 
             if 'repack_item_code' in part_mapping_data:
                 njqca_doc.repack_item_code = part_mapping_data['repack_item_code']
@@ -134,8 +132,11 @@ def process_njqca_data():
     njqca_result_parameter = njqca_doc.njqca_result_parameters
 
     if 'submit_status' in data and data['submit_status'] is not None:
-        njqca_doc.docstatus = '1'
-        njqca_doc.submit()
+        if data['manual_repack_item_code'] is not None and data['manual_repack_item_code'] != '':
+            njqca_doc.docstatus = '1'
+            njqca_doc.submit()
+        else:
+            frappe.throw('Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team')
     
     output ={
         'njqca_parent_data':njqca_parent_data,

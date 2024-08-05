@@ -259,19 +259,31 @@ def handle_non_serialized_item(data, stock_movement, has_serial_no, owner_wareho
     print(f'scan_barcode: {scan_barcode}, scan_grade: {scan_grade}, scan_warehouse: {scan_warehouse}')
     non_serialized_data = search_for_non_serialized_item(scan_barcode, scan_grade, scan_warehouse)
     print(f'NON_SERIALIZED_DATA ===30=== {non_serialized_data}')
+
+    print('%'*20)
+    print(f'\nNON_SERIALIZED_WAREHOUSE ========= {data.get("scan_warehouse")}`\n')
+    print('%'*20)
     
     item_code_from_non_serialized_data = f'{non_serialized_data}-{scan_grade}'
     print(f'item_code_from_non_serialized_data ===31=== {item_code_from_non_serialized_data}')
 
     database_item_codes = get_all_item_codes()
 
+    warehouse_check = get_all_warehouse()
+
+    print(f'CHECKING_WAREHOSUES ===32=== {warehouse_check}')
+
     if data['transfer_status'] == 'Stock Accept':
 
         if item_code_from_non_serialized_data in database_item_codes:
-            existing_item = next((item for item in stock_movement.items if item.item_code == item_code_from_non_serialized_data), None)
+            # existing_item = next((item for item in stock_movement.items if item.item_code == item_code_from_non_serialized_data), None)
             
-            if existing_item:
-                raise frappe.throw(f"<b>Item code : {item_code_from_non_serialized_data}</b> already exists.")
+            # if existing_item:
+            #     raise frappe.throw(f"<b>Item code : {item_code_from_non_serialized_data}</b> already exists.")
+            
+            if data['scan_warehouse']:
+                if data['scan_warehouse'] not in warehouse_check:
+                    raise frappe.throw(f"<b>Warehouse : {data['scan_warehouse']}</b> does not exist.")
             
             if non_serialized_data and data.get('qty'):
                 print(f'\n\n**************QUANTITY ENTERED INSIDE NON_SERIALIZED_DATA***************\n\n')
@@ -311,10 +323,10 @@ def handle_non_serialized_item(data, stock_movement, has_serial_no, owner_wareho
     elif data['transfer_status'] == 'Racking':
         if item_code_from_non_serialized_data in database_item_codes:
             print(f'===================STOCK_MOVEMENT_ITEMS INSIDE RACKING=============={stock_movement.items}')
-            existing_item = next((item for item in stock_movement.items if item.item_code == item_code_from_non_serialized_data), None)
+            # existing_item = next((item for item in stock_movement.items if item.item_code == item_code_from_non_serialized_data), None)
             
-            if existing_item:
-                raise frappe.throw(f"<b>Item code : {item_code_from_non_serialized_data}</b> already exists.")
+            # if existing_item:
+            #     raise frappe.throw(f"<b>Item code : {item_code_from_non_serialized_data}</b> already exists.")
             
             if non_serialized_data and data.get('qty'):
                 print(f'\n\n**************QUANTITY ENTERED INSIDE NON_SERIALIZED_DATA***************\n\n')
@@ -379,6 +391,10 @@ def handle_non_serialized_item(data, stock_movement, has_serial_no, owner_wareho
 def get_all_item_codes():
     database_items = frappe.get_all("Item", fields=["item_code"])
     return [item['item_code'] for item in database_items]
+
+def get_all_warehouse():
+    database_items = frappe.get_all("Warehouse", fields=["name"])
+    return [item['name'] for item in database_items]
 
 def handle_submission(data, stock_movement, submit_status):
     print(f'GOING TO SUBMIT THE DOC FOR {data["transfer_status"]}')

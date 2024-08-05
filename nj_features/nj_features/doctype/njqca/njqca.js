@@ -3,20 +3,17 @@
 
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
-        if (cur_frm.doc.serial_no && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
-            frm.events.serial_no(frm);
-         
-        }
-        if (!cur_frm.doc.model) {
-            if (!frm.doc.manufacturer_model) {
-                frappe.msgprint("Manufacturer Model is not found")
-                return
+        if (frm.doc.docstatus == 0) {
+            get_model(frm.doc.manufacturer_model);
+            if (cur_frm.doc.serial_no && cur_frm.doc.docstatus ==0 && cur_frm.doc.power_on == 'Yes') {
+                frm.events.serial_no(frm);
             }
-
-            if (!frm.doc.model){
-                get_model(frm.doc.manufacturer_model);
-            } else {
-                frm.set_df_property('model', 'read_only', 1);
+    
+            if (!cur_frm.doc.model) {
+                if (!frm.doc.manufacturer_model) {
+                    frappe.msgprint("Manufacturer Model is not found")
+                    return
+                }
             }
         }
 
@@ -449,10 +446,12 @@ frappe.ui.form.on('NJQCA', {
                         console.log("Error came");
                         frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
                         frappe.validated = false ;
-                    } else if (r.message.repack_item_code.Error){
-                        frappe.throw("Error" + r.message.repack_item_code.Error);
+                    } 
+                    else if (r.message.repack_item_code.Error){
+                        // frappe.throw("Error" + r.message.repack_item_code.Error);
                         frappe.validated = false;
-                    } else {
+                    } 
+                    else {
                         if(r.message.repack_item_code.error ){
                             console.log("Error came while creating of Repack Item Code" + r.message.repack_item_code.error) ;
                             

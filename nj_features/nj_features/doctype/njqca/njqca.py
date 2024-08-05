@@ -153,7 +153,7 @@ def open_draft_qi(self):
         name_of_check = field['quality_check']
         field_name = field['field_name']
         child_exists = any(
-            child.item_group == data.get("item_group") and child.check_name == name_of_check
+            child.item_group == config_data_2_qi  and child.check_name == name_of_check
             for child in new_qi.nj_quality_checks
         )
 
@@ -475,6 +475,12 @@ def after_save_njqca(docname):
             frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+
+
+@frappe.whitelist()
+def model_change_for_serial_no(newmodel,serial_no):
+    print('model_change_for_serial_no===================',newmodel,serial_no)
+    return True
             
 
 @frappe.whitelist()

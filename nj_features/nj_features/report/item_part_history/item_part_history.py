@@ -20,12 +20,18 @@ def get_columns():
     ]
 
 @frappe.whitelist()
-def get_data():
+def get_api_data():
     data = frappe.request.data
     data_json = data.decode('utf-8')
     filters = json.loads(data_json)
-    get_data(filters)
-    
+    # get_data(filters)
+    print(f'FILTER =======28======= {filters}')
+
+    response_data = get_data(filters)
+
+    print(f'RESPONSE DATA INSIDE ERP =======31======== {response_data}')
+
+    return response_data
 def get_data(filters):
 
     serial_no = filters.get('serial_no')

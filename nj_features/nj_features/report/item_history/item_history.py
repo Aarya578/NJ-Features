@@ -19,13 +19,26 @@ def get_columns():
     ]
 
 @frappe.whitelist()
-def get_data():
+def get_api_data():
     data = frappe.request.data
     data_json = data.decode('utf-8')
     filters = json.loads(data_json)
-    get_data(filters)
-    
+
+    print(f'FILTER =======28======= {filters}')
+
+    response_data = get_data(filters)
+
+    print(f'RESPONSE DATA INSIDE ERP =======31======== {response_data}')
+
+    return response_data
+
+@frappe.whitelist()
 def get_data(filters):
+
+
+    print(f'\nFILETRS FROM DJANGO ==========37=========== {filters}\n')
+
+
     conditions = []
 
     if filters.get("item_group"):
@@ -42,6 +55,9 @@ def get_data(filters):
         conditions.append(f"AND d.name = '{filters['department']}'")
 
     conditions_sql = " ".join(conditions)
+
+
+    print(f'CONDITIONS_SQL ====53==== {conditions_sql}')
 
     query = f"""
     SELECT
@@ -64,8 +80,7 @@ def get_data(filters):
     LEFT JOIN `tabUser` u2 ON u2.name = stock.owner
     LEFT JOIN `tabDepartment` d ON d.name = w.department  -- Assuming department is linked with tabWarehouse
     WHERE
-        sle.company = %(company)s
-        AND sle.is_cancelled = 0
+        sle.is_cancelled = 0
         AND MATCH(sle.serial_no) AGAINST (%(serial_no)s)
         {conditions_sql}
     ORDER BY

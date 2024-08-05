@@ -103,7 +103,7 @@ def open_draft_qi(self):
         name_of_check = field['quality_check']
         field_name = field['field_name']
         child_exists = any(
-            child.item_group == data.get("item_group") and child.check_name == name_of_check
+            child.item_group == config_data_2_qi  and child.check_name == name_of_check
             for child in new_qi.nj_quality_checks
         )
 

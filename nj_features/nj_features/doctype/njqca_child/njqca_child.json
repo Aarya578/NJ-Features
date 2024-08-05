@@ -176,8 +176,7 @@
    "fieldname": "accept",
    "fieldtype": "Select",
    "label": "Accept",
-   "options": "Yes\nNo",
-   "reqd": 1
+   "options": "Yes\nNo"
   },
   {
    "columns": 2,
@@ -203,7 +202,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-05-25 11:15:25.188982",
+ "modified": "2024-08-03 12:48:59.318985",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Child",

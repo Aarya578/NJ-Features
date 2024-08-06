@@ -278,7 +278,8 @@ class NJQCA(Document):
     def on_submit(self):
         # Repack
        
-            
+        if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
+            frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
         if self.power_on == 'Yes' and self.repack_item_code != '':
             self.make_stock_entry_using_nj_lib()
             

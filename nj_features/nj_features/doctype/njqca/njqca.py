@@ -6,6 +6,7 @@ import datetime
 # import frappe.frappe
 from frappe.model.document import Document
 import re
+from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
@@ -353,8 +354,37 @@ def after_save_njqca(docname):
 
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel,serial_no):
-    print('model_change_for_serial_no===================',newmodel,serial_no)
-    return True
+    # print('model_change_for_serial_no===================',newmodel,serial_no)
+    wizard_query = """Select name from `tabItem Wizards` where model = %s and part_list_status = 'Completed' order by modified desc"""
+
+    item_wizard = frappe.db.sql(wizard_query, (newmodel), as_dict=1)
+    qi_exists = """
+    select name from `tabNJ Quality Inspection` where barcode = %s
+    """
+    kitting_exists = """
+    select name from `tabKitting` where serial_no = %s
+    """
+    qi_exists_data = frappe.db.sql(qi_exists, (serial_no), as_dict=1)
+    kitting_exists_data = frappe.db.sql(kitting_exists,serial_no,as_dict=1)
+    # print('item_wizards=============',item_wizard,qi_exists_data,kitting_exists_data)
+    if qi_exists_data == [] and kitting_exists_data == []:
+        if item_wizard != []:
+            item_wizard_doc = frappe.get_doc("Item Wizards",item_wizard[0]['name'])
+            serial_no_doc = frappe.get_doc('Serial No', serial_no)
+            # print('serial_no_doc==============',serial_no_doc.as_dict())
+            # print('item_wizards_doc=================',item_wizard_doc.as_dict())
+            if item_wizard_doc.part_list_status != 'Completed':
+                frappe.throw(f"'Part List' in Item Wizard: {item_wizard[0]['name']} is not completed. Please contact NPD Team.")
+            if newmodel:
+                serial_no_doc.serial_no_component = []
+                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                return {
+                    "status": 'success',
+                }
+        else:
+            frappe.throw(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
+    else:
+        frappe.msgprint(f"Part List Cannot be changed for Serial No <b>{serial_no}</b>. Because NJ QI or Kitting is Done")
             
 
 @frappe.whitelist()

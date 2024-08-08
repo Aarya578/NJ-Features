@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2024-08-07 17:12:35.021590",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "audit_interval",
+  "column_break_j74uu",
+  "audit_warehouse",
+  "section_break_dsalw",
+  "nj_audit_items",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "NJ-AD-.YYYY.-.MM.-.###",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "NJ-AD-.YYYY.-.MM.-.###",
+   "reqd": 1
+  },
+  {
+   "fieldname": "audit_interval",
+   "fieldtype": "Select",
+   "label": "Audit Interval",
+   "options": "\nWeekly\nMonthly\nCustom"
+  },
+  {
+   "fieldname": "column_break_j74uu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "audit_warehouse",
+   "fieldtype": "Link",
+   "label": "Audit Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "section_break_dsalw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "nj_audit_items",
+   "fieldtype": "Table",
+   "label": "NJ Audit Items",
+   "options": "NJ Audit Items"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "NJ Audit",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-08-07 19:36:59.499923",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Audit",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

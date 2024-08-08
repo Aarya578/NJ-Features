@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "creation": "2024-08-07 18:44:24.835006",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "data_import",
+  "data_import_status",
+  "understand"
+ ],
+ "fields": [
+  {
+   "fieldname": "data_import",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Data Import",
+   "options": "Data Import"
+  },
+  {
+   "fieldname": "data_import_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Data Import Status"
+  },
+  {
+   "default": "0",
+   "fieldname": "understand",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Understand?"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-08-07 18:55:34.427010",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Data Import Report",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

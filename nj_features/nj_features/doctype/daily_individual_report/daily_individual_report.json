@@ -1,0 +1,76 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2024-08-07 19:41:37.969750",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "data_import_report",
+  "section_break_znyrl",
+  "work_warehouse_inventory",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "data_import_report",
+   "fieldtype": "Table",
+   "label": "Data Import Report",
+   "options": "Data Import Report"
+  },
+  {
+   "fieldname": "section_break_znyrl",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "work_warehouse_inventory",
+   "fieldtype": "Table",
+   "label": "Work Warehouse Inventory",
+   "options": "Work Warehouse Inventory"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Daily Individual Report",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "default": "DIR-.YYYY.-.MM.-.###",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "DIR-.YYYY.-.MM.-.###",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-08-07 19:45:05.384530",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Daily Individual Report",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

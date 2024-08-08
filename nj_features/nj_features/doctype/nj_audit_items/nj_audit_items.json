@@ -9,6 +9,7 @@
   "serial_no",
   "item",
   "warehouse",
+  "purchase_rate",
   "accept"
  ],
  "fields": [
@@ -45,12 +46,19 @@
    "fieldtype": "Button",
    "in_list_view": 1,
    "label": "Accept"
+  },
+  {
+   "fieldname": "purchase_rate",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Purchase Rate",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-08-08 16:04:31.465700",
+ "modified": "2024-08-08 18:13:45.125807",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

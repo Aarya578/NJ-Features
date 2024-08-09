@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2024-08-07 17:32:29.856704",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -41,7 +40,6 @@
   },
   {
    "bold": 1,
-   "default": "0",
    "fieldname": "accept",
    "fieldtype": "Button",
    "in_list_view": 1,
@@ -50,15 +48,14 @@
   {
    "fieldname": "purchase_rate",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Purchase Rate",
+   "precision": "3",
    "read_only": 1
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-08-08 18:13:45.125807",
+ "modified": "2024-08-09 12:29:03.475645",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

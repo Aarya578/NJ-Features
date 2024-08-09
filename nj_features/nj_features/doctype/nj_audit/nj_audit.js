@@ -1,15 +1,19 @@
 frappe.ui.form.on('NJ Audit', {
     onload: function(frm) {
-        $('.col-lg-2.layout-side-section').hide();	
-
+        $('.col-lg-2.layout-side-section').hide();
+		
 		frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
-
-		frappe.db.get_value('NJ Settings',{'parameter' : 'audit_interval'},'value',(r)=>{
+		
+		frappe.db.get_value('NJ Settings',{'parameter': 'audit_interval'},'value',(r)=>{
 			if(r){
-				frm.set_value('audit_interval',r.value);
-				frm.set_value('audit_warehouse','EMP - Post Man - NJ')
+				frm.set_value('audit_interval', r.value);
+				frm.refresh_field('audit_interval');
 			}
 		});
+	},
+
+	refresh(frm) {
+		$('[data-fieldname="scan_serial_no"]').focus();
 	},
 
     scan_serial_no: function(frm) {
@@ -41,6 +45,7 @@ frappe.ui.form.on('NJ Audit', {
                 }
             });
         }
+		$('[data-fieldname="scan_serial_no"]').focus();
     }
 });
 
@@ -64,6 +69,7 @@ frappe.ui.form.on('NJ Audit Items', {
 			"doctype": frm.doc.doctype,
 			"stock_entry_for_material_transfer_or_repack_items": stock_entry_items
 		}
+
 		frappe.call({
 			method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
 			args: { 'data': JSON.stringify(data) },

@@ -41,6 +41,7 @@ frappe.ui.form.on('NJ Audit', {
 
                     frm.set_value('scan_serial_no', '');
                 } else {
+					frm.set_value('scan_serial_no', '');
                     frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`);
                 }
             });

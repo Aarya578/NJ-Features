@@ -61,9 +61,10 @@ frappe.ui.form.on('NJ Audit', {
                             }
                         });
 
-                    frm.set_value('scan_serial_no', '');
+                    frm.set_value('scan_serial_no', '');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
                 } else {
-                    frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`);
+					frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`);
+					frm.set_value('scan_serial_no', '');
                 }
             });
         }

@@ -41,9 +41,6 @@ def get_data(filters):
 
     conditions_sql = " ".join(conditions)
 
-    print(f'CONDITIONS_SQL ====53==== {conditions_sql}')
-
-    # Replace the static serial_no with a dynamic one from filters
     serial_no = filters.get("serial_no", '')
 
     query = f"""
@@ -66,12 +63,6 @@ def get_data(filters):
         {conditions_sql}
         """
     data = frappe.db.sql(query, filters, as_dict=True)
-
-
-    for i in data:
-        print(f'\ni =========61========== {i}\n')
-    
-    print(f'DATA =======68======== {data}')
     
     return data
 

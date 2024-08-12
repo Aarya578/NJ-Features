@@ -33,30 +33,6 @@ frappe.query_reports["Dispatched System's analysis Report"] = {
 			"default": frappe.datetime.get_today(),
 			"hidden": 1
 		},
-		// {
-		// 	"fieldname": "warehouse",
-		// 	"label": __("Warehouse"),
-		// 	"fieldtype": "Link",
-		// 	"options": "Warehouse",
-		// 	"get_query": function() {
-		// 		const company = frappe.query_report.get_filter_value('company');
-		// 		return {
-		// 			filters: { 'company': company }
-		// 		};
-		// 	}
-		// },
-		// {
-		// 	"fieldname": "voucher_no",
-		// 	"label": __("Voucher #"),
-		// 	"fieldtype": "Data"
-		// },
-		// {
-		// 	"fieldname": "parent",
-		// 	"label": __("Parent"),
-		// 	"fieldtype": "Link",
-		// 	"hidden": 0,
-		// 	"options": "parent"
-		// }
 	],
 
 	"formatter": function(value, row, column, data, default_formatter) {

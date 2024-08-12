@@ -32,6 +32,7 @@ class NJAudit(Document):
             "t_warehouse": self.work_warehouse,
             "series": "STE-AD-.YYYY.-.MM.-",
             "doctype": self.doctype,
+            "name": self.name,
             "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
         }
         stock_entry = stock_entry_using_nj_lib(data)

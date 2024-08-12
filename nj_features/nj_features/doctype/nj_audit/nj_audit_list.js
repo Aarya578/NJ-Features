@@ -56,6 +56,7 @@ frappe.listview_settings['NJ Audit'] = {
                                     });
                                 } else if (response.message.value == '0') {
                                     $('.btn-primary.btn-sm.primary-action').hide();
+                                    $('[data-label="Active"]').removeClass('btn-primary');
                                     frappe.show_alert({
                                         message: __('NJ Audit has been de-activated successfully.'),
                                         indicator: 'red'

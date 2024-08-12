@@ -70,12 +70,34 @@ frappe.ui.form.on('NJ Audit', {
     },
 
     before_submit: function(frm) {
-        frappe.confirm(
-            `Do you want to transfer stock present in following <b>#Rows</b> to your Work Warehouse: <b>${frm.doc.work_warehouse}?</b><br>${frm.doc.accept_rows}`,
-            ()=>{ frm.enable_save(); }, 
-            ()=>{ frm.disable_save(); }
-        );
+        var dialog = new frappe.ui.Dialog({
+            title: __('Transfer Stock Confirmation'),
+            fields: [
+                {
+                    fieldtype: 'HTML',
+                    fieldname: 'message',
+                    options: `
+                        <p>Do you want to transfer stock present in the following <b>#Rows</b> to your Work Warehouse: <b>${frm.doc.work_warehouse}?</b></p>
+                        <p>${frm.doc.accept_rows}</p>
+                    `
+                }
+            ],
+            primary_action_label: __('Yes'),
+            primary_action: function() {
+                dialog.hide();
+                frm.enable_save();
+            },
+            secondary_action_label: __('No'),
+            secondary_action: function() {
+                frm.disable_save();
+                dialog.hide();
+            }
+        });
+    
+        dialog.show();
     }
+    
+    
 });
 
 function fill_audit_and_work_warehouse(frm) {

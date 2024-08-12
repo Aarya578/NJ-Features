@@ -59,10 +59,12 @@ def get_work_and_audit_warehouse():
     
     audit_interval = frappe.db.get_value('NJ Settings', {'parameter': 'audit_interval'}, 'value')
     
+    stock_balance = get_stock_balance(audit_warehouse)
     return {
         'work_warehouse': emp_data.get('work_warehouse'),
         'audit_warehouse': audit_warehouse,
         'audit_interval': audit_interval,
+        'stock_balance': stock_balance
     }
 
 @frappe.whitelist()
@@ -103,10 +105,32 @@ def update_create_permission(doctype, active_status=None):
                     frappe.db.set_value('Custom DocPerm', row.name, value)
             if docperm_records:
                 for row in docperm_records: 
-                    frappe.db.set_value('DocPerm', row.name, value, debug=1)
+                    frappe.db.set_value('DocPerm', row.name, value)
         
         return new_value
     
     else:
         frappe.throw('No NJ Settings found with parameter nj_audit_activation_level.')
         return None
+    
+@frappe.whitelist()
+def get_stock_balance(warehouse):
+    stock_entries = frappe.get_all(
+        'Stock Ledger Entry',
+        filters={'warehouse': warehouse, 'is_cancelled': 0},
+        fields=['item_code', 'actual_qty', 'qty_after_transaction']
+    )
+
+    stock_balance_summary = {}
+
+    for entry in stock_entries:
+        item_code = entry.get('item_code')
+        actual_qty = entry.get('actual_qty', 0)
+        qty_after_transaction = entry.get('qty_after_transaction', 0)
+
+        if item_code not in stock_balance_summary:
+            stock_balance_summary[item_code] = 0
+
+        stock_balance_summary[item_code] = qty_after_transaction
+    print("stock_balance_summary",stock_balance_summary)
+    return stock_balance_summary

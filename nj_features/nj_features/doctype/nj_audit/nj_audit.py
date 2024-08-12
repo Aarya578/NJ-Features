@@ -32,6 +32,7 @@ class NJAudit(Document):
             "t_warehouse": self.work_warehouse,
             "series": "STE-AD-.YYYY.-.MM.-",
             "doctype": self.doctype,
+            "name": self.name,
             "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
         }
         stock_entry = stock_entry_using_nj_lib(data)
@@ -61,7 +62,7 @@ def get_work_and_audit_warehouse():
     return {
         'work_warehouse': emp_data.get('work_warehouse'),
         'audit_warehouse': audit_warehouse,
-        'audit_interval': audit_interval
+        'audit_interval': audit_interval,
     }
 
 @frappe.whitelist()
@@ -81,3 +82,31 @@ def get_scanned_serial_no_data(serial_no):
         }]
         
     return None
+
+@frappe.whitelist()
+def update_create_permission(doctype, active_status=None):
+    nj_audit_activation_level = frappe.db.get_value('NJ Settings', {'parameter': 'nj_audit_activation_level'}, ['name', 'value'], as_dict=1)
+    new_value = nj_audit_activation_level.get('value')
+    if nj_audit_activation_level:
+        if active_status == '1':
+            current_value = nj_audit_activation_level.get('value')
+            new_value = '0' if current_value == '1' else '1'
+            
+            frappe.db.set_value('NJ Settings', nj_audit_activation_level.get('name'), 'value', new_value)
+            frappe.db.commit()
+        values = [{'create': int(new_value)}, {'write': int(new_value)}]
+        custom_docperm_records  = frappe.get_all('Custom DocPerm', {'parent': doctype}, 'name')
+        docperm_records  = frappe.get_all('DocPerm', {'parent': doctype}, 'name')
+        for value in values:
+            if custom_docperm_records:
+                for row in custom_docperm_records:
+                    frappe.db.set_value('Custom DocPerm', row.name, value)
+            if docperm_records:
+                for row in docperm_records: 
+                    frappe.db.set_value('DocPerm', row.name, value, debug=1)
+        
+        return new_value
+    
+    else:
+        frappe.throw('No NJ Settings found with parameter nj_audit_activation_level.')
+        return None

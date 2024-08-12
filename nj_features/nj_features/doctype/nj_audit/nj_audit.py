@@ -95,9 +95,15 @@ def update_create_permission(doctype, active_status=None):
             frappe.db.set_value('NJ Settings', nj_audit_activation_level.get('name'), 'value', new_value)
             frappe.db.commit()
         values = [{'create': int(new_value)}, {'write': int(new_value)}]
+        custom_docperm_records  = frappe.get_all('Custom DocPerm', {'parent': doctype}, 'name')
+        docperm_records  = frappe.get_all('DocPerm', {'parent': doctype}, 'name')
         for value in values:
-            frappe.db.set_value('Custom DocPerm', doctype, value)
-            frappe.db.set_value('DocPerm', doctype, value)
+            if custom_docperm_records:
+                for row in custom_docperm_records:
+                    frappe.db.set_value('Custom DocPerm', row.name, value)
+            if docperm_records:
+                for row in docperm_records: 
+                    frappe.db.set_value('DocPerm', row.name, value, debug=1)
         
         return new_value
     

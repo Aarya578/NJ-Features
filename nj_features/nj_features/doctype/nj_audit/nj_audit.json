@@ -34,7 +34,7 @@
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Audit Interval",
-   "options": "\nWeekly\nMonthly\nCustom",
+   "options": "\nWeekly\nMonthly",
    "read_only": 1
   },
   {
@@ -109,7 +109,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-08-12 13:33:16.803009",
+ "modified": "2024-08-12 19:51:03.025488",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",

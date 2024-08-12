@@ -1,28 +1,32 @@
 frappe.ui.form.on('NJ Audit', {
     onload: function(frm) {
-        $('.col-lg-2.layout-side-section').hide();
+        if (frm.doc.docstatus == 0 && !frm.doc.__islocal) {
+            // frm.fields_dict['nj_audit_items'].grid.wrapper.on('click', '.grid-remove-rows', function() {
+            //     let selectedRows = frm.fields_dict['nj_audit_items'].grid.get_selected_children();
+            //     selectedRows.forEach(row => {
+            //         let accept_rows = frm.doc.accept_rows || "";
+            //         let accept_rows_array = accept_rows.split(',').filter(idx => idx !== row.idx.toString());
+            //         frm.set_value('accept_rows', accept_rows_array.join(','));
+            //     });
+            // });
+            initializeGridListeners(frm)
+            fill_audit_and_work_warehouse(frm)
+        }
+
         frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
-
-        frm.fields_dict['nj_audit_items'].grid.wrapper.on('click', '.grid-remove-rows', function() {
-            let selectedRows = frm.fields_dict['nj_audit_items'].grid.get_selected_children();
-            selectedRows.forEach(row => {
-                let accept_rows = frm.doc.accept_rows || "";
-                let accept_rows_array = accept_rows.split(',').filter(idx => idx !== row.idx.toString());
-                frm.set_value('accept_rows', accept_rows_array.join(','));
-            });
-        });
-
-		fill_audit_and_work_warehouse(frm)
     },
-
-    refresh: function() { $('[data-fieldname="scan_serial_no"]').focus(); },
+    
+    refresh: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
+        if (frm.doc.docstatus == 0) {
+            $('[data-fieldname="scan_serial_no"]').focus();
+        }
+    },
 
     onload_post_render: function(frm) {
-        if (!frm.doc.work_warehouse || !frm.doc.audit_warehouse) { fill_audit_and_work_warehouse(frm) }
-    },
-
-    validate: function(frm) {
-        if (frm.doc.accept_rows) { frappe.throw(`<b>Rows : ${frm.doc.accept_rows}</b> Material Transfer is not happened`); }
+        if ((!frm.doc.work_warehouse || !frm.doc.audit_warehouse) && frm.doc.docstatus == 0) { 
+            fill_audit_and_work_warehouse(frm)
+        }
     },
 
     scan_serial_no: function(frm) {
@@ -40,13 +44,12 @@ frappe.ui.form.on('NJ Audit', {
                         });
                         frm.refresh_field("nj_audit_items");
                         
-                        let isAccepted = frm.doc.audit_warehouse === data[0]?.parent_warehouse;
-                        console.log("isAccepted", isAccepted);
+                        let isAccept = frm.doc.audit_warehouse != data[0]?.parent_warehouse;
                         
-                        frappe.meta.get_docfield('NJ Audit Items', 'accept', frm.doc.name).hidden = !isAccepted;
-                        console.log("idx", child_row, data[0]?.parent_warehouse);
+                        // frappe.meta.get_docfield('NJ Audit Items', 'accept', frm.doc.name).hidden = !isAccepted;
+                        console.log("isAccepted", isAccept);
                         
-                        if (isAccepted) {
+                        if (isAccept) {
                             if (!frm.doc.accept_rows) {
                                 frm.set_value('accept_rows', `${child_row.idx},`);
                             } else {
@@ -54,68 +57,29 @@ frappe.ui.form.on('NJ Audit', {
                                 frm.set_value('accept_rows', `${accept_row_data},`);
                             }
                         }
-
-                        frm.set_value('scan_serial_no', '');
-                    } else {
-                        frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`);
-                    }
+                    } else { frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
+                    console.log("accept_rows",frm.doc.accept_rows);
+                    
                     frm.refresh_field('accept_rows');
                     $('[data-fieldname="scan_serial_no"]').focus();
                 },
-                error: function(err) {
-                    console.error("Error in frappe call:", err);
-                }
+                error: function(err) { console.error("Error in frappe call:", err); }
             });
         }
         frm.set_value('scan_serial_no', '');
-    }    
-});
-
-frappe.ui.form.on('NJ Audit Items', {
-    accept: function(frm, cdt, cdn) {
-        let child = locals[cdt][cdn];
-        let work_warehouse = frm.doc.work_warehouse;
-        let stock_entry_items = [{
-            'item_code': child.item_code,
-            'basic_rate': child.purchase_rate,
-            'serial_no': child.serial_no
-        }];
-
-        let data = {
-            "serial_no": child.serial_no,
-            "stock_entry_type": "Material Transfer",
-            "t_warehouse": work_warehouse,
-            "series": "STRC-.YYYY.-.MM.-",
-            "reference_serial_no": child.serial_no,
-            "doctype": frm.doc.doctype,
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
-        };
-
-        frappe.call({
-            method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
-            args: { 'data': JSON.stringify(data) },
-            callback: function(r) {
-                if (child.parent_warehouse != cur_frm.doc.audit_warehouse) {
-                    frappe.model.set_value(cdt, cdn, 'warehouse', cur_frm.doc.work_warehouse);
-                    frm.set_df_property('nj_audit_items', 'hidden', 1, frm.docname, 'accept', cdn);
-
-                    let accept_row_data = frm.doc.accept_rows;
-                    let split_data = accept_row_data.split(',');
-                    if (split_data.includes(child.idx.toString())) {
-                        let result = split_data.filter(item => item !== child.idx.toString()).join(",");
-                        frm.set_value('accept_rows', result);
-                    }
-                    frm.refresh_field('accept_rows');
-                    frm.refresh_field('nj_audit_items');
-                }
-            },
-            error: function(err) { console.log(err); }
-        });
     },
+
+    before_submit: function(frm) {
+        frappe.confirm(
+            `Do you want to transfer stock present in following <b>#Rows</b> to your Work Warehouse: <b>${frm.doc.work_warehouse}?</b><br>${frm.doc.accept_rows}`,
+            ()=>{ frm.enable_save(); }, 
+            ()=>{ frm.disable_save(); }
+        );
+    }
 });
 
 function fill_audit_and_work_warehouse(frm) {
-	
+    
     frappe.call({
         method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_work_and_audit_warehouse',
         callback: function(r) {
@@ -137,3 +101,61 @@ function fill_audit_and_work_warehouse(frm) {
         }
     });
 }
+
+function initializeGridListeners(frm) {
+    frm.fields_dict['nj_audit_items'].grid.on('refresh', function() {
+        frm.fields_dict['nj_audit_items'].grid.wrapper.on('click', '.grid-remove-rows', function() {
+            handleRowRemoval(frm);
+        });
+    });
+}
+
+function handleRowRemoval(frm) {
+    let selectedRows = frm.fields_dict['nj_audit_items'].grid.get_selected_children();
+    
+    if (selectedRows.length > 0) {
+        let accept_rows = frm.doc.accept_rows || "";
+        let accept_rows_array = accept_rows.split(',').filter(idx => !selectedRows.some(row => row.idx.toString() === idx));
+        frm.set_value('accept_rows', accept_rows_array.join(','));
+    }
+}
+
+// frappe.ui.form.on('NJ Audit Items', {
+//     accept: function(frm, cdt, cdn) {
+//         let child = locals[cdt][cdn];
+//         let work_warehouse = frm.doc.work_warehouse;
+//         let stock_entry_items = [{
+//             'item_code': child.item_code,
+//             'basic_rate': child.purchase_rate,
+//             'serial_no': child.serial_no
+//         }];
+//         let data = {
+//             "serial_no": child.serial_no,
+//             "stock_entry_type": "Material Transfer",
+//             "t_warehouse": work_warehouse,
+//             "series": "STRC-.YYYY.-.MM.-",
+//             "reference_serial_no": child.serial_no,
+//             "doctype": frm.doc.doctype,
+//             "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
+//         };
+//         frappe.call({
+//             method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+//             args: { 'data': JSON.stringify(data) },
+//             callback: function(r) {
+//                 if (child.parent_warehouse != cur_frm.doc.audit_warehouse) {
+//                     frappe.model.set_value(cdt, cdn, 'warehouse', cur_frm.doc.work_warehouse);
+//                     frm.set_df_property('nj_audit_items', 'hidden', 1, frm.docname, 'accept', cdn);
+//                     let accept_row_data = frm.doc.accept_rows;
+//                     let split_data = accept_row_data.split(',');
+//                     if (split_data.includes(child.idx.toString())) {
+//                         let result = split_data.filter(item => item !== child.idx.toString()).join(",");
+//                         frm.set_value('accept_rows', result);
+//                     }
+//                     frm.refresh_field('accept_rows');
+//                     frm.refresh_field('nj_audit_items');
+//                 }
+//             },
+//             error: function(err) { console.log(err); }
+//         });
+//     },
+// });

@@ -9,8 +9,7 @@
   "item_code",
   "warehouse",
   "parent_warehouse",
-  "purchase_rate",
-  "accept"
+  "purchase_rate"
  ],
  "fields": [
   {
@@ -22,6 +21,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "serial_no.warehouse",
    "fieldname": "warehouse",
    "fieldtype": "Link",
@@ -31,13 +31,6 @@
    "read_only": 1
   },
   {
-   "bold": 1,
-   "fieldname": "accept",
-   "fieldtype": "Button",
-   "in_list_view": 1,
-   "label": "Accept"
-  },
-  {
    "fieldname": "purchase_rate",
    "fieldtype": "Float",
    "label": "Purchase Rate",
@@ -45,6 +38,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "parent_warehouse",
    "fieldtype": "Link",
    "hidden": 1,
@@ -63,7 +57,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-08-10 11:27:12.330035",
+ "modified": "2024-08-12 06:41:32.789177",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

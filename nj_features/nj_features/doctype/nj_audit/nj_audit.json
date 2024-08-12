@@ -13,6 +13,8 @@
   "audit_warehouse",
   "work_warehouse",
   "accept_rows",
+  "stock_balance",
+  "serial_no_count",
   "section_break_dsalw",
   "nj_audit_items",
   "amended_from"
@@ -89,11 +91,25 @@
    "hidden": 1,
    "label": "Work Warehouse",
    "options": "Warehouse"
+  },
+  {
+   "fieldname": "stock_balance",
+   "fieldtype": "Int",
+   "label": "Stock Balance",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "serial_no_count",
+   "fieldtype": "Int",
+   "label": "Scanned Serial No(s)",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-08-12 07:50:25.257157",
+ "modified": "2024-08-12 13:33:16.803009",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",

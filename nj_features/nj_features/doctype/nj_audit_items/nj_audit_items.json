@@ -28,7 +28,8 @@
    "in_list_view": 1,
    "label": "Warehouse",
    "options": "Warehouse",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "purchase_rate",
@@ -52,12 +53,13 @@
    "in_list_view": 1,
    "label": "Item",
    "options": "Item",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-08-12 06:41:32.789177",
+ "modified": "2024-08-12 16:03:54.849082",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

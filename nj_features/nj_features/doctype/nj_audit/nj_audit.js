@@ -1,6 +1,6 @@
 frappe.ui.form.on('NJ Audit', {
     onload: function(frm) {
-        if (frm.doc.docstatus == 0 && !frm.doc.__islocal) {
+        if (frm.doc.docstatus == 0 && !frm.doc.__islocal && frm.doc.__unsaved) {
             // frm.fields_dict['nj_audit_items'].grid.wrapper.on('click', '.grid-remove-rows', function() {
             //     let selectedRows = frm.fields_dict['nj_audit_items'].grid.get_selected_children();
             //     selectedRows.forEach(row => {
@@ -42,12 +42,12 @@ frappe.ui.form.on('NJ Audit', {
                         data.forEach(function(entry) { 
                             child_row = frm.add_child('nj_audit_items', entry);
                         });
+                        frm.set_value('serial_no_count', frm.doc.nj_audit_items.length);
+                        frm.refresh_field('serial_no_count');
+                        
                         frm.refresh_field("nj_audit_items");
                         
                         let isAccept = frm.doc.audit_warehouse != data[0]?.parent_warehouse;
-                        
-                        // frappe.meta.get_docfield('NJ Audit Items', 'accept', frm.doc.name).hidden = !isAccepted;
-                        console.log("isAccepted", isAccept);
                         
                         if (isAccept) {
                             if (!frm.doc.accept_rows) {
@@ -58,7 +58,6 @@ frappe.ui.form.on('NJ Audit', {
                             }
                         }
                     } else { frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
-                    console.log("accept_rows",frm.doc.accept_rows);
                     
                     frm.refresh_field('accept_rows');
                     $('[data-fieldname="scan_serial_no"]').focus();
@@ -142,6 +141,12 @@ function handleRowRemoval(frm) {
     }
 }
 
+frappe.ui.form.on('NJ Audit Items', {
+    nj_audit_items_remove: function(frm, cdt, cdn) {
+        frm.set_value('serial_no_count', frm.doc.nj_audit_items.length);
+        frm.refresh_field('serial_no_count');
+    }
+})
 // frappe.ui.form.on('NJ Audit Items', {
 //     accept: function(frm, cdt, cdn) {
 //         let child = locals[cdt][cdn];

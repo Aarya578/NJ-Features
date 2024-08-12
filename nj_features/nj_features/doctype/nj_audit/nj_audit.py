@@ -62,7 +62,7 @@ def get_work_and_audit_warehouse():
     return {
         'work_warehouse': emp_data.get('work_warehouse'),
         'audit_warehouse': audit_warehouse,
-        'audit_interval': audit_interval
+        'audit_interval': audit_interval,
     }
 
 @frappe.whitelist()
@@ -82,3 +82,25 @@ def get_scanned_serial_no_data(serial_no):
         }]
         
     return None
+
+@frappe.whitelist()
+def update_create_permission(doctype, active_status=None):
+    nj_audit_activation_level = frappe.db.get_value('NJ Settings', {'parameter': 'nj_audit_activation_level'}, ['name', 'value'], as_dict=1)
+    new_value = nj_audit_activation_level.get('value')
+    if nj_audit_activation_level:
+        if active_status == '1':
+            current_value = nj_audit_activation_level.get('value')
+            new_value = '0' if current_value == '1' else '1'
+            
+            frappe.db.set_value('NJ Settings', nj_audit_activation_level.get('name'), 'value', new_value)
+            frappe.db.commit()
+        values = [{'create': int(new_value)}, {'write': int(new_value)}]
+        for value in values:
+            frappe.db.set_value('Custom DocPerm', doctype, value)
+            frappe.db.set_value('DocPerm', doctype, value)
+        
+        return new_value
+    
+    else:
+        frappe.throw('No NJ Settings found with parameter nj_audit_activation_level.')
+        return None

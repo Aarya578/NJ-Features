@@ -5,6 +5,8 @@
 frappe.ui.form.on('Daily Individual Report', {
 	
 	onload: function(frm) {
+        frm.set_df_property('data_import_report','cannot_add_rows',true)
+        frm.set_df_property('work_warehouse_inventory','cannot_add_rows',true)
         $('.col-lg-2.layout-side-section').hide();	
         frappe.call({
             method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.fetch_data_imports',

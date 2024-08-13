@@ -1,13 +1,8 @@
-// Copyright (c) 2024, NewJaisa - IT Team and contributors
-// For license information, please see license.txt
-
-
 frappe.ui.form.on('Daily Individual Report', {
-	
-	onload: function(frm) {
-        frm.set_df_property('data_import_report','cannot_add_rows',true)
-        frm.set_df_property('work_warehouse_inventory','cannot_add_rows',true)
-        $('.col-lg-2.layout-side-section').hide();	
+    onload: function(frm) {
+        frm.set_df_property('data_import_report', 'cannot_add_rows', true);
+        $('.col-lg-2.layout-side-section').hide();   
+
         frappe.call({
             method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.fetch_data_imports',
             args: {},
@@ -29,13 +24,14 @@ frappe.ui.form.on('Daily Individual Report', {
                 }
             }
         });
+
         frappe.call({
-            method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_stock_data',
+            method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
             args: {},
             callback: function(r) {
                 if (!r.exc) {
                     // Clear existing rows in the child table
-                    frm.clear_table('data_import_report');
+                    frm.clear_table('work_warehouse_inventory');
 
                     r.message.forEach(function(row) {
                         // Ensure that item_code and serial_no are handled as arrays
@@ -84,4 +80,3 @@ function toggle_checkboxes(field) {
         }
     }
 }
-

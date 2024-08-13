@@ -54,6 +54,9 @@ frappe.listview_settings['NJ Audit'] = {
             listview.page.add_inner_button("Get Report", function() {
                 frappe.set_route(["query-report", "NJ Audit Report"]);
             }).addClass('btn-primary');
+            listview.page.add_inner_button("Not Scan Serial NO", function() {
+                frappe.set_route(["query-report", "Not Scan Serial No Report"]);
+            }).addClass('btn-primary');
         }
 
 	}

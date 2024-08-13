@@ -90,8 +90,10 @@ def create_user(self):
 
                     data = frappe.db.sql(query, filters, as_dict=1)
                     if data:
-                        frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                        pass
+                        # frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
                     else:
+                        print(f'\nDepartment Change: {self.get("department")}\n')
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
                         if dept_work_ware:
                             get_work_warehouse_doc.parent_warehouse = dept_work_ware
@@ -118,7 +120,6 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
     parent_warehouse, user_full_name, is_main_warehouse_exists = '', '', ''
     warehouse = frappe.new_doc('Warehouse')
     user_full_name = frappe.db.get_value('User', {'name': user}, 'full_name')
-
     if department and warehouse_type == 'work_ware':
         prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
         parent_warehouse = prefix + '-Work-Warehouse - NJ'
@@ -141,12 +142,16 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
             emp_warehouse_name = 'EMP - ' + user_full_name+ ' - ' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
         if is_main_warehouse_exists:
+            warehouse.warehouse_name = emp_warehouse_name
+            warehouse.parent_warehouse = parent_warehouse
+            warehouse.department = department
+            # warehouse.save(ignore_permissions=True)
             return is_main_warehouse_exists
         warehouse.warehouse_name = emp_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
-
     warehouse.warehouse_owner = user
+    print(f'\nis_main_warehouse_exists {is_main_warehouse_exists}\n')
     if is_main_warehouse_exists is None or is_main_warehouse_exists == '':
         warehouse.save(ignore_permissions=True)
     return warehouse.name

@@ -4,12 +4,6 @@
 
 frappe.query_reports["NJ Audit Report"] = {
 	"filters": [
-		{
-			"fieldname":"current_date",
-			"label": __("Current Date"),
-			"fieldtype": "Date",
-			"reqd": 0,
-			"default": "Today"
-		}
+		
 	],
 };

@@ -114,23 +114,26 @@ def update_create_permission(doctype, active_status=None):
         return None
     
 @frappe.whitelist()
-def get_stock_balance(warehouse):
-    stock_entries = frappe.get_all(
-        'Stock Ledger Entry',
-        filters={'warehouse': warehouse, 'is_cancelled': 0},
-        fields=['item_code', 'actual_qty', 'qty_after_transaction']
-    )
-
-    stock_balance_summary = {}
-
-    for entry in stock_entries:
-        item_code = entry.get('item_code')
-        actual_qty = entry.get('actual_qty', 0)
-        qty_after_transaction = entry.get('qty_after_transaction', 0)
-
-        if item_code not in stock_balance_summary:
-            stock_balance_summary[item_code] = 0
-
-        stock_balance_summary[item_code] = qty_after_transaction
-    print("stock_balance_summary",stock_balance_summary)
-    return stock_balance_summary
+def get_stock_balance(audit_warehouse):
+    grand_child_warehouse=[]
+    # print("warehouse-----",audit_warehouse)
+    parent_warehouse = audit_warehouse
+    restricted_warehouses = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
+    # print('restricted_warehouses=====122==========',restricted_warehouses)
+    restricted_warehouses.add(parent_warehouse)
+    # print("restricted_warehouses-------",restricted_warehouses)
+    def add_child_warehouses(warehouse):
+        child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
+        for child in child_warehouses:
+            if child not in restricted_warehouses and (frappe.db.get_value('Warehouse',{'name':child },'is_group')) == 0:
+                grand_child_warehouse.append(child)
+                add_child_warehouses(child)
+    for warehouse in list(restricted_warehouses):
+        add_child_warehouses(warehouse)
+    # print('grand_child_warehouse=============',grand_child_warehouse)
+    serial_no_data = []
+    for warehouses in grand_child_warehouse:
+        serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
+        serial_no_data.extend(serial_num_data)
+    serial_no_count = serial_no_data.__len__()
+    return serial_no_count

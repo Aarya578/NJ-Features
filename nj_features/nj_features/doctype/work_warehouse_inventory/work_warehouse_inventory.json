@@ -45,12 +45,6 @@
    "label": "No"
   },
   {
-   "fieldname": "reason",
-   "fieldtype": "Small Text",
-<<<<<<< HEAD
-   "label": "Reason"
-  },
-  {
    "fieldname": "user_activity",
    "fieldtype": "Select",
    "label": "User Activity",
@@ -59,21 +53,15 @@
   },
   {
    "fieldname": "column_break_tgigj",
-   "fieldtype": "Column Break"
-=======
+   "fieldtype": "Column Break",
    "label": "Reason",
    "mandatory_depends_on": "eval: doc.no == 1;"
->>>>>>> e652929cdde6b203c2a4b90d79b443c2e7bb6069
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
-<<<<<<< HEAD
  "modified": "2024-08-14 09:43:13.704030",
-=======
- "modified": "2024-08-14 10:23:10.394972",
->>>>>>> e652929cdde6b203c2a4b90d79b443c2e7bb6069
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Work Warehouse Inventory",

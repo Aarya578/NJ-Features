@@ -16,7 +16,6 @@ class NJAudit(Document):
             accept_rows_set = set(int(idx) for idx in accept_rows_list if idx.strip().isdigit())
         else:
             accept_rows_set = set()
-        
         for idx, row in enumerate(self.nj_audit_items):
             if row.idx in accept_rows_set:
                 stock_entry_item = {

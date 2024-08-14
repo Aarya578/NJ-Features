@@ -16,6 +16,7 @@ class NJAudit(Document):
             accept_rows_set = set(int(idx) for idx in accept_rows_list if idx.strip().isdigit())
         else:
             accept_rows_set = set()
+       
         for idx, row in enumerate(self.nj_audit_items):
             if row.idx in accept_rows_set:
                 stock_entry_item = {
@@ -24,8 +25,8 @@ class NJAudit(Document):
                     's_warehouse': row.warehouse,
                     'basic_rate': row.purchase_rate
                 }
-                stock_entry_items.append(stock_entry_item)
-                
+                if not any(item['serial_no'] == stock_entry_item['serial_no'] for item in stock_entry_items):
+                    stock_entry_items.append(stock_entry_item)
         data = {
             "stock_entry_type": "Material Transfer",
             "t_warehouse": self.work_warehouse,

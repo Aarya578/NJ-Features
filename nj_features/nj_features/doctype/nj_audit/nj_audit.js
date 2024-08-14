@@ -11,13 +11,9 @@ frappe.ui.form.on('NJ Audit', {
             // });
             initializeGridListeners(frm)
             fill_audit_and_work_warehouse(frm)
-            console.log('warehouse',frm.doc.audit_warehouse);
-            
-            
         }
 
         frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
-
     },
     
     refresh: function(frm) {
@@ -121,19 +117,6 @@ function fill_audit_and_work_warehouse(frm) {
                 if(!frm.doc.work_warehouse){
                     frm.set_value('work_warehouse',data.work_warehouse)
                     frm.refresh_field('work_warehouse')
-                }
-                if (frm.doc.audit_warehouse && !frm.doc.stock_balance) {
-
-                    frappe.call({
-                        method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_stock_balance',
-                        args: {audit_warehouse: frm.doc.audit_warehouse},
-                        callback: function(r) {
-                            console.log("enetred stock balance", r.message.serial_no_count,"r.message----",r.message)
-                            frm.set_value('stock_balance',r.message)
-
-                        }
-            
-                    })
                 }
             }
         }

@@ -9,7 +9,9 @@
   "serial_no",
   "yes",
   "no",
-  "reason"
+  "column_break_tgigj",
+  "reason",
+  "user_activity"
  ],
  "fields": [
   {
@@ -17,7 +19,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item",
-   "options": "Item"
+   "options": "Item",
+   "reqd": 1
   },
   {
    "fieldname": "serial_no",
@@ -45,12 +48,23 @@
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason"
+  },
+  {
+   "fieldname": "user_activity",
+   "fieldtype": "Select",
+   "label": "User Activity",
+   "options": "\nLog In\nLog Out",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tgigj",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-08-07 19:36:25.924999",
+ "modified": "2024-08-14 09:43:13.704030",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Work Warehouse Inventory",

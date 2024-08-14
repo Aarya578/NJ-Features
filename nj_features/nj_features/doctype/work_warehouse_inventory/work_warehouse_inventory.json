@@ -5,23 +5,13 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "item",
+  "item_code",
   "serial_no",
   "yes",
   "no",
-  "column_break_tgigj",
-  "reason",
-  "user_activity"
+  "reason"
  ],
  "fields": [
-  {
-   "fieldname": "item",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Item",
-   "options": "Item",
-   "reqd": 1
-  },
   {
    "fieldname": "serial_no",
    "fieldtype": "Link",
@@ -45,23 +35,23 @@
    "label": "No"
   },
   {
-   "fieldname": "user_activity",
-   "fieldtype": "Select",
-   "label": "User Activity",
-   "options": "\nLog In\nLog Out",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_tgigj",
-   "fieldtype": "Column Break",
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
    "label": "Reason",
    "mandatory_depends_on": "eval: doc.no == 1;"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code ",
+   "options": "Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-08-14 09:43:13.704030",
+ "modified": "2024-08-14 17:15:53.939793",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Work Warehouse Inventory",

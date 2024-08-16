@@ -90,8 +90,7 @@ def create_user(self):
 
                     data = frappe.db.sql(query, filters, as_dict=1)
                     if data:
-                        pass
-                        # frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                        frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
                     else:
                         print(f'\nDepartment Change: {self.get("department")}\n')
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))

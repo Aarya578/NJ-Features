@@ -16,6 +16,7 @@
   "column_break_5",
   "status",
   "submit_after_import",
+  "user",
   "mute_emails",
   "template_options",
   "import_warnings_section",
@@ -103,11 +104,10 @@
    "set_only_once": 1
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "mute_emails",
    "fieldtype": "Check",
-   "label": "Don't Send Emails",
-   "set_only_once": 1
+   "label": "Don't Send Emails"
   },
   {
    "fieldname": "template_options",
@@ -165,11 +165,16 @@
    "fieldname": "import_log_preview",
    "fieldtype": "HTML",
    "label": "Import Log Preview"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Data",
+   "label": "User"
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2024-08-07 14:38:06.410027",
+ "modified": "2024-08-16 12:02:35.456705",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Data Import",

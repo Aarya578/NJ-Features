@@ -2,6 +2,12 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('NJ Data Import', {
+
+	onload: function(frm) {
+        frm.set_value('user', frappe.session.user); 
+        frm.set_df_property('user', 'read_only', 1); 
+        frm.refresh_field('user'); 
+    },
 	setup(frm) {
 		frappe.realtime.on('data_import_refresh', ({ data_import }) => {
 			frm.import_in_progress = false;

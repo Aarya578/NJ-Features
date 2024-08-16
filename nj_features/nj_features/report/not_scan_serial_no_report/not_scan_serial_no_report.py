@@ -13,24 +13,20 @@ def execute(filters=None):
 		{"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse"},
 		{"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group"},
 		{"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
-
-
-
-
 	]
-	audit_warehouse = frappe.db.sql("""select audit_warehouse from `tabNJ Audit` where creation = (select MAX(creation) FROM `tabNJ Audit`)""",as_dict = 1)
-	parent_warehouse = audit_warehouse[0]['audit_warehouse']
-	restricted_warehouses = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
-	restricted_warehouses.add(parent_warehouse)
+	audit_warehouses_data = frappe.db.sql("""select audit_warehouse from `tabNJ Audit` where creation = (select MAX(creation) FROM `tabNJ Audit`)""",as_dict = 1)
+	parent_warehouse = audit_warehouses_data[0]['audit_warehouse']
+	audit_warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
+	audit_warehouses_data.add(parent_warehouse)
 	def add_child_warehouses(warehouse):
 		child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
 		for child in child_warehouses:
-			if child not in restricted_warehouses and (frappe.db.get_value('Warehouse',{'name':child },'is_group')) == 0:
+			if child not in audit_warehouses_data and (frappe.db.get_value('Warehouse',{'name':child },'is_group')) == 0:
 				grand_child_warehouse.append(child)
 				add_child_warehouses(child)
-	for warehouse in list(restricted_warehouses):
+	for warehouse in list(audit_warehouses_data):
 		add_child_warehouses(warehouse)
-	
+	print('grand_child_warehouse==================',grand_child_warehouse)
 	serial_no_data = []
 	for warehouses in grand_child_warehouse:
 		serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
@@ -39,6 +35,8 @@ def execute(filters=None):
 	serial_no_audit_set = {item['serial_no'] for item in serial_no_from_nj_audit}
 
 	data = [item for item in serial_no_data if item['name'] not in serial_no_audit_set]
+
+	# print('stock_balance==================',serial_no_data.count())
 
 
 	return columns, data

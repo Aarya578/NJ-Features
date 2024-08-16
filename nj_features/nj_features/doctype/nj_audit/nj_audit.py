@@ -118,21 +118,23 @@ def get_stock_balance(audit_warehouse):
     grand_child_warehouse=[]
     # print("warehouse-----",audit_warehouse)
     parent_warehouse = audit_warehouse
-    restricted_warehouses = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
-    # print('restricted_warehouses=====122==========',restricted_warehouses)
-    restricted_warehouses.add(parent_warehouse)
-    # print("restricted_warehouses-------",restricted_warehouses)
+    audit_warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
+    audit_warehouses_data.add(parent_warehouse)
     def add_child_warehouses(warehouse):
         child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
         for child in child_warehouses:
-            if child not in restricted_warehouses and (frappe.db.get_value('Warehouse',{'name':child },'is_group')) == 0:
+            if child not in audit_warehouses_data:
                 grand_child_warehouse.append(child)
                 add_child_warehouses(child)
-    for warehouse in list(restricted_warehouses):
+    for warehouse in list(audit_warehouses_data):
         add_child_warehouses(warehouse)
-    # print('grand_child_warehouse=============',grand_child_warehouse)
+    new_grand_warehouse =[]
+    for xar in grand_child_warehouse:
+        if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
+            new_grand_warehouse.append(xar)
+    print('new_grand_warehouse=============',new_grand_warehouse)
     serial_no_data = []
-    for warehouses in grand_child_warehouse:
+    for warehouses in new_grand_warehouse:
         serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
         serial_no_data.extend(serial_num_data)
     serial_no_count = serial_no_data.__len__()

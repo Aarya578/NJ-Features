@@ -21,24 +21,22 @@ def execute(filters=None):
 	def add_child_warehouses(warehouse):
 		child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
 		for child in child_warehouses:
-			if child not in audit_warehouses_data and (frappe.db.get_value('Warehouse',{'name':child },'is_group')) == 0:
+			if child not in audit_warehouses_data:
 				grand_child_warehouse.append(child)
 				add_child_warehouses(child)
 	for warehouse in list(audit_warehouses_data):
 		add_child_warehouses(warehouse)
-	print('grand_child_warehouse==================',grand_child_warehouse)
+	new_grand_warehouse =[]
+	for xar in grand_child_warehouse:
+		if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
+			new_grand_warehouse.append(xar)
 	serial_no_data = []
-	for warehouses in grand_child_warehouse:
+	for warehouses in new_grand_warehouse:
 		serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
 		serial_no_data.extend(serial_num_data)
-	serial_no_from_nj_audit = frappe.db.sql("""select serial_no from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict=1)
+	serial_no_from_nj_audit = frappe.db.sql("""select serial_no,parent_warehouse from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict=1)
 	serial_no_audit_set = {item['serial_no'] for item in serial_no_from_nj_audit}
-
 	data = [item for item in serial_no_data if item['name'] not in serial_no_audit_set]
-
-	# print('stock_balance==================',serial_no_data.count())
-
-
 	return columns, data
 
 

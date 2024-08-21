@@ -113,7 +113,10 @@ def open_draft_qi(self):
             child_table.check_name = field['quality_check']
             child_table.checks = field_name
             child_table.item_group =config_data_2_qi
-            child_table.options = njqca_config_query_data[0]['variant_9']
+            if njqca_config_query_data[0]['variant_9']:
+                child_table.options = njqca_config_query_data[0]['variant_9']
+            else:
+                child_table.options = ''
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """

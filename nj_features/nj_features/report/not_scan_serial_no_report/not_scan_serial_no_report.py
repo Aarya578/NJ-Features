@@ -14,29 +14,32 @@ def execute(filters=None):
 		{"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group"},
 		{"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
 	]
-	audit_warehouses_data = frappe.db.sql("""select audit_warehouse from `tabNJ Audit` where creation = (select MAX(creation) FROM `tabNJ Audit`)""",as_dict = 1)
-	parent_warehouse = audit_warehouses_data[0]['audit_warehouse']
-	audit_warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
-	audit_warehouses_data.add(parent_warehouse)
-	def add_child_warehouses(warehouse):
-		child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
-		for child in child_warehouses:
-			if child not in audit_warehouses_data:
-				grand_child_warehouse.append(child)
-				add_child_warehouses(child)
-	for warehouse in list(audit_warehouses_data):
-		add_child_warehouses(warehouse)
-	new_grand_warehouse =[]
-	for xar in grand_child_warehouse:
-		if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
-			new_grand_warehouse.append(xar)
-	serial_no_data = []
-	for warehouses in new_grand_warehouse:
-		serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
-		serial_no_data.extend(serial_num_data)
-	serial_no_from_nj_audit = frappe.db.sql("""select serial_no,parent_warehouse from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict=1)
-	serial_no_audit_set = {item['serial_no'] for item in serial_no_from_nj_audit}
-	data = [item for item in serial_no_data if item['name'] not in serial_no_audit_set]
+	audit_warehouses_data = frappe.db.sql("""select distinct parent_warehouse from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict = 1)
+	for audit_warehouse in audit_warehouses_data:
+		warehouses_data = set()
+		warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': audit_warehouse['parent_warehouse']}, pluck='name'))
+		warehouses_data.add(audit_warehouse['parent_warehouse'])
+		def add_child_warehouses(warehouse):
+			child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
+			for child in child_warehouses:
+				if child not in audit_warehouses_data:
+					grand_child_warehouse.append(child)
+					add_child_warehouses(child)
+		for warehouse in list(warehouses_data):
+			add_child_warehouses(warehouse)
+		new_grand_warehouse =[]
+		for xar in grand_child_warehouse:
+			if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
+				new_grand_warehouse.append(xar)
+		new_grand_warehouse = list(set(new_grand_warehouse))
+		serial_no_data = []
+		for warehouses in new_grand_warehouse:
+			serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
+			serial_no_data.extend(serial_num_data)
+		serial_no_from_nj_audit = frappe.db.sql("""select serial_no from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict=1)
+		serial_no_audit_set = {item['serial_no'] for item in serial_no_from_nj_audit}
+		data.extend([item for item in serial_no_data if item['name'] not in serial_no_audit_set])
+		
 	return columns, data
 
 

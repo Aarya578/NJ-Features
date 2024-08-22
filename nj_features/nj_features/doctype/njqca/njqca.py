@@ -99,7 +99,6 @@ def open_draft_qi(self):
             AND qc_check.diagnostic_type = 'Automatic'
             WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.njqca_parameter='Config'  """
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1, (config_data_2_qi, inspection_type), as_dict=True)
-
     for field in field_name_data_1:
         name_of_check = field['quality_check']
         field_name = field['field_name']
@@ -107,13 +106,16 @@ def open_draft_qi(self):
             child.item_group == config_data_2_qi  and child.check_name == name_of_check
             for child in new_qi.nj_quality_checks
         )
-
+    
         if not child_exists:
             child_table = new_qi.append("nj_quality_checks", {})
             child_table.check_name = field['quality_check']
             child_table.checks = field_name
             child_table.item_group =config_data_2_qi
-            child_table.options = njqca_config_query_data[0]['variant_9']
+            if njqca_config_query_data and njqca_config_query_data[0]['variant_9']:
+                child_table.options = njqca_config_query_data[0]['variant_9']
+            else:
+                child_table.options = ''
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """

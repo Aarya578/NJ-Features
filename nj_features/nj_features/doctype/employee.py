@@ -119,41 +119,37 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
     parent_warehouse, user_full_name, is_main_warehouse_exists = '', '', ''
     warehouse = frappe.new_doc('Warehouse')
     user_full_name = frappe.db.get_value('User', {'name': user}, 'full_name')
+    
     if department and warehouse_type == 'work_ware':
         prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
         parent_warehouse = prefix + '-Work-Warehouse - NJ'
         existing_parent = frappe.db.exists('Warehouse', {'name': parent_warehouse})
+        
         if not existing_parent:
             frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
+        
         wk_warehouse_name = 'WK-' + user_full_name + '-' + emp_id
-        warehouse.warehouse_name = wk_warehouse_name
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': wk_warehouse_name}, 'name')
         if is_main_warehouse_exists:
+            warehouse.save(ignore_permissions=True)
             return is_main_warehouse_exists
+        warehouse.warehouse_name = wk_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
-        
     else:
         parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')
-        emp_warehouse_name = 'EMP - ' + user_full_name
-        is_emp_warehouse_name_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
-        if is_emp_warehouse_name_exists is None:
-            emp_warehouse_name = 'EMP - ' + user_full_name+ ' - ' + emp_id
+        emp_warehouse_name = 'EMP - ' + user_full_name + ' - ' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
         if is_main_warehouse_exists:
-            warehouse.warehouse_name = emp_warehouse_name
-            warehouse.parent_warehouse = parent_warehouse
-            warehouse.department = department
-            # warehouse.save(ignore_permissions=True)
             return is_main_warehouse_exists
         warehouse.warehouse_name = emp_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
     warehouse.warehouse_owner = user
-    print(f'\nis_main_warehouse_exists {is_main_warehouse_exists}\n')
     if is_main_warehouse_exists is None or is_main_warehouse_exists == '':
         warehouse.save(ignore_permissions=True)
     return warehouse.name
+
 
 def get_dept_work_warehouse(department):
     dept_prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')

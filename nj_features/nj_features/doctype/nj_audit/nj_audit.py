@@ -116,7 +116,6 @@ def update_create_permission(doctype, active_status=None):
 @frappe.whitelist()
 def get_stock_balance(audit_warehouse):
     grand_child_warehouse=[]
-    # print("warehouse-----",audit_warehouse)
     parent_warehouse = audit_warehouse
     audit_warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
     audit_warehouses_data.add(parent_warehouse)
@@ -127,12 +126,14 @@ def get_stock_balance(audit_warehouse):
                 grand_child_warehouse.append(child)
                 add_child_warehouses(child)
     for warehouse in list(audit_warehouses_data):
-        add_child_warehouses(warehouse)
+        if frappe.db.get_value('Warehouse',{'name':warehouse },'is_group') == 1:
+            add_child_warehouses(warehouse)
+        else:
+            grand_child_warehouse.append(warehouse)
     new_grand_warehouse =[]
     for xar in grand_child_warehouse:
         if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
             new_grand_warehouse.append(xar)
-    print('new_grand_warehouse=============',new_grand_warehouse)
     serial_no_data = []
     for warehouses in new_grand_warehouse:
         serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})

@@ -221,7 +221,7 @@ frappe.ui.form.on('NJQCA', {
                             );
                         }
                     })
-                    if(cur_frm.doc.model != r.message.model){
+                    if(cur_frm.doc.model && cur_frm.doc.model != r.message.model){
                         frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
                             () => {
                                 frappe.call({

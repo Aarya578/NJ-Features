@@ -10,7 +10,6 @@ frappe.ui.form.on('NJ Audit', {
             //     });
             // });
             initializeGridListeners(frm)
-            fill_audit_and_work_warehouse(frm)
         }
 
         frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);

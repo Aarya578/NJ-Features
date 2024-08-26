@@ -26,7 +26,10 @@ def execute(filters=None):
 					grand_child_warehouse.append(child)
 					add_child_warehouses(child)
 		for warehouse in list(warehouses_data):
-			add_child_warehouses(warehouse)
+			if frappe.db.get_value('Warehouse',{'name':warehouse },'is_group') == 1:
+				add_child_warehouses(warehouse)
+			else:
+				grand_child_warehouse.append(warehouse)
 		new_grand_warehouse =[]
 		for xar in grand_child_warehouse:
 			if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:

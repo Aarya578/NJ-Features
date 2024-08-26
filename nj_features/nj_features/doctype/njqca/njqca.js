@@ -63,9 +63,10 @@ frappe.ui.form.on('NJQCA', {
             }
         });
         if(frm.doc.bios_serialno){
-            frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, 'name', (r) => {
-                if (r && r.name) {
+            frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name','model'], (r) => {
+                if (r && r.name && r.model) {
                     frm.set_value("serial_no", r.name);
+                    frm.set_value("model", r.model);
                 } else {
                     console.log("No Serial No found with this BIOS serial number.");
                 }

@@ -54,6 +54,7 @@ def create_user(self):
         else:
             previous_role_profile = frappe.db.get_value('Employee', {'user_id': user_email}, 'role_profile')
             if self.get('role_profile') != previous_role_profile:
+                print(f'Changing role profile for user {user_email} from {previous_role_profile} to {self.get("role_profile")}')
                 frappe.db.set_value('User', user_email, 'role_profile_name', self.get('role_profile'))
 
         # Determine the work warehouse
@@ -63,7 +64,7 @@ def create_user(self):
         if work_ware_reqd == 'Yes':
             warehouse_name = "WK-" + self.get('first_name').title() + "-" + self.get('emp_id')
             work_warehouse_in_db = frappe.db.get_value("Warehouse", {'warehouse_name': warehouse_name}, "name")
-
+            print(f'work_warehouse_in_db: {work_warehouse_in_db}')
             if not work_warehouse_in_db:
                 work_ware = create_warehouse(user_email, self.get('department'), self.get('emp_id'), 'work_ware')
             else:
@@ -71,14 +72,16 @@ def create_user(self):
                 get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_warehouse_in_db}, "department")
 
                 if get_dept_from_warehouse != self.get('department'):
+                    print('not equal')
                     # Handle department change
                     get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse_in_db)
+                    print(f'owner: {get_work_warehouse_doc.warehouse_owner}')
                     filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
                     conditions = []
                     if filters.get("warehouse_owner"):
                         conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
                     conditions_sql = " ".join(conditions)
-
+                    print(f'conditions_sql: {conditions_sql}')
                     query = f"""
                         SELECT 
                             SUM(Bin.actual_qty) AS total_qty
@@ -89,11 +92,16 @@ def create_user(self):
                     """
 
                     data = frappe.db.sql(query, filters, as_dict=1)
+                    print(f'data: {data}')
                     if data:
-                        frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                        # frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                        pass
                     else:
                         print(f'\nDepartment Change: {self.get("department")}\n')
                         dept_work_ware = get_dept_work_warehouse(self.get('department'))
+                        print(f'dept_work_ware: {dept_work_ware}')
+                        print(f'warehouse ======= {get_work_warehouse_doc}')
+                        print(f'get_work_warehouse_doc.department: {get_work_warehouse_doc.department}')
                         if dept_work_ware:
                             get_work_warehouse_doc.parent_warehouse = dept_work_ware
                             get_work_warehouse_doc.department = self.get('department')
@@ -116,11 +124,13 @@ def create_user(self):
         return {"status": self.get('status')}
 
 def create_warehouse(user, department, emp_id=None, warehouse_type=None):
+    print(f'BEFORE ASSIGNING USER: {user} DEPARTMENT: {department} EMP_ID: {emp_id} WAREHOUSE_TYPE: {warehouse_type}')
     parent_warehouse, user_full_name, is_main_warehouse_exists = '', '', ''
     warehouse = frappe.new_doc('Warehouse')
     user_full_name = frappe.db.get_value('User', {'name': user}, 'full_name')
-    
+    print(f'department: {department} and warehouse_type: {warehouse_type}')
     if department and warehouse_type == 'work_ware':
+        print(f'INSIDE DEPARTMENT AND WORK WARE')
         prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
         parent_warehouse = prefix + '-Work-Warehouse - NJ'
         existing_parent = frappe.db.exists('Warehouse', {'name': parent_warehouse})
@@ -131,6 +141,7 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
         wk_warehouse_name = 'WK-' + user_full_name + '-' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': wk_warehouse_name}, 'name')
         if is_main_warehouse_exists:
+            print(f'warehouse exists')
             warehouse.save(ignore_permissions=True)
             return is_main_warehouse_exists
         warehouse.warehouse_name = wk_warehouse_name
@@ -138,6 +149,7 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
         warehouse.department = department
     else:
         parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')
+        print(f'PARENT WAREHOUSE INSIDE ELSE ==== {parent_warehouse}')
         emp_warehouse_name = 'EMP - ' + user_full_name + ' - ' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': emp_warehouse_name, 'warehouse_owner': user}, 'name')
         if is_main_warehouse_exists:

@@ -62,6 +62,16 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         });
+        if(frm.doc.bios_serialno){
+            frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, 'name', (r) => {
+                if (r && r.name) {
+                    frm.set_value("serial_no", r.name);
+                } else {
+                    console.log("No Serial No found with this BIOS serial number.");
+                }
+            });      
+        }
+        
     },
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
@@ -522,8 +532,18 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         });
+        if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
+            if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
+                frappe.confirm = function(message, yes, no) {
+                    if (yes) yes();
+                };
+                frm.savesubmit();
+            }
+        }
+        else{
+            console.log("repack item code and item code are not same");
+        }
     }
-    
     
 });
 

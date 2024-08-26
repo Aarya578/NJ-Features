@@ -51,7 +51,7 @@ frappe.listview_settings['NJ Audit'] = {
                 });
             });
             
-            listview.page.add_inner_button("Get Report", function() {
+            listview.page.add_inner_button("Duplicate Serial No Report", function() {
                 frappe.set_route(["query-report", "NJ Audit Report"]);
             }).addClass('btn-primary');
             listview.page.add_inner_button("Not Scan Serial NO", function() {

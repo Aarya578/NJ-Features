@@ -72,7 +72,7 @@ def get_scanned_serial_no_data(serial_no):
     is_serial_no_exists = frappe.db.exists('Serial No', serial_no)
     
     if is_serial_no_exists:
-        serial_no_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['name', 'warehouse', 'item_code', 'purchase_rate'], as_dict=1)
+        serial_no_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['name', 'warehouse', 'item_code', 'purchase_rate' ,'item_group'], as_dict=1)
         parent_warehouse = frappe.db.get_value('Warehouse', {'name': serial_no_data.get('warehouse')}, 'parent_warehouse')
         
         return [{
@@ -80,7 +80,8 @@ def get_scanned_serial_no_data(serial_no):
             'serial_no': serial_no_data.get('name'),
             'item_code': serial_no_data.get('item_code'),
             'warehouse': serial_no_data.get('warehouse'),
-            'purchase_rate': serial_no_data.get('purchase_rate')
+            'purchase_rate': serial_no_data.get('purchase_rate'),
+            'item_group': serial_no_data.get('item_group')
         }]
         
     return None

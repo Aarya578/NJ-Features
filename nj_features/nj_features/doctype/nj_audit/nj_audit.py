@@ -27,21 +27,22 @@ class NJAudit(Document):
                 }
                 if not any(item['serial_no'] == stock_entry_item['serial_no'] for item in stock_entry_items):
                     stock_entry_items.append(stock_entry_item)
-        data = {
-            "stock_entry_type": "Material Transfer",
-            "t_warehouse": self.work_warehouse,
-            "series": "STE-AD-.YYYY.-.MM.-",
-            "doctype": self.doctype,
-            "name": self.name,
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
-        }
-        stock_entry = stock_entry_using_nj_lib(data)
-        
-        if stock_entry:
-            for idx, row in enumerate(self.nj_audit_items):
-                if row.idx in accept_rows_set:
-                    row.db_set('warehouse', self.work_warehouse)
-                    row.db_set('parent_warehouse', self.audit_warehouse)
+        if stock_entry_items != []:
+            data = {
+                "stock_entry_type": "Material Transfer",
+                "t_warehouse": self.work_warehouse,
+                "series": "STE-AD-.YYYY.-.MM.-",
+                "doctype": self.doctype,
+                "name": self.name,
+                "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
+            }
+            stock_entry = stock_entry_using_nj_lib(data)
+            
+            if stock_entry:
+                for idx, row in enumerate(self.nj_audit_items):
+                    if row.idx in accept_rows_set:
+                        row.db_set('warehouse', self.work_warehouse)
+                        row.db_set('parent_warehouse', self.audit_warehouse)
  
 @frappe.whitelist()
 def get_work_and_audit_warehouse():

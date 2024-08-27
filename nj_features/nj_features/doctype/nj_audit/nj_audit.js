@@ -65,36 +65,7 @@ frappe.ui.form.on('NJ Audit', {
             });
         }
         frm.set_value('scan_serial_no', '');
-    },
-
-    before_submit: function(frm) {
-        var dialog = new frappe.ui.Dialog({
-            title: __('Transfer Stock Confirmation'),
-            fields: [
-                {
-                    fieldtype: 'HTML',
-                    fieldname: 'message',
-                    options: `
-                        <p>Do you want to transfer stock present in the following <b>#Rows</b> to your Work Warehouse: <b>${frm.doc.work_warehouse}?</b></p>
-                        <p>${frm.doc.accept_rows}</p>
-                    `
-                }
-            ],
-            primary_action_label: __('Yes'),
-            primary_action: function() {
-                dialog.hide();
-                frm.enable_save();
-            },
-            secondary_action_label: __('No'),
-            secondary_action: function() {
-                frm.disable_save();
-                dialog.hide();
-            }
-        });
-    
-        dialog.show();
     }
-    
     
 });
 

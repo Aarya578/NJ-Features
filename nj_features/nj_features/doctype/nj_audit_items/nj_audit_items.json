@@ -10,7 +10,8 @@
   "warehouse",
   "parent_warehouse",
   "purchase_rate",
-  "item_group"
+  "item_group",
+  "is_available"
  ],
  "fields": [
   {
@@ -62,11 +63,18 @@
    "fieldtype": "Link",
    "label": "Item Group",
    "options": "Item Group"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_available",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": " Is Available"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-08-26 15:14:13.211739",
+ "modified": "2024-08-27 16:42:11.475854",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

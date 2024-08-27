@@ -12,7 +12,7 @@ frappe.ui.form.on('Employee', {
             callback: function(r) {
                 if (r && r.message) {
                     if (r.message.status) {
-                        frappe.throw("Employee status is <b>" + r.message.status + "</b>");
+                        frappe.msgprint("Employee status is <b>" + r.message.status + "</b>");
                     } else {
                         Object.keys(r.message).forEach(row => {
                             frm.set_value(row, r.message[row]);

@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "creation": "2024-08-27 11:52:01.013890",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "department",
+  "battery_video_file",
+  "column_break_2mehd",
+  "max_charging_time",
+  "max_discharging_time",
+  "percentage_checking_time"
+ ],
+ "fields": [
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Department",
+   "options": "Department",
+   "reqd": 1
+  },
+  {
+   "description": "Mention Time in mins (Eg. 120)",
+   "fieldname": "max_charging_time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "MAX Charging Time",
+   "reqd": 1
+  },
+  {
+   "description": "Mention Time in mins (Eg. 120)",
+   "fieldname": "max_discharging_time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "MAX Discharging Time",
+   "reqd": 1
+  },
+  {
+   "description": "Mention Time in mins (Eg. 2)",
+   "fieldname": "percentage_checking_time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Percentage Checking Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_2mehd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "battery_video_file",
+   "fieldtype": "Data",
+   "label": "Battery Video File"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2024-08-27 12:27:04.024631",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Battery Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -32,8 +32,12 @@ frappe.ui.form.on('NJ Audit', {
         if (frm.doc.scan_serial_no) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_scanned_serial_no_data',
-                args: {'serial_no': frm.doc.scan_serial_no},
+                args: {
+                    'serial_no': frm.doc.scan_serial_no,
+                    'audit_warehouse': frm.doc.audit_warehouse
+                },
                 callback: function(r) {
+                    console.log("r.message----",r)
                     if (r && r.message) {
                         let data = r.message;
                         let child_row = {}
@@ -56,7 +60,8 @@ frappe.ui.form.on('NJ Audit', {
                                 frm.set_value('accept_rows', `${accept_row_data},`);
                             }
                         }
-                    } else { frappe.throw(`Serial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
+                    } 
+                    else { frappe.throw(`erial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
                     
                     frm.refresh_field('accept_rows');
                     $('[data-fieldname="scan_serial_no"]').focus();

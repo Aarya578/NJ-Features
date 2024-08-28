@@ -9,7 +9,8 @@
   "serial_no",
   "yes",
   "no",
-  "reason"
+  "reason",
+  "user_activity"
  ],
  "fields": [
   {
@@ -46,12 +47,20 @@
    "in_list_view": 1,
    "label": "item Code",
    "options": "Item"
+  },
+  {
+   "fieldname": "user_activity",
+   "fieldtype": "Select",
+   "label": "User Activity",
+   "options": "Log In\nLog Out",
+   "read_only": 1,
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-08-16 12:23:33.921460",
+ "modified": "2024-08-28 18:40:16.188659",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Work Warehouse Inventory",

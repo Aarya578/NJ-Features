@@ -5,6 +5,17 @@
 frappe.query_reports["Customer Order History"] = {
     "filters": [
         {
+            "fieldname": "order_id",
+            "label": __("Order ID"),
+            "fieldtype": "Data"
+        },
+        {
+            "fieldname": "sales_order",
+            "label": __("Sales Order"),
+            "fieldtype": "Link",
+            "options": "Sales Order"
+        },
+        {
             "fieldname": "serial_no",
             "label": __("Serial No"),
             "fieldtype": "Data"
@@ -14,17 +25,6 @@ frappe.query_reports["Customer Order History"] = {
             "label": __("Delivery Note"),
             "fieldtype": "Link",
             "options": "Delivery Note"
-        },
-        {
-            "fieldname": "sales_order",
-            "label": __("Sales Order"),
-            "fieldtype": "Link",
-            "options": "Sales Order"
-        },
-        {
-            "fieldname": "order_id",
-            "label": __("Order ID"),
-            "fieldtype": "Data"
         }
     ],
     onload: function(report) {

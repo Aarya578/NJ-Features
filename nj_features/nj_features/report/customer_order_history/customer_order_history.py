@@ -3,14 +3,15 @@ from frappe import _
 
 def get_columns():
     return [
-        {"label": _("Serial No"), "fieldname": "serial_no", "fieldtype": "Link", "options": "Serial No"},
-        {"label": _("Delivery Note"), "fieldname": "delivery_note", "fieldtype": "Link", "options": "Delivery Note"},
-        {"label": _("DN Created On"), "fieldname": "creation", "fieldtype": "DateTime"},
-        {"label": _("Sales Order"), "fieldname": "against_sales_order", "fieldtype": "Link", "options": "Sales Order"},
-        {"label": _("Amazon Order ID"), "fieldname": "amazon_order_id", "fieldtype": "Data"},
-        {"label": _("Supplier"), "fieldname": "supplier", "fieldtype": "Link", "options": "Supplier"},
-        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
-        {"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group"}
+        {"label": _("Serial No"), "fieldname": "serial_no", "fieldtype": "Link", "options": "Serial No", "width": 150},
+        {"label": _("Delivery Note"), "fieldname": "delivery_note", "fieldtype": "Link", "options": "Delivery Note", "width": 150},
+        {"label": _("DN Created On"), "fieldname": "creation", "fieldtype": "DateTime", "width": 180},
+        {"label": _("Sales Order"), "fieldname": "against_sales_order", "fieldtype": "Link", "options": "Sales Order", "width": 180},
+        {"label": _("Amazon Order ID"), "fieldname": "amazon_order_id", "fieldtype": "Data", "width": 180},
+        {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 290},
+        {"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group", "width": 180},
+        {"label": _("Tracking ID"), "fieldname": "tracking_id", "fieldtype": "Data", "width": 160},
+        {"label": _("Courier Service"), "fieldname": "courier_service", "fieldtype": "Link", "options": "Courier Service", "width": 180}
     ]
 
 def get_data(filters):
@@ -48,14 +49,15 @@ def get_data(filters):
 
     query = f"""
         SELECT 
-            dni.serial_no AS serial_no,
+            dni.serial_no,
             dn.name AS delivery_note,
-            dn.creation AS creation,
-            dni.against_sales_order AS against_sales_order,
-            so.amazon_order_id AS amazon_order_id,
-            sn.supplier_name AS supplier,
-            dni.item_code AS item_code,
-            sn.item_group AS item_group
+            dn.creation,
+            dni.against_sales_order,
+            so.amazon_order_id,
+            dni.item_code,
+            sn.item_group,
+            dn.tracking_id,
+            dn.courier_service
         FROM 
             `tabDelivery Note` dn
         INNER JOIN 

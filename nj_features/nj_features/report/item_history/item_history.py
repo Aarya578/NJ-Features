@@ -23,22 +23,11 @@ def get_api_data():
     data = frappe.request.data
     data_json = data.decode('utf-8')
     filters = json.loads(data_json)
-
-    print(f'FILTER =======28======= {filters}')
-
     response_data = get_data(filters)
-
-    print(f'RESPONSE DATA INSIDE ERP =======31======== {response_data}')
 
     return response_data
 
-@frappe.whitelist()
 def get_data(filters):
-
-
-    print(f'\nFILETRS FROM DJANGO ==========37=========== {filters}\n')
-
-
     conditions = []
 
     if filters.get("item_group"):
@@ -55,9 +44,6 @@ def get_data(filters):
         conditions.append(f"AND d.name = '{filters['department']}'")
 
     conditions_sql = " ".join(conditions)
-
-
-    print(f'CONDITIONS_SQL ====53==== {conditions_sql}')
 
     query = f"""
     SELECT

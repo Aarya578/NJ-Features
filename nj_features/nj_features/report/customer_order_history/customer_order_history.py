@@ -10,8 +10,8 @@ def get_columns():
         {"label": _("Amazon Order ID"), "fieldname": "amazon_order_id", "fieldtype": "Data", "width": 180},
         {"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 290},
         {"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group", "width": 180},
-        {"label": _("Tracking ID"), "fieldname": "tracking_id", "fieldtype": "Data", "width": 160},
-        {"label": _("Courier Service"), "fieldname": "courier_service", "fieldtype": "Link", "options": "Courier Service", "width": 180}
+        {"label": _("Courier Service"), "fieldname": "courier_service", "fieldtype": "Link", "options": "Courier Service", "width": 180},
+        {"label": _("Tracking ID"), "fieldname": "tracking_id", "fieldtype": "Data", "width": 160}
     ]
 
 def get_data(filters):

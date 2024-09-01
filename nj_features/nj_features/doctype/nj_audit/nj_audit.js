@@ -9,10 +9,9 @@ frappe.ui.form.on('NJ Audit', {
             //         frm.set_value('accept_rows', accept_rows_array.join(','));
             //     });
             // });
-            initializeGridListeners(frm)
+            // initializeGridListeners(frm)
+            frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
         }
-
-        frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
     },
     
     refresh: function(frm) {
@@ -28,49 +27,79 @@ frappe.ui.form.on('NJ Audit', {
         }
     },
 
-    scan_serial_no: function(frm) {
-        if (frm.doc.scan_serial_no) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_scanned_serial_no_data',
-                args: {
-                    'serial_no': frm.doc.scan_serial_no,
-                    'audit_warehouse': frm.doc.audit_warehouse
-                },
-                callback: function(r) {
-                    console.log("r.message----",r)
-                    if (r && r.message) {
-                        let data = r.message;
-                        let child_row = {}
-    
-                        data.forEach(function(entry) { 
-                            child_row = frm.add_child('nj_audit_items', entry);
-                        });
-                        frm.set_value('serial_no_count', frm.doc.nj_audit_items.length);
-                        frm.refresh_field('serial_no_count');
-                        
-                        frm.refresh_field("nj_audit_items");
-                        
-                        let isAccept = frm.doc.audit_warehouse != data[0]?.parent_warehouse;
-                        
-                        if (isAccept) {
-                            if (!frm.doc.accept_rows) {
-                                frm.set_value('accept_rows', `${child_row.idx},`);
-                            } else {
-                                let accept_row_data = frm.doc.accept_rows + child_row.idx;
-                                frm.set_value('accept_rows', `${accept_row_data},`);
-                            }
-                        }
-                    } 
-                    else { frappe.throw(`erial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
-                    
-                    frm.refresh_field('accept_rows');
-                    $('[data-fieldname="scan_serial_no"]').focus();
-                },
-                error: function(err) { console.error("Error in frappe call:", err); }
-            });
+    scan_serial_no: function (frm) {
+        if (!frm.doc.scan_rack) {
+            frm.set_value("scan_serial_no", "");
+            frm.refresh_field("scan_serial_no");
+            frappe.throw("Please select Rack");
         }
-        frm.set_value('scan_serial_no', '');
+        
+        if (frm.doc.scan_serial_no != '' && frm.doc.scan_rack != '') {
+            frappe.db.get_value("Serial No", {serial_no: frm.doc.scan_serial_no}, ["name","item_code", "warehouse", "purchase_rate"], (r) => {
+                if (r) {
+                    let nj_audit_items = {
+                        "serial_no": r.name, 
+                        "item_code": r.item_code, 
+                        "s_warehouse": r.warehouse, 
+                        "purchase_rate": r.purchase_rate,
+                        "t_rack_warehouse": frm.doc.scan_rack
+                    };
+                    frm.add_child("nj_audit_items", nj_audit_items);
+                    frm.refresh_field("nj_audit_items");
+
+                    frm.set_value('serial_no_count', frm.doc.nj_audit_items.length);
+                    frm.refresh_field('serial_no_count');
+
+                    frm.set_value("scan_serial_no", "");
+                    frm.refresh_field("scan_serial_no");
+                }
+            })
+        }
     }
+
+    // scan_serial_no: function(frm) {
+    //     if (frm.doc.scan_serial_no) {
+    //         frappe.call({
+    //             method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_scanned_serial_no_data',
+    //             args: {
+    //                 'serial_no': frm.doc.scan_serial_no,
+    //                 'audit_warehouse': frm.doc.audit_warehouse
+    //             },
+    //             callback: function(r) {
+    //                 console.log("r.message----",r)
+    //                 if (r && r.message) {
+    //                     let data = r.message;
+    //                     let child_row = {}
+    
+    //                     data.forEach(function(entry) { 
+    //                         child_row = frm.add_child('nj_audit_items', entry);
+    //                     });
+    //                     frm.set_value('serial_no_count', frm.doc.nj_audit_items.length);
+    //                     frm.refresh_field('serial_no_count');
+                        
+    //                     frm.refresh_field("nj_audit_items");
+                        
+    //                     let isAccept = frm.doc.audit_warehouse != data[0]?.parent_warehouse;
+                        
+    //                     if (isAccept) {
+    //                         if (!frm.doc.accept_rows) {
+    //                             frm.set_value('accept_rows', `${child_row.idx},`);
+    //                         } else {
+    //                             let accept_row_data = frm.doc.accept_rows + child_row.idx;
+    //                             frm.set_value('accept_rows', `${accept_row_data},`);
+    //                         }
+    //                     }
+    //                 } 
+    //                 else { frappe.throw(`erial No: <b>${frm.doc.scan_serial_no}</b> is not found!`); }
+                    
+    //                 frm.refresh_field('accept_rows');
+    //                 $('[data-fieldname="scan_serial_no"]').focus();
+    //             },
+    //             error: function(err) { console.error("Error in frappe call:", err); }
+    //         });
+    //     }
+    //     frm.set_value('scan_serial_no', '');
+    // }
     
 });
 
@@ -94,17 +123,14 @@ function fill_audit_and_work_warehouse(frm) {
                     frm.refresh_field('work_warehouse')
                 }
                 if (frm.doc.audit_warehouse && !frm.doc.stock_balance) {
-
                     frappe.call({
                         method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_stock_balance',
                         args: {audit_warehouse: frm.doc.audit_warehouse},
                         callback: function(r) {
-                            console.log("enetred stock balance", r.message.serial_no_count,"r.message----",r.message)
                             frm.set_value('stock_balance',r.message)
-
+                            frm.refresh_field('stock_balance')
                         }
-
-                    })
+                    });
                 }
             }
         }

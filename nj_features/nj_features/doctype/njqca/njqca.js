@@ -17,7 +17,6 @@ frappe.ui.form.on('NJQCA', {
             }
         }
 
-
         frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
             
             
@@ -67,11 +66,15 @@ frappe.ui.form.on('NJQCA', {
                 if (r && r.name && r.model) {
                     frm.set_value("serial_no", r.name);
                     frm.set_value("model", r.model);
+                    frm.save();
+                    console.log("Serial No found with this BIOS serial number.");
                 } else {
                     console.log("No Serial No found with this BIOS serial number.");
                 }
             });      
         }
+        
+        frm.trigger("model");
         
     },
     refresh: function(frm) {
@@ -161,6 +164,7 @@ frappe.ui.form.on('NJQCA', {
             // if (isYes) {
                 // cur_frm.events.validate(cur_frm)
             // }
+
             
     },
     serial_no: function(frm) {
@@ -256,8 +260,6 @@ frappe.ui.form.on('NJQCA', {
                                 $('.primary-action').hide()
                             })
                     }
-                        
-    
                 }
             });
         }
@@ -265,27 +267,99 @@ frappe.ui.form.on('NJQCA', {
 
     model: function(frm) {
         var selectedModel = frm.doc.model;
-        if (selectedModel) {
+        var selectedBrand = frm.doc.brand;
+        var selectedItemGroup = frm.doc.item_group;
+    
+        console.log("selectedModel", selectedModel);
+        console.log("selectedBrand", selectedBrand);
+        console.log("selectedGroup", selectedItemGroup);
+    
+        if (selectedModel && selectedBrand) {
             frappe.call({
-                method: 'nj_features.nj_features.doctype.inward.inward.fetch_model_description',
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
                 args: {
-                    'model': selectedModel
+                    'model': selectedModel,
+                    'brand': selectedBrand,
+                    'item_group': selectedItemGroup
                 },
                 callback: function(r) {
-                    $('.desc').remove();
-                    if (r.message && r.message.model_description) {
-                        var description = r.message.model_description;
-                         var htmlContent = `<div class='desc'><strong>Model Description: </strong> ${description}</div>`;
-                        $(frm.fields_dict['model'].wrapper).append(htmlContent);
-
+                    if (r.message) {
+                        console.log("get_part_mapping", r.message);
+    
+                        var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
+                        console.log("item_template", itemTemplates);
+    
+                        if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
+                            cur_frm.set_value('item_template', '');
+                            if (itemTemplates.length == 1) {
+                                cur_frm.set_value('item_template', itemTemplates[0]);
+                                cur_frm.set_df_property('item_template', 'read_only', 1);
+    
+                                $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
+                                    'border-radius': '0.25rem',
+                                    'border': '2px solid rgba(173, 216, 230, 0.5)' 
+                                });
+    
+                                var selectedOption = itemTemplates[0];
+                                var wizardList = r.message.wizard_list || [];
+    
+                                if (wizardList.includes(selectedOption)) {
+                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'green');
+                                } else {
+                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
+                                }
+                            } else {
+                                var wizardList = r.message.wizard_list || [];
+                                cur_frm.set_df_property('item_template', 'options', itemTemplates);
+                                $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
+                                    'border-radius': '0.25rem',
+                                    'border': '2px solid rgba(173, 216, 230, 0.5)'  
+                                });
+    
+                                frm.fields_dict.item_template.$input.on('change', function() {
+                                    var selectedOption = $(this).val();
+                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+                                    if (wizardList.includes(selectedOption)) {
+                                        $(this).closest('.control-input-wrapper').css('border-color', 'green');
+                                    } else {
+                                        $(this).closest('.control-input-wrapper').css('border-color', 'red');
+                                    }
+                                });
+    
+                                frappe.show_alert({
+                                    message: __('Select Item Template'),
+                                    indicator: 'green'
+                                });
+                            }
+                            frm.refresh_field('item_template');
+                        } else {
+                            console.log("No item templates found.");
+                            cur_frm.set_value('item_template', '');
+                            cur_frm.set_df_property('item_template', 'options', []);
+                            
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
+                                'border-radius': '0.25rem',
+                                'border': '2px solid red'
+                            });
+    
+                            frappe.msgprint(__("Item Template is not found using <b>Brand: {0}</b>,<br><b>Model: {1}</b>,<br><b>Item Group: {2}</b>.<br>Please contact <b>NPD Team.</b>", 
+                            [selectedBrand, selectedModel, selectedItemGroup]));
+                        }
                     }
                 }
             });
+        } else {
+            console.log("Model and/or Brand is not selected.");
+            cur_frm.set_df_property('item_template', 'options', []);
+            cur_frm.set_value('item_template', '');
         }
-        if(cur_frm.doc.error_message != ''){
-            cur_frm.set_df_property('cur_frm.doc.error_message', 'hidden', 0)
+    
+        if (cur_frm.doc.error_message) {
+            console.log("empty error ", cur_frm.doc.error_message);
+            cur_frm.set_df_property('error_message', 'hidden', 0);
         }
     },
+    
     
 	onload_post_render: function(frm) {
         // console.log("empty error ", cur_frm.doc.error_message);
@@ -535,6 +609,7 @@ frappe.ui.form.on('NJQCA', {
         });
         if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
             if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
+                console.log("repack item code and item code are same");
                 frappe.confirm = function(message, yes, no) {
                     if (yes) yes();
                 };

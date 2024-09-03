@@ -8,6 +8,7 @@
  "field_order": [
   "naming_series",
   "audit_interval",
+  "scan_rack",
   "scan_serial_no",
   "column_break_j74uu",
   "audit_warehouse",
@@ -104,11 +105,18 @@
    "fieldtype": "Int",
    "label": "Scanned Serial No(s)",
    "read_only": 1
+  },
+  {
+   "fieldname": "scan_rack",
+   "fieldtype": "Link",
+   "label": "Scan Rack",
+   "options": "Warehouse",
+   "reqd": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-08-14 12:37:27.363203",
+ "modified": "2024-09-03 16:14:08.647747",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",
@@ -168,6 +176,5 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC",
- "track_changes": 1
+ "sort_order": "DESC"
 }

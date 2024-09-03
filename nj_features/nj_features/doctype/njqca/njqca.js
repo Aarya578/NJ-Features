@@ -67,6 +67,8 @@ frappe.ui.form.on('NJQCA', {
                 if (r && r.name && r.model) {
                     frm.set_value("serial_no", r.name);
                     frm.set_value("model", r.model);
+                    frm.save();
+                    console.log("Serial No found with this BIOS serial number.");
                 } else {
                     console.log("No Serial No found with this BIOS serial number.");
                 }
@@ -161,6 +163,7 @@ frappe.ui.form.on('NJQCA', {
             // if (isYes) {
                 // cur_frm.events.validate(cur_frm)
             // }
+
             
     },
     serial_no: function(frm) {
@@ -535,6 +538,7 @@ frappe.ui.form.on('NJQCA', {
         });
         if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
             if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
+                console.log("repack item code and item code are same");
                 frappe.confirm = function(message, yes, no) {
                     if (yes) yes();
                 };

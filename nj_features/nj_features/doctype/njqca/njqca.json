@@ -251,6 +251,7 @@
    "options": "NJQCA Result Parameters"
   },
   {
+   "depends_on": "eval:doc.item_group == 'BATTERY'",
    "fieldname": "backup_duration",
    "fieldtype": "Data",
    "label": "Backup Duration"
@@ -259,7 +260,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-08-17 10:18:26.526498",
+ "modified": "2024-09-02 15:30:47.365579",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

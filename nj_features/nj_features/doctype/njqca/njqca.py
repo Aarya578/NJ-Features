@@ -7,6 +7,7 @@ import datetime
 from frappe.model.document import Document
 import re
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
+from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
@@ -722,44 +723,7 @@ def get_manual_repack_item_code_filtered_data(item_group, brand, model=None):
 def get_part_item_code_filtered_data(item_group):
     get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND has_variants = 0"
     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
-
-# @frappe.whitelist()
-# def get_backup_duration(parent_name):
-#     first_last_record=[]
-#     get_first_last_record_query = """
-#                                 (SELECT parameter,value 
-#                                 FROM `tabNJQCA Result Parameters` 
-#                                 WHERE parent = %(parent_name)s 
-#                                 ORDER BY idx 
-#                                 LIMIT 1)
-#                                 UNION ALL
-#                                 (SELECT parameter, value 
-#                                 FROM `tabNJQCA Result Parameters` 
-#                                 WHERE parent = %(parent_name)s  
-#                                 ORDER BY idx DESC 
-#                                 LIMIT 1);
-#                             """
-#     # Pass the parameter as a dictionary
-#     first_last_record = frappe.db.sql(get_first_last_record_query, {'parent_name': parent_name}, as_list=True)
-#     print("list====================", first_last_record)
-
-#     if len(first_last_record)==2:
-#         time_format = "%H:%M:%S"
-#         try:
-#             time1_dt = datetime.datetime.strptime(first_last_record[0][0], time_format)
-#             time2_dt = datetime.datetime.strptime(first_last_record[1][0], time_format)
-       
-#             time_difference = abs(time2_dt - time1_dt)
-#             return time_difference
-        
-#         except ValueError as e:
-        
-#             return None
-#     else:
-#         return None
-        
-
-
+     
 @frappe.whitelist()
 def get_backup_duration(parent_name, item_group):
     records=[]
@@ -823,3 +787,11 @@ def get_backup_duration(parent_name, item_group):
      
     
     
+@frappe.whitelist()
+def get_njqca_item_template(item_group, brand, model, serial_no=None):
+    wizard_list = ''
+    item_template = get_item_template(brand, model, item_group)
+    if item_template:
+        wizard_list = has_item_wizards(item_template)
+        
+    return {'item_template': item_template, 'wizard_list': wizard_list}

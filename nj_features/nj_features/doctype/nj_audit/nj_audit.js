@@ -55,7 +55,7 @@ frappe.ui.form.on('NJ Audit', {
                                 frm.refresh_field('serial_no_count');
                             }
                             else{
-                                frappe.msgprint("Item Group <b>" + nj_audit_items.item_group + "</b> is not valid");
+                                frappe.throw("Item Group <b>" + nj_audit_items.item_group + "</b> is not valid");
                             }
                         }
                     });

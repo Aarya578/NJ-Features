@@ -723,3 +723,103 @@ def get_part_item_code_filtered_data(item_group):
     get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND has_variants = 0"
     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
+# @frappe.whitelist()
+# def get_backup_duration(parent_name):
+#     first_last_record=[]
+#     get_first_last_record_query = """
+#                                 (SELECT parameter,value 
+#                                 FROM `tabNJQCA Result Parameters` 
+#                                 WHERE parent = %(parent_name)s 
+#                                 ORDER BY idx 
+#                                 LIMIT 1)
+#                                 UNION ALL
+#                                 (SELECT parameter, value 
+#                                 FROM `tabNJQCA Result Parameters` 
+#                                 WHERE parent = %(parent_name)s  
+#                                 ORDER BY idx DESC 
+#                                 LIMIT 1);
+#                             """
+#     # Pass the parameter as a dictionary
+#     first_last_record = frappe.db.sql(get_first_last_record_query, {'parent_name': parent_name}, as_list=True)
+#     print("list====================", first_last_record)
+
+#     if len(first_last_record)==2:
+#         time_format = "%H:%M:%S"
+#         try:
+#             time1_dt = datetime.datetime.strptime(first_last_record[0][0], time_format)
+#             time2_dt = datetime.datetime.strptime(first_last_record[1][0], time_format)
+       
+#             time_difference = abs(time2_dt - time1_dt)
+#             return time_difference
+        
+#         except ValueError as e:
+        
+#             return None
+#     else:
+#         return None
+        
+
+
+@frappe.whitelist()
+def get_backup_duration(parent_name, item_group):
+    records=[]
+    nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'show_backup'}, 'value')
+    sudden_drop = frappe.db.get_value('NJ Settings', {'parameter': 'sudden_drop'}, 'value')
+
+    if nj_settings_item_group == item_group:
+
+        get_first_last_record_query = """
+                                    SELECT parameter, value 
+                                    FROM `tabNJQCA Result Parameters` 
+                                    WHERE parent = %(parent_name)s 
+                                    ORDER BY idx 
+                                """
+        # Pass the parameter as a dictionary
+        records = frappe.db.sql(get_first_last_record_query, {'parent_name': parent_name}, as_list=True)
+
+        if len( records)>2:
+            time_format = "%H:%M:%S"
+            try:
+                time1_dt = datetime.datetime.strptime(records[0][0], time_format)
+                time2_dt = datetime.datetime.strptime(records[len(records)-1][0], time_format)
+        
+                time_difference = abs(time2_dt - time1_dt)
+            
+            except ValueError as e:
+            
+                time_difference=None
+            
+            if(int(records[len(records)-1][1])>15):
+                return time_difference, "Yes"
+
+            i = 1
+            while i < len(records):
+                try:
+                    previous_percentage = int(records[i-1][1])
+                except ValueError:
+                    i += 1
+                    continue  
+
+                try:
+                    current_percentage = int(records[i][1])
+                except ValueError:
+                    i += 1
+                    try:  
+                        current_percentage = int(records[i][1])
+                    except IndexError:
+                        break
+                
+                change = previous_percentage - current_percentage
+                if change >= int(sudden_drop):
+                    return time_difference, "Yes"  
+                
+                i += 1 
+
+            return time_difference,"No" 
+    
+        else:
+            return None , None
+        
+     
+    
+    

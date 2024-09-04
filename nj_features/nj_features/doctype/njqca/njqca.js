@@ -72,6 +72,24 @@ frappe.ui.form.on('NJQCA', {
                 }
             });      
         }
+
+        if(!frm.doc.backup_duration){
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_backup_duration',
+                args: {
+                    'parent_name': frm.doc.name,
+                    'item_group': frm.doc.item_group
+                },
+                callback: function(r) {
+                    if(r && r.message){
+                        frm.set_value("backup_duration", r.message[0]);
+                        frm.set_value("sudden_drop", r.message[1]);
+                    }
+                    
+                }
+            });
+
+        }
         
     },
     refresh: function(frm) {

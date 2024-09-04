@@ -245,35 +245,27 @@
    "options": "NJQCA Result Parameters"
   },
   {
-<<<<<<< HEAD
+
    "depends_on": "eval:doc.item_group==\"BATTERY\"",
-=======
-   "depends_on": "eval:doc.item_group == 'BATTERY'",
->>>>>>> ab23261f053d6486def19d714d8d24d09931d04c
    "fieldname": "backup_duration",
    "fieldtype": "Data",
    "label": "Backup Duration"
   },
   {
-<<<<<<< HEAD
    "depends_on": "eval:doc.item_group==\"BATTERY\"",
    "fieldname": "sudden_drop",
    "fieldtype": "Data",
    "label": "Sudden Drop"
-=======
+  },
+  {
    "fieldname": "column_break_o2d7q",
    "fieldtype": "Column Break"
->>>>>>> ab23261f053d6486def19d714d8d24d09931d04c
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
-<<<<<<< HEAD
  "modified": "2024-09-03 15:27:19.544825",
-=======
- "modified": "2024-09-02 15:30:47.365579",
->>>>>>> ab23261f053d6486def19d714d8d24d09931d04c
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

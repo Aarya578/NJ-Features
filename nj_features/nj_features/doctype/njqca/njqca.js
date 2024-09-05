@@ -80,7 +80,18 @@ frappe.ui.form.on('NJQCA', {
             });
 
         }
-
+        
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_inspection_type',
+           
+            callback: function(r) {
+                if(r && r.message){
+                    frm.set_value("inspection_type", r.message);
+                }
+                
+            }
+        });
+        
         if(frm.doc.bios_serialno){
             frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name','model','item_code'], (r) => {
                 if (r && r.name && r.model && r.item_code) {

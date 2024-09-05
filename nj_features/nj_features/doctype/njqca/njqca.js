@@ -61,18 +61,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         });
-        if(frm.doc.bios_serialno){
-            frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name','model'], (r) => {
-                if (r && r.name && r.model) {
-                    frm.set_value("serial_no", r.name);
-                    frm.set_value("model", r.model);
-                    frm.save();
-                    console.log("Serial No found with this BIOS serial number.");
-                } else {
-                    console.log("No Serial No found with this BIOS serial number.");
-                }
-            });      
-        }
+
 
         if(!frm.doc.backup_duration){
             frappe.call({
@@ -90,6 +79,24 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
 
+        }
+
+        if(frm.doc.bios_serialno){
+            frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name','model','item_code'], (r) => {
+                if (r && r.name && r.model && r.item_code) {
+                    frm.set_value("serial_no", r.name);
+                    frm.set_value("model", r.model);
+                    frappe.db.get_value('Item', {'item_code': r.item_code}, ['variant_of'], (r) => {
+                        if (r && r.variant_of) {
+                            frm.set_value("item_template", r.variant_of);
+                            frm.save();
+                        }
+                    })
+                    console.log("Serial No found with this BIOS serial number.");
+                } else {
+                    console.log("No Serial No found with this BIOS serial number.");
+                }
+            });      
         }
         
         frm.trigger("model");
@@ -625,18 +632,18 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         });
-        if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
-            if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
-                console.log("repack item code and item code are same");
-                frappe.confirm = function(message, yes, no) {
-                    if (yes) yes();
-                };
-                frm.savesubmit();
-            }
-        }
-        else{
-            console.log("repack item code and item code are not same");
-        }
+        // if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
+        //     if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
+        //         console.log("repack item code and item code are same");
+        //         frappe.confirm = function(message, yes, no) {
+        //             if (yes) yes();
+        //         };
+        //         frm.savesubmit();
+        //     }
+        // }
+        // else{
+        //     console.log("repack item code and item code are not same");
+        // }
     }
     
 });

@@ -7,8 +7,8 @@ import datetime
 from frappe.model.document import Document
 import re
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
-from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 
@@ -357,7 +357,6 @@ def after_save_njqca(docname):
 
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel,serial_no):
-    # print('model_change_for_serial_no===================',newmodel,serial_no)
     wizard_query = """Select name from `tabItem Wizards` where model = %s and part_list_status = 'Completed' order by modified desc"""
 
     item_wizard = frappe.db.sql(wizard_query, (newmodel), as_dict=1)
@@ -723,7 +722,7 @@ def get_manual_repack_item_code_filtered_data(item_group, brand, model=None):
 def get_part_item_code_filtered_data(item_group):
     get_part_item_code_query = "SELECT name from `tabItem` where item_group = %(item_group)s AND has_variants = 0"
     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
-     
+
 @frappe.whitelist()
 def get_backup_duration(parent_name, item_group):
     records=[]

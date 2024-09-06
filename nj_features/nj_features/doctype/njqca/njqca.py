@@ -13,6 +13,9 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 
 
+logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
+
+
 def update_serial_no_componont_for_grade(self):
     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
 
@@ -111,7 +114,7 @@ def open_draft_qi(self):
     SELECT variant_10 from `tabNJQCA Child` where item_group = %s and parent =%s"""
     
     njqca_config_query_storage_data= frappe.db.sql(njqca_config_query_storage,(item_group[2],self.name),as_dict=True)
-
+    logger.debug("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
     field_name_check_sql_1 = """
             SELECT options.quality_check, qc_check.field_name
             FROM `tabNJ Quality Checks` qc
@@ -123,7 +126,7 @@ def open_draft_qi(self):
             WHERE qc.item_group in %s AND qc.inspection_type = %s  AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s """
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1, (item_group, inspection_type,parameter), as_dict=True)
     print("field_name_data_1-------118",field_name_data_1,"field_name_check_sql_1----",field_name_check_sql_1,"njqca_config_query_storage_data---",njqca_config_query_storage_data,"njqca_config_query_ram_data----------",njqca_config_query_ram_data)
-
+    logger.debug("field_name_data_1-----------------njqca----------129",field_name_data_1)
     def extract_numeric_and_suffix(value):
         if value is None or value.strip() == '':
             return None, ''  # Handle None and empty strings

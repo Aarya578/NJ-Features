@@ -14,13 +14,14 @@
   "purchase_price",
   "purchase_receipt",
   "serial_no",
+  "inspection_type",
   "bios_serialno",
   "item_group",
   "warehouse",
   "raw_data",
   "base_price",
+  "item_template",
   "backup_duration",
-  "sudden_drop",
   "column_break_5mcw7",
   "created",
   "data_attr",
@@ -35,9 +36,7 @@
   "item_code",
   "column_break_qzvyk",
   "model",
-  "column_break_o2d7q",
-  "item_template",
-  "inspection_type",
+  "error_section_section",
   "section_break_aggsk",
   "error_message",
   "section_break_56eed",
@@ -122,8 +121,10 @@
   },
   {
    "fieldname": "item_template",
-   "fieldtype": "Select",
-   "label": "Item Template"
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Template",
+   "permlevel": 1
   },
   {
    "fieldname": "column_break_qzvyk",
@@ -235,9 +236,9 @@
   },
   {
    "fieldname": "inspection_type",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Inspection Type",
-   "read_only": 1
+   "options": "Inspection Type"
   },
   {
    "fieldname": "njqca_result_parameters",
@@ -245,27 +246,20 @@
    "options": "NJQCA Result Parameters"
   },
   {
-
-   "depends_on": "eval:doc.item_group==\"BATTERY\"",
    "fieldname": "backup_duration",
    "fieldtype": "Data",
    "label": "Backup Duration"
   },
   {
-   "depends_on": "eval:doc.item_group==\"BATTERY\"",
-   "fieldname": "sudden_drop",
-   "fieldtype": "Data",
-   "label": "Sudden Drop"
-  },
-  {
-   "fieldname": "column_break_o2d7q",
-   "fieldtype": "Column Break"
+   "fieldname": "error_section_section",
+   "fieldtype": "Column Break",
+   "hidden": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-03 15:27:19.544825",
+ "modified": "2024-09-05 18:52:03.668131",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

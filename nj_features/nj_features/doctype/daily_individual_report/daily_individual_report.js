@@ -1,5 +1,15 @@
 frappe.ui.form.on('Daily Individual Report', {
     onload: function (frm) {
+        if(!frm.doc.warehouse && frm.doc.docstatus == 0) {
+            frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(r) {
+                if (r.work_warehouse) {
+                    frm.set_value('warehouse', r.work_warehouse)
+                }
+                else{
+                    frappe.msgprint(__('Please set your Work Warehouse in Employee.'))
+                }
+            });
+        }
         if (frm.is_new()) {
             if (frm.is_new()) {
                 frm.set_df_property('data_import_report', 'cannot_add_rows', true);

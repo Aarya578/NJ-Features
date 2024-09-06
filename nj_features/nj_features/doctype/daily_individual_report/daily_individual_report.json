@@ -7,6 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "warehouse",
+  "section_break_tul6u",
   "data_import_report",
   "section_break_znyrl",
   "work_warehouse_inventory",
@@ -46,12 +48,23 @@
    "label": "Series",
    "options": "DIR-.YYYY.-.MM.-.###",
    "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_tul6u",
+   "fieldtype": "Section Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-08-14 09:41:16.533406",
+ "modified": "2024-09-06 16:20:30.958276",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Daily Individual Report",

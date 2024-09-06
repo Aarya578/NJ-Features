@@ -104,7 +104,16 @@ frappe.listview_settings['Serial No'] = {
                                 },
                                 callback: function(r) {
                                     if (!r.exc) {
-                                        // Now submit the document
+                                        frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(x) {
+                                            if (x && x.work_warehouse) {
+                                                r.message.warehouse = x.work_warehouse;
+                                                
+                                            }
+                                            else{
+                                                frappe.msgprint(__('Please set your Work Warehouse in Employee.'))
+                                            }
+                                        });
+                                        
                                         frappe.call({
                                             method: 'frappe.client.submit',
                                             args: {

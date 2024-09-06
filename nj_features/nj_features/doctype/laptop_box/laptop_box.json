@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-09-04 14:37:37.058049",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "brand",
+  "model",
+  "processor_type",
+  "ram_capacity",
+  "storage_capacity",
+  "os",
+  "qty",
+  "section_break_tvmby",
+  "barcode",
+  "section_break_ey6d4",
+  "customer_care",
+  "section_break_gtgp7",
+  "refurb_by",
+  "section_break_fdsi5",
+  "date_of_refurb",
+  "country_of_refurb",
+  "mrp"
+ ],
+ "fields": [
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "label": "Brand ",
+   "options": "Brand"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "label": "Model",
+   "options": "Models"
+  },
+  {
+   "fieldname": "os",
+   "fieldtype": "Data",
+   "label": "OS"
+  },
+  {
+   "default": "1",
+   "fieldname": "qty",
+   "fieldtype": "Data",
+   "label": "QTY",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_tvmby",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_ey6d4",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "support@newjaisa.com\n+91 8088403455",
+   "fieldname": "customer_care",
+   "fieldtype": "Data",
+   "label": "Customer Care",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_gtgp7",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "NEWJAISA TECHNOLOGIES LTD <br>\n2nd Main Rd,Omkar Nagar Arekere <br>\nBengaluru ,Karnataka 550076 India",
+   "fieldname": "refurb_by",
+   "fieldtype": "Data",
+   "label": "Refurb By ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_fdsi5",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "date_of_refurb",
+   "fieldtype": "Datetime",
+   "label": "Date Of Refurb"
+  },
+  {
+   "default": "India",
+   "fieldname": "country_of_refurb",
+   "fieldtype": "Data",
+   "label": "Country Of Refurb",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mrp",
+   "fieldtype": "Data",
+   "label": "MRP"
+  },
+  {
+   "fieldname": "processor_type",
+   "fieldtype": "Data",
+   "label": "Processor Type"
+  },
+  {
+   "fieldname": "storage_capacity",
+   "fieldtype": "Data",
+   "label": "Storage Capacity"
+  },
+  {
+   "fieldname": "ram_capacity",
+   "fieldtype": "Data",
+   "label": "RAM Capacity"
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Serial No"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-09-06 16:18:21.149604",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Laptop Box",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

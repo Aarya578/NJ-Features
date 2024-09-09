@@ -48,10 +48,24 @@ def get_serial_no_data():
 
 @frappe.whitelist()
 def daily_report_not_submitted_warehouses_data():
-    all_warehouse_data = frappe.db.sql("""select name from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
-    submitted_warehouse_data = frappe.db.sql("""select warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
-    print('warehouse_data=================', all_warehouse_data)
-    print('submitted_warehouse_data=================', submitted_warehouse_data)
+    all_warehouse_data = frappe.db.sql("""select name, curdate(),owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
+    submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
+    submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
+    missing_warehouses = [warehouse for warehouse in all_warehouse_data if warehouse['name'] not in submitted_warehouse_names]
+    if missing_warehouses:
+        table_html = "<table border='1' cellpadding='5' cellspacing='0'>"
+        table_html += "<tr><th>Date</th><th>Warehouse name</th><th>Owner</th></tr>"
+        for warehouse in missing_warehouses:
+            table_html += f"<tr><td>{warehouse['curdate()']}</td><td>{warehouse['name']}</td><td>{warehouse['owner']}</td></tr>"
+        table_html += "</table>"
+        main_mail = frappe.db.get_value("NJ Settings", {"parameter": "main_mail_for_inventory_update_daily"}, "value")
+        nj_settings_cc_mails = frappe.db.get_value("NJ Settings", {"parameter": "cc_mails_for_inventory_report_daily"}, "value")
+        recipient_email = main_mail
+        cc_emails = nj_settings_cc_mails.split(",")
+        subject = "Daily Report: Missing Warehouses"
+        message = f"<p>The following warehouses have not submitted their daily reports:</p>{table_html}"
+        send_email_to_user(recipient_email, subject, message, cc_emails=cc_emails)
+
 @frappe.whitelist()
 def all_no_selected_serial_no_data():
     # Fetch data from the database
@@ -75,22 +89,24 @@ def all_no_selected_serial_no_data():
     else:
         table_content = "<p>No data found for today.</p>"
 
-    # Send email with the table content
-    # send_email_to_user(
-    #     recipient_email="vishnudandu5366@gmail.com", 
-    #     subject="Not Selected Serial No Data", 
-    #     message=f"<p>The following data is not selected:</p>{table_content}"
-    # )
-
-    print('all_not_selected_serial_no_data================', data)
+    main_mail = frappe.db.get_value("NJ Settings", {"parameter": "main_mail_for_inventory_update_daily"}, "value")
+    nj_settings_cc_mails = frappe.db.get_value("NJ Settings", {"parameter": "cc_mails_for_inventory_report_daily"}, "value")
+    cc_emails = nj_settings_cc_mails.split(",")
+    send_email_to_user(
+        recipient_email=main_mail, 
+        subject="Not Selected Serial No Data", 
+        message=f"<p>The following data is not selected:</p>{table_content}",
+        cc_emails=cc_emails
+    )
 
 
 @frappe.whitelist()
-def send_email_to_user(recipient_email, subject, message):
+def send_email_to_user(recipient_email, subject, message,cc_emails=None):
     try:
         # Define the email content
         email_args = {
             'recipients': recipient_email,
+            'cc': cc_emails,
             'subject': subject,
             'message': message,
             'reference_doctype': None,

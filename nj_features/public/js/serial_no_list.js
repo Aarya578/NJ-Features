@@ -75,7 +75,7 @@ frappe.listview_settings['Serial No'] = {
                             }
                         });
                 
-                        dialog.get_field('work_warehouse_inventory').grid.refresh(); 
+                        dialog.get_field('work_warehouse_inventory').grid.refresh();
                 
                         // Check for missing reasons in rows where 'No' is checked
                         values.work_warehouse_inventory.forEach((row, index) => {
@@ -85,7 +85,7 @@ frappe.listview_settings['Serial No'] = {
                             }
                         });
                 
-                        // Display a single popup if there are missing reasons
+                        // Display a popup if reasons are missing
                         if (showPopup) {
                             frappe.msgprint({
                                 title: __('Missing Fields'),
@@ -93,45 +93,47 @@ frappe.listview_settings['Serial No'] = {
                                 message: __('Reason is mandatory when No is checked in row(s): {0}', [missingReasonRows.join(', ')])
                             });
                         } else {
-                            // Proceed with form submission if all required fields are filled
-                            frappe.call({
-                                method: 'frappe.client.save',
-                                args: {
-                                    doc: {
-                                        doctype: 'Daily Individual Report',
-                                        work_warehouse_inventory: values.work_warehouse_inventory
-                                    }
-                                },
-                                callback: function(r) {
-                                    if (!r.exc) {
-                                        frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(x) {
-                                            if (x && x.work_warehouse) {
-                                                r.message.warehouse = x.work_warehouse;
-                                                
+                            // Fetch the warehouse from the logged-in user's Employee record
+                            frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(x) {
+                                if (x && x.work_warehouse) {
+                                    // Add warehouse to the report before submitting
+                                    values.warehouse = x.work_warehouse;
+                
+                                    // Submit the report
+                                    frappe.call({
+                                        method: 'frappe.client.save',
+                                        args: {
+                                            doc: {
+                                                doctype: 'Daily Individual Report',
+                                                work_warehouse_inventory: values.work_warehouse_inventory,
+                                                warehouse: values.warehouse // Add warehouse value
                                             }
-                                            else{
-                                                frappe.msgprint(__('Please set your Work Warehouse in Employee.'))
+                                        },
+                                        callback: function(r) {
+                                            if (!r.exc) {
+                                                frappe.call({
+                                                    method: 'frappe.client.submit',
+                                                    args: {
+                                                        doc: r.message
+                                                    },
+                                                    callback: function(r) {
+                                                        if (!r.exc) {
+                                                            frappe.msgprint(__('Report submitted successfully.'));
+                                                            dialog.hide();
+                                                        }
+                                                    }
+                                                });
                                             }
-                                        });
-                                        
-                                        frappe.call({
-                                            method: 'frappe.client.submit',
-                                            args: {
-                                                doc: r.message
-                                            },
-                                            callback: function(r) {
-                                                if (!r.exc) {
-                                                    frappe.msgprint(__('Report submitted successfully.'));
-                                                    dialog.hide();
-                                                }
-                                            }
-                                        });
-                                    }
+                                        }
+                                    });
+                                } else {
+                                    frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
                                 }
                             });
                         }
                     }
                 }
+                
                 
             
             });

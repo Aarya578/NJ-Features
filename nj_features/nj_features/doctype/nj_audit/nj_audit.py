@@ -1,75 +1,46 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
+import json
 import frappe
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class NJAudit(Document):
-    def on_submit(self):
-        self.move_all_stock()
+    pass
         
-    def move_all_stock(self):
-        stock_entry_for_material_transfer_or_repack_items = []
-        serial_numbers_seen = set()
-        
-        stock_entry_data = {
-            "stock_entry_type": "Material Transfer",
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items,
-            "series": "STE-AD-.YYYY.-.MM.-",
-            "doctype": self.doctype,
-            "name": self.name,
-        }
-        
-        for row in self.nj_audit_items:
-            if row.s_warehouse != row.t_rack_warehouse:
-                if row.serial_no not in serial_numbers_seen:
-                    stock_entry_for_material_transfer_or_repack_items.append({
-                        "item_code": row.item_code,
-                        "serial_no": row.serial_no,
-                        "s_warehouse": row.s_warehouse,
-                        "t_warehouse": row.t_rack_warehouse
-                    })
-                    serial_numbers_seen.add(row.serial_no)
-        
-        if stock_entry_for_material_transfer_or_repack_items:
-            return stock_entry_using_nj_lib(stock_entry_data)
+@frappe.whitelist()
+def move_all_stock(self):
     
-    # def move_all_stock(self):
-    #     stock_entry_items = []
-    #     if self.accept_rows:
-    #         accept_rows_list = self.accept_rows.split(',')
-    #         accept_rows_set = set(int(idx) for idx in accept_rows_list if idx.strip().isdigit())
-    #     else:
-    #         accept_rows_set = set()
-       
-    #     for idx, row in enumerate(self.nj_audit_items):
-    #         if row.idx in accept_rows_set and row.is_available == 0:
-    #             stock_entry_item = {
-    #                 'item_code': row.item_code,
-    #                 'serial_no': row.serial_no,
-    #                 's_warehouse': row.warehouse,
-    #                 'basic_rate': row.purchase_rate
-    #             }
-    #             if not any(item['serial_no'] == stock_entry_item['serial_no'] for item in stock_entry_items):
-    #                 stock_entry_items.append(stock_entry_item)
-    #     if stock_entry_items != []:
-    #         data = {
-    #             "stock_entry_type": "Material Transfer",
-    #             "t_warehouse": self.work_warehouse,
-    #             "series": "STE-AD-.YYYY.-.MM.-",
-    #             "doctype": self.doctype,
-    #             "name": self.name,
-    #             "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
-    #         }
-    #         stock_entry = stock_entry_using_nj_lib(data)
-            
-    #         if stock_entry:
-    #             for idx, row in enumerate(self.nj_audit_items):
-    #                 if row.idx in accept_rows_set:
-    #                     row.db_set('s_warehouse', self.work_warehouse)
-    #                     row.db_set('t_rack_warehouse', self.audit_warehouse)
- 
+    if isinstance(self, str):
+        self = json.loads(self)
+        
+    stock_entry_for_material_transfer_or_repack_items = []
+    serial_numbers_seen = set()
+    
+    stock_entry_data = {
+        "stock_entry_type": "Material Transfer",
+        "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items,
+        "series": "STE-AD-.YYYY.-.MM.-",
+        "doctype": self.get('doctype'),
+        "name": self.get('name'),
+    }
+    
+    for row in self.get('nj_audit_items'):
+        if row.get('s_warehouse') != row.get('t_rack_warehouse'):
+            if row.get('serial_no') not in serial_numbers_seen:
+                stock_entry_for_material_transfer_or_repack_items.append({
+                    "item_code": row.get('item_code'),
+                    "serial_no": row.get('serial_no'),
+                    "s_warehouse": row.get('s_warehouse'),
+                    "t_warehouse": row.get('t_rack_warehouse')
+                })
+                serial_numbers_seen.add(row.get('serial_no'))
+    
+    if stock_entry_for_material_transfer_or_repack_items:
+        return stock_entry_using_nj_lib(stock_entry_data)
+    return None
+
 @frappe.whitelist()
 def get_work_and_audit_warehouse():
     emp_data = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, ['work_warehouse', 'department'], as_dict=1)
@@ -93,38 +64,6 @@ def get_work_and_audit_warehouse():
         'audit_interval': audit_interval,
         'stock_balance': stock_balance
     }
-
-# @frappe.whitelist()
-# def get_scanned_serial_no_data(serial_no, audit_warehouse):
-#     is_serial_no_exists = frappe.db.exists('Serial No', serial_no)
-#     if is_serial_no_exists:
-#         serial_no_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['name', 'warehouse', 'item_code', 'purchase_rate', 'item_group'], as_dict=1)
-#         ware_house = serial_no_data.get('warehouse')
-#         def check_warehouse(ware_house):
-#             parent_warehouse = frappe.db.get_value('Warehouse', {'name': ware_house}, 'parent_warehouse')
-#             if parent_warehouse == audit_warehouse:
-#                 return [{
-#                     'serial_no': serial_no_data.get('name'),
-#                     'item_code': serial_no_data.get('item_code'),
-#                     'warehouse': serial_no_data.get('warehouse'),
-#                     'purchase_rate': serial_no_data.get('purchase_rate'),
-#                     'item_group': serial_no_data.get('item_group'),
-#                     'is_available': 1
-#                 }]
-#             elif parent_warehouse == '' or parent_warehouse is None:
-#                 return [{
-#                     'serial_no': serial_no_data.get('name'),
-#                     'item_code': serial_no_data.get('item_code'),
-#                     'warehouse': serial_no_data.get('warehouse'),
-#                     'purchase_rate': serial_no_data.get('purchase_rate'),
-#                     'item_group': serial_no_data.get('item_group'),
-#                 }]
-#             return check_warehouse(parent_warehouse)
-#         return check_warehouse(ware_house)
-
-#     else:
-#         return None
-
 
 @frappe.whitelist()
 def update_create_permission(doctype, active_status=None):

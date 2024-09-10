@@ -1,15 +1,6 @@
 frappe.ui.form.on('NJ Audit', {
     onload: function(frm) {
         if (frm.doc.docstatus == 0 && !frm.doc.__islocal && frm.doc.__unsaved) {
-            // frm.fields_dict['nj_audit_items'].grid.wrapper.on('click', '.grid-remove-rows', function() {
-            //     let selectedRows = frm.fields_dict['nj_audit_items'].grid.get_selected_children();
-            //     selectedRows.forEach(row => {
-            //         let accept_rows = frm.doc.accept_rows || "";
-            //         let accept_rows_array = accept_rows.split(',').filter(idx => idx !== row.idx.toString());
-            //         frm.set_value('accept_rows', accept_rows_array.join(','));
-            //     });
-            // });
-            // initializeGridListeners(frm)
             frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
         }
     },
@@ -57,6 +48,8 @@ frappe.ui.form.on('NJ Audit', {
                             else{
                                 frappe.throw("Item Group <b>" + nj_audit_items.item_group + "</b> is not valid");
                             }
+                        } else {
+                            frappe.throw("NJ Settings: <b>Item Group Check</b> is not configured");
                         }
                     });
                     frm.set_value("scan_serial_no", "");
@@ -64,9 +57,31 @@ frappe.ui.form.on('NJ Audit', {
                 }
             })
         }
+    },
+
+    after_save: function(frm) {
+        frappe.call({
+            'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.move_all_stock',
+            'args': {'self': frm.doc },
+            callback: function(r) {
+                if (r && r.message) {
+                    update_nj_audit_items(frm)
+                }
+            }
+        })
     }
-    
 });
+
+function update_nj_audit_items(frm) {
+    frm.doc.nj_audit_items.forEach(function(item) {
+        if (item.s_warehouse !== item.t_rack_warehouse) {
+            frappe.model.set_value(item.doctype, item.name, 's_warehouse', item.t_rack_warehouse);
+        }
+    });
+    
+    frm.refresh_field('nj_audit_items');
+    frm.save()
+}
 
 function fill_audit_and_work_warehouse(frm) {
     

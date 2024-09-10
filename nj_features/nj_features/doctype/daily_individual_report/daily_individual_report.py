@@ -48,7 +48,7 @@ def get_serial_no_data():
 
 @frappe.whitelist()
 def daily_report_not_submitted_warehouses_data():
-    all_warehouse_data = frappe.db.sql("""select name, curdate(),owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
+    all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
     submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
     missing_warehouses = [warehouse for warehouse in all_warehouse_data if warehouse['name'] not in submitted_warehouse_names]
@@ -56,7 +56,7 @@ def daily_report_not_submitted_warehouses_data():
         table_html = "<table border='1' cellpadding='5' cellspacing='0'>"
         table_html += "<tr><th>Date</th><th>Warehouse name</th><th>Owner</th></tr>"
         for warehouse in missing_warehouses:
-            table_html += f"<tr><td>{warehouse['curdate()']}</td><td>{warehouse['name']}</td><td>{warehouse['owner']}</td></tr>"
+            table_html += f"<tr><td>{warehouse['curdate()']}</td><td>{warehouse['name']}</td><td>{warehouse['warehouse_owner']}</td></tr>"
         table_html += "</table>"
         main_mail = frappe.db.get_value("NJ Settings", {"parameter": "main_mail_for_inventory_update_daily"}, "value")
         nj_settings_cc_mails = frappe.db.get_value("NJ Settings", {"parameter": "cc_mails_for_inventory_report_daily"}, "value")

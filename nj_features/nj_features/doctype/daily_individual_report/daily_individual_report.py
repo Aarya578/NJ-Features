@@ -68,7 +68,6 @@ def daily_report_not_submitted_warehouses_data():
 
 @frappe.whitelist()
 def all_no_selected_serial_no_data():
-    # Fetch data from the database
     data = frappe.db.sql("""
         SELECT DATE(creation) AS creation_date ,serial_no, reason, owner 
         FROM `tabWork Warehouse Inventory` 
@@ -77,7 +76,6 @@ def all_no_selected_serial_no_data():
         AND no = 1
     """, as_dict=1)
 
-    # Format the data as an HTML table
     if data:
         table_content = "<table border='1' cellpadding='5' cellspacing='0'>"
         table_content += "<tr><th>Date</th><th>Serial No</th><th>Reason</th><th>User</th></tr>"

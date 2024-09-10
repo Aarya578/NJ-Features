@@ -1,4 +1,9 @@
 from . import __version__ as app_version
+from nj_features.nj_features.doctype.daily_individual_report.daily_individual_report import (
+    all_no_selected_serial_no_data,
+    daily_report_not_submitted_warehouses_data
+)
+
 
 app_name = "nj_features"
 app_title = "NJ Features"
@@ -165,6 +170,16 @@ doc_events = {
 # 		]
 # 	}
 # }
+scheduler_events = {
+	"cron": {
+		"0 20 * * *": [
+			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
+			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data"
+		]
+	}
+}
+
+
 # Testing
 # -------
 

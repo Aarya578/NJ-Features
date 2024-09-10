@@ -396,7 +396,6 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     
-    
 	onload_post_render: function(frm) {
         // console.log("empty error ", cur_frm.doc.error_message);
         if (cur_frm.doc.error_message == "") {

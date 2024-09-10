@@ -20,7 +20,6 @@
   "warehouse",
   "raw_data",
   "base_price",
-  "item_template",
   "backup_duration",
   "column_break_5mcw7",
   "created",
@@ -36,8 +35,9 @@
   "item_code",
   "column_break_qzvyk",
   "model",
+  "column_break_kcjxr",
+  "item_template",
   "error_section_section",
-  "section_break_aggsk",
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
@@ -122,9 +122,7 @@
   {
    "fieldname": "item_template",
    "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Item Template",
-   "permlevel": 1
+   "label": "Item Template"
   },
   {
    "fieldname": "column_break_qzvyk",
@@ -231,10 +229,6 @@
    "options": "Item"
   },
   {
-   "fieldname": "section_break_aggsk",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "inspection_type",
    "fieldtype": "Link",
    "label": "Inspection Type",
@@ -251,6 +245,10 @@
    "label": "Backup Duration"
   },
   {
+   "fieldname": "column_break_kcjxr",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "error_section_section",
    "fieldtype": "Column Break",
    "hidden": 1
@@ -259,7 +257,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-05 18:52:03.668131",
+ "modified": "2024-09-10 19:12:17.560625",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

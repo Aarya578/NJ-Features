@@ -4,7 +4,11 @@ frappe.ui.form.on('Serial No', {
         frm.add_custom_button(__('Print QR Code'), function() {
             var docname = encodeURIComponent(frm.doc.name);
             var format = "Serial No Barcode";
-            var print_trigger = 1;
+            var print_trigger = 0;
+
+            console.log("frm.doc.qr_print_count", frm.doc.qr_print_count);
+            console.log("frm.doc.name", frm.doc.name);
+            console.log("docname", docname);
 
             frappe.call({
                 method: 'nj_features.qr_code.generate_and_save_qrcode',
@@ -45,35 +49,26 @@ frappe.ui.form.on('Serial No', {
                             ], function(values) {
                                 let reason = values.reason;
                                 let comment = values.comment;
-                                cur_frm.timeline.insert_comment(frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment);
+
                                 frappe.call({
                                     method: "frappe.desk.form.utils.add_comment",
                                     args: {
                                         reference_doctype: frm.doctype,
-                                        reference_name: frm.docname,
-                                        content: frappe.session.user+' has taken 1 copy. \nReason: '+reason+'\nComment: '+comment,
+                                        reference_name: frm.doc.name,
+                                        content: frappe.session.user + ' has taken 1 copy. \nReason: ' + reason + '\nComment: ' + comment,
                                         comment_email: frappe.session.user,
                                         comment_by: frappe.session.user_fullname,
                                     }
                                 });
-                                window.open(frappe.urllib.get_full_url("/printview?" +
-                                "doctype=" + encodeURIComponent("Serial No") +
-                                "&name=" + docname +
-                                "&trigger_print=" + print_trigger +
-                                "&format=" + format +
-                                "&no_letterhead=0" +
-                                "&_lang=" + (frappe.boot.lang || "en")));
+
+                                frappe.msgprint({
+                                    title: __('Reason Submitted'),
+                                    indicator: 'green',
+                                    message: __('Reason and Comment have been submitted successfully.')
+                                });
+
                                 frm.reload_doc(); 
                             });
-                        } else {
-                            window.open(frappe.urllib.get_full_url("/printview?" +
-                            "doctype=" + encodeURIComponent("Serial No") +
-                            "&name=" + docname +
-                            "&trigger_print=" + print_trigger +
-                            "&format=" + format +
-                            "&no_letterhead=0" +
-                            "&_lang=" + (frappe.boot.lang || "en")));
-                            frm.reload_doc(); 
                         }
                     }
                 });

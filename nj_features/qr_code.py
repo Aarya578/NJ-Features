@@ -57,3 +57,24 @@ def generate_and_save_qrcode(data, format='png'):
     
     except Exception as e:
         return f"Error in generating QR code: {e}"
+    
+@frappe.whitelist()
+def get_print_format_role():
+    try:
+        user = frappe.session.user
+        if not user:
+            raise ValueError("User is not logged in.")
+        user_id = frappe.db.get_value('User', {'name': user}, 'name')
+        if not user_id:
+            raise ValueError(f"No user found with email: {user}")
+        query = """
+            SELECT role
+            FROM `tabHas Role`
+            WHERE parent = %s
+        """
+        roles = frappe.db.sql(query, user_id, as_dict=True)
+        role_list = [role['role'] for role in roles]
+        return True if 'Print Format' in role_list else False
+    except Exception as e:
+        frappe.log_error(f"Error in get_print_format_role: {str(e)}")
+        return []

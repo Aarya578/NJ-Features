@@ -60,10 +60,13 @@ def get_inspection_type():
     inspection_type= frappe.db.get_value('Department', {'name': department}, 'inspection_type')
     if inspection_type:
         return inspection_type
+    
 
 def open_draft_qi(self):
     # user_email = frappe.session
     inspection_type = get_inspection_type()
+    if not inspection_type:
+        inspection_type = self.inspection_type
     print("get_inspection_type--------63",inspection_type)
     self.inspection_type = inspection_type
     existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)

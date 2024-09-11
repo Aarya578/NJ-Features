@@ -29,6 +29,7 @@ def fetch_data_imports():
     }
 
     data_imports.sort(key=lambda x: sort_order.get(x['status'].lower(), 4))
+    daily_report_not_submitted_warehouses_data_to_send_personal_mail()
     return data_imports
 
 
@@ -44,6 +45,18 @@ def get_serial_no_data():
         fields=['item_code', 'serial_no']
     )
     return serial_no_data
+
+@frappe.whitelist()
+def daily_report_not_submitted_warehouses_data_to_send_personal_mail():
+    all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
+    submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
+    submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
+    missing_warehouses_mails = [mail['warehouse_owner'] for mail in all_warehouse_data if mail['name'] not in submitted_warehouse_names]
+    print('missing warehouses ==================', missing_warehouses_mails)
+    new_mail = ['vishnudandu5366@gmail.com','itsupport@newjaisa.com']
+    print('mails are stared sending wait for few minutes=====================================')
+    for mail in new_mail:
+        send_email_to_user(mail, 'Daily Report Not Submitted', 'Daily Report Not Submitted')
 
 
 @frappe.whitelist()

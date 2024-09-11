@@ -106,11 +106,11 @@ frappe.ui.form.on('NJQCA', {
                     console.log("Serial No found with this BIOS serial number.");
                 } else {
                     console.log("No Serial No found with this BIOS serial number.");
+                    frm.trigger("model");
                 }
             });      
         }
         
-        frm.trigger("model");
         
     },
     refresh: function(frm) {
@@ -325,6 +325,7 @@ frappe.ui.form.on('NJQCA', {
                             if (itemTemplates.length == 1) {
                                 cur_frm.set_value('item_template', itemTemplates[0]);
                                 cur_frm.set_df_property('item_template', 'read_only', 1);
+                                // cur_frm.save()
     
                                 $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
                                     'border-radius': '0.25rem',
@@ -343,6 +344,7 @@ frappe.ui.form.on('NJQCA', {
                                 cur_frm.set_df_property('item_template', 'read_only', 0);
                                 var wizardList = r.message.wizard_list || [];
                                 cur_frm.set_df_property('item_template', 'options', itemTemplates);
+                                // cur_frm.save()
                                 $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
                                     'border-radius': '0.25rem',
                                     'border': '2px solid rgba(173, 216, 230, 0.5)'  

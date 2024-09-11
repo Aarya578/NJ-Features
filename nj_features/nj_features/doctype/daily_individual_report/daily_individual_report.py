@@ -29,7 +29,6 @@ def fetch_data_imports():
     }
 
     data_imports.sort(key=lambda x: sort_order.get(x['status'].lower(), 4))
-    daily_report_not_submitted_warehouses_data_to_send_personal_mail()
     return data_imports
 
 
@@ -47,7 +46,7 @@ def get_serial_no_data():
     return serial_no_data
 
 @frappe.whitelist()
-def daily_report_not_submitted_warehouses_data_to_send_personal_mail():
+def daily_report_to_send_personal_mail():
     all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
     submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]

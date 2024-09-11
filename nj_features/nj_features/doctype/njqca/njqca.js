@@ -305,11 +305,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
-    
-        console.log("selectedModel", selectedModel);
-        console.log("selectedBrand", selectedBrand);
-        console.log("selectedGroup", selectedItemGroup);
-    
+
         if (selectedModel && selectedBrand) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
@@ -323,7 +319,6 @@ frappe.ui.form.on('NJQCA', {
                         console.log("get_part_mapping", r.message);
     
                         var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
-                        console.log("item_template", itemTemplates);
     
                         if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
                             cur_frm.set_value('item_template', '');

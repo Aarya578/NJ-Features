@@ -558,7 +558,7 @@ def get_item_code_for_each_part(part_item_group,doc):
         if part_item_group != doc.item_group :
             return part_data    
         if part_item_group == doc.item_group :
-            item_template = f"S-{doc.brand} {doc.model}"
+            item_template = doc.get('item_template')
             item_template_exists = frappe.db.get_value('Item',{'item_name':item_template,'item_group':part_item_group,'has_variants':1},'name')
             if item_template_exists:
                 consolidated = consolidate_ram_capacities(child_attr_data)

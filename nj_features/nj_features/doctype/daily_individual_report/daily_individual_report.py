@@ -51,11 +51,8 @@ def daily_report_to_send_personal_mail():
     submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
     missing_warehouses_mails = [mail['warehouse_owner'] for mail in all_warehouse_data if mail['name'] not in submitted_warehouse_names]
-    print('missing warehouses ==================', missing_warehouses_mails)
-    new_mail = ['vishnudandu5366@gmail.com','itsupport@newjaisa.com']
-    print('mails are stared sending wait for few minutes=====================================')
-    for mail in new_mail:
-        send_email_to_user(mail, 'Daily Report Not Submitted', 'Daily Report Not Submitted')
+    for mail in missing_warehouses_mails:
+        send_email_to_user(mail, 'Inventory Not Updated', 'Please check that you have not submitted your Inventory report in Serial NO. Thank you.')
 
 
 @frappe.whitelist()
@@ -74,8 +71,8 @@ def daily_report_not_submitted_warehouses_data():
         nj_settings_cc_mails = frappe.db.get_value("NJ Settings", {"parameter": "cc_mails_for_inventory_report_daily"}, "value")
         recipient_email = main_mail
         cc_emails = nj_settings_cc_mails.split(",")
-        subject = "Daily Report: Missing Warehouses"
-        message = f"<p>The following warehouses have not submitted their daily reports:</p>{table_html}"
+        subject = "Inventory Not Updated"
+        message = f"<p>The following warehouses have not submitted their Inventory:</p>{table_html}"
         send_email_to_user(recipient_email, subject, message, cc_emails=cc_emails)
 
 @frappe.whitelist()
@@ -104,8 +101,8 @@ def all_no_selected_serial_no_data():
     cc_emails = nj_settings_cc_mails.split(",")
     send_email_to_user(
         recipient_email=main_mail, 
-        subject="Not Selected Serial No Data", 
-        message=f"<p>The following data is not selected:</p>{table_content}",
+        subject="Not Found Serial No in Inventory", 
+        message=f"<p>The following data is not found:</p>{table_content}",
         cc_emails=cc_emails
     )
 

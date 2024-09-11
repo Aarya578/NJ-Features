@@ -345,6 +345,7 @@ frappe.ui.form.on('NJQCA', {
                                     $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
                                 }
                             } else {
+                                cur_frm.set_df_property('item_template', 'read_only', 0);
                                 var wizardList = r.message.wizard_list || [];
                                 cur_frm.set_df_property('item_template', 'options', itemTemplates);
                                 $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
@@ -369,6 +370,7 @@ frappe.ui.form.on('NJQCA', {
                             }
                             frm.refresh_field('item_template');
                         } else {
+                            cur_frm.set_df_property('item_template', 'read_only', 0);
                             console.log("No item templates found.");
                             cur_frm.set_value('item_template', '');
                             cur_frm.set_df_property('item_template', 'options', []);

@@ -37,7 +37,6 @@
   "model",
   "column_break_kcjxr",
   "item_template",
-  "error_section_section",
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
@@ -247,17 +246,12 @@
   {
    "fieldname": "column_break_kcjxr",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "error_section_section",
-   "fieldtype": "Column Break",
-   "hidden": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-10 19:12:17.560625",
+ "modified": "2024-09-11 12:09:35.629694",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

@@ -305,11 +305,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
-    
-        console.log("selectedModel", selectedModel);
-        console.log("selectedBrand", selectedBrand);
-        console.log("selectedGroup", selectedItemGroup);
-    
+
         if (selectedModel && selectedBrand) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
@@ -323,7 +319,6 @@ frappe.ui.form.on('NJQCA', {
                         console.log("get_part_mapping", r.message);
     
                         var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
-                        console.log("item_template", itemTemplates);
     
                         if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
                             cur_frm.set_value('item_template', '');
@@ -345,6 +340,7 @@ frappe.ui.form.on('NJQCA', {
                                     $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
                                 }
                             } else {
+                                cur_frm.set_df_property('item_template', 'read_only', 0);
                                 var wizardList = r.message.wizard_list || [];
                                 cur_frm.set_df_property('item_template', 'options', itemTemplates);
                                 $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
@@ -369,6 +365,7 @@ frappe.ui.form.on('NJQCA', {
                             }
                             frm.refresh_field('item_template');
                         } else {
+                            cur_frm.set_df_property('item_template', 'read_only', 0);
                             console.log("No item templates found.");
                             cur_frm.set_value('item_template', '');
                             cur_frm.set_df_property('item_template', 'options', []);
@@ -395,7 +392,6 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_message', 'hidden', 0);
         }
     },
-    
     
 	onload_post_render: function(frm) {
         // console.log("empty error ", cur_frm.doc.error_message);

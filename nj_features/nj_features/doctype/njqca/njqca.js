@@ -22,7 +22,6 @@ frappe.ui.form.on('NJQCA', {
             
             var row = locals[cdt][cdn];
 
-            console.log('row value is ',row);
             if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
                 return {
                     filters: {
@@ -99,7 +98,6 @@ frappe.ui.form.on('NJQCA', {
                     frm.set_value("model", r.model);
                     frappe.db.get_value('Item', {'item_code': r.item_code}, ['variant_of'], (r) => {
                         if (r && r.variant_of) {
-                            console.log('item template is ===============',r.variant_of);
                             frm.set_value("item_template", r.variant_of);
                             frm.set_df_property('item_template', 'read_only', 1);
                             frm.save();
@@ -213,7 +211,6 @@ frappe.ui.form.on('NJQCA', {
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
                     
-                    console.log("get_info_from_serial_no==========",r.message.model);
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
                     if(!r.message.brand){
                         
@@ -234,7 +231,6 @@ frappe.ui.form.on('NJQCA', {
                             frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
                         }
                         else if (r.work_warehouse != ware) {
-                            console.log("79 work warehouse: ", r.work_warehouse)
                             let d = frappe.confirm(
                                 `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
                                 () => {
@@ -255,7 +251,6 @@ frappe.ui.form.on('NJQCA', {
                                         "doctype": frm.doc.doctype,
                                         "stock_entry_for_material_transfer_or_repack_items": stock_repack_item,
                                     }
-                                    console.log("data", data);
                                     frappe.call({
                                         method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
                                         args: { 'data': JSON.stringify(data) },
@@ -263,7 +258,6 @@ frappe.ui.form.on('NJQCA', {
                                             console.log(err);
                                         }
                                     })
-                                    console.log('r value is ', r)
                                     console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
                                     frm.set_value('warehouse', r.work_warehouse)
                                     d.hide()
@@ -318,7 +312,6 @@ frappe.ui.form.on('NJQCA', {
                 },
                 callback: function(r) {
                     if (r.message) {
-                        console.log("get_part_mapping", r.message);
     
                         var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
     
@@ -370,7 +363,6 @@ frappe.ui.form.on('NJQCA', {
                             frm.refresh_field('item_template');
                         } else {
                             cur_frm.set_df_property('item_template', 'read_only', 0);
-                            console.log("No item templates found.");
                             cur_frm.set_value('item_template', '');
                             cur_frm.set_df_property('item_template', 'options', []);
                             
@@ -536,7 +528,6 @@ frappe.ui.form.on('NJQCA', {
                         }
         
                         if (!r.message.model) {
-                            console.log("model exist", r.message.model);
                             dbError.push("Model: "+cur_frm.doc.model);
                         }
         
@@ -577,7 +568,6 @@ frappe.ui.form.on('NJQCA', {
 
     before_save: function(frm) {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
-            console.log("Calling the get_part_mapping function");
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
                 args: { 
@@ -587,9 +577,7 @@ frappe.ui.form.on('NJQCA', {
                     'item_template': cur_frm.doc.item_template
                 },
                 callback: function (r) {
-                    console.log("on save", r);
                     if (r.message.error) {
-                        console.log("Error came");
                         frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
                         frappe.validated = false ;
                     } 
@@ -631,14 +619,12 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     after_save:function(frm){
-        console.log("Calling the before_save_njqca function");
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
             args: {
                 'docname': cur_frm.doc.name
             },
             callback: function(r) {
-                console.log("After save response",r);
                 if (r.message) {
                     console.log("after save njqca method executed successfully.");
                 }

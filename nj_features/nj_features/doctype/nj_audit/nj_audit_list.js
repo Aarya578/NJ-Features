@@ -65,6 +65,12 @@ frappe.listview_settings['NJ Audit'] = {
                     args: {},
                     callback: function(response) {
                         console.log('response=======after mail button click==========',response);
+                        frappe.call({
+                            method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.mail_data_for_not_scan_serial_no_report',
+                            args: {
+                                'data': JSON.stringify(response.message)
+                            },
+                        })
                     }
                 });
             }).addClass('btn-primary');

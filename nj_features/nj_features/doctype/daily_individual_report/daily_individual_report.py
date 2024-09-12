@@ -1,6 +1,7 @@
 import frappe
 from frappe.utils import nowdate, add_days
 from frappe.model.document import Document
+import json
 
 class DailyIndividualReport(Document):
     pass
@@ -44,6 +45,22 @@ def get_serial_no_data():
         fields=['item_code', 'serial_no']
     )
     return serial_no_data
+
+@frappe.whitelist()
+def mail_data_for_not_scan_serial_no_report(data):
+    data = json.loads(data)
+    if data[1]:
+        table_html = "<table border='1' cellpadding='5' cellspacing='0'>"
+        table_html += "<tr><th>Serial No</th><th>Warehouse</th><th>Audit Warehouse</th><th>Item Group</th><th>Item Code</th></tr>"
+        for val in data[1]:
+            table_html += f"<tr><td>{val['name']}</td><td>{val['warehouse']}</td><td>{val['audit_warehouse']}</td><td>{val['item_group']}</td><td>{val['item_code']}</td></tr>"
+        table_html += "</table>"
+        recipient_email = frappe.db.get_value("NJ Settings", {"parameter": "main_mail_for_inventory_update_daily"}, "value")
+        nj_settings_cc_mails = frappe.db.get_value("NJ Settings", {"parameter": "cc_mails_for_inventory_report_daily"}, "value")
+        cc_emails = nj_settings_cc_mails.split(",")
+        subject = "Not Scanned Serial No. Report"
+        message = f"<p>The following serial numbers are not scanned:</p>{table_html}"
+        send_email_to_user(recipient_email, subject, message, cc_emails=cc_emails)
 
 @frappe.whitelist()
 def daily_report_to_send_personal_mail():

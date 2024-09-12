@@ -10,7 +10,8 @@
   "item_group",
   "s_warehouse",
   "t_rack_warehouse",
-  "purchase_rate"
+  "purchase_rate",
+  "parent_warehouse"
  ],
  "fields": [
   {
@@ -70,11 +71,17 @@
    "label": "Item Group",
    "options": "Item Group",
    "read_only": 1
+  },
+  {
+   "fieldname": "parent_warehouse",
+   "fieldtype": "Link",
+   "label": "Parent Warehouse",
+   "options": "Warehouse"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-09-10 17:28:35.536230",
+ "modified": "2024-09-12 14:51:51.522991",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

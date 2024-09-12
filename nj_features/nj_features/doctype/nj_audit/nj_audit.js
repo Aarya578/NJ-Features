@@ -34,7 +34,8 @@ frappe.ui.form.on('NJ Audit', {
                         "item_group": r.item_group,
                         "s_warehouse": r.warehouse, 
                         "purchase_rate": r.purchase_rate,
-                        "t_rack_warehouse": frm.doc.scan_rack
+                        "t_rack_warehouse": frm.doc.scan_rack,
+                        "parent_warehouse": frm.doc.audit_warehouse
                     };
                     frappe.db.get_value('NJ Settings', {'parameter': 'Item Group Check'}, 'value', function(response) {
                         if (response && response.value){

@@ -99,7 +99,9 @@ frappe.ui.form.on('NJQCA', {
                     frm.set_value("model", r.model);
                     frappe.db.get_value('Item', {'item_code': r.item_code}, ['variant_of'], (r) => {
                         if (r && r.variant_of) {
+                            console.log('item template is ===============',r.variant_of);
                             frm.set_value("item_template", r.variant_of);
+                            frm.set_df_property('item_template', 'read_only', 1);
                             frm.save();
                         }
                     })
@@ -581,7 +583,8 @@ frappe.ui.form.on('NJQCA', {
                 args: { 
                     'item_group': cur_frm.doc.item_group,
                     'docname': cur_frm.doc.name,
-                    'model':cur_frm.doc.model
+                    'model':cur_frm.doc.model,
+                    'item_template': cur_frm.doc.item_template
                 },
                 callback: function (r) {
                     console.log("on save", r);

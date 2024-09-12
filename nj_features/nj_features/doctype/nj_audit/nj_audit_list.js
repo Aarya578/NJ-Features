@@ -54,8 +54,19 @@ frappe.listview_settings['NJ Audit'] = {
             listview.page.add_inner_button("Duplicate Serial No Report", function() {
                 frappe.set_route(["query-report", "NJ Audit Report"]);
             }).addClass('btn-primary');
+
             listview.page.add_inner_button("Not Scan Serial NO", function() {
                 frappe.set_route(["query-report", "Not Scan Serial No Report"]);
+            }).addClass('btn-primary');
+            
+            listview.page.add_inner_button("Mail", function() {
+                frappe.call({
+                    method: 'nj_features.nj_features.report.not_scan_serial_no_report.not_scan_serial_no_report.execute',
+                    args: {},
+                    callback: function(response) {
+                        console.log('response=======after mail button click==========',response);
+                    }
+                });
             }).addClass('btn-primary');
         }
 

@@ -502,6 +502,7 @@ def get_info_from_serial_no(doc=None):
 
 
 def get_item_code_for_each_part(part_item_group,doc):
+    print(f'doc ------ {doc.as_dict()}')
     try:
         item_template = ''
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": part_item_group}, 
@@ -563,6 +564,7 @@ def get_item_code_for_each_part(part_item_group,doc):
         if part_item_group == doc.item_group :
             item_template = doc.get('item_template')
             item_template_exists = frappe.db.get_value('Item',{'item_name':item_template,'item_group':part_item_group,'has_variants':1},'name')
+            print(f'item_template_exists -------- {item_template_exists}')
             if item_template_exists:
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
@@ -573,9 +575,10 @@ def get_item_code_for_each_part(part_item_group,doc):
     except Exception as e:
         return {"Error": f"Error raised {str(e)}"}
 @frappe.whitelist()
-def get_part_mapping(item_group, docname,model):
+def get_part_mapping(item_group, docname,model,item_template):
     doc = frappe.get_doc("NJQCA", docname)
     doc.model = model
+    doc.item_template = item_template
     part_data = []
     if doc.njqca_item_component and doc.item_group:
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": item_group}, 
@@ -594,9 +597,6 @@ def get_part_mapping(item_group, docname,model):
         repack_item_code['part_data'] = json.dumps(part_data)
         return repack_item_code
 
-        
-        
-     
 
 def consolidate_ram_capacities(data):
     consolidated_data = {}

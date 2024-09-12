@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 
-
+@frappe.whitelist()
 def execute(filters=None):
 	columns, data = [], []
 	grand_child_warehouse=[]
@@ -16,6 +16,7 @@ def execute(filters=None):
 		{"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
 	]
 	audit_warehouses_data = frappe.db.sql("""select distinct parent_warehouse from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict = 1)
+	print('audit_warehouses_data==================',audit_warehouses_data)
 	for audit_warehouse in audit_warehouses_data:
 		warehouses_data = set()
 		warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': audit_warehouse['parent_warehouse']}, pluck='name'))
@@ -45,7 +46,5 @@ def execute(filters=None):
 		serial_no_from_nj_audit = frappe.db.sql("""select serial_no from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict=1)
 		serial_no_audit_set = {item['serial_no'] for item in serial_no_from_nj_audit}
 		data.extend([item for item in serial_no_data if item['name'] not in serial_no_audit_set])
-		
+	print('execute function of not_scan_serial_no_report',columns,data)	
 	return columns, data
-
-

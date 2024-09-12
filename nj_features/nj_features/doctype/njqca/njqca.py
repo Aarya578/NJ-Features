@@ -502,7 +502,6 @@ def get_info_from_serial_no(doc=None):
 
 
 def get_item_code_for_each_part(part_item_group,doc):
-    print(f'doc ------ {doc.as_dict()}')
     try:
         item_template = ''
         part_mapping = frappe.get_all("Part Mapping", filters={"parent": part_item_group}, 
@@ -564,7 +563,6 @@ def get_item_code_for_each_part(part_item_group,doc):
         if part_item_group == doc.item_group :
             item_template = doc.get('item_template')
             item_template_exists = frappe.db.get_value('Item',{'item_name':item_template,'item_group':part_item_group,'has_variants':1},'name')
-            print(f'item_template_exists -------- {item_template_exists}')
             if item_template_exists:
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 repack_item_code = get_variant_from_value(item_template, consolidated)

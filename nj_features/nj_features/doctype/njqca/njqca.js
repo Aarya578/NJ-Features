@@ -231,41 +231,47 @@ frappe.ui.form.on('NJQCA', {
                             frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
                         }
                         else if (r.work_warehouse != ware) {
-                            let d = frappe.confirm(
-                                `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
-                                () => {
-                                    
-                                    let stock_repack_item = [{
-                                        'item_code': frm.doc.item_code,
-                                        'basic_rate': frm.doc.base_price,
-                                        'serial_no': frm.doc.serial_no
-                                    }];
-                                    
-                                    let data = {
-                                        "serial_no": frm.doc.serial_no,
-                                        "stock_entry_type": "Material Transfer",
-                                        "s_warehouse": frm.doc.warehouse,
-                                        "t_warehouse": r.work_warehouse,
-                                        "series": "NJ-STE-NJQCA-",
-                                        "reference_serial_no": frm.doc.serial_no,
-                                        "doctype": frm.doc.doctype,
-                                        "stock_entry_for_material_transfer_or_repack_items": stock_repack_item,
+                            if(frm.doc.bios_serialno){
+                                frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name'], (r) => {
+                                    if (!r && !r.name) {
+                                        let d = frappe.confirm(
+                                            `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
+                                            () => {
+                                                
+                                                let stock_repack_item = [{
+                                                    'item_code': frm.doc.item_code,
+                                                    'basic_rate': frm.doc.base_price,
+                                                    'serial_no': frm.doc.serial_no
+                                                }];
+                                                
+                                                let data = {
+                                                    "serial_no": frm.doc.serial_no,
+                                                    "stock_entry_type": "Material Transfer",
+                                                    "s_warehouse": frm.doc.warehouse,
+                                                    "t_warehouse": r.work_warehouse,
+                                                    "series": "NJ-STE-NJQCA-",
+                                                    "reference_serial_no": frm.doc.serial_no,
+                                                    "doctype": frm.doc.doctype,
+                                                    "stock_entry_for_material_transfer_or_repack_items": stock_repack_item,
+                                                }
+                                                frappe.call({
+                                                    method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+                                                    args: { 'data': JSON.stringify(data) },
+                                                    error: function(err) {
+                                                        console.log(err);
+                                                    }
+                                                })
+                                                console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
+                                                frm.set_value('warehouse', r.work_warehouse)
+                                                d.hide()
+                                            },
+                                            () => {
+                                                $('.primary-action').hide()
+                                            }
+                                        );
                                     }
-                                    frappe.call({
-                                        method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
-                                        args: { 'data': JSON.stringify(data) },
-                                        error: function(err) {
-                                            console.log(err);
-                                        }
-                                    })
-                                    console.log("work warehouse: ", r.work_warehouse, "| ware from serial no: ", ware);
-                                    frm.set_value('warehouse', r.work_warehouse)
-                                    d.hide()
-                                },
-                                () => {
-                                    $('.primary-action').hide()
-                                }
-                            );
+                                })
+                            }
                         }
                     })
                     if(cur_frm.doc.model && cur_frm.doc.model != r.message.model){

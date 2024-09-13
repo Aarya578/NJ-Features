@@ -10,21 +10,19 @@
  "field_order": [
   "njqca_information_section",
   "power_on",
-  "purchase_order",
-  "purchase_price",
-  "purchase_receipt",
   "serial_no",
-  "inspection_type",
   "bios_serialno",
+  "inspection_type",
+  "column_break_ex7uj",
   "item_group",
   "warehouse",
+  "brand",
   "raw_data",
   "base_price",
   "backup_duration",
   "column_break_5mcw7",
   "created",
   "data_attr",
-  "brand",
   "make",
   "manufacturer_model",
   "repack_item_code",
@@ -59,35 +57,15 @@
    "read_only": 1
   },
   {
-   "fieldname": "purchase_order",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Purchase Order",
-   "options": "Purchase Order"
-  },
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price",
-   "precision": "2"
-  },
-  {
    "fieldname": "item_code",
-   "fieldtype": "Data",
-   "label": "PR Item",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
    "read_only": 1
   },
   {
    "fieldname": "column_break_5mcw7",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "purchase_receipt",
-   "fieldtype": "Link",
-   "label": "Purchase Receipt",
-   "options": "Purchase Receipt",
-   "read_only": 1
   },
   {
    "fieldname": "base_price",
@@ -246,12 +224,16 @@
   {
    "fieldname": "column_break_kcjxr",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ex7uj",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-11 16:28:21.753713",
+ "modified": "2024-09-12 17:21:34.613888",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

@@ -8,6 +8,7 @@ from frappe import _
 def execute(filters=None):
 	columns, data = [], []
 	grand_child_warehouse=[]
+	item_group_check = []
 	columns = [
 		{"label": _("Serial No"), "fieldname": "name", "fieldtype": "Link", "options": "Serial No"},
 		{"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse"},
@@ -15,6 +16,8 @@ def execute(filters=None):
 		{"label": _("Item Group"), "fieldname": "item_group", "fieldtype": "Link", "options": "Item Group"},
 		{"label": _("Item Code"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item"},
 	]
+	item_group_data = frappe.db.get_value('NJ Settings',{'parameter':'Item Group Check'},'value')
+	item_group_check = item_group_data.split(",")
 	audit_warehouses_data = frappe.db.sql("""select distinct parent_warehouse from `tabNJ Audit Items` where docstatus='1' and DATE(creation) = (SELECT DATE(MAX(creation)) FROM `tabNJ Audit`)""",as_dict = 1)
 	for audit_warehouse in audit_warehouses_data:
 		warehouses_data = set()
@@ -38,7 +41,14 @@ def execute(filters=None):
 		new_grand_warehouse = list(set(new_grand_warehouse))
 		serial_no_data = []
 		for warehouses in new_grand_warehouse:
-			serial_num_data  = frappe.db.get_all("Serial No",{'warehouse' : warehouses},{'name','warehouse','item_group','item_code'})
+			serial_num_data = frappe.db.get_all(
+    			"Serial No", 
+    			filters={
+        		'warehouse': warehouses, 
+        		'item_group': ['in', item_group_check]
+    			}, 
+    			fields=['name', 'warehouse', 'item_group', 'item_code']
+			)
 			for serial_num in serial_num_data:
 				serial_num['audit_warehouse'] = audit_warehouse.get('parent_warehouse')
 			serial_no_data.extend(serial_num_data)

@@ -60,6 +60,17 @@ frappe.ui.form.on('NJ Audit', {
         }
     },
 
+    scan_rack: function (frm) {
+        if (frm.doc.scan_rack != '') {
+            frappe.db.get_value('Warehouse', { 'name': frm.doc.scan_rack }, 'name', function(r) {
+                if (r.name != frm.doc.scan_rack) {
+                    frm.set_value("scan_rack", r.name);
+                    frm.refresh_field("scan_rack");
+                }
+            })
+        }
+    },
+
     after_save: function(frm) {
         frappe.call({
             'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.move_all_stock',

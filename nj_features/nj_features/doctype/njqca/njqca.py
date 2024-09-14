@@ -1,16 +1,15 @@
-import json
-import random
-import frappe
-from frappe import _
-import datetime
-# import frappe.frappe
-from frappe.model.document import Document
 import re
-from nj_p1_features.overrides.serial_no import update_component_in_serial_no
+import json
+import frappe
+import random
+import datetime
+from frappe import _
+from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
+from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 
 logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
@@ -844,12 +843,9 @@ def get_backup_duration(parent_name, item_group):
     
         else:
             return None , None
-        
-     
-    
     
 @frappe.whitelist()
-def get_njqca_item_template(item_group, brand, model, serial_no=None):
+def get_njqca_item_template(item_group, brand, model):
     wizard_list = ''
     item_template = get_item_template(brand, model, item_group)
     if item_template:

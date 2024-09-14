@@ -69,6 +69,24 @@ frappe.ui.form.on('NJ Audit', {
                 }
             })
         }
+        if(frm.doc.scan_rack) {
+            frappe.call({
+                'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_rack_balance',
+                'args': {
+                    'rack_name': frm.doc.scan_rack
+                },
+                callback: function(r) {
+                    if (r && r.message) {
+                        frm.set_value('rack_balance', r.message)
+                        frm.refresh_field('rack_balance')
+                    }
+                    else{
+                        frm.set_value('rack_balance', 0)
+                        frm.refresh_field('rack_balance')
+                    }
+                }
+            })
+        }
     },
 
     after_save: function(frm) {

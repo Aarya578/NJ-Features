@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "serial_no",
-  "sidn",
+  "sales_invoice",
   "delivery_note",
   "si_status",
   "dn_status"
@@ -21,15 +21,9 @@
    "options": "Serial No"
   },
   {
-   "fieldname": "sidn",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Sales Invoice",
-   "options": "Sales Invoice"
-  },
-  {
    "fieldname": "delivery_note",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Delivery Note",
    "options": "Delivery Note"
   },
@@ -42,13 +36,21 @@
   {
    "fieldname": "dn_status",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "DN Status"
+  },
+  {
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Invoice",
+   "options": "Sales Invoice"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-09-13 17:56:07.118222",
+ "modified": "2024-09-14 12:16:34.066109",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

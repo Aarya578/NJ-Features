@@ -14,6 +14,7 @@
   "audit_warehouse",
   "work_warehouse",
   "accept_rows",
+  "rack_balance",
   "stock_balance",
   "serial_no_count",
   "section_break_dsalw",
@@ -108,15 +109,20 @@
   },
   {
    "fieldname": "scan_rack",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Scan Rack",
-   "options": "Barcode",
+   "options": "Warehouse",
    "reqd": 1
+  },
+  {
+   "fieldname": "rack_balance",
+   "fieldtype": "Data",
+   "label": "Rack Balance"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-13 11:39:14.720689",
+ "modified": "2024-09-14 15:02:45.339073",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",

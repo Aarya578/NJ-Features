@@ -6,3 +6,6 @@ from frappe.model.document import Document
 
 class DispatchSecurityCheckpoints(Document):
 	pass
+
+@frappe.whitelist()
+def scan_serial_no_data():

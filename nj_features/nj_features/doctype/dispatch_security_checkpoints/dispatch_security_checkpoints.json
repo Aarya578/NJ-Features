@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2024-09-13 16:01:07.712246",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "scan_serial_no",
+  "dispatch_security_child_table",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Series",
+   "options": "NJ-DSC-.YYYY.-.MM.-.###",
+   "reqd": 1
+  },
+  {
+   "fieldname": "scan_serial_no",
+   "fieldtype": "Data",
+   "label": "Scan Serial No",
+   "options": "Barcode"
+  },
+  {
+   "fieldname": "dispatch_security_child_table",
+   "fieldtype": "Table",
+   "label": "Dispatch Security Child Table",
+   "options": "Dispatch Security Child Table"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Dispatch Security Checkpoints",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-09-13 18:18:41.200674",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Dispatch Security Checkpoints",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

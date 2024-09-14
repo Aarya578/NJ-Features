@@ -20,6 +20,7 @@
   "raw_data",
   "base_price",
   "backup_duration",
+  "sudden_drop",
   "column_break_5mcw7",
   "created",
   "data_attr",
@@ -217,6 +218,7 @@
    "options": "NJQCA Result Parameters"
   },
   {
+   "depends_on": "eval:doc.item_group == \"BATTERY\"",
    "fieldname": "backup_duration",
    "fieldtype": "Data",
    "label": "Backup Duration"
@@ -226,6 +228,11 @@
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "sudden_drop",
+   "fieldtype": "Data",
+   "label": "Sudden Drop"
+  },
+  {
    "fieldname": "column_break_ex7uj",
    "fieldtype": "Column Break"
   }
@@ -233,7 +240,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-12 17:21:34.613888",
+ "modified": "2024-09-14 09:57:35.092303",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

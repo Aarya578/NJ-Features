@@ -9,3 +9,4 @@ class DispatchSecurityCheckpoints(Document):
 
 @frappe.whitelist()
 def scan_serial_no_data():
+	pass

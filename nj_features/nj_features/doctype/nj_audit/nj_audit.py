@@ -55,6 +55,9 @@ def get_work_and_audit_warehouse():
     
     audit_warehouse = frappe.db.get_value('Department', {'name': emp_data.get('department')}, 'linked_warehouse')
     
+    if not audit_warehouse:
+        frappe.throw(f"Linked warehouse is missing for the <b>Department: {emp_data.get('department')}</b>.")
+    
     audit_interval = frappe.db.get_value('NJ Settings', {'parameter': 'audit_interval'}, 'value')
     
     stock_balance = get_stock_balance(audit_warehouse)

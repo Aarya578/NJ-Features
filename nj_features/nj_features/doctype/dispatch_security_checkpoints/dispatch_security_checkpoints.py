@@ -64,8 +64,8 @@ def scan_serial_no_data(serial_no, doc_name=None):
         if si_status != 'Paid':
             if approved != 1:
                 frappe.throw(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice['name']))
-            else:
-                frappe.msgprint(_("Sales Invoice '{}' is not 'Paid' but has been approved.").format(sales_invoice['name']))
+            # else:
+            #     frappe.msgprint(_("Sales Invoice '{}' is not 'Paid' but has been approved.").format(sales_invoice['name']))
 
     if not sales_invoice and not delivery_note:
         frappe.throw(_("No submitted Sales Invoice or Delivery Note found for the serial number {}").format(serial_no))

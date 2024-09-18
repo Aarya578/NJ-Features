@@ -45,7 +45,11 @@ def create_user(self):
             new_user.allowed_in_mentions = 0
             new_user.role_profile_name = self.get('role_profile')
             new_user.restrict_ip = restrict_ip
-            new_user.save(ignore_permissions=True)
+            try:
+                new_user.save(ignore_permissions=True)
+            except Exception as e:
+                frappe.throw("Error while creating user: ",e.message)
+                
             user_email = new_user.email
         else:
             previous_role_profile = frappe.db.get_value('Employee', {'user_id': user_email}, 'role_profile')
@@ -71,7 +75,10 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
         wk_warehouse_name = 'WK-' + user_full_name + '-' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': wk_warehouse_name}, 'name')
         if is_main_warehouse_exists:
-            warehouse.save(ignore_permissions=True)
+            try:
+                warehouse.save(ignore_permissions=True)
+            except Exception as e:
+                frappe.throw("Error while creating work warehouse: ",e.message)
             return is_main_warehouse_exists
         warehouse.warehouse_name = wk_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
@@ -94,7 +101,10 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
         
     warehouse.warehouse_owner = user
     if is_main_warehouse_exists is None or is_main_warehouse_exists == '':
-        warehouse.save(ignore_permissions=True)
+        try:
+            warehouse.save(ignore_permissions=True)
+        except Exception as e:
+            frappe.throw("Error while creating employee asset warehouse: ",e.message)
     return warehouse.name
 
 
@@ -146,14 +156,17 @@ def create_work_ware(self, user_email):
                 data = frappe.db.sql(query, filters, as_dict=1)
                 
                 if data:
-                    frappe.throw(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                    frappe.msgprint(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
                     return None
                 else:
                     dept_work_ware = get_dept_work_warehouse(self.get('department'))
                     if dept_work_ware:
                         get_work_warehouse_doc.parent_warehouse = dept_work_ware
                         get_work_warehouse_doc.department = self.get('department')
-                        get_work_warehouse_doc.save(ignore_permissions=True)
+                        try:
+                            get_work_warehouse_doc.save(ignore_permissions=True)
+                        except Exception as e:
+                            frappe.throw("Error while updating work warehouse: ",e.message)
                     else:
                         frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
                         return None

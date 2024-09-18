@@ -5,12 +5,15 @@ frappe.ui.form.on('Employee', {
         frm.set_df_property('company', 'hidden', 1);
     },
     validate(frm) {
-
+        frappe.validated = false;
         frappe.call({
             method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
-                if (r && r.message) {
+                if (r && r._server_messages) {
+                    frappe.throw(r._server_messages);
+                } else if (r && r.message) {
+                    frappe.validated = true;
                     if (r.message.status) {
                         frappe.msgprint("Employee status is <b>" + r.message.status + "</b>");
                     } else {

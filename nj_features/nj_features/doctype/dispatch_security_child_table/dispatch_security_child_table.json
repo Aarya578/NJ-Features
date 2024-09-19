@@ -8,9 +8,10 @@
  "field_order": [
   "serial_no",
   "sales_invoice",
-  "delivery_note",
   "si_status",
-  "dn_status"
+  "delivery_note",
+  "dn_status",
+  "item_code"
  ],
  "fields": [
   {
@@ -45,12 +46,18 @@
    "in_list_view": 1,
    "label": "Sales Invoice",
    "options": "Sales Invoice"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-09-14 12:16:34.066109",
+ "modified": "2024-09-18 16:23:22.176324",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

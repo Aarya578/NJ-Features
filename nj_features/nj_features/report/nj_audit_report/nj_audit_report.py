@@ -4,7 +4,6 @@
 import frappe
 from frappe import _
 
-
 def execute(filters=None):
 	columns, data = [], []
 	columns = [
@@ -12,10 +11,10 @@ def execute(filters=None):
 		{"label": _("Audit Warehouse"), "fieldname": "audit_warehouse", "fieldtype": "Link", "options": "Warehouse"},
 		{"label": _("Serial No"), "fieldname": "serial_no", "fieldtype": "Link", "options": "Serial No"}
 	]
-	last_audit_date = """SELECT DATE(MAX(creation)) FROM `tabNJ Audit`"""
-	date_result = frappe.db.sql(last_audit_date, as_dict=1)
-	date = date_result[0].get('DATE(MAX(creation))')
-
+	last_audit_date_query = """SELECT DATE(MAX(creation)) AS date FROM `tabNJ Audit` WHERE docstatus=1"""
+	date_result = frappe.db.sql(last_audit_date_query, as_dict=1)
+	date = date_result[0].get('date')
+	
 	query = """SELECT parent_table.name, parent_table.audit_warehouse, child_table.serial_no 
 	FROM `tabNJ Audit` parent_table JOIN `tabNJ Audit Items` child_table ON parent_table.name = child_table.parent 
 	WHERE child_table.serial_no IN (SELECT serial_no FROM `tabNJ Audit Items` WHERE DATE(creation) = %(creation_date)s 

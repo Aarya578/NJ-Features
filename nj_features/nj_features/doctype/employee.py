@@ -21,6 +21,8 @@ def create_user_and_warehouse(self):
         work_ware = create_work_ware(self, user_email)
         if work_ware is not None:
             return_data["work_warehouse"] = work_ware
+    else:
+        frappe.throw("User not created using email: ", self.get('prefered_email'))
 
     return return_data
 
@@ -75,10 +77,6 @@ def create_warehouse(user, department, emp_id=None, warehouse_type=None):
         wk_warehouse_name = 'WK-' + user_full_name + '-' + emp_id
         is_main_warehouse_exists = frappe.db.exists('Warehouse', {'warehouse_name': wk_warehouse_name}, 'name')
         if is_main_warehouse_exists:
-            try:
-                warehouse.save(ignore_permissions=True)
-            except Exception as e:
-                frappe.throw("Error while creating work warehouse: ",e.message)
             return is_main_warehouse_exists
         warehouse.warehouse_name = wk_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
@@ -124,13 +122,14 @@ def create_emp_ware(self, user_email):
 
 def create_work_ware(self, user_email):
     # Determine the work warehouse
+    work_warehouse = ''
     work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
-
     if work_ware_reqd == 'Yes':
         warehouse_name = "WK-" + self.get('first_name').title() + "-" + self.get('emp_id')
         get_work_warehouse_query = "SELECT name FROM `tabWarehouse` WHERE warehouse_name = '{0}'".format(warehouse_name)
         work_warehouse_in_db = frappe.db.sql(get_work_warehouse_query, as_dict=1)
-        work_warehouse = work_warehouse_in_db[0].get('name')
+        if work_warehouse_in_db and work_warehouse_in_db[0]:
+            work_warehouse = work_warehouse_in_db[0].get('name')
         if work_warehouse is None or work_warehouse == '':
             work_ware = create_warehouse(user_email, self.get('department'), self.get('emp_id'), 'work_ware')
         else:

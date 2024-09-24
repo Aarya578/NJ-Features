@@ -30,6 +30,7 @@ def execute(filters=None):
     for audit_warehouse in audit_warehouses_data:
         group_warehouses, non_group_warehouses = get_all_child_warehouses(audit_warehouse.get('parent_warehouse'))
         serial_no_data = []
+        
         for warehouse in non_group_warehouses:
             filters = {'warehouse': warehouse}
             

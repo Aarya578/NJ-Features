@@ -101,9 +101,11 @@
   },
   {
    "fieldname": "scan_rack",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Scan Rack",
-   "options": "Warehouse",
+   "options": "Barcode",
    "reqd": 1
   },
   {
@@ -115,7 +117,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-19 14:22:25.431979",
+ "modified": "2024-09-24 14:39:12.632883",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",

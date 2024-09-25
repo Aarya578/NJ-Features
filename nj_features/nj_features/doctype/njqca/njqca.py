@@ -12,7 +12,7 @@ from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 
-logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
+# logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
 
 
 def update_serial_no_componont_for_grade(self):
@@ -116,9 +116,9 @@ def open_draft_qi(self):
     SELECT variant_10 from `tabNJQCA Child` where item_group = %s and parent =%s"""
     
     njqca_config_query_storage_data= frappe.db.sql(njqca_config_query_storage,(item_group[2],self.name),as_dict=True)
-    logger.debug("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
+    # logger.debug("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
     field_name_check_sql_1 = """
-            SELECT options.quality_check, qc_check.field_name
+            SELECT options.name_of_the_check, qc_check.field_name
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
             ON qc.name = options.parent
@@ -128,7 +128,7 @@ def open_draft_qi(self):
             WHERE qc.item_group in %s AND qc.inspection_type = %s  AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s """
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1, (item_group, inspection_type,parameter), as_dict=True)
     print("field_name_data_1-------118",field_name_data_1,"field_name_check_sql_1----",field_name_check_sql_1,"njqca_config_query_storage_data---",njqca_config_query_storage_data,"njqca_config_query_ram_data----------",njqca_config_query_ram_data)
-    logger.debug("field_name_data_1-----------------njqca----------129",field_name_data_1)
+    # logger.debug("field_name_data_1-----------------njqca----------129",field_name_data_1)
     def extract_numeric_and_suffix(value):
         if value is None or value.strip() == '':
             return None, ''  # Handle None and empty strings
@@ -146,7 +146,7 @@ def open_draft_qi(self):
     }
 
     for idx, field in enumerate(field_name_data_1):
-        name_of_check = field['quality_check']
+        name_of_check = field['name_of_the_check']
         field_name = field['field_name']
         
         child_exists = any(
@@ -183,7 +183,7 @@ def open_draft_qi(self):
     
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
-            SELECT options.quality_check, qc_check.field_name
+            SELECT options.name_of_the_check, qc_check.field_name
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
             ON qc.name = options.parent
@@ -194,7 +194,7 @@ def open_draft_qi(self):
         field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
 
         for field in field_name_data:
-            name_of_check = field['quality_check']
+            name_of_check = field['name_of_the_check']
             field_name = field['field_name']
             child_exists = any(
                 child.item_group == data.get("item_group") and child.check_name == name_of_check
@@ -203,13 +203,13 @@ def open_draft_qi(self):
 
             if not child_exists:
                 child_table = new_qi.append("nj_quality_checks", {})
-                child_table.check_name = field['quality_check']
+                child_table.check_name = field['name_of_the_check']
                 child_table.checks = field_name
                 child_table.item_group = data.get("item_group")
                 child_table.options = data.get("value")
 
     
-
+    print("field_name_data-------212",field_name_data)
     new_qi.save()
     
 @frappe.whitelist()

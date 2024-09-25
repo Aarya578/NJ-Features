@@ -1,8 +1,13 @@
+document.addEventListener('keydown', function(event) {
+    if ((event.ctrlKey && event.shiftKey && (event.key === 'I' || event.key === 'J')) || event.key === 'F12') {
+        event.preventDefault(); 
+    }
+});
+
 $(document).ready(function() {
     $(document.body).addClass('full-width');
     localStorage.setItem('container_fullwidth', true);
-    // $('.layout-side-section').hide();
-    // $('.widget.widget-shadow.shortcut-widget-box [data-widget-name="086f270dbb"]')
+    
 });
 
 frappe.listview_settings['Non Compliance'] = {

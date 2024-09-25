@@ -8,9 +8,10 @@
   "serial_no",
   "item_code",
   "item_group",
+  "purchase_rate",
+  "column_break_6uj5y",
   "s_warehouse",
   "t_rack_warehouse",
-  "purchase_rate",
   "parent_warehouse"
  ],
  "fields": [
@@ -78,11 +79,15 @@
    "options": "Warehouse",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "column_break_6uj5y",
+   "fieldtype": "Column Break"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-09-14 10:38:21.970351",
+ "modified": "2024-09-24 14:41:36.622251",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit Items",

@@ -6,6 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "item_config",
   "item_group",
   "attribute_name",
   "mappng_fields"
@@ -33,12 +34,19 @@
    "in_list_view": 1,
    "label": "Attribute Name",
    "options": "Item Attribute"
+  },
+  {
+   "fieldname": "item_config",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Item Config",
+   "options": "Processor\nRAM\nMemory\nDisplay"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-01-29 17:11:51.381354",
+ "modified": "2024-09-24 18:08:50.561798",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Part Mapping",

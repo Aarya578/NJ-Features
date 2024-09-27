@@ -155,7 +155,7 @@ frappe.listview_settings['Serial No'] = {
                                 serial_no: row.serial_no,
                                 yes: 1,
                                 no: 0,
-                                user_activity: 'Log In'
+                                user_activity: 'Log Out'
                             });
                         });
 

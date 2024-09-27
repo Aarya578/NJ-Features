@@ -209,7 +209,6 @@ def open_draft_qi(self):
                 child_table.options = data.get("value")
 
     
-    print("field_name_data-------212",field_name_data)
     new_qi.save()
     
 @frappe.whitelist()
@@ -558,7 +557,7 @@ def get_item_code_for_each_part(part_item_group,doc):
                             part_data.append({'name':row.name,'attr_data':attribute_object,'part_item_code':part_item_code})
                             
         if part_item_group != doc.item_group :
-            return part_data    
+            return part_data
         if part_item_group == doc.item_group :
             item_template = doc.get('item_template')
             item_template_exists = frappe.db.get_value('Item',{'item_name':item_template,'item_group':part_item_group,'has_variants':1},'name')
@@ -585,7 +584,7 @@ def get_part_mapping(item_group, docname,model,item_template):
 
         for param in nj_settings:
             globals()[param.parameter] = param.value
-        
+
         for part in part_mapping:
             result = get_item_code_for_each_part(part.get("item_group"),doc)
             if result and 'error' not in result:

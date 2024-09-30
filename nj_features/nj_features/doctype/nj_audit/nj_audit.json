@@ -8,15 +8,14 @@
  "field_order": [
   "naming_series",
   "audit_interval",
+  "audit_warehouse",
   "scan_rack",
   "scan_serial_no",
   "column_break_j74uu",
-  "audit_warehouse",
-  "work_warehouse",
-  "accept_rows",
-  "rack_balance",
   "stock_balance",
+  "rack_balance",
   "serial_no_count",
+  "work_warehouse",
   "section_break_dsalw",
   "nj_audit_items",
   "amended_from"
@@ -80,13 +79,6 @@
    "options": "Barcode"
   },
   {
-   "fieldname": "accept_rows",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Accept Rows",
-   "non_negative": 1
-  },
-  {
    "allow_on_submit": 1,
    "fieldname": "work_warehouse",
    "fieldtype": "Link",
@@ -98,7 +90,7 @@
    "fieldname": "stock_balance",
    "fieldtype": "Int",
    "label": "Stock Balance",
-   "non_negative": 1
+   "read_only": 1
   },
   {
    "default": "0",
@@ -109,20 +101,23 @@
   },
   {
    "fieldname": "scan_rack",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Scan Rack",
-   "options": "Warehouse",
+   "options": "Barcode",
    "reqd": 1
   },
   {
    "fieldname": "rack_balance",
    "fieldtype": "Data",
-   "label": "Rack Balance"
+   "label": "Rack Balance",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-14 15:02:45.339073",
+ "modified": "2024-09-24 14:39:12.632883",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",

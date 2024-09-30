@@ -133,14 +133,8 @@ function fill_audit_and_work_warehouse(frm) {
                     frm.refresh_field('work_warehouse')
                 }
                 if (frm.doc.audit_warehouse && !frm.doc.stock_balance) {
-                    frappe.call({
-                        method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_stock_balance',
-                        args: {audit_warehouse: frm.doc.audit_warehouse},
-                        callback: function(r) {
-                            frm.set_value('stock_balance',r.message)
-                            frm.refresh_field('stock_balance')
-                        }
-                    });
+                    frm.set_value('stock_balance',data.stock_balance)
+                    frm.refresh_field('stock_balance')
                 }
             }
         }

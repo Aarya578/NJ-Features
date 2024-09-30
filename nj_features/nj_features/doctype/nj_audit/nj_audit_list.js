@@ -20,7 +20,6 @@ frappe.listview_settings['NJ Audit'] = {
         });
 
         if (frappe.user.has_role('NJ Audit Manager')) {
-
             listview.page.add_inner_button("Active", function() {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.update_create_permission',
@@ -29,7 +28,6 @@ frappe.listview_settings['NJ Audit'] = {
                         active_status: 1,
                     },
                     callback: function(response) {
-    
                         if (response.message == '1') {
                             $('.btn-primary.btn-sm.primary-action').show();
                             $('[data-label="Active"]').addClass('btn-primary');
@@ -51,11 +49,11 @@ frappe.listview_settings['NJ Audit'] = {
                 });
             });
             
-            listview.page.add_inner_button("Duplicate Serial No Report", function() {
+            listview.page.add_inner_button("Duplicate Serial No(s) Report", function() {
                 frappe.set_route(["query-report", "NJ Audit Report"]);
             }).addClass('btn-primary');
 
-            listview.page.add_inner_button("Not Scan Serial NO", function() {
+            listview.page.add_inner_button("Not Scanned Serial No(s)", function() {
                 frappe.set_route(["query-report", "Not Scan Serial No Report"]);
             }).addClass('btn-primary');
             
@@ -64,7 +62,6 @@ frappe.listview_settings['NJ Audit'] = {
                     method: 'nj_features.nj_features.report.not_scan_serial_no_report.not_scan_serial_no_report.execute',
                     args: {},
                     callback: function(response) {
-                        console.log('response=======after mail button click==========',response);
                         frappe.call({
                             method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.mail_data_for_not_scan_serial_no_report',
                             args: {
@@ -75,6 +72,5 @@ frappe.listview_settings['NJ Audit'] = {
                 });
             }).addClass('btn-primary');
         }
-
 	}
 };

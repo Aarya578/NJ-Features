@@ -50,17 +50,19 @@ def get_work_and_audit_warehouse():
     
     if not emp_data.get('department'):
         frappe.throw(f"Department is missing for <b>Employee: {frappe.session.user}</b>.")
+        
     if not emp_data.get('work_warehouse'):
-        frappe.throw(f"Work warehouse is missing for the <b>Employee: {frappe.session.user}</b>.")
+        frappe.throw(f"Work warehouse is missing for <b>Employee: {frappe.session.user}</b>.")
     
     audit_warehouse = frappe.db.get_value('Department', {'name': emp_data.get('department')}, 'linked_warehouse')
     
     if not audit_warehouse:
-        frappe.throw(f"Linked warehouse is missing for the <b>Department: {emp_data.get('department')}</b>.")
+        frappe.throw(f"Linked warehouse is missing for <b>Department: {emp_data.get('department')}</b>.")
     
     audit_interval = frappe.db.get_value('NJ Settings', {'parameter': 'audit_interval'}, 'value')
     
     stock_balance = get_stock_balance(audit_warehouse)
+    
     return {
         'work_warehouse': emp_data.get('work_warehouse'),
         'audit_warehouse': audit_warehouse,
@@ -97,56 +99,61 @@ def update_create_permission(doctype, active_status=None):
         return None
     
 @frappe.whitelist()
-def get_stock_balance(audit_warehouse):
-    grand_child_warehouse=[]
-    item_group_data = []
-    parent_warehouse = audit_warehouse
-    item_group_data = frappe.db.get_value('NJ Settings',{'parameter':'Item Group Check'},'value')
-    item_group_check = item_group_data.split(",")
-    audit_warehouses_data = set(frappe.db.get_all("Warehouse", filters={'parent_warehouse': parent_warehouse}, pluck='name'))
-    audit_warehouses_data.add(parent_warehouse)
-    def add_child_warehouses(warehouse):
-        child_warehouses = frappe.db.get_all("Warehouse", filters={'parent_warehouse': warehouse}, pluck='name')
-        for child in child_warehouses:
-            if child not in audit_warehouses_data:
-                grand_child_warehouse.append(child)
-                add_child_warehouses(child)
-    for warehouse in list(audit_warehouses_data):
-        if frappe.db.get_value('Warehouse',{'name':warehouse },'is_group') == 1:
-            add_child_warehouses(warehouse)
+def get_all_child_warehouses(parent_warehouse):
+    child_warehouses = frappe.get_all('Warehouse', filters={'parent_warehouse': parent_warehouse}, fields=['name', 'is_group'])
+    
+    if not child_warehouses:
+        return frappe.throw("No child warehouses found for parent warehouse: {0}".format(parent_warehouse))
+    
+    group_warehouses = []
+    non_group_warehouses = []
+    
+    for warehouse in child_warehouses:
+        if warehouse.is_group:
+            group_warehouses.append(warehouse.name)
+            child_group_warehouses, child_non_group_warehouses = get_all_child_warehouses(warehouse.name)
+            group_warehouses.extend(child_group_warehouses)
+            non_group_warehouses.extend(child_non_group_warehouses)
         else:
-            grand_child_warehouse.append(warehouse)
-    new_grand_warehouse =[]
-    for xar in grand_child_warehouse:
-        if (frappe.db.get_value('Warehouse',{'name':xar },'is_group')) == 0:
-            new_grand_warehouse.append(xar)
-    serial_no_data = []
-    for warehouses in new_grand_warehouse:
-        serial_num_data = frappe.db.get_all(
-    			"Serial No", 
-    			filters={
-        		'warehouse': warehouses, 
-        		'item_group': ['in', item_group_check]
-    			}, 
-    			fields=['name', 'warehouse', 'item_group', 'item_code']
-			)
-        serial_no_data.extend(serial_num_data)
-    serial_no_count = serial_no_data.__len__()
-    return serial_no_count
+            non_group_warehouses.append(warehouse.name)
+
+    return group_warehouses, non_group_warehouses
+
+def get_stock_balance(parent_warehouse):
+    group_warehouses, non_group_warehouses = get_all_child_warehouses(parent_warehouse)
+        
+    allowed_item_group_check = []
+    allowed_item_group_data = frappe.db.get_value('NJ Settings',{'parameter':'Item Group Check'},'value')
+    if allowed_item_group_data:
+        allowed_item_group_check = allowed_item_group_data.split(",")
+        
+    serial_count = 0
+    for warehouse in non_group_warehouses:
+        filters = {'warehouse': warehouse}
+        
+        if allowed_item_group_check:
+            filters['item_group'] = ['in', allowed_item_group_check]
+            
+        serials = frappe.get_all('Serial No', filters=filters, fields=['name'])
+        serial_count += len(serials)
+
+    return serial_count
 
 @frappe.whitelist()
 def get_rack_balance(rack_name):
-    data =[]
-    item_group_data = []
-    item_group_data = frappe.db.get_value('NJ Settings',{'parameter':'Item Group Check'},'value')
-    item_group_check = item_group_data.split(",")
-    data = frappe.db.get_all(
-    			"Serial No", 
-    			filters={
-        		'warehouse': rack_name, 
-        		'item_group': ['in', item_group_check]
-    			}, 
-    			fields=['name','item_group']
-			)
-    rack_count = data.__len__()
-    return rack_count
+    serial_count = 0
+    allowed_item_group_check = []
+    allowed_item_group_data = frappe.db.get_value('NJ Settings',{'parameter':'Item Group Check'},'value')
+    
+    if allowed_item_group_data:
+        allowed_item_group_check = allowed_item_group_data.split(",")
+        
+    filters = {'warehouse': rack_name}
+        
+    if allowed_item_group_check:
+        filters['item_group'] = ['in', allowed_item_group_check]
+        
+    serials = frappe.db.get_all("Serial No", filters=filters,  fields=['name'])
+    
+    serial_count = len(serials)
+    return serial_count

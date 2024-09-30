@@ -97,7 +97,7 @@
   }
  ],
  "links": [],
- "modified": "2024-08-27 13:45:27.976184",
+ "modified": "2024-09-23 12:21:00.993090",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Settings",
@@ -136,7 +136,6 @@
    "write": 1
   }
  ],
- "read_only": 1,
  "sort_field": "modified",
  "sort_order": "DESC"
 }

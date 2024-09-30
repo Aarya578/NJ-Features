@@ -26,7 +26,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             
                 return { filters: filters };
-            });        
+            });     
     
             if(!frm.doc.backup_duration){
                 frappe.call({

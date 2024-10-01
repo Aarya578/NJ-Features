@@ -155,7 +155,7 @@ frappe.listview_settings['Serial No'] = {
                                 serial_no: row.serial_no,
                                 yes: 1,
                                 no: 0,
-                                user_activity: 'Log In'
+                                user_activity: 'Log Out'
                             });
                         });
 
@@ -182,6 +182,20 @@ frappe.listview_settings['Serial No'] = {
     
 }
 
+// function toggle_checkboxes(field) {
+//     let row = $(field).closest('.grid-row');
+//     let yes_field = row.find('input[data-fieldname="yes"]');
+//     let no_field = row.find('input[data-fieldname="no"]');
+
+//     if ($(field).is(':checked')) {
+//         if (field.dataset.fieldname === 'yes') {
+//             no_field.prop('checked', false).change();
+//         } else {
+//             yes_field.prop('checked', false).change();
+//         }
+//     }
+// }
+
 function toggle_checkboxes(field) {
     let row = $(field).closest('.grid-row');
     let yes_field = row.find('input[data-fieldname="yes"]');
@@ -192,6 +206,15 @@ function toggle_checkboxes(field) {
             no_field.prop('checked', false).change();
         } else {
             yes_field.prop('checked', false).change();
+        }
+    } else {
+        // If both checkboxes are unchecked, check one by default
+        if (!yes_field.is(':checked') && !no_field.is(':checked')) {
+            if (field.dataset.fieldname === 'yes') {
+                no_field.prop('checked', true).change(); // Check "no" if "yes" was unchecked
+            } else {
+                yes_field.prop('checked', true).change(); // Check "yes" if "no" was unchecked
+            }
         }
     }
 }

@@ -1,43 +1,3 @@
-// Copyright (c) 2024, NewJaisa - IT Team and contributors
-// For license information, please see license.txt
-
-// frappe.ui.form.on('Laptop Box', {
-// 	// refresh: function(frm) {
-
-// 	// }
-// });
-// frappe.ui.form.on('Laptop Box', {
-//     barcode: function(frm) {
-//         if (frm.doc.barcode) {
-//             frappe.call({
-//                 method: "frappe.client.get",
-//                 args: {
-//                     doctype: "Serial No",
-//                     filters: { name: frm.doc.barcode },
-//                 },
-//                 callback: function(r) {
-//                     if (r.message) {
-//                         let serial_no_data = r.message;
-
-//                         // Set the brand and model directly from Serial No doctype
-//                         frm.set_value("brand", serial_no_data.brand);  // Set the brand field from Serial No
-//                         frm.set_value("model", serial_no_data.model);  // Set the model field from Serial No
-// 						console.log("brand    ====================="+serial_no_data.brand);
-// 						console.log("model================="+serial_no_data.model);
-						
-						
-//                     } else {
-//                         frm.set_value("barcode", null);
-//                         frappe.throw(`Serial No <b>'${frm.doc.barcode}'</b> not found. Please select an existing Serial No.`);
-//                     }
-//                 },
-//                 error: function() {
-//                     frappe.throw("Error fetching data for the barcode.");
-//                 }
-//             });
-//         }
-//     }
-// });
 
 // frappe.ui.form.on('Laptop Box', {
 //     barcode: function(frm) {
@@ -112,51 +72,49 @@
 // });
 frappe.ui.form.on('Laptop Box', {
     barcode: function(frm) {
+        frappe.call({
+            method: 'nj_features.qr_code.generate_and_save_qrcode',
+            args: { data: frm.doc.barcode }
+        });
+
         if (frm.doc.barcode) {
-            // First, fetch data from the Serial No doctype
             frappe.call({
                 method: "frappe.client.get",
                 args: {
                     doctype: "Serial No",
-                    name: frm.doc.barcode,  // Using 'name' to match the Serial No
+                    name: frm.doc.barcode, 
                 },
                 callback: function(r) {
                     if (r.message) {
                         let serial_no_data = r.message;
 
-                        // Set the brand and model fields from Serial No
                         frm.set_value("brand", serial_no_data.brand);  
                         frm.set_value("model", serial_no_data.model);  
 
                        
 
-                        // Fetch the Item document based on item_code from Serial No
                         frappe.call({
                             method: "frappe.client.get",
                             args: {
                                 doctype: "Item",
-                                name: serial_no_data.item_code,  // Get item code from Serial No
+                                name: serial_no_data.item_code,  
                             },
                             callback: function(item_data) {
                                 if (item_data.message) {
                                     let item = item_data.message;
 
-                                    // Debug: Log all attributes in the child table
                                     console.log("Item Variant Attributes:", item.attributes);
 
-                                    // Loop through the 'Item Variant Attribute' child table
                                     if (item.attributes && item.attributes.length > 0) {
                                         let processor_type = '';
                                         let ram_capacity = '';
                                         let storage_capacity = '';
 
                                         item.attributes.forEach(function(attr) {
-                                            // Check the exact names of attributes
                                             if (attr.attribute == "Processor Type") {
                                                 processor_type = attr.attribute_value;
                                             }
                                             if (attr.attribute == "RAM Capacity" || attr.attribute == "RAM") {
-                                                // Handle different possible RAM attribute names
                                                 ram_capacity = attr.attribute_value;
                                             }
                                             if (attr.attribute == "Storage Capacity") {
@@ -164,7 +122,6 @@ frappe.ui.form.on('Laptop Box', {
                                             }
                                         });
 
-                                        // Set the fetched values in the Laptop Box form
                                         frm.set_value("processor_type", processor_type);
                                         frm.set_value("ram_capacity", ram_capacity);
                                         frm.set_value("storage_capacity", storage_capacity);

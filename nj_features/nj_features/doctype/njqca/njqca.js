@@ -26,7 +26,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             
                 return { filters: filters };
-            });        
+            });     
     
             if(!frm.doc.backup_duration){
                 frappe.call({
@@ -54,12 +54,20 @@ frappe.ui.form.on('NJQCA', {
                     }
                 });
             }
-            
-            if(frm.doc.bios_serialno){
-                frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name','model','item_code'], (r) => {
+
+            if (frm.doc.bios_serialno) {
+                frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name', 'model', 'item_code'], (r) => {
                     if (r && r.name && r.model && r.item_code) {
                         frm.set_value("serial_no", r.name);
-                        frm.set_value("model", r.model);
+                        if (frm.fields_dict.model) {
+                            let options = frm.fields_dict.model.df.options || '';
+                            if (!options.includes(r.model)) {
+                                options += '\n' + r.model;
+                                frm.fields_dict.model.df.options = options;
+                                frm.refresh_field('model');
+                            }
+                            frm.set_value("model", r.model);
+                        }
                         frappe.db.get_value('Item', {'item_code': r.item_code}, ['variant_of'], (r) => {
                             if (r && r.variant_of) {
                                 frm.set_value("item_template", r.variant_of);
@@ -71,11 +79,10 @@ frappe.ui.form.on('NJQCA', {
                         get_model(frm.doc.manufacturer_model);
                         frm.trigger("model");
                     }
-                });      
+                });
             }
-
+            
             frm.fields_dict['njqca_item_component'].grid.get_field('part_item_code').get_query = function(doc, cdt, cdn) {
-                
                 var row = locals[cdt][cdn];
                 if(row.variant_1 && row.variant_1 != '[EMPTY]' && row.variant_1 != 'SYSTEM MEMORY'){
                     return {
@@ -473,7 +480,7 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save: function(frm) {
+    item_template: function(frm) {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
@@ -550,7 +557,7 @@ frappe.ui.form.on('NJQCA', {
     
 });
 
-function get_model(manufacturer_model, make) {
+function get_model(manufacturer_model) {
     frappe.call({
         method: 'nj_features.nj_features.doctype.njqca.njqca.get_model',
         args: { 'manufacturer_model': manufacturer_model },

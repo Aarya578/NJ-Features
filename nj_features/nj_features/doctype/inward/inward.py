@@ -8,6 +8,7 @@ from frappe.model.document import Document
 from erpnext.controllers.item_variant import get_variant
 from nj_features.qr_code import generate_and_save_qrcode
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_lib.utils.common_utils import get_latest_item_wizard
 
 class Inward(Document):
     def on_submit(self):
@@ -196,19 +197,10 @@ def get_item_template(brand, model, item_group):
 def has_item_wizards(item_template):
     wizard_list = []
     for item in item_template:
-        available_wizard = get_item_wizard_from_item_code(item.get('name'))
+        available_wizard = get_latest_item_wizard(item.get('name'))
         if available_wizard:
             wizard_list.append(item.get('name'))
     return wizard_list
-
-def get_item_wizard_from_item_code(item_template):
-    
-    latest_item_wizard = ''
-    if item_template:
-        latest_item_wizard = frappe.db.get_value('Item Wizards', filters={'item_template': item_template}, 
-                                    fieldname='name', order_by='creation DESC, modified DESC')
-    if latest_item_wizard:
-        return latest_item_wizard
 
 def create_serial_no(item_group=None, attempt=0):
     MAX_ATTEMPTS = 4

@@ -217,8 +217,8 @@
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration",
    "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Backup Duration"
+   "label": "Backup Duration",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_kcjxr",
@@ -228,7 +228,8 @@
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "sudden_drop",
    "fieldtype": "Data",
-   "label": "Sudden Drop"
+   "label": "Sudden Drop",
+   "read_only": 1
   },
   {
    "fieldname": "purchase_order",
@@ -260,7 +261,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-10-01 11:18:24.912479",
+ "modified": "2024-10-01 12:19:16.389071",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

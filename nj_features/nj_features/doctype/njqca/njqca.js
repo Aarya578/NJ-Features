@@ -480,7 +480,7 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save: function(frm) {
+    item_template: function(frm) {
         if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',

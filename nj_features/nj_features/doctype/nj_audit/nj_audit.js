@@ -27,7 +27,7 @@ frappe.ui.form.on('NJ Audit', {
         
         if (frm.doc.scan_serial_no != '' && frm.doc.scan_rack != '') {
             frappe.db.get_value("Serial No", {serial_no: frm.doc.scan_serial_no}, ["name","item_code","item_group", "warehouse", "purchase_rate"], (r) => {
-                if (r) {
+                if (r.name) {
                     let nj_audit_items = {
                         "serial_no": r.name, 
                         "item_code": r.item_code, 
@@ -47,15 +47,18 @@ frappe.ui.form.on('NJ Audit', {
                                 frm.refresh_field('serial_no_count');
                             }
                             else{
+                                frm.set_value("scan_serial_no", "");
                                 frappe.throw("Item Group <b>" + nj_audit_items.item_group + "</b> is not valid");
                             }
                         } else {
                             frappe.throw("NJ Settings: <b>Item Group Check</b> is not configured");
                         }
                     });
-                    frm.set_value("scan_serial_no", "");
-                    frm.refresh_field("scan_serial_no");
+                } else {
+                    frappe.msgprint("Serial No: "+cur_frm.doc.scan_serial_no+" is not found.")
                 }
+                frm.set_value("scan_serial_no", "");
+                frm.refresh_field("scan_serial_no");
             })
         }
     },

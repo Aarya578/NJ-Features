@@ -256,7 +256,7 @@ function get_item_template(frm) {
 function warehouse_info(frm) {
     if(frm.doc.docstatus == 0){
         let userEmail = frappe.session.user_email;
-        frappe.db.get_value('Employee', {'user_id': userEmail}, ['name', 'work_warehouse'], function(response) {
+        frappe.db.get_value('Employee', {'user_id': userEmail, 'status': 'Active'}, ['name', 'work_warehouse'], function(response) {
             if (!response.name) {
                 frappe.msgprint('Employee with <strong>'+userEmail+'</strong> not found. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.');
                 return;

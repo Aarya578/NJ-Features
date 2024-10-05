@@ -1,5 +1,7 @@
 import re
 import json
+
+from nj_features.nj_features.doctype import get_active_emp_work_ware
 import frappe
 import random
 import datetime
@@ -262,11 +264,11 @@ def get_itm_code_on_barcode(new_qi):
             return {"disable_save": True}
 
     if serial_no_data.warehouse:
-        work_warehouse = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'work_warehouse')
+        emp_data = get_active_emp_work_ware(frappe.session.user)
+        work_warehouse = emp_data.get('work_warehouse')
         if not work_warehouse:
             frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
         elif work_warehouse != serial_no_data.warehouse:
-            # Logic to handle stock transfer
             stock_entry_items = [{
                 'item_code': serial_no_data.item_code,
                 'basic_rate': serial_no_data.purchase_rate,

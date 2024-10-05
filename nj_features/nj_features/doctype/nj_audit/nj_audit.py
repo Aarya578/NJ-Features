@@ -43,7 +43,7 @@ def move_all_stock(self):
 
 @frappe.whitelist()
 def get_work_and_audit_warehouse():
-    emp_data = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, ['work_warehouse', 'department'], as_dict=1)
+    emp_data = frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, ['work_warehouse', 'department'], as_dict=1)
     
     if emp_data is None:
         frappe.throw("Employee data not found for user: {0}".format(frappe.session.user))
@@ -100,7 +100,7 @@ def update_create_permission(doctype, active_status=None):
     
 @frappe.whitelist()
 def get_all_child_warehouses(parent_warehouse):
-    child_warehouses = frappe.get_all('Warehouse', filters={'parent_warehouse': parent_warehouse}, fields=['name', 'is_group'])
+    child_warehouses = frappe.get_all('Warehouse', filters={'parent_warehouse': parent_warehouse, 'disabled': 0}, fields=['name', 'is_group'])
     
     if not child_warehouses:
         return frappe.throw("No child warehouses found for parent warehouse: {0}".format(parent_warehouse))

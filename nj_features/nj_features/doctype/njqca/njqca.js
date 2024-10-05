@@ -168,7 +168,7 @@ frappe.ui.form.on('NJQCA', {
     warehouse: function(frm) {
         if (cur_frm.doc.warehouse) {
             let ware = cur_frm.doc.warehouse;
-            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email}, 'work_warehouse', function(r) {
+            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
                        
                 if (!r.work_warehouse) {
                     frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)

@@ -1,10 +1,9 @@
-import frappe
-import json
-import random
 import os
-# from barcode import Code128
+import json
+import frappe
+import random
 from nj_features.qr_code import generate_and_save_qrcode
-# from io import BytesIO
+from nj_features.nj_features.doctype import get_active_emp_work_ware
 
 
 @frappe.whitelist()
@@ -65,17 +64,17 @@ def serializer_or_notserializer(item_code=None):
 @frappe.whitelist()
 def get_all_emp_warehouse(user):
     try:
-        dept = frappe.db.get_value('Employee', {'user_id': user}, 'department')
-        dept_values = frappe.db.get_value('Department', {'name': dept}, ['department_prefix', 'linked_warehouse'])
+        emp_dept = get_active_emp_work_ware(user, fields=['department'])
+        dept_values = frappe.db.get_value('Department', {'name': emp_dept.get('department')}, ['department_prefix', 'linked_warehouse'])
         if not dept_values:
             frappe.throw('Department values not found')
 
         if not dept_values[1]:
-            frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(dept))
+            frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
-        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0)}, ['name', 'available_capacity', 'max_capacity'])
-        centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1}, 'name')
+        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
+        centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
         centralized_warehouses = {}

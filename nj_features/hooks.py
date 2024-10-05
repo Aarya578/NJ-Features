@@ -170,15 +170,15 @@ doc_events = {
 # 		]
 # 	}
 # }
-# scheduler_events = {
-# 	"cron": {
-# 		"0 22 * * *": [
-# 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
-# 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
-# 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
-# 		]
-# 	}
-# }
+scheduler_events = {
+	"cron": {
+		"0 22 * * *": [
+			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
+			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
+			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
+		]
+	}
+}
 
 
 # Testing

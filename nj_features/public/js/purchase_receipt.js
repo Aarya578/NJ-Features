@@ -3,7 +3,7 @@ frappe.ui.form.on('Purchase Receipt', {
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             var user_email = frappe.session.user
-            frappe.db.get_value('Employee', {'prefered_email': user_email}, 'work_warehouse').then(function(r) {
+            frappe.db.get_value('Employee', {'prefered_email': user_email, 'status': 'Active'}, 'work_warehouse').then(function(r) {
 
                 if (r.message && r.message.work_warehouse) {
 

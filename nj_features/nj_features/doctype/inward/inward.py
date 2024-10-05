@@ -23,7 +23,7 @@ class Inward(Document):
             "stock_entry_type": "Repack",
             "doctype": self.doctype,
             "series": "STE-INW-",
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
+            "material_transfer_items": stock_entry_for_material_transfer_or_repack_items_data(self),
             "repack_items": get_repack_items(self)
         }
         stock_data_str = json.dumps(stock_data)

@@ -1,7 +1,6 @@
 import re
 import json
 
-from nj_features.nj_features.doctype import get_active_emp_work_ware
 import frappe
 import random
 import datetime
@@ -9,6 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
+from nj_features.nj_features.doctype.employee import get_active_emp_work_ware
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a

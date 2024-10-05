@@ -1,9 +1,10 @@
 import os
 import json
+
 import frappe
 import random
 from nj_features.qr_code import generate_and_save_qrcode
-from nj_features.nj_features.doctype import get_active_emp_work_ware
+from nj_features.nj_features.doctype.employee import get_active_emp_work_ware
 
 
 @frappe.whitelist()

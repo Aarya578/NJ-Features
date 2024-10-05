@@ -2,7 +2,7 @@ import json
 import frappe
 from frappe.utils import nowdate, add_days
 from frappe.model.document import Document
-from nj_features.nj_features.doctype import get_active_emp_work_ware
+from nj_features.nj_features.doctype.employee import get_active_emp_work_ware
 
 class DailyIndividualReport(Document):
     pass

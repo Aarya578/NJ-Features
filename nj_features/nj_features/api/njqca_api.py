@@ -1,3 +1,6 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
 import json
 import frappe
 from frappe import _
@@ -6,12 +9,10 @@ from nj_features.nj_features.doctype.njqca.njqca import model_change_for_serial_
     
 @frappe.whitelist()
 def process_njqca_data():
-    print('=======================================process_njqca_data===================================================')
     output = {}
     data = frappe.request.data
     data_json = data.decode('utf-8')
     data = json.loads(data_json)
-    print('**14**data*****process_njqca_data****',data)
     njqca_doc = frappe.get_doc('NJQCA', data['njqca_name'])
     part_mapping_data = {}
     part_item_code_update_child_data = njqca_doc.as_dict().njqca_item_component

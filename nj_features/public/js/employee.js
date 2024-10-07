@@ -7,7 +7,7 @@ frappe.ui.form.on('Employee', {
     validate(frm) {
         frappe.validated = false;
         frappe.call({
-            method: 'nj_features.nj_features.doctype.employee.create_user_and_warehouse',
+            method: 'nj_features.overrides.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
                 if (r && r._server_messages) {

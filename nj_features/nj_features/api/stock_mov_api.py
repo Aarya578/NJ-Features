@@ -1,9 +1,11 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
 import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from nj_features.nj_features.doctype.stock_movement.stock_movement import StockMovement
-from nj_features.api_files import get_all_emp_warehouse
+from nj_features.nj_features.doctype.stock_movement.stock_movement import StockMovement, get_all_emp_warehouse
 
 @frappe.whitelist()
 def process_stock_movement_data():

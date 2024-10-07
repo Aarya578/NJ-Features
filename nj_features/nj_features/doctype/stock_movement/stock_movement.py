@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class StockMovement(Document):
@@ -36,3 +37,42 @@ class StockMovement(Document):
 
         except Exception as e:
             frappe.throw("Error while submitting Stock Entry: ", e)
+
+@frappe.whitelist()
+def get_all_emp_warehouse(user):
+    try:
+        emp_dept = get_active_emp(user, fields=['department'])
+        dept_values = frappe.db.get_value('Department', {'name': emp_dept.get('department')}, ['department_prefix', 'linked_warehouse'])
+        if not dept_values:
+            frappe.throw('Department values not found')
+
+        if not dept_values[1]:
+            frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
+
+        default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
+        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
+        centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
+        centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
+        recommended_warehouses = {}
+        centralized_warehouses = {}
+
+        for warehouse in all_emp_ware:
+            recommended_warehouses[warehouse['name']] = warehouse['available_capacity']
+
+        for warehouse in centralized_ware:
+            centralized_warehouses[warehouse['name']] = warehouse['available_capacity']
+
+        if default_ww in recommended_warehouses:
+            del recommended_warehouses[default_ww]
+
+        formatted_recommended = '\n'.join([f"{warehouse}  =>  {capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
+        formatted_centralized = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in centralized_warehouses.items()])
+        warehouse = ','.join(recommended_warehouses.keys())
+        return {
+            'recommended': formatted_recommended,
+            'centralized': formatted_centralized,
+            'warehouse': warehouse
+        }
+        
+    except Exception as e:
+        return {'error in emp': str(e)}

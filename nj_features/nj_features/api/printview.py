@@ -1,7 +1,11 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
 import json
 import frappe
 from frappe.www.printview import *
 from frappe.utils.jinja import is_rtl
+from apps.frappe.frappe.www.printview import get_print_format_doc, get_print_style, get_rendered_template
 
 @frappe.whitelist()
 def printview():

@@ -1,3 +1,6 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
 # import frappe
 # import requests
 # import pytz
@@ -25,7 +28,6 @@
 #             "error": str(e)
 #         }
 
-
 import frappe
 from datetime import datetime
 import pytz
@@ -42,6 +44,7 @@ def current_date_time():
             "current_date": current_date,
             "current_time": current_time
         }
+    
     except Exception as e:
         return {
             "error": str(e)

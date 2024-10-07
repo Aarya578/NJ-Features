@@ -44,7 +44,7 @@ frappe.ui.form.on('Inward', {
                 var print_trigger = 1;
     
                 frappe.call({
-                    method: 'nj_features.qr_code.generate_and_save_qrcode',
+                    method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
                     args: { data: frm.doc.name }
                 });
     

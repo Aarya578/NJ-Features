@@ -3,7 +3,7 @@ frappe.ui.form.on('Purchase Receipt', {
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             var user_email = frappe.session.user
-            frappe.db.get_value('Employee', {'prefered_email': user_email, 'status': 'Active'}, 'work_warehouse').then(function(r) {
+            frappe.db.get_value('Employee', {'user_id': user_email, 'status': 'Active'}, 'work_warehouse').then(function(r) {
 
                 if (r.message && r.message.work_warehouse) {
 
@@ -11,7 +11,7 @@ frappe.ui.form.on('Purchase Receipt', {
 
                     frm.doc.items.forEach(function(item) {
                         frappe.db.get_list('NJ Settings', {
-                            filters: {'doc_type':'Warehouse', 'module': 'NJ Features'},
+                            filters: {'doc_type':'Warehouse', 'module':'NJ Features'},
                             fields: ['parameter', 'value']
                         }).then(function(result) {
                             result.forEach(function(setting) {
@@ -27,10 +27,10 @@ frappe.ui.form.on('Purchase Receipt', {
                     frappe.throw("Work Warehouse is not set for <b>User: "+user_email+"</b>. Please mail us at <strong><a href='mailto:itsupport@newjaisa.com'>itsupport@newjaisa.com</a></strong> to create an employee.")
                 }
             });
-
         }
         frm.refresh_field("items")
     },
+
     refresh: function(frm) {
         if (frm.doc.docstatus === 1) {
 
@@ -55,7 +55,6 @@ frappe.ui.form.on('Purchase Receipt', {
 });
 
 // Barcode printing
-
 frappe.ui.form.on('Purchase Receipt Item', {
     // serial_no: function(frm, cdt, cdn) {
     //     var child_doc = locals[cdt][cdn];
@@ -68,7 +67,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
         var child_doc = locals[cdt][cdn];
         if(frm.doc.docstatus == 0){
             frappe.call({
-                method: 'nj_features.api_files.print_barcode',
+                method: 'nj_features.nj_features.api.api_files.print_barcode',
                 args: {
                     doc: child_doc
                 },
@@ -85,16 +84,17 @@ frappe.ui.form.on('Purchase Receipt Item', {
                 }
             });
         }
+
         if((child_doc.serial_no || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
             let objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
-                                                    "doctype=" + encodeURIComponent("Purchase Receipt Item") +
-                                                    "&name=" + encodeURIComponent(child_doc.name) +
-                                                    "&trigger_print=1" +
-                                                    "&format=" + "PR Item Barcode" +
-                                                    "&qr_code_name=" + child_doc.decoded_item_code +
-                                                    "&no_letterhead=1" +
-                                                    "&_lang=en"
-                                                ));
+                                        "doctype=" + encodeURIComponent("Purchase Receipt Item") +
+                                        "&name=" + encodeURIComponent(child_doc.name) +
+                                        "&trigger_print=1" +
+                                        "&format=" + "PR Item Barcode" +
+                                        "&qr_code_name=" + child_doc.decoded_item_code +
+                                        "&no_letterhead=1" +
+                                        "&_lang=en"
+                                    ));
         }
     }
 });

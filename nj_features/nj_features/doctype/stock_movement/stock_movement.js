@@ -313,7 +313,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
         } else {
 
             frappe.call({
-                method: 'nj_features.api_files.get_all_emp_warehouse',
+                method: 'nj_features.nj_features.doctype.stock_movement.stock_movement.get_all_emp_warehouse',
                 args: {'user': frappe.session.user_email},
                 callback: function(response) {
                     if (response.message && response.message.error) {
@@ -435,7 +435,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
 //             var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
 //             // Get all employee warehouses
 //             frappe.call({
-//                 method: 'nj_features.api_files.get_all_emp_warehouse',
+//                 method: 'nj_features.nj_features.doctype.stock_movement.stock_movement.get_all_emp_warehouse',
 //                 args: {'user': frappe.session.user_email},
 //                 callback: function(response) {
 //                     if (response.message && response.message.error) {

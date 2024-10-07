@@ -2,14 +2,15 @@
 # For license information, please see license.txt
 
 import json
+
 import frappe
 import random
 from frappe import _
 from frappe.model.document import Document
 from erpnext.controllers.item_variant import get_variant
-from nj_features.qr_code import generate_and_save_qrcode
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_latest_item_wizard
+from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 
 class Inward(Document):
     def on_submit(self):
@@ -19,11 +20,11 @@ class Inward(Document):
     def make_stock_entry_using_nj_lib(self):
         stock_data = {
             "name": self.name,
+            "doctype": self.doctype,
             "item_code": self.item_code,
             "stock_entry_type": "Repack",
-            "doctype": self.doctype,
-            "series": "STE-INW-",
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
+            "series": "STE-INW-.YYYY.-.MM.-",
+            "parent_serial_no": self.serial_no,
             "repack_items": get_repack_items(self)
         }
         stock_data_str = json.dumps(stock_data)
@@ -62,24 +63,15 @@ class Inward(Document):
         else:
             frappe.throw(f"Serial No document not found for the given <b>Serial No. : {self.serial_no}</b>")
 
-
-def stock_entry_for_material_transfer_or_repack_items_data(self):
-	stock_entry_for_material_transfer_or_repack_items_list = []
-	stock_entry_for_material_transfer_or_repack_items_dict = {
-		"item_code": self.item_code,
-		"basic_rate": self.base_rate,
-        "s_warehouse": self.source_warehouse
-	}
-	stock_entry_for_material_transfer_or_repack_items_list.append(stock_entry_for_material_transfer_or_repack_items_dict)
-	return stock_entry_for_material_transfer_or_repack_items_list
-
 def get_repack_items(self):
     get_repack_items_list = []
     get_repack_items_dict = {
+		"repack_serial_no": self.serial_no,
+		"unpack_item_code": self.item_code,
 		"repack_item_code": self.repack_item_code,
-		"serial_no": self.serial_no,
 		"repack_base_price": self.base_rate,
-        "repack_warehouse": self.target_warehouse
+        "repack_item_source_warehouse": self.source_warehouse,
+        "unpack_item_target_warehouse": self.target_warehouse,
 	}
     get_repack_items_list.append(get_repack_items_dict)
     

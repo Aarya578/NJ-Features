@@ -1,3 +1,6 @@
+# Copyright (c) 2024, NewJaisa - IT Team and contributors
+# For license information, please see license.txt
+
 import json
 import frappe
 from frappe import _
@@ -15,11 +18,9 @@ def part_qi_check():
         if 'qi_name' in data:
             if data['qi_name'] != '':
                 existing_qi_doc = frappe.get_doc('NJ Quality Inspection', data['qi_name'])
-                print(f"existing_qi_doc: {existing_qi_doc}")
                 if existing_qi_doc.name != '':
                     data['serialNo'] = existing_qi_doc.bios_serial_number
                     data['inspection_type'] = existing_qi_doc.inspection_type
-        print(f"data after exisitng qi: {data}")
         
         item_code = frappe.db.get_value('Serial No', {'name': data['serialNo']}, 'item_code')
         
@@ -32,7 +33,6 @@ def part_qi_check():
             qi_name = save_qi_data(data)
         
         else: qi_name = save_qi_data(data)
-        print(f"qi_name: {qi_name}")
         #submit qi_doc
         qi_status = frappe.db.get_value('NJ Quality Inspection', {'name': qi_name}, ['status'])
         
@@ -49,7 +49,6 @@ def part_qi_check():
 
         if 'currentPart' in data:
             current_data = show_current_part_data(data, result, qi_name)
-            # print(f"current_data: {current_data}")
 
         if "result" in current_data:
             result.update(current_data["result"])
@@ -63,10 +62,8 @@ def part_qi_check():
             count = current_data["count"]
 
         is_available = frappe.db.get_value('Nj Quality Readings', {'parent':qi_name}, 'is_available')
-        print(f"part {data['submitStatus']}")
         nj_readings = []
         if data['submitStatus'].lower() == 'preview':
-            print(f"submitStatus: {data['submitStatus'].lower()}")
             nj_readings1 = get_prev_detail(data)
             nj_readings = nj_readings1["nj_readings"]
 
@@ -89,7 +86,6 @@ def part_qi_check():
         return output
 
     except Exception as e:
-        print(f"An error occurred in part_qi_check: {e}")
         return {"success": False, "message": f"Error: {str(e)}"}
 
 
@@ -101,14 +97,11 @@ def show_current_part_data(data, result, qi_name):
     
     if item_group_list and 1 <= i <= len(item_group_list):
         part_name = item_group_list[i - 1].item_group
-        # print(f"count: {len(item_group_list)}------{item_group_list}----------show_current")
-        # print(f"idx: {i}. part_name : {part_name}\n")
         result = get_current_part_data(data, result, part_name, qi_name)
         result['part'] = part_name
         result['count'] = len(item_group_list)
         check_name = frappe.db.get_value('Nj Quality Readings', {'parent': qi_name, 'item_group':part_name},'quality_check')
         no_of_checks = frappe.db.get_all('Nj QC Options', {'parent': check_name}, 'quality_check')
-        # print(f"no_of_checks: {no_of_checks}")
         for i in no_of_checks:
             automatic_list = frappe.db.sql("""
                 SELECT count(diagnostic_type) as count FROM `tabNJ QC Check List`
@@ -162,7 +155,6 @@ def get_current_part_data(data, result, part_name, qi_name):
             }, 'options', order_by='idx')
 
             # child = frappe.db.get_value('Nj QC Options', {'parent': quality_check}, ['dependant', 'operator', 'options'])
-            # print(f"child: {child}")
             # child = frappe.db.get_value('')
             
             combined_info = {
@@ -262,7 +254,6 @@ def get_prev_detail(data):
 #                 qi_doc.current_warehouse = serial_no_doc[0][2]
 #                 qi_doc.item_name = serial_no_doc[0][3]
 #             result = fetch_nj_qlty_readings(qi_doc)
-#             print(f"result: {result}, type: {type(result)}")
 
 #             if result:
 #                 for i in range(len(result)):
@@ -314,7 +305,6 @@ def get_prev_detail(data):
 
 def save_qi_data(data):
     qi_name, partIsAvailable, item_group, qi_doc, user_email = '', '', '', '', ''
-    print(f"input data: {data}")
     if 'qi_name' in data:
         qi_name = data["qi_name"]
     if 'partIsAvailable' in data:
@@ -353,27 +343,21 @@ def save_qi_data(data):
                     child_table.item_group = result[i]['item_group']
                     child_table.quality_check = result[i]['quality_check']
             qi_doc.save()
-            print(f"qi_doc after save: {qi_doc.inspection_type}")
 
     # update checks and their values
-    print(f"&&&&&&&&&&&&&&&&&&&&&&&&&& {qi_name}")
     # serial_no = data['serialNo']
     if 'checkName' in data and partIsAvailable=='1' and qi_name != '' and qi_name != None:
         i = int(data['prevPart'])
-        print("&&&&&&&&&&&&&&&&&&&&&&&&&&  346")
         item_group_list = get_ig_list_nj(qi_name)['results']
         if item_group_list and 1 <= i <= len(item_group_list):
             item_group = item_group_list[i - 1].item_group
-            print(f"item_group: {item_group}")
         for check_name, check_option in zip(data["checkName"], data["checkOption"]):
-            print(f"check_name: {check_name} | check_option: {check_option}")
             existing_child = frappe.db.sql(""" SELECT item_group, check_name, options, name, description, checks, score, weightage FROM `tabNJ Checks` WHERE item_group = %s AND check_name = %s AND parent = %s ORDER BY idx""",
             (item_group, check_name, qi_doc.name))
             grading = frappe.db.sql(""" SELECT check_options, active, score FROM `tabQC Options` WHERE check_options = %s AND parent = %s ORDER BY idx""",
             (check_option, check_name))
             # if len(grading)>0:
             if grading:
-                print("grading is on")
                 weightage = grading[0][1]
                 score = grading[0][2] 
             else:
@@ -400,7 +384,6 @@ def save_qi_data(data):
                 child_table.score = score
                 # set_grade_in_quality_readings(qi_doc, item_group)
                 qi_doc.save()
-    print(f"qi_doc: {qi_doc.name}")
 
     return qi_doc.name
 
@@ -462,7 +445,6 @@ def get_ig_list_nj(qi_name, item_group=None):
     results = [reading for reading in nj_readings if reading.get('quality_check')]
     idx = None
     for i in range(len(results)):
-        # print(f"results[i].get('item_group'): {results[i].get('item_group')}")
         if results[i].get('item_group') == item_group:
             idx = i+1
             break
@@ -530,7 +512,6 @@ def fetch_nj_qlty_readings(doc):
     if doc.barcode:
         item_code = frappe.db.get_value("Serial No", {'name': doc.get("barcode")}, 'item_code')
         itm_template = frappe.db.get_value("Item", {'name': item_code}, 'variant_of')
-        #frappe.msgprint(f"{itm_template}")
         if itm_template:
             itm_wzrd = frappe.db.get_value("Item", {'name': itm_template}, 'reference')
             if itm_wzrd:
@@ -539,7 +520,6 @@ def fetch_nj_qlty_readings(doc):
     serial_no_doc=frappe.get_doc('Serial No',doc.get("barcode"))
     serial_no=frappe.db.get_list('Serial No Component',
     filters={'parent':doc.get("barcode")},fields=['item_group'])
-    # print(f"serial_no_doc: {serial_no_doc}")
     if serial_no:
         #quality_inspection.nj_quality_readings=[]
         for i in serial_no_doc.serial_no_component:
@@ -553,7 +533,6 @@ def fetch_nj_qlty_readings(doc):
 
     if not serial_no:
         for compo in itm_wzrd_doc.component:
-            #frappe.msgprint(f"{compo.component_type}")
             nj_quality_checks=frappe.db.get_value('NJ Quality Checks',
             {'inspection_type':doc.get("inspection_type"),'item_group':compo.component_type},['name'])
             Quality_reading.append({"item_group":compo.component_type,"quality_check":nj_quality_checks})

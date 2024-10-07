@@ -1,8 +1,9 @@
 import json
+
 import frappe
 from frappe.utils import nowdate, add_days
 from frappe.model.document import Document
-from nj_features.nj_features.doctype.employee import get_active_emp_work_ware
+from nj_lib.utils.common_utils import get_active_emp
 
 class DailyIndividualReport(Document):
     pass
@@ -35,7 +36,7 @@ def fetch_data_imports():
 @frappe.whitelist()
 def get_serial_no_data():
     user = frappe.session.user
-    emp_data = get_active_emp_work_ware(user)
+    emp_data = get_active_emp(user)
     serial_no_data = frappe.get_all('Serial No',
         filters={
             'warehouse': emp_data.get('work_warehouse'),

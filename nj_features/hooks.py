@@ -1,9 +1,4 @@
 from . import __version__ as app_version
-from nj_features.nj_features.doctype.daily_individual_report.daily_individual_report import (
-    all_no_selected_serial_no_data,
-    daily_report_not_submitted_warehouses_data
-)
-
 
 app_name = "nj_features"
 app_title = "NJ Features"
@@ -105,7 +100,7 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Stock Ledger Entry": "nj_features.nj_features.doctype.stock_ledger_entry.CustomStockLedgerEntry"
+	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry"
 }
 
 # Document Events
@@ -113,17 +108,9 @@ override_doctype_class = {
 # Hook on document methods and events
 
 doc_events = {
-	# "*": {
-	# 	"on_update": "method",
-	# 	"on_cancel": "method",
-	# 	"on_trash": "method"
-	# }
 	"Purchase Receipt": {
-		"before_save": "nj_features.nj_features.doctype.purchase_receipt.get_batch",
+		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
 		"on_submit": "nj_features.api_files.update_serial_no_on_pr_submit",
-	},
-	"Sales Order": {
-		"on_submit": "nj_features.api_files.on_submit"
 	}
 }
 
@@ -170,6 +157,7 @@ doc_events = {
 # 		]
 # 	}
 # }
+
 scheduler_events = {
 	"cron": {
 		"0 22 * * *": [
@@ -179,7 +167,6 @@ scheduler_events = {
 		]
 	}
 }
-
 
 # Testing
 # -------

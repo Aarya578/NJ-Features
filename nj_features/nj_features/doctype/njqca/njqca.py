@@ -1,21 +1,17 @@
 import re
 import json
-
 import frappe
-import random
 import datetime
 from frappe import _
 from frappe.model.document import Document
+from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
-from nj_features.nj_features.doctype.employee import get_active_emp_work_ware
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
-
 # logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
-
 
 def update_serial_no_componont_for_grade(self):
     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
@@ -31,7 +27,6 @@ def update_serial_no_componont_for_grade(self):
         if model:
             serial_no_doc.model = model
     for reading in (self.njqca_item_component):
-        # print('reading value is ', reading,'\n',dir(reading))
         if reading.item_group not in  [s.item_group for s in serial_no_doc.serial_no_component] :
             row = serial_no_doc.append('serial_no_component', {})
             row.item = reading.part_item_code
@@ -40,20 +35,15 @@ def update_serial_no_componont_for_grade(self):
             row.is_available = 1
             row.quantity = 1
             # row.reference_doctype = self.doctype
-                # row.reference_doctype_no = self.namer
-            
+            # row.reference_doctype_no = self.namer
         else:
             for sn in serial_no_doc.serial_no_component :
                 if reading.item_group == sn.item_group and reading.part_item_code :
                     sn.item = reading.part_item_code
     serial_no_doc.save()
 
-
 # def fill_automated_data_to_checks(self):
     # qc_check.
-    
-    
-
 
 @frappe.whitelist()
 def get_inspection_type():
@@ -86,7 +76,6 @@ def open_draft_qi(self):
             new_qi.item_name = self.manual_repack_item_code
     
     result = get_itm_code_on_barcode(new_qi)
-  
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
     item_wizard_name = new_qi.get('item_wizard')
@@ -264,25 +253,25 @@ def get_itm_code_on_barcode(new_qi):
             return {"disable_save": True}
 
     if serial_no_data.warehouse:
-        emp_data = get_active_emp_work_ware(frappe.session.user)
+        emp_data = get_active_emp(frappe.session.user)
         work_warehouse = emp_data.get('work_warehouse')
         if not work_warehouse:
             frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
         elif work_warehouse != serial_no_data.warehouse:
-            stock_entry_items = [{
+            material_transfer_items = [{
+                'serial_no': barcode,
+                't_warehouse': work_warehouse,
                 'item_code': serial_no_data.item_code,
-                'basic_rate': serial_no_data.purchase_rate,
-                'serial_no': barcode
+                's_warehouse': serial_no_data.warehouse,
             }]
             data = {
-                "serial_no": barcode,
-                "stock_entry_type": "Material Transfer",
-                "t_warehouse": work_warehouse,
-                "series": "STE-NJ-QI-",
+                "doctype": new_qi.doctype,
+                "series": "NJ-QI-.YYYY.-.MM.-",
                 "reference_serial_no": barcode,
-                "doctype": "Stock Entry",
-                "stock_entry_for_material_transfer_or_repack_items": stock_entry_items
+                "stock_entry_type": "Material Transfer",
+                "material_transfer_items": material_transfer_items
             }
+
             stock_entry_using_nj_lib(data)
             result['warehouse'] = work_warehouse
             new_qi.set('warehouse',work_warehouse)
@@ -293,9 +282,6 @@ def get_itm_code_on_barcode(new_qi):
     return new_qi
 
 
-
-    
-
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
@@ -304,7 +290,6 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
     
     response = frappe._dict()
     
-        
     response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
     
     if response.get('sequence_list_for_nj_readings_data'):
@@ -340,20 +325,14 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
    
     return True 
 
-
 class NJQCA(Document):  
   
     def on_submit(self):
-        # Repack
-       
         if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
             frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
         if self.power_on == 'Yes' and self.repack_item_code != '':
             self.make_stock_entry_using_nj_lib()
-            
             open_draft_qi(self)
-
-
     
     
     def make_stock_entry_using_nj_lib(self):
@@ -372,7 +351,6 @@ class NJQCA(Document):
         }
         stock_data_str = json.dumps(stock_data)
         stock_entry_using_nj_lib(stock_data_str)
-        
 
 
 def stock_entry_for_material_transfer_or_repack_items_data(self):
@@ -418,7 +396,6 @@ def after_save_njqca(docname):
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
-
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel,serial_no):
     wizard_query = """Select name from `tabItem Wizards` where model = %s and part_list_status = 'Completed' order by modified desc"""
@@ -432,13 +409,10 @@ def model_change_for_serial_no(newmodel,serial_no):
     """
     qi_exists_data = frappe.db.sql(qi_exists, (serial_no), as_dict=1)
     kitting_exists_data = frappe.db.sql(kitting_exists,serial_no,as_dict=1)
-    # print('item_wizards=============',item_wizard,qi_exists_data,kitting_exists_data)
     if qi_exists_data == [] and kitting_exists_data == []:
         if item_wizard != []:
             item_wizard_doc = frappe.get_doc("Item Wizards",item_wizard[0]['name'])
             serial_no_doc = frappe.get_doc('Serial No', serial_no)
-            # print('serial_no_doc==============',serial_no_doc.as_dict())
-            # print('item_wizards_doc=================',item_wizard_doc.as_dict())
             if item_wizard_doc.part_list_status != 'Completed':
                 frappe.throw(f"'Part List' in Item Wizard: {item_wizard[0]['name']} is not completed. Please contact NPD Team.")
             if newmodel:
@@ -455,11 +429,10 @@ def model_change_for_serial_no(newmodel,serial_no):
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
+
     brand = frappe.db.exists('Brand', {'name': brand})
-    
     model = frappe.db.exists('Models', {'name': model})
     
-
     return {'brand': brand, 'model': model}
 
 
@@ -498,7 +471,6 @@ def get_info_from_serial_no(doc=None):
                 serial_no_doc.barcode = doc_json.get('serialno')
                 serial_no_doc.save()
     return result
-
 
 
 def get_item_code_for_each_part(part_item_group,doc):
@@ -637,12 +609,10 @@ def consolidate_ram_capacities(data):
 def consolidate_storage(data):
     total_storage_capacity = 0
     
-    # Iterate through the data to sum up storage capacities
     for obj in data:
         for key, value in obj.items():
             if key.lower() == 'storage capacity':
                 if value and value.lower() != 'no storage':
-                    # Extract numerical value from the string (e.g., '512 GB SSD')
                     match = re.match(r'^(\d+)\s*GB', value, re.IGNORECASE)
                     if match:
                         storage_amount = int(match.group(1))
@@ -667,7 +637,6 @@ def set_storage_item_code(obj):
     return obj
                 
                     
-
 def normalize_gen(gen_str):
     gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
 
@@ -799,7 +768,6 @@ def get_backup_duration(parent_name, item_group):
                                     WHERE parent = %(parent_name)s 
                                     ORDER BY idx 
                                 """
-        # Pass the parameter as a dictionary
         records = frappe.db.sql(get_first_last_record_query, {'parent_name': parent_name}, as_list=True)
 
         if len( records)>2:

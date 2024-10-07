@@ -6,7 +6,7 @@ frappe.ui.form.on('Purchase Order', {
         $('.col-lg-2.layout-side-section').hide();
     },
     
-    refresh(frm) {
+    has_warranty(frm) {
         if (frm.doc.has_warranty == 0 && frm.doc.docstatus == 0) {
             frm.set_value('warranty_days', 0);
         }
@@ -25,10 +25,9 @@ const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
     close_purchase_order: function(){
 
         frappe.call({
-            method: 'nj_features.nj_features.doctype.purchase_order.check_billed_and_closed_amount',
+            method: 'nj_features.overrides.purchase_order.check_billed_and_closed_amount',
             args: {'purchase_order': cur_frm.doc.name, 'po_grand_total': cur_frm.doc.grand_total},
             callback: function(r) {
-                console.log('check_billed_and_closed_amount: ', r.message);
                 let closedAmount = r.message.total_closed_amount ?? 0.0
                 let billedAmount = r.message.total_billed_amount ?? 0.0
                 let toleranceAmount = r.message.tolerance_amount

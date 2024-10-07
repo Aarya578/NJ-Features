@@ -18,10 +18,7 @@ frappe.ui.form.on('Delivery Note', {
         } else {
             frm.remove_custom_button(__('Print QR Code'));
         }
-        console.log("inside delivery note=============================");
-        
     }
-    
 });
 
 
@@ -164,11 +161,9 @@ frappe.ui.form.on('Delivery Note', {
 
 frappe.ui.form.on('Delivery Note', {
     refresh: function(frm) {
-        // Add 'Record' button for new documents (docstatus = 0)
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('Record'), function() {
-                // Trigger the URL opening when 'Record' button is clicked
-                openDjangoUrl(frm.doc.doctype,frm.doc.name);  // Pass DN number to the function
+                openDjangoUrl(frm.doc.doctype,frm.doc.name);
             }).addClass('btn-warning');
         }
     }
@@ -179,11 +174,7 @@ function openDjangoUrl(doctype,dn_number) {
     // Construct the URL by embedding the dn_number in it
     // let url = `https://njpulse.newjaisa.com/upload/${dn_number}/`;
     frappe.db.get_value("NJ Settings",{"parameter":"video_prefix"},"value").then((prefix)=>{
-
-        console.log("prefix------183",prefix.message.value)
         let url = `${prefix.message.value}${doctype}/${dn_number}/`;
-        
-        // Open the URL in a new tab
         window.open(url, '_blank');
     })
 }

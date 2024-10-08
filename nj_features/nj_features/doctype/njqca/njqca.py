@@ -336,6 +336,8 @@ class NJQCA(Document):
     
     
     def make_stock_entry_using_nj_lib(self):
+
+        print(f'get_rpeack_items----------------- 340 {get_repack_items(self)}')
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
         stock_data = {
             "name": self.name,
@@ -344,33 +346,35 @@ class NJQCA(Document):
             "doctype": self.doctype,
             "series": "NJ-STE-NJQCA-",
             "serial_no": self.serial_no,
-            "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items_data(self),
             "repack_items": get_repack_items(self),
-            # "unpack_items": get_unpack_items(self),
             "expense_account": accounting_cost_account
         }
         stock_data_str = json.dumps(stock_data)
         stock_entry_using_nj_lib(stock_data_str)
 
 
-def stock_entry_for_material_transfer_or_repack_items_data(self):
-    stock_entry_for_material_transfer_or_repack_items_list = []
-    stock_entry_for_material_transfer_or_repack_items_dict = {
-        "item_code": self.item_code,
-        "basic_rate": self.base_price,
-        "serial_no": self.serial_no,
-    }
-    stock_entry_for_material_transfer_or_repack_items_list.append(stock_entry_for_material_transfer_or_repack_items_dict)
-    return stock_entry_for_material_transfer_or_repack_items_list
+# def stock_entry_for_material_transfer_or_repack_items_data(self):
+#     stock_entry_for_material_transfer_or_repack_items_list = []
+#     stock_entry_for_material_transfer_or_repack_items_dict = {
+#         "item_code": self.item_code,
+#         "basic_rate": self.base_price,
+#         "serial_no": self.serial_no,
+#     }
+#     stock_entry_for_material_transfer_or_repack_items_list.append(stock_entry_for_material_transfer_or_repack_items_dict)
+#     return stock_entry_for_material_transfer_or_repack_items_list
 
 
 def get_repack_items(self):
     get_repack_items_list = []
     get_repack_items_dict = {
-		"repack_item_code": self.manual_repack_item_code,
-		"serial_no": self.serial_no,
+		"repack_item_code": self.item_code,
+		"repack_serial_no": self.serial_no,
 		"repack_base_price": self.base_price,
-        "repack_warehouse": self.warehouse
+        "repack_item_source_warehouse": self.warehouse,
+        "unpack_item_code": self.repack_item_code,
+        "unpack_serial_no": self.serial_no,
+        "unpack_base_price": self.repack_itm_price,
+        "unpack_item_target_warehouse": self.warehouse
 	}
     get_repack_items_list.append(get_repack_items_dict)
     

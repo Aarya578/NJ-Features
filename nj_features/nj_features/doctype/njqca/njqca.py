@@ -394,7 +394,7 @@ def after_save_njqca(docname):
             open_draft_qi(doc) 
             # self.save()
         elif doc.power_on == 'No':
-            frappe.throw("QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+            frappe.throw(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
         # else:
         #     frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
     else:

@@ -63,7 +63,7 @@ frappe.listview_settings['NJ Audit'] = {
                     args: {},
                     callback: function(response) {
                         frappe.call({
-                            method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.mail_data_for_not_scan_serial_no_report',
+                            method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.mail_button_data_for_not_scan_serial_no_report',
                             args: {
                                 'data': JSON.stringify(response.message)
                             },

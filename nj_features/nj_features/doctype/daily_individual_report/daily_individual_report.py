@@ -46,7 +46,7 @@ def get_serial_no_data():
     return serial_no_data
 
 @frappe.whitelist()
-def mail_data_for_not_scan_serial_no_report(data):
+def mail_button_data_for_not_scan_serial_no_report(data):
     data = json.loads(data)
     if data[1]:
         table_html = "<table border='1' cellpadding='5' cellspacing='0'>"
@@ -63,13 +63,40 @@ def mail_data_for_not_scan_serial_no_report(data):
 
 @frappe.whitelist()
 def daily_report_to_send_personal_mail():
-    all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
-    submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
+    all_warehouse_data = frappe.db.sql("""
+        SELECT name, warehouse_owner 
+        FROM `tabWarehouse` 
+        WHERE parent_warehouse LIKE '%work-warehouse%' 
+    """, as_dict=1)
+    
+    submitted_warehouse_data = frappe.db.sql("""
+        SELECT DISTINCT warehouse 
+        FROM `tabDaily Individual Report` 
+        WHERE docstatus = 1 AND DATE(creation) = CURRENT_DATE
+    """, as_dict=1)
+    
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
-    missing_warehouses_mails = [mail['warehouse_owner'] for mail in all_warehouse_data if mail['name'] not in submitted_warehouse_names]
-    for mail in missing_warehouses_mails:
-        send_email_to_user(mail, 'Inventory Not Updated', 'Please check that you have not submitted your Inventory report in Serial NO. Thank you.')
-
+    
+    missing_warehouse_emails = [
+        mail['warehouse_owner'] 
+        for mail in all_warehouse_data 
+        if mail['name'] not in submitted_warehouse_names
+    ]
+    
+    https_link = "https://erp.newjaisa.com/app/serial-no/view/list"
+    
+    for email in missing_warehouse_emails:
+        message = f"""
+        <p>Please check that you have not submitted your Inventory report in Serial NO.</p>
+        <p>For more details, visit the following link: <a href="{https_link}">Click here</a></p>
+        <p>After visiting the page, please click on the "Update Inventory" button and submit your inventory.</p>
+        <p>Thank you.</p>
+        """
+        send_email_to_user(
+            email, 
+            'Inventory Not Updated', 
+            message
+        )
 
 @frappe.whitelist()
 def daily_report_not_submitted_warehouses_data():

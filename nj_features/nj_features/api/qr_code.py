@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import os
+import random
 import frappe
 import pyqrcode
 from nj_lib.utils.common_utils import is_serialized

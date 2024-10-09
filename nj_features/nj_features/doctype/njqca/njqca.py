@@ -470,10 +470,6 @@ def get_info_from_serial_no(doc=None):
             result['warehouse'] = sle_entry.get('warehouse')
             result['repack_itm_price'] = repack_itm_price
             result['base_price'] = sle_entry.get('purchase_rate')
-            if not serial_no_doc.bios_serial_no:
-                serial_no_doc.bios_serial_no = doc_json.get('bios_serialno')
-                serial_no_doc.barcode = doc_json.get('serialno')
-                serial_no_doc.save()
     return result
 
 

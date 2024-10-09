@@ -66,7 +66,7 @@ def daily_report_to_send_personal_mail():
     all_warehouse_data = frappe.db.sql("""
         SELECT name, warehouse_owner 
         FROM `tabWarehouse` 
-        WHERE parent_warehouse LIKE '%work-warehouse%' 
+        WHERE parent_warehouse LIKE '%work-warehouse%' and disabled = 0
     """, as_dict=1)
     
     submitted_warehouse_data = frappe.db.sql("""
@@ -100,11 +100,12 @@ def daily_report_to_send_personal_mail():
 
 @frappe.whitelist()
 def daily_report_not_submitted_warehouses_data():
-    all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' """, as_dict=1)
+    all_warehouse_data = frappe.db.sql("""select name, curdate(),warehouse_owner from `tabWarehouse` where parent_warehouse like '%work-warehouse%' and disabled = 0 """, as_dict=1)
     submitted_warehouse_data = frappe.db.sql("""select distinct warehouse from `tabDaily Individual Report` where docstatus = 1 and DATE(creation) = CURRENT_DATE """, as_dict=1)
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
     missing_warehouses = [warehouse for warehouse in all_warehouse_data if warehouse['name'] not in submitted_warehouse_names]
     if missing_warehouses:
+        total_count = len(missing_warehouses)
         table_html = "<table border='1' cellpadding='5' cellspacing='0'>"
         table_html += "<tr><th>Date</th><th>Warehouse name</th><th>Owner</th></tr>"
         for warehouse in missing_warehouses:
@@ -115,7 +116,11 @@ def daily_report_not_submitted_warehouses_data():
         recipient_email = main_mail
         cc_emails = nj_settings_cc_mails.split(",")
         subject = "Inventory Not Updated"
-        message = f"<p>The following warehouses have not submitted their Inventory:</p>{table_html}"
+        message = f"""
+                <p>Total count of warehouses not submitted inventory: {total_count}</p>
+                <p>The following warehouses have not submitted their Inventory:</p>
+                {table_html}
+                """
         send_email_to_user(recipient_email, subject, message, cc_emails=cc_emails)
 
 @frappe.whitelist()

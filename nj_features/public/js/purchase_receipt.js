@@ -67,7 +67,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
         var child_doc = locals[cdt][cdn];
         if(frm.doc.docstatus == 0){
             frappe.call({
-                method: 'nj_features.nj_features.api.api_files.print_barcode',
+                method: 'nj_features.nj_features.api.qr_code.print_barcode',
                 args: {
                     doc: child_doc
                 },

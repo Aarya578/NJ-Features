@@ -158,7 +158,7 @@ def create_work_ware(self, user_email):
                     SELECT SUM(Bin.actual_qty) AS total_qty
                     FROM tabBin Bin
                     INNER JOIN tabWarehouse WH ON Bin.warehouse = WH.name
-                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 {conditions_sql}
+                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name NOT LIKE 'EMP%' {conditions_sql}
                     GROUP BY WH.warehouse_owner;
                 """
 

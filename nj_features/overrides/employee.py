@@ -4,7 +4,7 @@
 import json
 import frappe
 from frappe import _
-from nj_lib.utils.common_utils import get_active_user
+from nj_lib.utils.common_utils import get_active_emp
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
@@ -57,9 +57,9 @@ def create_user(self):
                 
             user_email = new_user.email
         else:
-            previous_role_profile = get_active_user(user_email, fields=['role_profile'])
+            emp_data = get_active_emp(user_email, fields=['role_profile'])
             try:
-                if self.get('role_profile') != previous_role_profile.get('role_profile'):
+                if emp_data and self.get('role_profile') != emp_data.get('role_profile'):
                     frappe.db.set_value('User', user_email, 'role_profile_name', self.get('role_profile'))
             except Exception as e:
                 frappe.throw("Error while updating user role profile: ",e.message)

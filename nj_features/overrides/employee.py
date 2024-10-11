@@ -4,7 +4,7 @@
 import json
 import frappe
 from frappe import _
-from nj_lib.utils.common_utils import get_active_emp
+from nj_lib.utils.common_utils import get_active_emp, get_active_user
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
@@ -15,25 +15,26 @@ def create_user_and_warehouse(self):
     return_data = { "user_id": user_email }
     
     if user_email is not None or user_email != "":
-        if self.employee_asset_warehouse is not None:
+        if self.get("employee_asset_warehouse") is None:
             emp_ware = create_emp_ware(self, user_email)
             if emp_ware is not None:
                 return_data["employee_asset_warehouse"] = emp_ware
-
-        if self.work_warehouse is not None:    
+                
+        if self.get("work_warehouse") is None:    
             work_ware = create_work_ware(self, user_email)
             if work_ware is not None:
                 return_data["work_warehouse"] = work_ware
     else:
-        frappe.throw("User not created using email: ", self.get('prefered_email'))
+        frappe.throw("User not created using email: ", self.get("prefered_email"))
 
     return return_data
 
 def create_user(self):
 
     if self.get('status') == 'Active':
-        user_email = frappe.db.exists("User", {"email": self.get('prefered_email')})
-        
+        user_data = get_active_user(self.get('prefered_email'), ignore=True)
+        user_email = user_data.get('email')
+
         if not user_email:
             restrict_ip = frappe.db.get_value('NJ Settings', {'doc_type': 'User', 'parameter': 'restrict_ip'}, 'value')
             new_user = frappe.new_doc('User')
@@ -58,6 +59,7 @@ def create_user(self):
             user_email = new_user.email
         else:
             emp_data = get_active_emp(user_email, fields=['role_profile'], exists=True, ignore=True)
+
             try:
                 if emp_data and self.get('role_profile') != emp_data.get('role_profile'):
                     frappe.db.set_value('User', user_email, 'role_profile_name', self.get('role_profile'))
@@ -71,7 +73,8 @@ def create_user(self):
 def create_warehouse(user, department, location, emp_id=None, warehouse_type=None):
     parent_warehouse, user_full_name, is_main_warehouse_exists = '', '', ''
     warehouse = frappe.new_doc('Warehouse')
-    user_full_name = frappe.db.get_value('User', {'name': user, 'status':'Active'}, 'full_name')
+    user_data = get_active_user(user, fields=['full_name'])
+    user_full_name = user_data.get('full_name')
     if department and warehouse_type == 'work_ware':
         prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
         parent_warehouse = prefix + '-Work-Warehouse - NJ'

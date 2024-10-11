@@ -12,6 +12,10 @@ def create_user_and_warehouse(self):
         self = json.loads(self)
     
     user_email = create_user(self)
+
+    if user_email.get('status'):
+        return user_email
+    
     return_data = { "user_id": user_email }
     
     if user_email is not None or user_email != "":

@@ -137,29 +137,29 @@ frappe.ui.form.on('NJQCA', {
                         }
                     });
                     
-                    if(cur_frm.doc.model && cur_frm.doc.model != r.message.model){
-                        frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
-                            () => {
-                                frappe.call({
-                                    method: 'nj_features.nj_features.doctype.njqca.njqca.model_change_for_serial_no',
-                                    args: {
-                                        'newmodel': cur_frm.doc.model,
-                                        'serial_no': cur_frm.doc.serial_no
-                                    },
-                                    callback: function(r) {
-                                        if(r.message.status === 'success'){
-                                            var base_url = frappe.urllib.get_base_url();
+                    // if(cur_frm.doc.model && cur_frm.doc.model != r.message.model){
+                    //     frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
+                    //         () => {
+                    //             frappe.call({
+                    //                 method: 'nj_features.nj_features.doctype.njqca.njqca.model_change_for_serial_no',
+                    //                 args: {
+                    //                     'newmodel': cur_frm.doc.model,
+                    //                     'serial_no': cur_frm.doc.serial_no
+                    //                 },
+                    //                 callback: function(r) {
+                    //                     if(r.message.status === 'success'){
+                    //                         var base_url = frappe.urllib.get_base_url();
 
-                                            var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
+                    //                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                             
-                                            frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
-                                        }
-                                    }
-                                });
-                            }, () => {
-                                $('.primary-action').hide()
-                            })
-                    }
+                    //                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
+                    //                     }
+                    //                 }
+                    //             });
+                    //         }, () => {
+                    //             $('.primary-action').hide()
+                    //         })
+                    // }
                 }
             });
         }
@@ -177,30 +177,32 @@ frappe.ui.form.on('NJQCA', {
                         `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
                         () => {
                             
-                            let stock_repack_item = [{
+                            let material_transfer_items = [{
+                                'serial_no': frm.doc.serial_no,
                                 'item_code': frm.doc.item_code,
-                                'basic_rate': frm.doc.base_price,
-                                'serial_no': frm.doc.serial_no
+                                't_warehouse': r.work_warehouse,
+                                's_warehouse': frm.doc.warehouse
                             }];
                             
                             let data = {
-                                "serial_no": frm.doc.serial_no,
-                                "stock_entry_type": "Material Transfer",
-                                "s_warehouse": frm.doc.warehouse,
-                                "t_warehouse": r.work_warehouse,
-                                "series": "NJ-STE-NJQCA-",
-                                "reference_serial_no": frm.doc.serial_no,
                                 "doctype": frm.doc.doctype,
-                                "stock_entry_for_material_transfer_or_repack_items": stock_repack_item,
+                                "serial_no": frm.doc.serial_no,
+                                "series": "NJ-STE-NJQCA-",
+                                "t_warehouse": r.work_warehouse,
+                                "stock_entry_type": "Material Transfer",
+                                "reference_serial_no": frm.doc.serial_no,
+                                "material_transfer_items": material_transfer_items,
                             }
                             frappe.call({
                                 method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
                                 args: { 'data': JSON.stringify(data) },
+                                callback: function(response) {
+                                    frm.set_value('warehouse', r.work_warehouse)
+                                },
                                 error: function(err) {
                                     console.log(err);
                                 }
                             })
-                            frm.set_value('warehouse', r.work_warehouse)
                             dialog.hide()
                         },
                         () => {
@@ -218,6 +220,33 @@ frappe.ui.form.on('NJQCA', {
         var selectedItemGroup = frm.doc.item_group;
 
         if (selectedModel && selectedBrand) {
+            frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no,}, 'model', function(r) {
+                if(selectedModel && selectedModel != r.model){
+                    frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
+                        () => {
+                            frappe.call({
+                                method: 'nj_features.nj_features.doctype.njqca.njqca.model_change_for_serial_no',
+                                args: {
+                                    'newmodel': cur_frm.doc.model,
+                                    'serial_no': cur_frm.doc.serial_no
+                                },
+                                callback: function(r) {
+                                    if(r.message.status === 'success'){
+                                        var base_url = frappe.urllib.get_base_url();
+    
+                                        var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
+                                        
+                                        frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
+                                    }
+                                }
+                            });
+                        }, () => {
+                            $('.primary-action').hide()
+                        })
+                }
+            })
+
+
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
                 args: {

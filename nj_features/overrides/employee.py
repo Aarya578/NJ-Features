@@ -57,7 +57,7 @@ def create_user(self):
                 
             user_email = new_user.email
         else:
-            emp_data = get_active_emp(user_email, fields=['role_profile'])
+            emp_data = get_active_emp(user_email, fields=['role_profile'], exists=True, ignore=True)
             try:
                 if emp_data and self.get('role_profile') != emp_data.get('role_profile'):
                     frappe.db.set_value('User', user_email, 'role_profile_name', self.get('role_profile'))

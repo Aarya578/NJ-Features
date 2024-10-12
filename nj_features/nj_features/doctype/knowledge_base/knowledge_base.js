@@ -228,7 +228,7 @@ function displayAttachment(attachment_link) {
 }
 
 function isImage(url) {
-    return /\.(jpeg|jpg|gif|png)$/i.test(url);
+    return /\.(jpeg|jpg|gif|png|webp)$/i.test(url);
 }
 
 function isVideo(url) {

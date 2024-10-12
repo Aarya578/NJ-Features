@@ -13,7 +13,7 @@ def create_user_and_warehouse(self):
     
     user_email = create_user(self)
 
-    if user_email.get('status'):
+    if 'status' in user_email:
         return user_email
     
     return_data = { "user_id": user_email }
@@ -23,7 +23,6 @@ def create_user_and_warehouse(self):
             emp_ware = create_emp_ware(self, user_email)
             if emp_ware is not None:
                 return_data["employee_asset_warehouse"] = emp_ware
-                
         if self.get("work_warehouse") is None:    
             work_ware = create_work_ware(self, user_email)
             if work_ware is not None:
@@ -37,9 +36,7 @@ def create_user(self):
 
     if self.get('status') == 'Active':
         user_data = get_active_user(self.get('prefered_email'), ignore=True)
-        user_email = user_data.get('email')
-
-        if not user_email:
+        if user_data is None:
             restrict_ip = frappe.db.get_value('NJ Settings', {'doc_type': 'User', 'parameter': 'restrict_ip'}, 'value')
             new_user = frappe.new_doc('User')
 
@@ -54,21 +51,21 @@ def create_user(self):
             new_user.allowed_in_mentions = 0
             new_user.role_profile_name = self.get('role_profile')
             new_user.restrict_ip = restrict_ip
-            
             try:
                 new_user.save(ignore_permissions=True)
             except Exception as e:
-                frappe.throw("Error while creating user: ",e.message)
+                frappe.throw("Error while creating user: ",e)
                 
             user_email = new_user.email
         else:
+            user_email = user_data.get('name')
             emp_data = get_active_emp(user_email, fields=['role_profile'], exists=True, ignore=True)
 
             try:
                 if emp_data and self.get('role_profile') != emp_data.get('role_profile'):
                     frappe.db.set_value('User', user_email, 'role_profile_name', self.get('role_profile'))
             except Exception as e:
-                frappe.throw("Error while updating user role profile: ",e.message)
+                frappe.throw("Error while updating user role profile: ",e)
         
         return user_email
     else:
@@ -119,7 +116,7 @@ def create_warehouse(user, department, location, emp_id=None, warehouse_type=Non
         try:
             warehouse.save(ignore_permissions=True)
         except Exception as e:
-            frappe.throw("Error while creating employee asset warehouse: ",e.message)
+            frappe.throw("Error while creating employee asset warehouse: ",e)
             return None
     return warehouse.name
 
@@ -182,7 +179,7 @@ def create_work_ware(self, user_email):
                         try:
                             get_work_warehouse_doc.save(ignore_permissions=True)
                         except Exception as e:
-                            frappe.throw("Error while updating work warehouse: ",e.message)
+                            frappe.throw("Error while updating work warehouse: ",e)
                     else:
                         frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
                         return None

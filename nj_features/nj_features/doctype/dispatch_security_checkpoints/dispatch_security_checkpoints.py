@@ -29,13 +29,22 @@ def scan_serial_no_data(serial_no, doc_name=None):
     item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
     # print(f'=================================item-code=======',item_code)
     
-    sales_invoices = frappe.db.get_list('Sales Invoice', 
-        filters={
-            'serial_no': ['like', '%' + serial_no + '%'],
-            'docstatus': 1  
-        },
-        fields=['name', 'status', 'approved']  
-    )
+    # sales_invoices = frappe.db.get_list('Sales Invoice', 
+    #     filters={
+    #         'serial_no': ['like', '%' + serial_no + '%'],
+    #         'docstatus': 1  
+    #     },
+    #     fields=['name', 'status', 'approved']  
+    # )
+    sales_invoices = frappe.db.sql(f"""SELECT name, status, approved 
+                                            FROM `tabSales Invoice` 
+                                            WHERE name = (
+                                                SELECT parent 
+                                                FROM `tabSales Invoice Item` 
+                                                WHERE docstatus = 1 
+                                                AND serial_no = '{serial_no}'
+                                            )""", as_dict=True)
+    
 
     delivery_notes = frappe.db.get_list('Delivery Note', 
         filters={
@@ -55,11 +64,10 @@ def scan_serial_no_data(serial_no, doc_name=None):
     sales_channel = None
     if sales_invoice:
         sales_channel = frappe.db.get_value('Sales Invoice', sales_invoice['name'], 'sales_channel')
-
     if sales_channel == 'Amazon':
         if not sales_invoice or not delivery_note:
             frappe.throw(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
-
+    
     elif sales_invoice and sales_channel != 'Amazon':
         if si_status != 'Paid':
             if approved != 1:

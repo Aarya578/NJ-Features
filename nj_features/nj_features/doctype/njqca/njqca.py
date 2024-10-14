@@ -109,7 +109,7 @@ def open_draft_qi(self):
     njqca_config_query_storage_data= frappe.db.sql(njqca_config_query_storage,(item_group[2],self.name),as_dict=True)
     # logger.debug("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
     field_name_check_sql_1 = """
-            SELECT options.name_of_the_check, qc_check.field_name
+          SELECT options.quality_check
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
             ON qc.name = options.parent
@@ -137,8 +137,7 @@ def open_draft_qi(self):
     }
 
     for idx, field in enumerate(field_name_data_1):
-        name_of_check = field['name_of_the_check']
-        field_name = field['field_name']
+        name_of_check = field['quality_check']
         
         child_exists = any(
             child.item_group in config_data_2_qi and child.check_name == name_of_check
@@ -168,13 +167,14 @@ def open_draft_qi(self):
             if options_value:
                 child_table = new_qi.append("nj_quality_checks", {})
                 child_table.check_name = name_of_check
-                child_table.checks = field_name
+                # child_table.checks = field_name
                 child_table.options = options_value
                 child_table.item_group = item_group_value
     
     for data in self.njqca_result_parameters:
+        # print("data----176",data.as_dict())
         field_name_check_sql = """
-            SELECT options.name_of_the_check, qc_check.field_name
+            SELECT options.quality_check
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
             ON qc.name = options.parent
@@ -183,10 +183,10 @@ def open_draft_qi(self):
             AND qc_check.diagnostic_type = 'Automatic'
             WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.parameter = %s """
         field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
-
+        # print("field_name_data----186",field_name_data)
         for field in field_name_data:
-            name_of_check = field['name_of_the_check']
-            field_name = field['field_name']
+            name_of_check = field['quality_check']
+            # print("name_of_check---189",name_of_check)
             child_exists = any(
                 child.item_group == data.get("item_group") and child.check_name == name_of_check
                 for child in new_qi.nj_quality_checks
@@ -194,8 +194,8 @@ def open_draft_qi(self):
 
             if not child_exists:
                 child_table = new_qi.append("nj_quality_checks", {})
-                child_table.check_name = field['name_of_the_check']
-                child_table.checks = field_name
+                child_table.check_name = field['quality_check']
+                # child_table.checks = field_name
                 child_table.item_group = data.get("item_group")
                 child_table.options = data.get("value")
 

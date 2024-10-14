@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import auth
+from nj_lib.utils.common_utils import get_active_user
 
 @frappe.whitelist( allow_guest=True )
 def login(usr, pwd):
@@ -19,20 +20,21 @@ def login(usr, pwd):
         }
 
     api_key, api_generate = '', ''
-    user = frappe.get_doc('User', frappe.session.user)
+    user_data = get_active_user(usr, fields=['api_key', 'username', 'email'])
     
-    if not user.api_key:
-        api_generated_secret = frappe.get_attr("frappe.core.doctype.user.user.generate_keys")(frappe.session.user)
+    if not user_data.get('api_key'):
+        api_generated_secret = frappe.get_attr("frappe.core.doctype.user.user.generate_keys")(usr)
         api_generate = api_generated_secret.get('api_secret')
-        api_key = frappe.db.get_value('User', {'name': frappe.session.user}, 'api_key')
+        api_key_from_user_data = get_active_user(usr, fields=['api_key'])
+        api_key = api_key_from_user_data.get('api_key')
     else:
         generated_secret = frappe.utils.password.get_decrypted_password(
             "User", frappe.session.user, fieldname="api_secret"
         )
         api_generate = generated_secret
-        api_key = user.api_key
+        api_key = user_data.get('api_key')
         
-    get_dept_query = "SELECT department FROM `tabEmployee` WHERE user_id = %s"
+    get_dept_query = "SELECT department FROM `tabEmployee` WHERE user_id = %s AND status = 'Active'"
     department=frappe.db.sql(get_dept_query,(usr), as_dict=True)
     
     if department:
@@ -43,8 +45,8 @@ def login(usr, pwd):
             "sid":frappe.session.sid,
             "api_key":api_key,
             "api_secret":api_generate,
-            "username":user.username,
-            "email":user.email,
+            "username":user.get('username'),
+            "email":user.get('email'),
             "department":department
         }
     else:
@@ -61,7 +63,7 @@ def login(usr, pwd):
     )
     api_generate = generated_secret
   
-    sql="""SELECT department from `tabEmployee` where prefered_email =%s """
+    sql="""SELECT department from `tabEmployee` where user_id =%s AND status = 'Active'"""
     department=frappe.db.sql(sql,(usr),as_dict=True)
     if department:
         department = department[0]['department']
@@ -69,10 +71,10 @@ def login(usr, pwd):
         "success_key":1,
         "message":"Authentication success",
         "sid":frappe.session.sid,
-        "api_key":user.api_key,
+        "api_key":user_data.get('api_key'),
         "api_secret":api_generate,
-        "username":user.username,
-        "email":user.email,
+        "username":user_data.get('username'),
+        "email":user_data.get('email'),
         "department":department
     }
     else:

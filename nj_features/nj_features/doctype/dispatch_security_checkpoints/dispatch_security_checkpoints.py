@@ -45,15 +45,24 @@ def scan_serial_no_data(serial_no, doc_name=None):
                                                 AND serial_no = '{serial_no}'
                                             )""", as_dict=True)
     
+    print('=================================sales_invoices=======',sales_invoices)
+    # delivery_notes = frappe.db.get_list('Delivery Note', 
+    #     filters={
+    #         'serial_no': serial_no,
+    #         'docstatus': 1  
+    #     },
+    #     fields=['name', 'status']
+    # )
+    delivery_notes = sales_invoices = frappe.db.sql(f"""SELECT name, status
+                                            FROM `tabDelivery Note` 
+                                            WHERE name = (
+                                                SELECT parent 
+                                                FROM `tabDelivery Note Item` 
+                                                WHERE docstatus = 1 
+                                                AND serial_no = '{serial_no}'
+                                            )""", as_dict=True)
 
-    delivery_notes = frappe.db.get_list('Delivery Note', 
-        filters={
-            'serial_no': ['like', '%' + serial_no + '%'],
-            'docstatus': 1  
-        },
-        fields=['name', 'status']
-    )
-
+    print('=================================delivery_notes=======',delivery_notes)
     sales_invoice = sales_invoices[0] if sales_invoices else None
     delivery_note = delivery_notes[0] if delivery_notes else None
 

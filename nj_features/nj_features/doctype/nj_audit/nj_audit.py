@@ -20,7 +20,7 @@ def move_all_stock(self):
     
     stock_entry_data = {
         "stock_entry_type": "Material Transfer",
-        "stock_entry_for_material_transfer_or_repack_items": stock_entry_for_material_transfer_or_repack_items,
+        "material_transfer_items": stock_entry_for_material_transfer_or_repack_items,
         "series": "STE-AD-.YYYY.-.MM.-",
         "doctype": self.get('doctype'),
         "name": self.get('name'),

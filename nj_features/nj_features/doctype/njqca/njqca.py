@@ -344,6 +344,7 @@ class NJQCA(Document):
             "expense_account": accounting_cost_account
         }
         stock_data_str = json.dumps(stock_data)
+        print("\n\nstock_data",stock_data)
         stock_entry_using_nj_lib(stock_data_str)
 
 
@@ -561,6 +562,7 @@ def get_part_mapping(item_group, docname,model,item_template):
                 part_data.extend(result)
         repack_item_code = get_item_code_for_each_part(item_group,doc)
         repack_item_code['part_data'] = json.dumps(part_data)
+        print('repack_item_code====================',repack_item_code)
         return repack_item_code
 
 

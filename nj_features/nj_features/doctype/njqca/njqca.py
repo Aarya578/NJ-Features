@@ -58,7 +58,6 @@ def open_draft_qi(self):
     inspection_type = get_inspection_type()
     if not inspection_type:
         inspection_type = self.inspection_type
-    print("get_inspection_type--------63",inspection_type)
     self.inspection_type = inspection_type
     existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
     if existing_qi:
@@ -67,7 +66,7 @@ def open_draft_qi(self):
     else:
         new_qi = frappe.new_doc('NJ Quality Inspection')
         
-        new_qi.inspection_type = inspection_type    
+        new_qi.inspection_type = self.inspection_type    
         new_qi.barcode = self.serial_no
         new_qi.njqca_laptop_name = self.name
         new_qi.inspected_by = new_qi.owner
@@ -118,7 +117,6 @@ def open_draft_qi(self):
             AND qc_check.diagnostic_type = 'Automatic'
             WHERE qc.item_group in %s AND qc.inspection_type = %s  AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s """
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1, (item_group, inspection_type,parameter), as_dict=True)
-    print("field_name_data_1-------118",field_name_data_1,"field_name_check_sql_1----",field_name_check_sql_1,"njqca_config_query_storage_data---",njqca_config_query_storage_data,"njqca_config_query_ram_data----------",njqca_config_query_ram_data)
     # logger.debug("field_name_data_1-----------------njqca----------129",field_name_data_1)
     def extract_numeric_and_suffix(value):
         if value is None or value.strip() == '':
@@ -172,7 +170,6 @@ def open_draft_qi(self):
                 child_table.item_group = item_group_value
     
     for data in self.njqca_result_parameters:
-        # print("data----176",data.as_dict())
         field_name_check_sql = """
             SELECT options.quality_check
             FROM `tabNJ Quality Checks` qc
@@ -183,10 +180,8 @@ def open_draft_qi(self):
             AND qc_check.diagnostic_type = 'Automatic'
             WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.parameter = %s """
         field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
-        # print("field_name_data----186",field_name_data)
         for field in field_name_data:
             name_of_check = field['quality_check']
-            # print("name_of_check---189",name_of_check)
             child_exists = any(
                 child.item_group == data.get("item_group") and child.check_name == name_of_check
                 for child in new_qi.nj_quality_checks
@@ -337,7 +332,6 @@ class NJQCA(Document):
     
     def make_stock_entry_using_nj_lib(self):
 
-        print(f'get_rpeack_items----------------- 340 {get_repack_items(self)}')
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
         stock_data = {
             "name": self.name,
@@ -371,19 +365,21 @@ def get_repack_items(self):
 		"repack_serial_no": self.serial_no,
 		"repack_base_price": self.base_price,
         "repack_item_source_warehouse": self.warehouse,
-        "unpack_item_code": self.repack_item_code,
-        "unpack_serial_no": self.serial_no,
-        "unpack_base_price": self.repack_itm_price,
-        "unpack_item_target_warehouse": self.warehouse
 	}
     get_repack_items_list.append(get_repack_items_dict)
+    get_unpack_items_dict = {
+        "unpack_item_code": self.manual_repack_item_code,
+        "unpack_serial_no": self.serial_no,
+        "unpack_base_price": self.base_price,
+        "unpack_item_target_warehouse": self.warehouse
+    }
+    get_repack_items_list.append(get_unpack_items_dict)
     
     return get_repack_items_list
  
 
 @frappe.whitelist()
 def after_save_njqca(docname):
-    print("save method")
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         update_serial_no_componont_for_grade(doc)

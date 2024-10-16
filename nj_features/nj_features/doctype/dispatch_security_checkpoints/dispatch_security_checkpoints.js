@@ -15,11 +15,10 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data',
                 args: { 
-                    serial_no: frm.doc.scan_serial_no,   
-                    doc_name: frm.doc.name               
+                    serial_no: frm.doc.scan_serial_no            
                 },
                 callback: function (r) {
-                    if (r.message && r.message.length > 0) {
+                    if (r.message) {
                         frm.set_value('scan_serial_no', '');
                         frm.refresh_field('scan_serial_no');
                         

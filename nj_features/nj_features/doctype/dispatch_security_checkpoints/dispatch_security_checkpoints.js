@@ -43,4 +43,3 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         }
     },
 });
-

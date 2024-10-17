@@ -4,7 +4,7 @@ import frappe
 import datetime
 from frappe import _
 from frappe.model.document import Document
-from nj_lib.utils.common_utils import get_active_emp
+from nj_lib.utils.common_utils import get_active_emp,get_latest_item_wizard
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
@@ -14,36 +14,29 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 # logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
 
 def update_serial_no_componont_for_grade(self):
-    serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+    try:
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
 
-    # serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
-    # serial_no_doc.preferred_a_grade_price = self.preferred_a_grade_price
-    serial_no_doc.bios_serial_no = self.bios_serialno
-    serial_no_doc.purchase_price = self.base_price
-    serial_no_doc.current_price = self.base_price
-    
-    if not serial_no_doc.model:
-        model = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'item_model')
-        if model:
-            serial_no_doc.model = model
-    for reading in (self.njqca_item_component):
-        if reading.item_group not in  [s.item_group for s in serial_no_doc.serial_no_component] :
-            row = serial_no_doc.append('serial_no_component', {})
-            row.item = reading.part_item_code
-            row.item_group = reading.item_group
-            row.grade = 'UNKNOWN'
-            row.is_available = 1
-            row.quantity = 1
-            # row.reference_doctype = self.doctype
-            # row.reference_doctype_no = self.namer
-        else:
-            for sn in serial_no_doc.serial_no_component :
-                if reading.item_group == sn.item_group and reading.part_item_code :
-                    sn.item = reading.part_item_code
-    serial_no_doc.save()
-
-# def fill_automated_data_to_checks(self):
-    # qc_check.
+        # serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
+        # serial_no_doc.preferred_a_grade_price = self.preferred_a_grade_price
+        serial_no_doc.bios_serial_no = self.bios_serialno
+        serial_no_doc.purchase_price = self.base_price
+        serial_no_doc.current_price = self.base_price
+        
+        if not serial_no_doc.model:
+            model = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'item_model')
+            if model:
+                serial_no_doc.model = model
+        for reading in (self.njqca_item_component):
+            if reading.part_item_code and reading.item_group:
+                for sn in serial_no_doc.serial_no_component:
+                    if reading.item_group == sn.item_group:
+                        sn.item = reading.part_item_code
+        
+        # Save the Serial No document first
+        serial_no_doc.save()
+    except Exception as e:
+        return {f'Error while updating the Serial No Component: {str(e)}'}
 
 @frappe.whitelist()
 def get_inspection_type():
@@ -364,14 +357,14 @@ def get_repack_items(self):
     get_repack_items_dict = {
 		"repack_item_code": self.item_code,
 		"repack_serial_no": self.serial_no,
-		"repack_base_price": self.base_price,
+		"repack_item_base_price": self.base_price,
         "repack_item_source_warehouse": self.warehouse,
 	}
     get_repack_items_list.append(get_repack_items_dict)
     get_unpack_items_dict = {
         "unpack_item_code": self.manual_repack_item_code,
         "unpack_serial_no": self.serial_no,
-        "unpack_base_price": self.base_price,
+        "unpack_item_base_price": self.base_price,
         "unpack_item_target_warehouse": self.warehouse
     }
     get_repack_items_list.append(get_unpack_items_dict)

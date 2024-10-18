@@ -21,10 +21,8 @@ class Inward(Document):
         stock_data = {
             "name": self.name,
             "doctype": self.doctype,
-            "item_code": self.item_code,
             "stock_entry_type": "Repack",
             "series": "STE-INW-.YYYY.-.MM.-",
-            "parent_serial_no": self.serial_no,
             "repack_items": get_repack_items(self)
         }
         stock_data_str = json.dumps(stock_data)
@@ -66,14 +64,18 @@ class Inward(Document):
 def get_repack_items(self):
     get_repack_items_list = []
     get_repack_items_dict = {
-		"repack_serial_no": self.serial_no,
-		"unpack_item_code": self.item_code,
-		"repack_item_code": self.repack_item_code,
-		"repack_base_price": self.base_rate,
+		"repack_item_code": self.item_code,
+		"repack_item_base_price": self.base_rate,
         "repack_item_source_warehouse": self.source_warehouse,
-        "unpack_item_target_warehouse": self.target_warehouse,
 	}
     get_repack_items_list.append(get_repack_items_dict)
+    get_unpack_items_dict = {
+		"unpack_serial_no": self.serial_no,
+		"unpack_item_code": self.repack_item_code,
+		"unpack_item_base_price": self.base_rate,
+        "unpack_item_target_warehouse": self.target_warehouse,
+	}
+    get_repack_items_list.append(get_unpack_items_dict)
     
     return get_repack_items_list
 

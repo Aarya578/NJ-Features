@@ -64,9 +64,8 @@ def mail_button_data_for_not_scan_serial_no_report(data):
 @frappe.whitelist()
 def daily_report_to_send_personal_mail():
     all_warehouse_data = frappe.db.sql("""
-        SELECT name, warehouse_owner 
-        FROM `tabWarehouse` 
-        WHERE parent_warehouse LIKE '%work-warehouse%' and disabled = 0
+        SELECT w.name, w.warehouse_owner FROM `tabWarehouse` w JOIN `tabUser` u ON w.warehouse_owner = u.email 
+                                       WHERE w.parent_warehouse LIKE '%work-warehouse%' AND w.disabled = 0 AND u.enabled = 1;
     """, as_dict=1)
     
     submitted_warehouse_data = frappe.db.sql("""
@@ -77,11 +76,7 @@ def daily_report_to_send_personal_mail():
     
     submitted_warehouse_names = [d['warehouse'] for d in submitted_warehouse_data]
     
-    missing_warehouse_emails = [
-        mail['warehouse_owner'] 
-        for mail in all_warehouse_data 
-        if mail['name'] not in submitted_warehouse_names
-    ]
+    missing_warehouse_emails = [mail['warehouse_owner'] for mail in all_warehouse_data if mail['name'] not in submitted_warehouse_names]
     
     https_link = "https://erp.newjaisa.com/app/serial-no/view/list"
     

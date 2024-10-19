@@ -98,6 +98,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     refresh: function(frm) {
+        handleScannerInput(frm, 'serial_no');
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.events.power_on();
@@ -119,6 +120,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     serial_no: function(frm) {
+		handleScannerInput(frm, 'serial_no');
         if (cur_frm.doc.serial_no && cur_frm.doc.power_on == 'Yes') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',

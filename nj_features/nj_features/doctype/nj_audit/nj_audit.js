@@ -6,6 +6,7 @@ frappe.ui.form.on('NJ Audit', {
     },
     
     refresh: function(frm) {
+		handleScannerInput(frm, 'scan_serial_no');
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
@@ -19,6 +20,7 @@ frappe.ui.form.on('NJ Audit', {
     },
 
     scan_serial_no: function (frm) {
+		handleScannerInput(frm, 'scan_serial_no');
         if (!frm.doc.scan_rack) {
             frm.set_value("scan_serial_no", "");
             frm.refresh_field("scan_serial_no");

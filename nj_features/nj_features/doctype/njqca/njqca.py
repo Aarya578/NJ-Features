@@ -687,7 +687,7 @@ def construct_item_code(item_template, args_list):
             concatenated_string += f"-{value}"
     query = """
         SELECT item_code FROM `tabItem`
-        WHERE item_code = %s and has_serial_no = 1
+        WHERE item_code = %s and has_serial_no = 1 and disabled = 0
     """
 
     item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)

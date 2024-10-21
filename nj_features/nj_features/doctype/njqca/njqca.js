@@ -512,29 +512,26 @@ frappe.ui.form.on('NJQCA', {
     },
 
     item_template: function(frm) {
-        if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
-                args: { 
-                    'item_group': cur_frm.doc.item_group,
-                    'docname': cur_frm.doc.name,
-                    'model':cur_frm.doc.model,
-                    'item_template': cur_frm.doc.item_template
-                },
-                callback: function (r) {
-                    if (r.message.error) {
-                        frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
-                        frappe.validated = false ;
-                    } 
-                    else if (r.message.repack_item_code.Error){
-                        // frappe.throw("Error" + r.message.repack_item_code.Error);
-                        frappe.validated = false;
-                    } 
-                    else {
-                        if(r.message.repack_item_code.error ){
-                            console.log("Error came while creating of Repack Item Code" + r.message.repack_item_code.error) ;
+        if(frm.doc.item_template){
+            console.log('trigerring item_itemplate...')
+            if (cur_frm.doc.njqca_item_component && cur_frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
+                    args: { 
+                        'item_group': cur_frm.doc.item_group,
+                        'docname': cur_frm.doc.name,
+                        'model':cur_frm.doc.model,
+                        'item_template': cur_frm.doc.item_template
+                    },
+                    callback: function (r) {
+                        if (r.message.error) {
+                            frappe.msgprint("Serialized Item Code: <b>"+r.message.error+"</b> is not found. Please contact NPD Team")
+                        } 
+                        else if (r.message.repack_item_code.error){
+                            frappe.msgprint("Error while creating of Repack Item Code: <b>"+r.message.repack_item_code.error+"</b> Please contact NPD Team")
+                        } 
+                        else {
                             
-                        } else {
                             console.log("came to print repack item code");
                             cur_frm.set_value('repack_item_code', r.message.repack_item_code)
                             cur_frm.set_value('manual_repack_item_code',r.message.repack_item_code)
@@ -542,23 +539,26 @@ frappe.ui.form.on('NJQCA', {
                             cur_frm.refresh_field('repack_item_code');
                             cur_frm.refresh_field('manual_repack_item_code');
                             cur_frm.refresh_field('data_attr');
+        
+                            const partData = JSON.parse(r.message.part_data);
     
+                            frm.doc.njqca_item_component.forEach(row => {
+                                const part = partData.find(p => p.name === row.name);
+                                if (part) {
+                                    frappe.model.set_value(row.doctype, row.name, 'part_item_code', part.part_item_code);
+                                    frappe.model.set_value(row.doctype, row.name, 'attr_data', JSON.stringify(part.attr_data)); // Assuming attr_data is stored as a JSON string
+                                }
+                            });
+    
+                            frm.refresh_field('njqca_item_component'); // Refresh the child table
                         }
-                        const partData = JSON.parse(r.message.part_data);
-
-                        frm.doc.njqca_item_component.forEach(row => {
-                            const part = partData.find(p => p.name === row.name);
-                            if (part) {
-                                frappe.model.set_value(row.doctype, row.name, 'part_item_code', part.part_item_code);
-                                frappe.model.set_value(row.doctype, row.name, 'attr_data', JSON.stringify(part.attr_data)); // Assuming attr_data is stored as a JSON string
-                            }
-                        });
-
-                        frm.refresh_field('njqca_item_component'); // Refresh the child table
                     }
-                }
-            });
+                });
+            }
+        }else{
+            console.log('item_template is empty...')
         }
+        
     },
     after_save:function(frm){
         frappe.call({

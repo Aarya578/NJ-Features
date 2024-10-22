@@ -16,9 +16,6 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 def update_serial_no_componont_for_grade(self):
     try:
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-
-        # serial_no_doc = frappe.get_doc("Serial No", {'serial_no': self.serial_no})
-        # serial_no_doc.preferred_a_grade_price = self.preferred_a_grade_price
         serial_no_doc.bios_serial_no = self.bios_serialno
         serial_no_doc.purchase_price = self.base_price
         serial_no_doc.current_price = self.base_price
@@ -211,6 +208,7 @@ def get_itm_code_on_barcode(new_qi):
         "base_price": serial_no_data.purchase_rate
     }
 
+
     for key,value in result.items():
         new_qi.set(key,value)
     
@@ -337,7 +335,7 @@ class NJQCA(Document):
             "expense_account": accounting_cost_account
         }
         stock_data_str = json.dumps(stock_data)
-        print("\n\nstock_data",stock_data)
+        # print("\n\nstock_data=============",stock_data)
         stock_entry_using_nj_lib(stock_data_str)
 
 
@@ -362,7 +360,7 @@ def get_repack_items(self):
 	}
     get_repack_items_list.append(get_repack_items_dict)
     get_unpack_items_dict = {
-        "unpack_item_code": self.manual_repack_item_code,
+        "unpack_item_code": self.repack_item_code,
         "unpack_serial_no": self.serial_no,
         "unpack_item_base_price": self.base_price,
         "unpack_item_target_warehouse": self.warehouse
@@ -555,7 +553,7 @@ def get_part_mapping(item_group, docname,model,item_template):
                 part_data.extend(result)
         repack_item_code = get_item_code_for_each_part(item_group,doc)
         repack_item_code['part_data'] = json.dumps(part_data)
-        print('repack_item_code====================',repack_item_code)
+        # print('repack_item_code=========data=============',repack_item_code)
         return repack_item_code
 
 

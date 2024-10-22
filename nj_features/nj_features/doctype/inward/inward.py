@@ -184,7 +184,7 @@ def create_serial_no_and_get_item_code(item_group, brand, model, serial_no=None)
     return {'serial_no': serial_no, 'item_template': item_template, 'wizard_list': wizard_list}
 
 def get_item_template(brand, model, item_group):
-    item_template = frappe.db.get_list('Item', {'brand': brand, 'item_model':model, 'has_variants': 1, 'item_group': item_group}, 'name')
+    item_template = frappe.db.get_list('Item', {'brand': brand, 'item_model':model, 'has_variants': 1, 'item_group': item_group, 'disabled': 0}, 'name')
     if item_template:
         return item_template
     return None

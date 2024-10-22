@@ -36,6 +36,7 @@ class StockMovement(Document):
                 frappe.throw("None available in <b>Items</b> table.")
 
         except Exception as e:
+            frappe.db.rollback()
             frappe.throw("Error while submitting Stock Entry: ", e)
 
 @frappe.whitelist()

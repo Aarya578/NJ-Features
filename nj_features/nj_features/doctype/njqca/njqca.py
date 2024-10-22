@@ -13,6 +13,7 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 
 # logger = frappe.logger("NJQCA",allow_site = True ,file_count = 1)
 
+@frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
     try:
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
@@ -33,8 +34,15 @@ def update_serial_no_componont_for_grade(self):
                     if reading.item_group == sn.item_group:
                         sn.item = reading.part_item_code
         
-        # Save the Serial No document first
+        item_template = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'variant_of')
+
+        if item_template:
+            item_wizard = get_latest_item_wizard(item_template, serial_no_doc.item_code)
+            item_wizard_doc = frappe.get_doc("Item Wizards", {"name": item_wizard})
+            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model)
+
         serial_no_doc.save()
+
     except Exception as e:
         return {f'Error while updating the Serial No Component: {str(e)}'}
 
@@ -374,6 +382,7 @@ def get_repack_items(self):
 
 @frappe.whitelist()
 def after_save_njqca(docname):
+    print(f'docname ---------------- 379 {docname}')
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         update_serial_no_componont_for_grade(doc)
@@ -411,7 +420,7 @@ def model_change_for_serial_no(newmodel,serial_no):
                 frappe.throw(f"'Part List' in Item Wizard: {item_wizard[0]['name']} is not completed. Please contact NPD Team.")
             if newmodel:
                 serial_no_doc.serial_no_component = []
-                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                (item_wizard_doc, serial_no_doc, newmodel)
                 return {
                     "status": 'success',
                 }

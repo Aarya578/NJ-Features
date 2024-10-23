@@ -18,6 +18,27 @@ frappe.ui.form.on('Delivery Note', {
         } else {
             frm.remove_custom_button(__('Print QR Code'));
         }
+        
+    },
+    courier_service: function(frm) {
+        console.log('triggering courier service');
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
+            args: {
+                doc: frm.doc
+            },
+            callback: function(r) {
+                if (r.message === true) {
+                    console.log("QR code generated successfully");
+                    frm.set_df_property('tracking_id', 'reqd', 1);
+                    frappe.msgprint(__('Tracking ID field is now mandatory.'));
+                } else {
+                    console.log('QR code generation failed');
+                    frappe.msgprint(__('QR code generation failed.'));
+                    frm.set_df_property('tracking_id', 'reqd', 0);
+                }
+            }
+        });
     }
 });
 

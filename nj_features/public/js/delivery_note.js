@@ -29,9 +29,9 @@ frappe.ui.form.on('Delivery Note', {
             },
             callback: function(r) {
                 if (r.message === true) {
-                    frm.set_df_property('tracking_id', 'reqd', 1);
-                } else {
                     frm.set_df_property('tracking_id', 'reqd', 0);
+                } else {
+                    frm.set_df_property('tracking_id', 'reqd', 1);
                 }
             }
         });

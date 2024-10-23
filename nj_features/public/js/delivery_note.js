@@ -29,12 +29,8 @@ frappe.ui.form.on('Delivery Note', {
             },
             callback: function(r) {
                 if (r.message === true) {
-                    console.log("QR code generated successfully");
                     frm.set_df_property('tracking_id', 'reqd', 1);
-                    frappe.msgprint(__('Tracking ID field is now mandatory.'));
                 } else {
-                    console.log('QR code generation failed');
-                    frappe.msgprint(__('QR code generation failed.'));
                     frm.set_df_property('tracking_id', 'reqd', 0);
                 }
             }

@@ -221,7 +221,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-        if (selectedModel && selectedBrand) {
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no) {
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no,}, 'model', function(r) {
                 if(selectedModel && selectedModel != r.model){
                     frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',

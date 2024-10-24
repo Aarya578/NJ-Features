@@ -18,6 +18,23 @@ frappe.ui.form.on('Delivery Note', {
         } else {
             frm.remove_custom_button(__('Print QR Code'));
         }
+        
+    },
+    courier_service: function(frm) {
+        console.log('triggering courier service');
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
+            args: {
+                doc: frm.doc
+            },
+            callback: function(r) {
+                if (r.message === true) {
+                    frm.set_df_property('tracking_id', 'reqd', 0);
+                } else {
+                    frm.set_df_property('tracking_id', 'reqd', 1);
+                }
+            }
+        });
     }
 });
 

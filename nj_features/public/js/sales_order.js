@@ -88,6 +88,22 @@
 // }
 // 
 
+frappe.ui.form.on('Sales Order', {
+    refresh: function(frm) {
+        console.log("Inside the refresh function");
+    },
+    amazon_order_id: function(frm) {
+        $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
+            validateAmazonOrderID(frm);
+        });
+    }
+});
+function validateAmazonOrderID(frm) {
+    if (frm.doc.amazon_order_id && frm.doc.amazon_order_id.length < 16) {
+        frappe.msgprint(__('Amazon Order ID must be at least 16 characters long.'));
+        frm.set_value('amazon_order_id', '');
+    }
+}
 
 
 frappe.listview_settings['Sales Order'] = {

@@ -18,6 +18,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                     serial_no: frm.doc.scan_serial_no            
                 },
                 callback: function (r) {
+                    console.log(r);
                     if (r.message) {
                         frm.set_value('scan_serial_no', '');
                         frm.refresh_field('scan_serial_no');

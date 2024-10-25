@@ -36,8 +36,8 @@ def scan_serial_no_data(serial_no):
                                                     SELECT parent 
                                                     FROM `tabSales Invoice Item` 
                                                     WHERE docstatus = 1 
-                                                    AND serial_no = '{serial_no}' ORDER BY creation DESC LIMIT 1
-                                                )""", as_dict=True)
+                                                    AND serial_no = '{serial_no}' ORDER BY creation DESC LIMIT 1)
+                                                """, as_dict=True)
         
         delivery_notes = frappe.db.sql(f"""SELECT name, status
                                                 FROM `tabDelivery Note` 
@@ -45,8 +45,8 @@ def scan_serial_no_data(serial_no):
                                                     SELECT parent 
                                                     FROM `tabDelivery Note Item` 
                                                     WHERE docstatus = 1 
-                                                    AND serial_no = '{serial_no}' ORDER BY creation DESC LIMIT 1
-                                                )""", as_dict=True)
+                                                    AND serial_no = '{serial_no}' ORDER BY creation DESC LIMIT 1)
+                                                """, as_dict=True)
         
         sales_invoice = sales_invoices[0].get('name') if sales_invoices else None
         delivery_note = delivery_notes[0].get('name') if delivery_notes else None
@@ -57,6 +57,9 @@ def scan_serial_no_data(serial_no):
         sales_channel = None
         if sales_invoice:
             sales_channel = frappe.db.get_value('Sales Invoice', sales_invoice, 'sales_channel')
+        else:
+            frappe.msgprint(_("Sales Invoice not found for serial number <b>{}</b>").format(serial_no))
+            return {}
         if sales_channel == 'Amazon':
             if not sales_invoice and not delivery_note:
                 frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))

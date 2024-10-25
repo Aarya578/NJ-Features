@@ -52,7 +52,7 @@ def scan_serial_no_data(serial_no):
         delivery_note = delivery_notes[0].get('name') if delivery_notes else None
         si_status = sales_invoices[0].get('status') if sales_invoices else 'Not Available'
         dn_status = delivery_notes[0].get('status') if delivery_notes else 'Not Available'
-        approved = sales_invoices[0].get('approved') if sales_invoices else 0  # Default to 0 if not found
+        approved = sales_invoices[0].get('approved') if sales_invoices else 0
 
         sales_channel = None
         if sales_invoice:
@@ -67,10 +67,9 @@ def scan_serial_no_data(serial_no):
                 frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice))
                 return {}
             
-        if not sales_invoice and not delivery_note:
+        if not sales_invoice and not delivery_note :
             frappe.msgprint(_("`Sales Invoice` or `Delivery Note` must be created for the serial number <b>{}</b>").format(serial_no))
             return {}
-
         return {
             'serial_no': serial_no,
             'item_code': item_code,

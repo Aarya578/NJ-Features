@@ -28,7 +28,8 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                             "sales_invoice": r.message.sales_invoice || 'Not Available',
                             "delivery_note": r.message.delivery_note || 'Not Available',
                             "si_status": r.message.si_status || 'Not Available',
-                            "dn_status": r.message.dn_status || 'Not Available'
+                            "dn_status": r.message.dn_status || 'Not Available',
+                            "si_approved": r.message.si_approved || 'Not Available',
                         };
                         
                         

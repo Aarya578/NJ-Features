@@ -28,7 +28,7 @@ frappe.ui.form.on('NJQCA', {
                 return { filters: filters };
             });     
     
-            if(!frm.doc.backup_duration){
+            if(!frm.doc.backup_duration_cycle_1){
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.njqca.njqca.get_backup_duration',
                     args: {
@@ -37,7 +37,7 @@ frappe.ui.form.on('NJQCA', {
                     },
                     callback: function(r) {
                         if(r && r.message){
-                            frm.set_value("backup_duration", r.message[0]);
+                            frm.set_value("backup_duration_cycle_1", r.message[0]);
                             frm.set_value("sudden_drop", r.message[1]);
                         }
                     }

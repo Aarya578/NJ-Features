@@ -5,12 +5,14 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         }
     },
     refresh: function(frm) {
+        handleScannerInput(frm, 'scan_serial_no');
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
         }
     },
     scan_serial_no: function (frm) {
+        handleScannerInput(frm, 'scan_serial_no');
         if (frm.doc.scan_serial_no != '') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data',

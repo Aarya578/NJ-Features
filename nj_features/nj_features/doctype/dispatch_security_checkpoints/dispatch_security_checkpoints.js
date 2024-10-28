@@ -5,12 +5,14 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         }
     },
     refresh: function(frm) {
+        handleScannerInput(frm, 'scan_serial_no');
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
         }
     },
     scan_serial_no: function (frm) {
+        handleScannerInput(frm, 'scan_serial_no');
         if (frm.doc.scan_serial_no != '') {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data',
@@ -18,6 +20,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                     serial_no: frm.doc.scan_serial_no            
                 },
                 callback: function (r) {
+                    console.log(r);
                     if (r.message) {
                         frm.set_value('scan_serial_no', '');
                         frm.refresh_field('scan_serial_no');
@@ -28,7 +31,8 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                             "sales_invoice": r.message.sales_invoice || 'Not Available',
                             "delivery_note": r.message.delivery_note || 'Not Available',
                             "si_status": r.message.si_status || 'Not Available',
-                            "dn_status": r.message.dn_status || 'Not Available'
+                            "dn_status": r.message.dn_status || 'Not Available',
+                            "si_approved": r.message.si_approved || 'Not Available',
                         };
                         
                         

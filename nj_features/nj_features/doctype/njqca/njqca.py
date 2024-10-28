@@ -368,7 +368,7 @@ def get_repack_items(self):
 	}
     get_repack_items_list.append(get_repack_items_dict)
     get_unpack_items_dict = {
-        "unpack_item_code": self.repack_item_code,
+        "unpack_item_code": self.manual_repack_item_code,
         "unpack_serial_no": self.serial_no,
         "unpack_item_base_price": self.base_price,
         "unpack_item_target_warehouse": self.warehouse

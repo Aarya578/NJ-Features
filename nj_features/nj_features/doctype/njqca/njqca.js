@@ -28,7 +28,7 @@ frappe.ui.form.on('NJQCA', {
                 return { filters: filters };
             });     
     
-            if(!frm.doc.backup_duration){
+            if(!frm.doc.backup_duration_cycle_1){
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.njqca.njqca.get_backup_duration',
                     args: {
@@ -37,7 +37,7 @@ frappe.ui.form.on('NJQCA', {
                     },
                     callback: function(r) {
                         if(r && r.message){
-                            frm.set_value("backup_duration", r.message[0]);
+                            frm.set_value("backup_duration_cycle_1", r.message[0]);
                             frm.set_value("sudden_drop", r.message[1]);
                         }
                     }
@@ -221,7 +221,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-        if (selectedModel && selectedBrand) {
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no) {
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no,}, 'model', function(r) {
                 if(selectedModel && selectedModel != r.model){
                     frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',

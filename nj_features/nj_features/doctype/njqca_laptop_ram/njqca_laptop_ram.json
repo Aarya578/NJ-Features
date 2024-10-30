@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-10-28 13:09:14.006574",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "fetched_item_code",
+  "calculated_item_code",
+  "ram_type",
+  "ram_capacity",
+  "ram_speed",
+  "grade"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "ram_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "RAM Type"
+  },
+  {
+   "fieldname": "ram_capacity",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "RAM Capacity"
+  },
+  {
+   "fieldname": "ram_speed",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "RAM Speed"
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Grade"
+  },
+  {
+   "fieldname": "fetched_item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Fetched Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "calculated_item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Calculated Item Code",
+   "options": "Item"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-10-28 15:05:19.201666",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJQCA Laptop Ram",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -45,6 +45,15 @@
   "section_break_56eed",
   "njqca_item_component",
   "njqca_result_parameters",
+  "section_break_drfru",
+  "njqca_display",
+  "processor_section",
+  "njqca_adaptor",
+  "laptop_ram_section",
+  "njqca_laptop_ram",
+  "laptop_storage_section",
+  "njqca_laptop_storage",
+  "section_break_d2ocq",
   "amended_from"
  ],
  "fields": [
@@ -273,12 +282,60 @@
    "fieldname": "backup_duration_cycle_1",
    "fieldtype": "Data",
    "label": "Backup Duration Cycle 1"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_drfru",
+   "fieldtype": "Section Break",
+   "label": "Display"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "processor_section",
+   "fieldtype": "Section Break",
+   "label": "Adaptor"
+  },
+  {
+   "fieldname": "njqca_display",
+   "fieldtype": "Table",
+   "options": "NJQCA Display"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "laptop_ram_section",
+   "fieldtype": "Section Break",
+   "label": "Laptop Ram"
+  },
+  {
+   "fieldname": "njqca_laptop_ram",
+   "fieldtype": "Table",
+   "options": "NJQCA Laptop Ram"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "laptop_storage_section",
+   "fieldtype": "Section Break",
+   "label": "Laptop Storage"
+  },
+  {
+   "fieldname": "njqca_laptop_storage",
+   "fieldtype": "Table",
+   "options": "NJQCA Laptop Storage"
+  },
+  {
+   "fieldname": "section_break_d2ocq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "njqca_adaptor",
+   "fieldtype": "Table",
+   "options": "NJQCA Adaptor"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-10-26 13:01:39.702257",
+ "modified": "2024-10-30 11:13:59.337816",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

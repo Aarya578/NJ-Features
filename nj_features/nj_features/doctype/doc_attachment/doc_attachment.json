@@ -14,6 +14,8 @@
   "file_type",
   "file_location",
   "linked_data",
+  "starting_time",
+  "ending_time",
   "time_taken_to_upload",
   "amended_from"
  ],
@@ -77,13 +79,23 @@
    "fieldname": "time_taken_to_upload",
    "fieldtype": "Data",
    "label": "Time Taken To Upload"
+  },
+  {
+   "fieldname": "starting_time",
+   "fieldtype": "Data",
+   "label": "Starting time"
+  },
+  {
+   "fieldname": "ending_time",
+   "fieldtype": "Data",
+   "label": "Ending Time"
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-06-22 19:13:44.970370",
+ "modified": "2024-10-28 16:29:38.233337",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Doc Attachment",

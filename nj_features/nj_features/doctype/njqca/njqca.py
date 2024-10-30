@@ -192,7 +192,6 @@ def open_draft_qi(self):
                 child_table.item_group = data.get("item_group")
                 child_table.options = data.get("value")
 
-    
     new_qi.save()
     
 @frappe.whitelist()
@@ -216,11 +215,9 @@ def get_itm_code_on_barcode(new_qi):
         "base_price": serial_no_data.purchase_rate
     }
 
-
     for key,value in result.items():
         new_qi.set(key,value)
     
-
     # Check if the item group is a component
     is_component = frappe.db.get_value('Item Group', serial_no_data.item_group, 'is_component')
 
@@ -275,7 +272,6 @@ def get_itm_code_on_barcode(new_qi):
         return {"disable_save": True}
     return new_qi
 
-
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
@@ -304,7 +300,6 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('nj_quality_readings', [])
         for reading in nj_quality_readings:
             new_qi.append('nj_quality_readings', reading)
-        new_qi.save()
     
     if response.get('initial_mandatory_rows'):
         new_qi.set('mandatory_rows', response.get('initial_mandatory_rows'))
@@ -325,62 +320,48 @@ class NJQCA(Document):
         if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
             frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
         if self.power_on == 'Yes' and self.repack_item_code != '':
-            self.make_stock_entry_using_nj_lib()
-            open_draft_qi(self)
-    
+            try:
+                self.make_stock_entry_using_nj_lib()
+                open_draft_qi(self)
+            except Exception as e:
+                frappe.db.rollback()
+                frappe.throw("Error during submission: " + str(e))
     
     def make_stock_entry_using_nj_lib(self):
 
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
         stock_data = {
             "name": self.name,
-            "item_code": self.item_code,
-            "stock_entry_type": "Repack",
             "doctype": self.doctype,
             "series": "NJ-STE-NJQCA-",
-            "serial_no": self.serial_no,
+            "stock_entry_type": "Repack",
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
         }
         stock_data_str = json.dumps(stock_data)
-        # print("\n\nstock_data=============",stock_data)
         stock_entry_using_nj_lib(stock_data_str)
-
-
-# def stock_entry_for_material_transfer_or_repack_items_data(self):
-#     stock_entry_for_material_transfer_or_repack_items_list = []
-#     stock_entry_for_material_transfer_or_repack_items_dict = {
-#         "item_code": self.item_code,
-#         "basic_rate": self.base_price,
-#         "serial_no": self.serial_no,
-#     }
-#     stock_entry_for_material_transfer_or_repack_items_list.append(stock_entry_for_material_transfer_or_repack_items_dict)
-#     return stock_entry_for_material_transfer_or_repack_items_list
-
 
 def get_repack_items(self):
     get_repack_items_list = []
-    get_repack_items_dict = {
-		"repack_item_code": self.item_code,
-		"repack_serial_no": self.serial_no,
-		"repack_item_base_price": self.base_price,
-        "repack_item_source_warehouse": self.warehouse,
-	}
-    get_repack_items_list.append(get_repack_items_dict)
     get_unpack_items_dict = {
-        "unpack_item_code": self.manual_repack_item_code,
+        "unpack_item_code": self.item_code,
         "unpack_serial_no": self.serial_no,
         "unpack_item_base_price": self.base_price,
-        "unpack_item_target_warehouse": self.warehouse
+        "unpack_item_source_warehouse": self.warehouse
     }
     get_repack_items_list.append(get_unpack_items_dict)
+    get_repack_items_dict = {
+		"repack_serial_no": self.serial_no,
+		"repack_item_base_price": self.base_price,
+        "repack_item_target_warehouse": self.warehouse,
+		"repack_item_code": self.manual_repack_item_code,
+	}
+    get_repack_items_list.append(get_repack_items_dict)
     
     return get_repack_items_list
- 
 
 @frappe.whitelist()
 def after_save_njqca(docname):
-    print(f'docname ---------------- 379 {docname}')
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         update_serial_no_componont_for_grade(doc)
@@ -426,7 +407,6 @@ def model_change_for_serial_no(newmodel,serial_no):
             frappe.throw(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
     else:
         frappe.msgprint(f"Part List Cannot be changed for Serial No <b>{serial_no}</b>. Because NJ QI or Kitting is Done")
-            
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
@@ -435,7 +415,6 @@ def brand_model_validation(brand=None, model=None):
     model = frappe.db.exists('Models', {'name': model})
     
     return {'brand': brand, 'model': model}
-
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
@@ -446,15 +425,13 @@ def get_info_from_serial_no(doc=None):
         serial_no_doc = frappe.get_doc('Serial No', {'name': serial_no}) # NJ - serial_no
         # get price from Stock Ledger Entry
         sql_query = """
-            SELECT 
-                item_code, warehouse, purchase_rate
+            SELECT item_code, warehouse, purchase_rate
             FROM
                 `tabSerial No`
             WHERE
                 serial_no = %s
         """
         sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-        
         
         if serial_no_doc:
             sle_entry = sle[0]
@@ -468,7 +445,6 @@ def get_info_from_serial_no(doc=None):
             result['repack_itm_price'] = repack_itm_price
             result['base_price'] = sle_entry.get('purchase_rate')
     return result
-
 
 def get_item_code_for_each_part(part_item_group,doc):
     try:
@@ -541,6 +517,7 @@ def get_item_code_for_each_part(part_item_group,doc):
 
     except Exception as e:
         return {"Error": f"Error raised {str(e)}"}
+    
 @frappe.whitelist()
 def get_part_mapping(item_group, docname,model,item_template):
     doc = frappe.get_doc("NJQCA", docname)
@@ -562,9 +539,7 @@ def get_part_mapping(item_group, docname,model,item_template):
                 part_data.extend(result)
         repack_item_code = get_item_code_for_each_part(item_group,doc)
         repack_item_code['part_data'] = json.dumps(part_data)
-        # print('repack_item_code=========data=============',repack_item_code)
         return repack_item_code
-
 
 def consolidate_ram_capacities(data):
     consolidated_data = {}
@@ -617,6 +592,7 @@ def consolidate_storage(data):
                         total_storage_capacity += storage_amount
     
     return total_storage_capacity
+
 def set_storage_item_code(obj):
     if obj :
         for key,value in obj.items():
@@ -633,7 +609,6 @@ def set_storage_item_code(obj):
         if len(obj) == 3:
             obj[storage_interface] = '2.5"'
     return obj
-                
                     
 def normalize_gen(gen_str):
     gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
@@ -745,7 +720,6 @@ def get_manual_repack_item_code_filtered_data(item_group, brand, model=None):
     manual_repack_item_code = [item[0] for item in manual_repack_item_code]
 
     return manual_repack_item_code
-
 
 @frappe.whitelist()
 def get_part_item_code_filtered_data(item_group):

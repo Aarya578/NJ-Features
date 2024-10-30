@@ -14,12 +14,8 @@ from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 
 class Inward(Document):
     def on_submit(self):
-        try:
-            self.make_stock_entry_using_nj_lib()
-            generate_and_save_qrcode(self.serial_no)
-        except Exception as ex:
-            frappe.db.rollback()
-            frappe.throw("Error during submission: " + str(ex))
+        self.make_stock_entry_using_nj_lib()
+        generate_and_save_qrcode(self.serial_no)
 
     def make_stock_entry_using_nj_lib(self):
         stock_data = {
@@ -67,19 +63,21 @@ class Inward(Document):
 
 def get_repack_items(self):
     get_repack_items_list = []
-    get_unpack_items_dict = {
-		"unpack_item_code": self.item_code,
-		"unpack_item_base_price": self.base_rate,
-        "unpack_item_source_warehouse": self.target_warehouse,
-	}
-    get_repack_items_list.append(get_unpack_items_dict)
+
     get_repack_items_dict = {
-		"repack_serial_no": self.serial_no,
-		"repack_item_code": self.repack_item_code,
+		"repack_item_code": self.item_code,
 		"repack_item_base_price": self.base_rate,
-        "repack_item_target_warehouse": self.source_warehouse,
+        "repack_item_source_warehouse": self.source_warehouse,
 	}
     get_repack_items_list.append(get_repack_items_dict)
+
+    get_unpack_items_dict = {
+		"unpack_serial_no": self.serial_no,
+		"unpack_item_base_price": self.base_rate,
+		"unpack_item_code": self.repack_item_code,
+        "unpack_item_target_warehouse": self.target_warehouse,
+	}
+    get_repack_items_list.append(get_unpack_items_dict)
     
     return get_repack_items_list
 
@@ -91,6 +89,43 @@ def get_item_list_from_pr(pr):
     item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
     
     return item_codes_in_pr
+
+# @frappe.whitelist()
+# def get_item_list_from_po(po):
+#     return frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
+
+# @frappe.whitelist()
+# def get_stock_data_from_po(po, item_code=None):
+#     get_serial_no = ''
+#     supplier=None
+#     if po and item_code:
+#         pr = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'purchase_order': po}, 'parent')
+#         sql_query = """
+#                 SELECT 
+#                     item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
+#                 FROM
+#                     `tabStock Ledger Entry`
+#                 WHERE
+#                     voucher_no = %s and item_code = %s
+#                     AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
+#                 ORDER BY
+#                     posting_date DESC, posting_time DESC, creation DESC
+#                 LIMIT 1
+#             """
+#         sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
+        
+#         item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
+        
+#         if sle and sle[0].get('serial_no'):
+#             get_serial_no = frappe.db.sql(
+#                 """SELECT name FROM `tabSerial No` WHERE item_code = %s 
+#                 AND delivery_document_no IS NULL AND warehouse = %s """,
+#                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
+#             )
+#     pr_doc = frappe.get_doc('Purchase Receipt', pr)
+#     if pr_doc:
+#         supplier = pr_doc.supplier
+#     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier}
 
 @frappe.whitelist()
 def get_repack_item_code(item_template):

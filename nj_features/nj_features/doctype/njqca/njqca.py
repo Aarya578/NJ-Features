@@ -343,21 +343,23 @@ class NJQCA(Document):
 
 def get_repack_items(self):
     get_repack_items_list = []
-    get_unpack_items_dict = {
-        "unpack_item_code": self.item_code,
-        "unpack_serial_no": self.serial_no,
-        "unpack_item_base_price": self.base_price,
-        "unpack_item_source_warehouse": self.warehouse
-    }
-    get_repack_items_list.append(get_unpack_items_dict)
+
     get_repack_items_dict = {
+		"repack_item_code": self.item_code,
 		"repack_serial_no": self.serial_no,
 		"repack_item_base_price": self.base_price,
-        "repack_item_target_warehouse": self.warehouse,
-		"repack_item_code": self.manual_repack_item_code,
+        "repack_item_source_warehouse": self.warehouse,
 	}
     get_repack_items_list.append(get_repack_items_dict)
-    
+
+    get_unpack_items_dict = {
+        "unpack_serial_no": self.serial_no,
+        "unpack_item_base_price": self.base_price,
+        "unpack_item_target_warehouse": self.warehouse,
+        "unpack_item_code": self.manual_repack_item_code,
+    }
+    get_repack_items_list.append(get_unpack_items_dict)
+
     return get_repack_items_list
 
 @frappe.whitelist()

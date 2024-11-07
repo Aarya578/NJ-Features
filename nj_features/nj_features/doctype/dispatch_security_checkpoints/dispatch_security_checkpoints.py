@@ -11,7 +11,7 @@ class DispatchSecurityCheckpoints(Document):
 
 
 @frappe.whitelist()
-def scan_serial_no_data(serial_no):
+def scan_serial_no_data_for_sales(serial_no):
     """
     Function to fetch sales invoice, delivery note, and item code details for the scanned serial number,
     and validate if both sales invoice and delivery note are mandatory for 'Amazon' sales channel,
@@ -84,5 +84,44 @@ def scan_serial_no_data(serial_no):
             'approved': approved  
         }
 
+    except Exception as e:
+        frappe.throw(e)
+
+
+@frappe.whitelist()
+def scan_serial_no_data_for_return(serial_no):
+    try:
+        serial_no_doc = frappe.get_doc('Serial No', serial_no)
+        item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
+
+        return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI, 
+                            pr.status as PR_Status, pi.status as PI_Status
+                            FROM `tabPurchase Receipt Item` ch
+                            LEFT JOIN `tabPurchase Receipt` pr on pr.name = ch.parent
+                            LEFT JOIN `tabPurchase Invoice` pi on pi.name = ch.purchase_invoice
+                            WHERE ch.serial_no = '{serial_no}' AND pr.is_return = 1 
+                            AND ch.purchase_invoice is not null or ch.purchase_invoice != ''
+                            ORDER BY ch.creation DESC, ch.modified DESC limit 1
+                            """, as_dict=True)
+            
+        if not return_data:
+            frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
+            return None
+        if not return_data[0].get('PR') and not return_data[0].get('PI'):
+            frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
+            return None
+
+        if not return_data[0].get('PR Status') and not return_data[0].get('PI Status'):
+            frappe.msgprint(_("Please check the status of PR or PI found for serial number <b>{}</b>").format(serial_no))
+            return None
+
+        return {
+            'serial_no': serial_no,
+            'item_code': item_code,
+            'purchase_receipt': return_data[0].get('PR'),
+            'purchase_invoice': return_data[0].get('PI'),
+            'pr_status': return_data[0].get('PR_Status'),
+            'pi_status': return_data[0].get('PI_Status')
+        }
     except Exception as e:
         frappe.throw(e)

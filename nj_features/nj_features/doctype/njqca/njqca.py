@@ -20,7 +20,7 @@ def update_serial_no_componont_for_grade(self):
         serial_no_doc.bios_serial_no = self.bios_serialno
         serial_no_doc.purchase_price = self.base_price
         serial_no_doc.current_price = self.base_price
-        
+
         if not serial_no_doc.model:
             model = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'item_model')
             if model:
@@ -401,7 +401,7 @@ def model_change_for_serial_no(newmodel,serial_no):
                 frappe.throw(f"'Part List' in Item Wizard: {item_wizard[0]['name']} is not completed. Please contact NPD Team.")
             if newmodel:
                 serial_no_doc.serial_no_component = []
-                (item_wizard_doc, serial_no_doc, newmodel)
+                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
                 return {
                     "status": 'success',
                 }

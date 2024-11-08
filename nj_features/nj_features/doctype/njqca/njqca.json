@@ -18,6 +18,7 @@
   "bios_serialno",
   "item_group",
   "warehouse",
+  "department",
   "raw_data",
   "base_price",
   "column_break_5mcw7",
@@ -330,12 +331,21 @@
    "fieldname": "njqca_adaptor",
    "fieldtype": "Table",
    "options": "NJQCA Adaptor"
+  },
+  {
+   "fetch_from": "warehouse.department",
+   "fetch_if_empty": 1,
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-10-30 11:13:59.337816",
+ "modified": "2024-11-04 17:06:01.803739",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

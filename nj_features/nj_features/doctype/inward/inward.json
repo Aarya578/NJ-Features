@@ -18,6 +18,7 @@
   "brand",
   "source_warehouse",
   "target_warehouse",
+  "department",
   "column_break_mcau4",
   "model",
   "item_template",
@@ -147,12 +148,21 @@
    "fieldtype": "Select",
    "label": "Item Template",
    "reqd": 1
+  },
+  {
+   "fetch_from": "target_warehouse.department",
+   "fetch_if_empty": 1,
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-07-05 13:08:39.854803",
+ "modified": "2024-11-04 18:26:06.041725",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

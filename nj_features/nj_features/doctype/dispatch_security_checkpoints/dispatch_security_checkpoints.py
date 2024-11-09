@@ -26,6 +26,7 @@ def scan_serial_no_data_for_sales(serial_no):
     """
 
     try:
+        serial_no = serial_no.strip()
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
         
         item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
@@ -91,6 +92,7 @@ def scan_serial_no_data_for_sales(serial_no):
 @frappe.whitelist()
 def scan_serial_no_data_for_return(serial_no):
     try:
+        serial_no = serial_no.strip()
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
         item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
 
@@ -111,7 +113,7 @@ def scan_serial_no_data_for_return(serial_no):
             frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
             return None
 
-        if not return_data[0].get('PR Status') and not return_data[0].get('PI Status'):
+        if not return_data[0].get('PR_Status') and not return_data[0].get('PI_Status'):
             frappe.msgprint(_("Please check the status of PR or PI found for serial number <b>{}</b>").format(serial_no))
             return None
 

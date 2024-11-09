@@ -26,6 +26,7 @@ def scan_serial_no_data_for_sales(serial_no):
     """
 
     try:
+        serial_no = serial_no.strip()
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
         
         item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
@@ -91,6 +92,7 @@ def scan_serial_no_data_for_sales(serial_no):
 @frappe.whitelist()
 def scan_serial_no_data_for_return(serial_no):
     try:
+        serial_no = serial_no.strip()
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
         item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
 

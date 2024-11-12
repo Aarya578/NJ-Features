@@ -12,7 +12,9 @@
   "ram_type",
   "ram_capacity",
   "ram_speed",
-  "grade"
+  "grade",
+  "item_template",
+  "reference_row_name"
  ],
  "fields": [
   {
@@ -35,6 +37,7 @@
    "label": "RAM Capacity"
   },
   {
+   "fetch_from": "calculated_item_code.attribute_value",
    "fieldname": "ram_speed",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -54,8 +57,20 @@
    "options": "Item"
   },
   {
+   "fieldname": "item_template",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Template"
+  },
+  {
+   "fieldname": "reference_row_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Row Name"
+  },
+  {
    "fieldname": "calculated_item_code",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Calculated Item Code",
    "options": "Item"
@@ -64,7 +79,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-10-28 15:05:19.201666",
+ "modified": "2024-11-09 13:05:29.410435",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Ram",

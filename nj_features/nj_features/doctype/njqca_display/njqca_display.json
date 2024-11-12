@@ -7,8 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "item_group",
-  "calculated_item_code",
   "fetched_item_code",
+  "calculated_item_code",
   "model",
   "display_tech",
   "display_pin_type",
@@ -16,7 +16,8 @@
   "resolution",
   "thickness",
   "display_bracket",
-  "grade"
+  "grade",
+  "item_template"
  ],
  "fields": [
   {
@@ -24,75 +25,89 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
-   "options": "Item"
+   "options": "Item Group"
   },
   {
    "fieldname": "calculated_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Calculated Item Code",
-   "options": "Item Group"
+   "label": "Final Item Code",
+   "options": "Item"
   },
   {
    "fieldname": "fetched_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Fetched Item Code",
-   "options": "Item Group"
+   "options": "Item"
   },
   {
    "fieldname": "model",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Model"
+   "label": "Model",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "display_tech",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Display Tech"
+   "label": "Display Tech",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "display_pin_type",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Display PIN Type"
+   "label": "Display PIN Type",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "display_size",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Display Size"
+   "label": "Display Size",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "resolution",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Resolution"
+   "label": "Resolution",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "thickness",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Thickness"
+   "label": "Thickness",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "display_bracket",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Display Bracket"
+   "label": "Display Bracket",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "grade",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grade"
+   "label": "Grade",
+   "options": "Item Attribute Value"
+  },
+  {
+   "fieldname": "item_template",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Template"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-10-28 17:25:15.627652",
+ "modified": "2024-11-11 18:01:41.698194",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Display",

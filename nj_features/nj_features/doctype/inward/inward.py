@@ -39,24 +39,28 @@ class Inward(Document):
         if serial_no_doc:
             po_doc = frappe.get_doc('Purchase Receipt', self.purchase_receipt)
             warranty_days = po_doc.get('warranty_days')
+
             supplier_name = frappe.db.get_value('Supplier', {'name': po_doc.get('supplier')}, 'supplier_name')
+
             po = frappe.db.get_value('Purchase Receipt Item', {'parent': self.purchase_receipt, 'item_code': self.item_code}, 'purchase_order')
             
             serial_no_doc.brand = self.brand
-            serial_no_doc.purchase_price = self.base_rate
-            serial_no_doc.current_price = self.base_rate
+            serial_no_doc.purchase_order = po
             serial_no_doc.barcode = self.serial_no
+            serial_no_doc.warranty_days = warranty_days
+            serial_no_doc.supplier_name = supplier_name
+            serial_no_doc.current_price = self.base_rate
+            serial_no_doc.purchase_price = self.base_rate
             serial_no_doc.supplier = po_doc.get('supplier')
+            serial_no_doc.purchase_warranty_days = warranty_days
+            serial_no_doc.purchase_receipt = self.purchase_receipt
+            serial_no_doc.reference_doctype_no = self.purchase_receipt
+            serial_no_doc.vendor_warranty_expiry_date = po_doc.get('warranty_till_date')
+
             has_batch_no = frappe.db.get_value('Item', {'name': self.item_code}, 'has_batch_no')
             if has_batch_no:
                 serial_no_doc.batch_no = self.batch_no
-            serial_no_doc.purchase_warranty_days = warranty_days
-            serial_no_doc.vendor_warranty_expiry_date = po_doc.get('warranty_till_date')
-            serial_no_doc.reference_doctype_no = self.purchase_receipt
-            serial_no_doc.warranty_days = warranty_days
-            serial_no_doc.purchase_order = po
-            serial_no_doc.supplier_name = supplier_name
-            serial_no_doc.purchase_receipt = self.purchase_receipt
+
             serial_no_doc.save()
         else:
             frappe.throw(f"Serial No document not found for the given <b>Serial No. : {self.serial_no}</b>")
@@ -65,6 +69,7 @@ def get_repack_items(self):
     get_repack_items_list = []
 
     get_repack_items_dict = {
+        "batch_no": self.batch_no,
 		"repack_item_code": self.item_code,
 		"repack_item_base_price": self.base_rate,
         "repack_item_source_warehouse": self.source_warehouse,
@@ -83,49 +88,11 @@ def get_repack_items(self):
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):
-    # return frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
     item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
     pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
     item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
     
     return item_codes_in_pr
-
-# @frappe.whitelist()
-# def get_item_list_from_po(po):
-#     return frappe.db.get_list('Purchase Order Item', {'parent': po}, ['item_code'])
-
-# @frappe.whitelist()
-# def get_stock_data_from_po(po, item_code=None):
-#     get_serial_no = ''
-#     supplier=None
-#     if po and item_code:
-#         pr = frappe.db.get_value('Purchase Receipt Item', {'item_code': item_code, 'purchase_order': po}, 'parent')
-#         sql_query = """
-#                 SELECT 
-#                     item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
-#                 FROM
-#                     `tabStock Ledger Entry`
-#                 WHERE
-#                     voucher_no = %s and item_code = %s
-#                     AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
-#                 ORDER BY
-#                     posting_date DESC, posting_time DESC, creation DESC
-#                 LIMIT 1
-#             """
-#         sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
-        
-#         item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
-        
-#         if sle and sle[0].get('serial_no'):
-#             get_serial_no = frappe.db.sql(
-#                 """SELECT name FROM `tabSerial No` WHERE item_code = %s 
-#                 AND delivery_document_no IS NULL AND warehouse = %s """,
-#                 (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
-#             )
-#     pr_doc = frappe.get_doc('Purchase Receipt', pr)
-#     if pr_doc:
-#         supplier = pr_doc.supplier
-#     return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None, "supplier": supplier}
 
 @frappe.whitelist()
 def get_repack_item_code(item_template):
@@ -149,17 +116,17 @@ def get_stock_data_from_pr(pr, item_code=None):
     get_serial_no = ''
     if pr:
         sql_query = """
-                SELECT 
-                    item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
-                FROM
-                    `tabStock Ledger Entry`
-                WHERE
-                    voucher_no = %s and item_code = %s
-                    AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
-                ORDER BY
-                    posting_date DESC, posting_time DESC, creation DESC
-                LIMIT 1
-            """
+            SELECT 
+                item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
+            FROM
+                `tabStock Ledger Entry`
+            WHERE
+                voucher_no = %s and item_code = %s
+                AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
+            ORDER BY
+                posting_date DESC, posting_time DESC, creation DESC
+            LIMIT 1
+        """
         sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
         
         item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
@@ -227,7 +194,6 @@ def create_serial_no(item_group=None, attempt=0):
         frappe.log_error(f"Error while creating Serial No: {e}")
         return None
     
-
 @frappe.whitelist()
 def fetch_model_description(model):
     model_description = frappe.db.get_value('Models', {'name':model}, 'model_description')

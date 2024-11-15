@@ -83,12 +83,8 @@ frappe.ui.form.on('NJQCA', {
                 });
             }
             
-           
-            
-            
         }
 
-        console.log('serial_no:', frm.doc.serial_no);
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data',
@@ -97,7 +93,6 @@ frappe.ui.form.on('NJQCA', {
             },
             callback: function(r) {
                 if (r && r.message) {
-                    console.log('serial_no:', r.message);
         
                     frm.clear_table('njqca_display');
                     frm.clear_table('njqca_adaptor');
@@ -143,7 +138,6 @@ frappe.ui.form.on('NJQCA', {
         }
       },
     before_submit: function(frm) {
-        console.log('before submit is triggered...');
         
         return new Promise((resolve, reject) => {
             let tablesToCheck = [
@@ -401,13 +395,11 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         } else {
-            console.log("Model and/or Brand is not selected.");
             cur_frm.set_df_property('item_template', 'options', []);
             cur_frm.set_value('item_template', '');
         }
     
         if (cur_frm.doc.error_message) {
-            console.log("empty error ", cur_frm.doc.error_message);
             cur_frm.set_df_property('error_message', 'hidden', 0);
         }
     },
@@ -428,7 +420,6 @@ frappe.ui.form.on('NJQCA', {
             //         callback: function (r) {
                         // if (r.message) {
                         //     var lastVariantValues = {};
-                        //     console.log("get_part_mapping",r.message);
                         //     r.message.values.forEach(function (param) { //get value from NJ Settings
                         //         window[param.parameter] = param.value;
                         //     });
@@ -487,17 +478,12 @@ frappe.ui.form.on('NJQCA', {
             // if (cur_frm.doc.data_attr == "") {
             //     cur_frm.set_value('data_attr', '');
             //     var child_attr_data = [];
-            //     // console.log("set data arg");
             //     frm.doc.njqca_item_component.forEach(function (row) {
             //         if (row.attr_data) {
-            //             // console.log("row: ", row.attr_data);
             //             child_attr_data.push(JSON.parse(row.attr_data));
             //         }
             //     });
-            //     console.log("child_attr_data: ", JSON.stringify(child_attr_data));
             //     const consolidated = consolidateRamCapacities(child_attr_data);
-            //     console.log("consolidated",consolidated);
-            //     console.log("2", JSON.stringify(consolidated));
             //     cur_frm.set_value('data_attr', JSON.stringify(child_attr_data));
             //     cur_frm.refresh_field('data_attr');
             // }
@@ -545,7 +531,6 @@ frappe.ui.form.on('NJQCA', {
                     method: 'nj_features.nj_features.doctype.njqca.njqca.brand_model_validation',
                     args: {'brand': cur_frm.doc.brand, 'model': cur_frm.doc.model},
                     callback: function(r) {
-                        console.log('brnd_model_validation --------', r.message);
                         if (!r.message.brand) {
                             dbError.push("Brand: "+cur_frm.doc.brand);
                         }
@@ -555,7 +540,6 @@ frappe.ui.form.on('NJQCA', {
                         }
         
                         if (errorMessages.length > 0 || dbError.length > 0) {
-                            console.log('errprrrrrrrrrrrrrrrrrrrrrr');
                             frappe.utils.play_sound("error");
                             var errorMessageString = "";
         
@@ -605,16 +589,10 @@ frappe.ui.form.on('NJQCA', {
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
             args: {
                 'docname': cur_frm.doc.name
-            },
-            callback: function(r) {
-                if (r.message) {
-                    console.log("after save njqca method executed successfully.");
-                }
             }
         });
         // if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
         //     if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
-        //         console.log("repack item code and item code are same");
         //         frappe.confirm = function(message, yes, no) {
         //             if (yes) yes();
         //         };
@@ -630,7 +608,6 @@ frappe.ui.form.on('NJQCA', {
 
 
 function processItemTemplate(frm) {
-    console.log('item_template triggered...');
     if (frm.doc.njqca_item_component && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
@@ -832,7 +809,6 @@ frappe.ui.form.on('NJQCA Display', {
 function generateDisplayItemCode(frm, cdt, cdn, child) {
     const item_template = child.item_template;
     const row_name = child.reference_row_name;
-    console.log('item_template ----------', item_template);
 
     let model = frm.doc.model;
     let display_tech = frm.doc.display_tech;
@@ -866,8 +842,6 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
                 if (r.message.error) {
                     frappe.throw('Item code not found: ' + r.message.error);
                 } else {
-                    console.log('item_code:', r.message);
-                    
                     frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
                 }
             }
@@ -880,7 +854,6 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
 function generateRamItemCode(frm, cdt, cdn, child) {
     const item_template = child.item_template;
     const row_name = child.reference_row_name;
-    console.log('item_template ----------', item_template);
     
     const ram_properties = [
         {
@@ -902,11 +875,8 @@ function generateRamItemCode(frm, cdt, cdn, child) {
             if (r.message.error) {
                 frappe.throw('item_code not found ---------------- ' + r.message.error);
             } else {
-                console.log('item_code:', r.message);
                 frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-
                 frm.doc.njqca_item_component.forEach(row => {
-                    console.log('setting value to the part_item_code')
                     frappe.model.set_value(row.doctype, row_name, 'part_item_code', r.message);
                 });
             }

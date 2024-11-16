@@ -72,6 +72,9 @@ def execute(filters=None):
 
 				if include_uom:
 					conversion_factors.setdefault(item, item_map[item].conversion_factor)
+				
+				if sle:
+					report_data["sle_name"] = sle[0]["sle_name"] 
 
 				if filters.get("show_stock_ageing_data"):
 					fifo_queue = item_wise_fifo_queue[(item, warehouse)].get("fifo_queue")
@@ -101,6 +104,12 @@ def execute(filters=None):
 def get_columns(filters):
 	"""return columns"""
 	columns = [
+		{
+			"label": _("SLE Name"),
+			"fieldname": "sle_name",
+			"fieldtype": "Data",
+			"width": 100,
+		},
 		{
 			"label": _("Item"),
 			"fieldname": "item_code",
@@ -260,7 +269,7 @@ def get_stock_ledger_entries(filters, items):
 	return frappe.db.sql(
 		"""
 		select
-			sle.item_code, warehouse, sle.posting_date, sle.actual_qty, sle.valuation_rate,
+			sle.name as sle_name, sle.item_code, warehouse, sle.posting_date, sle.actual_qty, sle.valuation_rate,
 			sle.voucher_type, sle.qty_after_transaction, sle.stock_value_difference,
 			sle.item_code as name, sle.voucher_no, sle.stock_value, sle.batch_no
 		from

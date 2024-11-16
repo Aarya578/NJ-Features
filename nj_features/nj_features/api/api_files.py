@@ -180,7 +180,6 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 def battery_data():
     bios_serial_no = frappe.local.form_dict.get('bios_serial_no')
     
-   print("bios_serial_no")
     if not bios_serial_no:
         frappe.throw("BIOS Serial No is required.")
     

@@ -50,10 +50,8 @@ frappe.ui.form.on('Inward', {
     
                 window.open(frappe.urllib.get_full_url("/printview?" +
                 "doctype=" + encodeURIComponent("Inward") +
-                "&name=" + docname +
-                "&trigger_print=" + print_trigger +
-                "&format=" + format +
-                "&no_letterhead=0" +
+                "&name=" + docname + "&trigger_print=" + print_trigger +
+                "&format=" + format + "&no_letterhead=0" +
                 "&_lang=" + (frappe.boot.lang || "en")));
                     
             }).addClass('btn-primary');

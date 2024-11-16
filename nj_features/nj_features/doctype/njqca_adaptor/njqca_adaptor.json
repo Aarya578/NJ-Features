@@ -12,7 +12,8 @@
   "brand",
   "wattage_capacity",
   "adapter_pin_type",
-  "grade"
+  "grade",
+  "item_template"
  ],
  "fields": [
   {
@@ -24,9 +25,10 @@
   },
   {
    "fieldname": "grade",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Grade"
+   "label": "Grade",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "fetched_item_code",
@@ -44,27 +46,35 @@
   },
   {
    "fieldname": "brand",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Brand"
+   "label": "Brand",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "wattage_capacity",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Wattage Capacity"
+   "label": "Wattage Capacity",
+   "options": "Item Attribute Value"
   },
   {
    "fieldname": "adapter_pin_type",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Adapter Pin Type"
+   "label": "Adapter Pin Type",
+   "options": "Item Attribute Value"
+  },
+  {
+   "fieldname": "item_template",
+   "fieldtype": "Data",
+   "label": "Item Template"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-10-30 11:14:35.981238",
+ "modified": "2024-11-11 18:08:28.506374",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Adaptor",

@@ -138,3 +138,73 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
     new_doc.document_name = name
     new_doc.save()
     return new_doc.name
+
+# @frappe.whitelist()
+# def battery_data(bios_serial_no):
+#     serialno_doc = frappe.get_doc("Serial No", {"bios_serial_no": bios_serial_no})
+    
+#     if not serialno_doc:
+#         frappe.throw("Serial No document not found for the given BIOS serial number.")
+    
+#     # Retrieve data from the serial_no_component table
+#     serial_no_components = []
+#     if hasattr(serialno_doc, 'serial_no_component'):
+#         for component in serialno_doc.serial_no_component:
+#             serial_no_components.append({
+#                 "component_name": component.component_name,
+#                 "component_serial_no": component.component_serial_no,
+#                 "status": component.status
+#             })
+    
+#     return serial_no_components
+# @frappe.whitelist(allow_guest=True)
+# def battery_data():
+#     bios_serial_no = frappe.local.form_dict.get('bios_serial_no')
+    
+#     if not bios_serial_no:
+#         frappe.throw("BIOS Serial No is required.")
+    
+#     serialno_doc = frappe.get_doc("Serial No", {"bios_serial_no": bios_serial_no})
+    
+#     if not serialno_doc:
+#         frappe.throw("Serial No document not found for the given BIOS serial number.")
+    
+#     # Retrieve data from the serial_no_component table
+#     if hasattr(serialno_doc, 'serial_no_component'):
+#         for component in serialno_doc.serial_no_component:
+#            if component.item_group = 'BATTERY':
+#                 battery_serial_no = component.component_serial_no
+#     if battery_serial_no:
+#         njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_3 from `tabNJQCA` where serial_no = %s """,battery_serial_no)
+@frappe.whitelist(allow_guest=True)
+def battery_data():
+    bios_serial_no = frappe.local.form_dict.get('bios_serial_no')
+    
+    if not bios_serial_no:
+        frappe.throw("BIOS Serial No is required.")
+    
+    serialno_doc = frappe.get_doc("Serial No", {"bios_serial_no": bios_serial_no})
+    
+    if not serialno_doc:
+        frappe.throw("Serial No document not found for the given BIOS serial number.")
+    
+    # Initialize battery_serial_no to avoid issues if no component is found
+    battery_serial_no = None
+    
+    # Retrieve data from the serial_no_component table
+    if hasattr(serialno_doc, 'serial_no_component'):
+        for component in serialno_doc.serial_no_component:
+            if component.item_group == 'BATTERY':  # Corrected comparison operator
+                battery_serial_no = component.component_serial_no
+                print("battery serial no",battery_serial_no)
+                break  # Exit loop once the first match is found
+    
+    # If battery_serial_no is found, fetch data from NJQCA
+    if battery_serial_no:
+        print("-----------205----------")
+        njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_3 FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
+        print("njqca_doc------------",njqca_doc[0].get('backup_duration_cycle_3'))
+        return njqca_doc[0].get('backup_duration_cycle_3')
+    else:
+        battery_serial_no = "" 
+

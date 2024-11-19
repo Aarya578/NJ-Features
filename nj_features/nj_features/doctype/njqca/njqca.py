@@ -827,8 +827,9 @@ def get_serial_no_attribute_data(serial_no):
     for item in adap_dis_item_code:
         item['item_template'] = frappe.db.get_value('Item', item['item'], 'variant_of')
     
-    return adap_dis_item_code
-
+    if adap_dis_item_code:
+        return adap_dis_item_code
+    return None
 
 @frappe.whitelist()
 def update_serial_no_component_for_njqca(doc):

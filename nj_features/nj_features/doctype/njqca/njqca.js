@@ -366,7 +366,7 @@ frappe.ui.form.on('NJQCA', {
         } else {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
-        if (frm.doc.docstatus == 0) {
+        if (frm.doc.docstatus == 0 && frm.doc.serial_no) {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data',
@@ -616,11 +616,11 @@ function get_model(manufacturer_model) {
 
 frappe.ui.form.on('NJQCA PROCESSOR', {
     njqca_laptop_processors_add: function(frm, cdt, cdn) {
-
+        console.log(frm, cdt, cdn);
         const child_table_fieldname = 'njqca_laptop_processors';
         const grid = frm.fields_dict[child_table_fieldname].grid;
-
-        set_options_for_attribute_fields_in_child(grid);
+        
+        set_options_for_attribute_fields_in_child(frm, cdt, cdn, grid);
     }
 });
 
@@ -630,7 +630,7 @@ frappe.ui.form.on('NJQCA Adaptor', {
         const child_table_fieldname = 'njqca_adaptor';
         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(grid);
+        set_options_for_attribute_fields_in_child(frm, cdt, cdn, grid);
     }
 });
 
@@ -640,38 +640,29 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         const child_table_fieldname = 'njqca_laptop_storage';
         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(grid);
+        set_options_for_attribute_fields_in_child(frm, cdt, cdn, grid);
     }
 });
 
-function set_options_for_attribute_fields_in_child(grid) {
+function set_options_for_attribute_fields_in_child(frm, cdt, cdn, grid) {
     $.each(grid.grid_rows, function(i, row) {
             
         $.each(row.columns, function(j, field) {
             
             if (field.df.fieldtype === 'Select') {
 
-                var field_area = field.field_area;
-                var term = ''
                 frappe.call({
                     method: "erpnext.stock.doctype.item.item.get_item_attribute",
                     args: {
                         parent: field.df.label,
-                        attribute_value: term
+                        attribute_value: ''
                     },
                     callback: function(r) {
                         if (r.message) {
                             var options = r.message.map(function(d) { 
                                 return d.attribute_value; 
                             });
-
-                            var select = $(field_area).find('select');
-                            select.append('<option value=""></option>');
-
-                            options.forEach(function(value) {
-                                var option = $('<option>').val(value).text(value);
-                                select.append(option);
-                            });
+                            frm.set_df_property(grid.df.fieldname, 'options', options, frm.docname, field.df.fieldname, cdn);
                         }
                     }
                 });
@@ -718,7 +709,7 @@ frappe.ui.form.on('NJQCA Display', {
         const child_table_fieldname = 'njqca_display';
         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(grid);
+        set_options_for_attribute_fields_in_child(frm, cdt, cdn, grid);
     },
 
     model: function(frm, cdt, cdn){

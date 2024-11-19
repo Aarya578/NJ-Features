@@ -4,8 +4,8 @@ import frappe
 import datetime
 from frappe import _
 from frappe.model.document import Document
-from nj_lib.utils.common_utils import get_active_emp,get_latest_item_wizard
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_lib.utils.common_utils import get_active_emp,get_latest_item_wizard
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
@@ -447,6 +447,7 @@ def get_info_from_serial_no(doc=None):
             result['warehouse'] = sle_entry.get('warehouse')
             result['repack_itm_price'] = repack_itm_price
             result['base_price'] = sle_entry.get('purchase_rate')
+            result['inspection_date'] = get_inspection_type()
     return result
 
 def get_item_code_for_each_part(part_item_group,doc):

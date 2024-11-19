@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2024-10-28 13:20:14.966808",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -17,61 +16,76 @@
  ],
  "fields": [
   {
+   "columns": 1,
    "fieldname": "item_group",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "reqd": 1
   },
   {
+   "columns": 1,
    "fieldname": "storage_type",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Storage Type"
+   "label": "Storage Type",
+   "reqd": 1
   },
   {
+   "columns": 1,
    "fieldname": "storage_interface",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Storage Interface"
+   "label": "Storage Interface",
+   "reqd": 1
   },
   {
+   "columns": 1,
    "fieldname": "storage_capacity",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Storage Capacity"
+   "label": "Storage Capacity",
+   "reqd": 1
   },
   {
+   "columns": 1,
    "fieldname": "storage_length",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Storage Length"
+   "label": "Storage Length",
+   "reqd": 1
   },
   {
+   "columns": 1,
    "fieldname": "grade",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Grade"
+   "label": "Grade",
+   "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "fetched_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Fetched Item Code",
-   "options": "Item"
+   "options": "Item",
+   "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "calculated_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Calculated Item Code",
-   "options": "Item"
+   "options": "Item",
+   "reqd": 1
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-10-28 15:05:05.632363",
+ "modified": "2024-11-19 14:30:18.777105",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Storage",

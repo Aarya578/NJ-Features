@@ -4,6 +4,15 @@
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
         if (frm.doc.docstatus == 0) {
+
+            frm.set_query("inspection_type", () => {
+                return {
+                    filters: {
+                        "active": 1
+                    }
+                };
+            });
+
             if (!cur_frm.doc.model && !frm.doc.manufacturer_model) {
                 frappe.msgprint("Manufacturer Model is not found")
                 return

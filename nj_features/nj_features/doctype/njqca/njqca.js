@@ -22,17 +22,17 @@ frappe.ui.form.on('NJQCA', {
                 frm.events.serial_no(frm);
             }    
     
-            if(!frm.doc.backup_duration_cycle_1){
+            if(!frm.doc.sudden_drop){
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_backup_duration',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
                     args: {
                         'parent_name': frm.doc.name,
                         'item_group': frm.doc.item_group
                     },
                     callback: function(r) {
+                        
                         if(r && r.message){
-                            frm.set_value("backup_duration_cycle_1", r.message[0]);
-                            frm.set_value("sudden_drop", r.message[1]);
+                            frm.set_value("sudden_drop", r.message);
                         }
                     }
                 });

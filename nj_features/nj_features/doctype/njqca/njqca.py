@@ -744,63 +744,47 @@ def get_part_item_code_filtered_data(item_group):
     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
-def get_backup_duration(parent_name, item_group):
-    records=[]
-    nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'show_backup'}, 'value')
-    sudden_drop = frappe.db.get_value('NJ Settings', {'parameter': 'sudden_drop'}, 'value')
-
-    if nj_settings_item_group == item_group:
-
-        get_first_last_record_query = """
-                                    SELECT parameter, value 
-                                    FROM `tabNJQCA Result Parameters` 
-                                    WHERE parent = %(parent_name)s 
-                                    ORDER BY idx 
-                                """
-        records = frappe.db.sql(get_first_last_record_query, {'parent_name': parent_name}, as_list=True)
-
-        if len( records)>2:
-            time_format = "%H:%M:%S"
-            try:
-                time1_dt = datetime.datetime.strptime(records[0][0], time_format)
-                time2_dt = datetime.datetime.strptime(records[len(records)-1][0], time_format)
-        
-                time_difference = abs(time2_dt - time1_dt)
-            
-            except ValueError as e:
-            
-                time_difference=None
-            
-            if(int(records[len(records)-1][1])>15):
-                return time_difference, "Yes"
-
-            i = 1
-            while i < len(records):
-                try:
-                    previous_percentage = int(records[i-1][1])
-                except ValueError:
-                    i += 1
-                    continue  
-
-                try:
-                    current_percentage = int(records[i][1])
-                except ValueError:
-                    i += 1
-                    try:  
-                        current_percentage = int(records[i][1])
-                    except IndexError:
-                        break
-                
-                change = previous_percentage - current_percentage
-                if change >= int(sudden_drop):
-                    return time_difference, "Yes"  
-                
-                i += 1 
-
-            return time_difference,"No" 
+def get_sudden_drop(parent_name, item_group):
     
+    njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+    if njqca_battery_item_group == item_group:
+
+        delta_query="""WITH FilteredResults AS (
+                                SELECT value, idx 
+                                FROM `tabNJQCA Result Parameters`
+                                WHERE idx >= (
+                                    SELECT idx 
+                                    FROM `tabNJQCA Result Parameters`
+                                    WHERE parent = %(parent_name)s 
+                                    AND parameter = (
+                                        SELECT value 
+                                        FROM `tabNJQCA Result Parameters`
+                                        WHERE parent = %(parent_name)s
+                                            AND parameter = 'Battery_Discharging_Start_Time'
+                                        ORDER BY idx DESC LIMIT 1
+                                    )
+                                )
+                                AND parameter <> 'Battery_Discharging_Start_Time'
+                                AND parent = %(parent_name)s
+                                ORDER BY idx
+                            )
+                            SELECT MAX(delta) AS max_delta, AVG(delta) AS avg_delta
+                            FROM (
+                                SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
+                                FROM FilteredResults
+                            ) AS DeltaValues"""
+        
+        delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+        delta = delta[0]
+        
+        if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
+            return "Yes"
+        elif(delta.get('max_delta')>4*delta.get('avg_delta')):
+            return "No"
         else:
-            return None , None
+            return "Yes"
+
+        
     
 @frappe.whitelist()
 def get_njqca_item_template(item_group, brand, model):

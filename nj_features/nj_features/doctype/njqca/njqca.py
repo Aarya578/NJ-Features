@@ -779,10 +779,10 @@ def get_sudden_drop(parent_name, item_group):
         
         if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
             return "Yes"
-        elif(delta.get('max_delta')>4*delta.get('avg_delta')):
-            return "No"
+        elif(float(delta.get('max_delta'))<4*float(delta.get('avg_delta'))):
+            return f"No, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
         else:
-            return "Yes"
+            return f"Yes, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
 
         
     

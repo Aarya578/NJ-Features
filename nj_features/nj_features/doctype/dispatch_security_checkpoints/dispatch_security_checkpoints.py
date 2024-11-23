@@ -12,6 +12,10 @@ class DispatchSecurityCheckpoints(Document):
 def scan_serial_no_data_for_sales(serial_no):
     try:
         serial_no = serial_no.strip()
+        serial_no_exists = frappe.db.exists('Serial No', serial_no)
+        if not serial_no_exists:
+            frappe.throw(f"Serial No: {serial_no} doesn't exist")
+            return None
         
         result = frappe.db.sql(f"""
             SELECT dn.name as delivery_note, dn.status as dn_status, dni.serial_no, 
@@ -65,11 +69,13 @@ def scan_serial_no_data_for_sales(serial_no):
 def scan_serial_no_data_for_return(serial_no):
     try:
         serial_no = serial_no.strip()
-        serial_no_doc = frappe.get_doc('Serial No', serial_no)
-        item_code = serial_no_doc.item_code if serial_no_doc.item_code else 'Not Available'
+        serial_no_exists = frappe.db.exists('Serial No', serial_no)
+        if not serial_no_exists:
+            frappe.throw(f"Serial No: {serial_no} doesn't exist")
+            return None
 
         return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI, 
-                            pr.status as PR_Status, pi.status as PI_Status
+                            pr.status as PR_Status, pi.status as PI_Status, ch.item_code
                             FROM `tabPurchase Receipt Item` ch
                             LEFT JOIN `tabPurchase Receipt` pr on pr.name = ch.parent
                             LEFT JOIN `tabPurchase Invoice` pi on pi.name = ch.purchase_invoice
@@ -91,7 +97,7 @@ def scan_serial_no_data_for_return(serial_no):
 
         return {
             'serial_no': serial_no,
-            'item_code': item_code,
+            'item_code': return_data[0].get('item_code'),
             'purchase_receipt': return_data[0].get('PR'),
             'purchase_invoice': return_data[0].get('PI'),
             'pr_status': return_data[0].get('PR_Status'),

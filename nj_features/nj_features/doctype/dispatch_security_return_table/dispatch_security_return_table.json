@@ -14,6 +14,7 @@
  ],
  "fields": [
   {
+   "columns": 2,
    "fieldname": "serial_no",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -22,6 +23,7 @@
    "unique": 1
   },
   {
+   "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -29,6 +31,7 @@
    "options": "Item"
   },
   {
+   "columns": 2,
    "fieldname": "purchase_invoice",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -36,12 +39,14 @@
    "options": "Purchase Invoice"
   },
   {
+   "columns": 1,
    "fieldname": "pi_status",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "PI Status"
   },
   {
+   "columns": 2,
    "fieldname": "purchase_receipt",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -49,6 +54,7 @@
    "options": "Purchase Receipt"
   },
   {
+   "columns": 1,
    "fieldname": "pr_status",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -58,7 +64,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-07 18:36:31.329010",
+ "modified": "2024-11-23 14:28:00.589636",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Return Table",

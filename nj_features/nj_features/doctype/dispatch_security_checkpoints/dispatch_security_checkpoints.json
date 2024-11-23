@@ -11,6 +11,7 @@
   "scan_serial_no",
   "column_break_t5sng",
   "dispatch_type",
+  "section_break_t4y06",
   "dispatch_security_child_table",
   "section_break_aryok",
   "dispatch_security_return_table",
@@ -55,8 +56,10 @@
   {
    "fieldname": "dispatch_type",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Dispatch Type",
-   "options": "\nSales Order\nPurchase Return"
+   "options": "\nSales Order\nPurchase Return",
+   "reqd": 1
   },
   {
    "fieldname": "dispatch_security_return_table",
@@ -68,12 +71,15 @@
   {
    "fieldname": "section_break_aryok",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_t4y06",
+   "fieldtype": "Section Break"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-06 15:12:49.814066",
+ "modified": "2024-11-23 14:32:01.645488",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

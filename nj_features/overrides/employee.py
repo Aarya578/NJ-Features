@@ -208,11 +208,6 @@ def department_change_log(docname, cur_department, previous_department):
     """
     params = {'docname': docname}
     changed_on = frappe.db.sql(query, params, as_dict=True)
-    print(f'Changed_on ------------ 213 {changed_on}')
-
-    print(f'previous_department {previous_department}')
-    print(f'cur_department {cur_department}')
-
     if previous_department != cur_department:
         print(f'creating department change log')
         new_doc = frappe.new_doc('Department Change Log')

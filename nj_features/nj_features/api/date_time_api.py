@@ -46,6 +46,4 @@ def current_date_time():
         }
     
     except Exception as e:
-        return {
-            "error": str(e)
-        }
+        return { "error": str(e) }

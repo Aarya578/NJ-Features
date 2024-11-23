@@ -46,9 +46,7 @@ class CustomImgWriter(BaseWriter):  # type: ignore[no-redef]
 
     def _init(self, code):
         width, height = self.calculate_size(len(code[0]), len(code)/4) # reduce height by 2
-        print(f"width: {len(code[0])}, height: {len(code[0])/4}") 
         size = (int(mm2px(width, self.dpi)), int(mm2px(height, self.dpi)))
-        print(size)
         self._image = Image.new(self.mode, size, self.background)
         self._draw = ImageDraw.Draw(self._image)
 

@@ -12,10 +12,6 @@ function printQRCode(frm) {
     var format = "Serial No Barcode";
     var print_trigger = 0;
 
-    console.log("frm.doc.qr_print_count", frm.doc.qr_print_count);
-    console.log("frm.doc.name", frm.doc.name);
-    console.log("docname", docname);
-
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
         args: {
@@ -25,8 +21,6 @@ function printQRCode(frm) {
 
     frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
         let max_copies = r.message.value;
-        console.log("frm.doc.qr_print_count", frm.doc.qr_print_count, "max", max_copies);
-
         frm.doc.qr_print_count = frm.doc.qr_print_count ? frm.doc.qr_print_count + 1 : 1;
 
         frappe.call({
@@ -74,7 +68,6 @@ function printQRCode(frm) {
                                     method: "nj_features.qr_code.get_print_format_role",
                                     callback: function(r) {
                                         if (r.message == true) {
-                                            console.log("QR code generated successfully");
                                             window.open(frappe.urllib.get_full_url("/printview?" +
                                             "doctype=" + encodeURIComponent("Serial No") +
                                             "&name=" + docname +
@@ -84,7 +77,6 @@ function printQRCode(frm) {
                                             "&_lang=" + (frappe.boot.lang || "en")));
                                             frm.reload_doc();
                                         }else{
-                                            console.log('QR code generation failed');
                                             frappe.msgprint(__('QR code generation failed.'));
                                         }
                                     }

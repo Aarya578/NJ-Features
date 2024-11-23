@@ -181,8 +181,9 @@ frappe.ui.form.on('Delivery Note', {
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('Record'), function() {
                 openDjangoUrl(frm.doc.doctype,frm.doc.name);
-            }).addClass('btn-warning');
+            }).addClass('btn-primary');
         }
+       
     }
 });
 
@@ -196,3 +197,54 @@ function openDjangoUrl(doctype,dn_number) {
     })
 }
 
+
+frappe.ui.form.on('Delivery Note', {
+
+    refresh: function(frm) {
+        if (frm.doc.docstatus === 0) {
+            frm.add_custom_button(__('View'), function() {
+            fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
+            }).addClass('btn-primary');
+        }
+       
+    }
+    
+   
+});
+
+function fetchAndDisplayLinks(frm, method, type) {
+    frappe.call({
+        method: method,
+        args: { 'name': frm.doc.name },
+        callback: function(r) {
+            var links = r.message;
+            if (links && links.length > 0) {
+                var dialog = new frappe.ui.Dialog({
+                    title: __('Preview')
+                });
+
+                var contentContainer = document.createElement('div');
+                for (var i = 0; i < links.length; i++) {
+                    var link = links[i].linked_data;
+                    var buttonLabel = type + ' ' + (i + 1);
+                    var button = document.createElement('button');
+                    button.textContent = buttonLabel;
+                    button.setAttribute('data-link-url', link);
+                    button.classList.add('btn', 'btn-primary', 'preview-button', 'margin-right');
+                    button.style.marginRight = '10px';
+                    button.style.marginBottom = '10px';
+                    button.addEventListener('click', function() {
+                        var linkUrl = this.getAttribute('data-link-url');
+                        window.open(linkUrl, '_blank');
+                    });
+                    contentContainer.appendChild(button);
+                }
+
+                dialog.body.appendChild(contentContainer);
+                dialog.show();
+            } else {
+                frappe.msgprint(__('No ' + type.toLowerCase() + ' links found.'));
+            }
+        }
+    });
+}

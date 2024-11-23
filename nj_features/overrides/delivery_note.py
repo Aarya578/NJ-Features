@@ -20,3 +20,13 @@ def set_tracking_id_for_delivery_note(doc):
         return True
     
     return False
+
+
+@frappe.whitelist()
+def get_link_1(name):
+    nj_setting_value = frappe.db.get_value("NJ Settings", {"parameter": "NJpulse_url"}, "value")
+    
+    link = frappe.db.get_list("Doc Attachment", {"doctypename": name, "file_type": "Video", "docstatus": 1}, ["linked_data"])
+    for item in link:
+        item["linked_data"] = nj_setting_value + item["linked_data"]
+    return link

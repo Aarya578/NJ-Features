@@ -3,6 +3,7 @@ frappe.ui.form.on('Employee', {
         $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
         frm.set_df_property('company', 'hidden', 1);
+        
     },
     validate(frm) {
         frappe.validated = false;

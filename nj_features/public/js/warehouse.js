@@ -1,4 +1,26 @@
 frappe.ui.form.on('Warehouse', {
+    refresh: function(frm) {
+        if(frm.doc.warehouse_type){
+            console.log('warehouse_type is trigerred');
+            console.log("frm.doc.warehouse_type",frm.doc.warehouse_type);
+            frm.set_df_property('department', 'read_only', 1);
+        }
+    },
+    department: function(frm) {
+        let cur_department = frm.doc.department;
+        console.log('cur_department', cur_department);
+        frappe.call({
+            method: 'nj_features.overrides.employee.get_previous_department',
+            args: {
+                'docname': frm.doc.name,
+                'cur_department': cur_department
+            },
+            callback(r){
+                console.log('previous_department', r.message);
+                frm.set_value('previous_department', r.message);
+            }
+        })
+    },
     onload: async function(frm) {
         if(frm.doc.default_capacity == 1 && !frm.doc.max_capacity) {
             frappe.db.get_value('NJ Settings', {"doc_type": "Stock Movement", "parameter": "max_capacity"}, "value").then(function(r) {
@@ -10,6 +32,23 @@ frappe.ui.form.on('Warehouse', {
                 }
             })
         }
+    },
+    after_save: function(frm) {
+        let cur_department = frm.doc.department;
+        let previous_department = frm.doc.previous_department;
+        console.log('cur_department', cur_department);
+        console.log('previous_department', previous_department);
+        frappe.call({
+            method: 'nj_features.overrides.employee.department_change_log',
+            args: {
+                'docname': frm.doc.name,
+                'cur_department': cur_department,
+                'previous_department': previous_department
+            },
+            callback(r){
+                console.log('department_change_log', r.message);
+            }
+        })
     },
     max_capacity: function(frm) {
         frm.set_value('available_capacity', cur_frm.doc.max_capacity - cur_frm.doc.qty_after_transaction);

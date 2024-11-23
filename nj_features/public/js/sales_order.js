@@ -89,8 +89,17 @@
 // 
 
 frappe.ui.form.on('Sales Order', {
+    setup: function(frm) {
+        frm.make_purchase_order = function() {
+            return;
+        }
+    },
     refresh: function(frm) {
-        console.log("Inside the refresh function");
+        setTimeout(() => {
+            frm.remove_custom_button('Delivery Note', 'Create');
+            frm.page.remove_inner_button('Delivery Note', 'Create');
+            $('.btn-group.dropdown-menu a:contains("Delivery Note")').parent().remove();
+        }, 300);
     },
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {

@@ -1,6 +1,11 @@
 frappe.ui.form.on('Sales Invoice', {
     refresh: function(frm) {
         handleScannerInput(frm, 'scan_barcode');
+        setTimeout(() => {
+            frm.remove_custom_button('Return / Credit Note', 'Create');
+            frm.page.remove_inner_button('Return / Credit Note', 'Create');
+            $('.btn-group.dropdown-menu a:contains("Return / Credit Note")').parent().remove();
+        }, 300);
     },
 
     scan_barcode: function(frm) {

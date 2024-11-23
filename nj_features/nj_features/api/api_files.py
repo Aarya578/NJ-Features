@@ -44,7 +44,7 @@ def search_for_serial_or_batch_or_barcode_no(search_value):
         as_dict=True
     )
     if serial_no_data and (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
-        return {"message": "Delivered items can't be moved"}
+        frappe.throw("Delivered items can't be moved")
     
     if serial_no_data:
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}

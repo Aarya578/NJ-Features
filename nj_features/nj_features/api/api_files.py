@@ -40,9 +40,12 @@ def crt_amzsl_inv(sales_order_name):
 def search_for_serial_or_batch_or_barcode_no(search_value):
     serial_no_data = frappe.db.get_value(
         "Serial No", search_value, 
-        ["name as serial_no", "item_code", "warehouse", "delivery_document_name", "delivery_document_no"], 
+        ["name as serial_no", "item_code", "warehouse", "delivery_document_no", "delivery_document_type"], 
         as_dict=True
     )
+    if serial_no_data and (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
+        return {"message": "Delivered items can't be moved"}
+    
     if serial_no_data:
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 
@@ -58,10 +61,7 @@ def serializer_or_notserializer(item_code=None):
         return has_serial_no.has_serial_no if has_serial_no else 0
     return 0  # Return 0 if item code or has_serial_no is not found or is None
 
-
-    
 # Barcode Printing in Purchase Receipt:
-
 
 # def generate_and_save_barcode(serial_no, format='png'):
 #     my_code = Code128(serial_no, writer=CustomImgWriter())

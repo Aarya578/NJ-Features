@@ -121,8 +121,9 @@
   },
   {
    "fieldname": "department",
-   "fieldtype": "Read Only",
-   "label": "Department"
+   "fieldtype": "Data",
+   "label": "Department",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,

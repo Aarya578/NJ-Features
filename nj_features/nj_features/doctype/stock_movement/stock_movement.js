@@ -13,13 +13,13 @@ frappe.ui.form.on('Stock Movement', {
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
 
         if (cur_frm.doc.docstatus == 0) {
-            let department = frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, 'department');
-
-            if (department) {
-                cur_frm.set_value("department", department);
-            } else {
-                frappe.throw("Your department is not set. Please mail to <b>IT Infra Team</b> at <strong><a href='mailto:itinfra@newjaisa.com'>itinfra@newjaisa.com</a></strong> to update employee.");
-            }
+            frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, 'department').then((r) => {
+                if (r.message.department) {
+                    cur_frm.set_value("department", r.message.department);
+                } else {
+                    frappe.throw("Your department is not set. Please mail to <b>IT Infra Team</b> at <strong><a href='mailto:itinfra@newjaisa.com'>itinfra@newjaisa.com</a></strong> to update employee.");
+                }
+            })
         }
     },
     refresh(frm) {

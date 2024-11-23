@@ -9,7 +9,8 @@
   "part_config_id",
   "item_group",
   "parameter",
-  "value"
+  "value",
+  "score"
  ],
  "fields": [
   {
@@ -17,32 +18,42 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "read_only": 1
   },
   {
    "fieldname": "parameter",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Parameter"
+   "label": "Parameter",
+   "read_only": 1
   },
   {
    "fieldname": "value",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Value"
+   "label": "Value",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "part_config_id",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Part Config ID"
+   "label": "Part Config ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "score",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Score"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-05-25 11:20:52.477492",
+ "modified": "2024-11-23 17:10:49.612119",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Result Parameters",

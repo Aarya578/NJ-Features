@@ -336,6 +336,7 @@ class NJQCA(Document):
             "doctype": self.doctype,
             "series": "NJ-STE-NJQCA-",
             "stock_entry_type": "Repack",
+            "department": self.department,
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
         }
@@ -745,45 +746,46 @@ def get_part_item_code_filtered_data(item_group):
 
 @frappe.whitelist()
 def get_sudden_drop(parent_name, item_group):
-    
-    njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-    if njqca_battery_item_group == item_group:
+    try:
+        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+        if njqca_battery_item_group == item_group:
 
-        delta_query="""WITH FilteredResults AS (
-                                SELECT value, idx 
-                                FROM `tabNJQCA Result Parameters`
-                                WHERE idx >= (
-                                    SELECT idx 
+            delta_query="""WITH FilteredResults AS (
+                                    SELECT value, idx 
                                     FROM `tabNJQCA Result Parameters`
-                                    WHERE parent = %(parent_name)s 
-                                    AND parameter = (
-                                        SELECT value 
+                                    WHERE idx >= (
+                                        SELECT idx 
                                         FROM `tabNJQCA Result Parameters`
-                                        WHERE parent = %(parent_name)s
-                                            AND parameter = 'Battery_Discharging_Start_Time'
-                                        ORDER BY idx DESC LIMIT 1
+                                        WHERE parent = %(parent_name)s 
+                                        AND parameter = (
+                                            SELECT value 
+                                            FROM `tabNJQCA Result Parameters`
+                                            WHERE parent = %(parent_name)s
+                                                AND parameter = 'Battery_Discharging_Start_Time'
+                                            ORDER BY idx DESC LIMIT 1
+                                        )
                                     )
+                                    AND parameter <> 'Battery_Discharging_Start_Time'
+                                    AND parent = %(parent_name)s
+                                    ORDER BY idx
                                 )
-                                AND parameter <> 'Battery_Discharging_Start_Time'
-                                AND parent = %(parent_name)s
-                                ORDER BY idx
-                            )
-                            SELECT MAX(delta) AS max_delta, AVG(delta) AS avg_delta
-                            FROM (
-                                SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
-                                FROM FilteredResults
-                            ) AS DeltaValues"""
-        
-        delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
-        delta = delta[0]
-        
-        if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
-            return "Yes"
-        elif(float(delta.get('max_delta'))<4*float(delta.get('avg_delta'))):
-            return f"No, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
-        else:
-            return f"Yes, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
-
+                                SELECT MAX(delta) AS max_delta, AVG(delta) AS avg_delta
+                                FROM (
+                                    SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
+                                    FROM FilteredResults
+                                ) AS DeltaValues"""
+            
+            delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+            delta = delta[0]
+            
+            if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
+                return "Yes"
+            elif(float(delta.get('max_delta'))<3*float(delta.get('avg_delta'))):
+                return f"No, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+            else:
+                return f"Yes, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+    except Exception as e:
+        return e
         
     
 @frappe.whitelist()

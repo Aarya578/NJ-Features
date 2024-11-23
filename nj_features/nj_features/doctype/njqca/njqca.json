@@ -335,15 +335,6 @@
    "options": "NJQCA Adaptor"
   },
   {
-   "fetch_from": "warehouse.department",
-   "fetch_if_empty": 1,
-   "fieldname": "department",
-   "fieldtype": "Link",
-   "label": "Department",
-   "options": "Department",
-   "read_only": 1
-  },
-  {
    "fieldname": "njqca_laptop_processors",
    "fieldtype": "Table",
    "options": "NJQCA PROCESSOR"
@@ -353,12 +344,17 @@
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Read Only",
+   "label": "Department"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-11 12:41:52.182338",
+ "modified": "2024-11-23 10:44:33.566180",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

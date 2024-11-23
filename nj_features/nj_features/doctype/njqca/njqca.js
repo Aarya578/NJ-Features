@@ -13,6 +13,14 @@ frappe.ui.form.on('NJQCA', {
                 };
             });
 
+            let department = frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, 'department');
+
+            if (department) {
+                frappe.set_value("department", department);
+            } else {
+                frappe.throw("Your department is not set. Please mail to <b>IT Infra Team</b> at <strong><a href='mailto:itinfra@newjaisa.com'>itinfra@newjaisa.com</a></strong> to update employee.");
+            }
+
             if (!cur_frm.doc.model && !frm.doc.manufacturer_model) {
                 frappe.msgprint("Manufacturer Model is not found")
                 return

@@ -16,7 +16,6 @@ frappe.ui.form.on('Item', {
                         data: frm.doc.name
                     },
                     callback: (r) => {
-                        console.log("mes from qr code", r.message);
                         qr_code_name = r.message
                         window.open(frappe.urllib.get_full_url("/printview?" +
                         "doctype=" + encodeURIComponent("Item") +
@@ -30,7 +29,6 @@ frappe.ui.form.on('Item', {
                 });
                 
                 // frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
-                //     console.log("frm.doc.qr_print_count", frm.doc.qr_print_count, "max", r.message.value);
                 //     if (frm.doc.qr_print_count > r.message.value) {
                 //         frappe.prompt([
                 //             {

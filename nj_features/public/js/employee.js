@@ -11,7 +11,6 @@ frappe.ui.form.on('Employee', {
             method: 'nj_features.overrides.employee.create_user_and_warehouse',
             args: {'self': frm.doc},
             callback: function(r) {
-                console.log("r",r);
                 
                 if (r && r._server_messages) {
                     frappe.throw(r._server_messages);

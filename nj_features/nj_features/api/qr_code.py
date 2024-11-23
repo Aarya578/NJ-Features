@@ -102,7 +102,6 @@ def print_barcode(doc):
             new_item_code = truncate_grade(item_code)
             if new_item_code:
                 decoded_item_code = generate_and_save_qrcode(new_item_code)
-                print(decoded_item_code)
                 return {"truncated_item_code": new_item_code, "decoded_item_code": decoded_item_code}
     
     except Exception as e:

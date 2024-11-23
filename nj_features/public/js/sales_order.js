@@ -95,6 +95,7 @@ frappe.ui.form.on('Sales Order', {
         }
     },
     refresh: function(frm) {
+        console.log('refreshing...')
         setTimeout(() => {
             frm.remove_custom_button('Delivery Note', 'Create');
             frm.page.remove_inner_button('Delivery Note', 'Create');

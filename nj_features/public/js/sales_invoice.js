@@ -1,5 +1,6 @@
 frappe.ui.form.on('Sales Invoice', {
     refresh: function(frm) {
+        console.log('refreshing...')
         handleScannerInput(frm, 'scan_barcode');
         setTimeout(() => {
             frm.remove_custom_button('Return / Credit Note', 'Create');

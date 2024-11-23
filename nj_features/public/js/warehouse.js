@@ -36,8 +36,6 @@ frappe.ui.form.on('Warehouse', {
     after_save: function(frm) {
         let cur_department = frm.doc.department;
         let previous_department = frm.doc.previous_department;
-        console.log('cur_department', cur_department);
-        console.log('previous_department', previous_department);
         frappe.call({
             method: 'nj_features.overrides.employee.department_change_log',
             args: {

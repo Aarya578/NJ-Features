@@ -21,7 +21,6 @@ frappe.ui.form.on('Delivery Note', {
         
     },
     courier_service: function(frm) {
-        console.log('triggering courier service');
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
             args: {

@@ -36,12 +36,12 @@ def crt_amzsl_inv(sales_order_name):
     else:
         pass
 
-# for stock entry
 @frappe.whitelist()
 def search_for_serial_or_batch_or_barcode_no(search_value):
-    # Search serial number
     serial_no_data = frappe.db.get_value(
-        "Serial No", search_value, ["name as serial_no", "item_code", "warehouse"], as_dict=True
+        "Serial No", search_value, 
+        ["name as serial_no", "item_code", "warehouse", "delivery_document_name", "delivery_document_no"], 
+        as_dict=True
     )
     if serial_no_data:
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
@@ -176,6 +176,7 @@ def create_reason_copy(serial_no, item_code, name, copies, reason, comment, doct
 #                 battery_serial_no = component.component_serial_no
 #     if battery_serial_no:
 #         njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_3 from `tabNJQCA` where serial_no = %s """,battery_serial_no)
+
 @frappe.whitelist(allow_guest=True)
 def battery_data():
     bios_serial_no = frappe.local.form_dict.get('bios_serial_no')
@@ -196,15 +197,11 @@ def battery_data():
         for component in serialno_doc.serial_no_component:
             if component.item_group == 'BATTERY':  # Corrected comparison operator
                 battery_serial_no = component.component_serial_no
-                print("battery serial no",battery_serial_no)
-                break  # Exit loop once the first match is found
+                break 
     
     # If battery_serial_no is found, fetch data from NJQCA
     if battery_serial_no:
-        print("-----------205----------")
         njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_3 FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
-        print("njqca_doc------------",njqca_doc[0].get('backup_duration_cycle_3'))
         return njqca_doc[0].get('backup_duration_cycle_3')
     else:
-        battery_serial_no = "" 
-
+        battery_serial_no = ""

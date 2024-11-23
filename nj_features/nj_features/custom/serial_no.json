@@ -1,6 +1,6 @@
 {
-    "custom_fields": [
-     {
+  "custom_fields": [
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -59,8 +59,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -119,8 +119,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -179,8 +179,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "132"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -239,8 +239,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -299,8 +299,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -359,8 +359,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -419,8 +419,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "54"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -479,8 +479,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "104"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -539,8 +539,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "48"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -599,8 +599,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "38"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -659,8 +659,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -719,8 +719,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -779,8 +779,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -839,8 +839,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "340"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -899,8 +899,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -959,8 +959,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1019,8 +1019,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1079,8 +1079,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "171"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1139,8 +1139,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1199,8 +1199,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "203"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1259,8 +1259,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1319,8 +1319,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1379,8 +1379,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1439,8 +1439,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1499,8 +1499,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1559,8 +1559,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1619,8 +1619,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1679,8 +1679,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1739,8 +1739,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1799,8 +1799,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1859,8 +1859,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1919,8 +1919,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1979,8 +1979,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2039,8 +2039,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2099,8 +2099,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2159,8 +2159,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2219,8 +2219,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2279,70 +2279,130 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
-   "_assign": null,
-   "_comments": null,
-   "_liked_by": null,
-   "_user_tags": null,
-   "allow_in_quick_entry": 0,
-   "allow_on_submit": 0,
-   "bold": 0,
-   "collapsible": 0,
-   "collapsible_depends_on": null,
-   "columns": 0,
-   "creation": "2024-11-16 10:02:47.285147",
-   "default": null,
-   "depends_on": null,
-   "description": null,
-   "docstatus": 0,
-   "dt": "Serial No",
-   "fetch_from": null,
-   "fetch_if_empty": 0,
-   "fieldname": "max_item_group_idx",
-   "fieldtype": "Int",
-   "hidden": 0,
-   "hide_border": 0,
-   "hide_days": 0,
-   "hide_seconds": 0,
-   "idx": 18,
-   "ignore_user_permissions": 0,
-   "ignore_xss_filter": 0,
-   "in_global_search": 0,
-   "in_list_view": 0,
-   "in_preview": 0,
-   "in_standard_filter": 0,
-   "insert_after": "sales_order",
-   "label": "Max Item Group Idx",
-   "length": 0,
-   "mandatory_depends_on": null,
-   "modified": "2024-11-16 10:02:47.285147",
-   "modified_by": "user@mail.com",
-   "name": "Serial No-max_item_group_idx",
-   "no_copy": 0,
-   "non_negative": 0,
-   "options": null,
-   "owner": "user@mail.com",
-   "parent": null,
-   "parentfield": null,
-   "parenttype": null,
-   "permlevel": 0,
-   "precision": "",
-   "print_hide": 0,
-   "print_hide_if_no_value": 0,
-   "print_width": null,
-   "read_only": 1,
-   "read_only_depends_on": null,
-   "report_hide": 0,
-   "reqd": 0,
-   "search_index": 0,
-   "translatable": 0,
-   "unique": 0,
-   "width": null
-  }
-    ],
-    "custom_perms": [
-     {
+    },
+    {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-11-16 10:02:47.285147",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "max_item_group_idx",
+      "fieldtype": "Int",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 18,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "sales_order",
+      "label": "Max Item Group Idx",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-11-16 10:02:47.285147",
+      "modified_by": "user@mail.com",
+      "name": "Serial No-max_item_group_idx",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "user@mail.com",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+    },
+    {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-11-22 18:43:39.154870",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": "warehouse.department",
+      "fetch_if_empty": 1,
+      "fieldname": "department",
+      "fieldtype": "Data",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 9,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "parent_warehouse",
+      "label": "Department",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-11-22 18:43:39.154870",
+      "modified_by": "postman@mail.com",
+      "name": "Serial No-department",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "postman@mail.com",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+    }
+  ],
+  "custom_perms": [
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2375,8 +2435,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2409,8 +2469,8 @@
       "share": 0,
       "submit": 0,
       "write": 0
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2443,8 +2503,8 @@
       "share": 1,
       "submit": 0,
       "write": 0
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2477,8 +2537,8 @@
       "share": 0,
       "submit": 0,
       "write": 0
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2511,8 +2571,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2545,8 +2605,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2579,8 +2639,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2613,11 +2673,11 @@
       "share": 0,
       "submit": 0,
       "write": 1
-     }
-    ],
-    "doctype": "Serial No",
-    "property_setters": [
-     {
+    }
+  ],
+  "doctype": "Serial No",
+  "property_setters": [
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2640,8 +2700,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "1"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2664,8 +2724,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "1"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2688,8 +2748,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "0"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2712,8 +2772,8 @@
       "property_type": null,
       "row_name": null,
       "value": "281"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2736,8 +2796,8 @@
       "property_type": null,
       "row_name": null,
       "value": "184"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2760,8 +2820,8 @@
       "property_type": null,
       "row_name": null,
       "value": "413"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2784,8 +2844,8 @@
       "property_type": null,
       "row_name": null,
       "value": "98"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2808,8 +2868,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2832,8 +2892,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2856,8 +2916,8 @@
       "property_type": null,
       "row_name": null,
       "value": "340"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2880,8 +2940,8 @@
       "property_type": null,
       "row_name": null,
       "value": "96"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2904,8 +2964,8 @@
       "property_type": null,
       "row_name": null,
       "value": "112"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2928,8 +2988,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2952,8 +3012,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2976,8 +3036,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3000,8 +3060,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3024,8 +3084,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3048,8 +3108,8 @@
       "property_type": null,
       "row_name": null,
       "value": "90"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3072,8 +3132,8 @@
       "property_type": null,
       "row_name": null,
       "value": "101"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3096,8 +3156,8 @@
       "property_type": null,
       "row_name": null,
       "value": "85"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3120,8 +3180,8 @@
       "property_type": null,
       "row_name": null,
       "value": "91"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3144,8 +3204,8 @@
       "property_type": null,
       "row_name": null,
       "value": "222"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3168,8 +3228,8 @@
       "property_type": null,
       "row_name": null,
       "value": "78"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3192,8 +3252,8 @@
       "property_type": null,
       "row_name": null,
       "value": "114"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3216,8 +3276,8 @@
       "property_type": null,
       "row_name": null,
       "value": "171"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3240,8 +3300,8 @@
       "property_type": null,
       "row_name": null,
       "value": "60"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3264,8 +3324,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3288,8 +3348,8 @@
       "property_type": null,
       "row_name": null,
       "value": "203"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3312,8 +3372,8 @@
       "property_type": null,
       "row_name": null,
       "value": "48"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3336,8 +3396,8 @@
       "property_type": null,
       "row_name": null,
       "value": "104"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3360,8 +3420,8 @@
       "property_type": null,
       "row_name": null,
       "value": "132"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3384,8 +3444,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3408,8 +3468,8 @@
       "property_type": null,
       "row_name": null,
       "value": "38"
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3432,7 +3492,7 @@
       "property_type": null,
       "row_name": null,
       "value": "54"
-     }
-    ],
-    "sync_on_migrate": 1
-   }
+    }
+  ],
+  "sync_on_migrate": 1
+}

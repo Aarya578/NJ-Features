@@ -13,6 +13,14 @@ frappe.ui.form.on('NJQCA', {
                 };
             });
 
+            frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, 'department').then((r) => {
+                if (r.message.department) {
+                    cur_frm.set_value("department", r.message.department);
+                } else {
+                    frappe.throw("Your department is not set. Please mail to <b>IT Infra Team</b> at <strong><a href='mailto:itinfra@newjaisa.com'>itinfra@newjaisa.com</a></strong> to update employee.");
+                }
+            })
+
             if (!cur_frm.doc.model && !frm.doc.manufacturer_model) {
                 frappe.msgprint("Manufacturer Model is not found")
                 return
@@ -22,17 +30,17 @@ frappe.ui.form.on('NJQCA', {
                 frm.events.serial_no(frm);
             }    
     
-            if(!frm.doc.backup_duration_cycle_1){
+            if(!frm.doc.sudden_drop){
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_backup_duration',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
                     args: {
                         'parent_name': frm.doc.name,
                         'item_group': frm.doc.item_group
                     },
                     callback: function(r) {
+                        
                         if(r && r.message){
-                            frm.set_value("backup_duration_cycle_1", r.message[0]);
-                            frm.set_value("sudden_drop", r.message[1]);
+                            frm.set_value("sudden_drop", r.message);
                         }
                     }
                 });

@@ -108,6 +108,8 @@ def create_warehouse(user, department, location, emp_id=None, warehouse_type=Non
         warehouse.warehouse_name = emp_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
+        warehouse.warehouse_type = 'Employee Personal Warehouse'
+        
         
     warehouse.warehouse_owner = user
     warehouse.location = location
@@ -186,3 +188,40 @@ def create_work_ware(self, user_email):
         return work_ware
     else:
         return None
+
+@frappe.whitelist()
+def get_previous_department(docname):
+    previous_department = frappe.db.get_value('Warehouse', {'name': docname}, 'department')
+    # frappe.db.set_value('Warehouse', docname, 'previous_department', previous_department)
+    # frappe.db.commit()
+    return previous_department
+
+@frappe.whitelist()
+def department_change_log(docname, cur_department, previous_department):
+    changed_by = frappe.session.user
+
+    query = """
+        SELECT user_id
+        FROM `tabEmployee`
+        WHERE work_warehouse = %(docname)s
+        OR employee_asset_warehouse = %(docname)s
+    """
+    params = {'docname': docname}
+    changed_on = frappe.db.sql(query, params, as_dict=True)
+    print(f'Changed_on ------------ 213 {changed_on}')
+
+    print(f'previous_department {previous_department}')
+    print(f'cur_department {cur_department}')
+
+    if previous_department != cur_department:
+        print(f'creating department change log')
+        new_doc = frappe.new_doc('Department Change Log')
+        new_doc.flags.ignore_mandatory = True
+        new_doc.previous_department = previous_department
+        new_doc.current_department = cur_department
+        new_doc.changed_by = changed_by
+        new_doc.changed_on = ', '.join([row['user_id'] for row in changed_on]) if changed_on else 'No user found'
+        new_doc.save()
+        new_doc.submit()
+
+    return previous_department

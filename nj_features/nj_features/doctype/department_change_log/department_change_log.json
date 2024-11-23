@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-22 19:18:53.065952",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "previous_department",
+  "changed_by",
+  "column_break_czjgg",
+  "current_department",
+  "changed_on",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "previous_department",
+   "fieldtype": "Link",
+   "label": "Previous Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "current_department",
+   "fieldtype": "Link",
+   "label": "Current Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "column_break_czjgg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Link",
+   "label": "Changed By",
+   "options": "User"
+  },
+  {
+   "fieldname": "changed_on",
+   "fieldtype": "Link",
+   "label": "Changed On",
+   "options": "User"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Department Change Log",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-11-23 10:31:23.393238",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Department Change Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

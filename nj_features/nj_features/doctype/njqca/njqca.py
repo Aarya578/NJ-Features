@@ -50,6 +50,8 @@ def get_inspection_type():
 
 def open_draft_qi(self):
     # user_email = frappe.session
+    # try:
+    print("-----------53-----------")
     inspection_type = get_inspection_type()
     if not inspection_type:
         inspection_type = self.inspection_type
@@ -70,20 +72,21 @@ def open_draft_qi(self):
             new_qi.item_name = self.manual_repack_item_code
     
     result = get_itm_code_on_barcode(new_qi)
-
+    print("result---------",result)
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
     item_wizard_name = new_qi.get('item_wizard')
+    print("---------78")
     item_group_data =''
     if item_wizard_name :
         component_type = """
         SELECT component_type from `tabComponent` where parent = %s"""
         component_type_data = frappe.db.sql(component_type,(item_wizard_name,),as_dict= True)
         item_group_data = [a['component_type'] for a in component_type_data]
-        
+    print("----85")
     config_data_2_qi = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"config"},"value")
 
     config_data_2_qi = json.loads(config_data_2_qi)
-   
+    print("--------89-----")
     
     item_group = tuple(config_data_2_qi.keys())
     parameter = tuple(config_data_2_qi.values())
@@ -101,9 +104,9 @@ def open_draft_qi(self):
     SELECT variant_10 from `tabNJQCA Child` where item_group = %s and parent =%s"""
     
     njqca_config_query_storage_data= frappe.db.sql(njqca_config_query_storage,(item_group[2],self.name),as_dict=True)
-    # logger.debug("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
+    print("njqca_config_query_storage_data-------------",njqca_config_query_storage_data,"njqca_config_query_ram_data--------",njqca_config_query_ram_data,"njqca_config_query_battery_data-----------",njqca_config_query_battery_data)
     field_name_check_sql_1 = """
-          SELECT options.quality_check
+        SELECT options.quality_check
             FROM `tabNJ Quality Checks` qc
             LEFT JOIN `tabNj QC Options` options
             ON qc.name = options.parent
@@ -112,7 +115,7 @@ def open_draft_qi(self):
             AND qc_check.diagnostic_type = 'Automatic'
             WHERE qc.item_group in %s AND qc.inspection_type = %s  AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s """
     field_name_data_1 = frappe.db.sql(field_name_check_sql_1, (item_group, inspection_type,parameter), as_dict=True)
-    # logger.debug("field_name_data_1-----------------njqca----------129",field_name_data_1)
+    print("field_name_data_1-------",field_name_data_1)
     def extract_numeric_and_suffix(value):
         if value is None or value.strip() == '':
             return None, ''  # Handle None and empty strings
@@ -164,6 +167,44 @@ def open_draft_qi(self):
                 child_table.options = options_value
                 child_table.item_group = item_group_value
     
+    # for data in self.njqca_result_parameters:
+    #     field_name_check_sql = """
+    #         SELECT options.quality_check
+    #         FROM `tabNJ Quality Checks` qc
+    #         LEFT JOIN `tabNj QC Options` options
+    #         ON qc.name = options.parent
+    #         INNER JOIN `tabNJ QC Check List` qc_check
+    #         ON options.quality_check = qc_check.name
+    #         AND qc_check.diagnostic_type = 'Automatic'
+    #         WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.parameter = %s """
+    #     field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
+    #     print("field_name_data------178",field_name_data)
+    #     if field_name_data and "quality_check" in field_name_data[0]:
+    #         quality_check_value = field_name_data[0]["quality_check"] 
+            
+    #         # Pass it into the SQL query
+    #         sql_check_option_automatic = frappe.db.sql("""
+    #             SELECT check_options, score 
+    #             FROM `tabQC Options` 
+    #             WHERE parent = %s
+    #         """, quality_check_value, as_dict=True)
+            
+    #         print("sql_check_option_automatic---------182", sql_check_option_automatic)
+        
+    #     for field in field_name_data:
+    #         name_of_check = field['quality_check']
+    #         child_exists = any(
+    #             child.item_group == data.get("item_group") and child.check_name == name_of_check
+    #             for child in new_qi.nj_quality_checks
+    #         )
+
+    #         if not child_exists:
+    #             child_table = new_qi.append("nj_quality_checks", {})
+    #             child_table.check_name = field['quality_check']
+    #             # child_table.checks = field_name
+    #             child_table.item_group = data.get("item_group")
+    #             child_table.options = data.get("value")
+
     for data in self.njqca_result_parameters:
         field_name_check_sql = """
             SELECT options.quality_check
@@ -173,23 +214,53 @@ def open_draft_qi(self):
             INNER JOIN `tabNJ QC Check List` qc_check
             ON options.quality_check = qc_check.name
             AND qc_check.diagnostic_type = 'Automatic'
-            WHERE qc.item_group = %s AND qc.inspection_type = %s  AND qc_check.parameter = %s """
-        field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type,data.get("parameter")), as_dict=True)
-        for field in field_name_data:
-            name_of_check = field['quality_check']
-            child_exists = any(
-                child.item_group == data.get("item_group") and child.check_name == name_of_check
-                for child in new_qi.nj_quality_checks
-            )
+            WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
+        """
+        field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+        print("field_name_data------178", field_name_data)
 
-            if not child_exists:
-                child_table = new_qi.append("nj_quality_checks", {})
-                child_table.check_name = field['quality_check']
-                # child_table.checks = field_name
-                child_table.item_group = data.get("item_group")
-                child_table.options = data.get("value")
+        if field_name_data:
+            for field in field_name_data:
+                name_of_check = field["quality_check"]
+                sql_check_option_automatic = frappe.db.sql("""
+                    SELECT check_options, score 
+                    FROM `tabQC Options` 
+                    WHERE parent = %s
+                """, name_of_check, as_dict=True)
+
+                print("sql_check_option_automatic---------182", sql_check_option_automatic)
+
+                # Check if the child already exists
+                child_exists = any(
+                    child.item_group == data.get("item_group") and child.check_name == name_of_check
+                    for child in new_qi.nj_quality_checks
+                )
+
+                if not child_exists:
+                    child_table = new_qi.append("nj_quality_checks", {})
+                    child_table.check_name = name_of_check
+                    child_table.item_group = data.get("item_group")
+
+                    # Default to data.get('value')
+                    child_table.options = data.get('value')
+
+                if sql_check_option_automatic:
+                    for option in sql_check_option_automatic:
+                        option_score = float(option["score"]) if option["score"] is not None else None
+                        data_score = float(data.get("score")) if data.get("score") else None
+
+                        print("Option Score Type:", type(option_score), "Value:", option_score)
+                        print("Data Score Type:", type(data_score), "Value:", data_score)
+
+                        if option_score == data_score:
+                            print("Match Found! Check Options:", option["check_options"])
+                            child_table.options = option["check_options"] 
+                            break  
+
 
     new_qi.save()
+        # except Exception as e:
+        #     print("eroor in saving -----------200",e)
     
 @frappe.whitelist()
 def get_itm_code_on_barcode(new_qi):

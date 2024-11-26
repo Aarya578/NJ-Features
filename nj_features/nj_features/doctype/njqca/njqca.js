@@ -182,30 +182,10 @@ frappe.ui.form.on('NJQCA', {
                             cur_frm.refresh_field(field);
                         }
                     });
-                    
-                    // if(cur_frm.doc.model && cur_frm.doc.model != r.message.model){
-                    //     frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
-                    //         () => {
-                    //             frappe.call({
-                    //                 method: 'nj_features.nj_features.doctype.njqca.njqca.model_change_for_serial_no',
-                    //                 args: {
-                    //                     'newmodel': cur_frm.doc.model,
-                    //                     'serial_no': cur_frm.doc.serial_no
-                    //                 },
-                    //                 callback: function(r) {
-                    //                     if(r.message.status === 'success'){
-                    //                         var base_url = frappe.urllib.get_base_url();
-
-                    //                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
-                                            
-                    //                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
-                    //                     }
-                    //                 }
-                    //             });
-                    //         }, () => {
-                    //             $('.primary-action').hide()
-                    //         })
-                    // }
+                    console.log('role=======',frappe.user.has_role("NJ IQC Manager"));
+                    if(!frappe.user.has_role("IQC Manager")){
+                        cur_frm.set_df_property('serial_no', 'read_only', 1);
+                    }
                 }
             });
         }

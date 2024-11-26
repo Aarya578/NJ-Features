@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-25 18:56:58.818023",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "po_number",
+  "po_total_value",
+  "date",
+  "default_warehouse",
+  "column_break_fbmgw",
+  "registry_type",
+  "vendor_si",
+  "location",
+  "column_break_l6l2u",
+  "vehicle_no",
+  "delivery_partner_name",
+  "delivery_partner_no",
+  "section_break_7olev",
+  "table_mnvwk",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "po_number",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "PO Number",
+   "options": "Purchase Order",
+   "reqd": 1
+  },
+  {
+   "fieldname": "po_total_value",
+   "fieldtype": "Data",
+   "label": "PO Total Value",
+   "read_only": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "vendor_si",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Vendor SI",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_fbmgw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vehicle_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Vehicle No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_partner_name",
+   "fieldtype": "Data",
+   "label": "Delivery Partner Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_partner_no",
+   "fieldtype": "Data",
+   "label": "Delivery Partner No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_7olev",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.registry_type == 'Purchase'",
+   "fieldname": "table_mnvwk",
+   "fieldtype": "Table",
+   "options": "Security Inward Registry Child",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Security Inward Registry",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "default_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Select",
+   "label": "Location",
+   "options": "\nBG\nJN",
+   "reqd": 1
+  },
+  {
+   "fieldname": "registry_type",
+   "fieldtype": "Select",
+   "label": "Registry Type",
+   "options": "\nPurchase\nCustom Return\nTransfer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_l6l2u",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "hide_toolbar": 1,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-11-26 11:05:52.734740",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Security Inward Registry",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

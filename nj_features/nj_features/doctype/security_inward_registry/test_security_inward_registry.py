@@ -4,5 +4,5 @@
 # import frappe
 import unittest
 
-class TestNewdoc(unittest.TestCase):
+class TestSecurityInwardRegistry(unittest.TestCase):
 	pass

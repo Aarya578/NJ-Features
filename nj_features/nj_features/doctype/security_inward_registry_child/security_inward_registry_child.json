@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "creation": "2024-11-25 18:48:44.956737",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "item_code",
+  "warehouse",
+  "po_qty",
+  "received_qty",
+  "invoice_value",
+  "unit_value"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "po_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "PO Qty",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "received_qty",
+   "fieldtype": "Float",
+   "label": "Received Qty",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "invoice_value",
+   "fieldtype": "Data",
+   "label": "Invoice Value",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "unit_value",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Unit Value"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-11-25 18:59:23.951053",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Security Inward Registry Child",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

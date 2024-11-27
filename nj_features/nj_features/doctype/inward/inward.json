@@ -84,7 +84,6 @@
    "fieldtype": "Link",
    "label": "Repack Item Code",
    "options": "Item",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -162,7 +161,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-04 18:26:06.041725",
+ "modified": "2024-11-27 17:06:08.687120",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

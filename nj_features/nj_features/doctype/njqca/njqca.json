@@ -346,6 +346,8 @@
    "label": "Laptop Processor"
   },
   {
+   "fetch_from": "warehouse.department",
+   "fetch_if_empty": 1,
    "fieldname": "department",
    "fieldtype": "Data",
    "label": "Department",
@@ -355,7 +357,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-23 10:44:33.566180",
+ "modified": "2024-11-27 19:24:37.929176",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

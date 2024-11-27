@@ -407,7 +407,6 @@ class NJQCA(Document):
             "doctype": self.doctype,
             "series": "NJ-STE-NJQCA-",
             "stock_entry_type": "Repack",
-            "department": self.department,
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
         }

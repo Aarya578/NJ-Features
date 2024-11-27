@@ -4,6 +4,16 @@
 frappe.ui.form.on('Inward', {
     onload: function(frm) {
         warehouse_info(frm);
+        frm.set_query('repack_item_code', function(doc) {
+            return {
+                query: "nj_features.nj_features.doctype.inward.inward.get_item_code_filtered_data",
+                filters: {
+                    item_group: frm.doc.item_group || '',
+                    model: frm.doc.model || '',
+                    brand: frm.doc.brand || ''
+                }
+            };
+        });
     },
     
     refresh(frm) {
@@ -136,6 +146,14 @@ frappe.ui.form.on('Inward', {
                             }
                             if (itemGroup) {
                                 cur_frm.set_value('item_group', itemGroup);
+                                
+                                frappe.db.get_value('NJ Settings', {'parameter': 'item_group_for_inward_check'}, 'value', function(response) {
+                                    if(response && response.value){
+                                        if(itemGroup != response.value){
+                                            cur_frm.set_df_property('repack_item_code', 'read_only', 1);
+                                        }
+                                    }
+                                });
                             }
                             if(batch_no){
                                 cur_frm.set_value('batch_no', batch_no);
@@ -172,7 +190,7 @@ frappe.ui.form.on('Inward', {
         if (frm.doc.model && frm.doc.brand) {
             get_item_template(frm)
         }
-    }
+    },
 });
 
 function get_item_template(frm) {

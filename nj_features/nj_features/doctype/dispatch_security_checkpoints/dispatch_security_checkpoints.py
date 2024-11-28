@@ -44,7 +44,10 @@ def scan_serial_no_data_for_sales(serial_no):
                     frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
                     return None
                 elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 0:
-                    frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice))
+                    frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed and it is approved.").format(sales_invoice))
+                    return None
+                elif sales_channel != 'Amazon' and si_status == 'Paid' and approved == 0:
+                    frappe.msgprint(_("Sales Invoice '{}' must be approved to proceed.").format(sales_invoice))
                     return None
             else:
                 frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))

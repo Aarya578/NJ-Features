@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import json
-
 import frappe
 import random
 from frappe import _

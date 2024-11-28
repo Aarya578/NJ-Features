@@ -51,7 +51,6 @@ def get_inspection_type():
 def open_draft_qi(self):
     # user_email = frappe.session
     # try:
-    print("-----------53-----------")
     inspection_type = get_inspection_type()
     if not inspection_type:
         inspection_type = self.inspection_type

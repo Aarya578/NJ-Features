@@ -40,6 +40,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                                 "si_status": r.message.si_status || 'Not Available',
                                 "dn_status": r.message.dn_status || 'Not Available',
                                 "si_approved": r.message.approved || 'Not Available',
+                                "sales_channel":r.message.sales_channel || 'Not Available'
                             };
                             
                             frm.add_child("dispatch_security_child_table", dispatch_security_child_table);

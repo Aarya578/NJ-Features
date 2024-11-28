@@ -11,7 +11,8 @@
   "si_status",
   "approved",
   "delivery_note",
-  "dn_status"
+  "dn_status",
+  "sales_channel"
  ],
  "fields": [
   {
@@ -68,12 +69,17 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Approved"
+  },
+  {
+   "fieldname": "sales_channel",
+   "fieldtype": "Data",
+   "label": "Sales Channel"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-23 14:29:04.441154",
+ "modified": "2024-11-28 16:37:13.558144",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

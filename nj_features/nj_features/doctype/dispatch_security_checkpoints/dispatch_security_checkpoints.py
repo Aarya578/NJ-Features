@@ -40,10 +40,10 @@ def scan_serial_no_data_for_sales(serial_no):
             sales_channel = delivery_note_data.get('sales_channel')
 
             if sales_invoice:
-                if sales_channel == 'Amazon' and not sales_invoice and not delivery_note:
+                if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):
                     frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
                     return None
-                elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 1:
+                elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 0:
                     frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice))
                     return None
             else:

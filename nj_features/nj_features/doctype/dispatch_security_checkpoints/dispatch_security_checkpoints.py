@@ -24,7 +24,7 @@ def scan_serial_no_data_for_sales(serial_no):
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            WHERE dni.serial_no = %s
+            WHERE dni.serial_no = %s AND dn.docstatus = 1
         """, (serial_no,), as_dict=True)
 
         if result:
@@ -46,6 +46,9 @@ def scan_serial_no_data_for_sales(serial_no):
                 elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 1:
                     frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice))
                     return None
+            else:
+                frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
+                return None
         else:
             frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
             return None

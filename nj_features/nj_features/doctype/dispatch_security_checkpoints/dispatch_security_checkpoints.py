@@ -80,7 +80,7 @@ def scan_serial_no_data_for_return(serial_no):
             frappe.throw(f"Serial No: {serial_no} doesn't exist")
             return None
 
-        return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI, 
+        return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI,pr.total as PR_Total,
                             pr.status as PR_Status, pi.status as PI_Status, ch.item_code
                             FROM `tabPurchase Receipt Item` ch
                             LEFT JOIN `tabPurchase Receipt` pr on pr.name = ch.parent
@@ -99,6 +99,10 @@ def scan_serial_no_data_for_return(serial_no):
 
         if not return_data[0].get('PR_Status') and not return_data[0].get('PI_Status'):
             frappe.msgprint(_("Please check the status of PR or PI found for serial number <b>{}</b>").format(serial_no))
+            return None
+        
+        if not return_data[0].get('PR_Total') or return_data[0].get('PR_Total') >= 0 :
+            frappe.msgprint(_("Please check the total amount of PR found for serial number <b>{}</b>").format(serial_no))
             return None
 
         return {

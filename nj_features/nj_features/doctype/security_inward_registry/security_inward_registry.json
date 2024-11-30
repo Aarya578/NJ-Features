@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "po_number",
+  "ste_number",
   "po_total_value",
   "date",
   "default_warehouse",
@@ -19,11 +20,14 @@
   "delivery_partner_name",
   "delivery_partner_no",
   "section_break_7olev",
-  "table_mnvwk",
+  "purchase_inward_registry",
+  "customer_return_registry",
+  "transfer_registry",
   "amended_from"
  ],
  "fields": [
   {
+   "depends_on": "eval:doc.registry_type !== 'Transfer'",
    "fieldname": "po_number",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -81,13 +85,6 @@
    "fieldtype": "Section Break"
   },
   {
-   "depends_on": "eval:doc.registry_type == 'Purchase'",
-   "fieldname": "table_mnvwk",
-   "fieldtype": "Table",
-   "options": "Security Inward Registry Child",
-   "reqd": 1
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -121,13 +118,43 @@
   {
    "fieldname": "column_break_l6l2u",
    "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.registry_type == 'Purchase'",
+   "fieldname": "purchase_inward_registry",
+   "fieldtype": "Table",
+   "options": "Security Inward Registry Child",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.registry_type == 'Custom Return'",
+   "fieldname": "customer_return_registry",
+   "fieldtype": "Table",
+   "options": "Customer Return for Security Inward Registry",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.registry_type == 'Transfer'",
+   "fieldname": "transfer_registry",
+   "fieldtype": "Table",
+   "options": "Security Inward Registry  Transfer Child",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.registry_type == 'Transfer'",
+   "fieldname": "ste_number",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "STE Number",
+   "options": "Stock Entry",
+   "reqd": 1
   }
  ],
  "hide_toolbar": 1,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-26 11:05:52.734740",
+ "modified": "2024-11-29 15:20:20.438952",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry",

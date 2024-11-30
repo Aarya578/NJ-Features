@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import json
-
 import frappe
 import random
 from frappe import _
@@ -200,3 +199,37 @@ def fetch_model_description(model):
     if model_description:
         return {"model_description": model_description}
     return {"model_description": None}
+
+@frappe.whitelist()
+def get_item_code_filtered_data(doctype, txt, searchfield, start, page_len, filters):
+    """
+    Query to fetch filtered options for the repack_item_code field.
+    """
+    item_group = filters.get("item_group")
+    model = filters.get("model")
+    brand = filters.get("brand")
+    
+    # Build the SQL query dynamically based on provided filters
+    query = """
+        SELECT name 
+        FROM `tabItem`
+        WHERE 1=1 AND has_variants = 0 AND disabled = 0
+    """
+    params = []
+    
+    if item_group:
+        query += " AND item_group = %s"
+        params.append(item_group)
+    
+    if model:
+        query += " AND item_model = %s"
+        params.append(model)
+    
+    if brand:
+        query += " AND brand = %s"
+        params.append(brand)
+    
+    query += " ORDER BY name LIMIT %s, %s"
+    params.extend([start, page_len])
+
+    return frappe.db.sql(query, params)

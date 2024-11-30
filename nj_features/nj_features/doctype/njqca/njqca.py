@@ -51,7 +51,6 @@ def get_inspection_type():
 def open_draft_qi(self):
     # user_email = frappe.session
     # try:
-    print("-----------53-----------")
     inspection_type = get_inspection_type()
     if not inspection_type:
         inspection_type = self.inspection_type
@@ -407,7 +406,6 @@ class NJQCA(Document):
             "doctype": self.doctype,
             "series": "NJ-STE-NJQCA-",
             "stock_entry_type": "Repack",
-            "department": self.department,
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
         }
@@ -499,17 +497,22 @@ def get_info_from_serial_no(doc=None):
         serial_no = doc_json['serial_no']
         serial_no_doc = frappe.get_doc('Serial No', {'name': serial_no}) # NJ - serial_no
         # get price from Stock Ledger Entry
+        bio_serial_no_in_ui = doc_json['bios_serialno']
         sql_query = """
-            SELECT item_code, warehouse, purchase_rate
+            SELECT item_code, warehouse, purchase_rate , bios_serial_no
             FROM
                 `tabSerial No`
             WHERE
                 serial_no = %s
         """
+
         sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-        
         if serial_no_doc:
             sle_entry = sle[0]
+            if sle_entry.get('bios_serial_no'):
+                if sle_entry.get('bios_serial_no') != bio_serial_no_in_ui:
+                    frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
+
             repack_itm_price = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, 'valuation_rate')
 
             result['item_code'] = sle_entry.get('item_code')
@@ -520,6 +523,9 @@ def get_info_from_serial_no(doc=None):
             result['repack_itm_price'] = repack_itm_price
             result['base_price'] = sle_entry.get('purchase_rate')
             result['inspection_date'] = get_inspection_type()
+            frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""", (bio_serial_no_in_ui,serial_no))
+
+
     return result
 
 def get_item_code_for_each_part(part_item_group,doc):

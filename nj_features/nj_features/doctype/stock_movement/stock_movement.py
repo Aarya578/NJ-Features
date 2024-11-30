@@ -14,7 +14,6 @@ class StockMovement(Document):
             stock_entry_data = {
                 "name": self.name,
                 "doctype": self.doctype,
-                "department": self.department,
                 "series": "STE-SM-.YYYY.-.MM.-",
                 "transfer_status": self.transfer_status,
                 "stock_entry_type": "Material Transfer",

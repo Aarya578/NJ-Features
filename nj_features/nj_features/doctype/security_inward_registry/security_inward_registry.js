@@ -75,7 +75,6 @@ frappe.ui.form.on('Security Inward Registry', {
 			callback: function(r) {
 				if (r.message) {
 					frm.clear_table("transfer_registry");
-	
 					let errors = [];
 	
 					if (Array.isArray(r.message)) {
@@ -83,7 +82,7 @@ frappe.ui.form.on('Security Inward Registry', {
 							console.log('items', item);
 							if (item.error) {
 								errors.push(item.error);
-							} else {
+							} else if (item.item_code) {
 								console.log('s_warehouse', item.s_warehouse);
 								console.log('t_warehouse', item.t_warehouse);
 								let new_row = frm.add_child("transfer_registry");
@@ -91,22 +90,27 @@ frappe.ui.form.on('Security Inward Registry', {
 								frappe.model.set_value(new_row.doctype, new_row.name, "target_warehouse", item.t_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
+								console.log( item.item_code);
+								console.log( item.t_warehouse);
+								console.log(item.s_warehouse);
 							}
 						});
 	
 						frm.refresh_field("transfer_registry");
-						if (errors.length > 0) {
-							frappe.msgprint({
-								title: __('Errors'),
-								message: errors.join('<br>'),
-								indicator: 'red'
-							});
-						}
+					}
+	
+					if (errors.length > 0) {
+						frappe.msgprint({
+							title: __('Errors'),
+							message: errors.join('<br>'),
+							indicator: 'red'
+						});
 					}
 				}
 			}
 		});
 	}
+	
 });
 
 // Security Inward Registry Child
@@ -139,30 +143,30 @@ frappe.ui.form.on('Security Inward Registry Child', {
 // Security Inward Registry  Transfer Child
 
 frappe.ui.form.on('Security Inward Registry  Transfer Child', {
-	item_code: function (frm, cdt, cdn) {
-		if(!frm.doc.ste_number){
-			frappe.model.set_value(cdt, cdn, 'source_warehouse', '');
-			frappe.throw('Please fill the STE Number first');
-			return
-		}else{
-			let child = locals[cdt][cdn];
-			frappe.call({
-				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_item_code_details_for_transfer",
-				args: {
-					ste_number: frm.doc.ste_number,
-					item_code: child.item_code,
-				},
-				callback: function (r) {
-					if (r.message) {
-						if (Array.isArray(r.message)) {
-							r.message.forEach(item => {
-								frappe.model.set_value(cdt, cdn, 'source_warehouse', item.t_warehouse);
-								frappe.model.set_value(cdt, cdn, 'qty', item.qty);
-							})
-						}
-					}
-				}
-			});
-		}
-	}
+	// item_code: function (frm, cdt, cdn) {
+	// 	if(!frm.doc.ste_number){
+	// 		frappe.model.set_value(cdt, cdn, 'source_warehouse', '');
+	// 		frappe.throw('Please fill the STE Number first');
+	// 		return
+	// 	}else{
+	// 		let child = locals[cdt][cdn];
+	// 		frappe.call({
+	// 			method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_item_code_details_for_transfer",
+	// 			args: {
+	// 				ste_number: frm.doc.ste_number,
+	// 				item_code: child.item_code,
+	// 			},
+	// 			callback: function (r) {
+	// 				if (r.message) {
+	// 					if (Array.isArray(r.message)) {
+	// 						r.message.forEach(item => {
+	// 							frappe.model.set_value(cdt, cdn, 'source_warehouse', item.t_warehouse);
+	// 							frappe.model.set_value(cdt, cdn, 'qty', item.qty);
+	// 						})
+	// 					}
+	// 				}
+	// 			}
+	// 		});
+	// 	}
+	// }
 });

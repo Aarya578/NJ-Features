@@ -32,29 +32,6 @@ frappe.ui.form.on('Security Inward Registry', {
                 }
             };
         });
-
-		frm.fields_dict['transfer_registry'].grid.get_field('item_code').get_query = function(doc, cdt, cdn){
-			if(frm.doc.ste_number === ''){
-				frappe.throw('Please fill the STE Number first');
-			}
-			let child = locals[cdt][cdt];
-			return {
-				query: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_ste_number_item_code",
-				filters: {
-					ste_number: frm.doc.ste_number,
-				}
-			}
-		}
-		
-		frm.fields_dict['transfer_registry'].grid.get_field('target_warehouse').get_query = function(doc, cdt, cdn){
-			let child = locals[cdt][cdn];
-			return {
-				query: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_target_warehouse",
-				filters: {
-					source_warehouse: child.source_warehouse
-				}
-			}
-		}
 	},
 	po_number: function(frm) {
 		if (!frm.doc.registry_type) {
@@ -107,10 +84,12 @@ frappe.ui.form.on('Security Inward Registry', {
 							if (item.error) {
 								errors.push(item.error);
 							} else {
+								console.log('s_warehouse', item.s_warehouse);
+								console.log('t_warehouse', item.t_warehouse);
 								let new_row = frm.add_child("transfer_registry");
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
-								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "target_warehouse", item.t_warehouse);
+								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
 							}
 						});
@@ -159,7 +138,6 @@ frappe.ui.form.on('Security Inward Registry', {
 			});
 		}
 	}
-	
 });
 
 // Security Inward Registry Child
@@ -218,5 +196,4 @@ frappe.ui.form.on('Security Inward Registry  Transfer Child', {
 			});
 		}
 	}
-	
 });

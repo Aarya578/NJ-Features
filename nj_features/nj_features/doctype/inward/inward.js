@@ -125,14 +125,16 @@ frappe.ui.form.on('Inward', {
     },
 
     item_group: function (frm) {
-        frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, function(r) {
-            if (r && r.message) {
-                var allowed_item_groups = r.message;
-                if (allowed_item_groups && allowed_item_groups.includes(frm.doc.item_group)) {
-                    frm.set_df_property('item_code', 'read_only', 0);
+        if (frm.doc.item_group) {
+            frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, ['value'], function(r) {
+                if (r && r.value) {
+                    var allowed_item_groups = r.value.split(',');
+                    if (allowed_item_groups > 0 && allowed_item_groups.includes(frm.doc.item_group)) {
+                        frm.set_df_property('item_code', 'read_only', 0);
+                    }
                 }
-            }
-        });
+            });
+        }
     },
 
     item_code: function(frm) {

@@ -124,19 +124,6 @@ frappe.ui.form.on('Inward', {
         }
     },
 
-    item_group: function (frm) {
-        if (frm.doc.item_group) {
-            frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, ['value'], function(r) {
-                if (r && r.value) {
-                    var allowed_item_groups = r.value.split(',');
-                    if (allowed_item_groups > 0 && allowed_item_groups.includes(frm.doc.item_group)) {
-                        frm.set_df_property('item_code', 'read_only', 0);
-                    }
-                }
-            });
-        }
-    },
-
     item_code: function(frm) {
         if (frm.doc.item_code) {
             if (cur_frm.doc.purchase_receipt) {
@@ -159,8 +146,7 @@ frappe.ui.form.on('Inward', {
                             }
                             if (itemGroup) {
                                 cur_frm.set_value('item_group', itemGroup);
-                                
-                                frappe.db.get_value('NJ Settings', {'parameter': 'item_group_for_inward_check'}, 'value', function(response) {
+                                frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, 'value', function(response) {
                                     if(response && response.value){
                                         if(itemGroup != response.value){
                                             cur_frm.set_df_property('repack_item_code', 'read_only', 1);

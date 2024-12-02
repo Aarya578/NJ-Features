@@ -18,18 +18,31 @@ def make_security_inward_registry(po_number, registry_type):
 @frappe.whitelist()
 def get_po_number_details(po_number):
     po_creation_date = frappe.db.get_value('Purchase Order', {'name': po_number}, ['creation'])
+
+    purchase_inward_security_result = []
+    
     if not po_creation_date:
         return {'error': f'Purchase Order {po_number} does not exist.'}
 
     current_date = now_datetime()
 
     days_difference = date_diff(current_date.date(), po_creation_date.date())
-    if days_difference > 14:
+    if not days_difference > 14:
+        result = get_po_item_group(po_number)
+
+        for row in result:
+            row_res = get_item__code_details(po_number, row['item_code'], row['item_group'])
+            purchase_inward_security_result.append(row_res)
+            print('row_res', row_res)
+
+        return purchase_inward_security_result
+    else:
         return {'error': '14 days expired for this Purchase Order'}
 
 
+
 @frappe.whitelist()
-def get_item__code_details(item_code, po_number, item_group):
+def get_item__code_details(po_number,item_code,  item_group):
     po_qty = frappe.db.get_value(
         'Purchase Order Item',
         {'parent': po_number, 'item_code': item_code, 'item_group': item_group},
@@ -55,6 +68,8 @@ def get_item__code_details(item_code, po_number, item_group):
         available_qty = 0
 
     return {
+        "item_code": item_code,
+        "item_group": item_group,
         "po_qty": po_qty,
         "available_qty": available_qty
     }
@@ -97,52 +112,40 @@ def get_ste_number_item_code(doctype, txt, searchfield, start, page_len, filters
     return result_data
 
 @frappe.whitelist()
-def get_item_code_details_for_transfer(ste_number, item_code):
+def get_item_code_details_for_transfer(ste_number):
     material_transfer_details = frappe.db.get_all(
         "Stock Entry Detail",
-        filters={'parent': ste_number, 'item_code': item_code},
-        fields=['t_warehouse', 'qty']
+        filters={'parent': ste_number},
+        fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx']
     )
 
-    return material_transfer_details
+    print(f'material_transfer_details -------------- {material_transfer_details}')
 
-    
-@frappe.whitelist()
-def purchase_reciept_details(po_number, item_code, item_group):
-    query = """
-        SELECT 
-            po.name AS purchase_order_name,
-            pr.name AS purchase_receipt_name,
-            poi.qty AS purchase_order_qty,
-            pri.qty AS purchase_receipt_qty
-        FROM 
-            `tabPurchase Order` po
-        INNER JOIN 
-            `tabPurchase Order Item` poi ON po.name = poi.parent
-        INNER JOIN 
-            `tabPurchase Receipt Item` pri ON po.name = pri.purchase_order
-        INNER JOIN 
-            `tabPurchase Receipt` pr ON pr.name = pri.parent
-        WHERE 
-            po.name = %s AND 
-            poi.item_group = %s AND 
-            poi.item_code = %s
-    """
+    result = []
 
-    result = frappe.db.sql(query, (po_number, item_group, item_code), as_dict=True)
-    
+    for row in material_transfer_details:
+        print(f'row ------------------ {row}')
+        s_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['s_warehouse']}, ['location'])
+        t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])
+        print(f'location ---- {s_warehouse_lc} -------- {t_warehouse_lc}')
+
+        if s_warehouse_lc == t_warehouse_lc:
+            result.append(
+                {
+                    'error': f'The source warehouse and target warehouse cannot have the same location at  row {row["idx"]}:{row["item_code"]}</b>'
+                })
+        else:
+            result.append(row)
+
     return result
 
 @frappe.whitelist()
-def get_po_item_group(doctype, txt, searchfield, start, page_len, filters):
-    if not filters or 'po_number' not in filters:
-        return []
-
-    po_number = filters['po_number']
+def get_po_item_group(po_number):
 
     query = """
         SELECT 
-            poi.item_group
+            poi.item_group,
+            poi.item_code
         FROM 
             `tabPurchase Order Item` poi
         LEFT JOIN (
@@ -165,25 +168,9 @@ def get_po_item_group(doctype, txt, searchfield, start, page_len, filters):
     
     filtered_data = frappe.db.sql(query, (po_number, po_number), as_dict=1)
 
-    filtered_item_groups = [d['item_group'] for d in filtered_data]
+    print(f'filtered_item_groups ------------------- 161 {filtered_data}')
 
-    if not filtered_item_groups:
-        return []
-
-    filters_data = [
-        ["name", "in", filtered_item_groups],
-    ]
-
-    result_data = frappe.get_all(
-        "Item Group",
-        filters=filters_data,
-        fields=["name"],
-        as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
-    )
-    return result_data
+    return filtered_data
 
 @frappe.whitelist()
 def get_po_item_code(doctype, txt, searchfield, start, page_len, filters):

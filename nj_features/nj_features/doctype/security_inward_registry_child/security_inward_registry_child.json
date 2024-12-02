@@ -55,7 +55,6 @@
    "fieldname": "received_qty",
    "fieldtype": "Float",
    "label": "Received Qty",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -63,7 +62,6 @@
    "fieldtype": "Float",
    "label": "Invoice Value",
    "read_only": 1,
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -83,7 +81,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-29 12:47:56.663579",
+ "modified": "2024-12-02 15:51:42.900904",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry Child",

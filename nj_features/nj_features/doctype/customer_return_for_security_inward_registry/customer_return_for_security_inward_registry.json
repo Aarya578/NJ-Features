@@ -7,7 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "data",
-  "courier_partner",
   "tracking_id",
   "vehicle_no",
   "qty"
@@ -20,13 +19,6 @@
    "in_list_view": 1,
    "label": "Data",
    "read_only": 1
-  },
-  {
-   "fieldname": "courier_partner",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Courier Partner",
-   "options": "\nAmazon\nShopify\nDelivery Return\nCriticolog Return"
   },
   {
    "fieldname": "tracking_id",
@@ -50,7 +42,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-26 13:03:59.191128",
+ "modified": "2024-12-02 11:03:04.805955",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Customer Return for Security Inward Registry",

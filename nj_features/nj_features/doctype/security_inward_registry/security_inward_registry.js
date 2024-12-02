@@ -127,10 +127,38 @@ frappe.ui.form.on('Security Inward Registry', {
 				}
 			}
 		});
+	},
+	make_dashboard: (frm) => {
+		if(!frm.is_new()) {
+			frappe.call({
+				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_qty',
+				args: {name: frm.doc.name, registry_type: frm.doc.registry_type},
+				callback: (r) => {
+					if(!r.message) {
+						return;
+					}
+
+					const section = frm.dashboard.add_section('', __("Stock Levels"));
+
+					// sort by qty
+					r.message.sort(function(a, b) { a.qty > b.qty ? 1 : -1 });
+
+					var rows = $('<div></div>').appendTo(section);
+
+					// show
+					(r.message || []).forEach(function(d) {
+						if(d.qty > 0) {
+							$(`<div class='row' style='margin-bottom: 10px;'>
+								<div class='col-sm-6 small' style='padding-top: 3px;'>${d.warehouse}</div>
+								<div class='col-sm-6 small text-right' style='padding-top: 3px;'>${d.qty}</div>
+							</div>`).appendTo(rows);
+						}
+					});
+					frm.dashboard.show();
+				}
+			});
+		}
 	}
-	
-	
-	
 	
 });
 

@@ -3,6 +3,7 @@
 
 frappe.ui.form.on('Security Inward Registry', {
 	refresh: function(frm) {
+		frm.trigger("make_dashboard");
 		frappe.call({
 			method: "frappe.client.get_list",
 			args: {
@@ -108,10 +109,17 @@ frappe.ui.form.on('Security Inward Registry', {
 		});
 	},
 	make_dashboard: (frm) => {
+		let child_table = null;
+		$.each(frm.fields_dict, function(i, row) {
+			if (row.fieldtype == "Table") {
+				child_table = "tab" + row.options;;
+			}
+		});
+
 		if(!frm.is_new()) {
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_qty',
-				args: {name: frm.doc.name, registry_type: frm.doc.registry_type},
+				args: {name: frm.doc.name, registry_type: frm.doc.registry_type, child_table: child_table},
 				callback: (r) => {
 					if(!r.message) {
 						return;

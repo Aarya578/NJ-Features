@@ -64,7 +64,7 @@ frappe.ui.form.on('NJQCA', {
                                 frm.set_value("item_template", r.variant_of);
                                 frm.set_df_property('item_template', 'read_only', 1);
                                 // processItemTemplate(frm);
-                                // frm.save();
+                                frm.save();
                             }
                         });
                     } else {

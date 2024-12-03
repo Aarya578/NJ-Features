@@ -24,8 +24,8 @@ def scan_serial_no_data_for_sales(serial_no):
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            WHERE dni.serial_no = %s AND dn.docstatus = 1
-        """, (serial_no,), as_dict=True)
+            WHERE dni.serial_no LIKE %s AND dn.docstatus = 1
+        """, ('%' + serial_no + '%',), as_dict=True)
 
         if result:
             delivery_note_data = result[0]
@@ -102,7 +102,7 @@ def scan_serial_no_data_for_return(serial_no):
                                             LEFT JOIN 
                                                 `tabPurchase Invoice` AS pi ON pi.name = pii.parent
                                             WHERE 
-                                                ch.serial_no = '{serial_no_name}' 
+                                                ch.serial_no LIKE '%{serial_no_name}%' 
                                                 AND pr.is_return = 1 
                                                 AND pr.docstatus = 1
                                                 AND pi.docstatus = 1

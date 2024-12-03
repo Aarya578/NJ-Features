@@ -268,3 +268,16 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
     print(f'result_data ----------------- 281 {result_data}')
 
     return result_data
+
+
+@frappe.whitelist()
+def get_registry_qty(name, child_table):
+    out = frappe.db.sql(
+			"""select item_code, sum(qty) as qty
+			from `%s`
+			where parent = %s
+			group by item_code""",
+			(child_table, name), as_dict=1,
+		)
+    
+    return out

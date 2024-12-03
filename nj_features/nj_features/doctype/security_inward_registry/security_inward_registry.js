@@ -76,17 +76,13 @@ frappe.ui.form.on('Security Inward Registry', {
 			callback: function(r) {
 				if (r.message) {
 					frm.clear_table("transfer_registry");
-	
 					let errors = [];
 	
 					if (Array.isArray(r.message)) {
 						r.message.forEach(item => {
-							console.log('items', item);
 							if (item.error) {
 								errors.push(item.error);
-							} else {
-								console.log('s_warehouse', item.s_warehouse);
-								console.log('t_warehouse', item.t_warehouse);
+							} else if (item.item_code) {
 								let new_row = frm.add_child("transfer_registry");
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
 								frappe.model.set_value(new_row.doctype, new_row.name, "target_warehouse", item.t_warehouse);
@@ -96,13 +92,14 @@ frappe.ui.form.on('Security Inward Registry', {
 						});
 	
 						frm.refresh_field("transfer_registry");
-						if (errors.length > 0) {
-							frappe.msgprint({
-								title: __('Errors'),
-								message: errors.join('<br>'),
-								indicator: 'red'
-							});
-						}
+					}
+	
+					if (errors.length > 0) {
+						frappe.msgprint({
+							title: __('Errors'),
+							message: errors.join('<br>'),
+							indicator: 'red'
+						});
 					}
 				}
 			}
@@ -119,7 +116,7 @@ frappe.ui.form.on('Security Inward Registry', {
 		if(!frm.is_new()) {
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_qty',
-				args: {name: frm.doc.name, registry_type: frm.doc.registry_type, child_table: child_table},
+				args: {name: frm.doc.name, child_table: child_table},
 				callback: (r) => {
 					if(!r.message) {
 						return;
@@ -144,6 +141,17 @@ frappe.ui.form.on('Security Inward Registry', {
 					frm.dashboard.show();
 				}
 			});
+		}
+	},
+
+	tracking_id: function(frm) {
+		let tracking_id = frm.doc.tracking_id;
+		if (!tracking_id || tracking_id.trim() === '') {
+			frappe.throw(__('Tracking ID cannot be empty.'));
+		} else {
+			let new_row = frm.add_child("customer_return_registry");
+			frappe.model.set_value(new_row.doctype, new_row.name, "tracking_id", tracking_id);
+			frm.refresh_field("customer_return_registry");
 		}
 	}
 });
@@ -171,37 +179,5 @@ frappe.ui.form.on('Security Inward Registry Child', {
 				}
 			}
 		});
-	}
-});
-
-
-// Security Inward Registry  Transfer Child
-
-frappe.ui.form.on('Security Inward Registry  Transfer Child', {
-	item_code: function (frm, cdt, cdn) {
-		if(!frm.doc.ste_number){
-			frappe.model.set_value(cdt, cdn, 'source_warehouse', '');
-			frappe.throw('Please fill the STE Number first');
-			return
-		}else{
-			let child = locals[cdt][cdn];
-			frappe.call({
-				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_item_code_details_for_transfer",
-				args: {
-					ste_number: frm.doc.ste_number,
-					item_code: child.item_code,
-				},
-				callback: function (r) {
-					if (r.message) {
-						if (Array.isArray(r.message)) {
-							r.message.forEach(item => {
-								frappe.model.set_value(cdt, cdn, 'source_warehouse', item.t_warehouse);
-								frappe.model.set_value(cdt, cdn, 'qty', item.qty);
-							})
-						}
-					}
-				}
-			});
-		}
 	}
 });

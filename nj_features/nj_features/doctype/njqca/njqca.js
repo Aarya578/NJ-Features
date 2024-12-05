@@ -46,7 +46,7 @@ frappe.ui.form.on('NJQCA', {
                 });
             }
 
-            if (frm.doc.bios_serialno) {
+            if (frm.doc.bios_serialno && frm.doc.item_group == 'Laptops') {
                 frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name', 'model', 'item_code'], (r) => {
                     if (r && r.name && r.model && r.item_code) {
                         frm.set_value("serial_no", r.name);

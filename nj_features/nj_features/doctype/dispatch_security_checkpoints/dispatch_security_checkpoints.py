@@ -24,8 +24,8 @@ def scan_serial_no_data_for_sales(serial_no):
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            WHERE dni.serial_no = %s AND dn.docstatus = 1
-        """, (serial_no,), as_dict=True)
+            WHERE dni.serial_no LIKE %s AND dn.docstatus = 1
+        """, ('%' + serial_no + '%',), as_dict=True)
 
         if result:
             delivery_note_data = result[0]
@@ -76,20 +76,60 @@ def scan_serial_no_data_for_return(serial_no):
     try:
         serial_no = serial_no.strip()
         serial_no_exists = frappe.db.exists('Serial No', serial_no)
+        serial_no_name = ''
+        pr_name = ''
         if not serial_no_exists:
-            frappe.throw(f"Serial No: {serial_no} doesn't exist")
-            return None
-
-        return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI,pr.total as PR_Total,
-                            pr.status as PR_Status, pi.status as PI_Status, ch.item_code
-                            FROM `tabPurchase Receipt Item` ch
-                            LEFT JOIN `tabPurchase Receipt` pr on pr.name = ch.parent
-                            LEFT JOIN `tabPurchase Invoice` pi on pi.name = ch.purchase_invoice
-                            WHERE ch.serial_no = '{serial_no}' AND pr.is_return = 1 
-                            AND ch.purchase_invoice is not null or ch.purchase_invoice != ''
-                            ORDER BY ch.creation DESC, ch.modified DESC limit 1
-                            """, as_dict=True)
+            if not frappe.db.exists('Purchase Receipt', serial_no):
+                frappe.throw(f"Serial No or Purchase Receipt: {serial_no} doesn't exist")
+                return None
+            else:
+                pr_name = serial_no
+        else:
+            serial_no_name =serial_no
+        if serial_no_name:
+            return_data = frappe.db.sql(f"""SELECT 
+                                                ch.parent AS PR, 
+                                                pr.total AS PR_Total,
+                                                pr.status AS PR_Status,
+                                                pii.parent AS PI, 
+                                                pi.status AS PI_Status
+                                            FROM 
+                                                `tabPurchase Receipt Item` AS ch
+                                            LEFT JOIN 
+                                                `tabPurchase Receipt` AS pr ON pr.name = ch.parent
+                                            LEFT JOIN 
+                                                `tabPurchase Invoice Item` AS pii ON pii.purchase_receipt = pr.name
+                                            LEFT JOIN 
+                                                `tabPurchase Invoice` AS pi ON pi.name = pii.parent
+                                            WHERE 
+                                                ch.serial_no LIKE '%{serial_no_name}%' 
+                                                AND pr.is_return = 1 
+                                                AND pr.docstatus = 1
+                                                AND pi.docstatus = 1
+                                            ORDER BY
+                                                ch.creation DESC, 
+                                                ch.modified DESC 
+                                            LIMIT 1""", as_dict=True)
+        else:
+            pr_items_data = frappe.db.sql(f"""select item_code from `tabPurchase Receipt Item` where parent = '{pr_name}'
+                                """, as_dict=True)
+            if pr_items_data:
+                for item in pr_items_data:
+                    if frappe.db.get_value("Item", {"name": item['item_code']}, "has_serial_no") == 1:
+                        frappe.msgprint(f"PR has serialized items")
+                        return None
+            else:
+                frappe.msgprint(_("Item codes not found in Purchase Receipt Item  in <b>{}</b>").format(serial_no))
+                return None
             
+            return_data = frappe.db.sql(f"""select Pr.name as PR, Pr.status as PR_Status , Pr.total as PR_Total,
+                                            Pi.name as PI, Pi.status as PI_Status from `tabPurchase Receipt` Pr
+                                            inner join `tabPurchase Invoice Item` PII 
+                                            inner join `tabPurchase Invoice` Pi
+                                            on PII.purchase_receipt = Pr.name and 
+                                            Pi.name = PII.parent
+                                            where Pr.name = '{pr_name}' and Pr.is_return = 1
+                                """, as_dict=True)            
         if not return_data:
             frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
             return None

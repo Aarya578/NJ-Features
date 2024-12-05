@@ -201,7 +201,8 @@ def battery_data():
     
     # If battery_serial_no is found, fetch data from NJQCA
     if battery_serial_no:
-        njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_3 FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
-        return njqca_doc[0].get('backup_duration_cycle_3')
+        njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_1,sudden_drop FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
+        print("njqca =======================205",njqca_doc)
+        return njqca_doc
     else:
         battery_serial_no = ""

@@ -71,6 +71,7 @@ def open_draft_qi(self):
             new_qi.item_name = self.manual_repack_item_code
     
     result = get_itm_code_on_barcode(new_qi)
+    print("qi name is print in========================================", new_qi.name)
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
 

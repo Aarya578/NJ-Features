@@ -554,6 +554,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         }
+        frm.set_value('qi_name', frm.doc.name);
         // if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
         //     if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
         //         frappe.confirm = function(message, yes, no) {

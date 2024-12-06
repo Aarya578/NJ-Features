@@ -6,8 +6,22 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime, date_diff
 
 class SecurityInwardRegistry(Document):
-	pass
+    def on_submit(self):
+        total_qty = 0
+        
+        for item in self.transfer_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        for item in self.purchase_inward_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        for item in self.customer_return_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        self.db_set("total_qty", total_qty)
 
+    def on_cancel(self):
+        pass
 
 @frappe.whitelist()
 def make_security_inward_registry(po_number, registry_type):
@@ -33,7 +47,6 @@ def get_po_number_details(po_number):
         for row in result:
             row_res = get_item__code_details(po_number, row['item_code'], row['item_group'])
             purchase_inward_security_result.append(row_res)
-            print('row_res', row_res)
 
         return purchase_inward_security_result
     else:
@@ -50,8 +63,7 @@ def get_item__code_details(po_number,item_code,  item_group):
     )
     
     total_received_qty = frappe.db.sql("""
-        SELECT 
-            SUM(pri.qty) 
+        SELECT SUM(pri.qty) 
         FROM 
             `tabPurchase Receipt Item` pri
         INNER JOIN 
@@ -119,15 +131,11 @@ def get_item_code_details_for_transfer(ste_number):
         fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx']
     )
 
-    print(f'material_transfer_details -------------- {material_transfer_details}')
-
     result = []
 
     for row in material_transfer_details:
-        print(f'row ------------------ {row}')
         s_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['s_warehouse']}, ['location'])
         t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])
-        print(f'location ---- {s_warehouse_lc} -------- {t_warehouse_lc}')
 
         if s_warehouse_lc == t_warehouse_lc:
             result.append(
@@ -143,15 +151,12 @@ def get_item_code_details_for_transfer(ste_number):
 def get_po_item_group(po_number):
 
     query = """
-        SELECT 
-            poi.item_group,
-            poi.item_code
+        SELECT poi.item_group, poi.item_code
         FROM 
             `tabPurchase Order Item` poi
         LEFT JOIN (
             SELECT 
-                pri.item_code, 
-                SUM(pri.qty) AS total_receipt_qty
+                pri.item_code, SUM(pri.qty) AS total_receipt_qty
             FROM 
                 `tabPurchase Receipt Item` pri
             INNER JOIN 
@@ -167,8 +172,6 @@ def get_po_item_group(po_number):
     """
     
     filtered_data = frappe.db.sql(query, (po_number, po_number), as_dict=1)
-
-    print(f'filtered_item_groups ------------------- 161 {filtered_data}')
 
     return filtered_data
 
@@ -234,7 +237,6 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
 
     if source_warehouse:
         sr_location = frappe.db.get_value('Warehouse', {'name': source_warehouse}, ['location'])
-        print(f'sr_location -------------- 250 {sr_location}')
 
     filtered_data = frappe.db.sql(
         """
@@ -250,7 +252,6 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
     )
 
     filtered_data = [d['name'] for d in filtered_data]  
-    print(f'filtered data ------- {filtered_data}')
 
     filtered_data = [
         ["name", "in", filtered_data],
@@ -265,19 +266,48 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
         ]
     )
 
-    print(f'result_data ----------------- 281 {result_data}')
-
     return result_data
 
 
 @frappe.whitelist()
 def get_registry_qty(name, child_table):
-    out = frappe.db.sql(
-			"""select item_code, sum(qty) as qty
-			from `%s`
-			where parent = %s
-			group by item_code""",
-			(child_table, name), as_dict=1,
-		)
+    valid_table_name = frappe.db.escape(child_table).strip("'")
+
+    query = "SELECT item_code, warehouse, SUM(actual_qty) AS qty FROM `{}` WHERE parent = %s and docstatus = 1 GROUP BY item_code".format(valid_table_name)
+
+    out = frappe.db.sql(query, (name,), as_dict=True)
+
+    if out:
+        return out
+    return None
+
+@frappe.whitelist()
+def get_stock_registry(stock_registry_no):
+    try:
+        registry_data_query = """
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
+        FROM `tabSecurity Inward Registry Child`
+        WHERE parent = %s AND actual_qty > 0)
+        
+        UNION
+        
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
+        FROM `tabCustomer Return for Security Inward Registry`
+        WHERE parent = %s AND actual_qty > 0)
+        
+        UNION
+        
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
+        FROM `tabSecurity Inward Registry Transfer Child`
+        WHERE parent = %s AND actual_qty > 0)
+        """
+        
+        stock_data = frappe.db.sql(registry_data_query, (stock_registry_no, stock_registry_no, stock_registry_no), as_dict=True)
+
+        return stock_data
     
-    return out
+    except Exception as e:
+        frappe.throw("Error in get_stock_registry ", e)

@@ -148,8 +148,7 @@ frappe.ui.form.on('Security Inward Registry', {
 				}
 			});
 		}
-	},	
-
+	},
 	tracking_id: function(frm) {
 		let tracking_id = frm.doc.tracking_id;
 		if (!tracking_id || tracking_id.trim() === '') {
@@ -170,9 +169,11 @@ frappe.ui.form.on('Security Inward Registry', {
 						if (Array.isArray(r.message)) {
 							r.message.forEach(item => {
 							let new_row = frm.add_child("transfer_registry");
+								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
 								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.warehouse);
-								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
+								frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.reference_name);
+								frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.reference_parent);
 							})
 						}
 					} else {
@@ -207,5 +208,48 @@ frappe.ui.form.on('Security Inward Registry Child', {
 				}
 			}
 		});
+	},
+	item_code: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
+        autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
+    },
+	qty: function(frm, cdt, cdn) {
+		var child = locals[cdt][cdn];
+		set_actual_qty(cdt, cdn, child.qty);
 	}
 });
+
+frappe.ui.form.on('Customer Return for Security Inward Registry', {
+	item_code: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
+        autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
+    },
+	qty: function(frm, cdt, cdn) {
+		var child = locals[cdt][cdn];
+		set_actual_qty(cdt, cdn, child.qty);
+	}
+});
+
+frappe.ui.form.on('Security Inward Registry Transfer Child', {
+	item_code: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
+        autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
+    },
+	qty: function(frm, cdt, cdn) {
+		var child = locals[cdt][cdn];
+		set_actual_qty(cdt, cdn, child.qty);
+	}
+});
+
+function autofill_warehouse(child_table, warehouse_field, warehouse) {
+    if (warehouse && child_table && child_table.length) {
+        let doctype = child_table[0].doctype;
+        $.each(child_table || [], function(i, item) {
+            frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
+        });
+    }
+}
+
+function set_actual_qty(cdt, cdn, qty) {
+	frappe.model.set_value(cdt, cdn, "actual_qty", qty);
+}

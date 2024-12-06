@@ -21,7 +21,7 @@ function openAccessRegistry(listview) {
 			var doc = frappe.model.get_new_doc('Security Inward Registry');
 			doc.registry_type = "Accept Registry";
 
-			frappe.model.with_doctype('Security Inward Registry  Transfer Child', function () {
+			frappe.model.with_doctype('Security Inward Registry Transfer Child', function () {
                 var child_table = frappe.model.get_new_doc('Security Inward Registry Transfer Child');
                 child_table.parent = doc.name;
                 child_table.parenttype = doc.doctype;

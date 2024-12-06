@@ -7,7 +7,18 @@ from frappe.utils import now_datetime, date_diff
 
 class SecurityInwardRegistry(Document):
     def on_submit(self):
-        pass
+        total_qty = 0
+        
+        for item in self.transfer_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        for item in self.purchase_inward_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        for item in self.customer_return_registry:
+            total_qty += item.get('actual_qty', 0)
+        
+        self.db_set("total_qty", total_qty)
 
     def on_cancel(self):
         pass
@@ -274,19 +285,22 @@ def get_registry_qty(name, child_table):
 def get_stock_registry(stock_registry_no):
     try:
         registry_data_query = """
-        (SELECT Date(creation) as date, item_code, actual_qty as qty, warehouse
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
         FROM `tabSecurity Inward Registry Child`
         WHERE parent = %s AND actual_qty > 0)
         
         UNION
         
-        (SELECT Date(creation) as date, item_code, actual_qty as qty, warehouse
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
         FROM `tabCustomer Return for Security Inward Registry`
         WHERE parent = %s AND actual_qty > 0)
         
         UNION
         
-        (SELECT Date(creation) as date, item_code, actual_qty as qty, warehouse
+        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+        item_code, actual_qty as qty, warehouse
         FROM `tabSecurity Inward Registry Transfer Child`
         WHERE parent = %s AND actual_qty > 0)
         """

@@ -368,7 +368,7 @@
   },
   {
    "fieldname": "qi_name",
-   "fieldtype": "Data",
+   "fieldtype": "Data",    
    "label": "QI Name"
   }
  ],

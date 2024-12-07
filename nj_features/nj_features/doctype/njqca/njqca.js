@@ -542,6 +542,14 @@ frappe.ui.form.on('NJQCA', {
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
             args: {
                 'docname': cur_frm.doc.name
+            },
+            callback: function(r){
+                if(r.message){
+                    frm.set_value('qi_name', r.message);
+                    frm.set_df_property('qi_name', 'read_only', 1);
+                }else{
+                    console.error('QI name is not defined');
+                }
             }
         });
         if (frm.doc.docstatus == 0) {
@@ -554,7 +562,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         }
-        frm.set_value('qi_name', frm.doc.name);
         // if(cur_frm.doc.item_code && cur_frm.doc.repack_item_code){
         //     if(cur_frm.doc.item_code == cur_frm.doc.repack_item_code){
         //         frappe.confirm = function(message, yes, no) {

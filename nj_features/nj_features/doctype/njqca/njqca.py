@@ -72,6 +72,7 @@ def open_draft_qi(self):
     
     result = get_itm_code_on_barcode(new_qi)
     print("qi name is print in========================================", new_qi.name)
+    self.qi_name = new_qi.name
 
     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
 
@@ -245,6 +246,7 @@ def open_draft_qi(self):
 
 
     new_qi.save()
+    return new_qi.name
         # except Exception as e:
         #     print("eroor in saving -----------200",e)
     
@@ -429,7 +431,9 @@ def after_save_njqca(docname):
         # department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
         
         if doc.power_on == 'Yes':
-            open_draft_qi(doc) 
+            qi_name = open_draft_qi(doc) 
+            print('getting qi_name -------------- 434 ', qi_name)
+            return qi_name
             # self.save()
         elif doc.power_on == 'No':
             frappe.throw(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
@@ -517,6 +521,7 @@ def get_info_from_serial_no(doc=None):
 
 def get_item_code_for_each_part(part_item_group, doc):
     item_template = ''
+    item_group = ''
     part_mapping = frappe.get_all(
         "Part Mapping",
         filters={"parent": part_item_group},

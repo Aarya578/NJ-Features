@@ -1,0 +1,149 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2024-12-05 12:33:58.859177",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "item_code",
+  "grade",
+  "warehouse",
+  "department",
+  "column_break_4kdha",
+  "new_grade",
+  "repack_item_code",
+  "quantity",
+  "item_code_price",
+  "repack_item_code_price",
+  "amended_from",
+  "section_break_5yknt",
+  "grade_change_reason__reference"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Repack For Non Serialised",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Link",
+   "label": "Grade",
+   "options": "Grade",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_4kdha",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "repack_item_code",
+   "fieldtype": "Link",
+   "label": "Repack Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "new_grade",
+   "fieldtype": "Link",
+   "label": "New Grade",
+   "options": "Grade",
+   "reqd": 1
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Int",
+   "label": "Quantity",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_5yknt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "grade_change_reason__reference",
+   "fieldtype": "Small Text",
+   "label": "Grade Change Reason / Reference",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "warehouse.department",
+   "fetch_if_empty": 1,
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department",
+   "read_only": 1
+  },
+  {
+   "default": "NS-RPK-.YYYY.-.MM.-.###",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "NS-RPK-.YYYY.-.MM.-.###",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_code_price",
+   "fieldtype": "Data",
+   "label": "Item Code Price",
+   "read_only": 1
+  },
+  {
+   "fieldname": "repack_item_code_price",
+   "fieldtype": "Data",
+   "label": "Repack Item Code Price",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-12-06 18:16:43.377591",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Repack For Non Serialised",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

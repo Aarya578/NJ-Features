@@ -148,17 +148,17 @@ doc_events = {
 #	]
 # }
 
-# scheduler_events = {
-# 	"cron": {
-# 		# Every ten minutes
-# 		"*/10 * * * *": [
-# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
-# 		],
-# 		"0/30 * * * *": [
-# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
-# 		]
-# 	}
-# }
+scheduler_events = {
+	"cron": {
+		# Every ten minutes
+		"*/2 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+		],
+		"0/30 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
+		]
+	}
+}
 
 scheduler_events = {
 	"cron": {

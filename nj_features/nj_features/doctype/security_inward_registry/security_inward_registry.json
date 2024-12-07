@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "autoname": "SIR-.YYYY.-.MM.-.#####",
  "creation": "2024-11-25 18:56:58.818023",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -9,8 +10,10 @@
   "po_total_value",
   "date",
   "default_warehouse",
+  "total_qty",
   "column_break_fbmgw",
   "po_number",
+  "stock_registry_no",
   "ste_number",
   "courier_partner",
   "vendor_si",
@@ -29,7 +32,7 @@
  "fields": [
   {
    "allow_on_submit": 1,
-   "depends_on": "eval:doc.registry_type == 'Purchase'",
+   "depends_on": "eval: doc.registry_type == 'Purchase' && doc.registry_type != \"Accept Registry\"",
    "fieldname": "po_number",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -45,6 +48,7 @@
   },
   {
    "default": "Today",
+   "depends_on": "eval: doc.registry_type != \"Accept Registry\"",
    "fieldname": "date",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -53,17 +57,19 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval: doc.registry_type != 'Transfer' && doc.registry_type != \"Accept Registry\"",
    "fieldname": "vendor_si",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Vendor SI",
-   "reqd": 1
+   "mandatory_depends_on": "eval: doc.registry_type != 'Transfer' && doc.registry_type != \"Accept Registry\""
   },
   {
    "fieldname": "column_break_fbmgw",
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval: doc.registry_type != \"Accept Registry\"",
    "fieldname": "vehicle_no",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -71,12 +77,14 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval: doc.registry_type != \"Accept Registry\"",
    "fieldname": "delivery_partner_name",
    "fieldtype": "Data",
    "label": "Delivery Partner Name",
    "reqd": 1
   },
   {
+   "depends_on": "eval: doc.registry_type != \"Accept Registry\"",
    "fieldname": "delivery_partner_no",
    "fieldtype": "Data",
    "label": "Delivery Partner No",
@@ -115,7 +123,7 @@
    "fieldname": "registry_type",
    "fieldtype": "Select",
    "label": "Registry Type",
-   "options": "\nPurchase\nCustomer Return\nTransfer",
+   "options": "\nPurchase\nCustomer Return\nTransfer\nAccept Registry",
    "reqd": 1
   },
   {
@@ -123,26 +131,26 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.registry_type == 'Purchase'",
+   "depends_on": "eval: doc.registry_type == 'Purchase'",
    "fieldname": "purchase_inward_registry",
    "fieldtype": "Table",
    "options": "Security Inward Registry Child"
   },
   {
-   "depends_on": "eval:doc.registry_type == 'Customer Return'",
+   "depends_on": "eval: doc.registry_type == 'Customer Return'",
    "fieldname": "customer_return_registry",
    "fieldtype": "Table",
    "options": "Customer Return for Security Inward Registry"
   },
   {
-   "depends_on": "eval:doc.registry_type == 'Transfer'",
+   "depends_on": "eval: doc.registry_type == 'Transfer' || doc.registry_type == 'Accept Registry'",
    "fieldname": "transfer_registry",
    "fieldtype": "Table",
-   "options": "Security Inward Registry  Transfer Child"
+   "options": "Security Inward Registry Transfer Child"
   },
   {
    "allow_on_submit": 1,
-   "depends_on": "eval:doc.registry_type == 'Transfer'",
+   "depends_on": "eval: doc.registry_type == 'Transfer' && doc.registry_type != \"Accept Registry\"",
    "fieldname": "ste_number",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -150,24 +158,39 @@
    "options": "Stock Entry"
   },
   {
-   "depends_on": "eval:doc.registry_type == 'Customer Return'",
+   "depends_on": "eval: doc.registry_type == 'Customer Return' && doc.registry_type != \"Accept Registry\"",
    "fieldname": "tracking_id",
    "fieldtype": "Data",
    "label": "Tracking Id"
   },
   {
    "allow_on_submit": 1,
-   "depends_on": "eval:doc.registry_type == 'Customer Return'",
+   "depends_on": "eval: doc.registry_type == 'Customer Return' && doc.registry_type != \"Accept Registry\"",
    "fieldname": "courier_partner",
    "fieldtype": "Select",
    "label": "Courier Partner",
    "options": "\nAmazon\nShopify\nDelivery Return\nCriticaLog"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval: doc.docstatus == 1",
+   "fieldname": "total_qty",
+   "fieldtype": "Int",
+   "label": "Total Qty",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.registry_type == \"Accept Registry\"",
+   "fieldname": "stock_registry_no",
+   "fieldtype": "Data",
+   "label": "Stock Registry No",
+   "options": "Barcode"
   }
  ],
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-02 18:13:14.863425",
+ "modified": "2024-12-06 07:37:31.051556",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry",
@@ -196,6 +219,7 @@
    "report": 1,
    "role": "Stock User",
    "share": 1,
+   "submit": 1,
    "write": 1
   },
   {
@@ -208,6 +232,7 @@
    "report": 1,
    "role": "Tech MR & Transfer Access",
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],

@@ -31,14 +31,16 @@ def get_repack_items(self):
     get_repack_items_dict = {
 		"repack_item_code": self.item_code,
         "repack_item_source_warehouse": self.warehouse,
-        "qty": self.quantity
+        "qty": self.quantity,
+        "repack_item_base_price": self.item_code_price
 	}
     get_repack_items_list.append(get_repack_items_dict)
 
     get_unpack_items_dict = {
         "unpack_item_code": self.repack_item_code,
         "unpack_item_target_warehouse": self.warehouse,
-        "qty": self.quantity
+        "qty": self.quantity,
+        "unpack_item_base_price": self.repack_item_code_price
     }
     get_repack_items_list.append(get_unpack_items_dict)
 
@@ -47,17 +49,14 @@ def get_repack_items(self):
 @frappe.whitelist()
 def get_item_code_and_warehouse(item_code):
     emp_data = get_active_emp(frappe.session.user)
-    if item_code:
-        variant_value = frappe.db.get_value("Item", {"name": item_code}, "has_serial_no")
-        if variant_value == 1:
-            frappe.throw("Serialised Item is not allowed to be Repacked!")
-
     grade = frappe.db.get_value("Item Variant Attribute", {"parent": item_code, "attribute": "Grade"}, "attribute_value")
     if not grade:
         frappe.throw("No 'Grade' found for the given Item Code: <b>" + item_code + "</b>")
+    valuation_rate_for_item_code = get_valuation_rate(item_code,grade)
     return {
         "grade": grade,
-        "warehouse": emp_data.get("work_warehouse")
+        "warehouse": emp_data.get("work_warehouse"),
+        "item_code_price": valuation_rate_for_item_code,
     }
 
 @frappe.whitelist()
@@ -130,3 +129,23 @@ def get_new_grade(doctype, txt, searchfield, start, page_len, filters):
             ["name", "like", f"%{txt}%"]
         ]
     )
+
+@frappe.whitelist()
+def get_valuation_rate(item_code,grade):
+    grade_a_item_code = get_repack_item_code_with_new_grade(item_code, 'Grade A')
+
+    valuation_rate_for_grade_a = frappe.db.get_value('Stock Ledger Entry', {'item_code': grade_a_item_code}, 'valuation_rate')
+
+    if not valuation_rate_for_grade_a:
+        frappe.throw("No 'valuation_rate' found for the given Item Code: <b>" + grade_a_item_code + "</b>")
+
+    item_group_of_grade_a = frappe.db.get_value('Item', {'name': grade_a_item_code}, 'item_group')
+
+    part_percentage = frappe.db.sql("""select grade,part_value_percentage from `tabItem group Grades` where parent = %s""", (item_group_of_grade_a), as_dict=1)
+
+    for part in part_percentage:
+        if part.get('grade') == grade:
+            return valuation_rate_for_grade_a * (int(part.get('part_value_percentage'))/100)
+
+    
+

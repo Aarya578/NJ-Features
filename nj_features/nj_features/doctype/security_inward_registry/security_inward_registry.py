@@ -1,27 +1,138 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
+import json
 import frappe
+import traceback
 from frappe.model.document import Document
 from frappe.utils import now_datetime, date_diff
 
 class SecurityInwardRegistry(Document):
     def on_submit(self):
-        total_qty = 0
-        
-        for item in self.transfer_registry:
-            total_qty += item.get('actual_qty', 0)
-        
-        for item in self.purchase_inward_registry:
-            total_qty += item.get('actual_qty', 0)
-        
-        for item in self.customer_return_registry:
-            total_qty += item.get('actual_qty', 0)
-        
-        self.db_set("total_qty", total_qty)
+        try:
+
+            self.update_transfer_qty(state='submit')
+
+        except Exception as e:
+
+            traceback_info = traceback.format_exc()
+            frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}") 
+            frappe.db.rollback()
 
     def on_cancel(self):
-        pass
+        try:
+
+            self.update_transfer_qty(state='cancel')
+
+        except Exception as e:
+            traceback_info = traceback.format_exc()
+            frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}") 
+            frappe.db.rollback()
+
+    def update_transfer_qty(self, state):
+        valid_table_name = get_child_table(self)
+
+        registry_select_query = """SELECT actual_qty as qty
+            FROM `{}` WHERE name = %s and parent = %s and docstatus = 1""".format(valid_table_name)
+
+        registry_select_query_with_ref = """SELECT actual_qty as qty
+            FROM `{}` WHERE parent = %s and reference_name = %s and reference_parent = %s and docstatus = 1""".format(valid_table_name)
+
+        registry_update_query = """ UPDATE `{}` SET actual_qty = %s
+            WHERE name = %s and parent = %s and docstatus = 1""".format(valid_table_name)
+
+        if state == 'cancel':
+            print("Cancel", self.get('transfer_registry'))
+            if self.get('transfer_registry') and len(self.get('transfer_registry')):
+                for item in self.get('transfer_registry'):
+                    print(item.as_dict())
+                    if item.get('reference_name') and item.get('reference_parent'):
+                        registry_select_qty = frappe.db.sql(registry_select_query, (
+                            item.get('reference_name'), #child name
+                            item.get('reference_parent') #SIR name
+                        ))
+                        print("registry_select_qty",registry_select_qty)
+                        if registry_select_qty and registry_select_qty[0][0]:
+                            remaining_qty = int(registry_select_qty[0][0]) + int(item.get('actual_qty'))
+                        else:
+                            remaining_qty = 0
+
+                        registry_update = frappe.db.sql(registry_update_query, (
+                            (remaining_qty),
+                            item.get('reference_name'),
+                            item.get('reference_parent')
+                        ))
+                        print("registry_update",registry_update)
+            
+
+        elif state == 'submit':
+            if self.registry_type == 'Accept Registry':
+                for item in self.get('transfer_registry'):
+                    registry_select_qty = frappe.db.sql(registry_select_query_with_ref, (
+                        self.get('name'), #parent
+                        item.get('reference_name'),
+                        item.get('reference_parent')
+                    ))
+
+                    if registry_select_qty and registry_select_qty[0][0]:
+                        remaining_qty = int(registry_select_qty[0][0]) - int(item.get('actual_qty'))
+                    else:
+                        remaining_qty = 0
+
+                    registry_update = frappe.db.sql(registry_update_query, (
+                        (remaining_qty),
+                        item.get('reference_name'),
+                        item.get('reference_parent')
+                    ))
+
+    def get_total_qty(self):
+        try:
+            total_qty = 0
+
+            if self.transfer_registry and len(self.transfer_registry)>0:
+                for item in self.transfer_registry:
+                    total_qty += int(item.actual_qty)
+            
+            if self.purchase_inward_registry and len(self.purchase_inward_registry)>0:
+                for item in self.purchase_inward_registry:
+                    total_qty += int(item.actual_qty)
+            
+            if self.customer_return_registry and len(self.customer_return_registry)>0:
+                for item in self.customer_return_registry:
+                    total_qty += int(item.actual_qty)
+
+            self.db_set("total_qty", total_qty)
+        
+        except Exception as e:
+            traceback_info = traceback.format_exc()
+            frappe.throw(f"Error on get_total_qty: {str(e)}\n{traceback_info}")
+            return None
+
+def get_child_table(frm):
+    valid_table_name = None
+
+    if isinstance(frm, dict):
+        if frm.get('purchase_inward_registry') and len(frm['purchase_inward_registry']) > 0:
+            valid_table_name = frm['purchase_inward_registry'][0].get('doctype')
+
+        elif frm.get('customer_return_registry') and len(frm['customer_return_registry']) > 0:
+            valid_table_name = frm['customer_return_registry'][0].get('doctype')
+
+        elif frm.get('transfer_registry') and len(frm['transfer_registry']) > 0:
+            valid_table_name = frm['transfer_registry'][0].get('doctype')
+    else:
+        if frm.purchase_inward_registry and len(frm.purchase_inward_registry) > 0:
+            valid_table_name = frm.purchase_inward_registry[0].get('doctype')
+
+        elif frm.customer_return_registry and len(frm.customer_return_registry) > 0:
+            valid_table_name = frm.customer_return_registry[0].get('doctype')
+
+        elif frm.transfer_registry and len(frm.transfer_registry) > 0:
+            valid_table_name = frm.transfer_registry[0].get('doctype')
+
+    if valid_table_name:
+        return "tab" + valid_table_name
+    return None
 
 @frappe.whitelist()
 def make_security_inward_registry(po_number, registry_type):
@@ -270,15 +381,25 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
 
 
 @frappe.whitelist()
-def get_registry_qty(name, child_table):
-    valid_table_name = frappe.db.escape(child_table).strip("'")
+def get_registry_qty(frm):
+    if isinstance(frm, str):
+        frm = json.loads(frm)
 
-    query = "SELECT item_code, warehouse, SUM(actual_qty) AS qty FROM `{}` WHERE parent = %s and docstatus = 1 GROUP BY item_code".format(valid_table_name)
+    valid_table_name = get_child_table(frm)
 
-    out = frappe.db.sql(query, (name,), as_dict=True)
+    if valid_table_name:
+        query = """
+            SELECT item_code, warehouse, SUM(actual_qty) AS qty 
+            FROM `{}` 
+            WHERE parent = %s AND docstatus = 1 
+            GROUP BY item_code
+        """.format(valid_table_name)
 
-    if out:
-        return out
+        out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
+
+        if out:
+            return out
+
     return None
 
 @frappe.whitelist()
@@ -311,3 +432,13 @@ def get_stock_registry(stock_registry_no):
     
     except Exception as e:
         frappe.throw("Error in get_stock_registry ", e)
+
+@frappe.whitelist()
+def get_total_qty(doctype, docname):
+    try:
+        sir = frappe.get_doc(doctype, docname)
+        return sir.get_total_qty()
+    
+    except Exception as e:
+        frappe.throw(f"Error on submit: {str(e)}")
+        return None

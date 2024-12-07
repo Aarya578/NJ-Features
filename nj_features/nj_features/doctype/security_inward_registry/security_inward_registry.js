@@ -4,41 +4,48 @@
 frappe.ui.form.on('Security Inward Registry', {
 	refresh: function(frm) {
 		frm.trigger("make_dashboard");
-		frappe.call({
-			method: "frappe.client.get_list",
-			args: {
-				doctype: "Employee",
-				filters: {
-					user_id: frappe.session.user, 
-					status: "Active"
-				},
-				fields: ["name", "work_warehouse", "location"]
-			},
-			callback: function(r) {
-				if (r.message && r.message.length > 0) {
-					const employee_warehouse = r.message[0].work_warehouse;
-					const location = r.message[0].location;
-					if (employee_warehouse) {
-						frm.set_value('default_warehouse', employee_warehouse);
-					} else {
-						frappe.msgprint(__('Warehouse not set for the logged-in employee.'));
-					}
 
-					if (location) {
-						frm.set_value('location', location);
+		if (frm.doc.docstatus == 0) {
+			
+			frappe.call({
+				method: "frappe.client.get_list",
+				args: {
+					doctype: "Employee",
+					filters: { user_id: frappe.session.user, status: "Active" },
+					fields: ["name", "work_warehouse", "location"]
+				},
+				callback: function(r) {
+					if (r.message && r.message.length > 0) {
+						const employee_warehouse = r.message[0].work_warehouse;
+						const location = r.message[0].location;
+
+						if (employee_warehouse) {
+							frm.set_value('default_warehouse', employee_warehouse);
+						} else {
+							frappe.msgprint(__('Warehouse not set for the logged-in employee.'));
+						}
+	
+						if (location) {
+							frm.set_value('location', location);
+						}
 					}
 				}
-			}
-		});
+			});
+	
+			frm.set_query('ste_number', function() {
+				return {
+					query: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_ste_number",
+					filters: { stock_entry_type: 'Material Transfer' }
+				};
+			});
+		}
 
-		frm.set_query('ste_number', function() {
-            return {
-                query: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_ste_number",
-                filters: {
-                    stock_entry_type: 'Material Transfer'
-                }
-            };
-        });
+		if (frm.doc.docstatus == 1) {
+			frappe.call({
+				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_total_qty',
+				args: { 'doctype': frm.doc.doctype, 'docname': frm.doc.name }
+			})
+		}
 	},
 	po_number: function(frm) {
 		if (!frm.doc.registry_type) {
@@ -112,19 +119,14 @@ frappe.ui.form.on('Security Inward Registry', {
 		});
 	},
 	make_dashboard: (frm) => {
-		var child_table = null;
-		$.each(frm.fields_dict, function(i, row) {
-			if (row.df.fieldtype == "Table") {
-				child_table = "tab" + row.df.options;
-			}
-		});
 	
-		if (!frm.is_new() && (child_table !== null && child_table !== undefined && child_table !== '')) {
+		if (!frm.is_new()) {
 			
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_qty',
-				args: {name: frm.doc.name, child_table: child_table},
+				args: {frm: frm.doc},
 				callback: (r) => {
+					
 					if (!r.message) {
 						return;
 					}
@@ -138,9 +140,9 @@ frappe.ui.form.on('Security Inward Registry', {
 					(r.message || []).forEach(function(d) {
 						if (d.qty > 0) {
 							$(`<div class='row' style='margin-bottom: 10px;'>
-								<div class='col-sm-4 small' style='padding-top: 3px;'>${d.item_code}</div>
+								<div class='col-sm-7 small' style='padding-top: 3px;'>${d.item_code}</div>
 								<div class='col-sm-4 small' style='padding-top: 3px;'>${d.warehouse}</div>
-								<div class='col-sm-4 small text-right' style='padding-top: 3px;'>${d.qty}</div>
+								<div class='col-sm-1 small text-right' style='padding-top: 3px;'>${d.qty}</div>
 							</div>`).appendTo(rows);
 						}
 					});
@@ -160,6 +162,7 @@ frappe.ui.form.on('Security Inward Registry', {
 		}
 	},
 	stock_registry_no: function (frm) {
+		
 		if (frm.doc.stock_registry_no) {
 			frappe.call({
 				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_stock_registry",
@@ -176,6 +179,7 @@ frappe.ui.form.on('Security Inward Registry', {
 								frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.reference_parent);
 							})
 						}
+						frm.refresh_field("transfer_registry");
 					} else {
 						frappe.msgprint("Qty is not available in ", frm.doc.stock_registry_no);
 						frm.set_value('stock_registry_no', '')
@@ -188,15 +192,15 @@ frappe.ui.form.on('Security Inward Registry', {
 
 // Security Inward Registry Child
 frappe.ui.form.on('Security Inward Registry Child', {
-	received_qty: function(frm, cdt, cdn) {
+	qty: function(frm, cdt, cdn) {
 		let child = locals[cdt][cdn];
 		frappe.call({
 			method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.recieved_qty_details",
 			args: {	
+				received_qty: child.qty,
 				item_code: child.item_code,
 				po_number: frm.doc.po_number,
 				item_group: child.item_group,
-				received_qty: child.received_qty,
 				available_qty: child.available_qty
 			},
 			callback: function(r) {
@@ -208,15 +212,13 @@ frappe.ui.form.on('Security Inward Registry Child', {
 				}
 			}
 		});
+
+		set_actual_qty(cdt, cdn, child.qty);
 	},
 	item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn];
         autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
-    },
-	qty: function(frm, cdt, cdn) {
-		var child = locals[cdt][cdn];
-		set_actual_qty(cdt, cdn, child.qty);
-	}
+    }
 });
 
 frappe.ui.form.on('Customer Return for Security Inward Registry', {

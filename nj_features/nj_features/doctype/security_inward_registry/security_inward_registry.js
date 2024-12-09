@@ -2,6 +2,12 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Security Inward Registry', {
+	onload: function(frm) {
+
+		frm.set_df_property('transfer_registry', 'cannot_add_rows', true);
+		frm.set_df_property('purchase_inward_registry', 'cannot_add_rows', true);
+		frm.set_df_property('customer_return_registry', 'cannot_add_rows', true);
+	},
 	refresh: function(frm) {
 		frm.trigger("make_dashboard");
 
@@ -177,6 +183,7 @@ frappe.ui.form.on('Security Inward Registry', {
 								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.reference_name);
 								frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.reference_parent);
+								frappe.model.set_value(new_row.doctype, new_row.name, "reference_doctype", item.reference_doctype);
 							})
 						}
 						frm.refresh_field("transfer_registry");
@@ -247,7 +254,13 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
     if (warehouse && child_table && child_table.length) {
         let doctype = child_table[0].doctype;
         $.each(child_table || [], function(i, item) {
+			
+			if (doctype === "Security Inward Registry Transfer Child") {
+				frappe.throw("Source and Target Warehouse can not be same!");
+				frappe.validated = false;
+			}
             frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
+			frappe.validated = true;
         });
     }
 }

@@ -13,7 +13,10 @@
   "available_qty",
   "unit_value",
   "invoice_value",
-  "actual_qty"
+  "actual_qty",
+  "reference_name",
+  "reference_parent",
+  "reference_doctype"
  ],
  "fields": [
   {
@@ -91,11 +94,30 @@
    "fieldtype": "Int",
    "hidden": 1,
    "label": "Actual Qty"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Name"
+  },
+  {
+   "fieldname": "reference_parent",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Reference Parent",
+   "options": "Security Inward Registry"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Doctype"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-12-06 07:35:08.684179",
+ "modified": "2024-12-09 13:44:57.370040",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry Child",

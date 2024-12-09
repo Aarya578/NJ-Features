@@ -30,60 +30,63 @@ class SecurityInwardRegistry(Document):
             frappe.db.rollback()
 
     def update_transfer_qty(self, state):
-        valid_table_name = get_child_table(self)
-
-        registry_select_query = """SELECT actual_qty as qty
-            FROM `{}` WHERE name = %s and parent = %s and docstatus = 1""".format(valid_table_name)
-
-        registry_select_query_with_ref = """SELECT actual_qty as qty
-            FROM `{}` WHERE parent = %s and reference_name = %s and reference_parent = %s and docstatus = 1""".format(valid_table_name)
-
-        registry_update_query = """ UPDATE `{}` SET actual_qty = %s
-            WHERE name = %s and parent = %s and docstatus = 1""".format(valid_table_name)
+        # valid_table_name = get_child_table(self)
 
         if state == 'cancel':
-            print("Cancel", self.get('transfer_registry'))
             if self.get('transfer_registry') and len(self.get('transfer_registry')):
                 for item in self.get('transfer_registry'):
-                    print(item.as_dict())
-                    if item.get('reference_name') and item.get('reference_parent'):
+
+                    registry_select_query = """SELECT actual_qty as qty
+                        FROM `{}` WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
+                    if item.get('reference_name') and item.get('reference_parent') and item.get('reference_doctype'):
+
                         registry_select_qty = frappe.db.sql(registry_select_query, (
-                            item.get('reference_name'), #child name
-                            item.get('reference_parent') #SIR name
+                            item.get('reference_name'),  # child name
+                            item.get('reference_parent')  # SIR name
                         ))
-                        print("registry_select_qty",registry_select_qty)
+
                         if registry_select_qty and registry_select_qty[0][0]:
                             remaining_qty = int(registry_select_qty[0][0]) + int(item.get('actual_qty'))
                         else:
                             remaining_qty = 0
 
+                        registry_update_query = """UPDATE `{}` SET actual_qty = %s
+                            WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
                         registry_update = frappe.db.sql(registry_update_query, (
-                            (remaining_qty),
+                            remaining_qty,
                             item.get('reference_name'),
                             item.get('reference_parent')
                         ))
-                        print("registry_update",registry_update)
-            
 
         elif state == 'submit':
             if self.registry_type == 'Accept Registry':
                 for item in self.get('transfer_registry'):
+                    
+                    registry_select_query_with_ref = """SELECT actual_qty as qty
+                        FROM `{}` WHERE parent = %s and reference_name = %s 
+                        and reference_parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
                     registry_select_qty = frappe.db.sql(registry_select_query_with_ref, (
-                        self.get('name'), #parent
+                        self.get('name'),  # parent
                         item.get('reference_name'),
                         item.get('reference_parent')
-                    ))
+                    ), debug=0, explain=0)
 
                     if registry_select_qty and registry_select_qty[0][0]:
                         remaining_qty = int(registry_select_qty[0][0]) - int(item.get('actual_qty'))
                     else:
                         remaining_qty = 0
 
+                    registry_update_query = """UPDATE `{}` SET actual_qty = %s
+                        WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
                     registry_update = frappe.db.sql(registry_update_query, (
-                        (remaining_qty),
+                        remaining_qty,
                         item.get('reference_name'),
                         item.get('reference_parent')
-                    ))
+                    ), debug=0, explain=0)
 
     def get_total_qty(self):
         try:
@@ -407,21 +410,21 @@ def get_stock_registry(stock_registry_no):
     try:
         registry_data_query = """
         (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse
+        item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Child' as reference_doctype
         FROM `tabSecurity Inward Registry Child`
         WHERE parent = %s AND actual_qty > 0)
         
         UNION
         
         (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse
+        item_code, actual_qty as qty, warehouse, 'tabCustomer Return for Security Inward Registry' as reference_doctype
         FROM `tabCustomer Return for Security Inward Registry`
         WHERE parent = %s AND actual_qty > 0)
         
         UNION
         
         (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse
+        item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Transfer Child' as reference_doctype
         FROM `tabSecurity Inward Registry Transfer Child`
         WHERE parent = %s AND actual_qty > 0)
         """

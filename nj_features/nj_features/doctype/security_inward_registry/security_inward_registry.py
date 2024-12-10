@@ -6,11 +6,11 @@ import frappe
 import traceback
 from frappe.model.document import Document
 from frappe.utils import now_datetime, date_diff
+from nj_lib.utils.common_utils import get_active_emp
 
 class SecurityInwardRegistry(Document):
     def on_submit(self):
         try:
-
             self.update_transfer_qty(state='submit')
 
         except Exception as e:
@@ -21,7 +21,6 @@ class SecurityInwardRegistry(Document):
 
     def on_cancel(self):
         try:
-
             self.update_transfer_qty(state='cancel')
 
         except Exception as e:
@@ -135,12 +134,14 @@ def get_child_table(frm):
 
     if valid_table_name:
         return "tab" + valid_table_name
+    
     return None
 
 @frappe.whitelist()
 def make_security_inward_registry(po_number, registry_type):
     po_data = frappe.get_doc('Purchase Order', po_number)
     po_data_dict = po_data.__dict__
+    
     return po_data_dict
 
 @frappe.whitelist()
@@ -203,7 +204,7 @@ def get_item__code_details(po_number,item_code,  item_group):
 @frappe.whitelist()
 def recieved_qty_details(po_number, item_code, item_group, received_qty, available_qty):
 
-    if received_qty > available_qty:
+    if int(received_qty) > int(available_qty):
         return {'error': 'Received quantity cannot be greater than available quantity.'}
     
     if received_qty:
@@ -222,17 +223,13 @@ def get_ste_number_item_code(doctype, txt, searchfield, start, page_len, filters
 
     filtered_data = [d['item_code'] for d in material_transfer_details]
 
-    filters_data = [
-        ["name", "in", filtered_data],
-    ]
+    filters_data = [ ["name", "in", filtered_data] ]
     result_data = frappe.get_all(
         "Item",
         filters=filters_data,
         fields=["name"],
         as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
+        or_filters=[ ["name", "like", f"%{txt}%"] ]
     )
 
     return result_data
@@ -252,10 +249,9 @@ def get_item_code_details_for_transfer(ste_number):
         t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])
 
         if s_warehouse_lc == t_warehouse_lc:
-            result.append(
-                {
-                    'error': f'The source warehouse and target warehouse cannot have the same location at  row {row["idx"]}:{row["item_code"]}</b>'
-                })
+            result.append({
+                'error': f'The source warehouse and target warehouse cannot have the same location at  row {row["idx"]}:{row["item_code"]}</b>'
+            })
         else:
             result.append(row)
 
@@ -307,17 +303,13 @@ def get_po_item_code(doctype, txt, searchfield, start, page_len, filters):
     
     filtered_data = [d['item_code'] for d in filtered_data]
 
-    filters_data = [
-        ["name", "in", filtered_data],
-    ]
+    filters_data = [ ["name", "in", filtered_data] ]
 
     result_data = frappe.get_all("Item",
         filters=filters_data,
         fields=["name"],
         as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
+        or_filters=[ ["name", "like", f"%{txt}%"] ]
     )
     return result_data
 
@@ -330,17 +322,13 @@ def get_ste_number(doctype, txt, searchfield, start, page_len, filters):
             WHERE stock_entry_type = %s
         """,(filters.get('stock_entry_type')),as_dict=1 )
     
-    filtered_data = [d['name'] for d in filtered_data]
-    filters_data  = [
-        ["name", "in", filtered_data],
-    ]
+    filtered_data = [ d['name'] for d in filtered_data ]
+    filters_data  = [ ["name", "in", filtered_data] ]
     result_data = frappe.get_all("Stock Entry", 
         filters=filters_data,
         fields=["name"],
         as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
+        or_filters=[ ["name", "like", f"%{txt}%"] ]
     )
 
     return result_data
@@ -353,31 +341,24 @@ def get_target_warehouse(doctype, txt, searchfield, start, page_len, filters):
         sr_location = frappe.db.get_value('Warehouse', {'name': source_warehouse}, ['location'])
 
     filtered_data = frappe.db.sql(
-        """
-            SELECT name
+        """ SELECT name
             FROM `tabWarehouse` 
             WHERE location NOT IN (
                 SELECT location 
                 FROM `tabWarehouse` 
                 WHERE name = %s
-            )
-        """,
-        (source_warehouse,), as_dict=1
+            ) """, (source_warehouse,), as_dict=1
     )
 
-    filtered_data = [d['name'] for d in filtered_data]  
+    filtered_data = [ d['name'] for d in filtered_data ]  
 
-    filtered_data = [
-        ["name", "in", filtered_data],
-    ]
+    filtered_data = [ ["name", "in", filtered_data] ]
 
     result_data = frappe.get_all("Warehouse", 
         filters=filtered_data,
         fields=["name"],
         as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
+        or_filters=[ ["name", "like", f"%{txt}%"] ]
     )
 
     return result_data
@@ -408,30 +389,37 @@ def get_registry_qty(frm):
 @frappe.whitelist()
 def get_stock_registry(stock_registry_no):
     try:
+        po_number = frappe.db.get_value("Security Inward Registry", stock_registry_no, "po_number")
+
         registry_data_query = """
-        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Child' as reference_doctype
-        FROM `tabSecurity Inward Registry Child`
-        WHERE parent = %s AND actual_qty > 0)
-        
-        UNION
-        
-        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse, 'tabCustomer Return for Security Inward Registry' as reference_doctype
-        FROM `tabCustomer Return for Security Inward Registry`
-        WHERE parent = %s AND actual_qty > 0)
-        
-        UNION
-        
-        (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
-        item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Transfer Child' as reference_doctype
-        FROM `tabSecurity Inward Registry Transfer Child`
-        WHERE parent = %s AND actual_qty > 0)
+            (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+            item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Child' as reference_doctype
+            FROM `tabSecurity Inward Registry Child`
+            WHERE parent = %s AND actual_qty > 0)
+            
+            UNION
+            
+            (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+            item_code, actual_qty as qty, warehouse, 'tabCustomer Return for Security Inward Registry' as reference_doctype
+            FROM `tabCustomer Return for Security Inward Registry`
+            WHERE parent = %s AND actual_qty > 0)
+            
+            UNION
+            
+            (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
+            item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Transfer Child' as reference_doctype
+            FROM `tabSecurity Inward Registry Transfer Child`
+            WHERE parent = %s AND actual_qty > 0)
         """
         
         stock_data = frappe.db.sql(registry_data_query, (stock_registry_no, stock_registry_no, stock_registry_no), as_dict=True)
 
-        return stock_data
+        return_data = {"stock_data": stock_data }
+
+        if po_number:
+            return_data.update({"po_number": po_number})
+
+        return return_data
     
     except Exception as e:
         frappe.throw("Error in get_stock_registry ", e)
@@ -445,3 +433,31 @@ def get_total_qty(doctype, docname):
     except Exception as e:
         frappe.throw(f"Error on submit: {str(e)}")
         return None
+    
+@frappe.whitelist()
+def get_registry_in_warehouse(po_number=None):
+    try:
+        emp_data = get_active_emp(frappe.session.user)
+
+        warehouse = emp_data.get('work_warehouse')
+        registry_data_query = """
+            (SELECT sir.name as parent
+            FROM `tabSecurity Inward Registry Child` tc
+            INNER JOIN `tabSecurity Inward Registry` sir ON sir.name = tc.parent
+            WHERE tc.warehouse = %(warehouse)s AND tc.actual_qty > 0 AND sir.docstatus = 1 AND sir.po_number = %(po_number)s)
+            
+            UNION
+            
+            (SELECT sir.name as parent
+            FROM `tabSecurity Inward Registry Transfer Child` tc
+            INNER JOIN `tabSecurity Inward Registry` sir ON sir.name = tc.parent
+            WHERE tc.warehouse = %(warehouse)s AND tc.actual_qty > 0 AND sir.docstatus = 1 AND sir.po_number = %(po_number)s)
+        """
+            
+        stock_data = frappe.db.sql(registry_data_query, {'warehouse': warehouse, 'po_number': po_number}, as_dict=True)
+
+        return stock_data
+    except Exception as e:
+        traceback_info = traceback.format_exc()
+        frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}")
+        return traceback_info

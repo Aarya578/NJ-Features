@@ -3,7 +3,6 @@
 
 frappe.ui.form.on('Security Inward Registry', {
 	onload: function(frm) {
-
 		frm.set_df_property('transfer_registry', 'cannot_add_rows', true);
 		frm.set_df_property('purchase_inward_registry', 'cannot_add_rows', true);
 		frm.set_df_property('customer_return_registry', 'cannot_add_rows', true);
@@ -50,7 +49,7 @@ frappe.ui.form.on('Security Inward Registry', {
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_total_qty',
 				args: { 'doctype': frm.doc.doctype, 'docname': frm.doc.name }
-			})
+			});
 		}
 	},
 	po_number: function(frm) {
@@ -58,7 +57,7 @@ frappe.ui.form.on('Security Inward Registry', {
 			frm.set_value('po_number', '');
 			frappe.throw('Please select the Registry Type first');
 		}
-		if (frm.doc.po_number && frm.doc.po_number.trim() !== '') {
+		if (frm.doc.po_number && frm.doc.po_number.trim() !== '' && frm.doc.registry_type === 'Purchase') {
 			frappe.call({
 				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_po_number_details",
 				args: {
@@ -175,8 +174,12 @@ frappe.ui.form.on('Security Inward Registry', {
 				args: {stock_registry_no: frm.doc.stock_registry_no},
 				callback: function(r) {
 					if (r && r.message) {
-						if (Array.isArray(r.message)) {
-							r.message.forEach(item => {
+						if (r.message.po_number) {
+							frm.set_value('po_number', r.message.po_number);
+							frm.refresh_field("po_number");
+						}
+						if (Array.isArray(r.message.stock_data)) {
+							r.message.stock_data.forEach(item => {
 							let new_row = frm.add_child("transfer_registry");
 								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
@@ -256,8 +259,10 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
         $.each(child_table || [], function(i, item) {
 			
 			if (doctype === "Security Inward Registry Transfer Child") {
-				frappe.throw("Source and Target Warehouse can not be same!");
-				frappe.validated = false;
+				if (item.source_warehouse === warehouse) {
+					frappe.throw("Source and Target Warehouse can not be same!");
+					frappe.validated = false;
+				}
 			}
             frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
 			frappe.validated = true;

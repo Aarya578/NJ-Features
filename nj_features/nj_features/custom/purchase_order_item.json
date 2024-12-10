@@ -161,7 +161,7 @@
       "name": "Purchase Order Item-grade",
       "no_copy": 0,
       "non_negative": 0,
-      "options": "\nGrade\nAs is",
+      "options": "\nGrade A\nAs Is",
       "owner": "postman@mail.com",
       "parent": null,
       "parentfield": null,

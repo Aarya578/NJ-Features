@@ -72,13 +72,12 @@ class CustomDeliveryNote(DeliveryNote):
         
         for item_component in item_wizard_doc.component:
             for serial_no_component in serial_no_doc.serial_no_component:
-                print(f'item_group ------ 79 {serial_no_component.item_group} ----- {item_component.get("component_type")}')
-                if serial_no_component.item_group == item_component.get("component_type"):
-                    serial_no_component.quantity = item_component.get("quantity")
-                    serial_no_component.grade = 'UNKNOWN'
-                    serial_no_component.reference_doctype = reference_doctype
-                    serial_no_component.reference_doctype_no = reference_name
-                    updated = True
+                    if serial_no_component.item_group == item_component.get("component_type"):
+                        serial_no_component.quantity = item_component.get("quantity")
+                        serial_no_component.grade = 'UNKNOWN'
+                        serial_no_component.reference_doctype = reference_doctype
+                        serial_no_component.reference_doctype_no = reference_name
+                        updated = True
         
         if updated:
             serial_no_doc.save(ignore_permissions=True) 

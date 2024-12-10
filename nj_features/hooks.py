@@ -102,7 +102,8 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry"
+	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
+    "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
 }
 
 # Document Events

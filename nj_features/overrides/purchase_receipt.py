@@ -34,6 +34,7 @@ def before_save_purchase_receipt(doc, method):
         get_batch(doc, method)
 
 def update_serial_no_on_pr_submit(doc, method=None):
+    print('updating serial_no_on_pr_submit...', doc.as_dict())
     for item in doc.items:
         if item.item_code and item.qty and is_serialized(item.item_code) == 1:
             serial_nos = item.serial_no.split('\n') if item.serial_no else []
@@ -41,6 +42,7 @@ def update_serial_no_on_pr_submit(doc, method=None):
                 update_serial_no(serial_no, doc, item)
 
 def update_serial_no(serial_no, doc, item):
+    print('updating serial_no...')
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     
@@ -54,6 +56,7 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.purchase_price = item.base_rate
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
+        serial_no_doc.grade = item.grade
         serial_no_doc.supplier = doc.supplier
         serial_no_doc.purchase_warranty_days = doc.warranty_days
         serial_no_doc.warranty_days = doc.warranty_days

@@ -211,17 +211,15 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
-                    
+                    console.log('response', r);
                     const fieldsToUpdate = ['item_group', 'brand', 'warehouse', 'base_price', 'item_code'];
                     if(!r.message.brand){
                         frappe.throw(`Brand is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                     }
 
                     fieldsToUpdate.forEach(field => {                    
-                        if (!frm.doc[field]) {
-                            frm.set_value(field, r.message[field]);
-                            cur_frm.refresh_field(field);
-                        }
+                        frm.set_value(field, r.message[field]);
+                        cur_frm.refresh_field(field);
                     });
                     if(!frappe.user.has_role("IQC Manager")){
                         cur_frm.set_df_property('serial_no', 'read_only', 1);

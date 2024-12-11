@@ -172,7 +172,7 @@ def get_po_number_details(po_number):
 
 
 @frappe.whitelist()
-def get_item__code_details(po_number,item_code,  item_group):
+def get_item__code_details(po_number, item_code, item_group):
     po_qty = frappe.db.get_value(
         'Purchase Order Item',
         {'parent': po_number, 'item_code': item_code, 'item_group': item_group},
@@ -192,6 +192,17 @@ def get_item__code_details(po_number,item_code,  item_group):
     """, (po_number, item_code))[0][0] or 0 
     
     available_qty = float(po_qty) - float(total_received_qty)
+
+    available_qty_in_sir_query = """
+        SELECT actual_qty FROM `tabSecurity Inward Registry Transfer Child`
+        WHERE po_no = %s AND item_code = %s AND docstatus = 1 AND actual_qty > 0 AND item_group = %s
+        ORDER BY creation DESC, modified DESC LIMIT 1
+    """
+
+    available_qty_in_sir = frappe.db.sql(available_qty_in_sir_query, (po_number, item_code, item_group), as_dict=True)
+
+    if available_qty_in_sir:
+        available_qty = available_qty -float(available_qty_in_sir[0].get('actual_qty'))
 
     if available_qty < 0:
         available_qty = 0

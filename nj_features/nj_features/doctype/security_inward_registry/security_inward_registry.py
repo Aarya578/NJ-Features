@@ -45,7 +45,7 @@ class SecurityInwardRegistry(Document):
                             item.get('reference_name'),  # child name
                             item.get('reference_parent')  # SIR name
                         ), debug=0, explain=0)
-                        print("registry_select_qty",registry_select_qty)
+                        
                         if registry_select_qty and registry_select_qty[0][0]:
                             remaining_qty = int(registry_select_qty[0][0]) + int(item.get('actual_qty'))
                         else:
@@ -60,19 +60,14 @@ class SecurityInwardRegistry(Document):
                             item.get('reference_name'),
                             item.get('reference_parent')
                         ), debug=0, explain=0)
-                        print("registry_update",registry_update)
 
         elif state == 'submit':
             if self.registry_type == 'Accept Registry':
                 for item in self.get('transfer_registry'):
                     
-                    print(f"Item for submit: {item}")
-
                     registry_select_query_with_ref = """SELECT actual_qty as qty
                         FROM `{}` WHERE parent = %s and reference_name = %s 
                         and reference_parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
-
-                    print(f"registry_select_query_with_ref: {registry_select_query_with_ref}")
 
                     registry_select_qty = frappe.db.sql(registry_select_query_with_ref, (
                         self.get('name'),  # parent
@@ -85,12 +80,8 @@ class SecurityInwardRegistry(Document):
                     else:
                         remaining_qty = 0
 
-                    print(f"remaining_qty: {remaining_qty}")
-
                     registry_update_query = """UPDATE `{}` SET actual_qty = %s
                         WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
-
-                    print(f"registry_update_query: {registry_update_query}")
 
                     registry_update = frappe.db.sql(registry_update_query, (
                         remaining_qty,

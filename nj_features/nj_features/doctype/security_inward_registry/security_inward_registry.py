@@ -172,7 +172,7 @@ def get_po_number_details(po_number):
 
 
 @frappe.whitelist()
-def get_item__code_details(po_number, item_code, item_group):
+def get_item_code_details(po_number, item_code, item_group):
     po_qty = frappe.db.get_value(
         'Purchase Order Item',
         {'parent': po_number, 'item_code': item_code, 'item_group': item_group},

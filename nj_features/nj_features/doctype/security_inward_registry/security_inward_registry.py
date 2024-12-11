@@ -12,6 +12,7 @@ class SecurityInwardRegistry(Document):
     def on_submit(self):
         try:
             self.update_transfer_qty(state='submit')
+            self.get_total_qty()
 
         except Exception as e:
 
@@ -22,6 +23,7 @@ class SecurityInwardRegistry(Document):
     def on_cancel(self):
         try:
             self.update_transfer_qty(state='cancel')
+            self.get_total_qty()
 
         except Exception as e:
             traceback_info = traceback.format_exc()
@@ -29,7 +31,6 @@ class SecurityInwardRegistry(Document):
             frappe.db.rollback()
 
     def update_transfer_qty(self, state):
-        # valid_table_name = get_child_table(self)
 
         if state == 'cancel':
             if self.get('transfer_registry') and len(self.get('transfer_registry')):
@@ -43,12 +44,13 @@ class SecurityInwardRegistry(Document):
                         registry_select_qty = frappe.db.sql(registry_select_query, (
                             item.get('reference_name'),  # child name
                             item.get('reference_parent')  # SIR name
-                        ))
-
+                        ), debug=0, explain=0)
+                        print("registry_select_qty",registry_select_qty)
                         if registry_select_qty and registry_select_qty[0][0]:
                             remaining_qty = int(registry_select_qty[0][0]) + int(item.get('actual_qty'))
                         else:
-                            remaining_qty = 0
+                            remaining_qty = int(item.get('actual_qty')) 
+
 
                         registry_update_query = """UPDATE `{}` SET actual_qty = %s
                             WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
@@ -57,15 +59,20 @@ class SecurityInwardRegistry(Document):
                             remaining_qty,
                             item.get('reference_name'),
                             item.get('reference_parent')
-                        ))
+                        ), debug=0, explain=0)
+                        print("registry_update",registry_update)
 
         elif state == 'submit':
             if self.registry_type == 'Accept Registry':
                 for item in self.get('transfer_registry'):
                     
+                    print(f"Item for submit: {item}")
+
                     registry_select_query_with_ref = """SELECT actual_qty as qty
                         FROM `{}` WHERE parent = %s and reference_name = %s 
                         and reference_parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
+                    print(f"registry_select_query_with_ref: {registry_select_query_with_ref}")
 
                     registry_select_qty = frappe.db.sql(registry_select_query_with_ref, (
                         self.get('name'),  # parent
@@ -78,8 +85,12 @@ class SecurityInwardRegistry(Document):
                     else:
                         remaining_qty = 0
 
+                    print(f"remaining_qty: {remaining_qty}")
+
                     registry_update_query = """UPDATE `{}` SET actual_qty = %s
                         WHERE name = %s and parent = %s and docstatus = 1""".format(item.get('reference_doctype'))
+
+                    print(f"registry_update_query: {registry_update_query}")
 
                     registry_update = frappe.db.sql(registry_update_query, (
                         remaining_qty,
@@ -395,24 +406,24 @@ def get_stock_registry(stock_registry_no):
             (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
             item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Child' as reference_doctype
             FROM `tabSecurity Inward Registry Child`
-            WHERE parent = %s AND actual_qty > 0)
+            WHERE parent = %(stock_registry_no)s AND actual_qty > 0)
             
             UNION
             
             (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
             item_code, actual_qty as qty, warehouse, 'tabCustomer Return for Security Inward Registry' as reference_doctype
             FROM `tabCustomer Return for Security Inward Registry`
-            WHERE parent = %s AND actual_qty > 0)
+            WHERE parent = %(stock_registry_no)s AND actual_qty > 0)
             
             UNION
             
             (SELECT name as reference_name, parent as reference_parent, Date(creation) as date,
             item_code, actual_qty as qty, warehouse, 'tabSecurity Inward Registry Transfer Child' as reference_doctype
             FROM `tabSecurity Inward Registry Transfer Child`
-            WHERE parent = %s AND actual_qty > 0)
+            WHERE parent = %(stock_registry_no)s AND actual_qty > 0)
         """
         
-        stock_data = frappe.db.sql(registry_data_query, (stock_registry_no, stock_registry_no, stock_registry_no), as_dict=True)
+        stock_data = frappe.db.sql(registry_data_query, {'stock_registry_no': stock_registry_no}, as_dict=True)
 
         return_data = {"stock_data": stock_data }
 
@@ -441,17 +452,15 @@ def get_registry_in_warehouse(po_number=None):
 
         warehouse = emp_data.get('work_warehouse')
         registry_data_query = """
-            (SELECT sir.name as parent
-            FROM `tabSecurity Inward Registry Child` tc
-            INNER JOIN `tabSecurity Inward Registry` sir ON sir.name = tc.parent
-            WHERE tc.warehouse = %(warehouse)s AND tc.actual_qty > 0 AND sir.docstatus = 1 AND sir.po_number = %(po_number)s)
+            (SELECT parent
+            FROM `tabSecurity Inward Registry Child`
+            WHERE warehouse = %(warehouse)s AND actual_qty > 0 AND docstatus = 1 AND po_no = %(po_number)s)
             
             UNION
             
-            (SELECT sir.name as parent
-            FROM `tabSecurity Inward Registry Transfer Child` tc
-            INNER JOIN `tabSecurity Inward Registry` sir ON sir.name = tc.parent
-            WHERE tc.warehouse = %(warehouse)s AND tc.actual_qty > 0 AND sir.docstatus = 1 AND sir.po_number = %(po_number)s)
+            (SELECT parent
+            FROM `tabSecurity Inward Registry Transfer Child`
+            WHERE warehouse = %(warehouse)s AND actual_qty > 0 AND docstatus = 1 AND po_no = %(po_number)s)
         """
             
         stock_data = frappe.db.sql(registry_data_query, {'warehouse': warehouse, 'po_number': po_number}, as_dict=True)

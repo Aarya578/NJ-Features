@@ -51,8 +51,8 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
                 sir_doc = frappe.get_doc('Security Inward Registry', sir_name)
                 for sir_item in sir_doc.get('transfer_registry', []):
                     if sir_item.get('item_code') == obj.item_code:
-                        target.qty = sir_item.get('qty')
-
+                        target.qty = sir_item.get('actual_qty')
+                        
             # target.qty = flt(obj.qty) - flt(obj.received_qty)
             target.stock_qty = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.conversion_factor)
             target.amount = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.rate)

@@ -174,13 +174,12 @@ frappe.ui.form.on('Security Inward Registry', {
 				args: {stock_registry_no: frm.doc.stock_registry_no},
 				callback: function(r) {
 					if (r && r.message) {
-						if (r.message.po_number) {
-							frm.set_value('po_number', r.message.po_number);
-							frm.refresh_field("po_number");
-						}
 						if (Array.isArray(r.message.stock_data)) {
 							r.message.stock_data.forEach(item => {
-							let new_row = frm.add_child("transfer_registry");
+								let new_row = frm.add_child("transfer_registry");
+								if (r.message.po_number) {
+									frappe.model.set_value(new_row.doctype, new_row.name, "po_no", r.message.po_number);
+								}
 								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
 								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.warehouse);

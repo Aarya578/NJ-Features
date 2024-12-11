@@ -12,8 +12,10 @@ frappe.ui.form.on('Purchase Order', {
                         method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
                         args: { po_number: frm.doc.name },
                         callback: function(r) {
+                            
                             if (r && r.message.length > 0) {
                                 $.each(r.message, function(i, d) {
+                                    
                                     frm.add_custom_button(__(d.parent), function() {
                                         
                                         frappe.model.nj_open_mapped_doc({
@@ -24,10 +26,10 @@ frappe.ui.form.on('Purchase Order', {
                                         })
                                     },  __('Create PR from Registry'));
                                 });
+                                cur_frm.page.set_inner_btn_group_as_primary(__('Create PR from Registry'));
                             }
                         }
                     })
-                    cur_frm.page.set_inner_btn_group_as_primary(__('Create PR from Registry'));
                 }
             }
         }

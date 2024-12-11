@@ -243,8 +243,10 @@ frappe.ui.form.on('Customer Return for Security Inward Registry', {
 
 frappe.ui.form.on('Security Inward Registry Transfer Child', {
 	item_code: function(frm, cdt, cdn) {
-        var child = locals[cdt][cdn];
-        autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
+		if(frm.doc.registry_type  === 'Accept Registry'){
+			var child = locals[cdt][cdn];
+			autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
+		}
     },
 	qty: function(frm, cdt, cdn) {
 		var child = locals[cdt][cdn];

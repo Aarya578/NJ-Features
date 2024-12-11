@@ -148,31 +148,37 @@ def make_security_inward_registry(po_number, registry_type):
 
 @frappe.whitelist()
 def get_po_number_details(po_number):
-    po_creation_date = frappe.db.get_value('Purchase Order', {'name': po_number}, ['creation'])
+    try:
+        po_creation_date = frappe.db.get_value('Purchase Order', {'name': po_number}, ['creation'])
 
-    purchase_inward_security_result = []
-    
-    if not po_creation_date:
-        return {'error': f'Purchase Order {po_number} does not exist.'}
+        purchase_inward_security_result = []
+        
+        if not po_creation_date:
+            return {'error': f'Purchase Order {po_number} does not exist.'}
 
-    current_date = now_datetime()
+        current_date = now_datetime()
 
-    days_difference = date_diff(current_date.date(), po_creation_date.date())
-    if not days_difference > 14:
-        result = get_po_item_group(po_number)
+        days_difference = date_diff(current_date.date(), po_creation_date.date())
+        if not days_difference > 14:
+            result = get_po_item_group(po_number)
 
-        for row in result:
-            row_res = get_item__code_details(po_number, row['item_code'], row['item_group'])
-            purchase_inward_security_result.append(row_res)
+            for row in result:
+                row_res = get_item_code_details(po_number, row['item_code'], row['item_group'])
+                purchase_inward_security_result.append(row_res)
 
-        return purchase_inward_security_result
-    else:
-        return {'error': '14 days expired for this Purchase Order'}
+            return purchase_inward_security_result
+        else:
+            return {'error': '14 days expired for this Purchase Order'}
 
+    except Exception as e:
+        traceback_info = traceback.format_exc()
+        frappe.throw(f"Error on get_po_number_details: {str(e)}\n{traceback_info}")
+        return None
 
 
 @frappe.whitelist()
 def get_item_code_details(po_number, item_code, item_group):
+    
     po_qty = frappe.db.get_value(
         'Purchase Order Item',
         {'parent': po_number, 'item_code': item_code, 'item_group': item_group},
@@ -193,16 +199,25 @@ def get_item_code_details(po_number, item_code, item_group):
     
     available_qty = float(po_qty) - float(total_received_qty)
 
-    available_qty_in_sir_query = """
+    available_qty_in_transfer_sir_query = """
         SELECT actual_qty FROM `tabSecurity Inward Registry Transfer Child`
-        WHERE po_no = %s AND item_code = %s AND docstatus = 1 AND actual_qty > 0 AND item_group = %s
+        WHERE po_no = %s AND item_code = %s AND docstatus = 1 AND actual_qty > 0
         ORDER BY creation DESC, modified DESC LIMIT 1
     """
 
-    available_qty_in_sir = frappe.db.sql(available_qty_in_sir_query, (po_number, item_code, item_group), as_dict=True)
+    available_qty_in_sir = frappe.db.sql(available_qty_in_transfer_sir_query, (po_number, item_code), as_dict=True)
+
+    if not available_qty_in_sir:
+        available_qty_in_inward_sir_query = """
+            SELECT inw_sir.actual_qty FROM `tabSecurity Inward Registry Child` inw_sir
+            LEFT JOIN `tabSecurity Inward Registry` sir ON sir.name = inw_sir.parent
+            WHERE sir.po_number = %s AND inw_sir.item_code = %s AND sir.docstatus = 1 AND inw_sir.actual_qty > 0
+            ORDER BY sir.creation DESC, sir.modified DESC LIMIT 1
+        """
+        available_qty_in_sir = frappe.db.sql(available_qty_in_inward_sir_query, (po_number, item_code), as_dict=True)
 
     if available_qty_in_sir:
-        available_qty = available_qty -float(available_qty_in_sir[0].get('actual_qty'))
+        available_qty = available_qty - float(available_qty_in_sir[0].get('actual_qty'))
 
     if available_qty < 0:
         available_qty = 0

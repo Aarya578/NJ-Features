@@ -164,7 +164,8 @@ def get_po_number_details(po_number):
 
             for row in result:
                 row_res = get_item_code_details(po_number, row['item_code'], row['item_group'])
-                purchase_inward_security_result.append(row_res)
+                if row_res.get('available_qty')>0:
+                    purchase_inward_security_result.append(row_res)
 
             return purchase_inward_security_result
         else:

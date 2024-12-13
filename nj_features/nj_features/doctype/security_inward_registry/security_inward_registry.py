@@ -158,9 +158,10 @@ def get_po_number_details(po_number):
 
         current_date = now_datetime()
 
-        # Change from 14 to 120 days (approx. 4 months)
+        po_restriction_days = frappe.db.get_single_value('NewJaisa Configuration', 'po_restriction_days')
+
         days_difference = date_diff(current_date.date(), po_creation_date.date())
-        if not days_difference > 120:
+        if not days_difference > int(po_restriction_days):
             result = get_po_item_group(po_number)
 
             for row in result:
@@ -170,7 +171,7 @@ def get_po_number_details(po_number):
 
             return purchase_inward_security_result
         else:
-            return {'error': '120 days expired for this Purchase Order'}
+            return {'error': f'{po_restriction_days} days expired for this Purchase Order'}
 
     except Exception as e:
         traceback_info = traceback.format_exc()
@@ -495,7 +496,3 @@ def get_registry_in_warehouse(po_number=None):
         traceback_info = traceback.format_exc()
         frappe.throw(f"Error on submit: {str(e)}\n{traceback_info}")
         return traceback_info
-
-
-# @frappe.whitelist()
-# def tracking_id_validation()

@@ -142,7 +142,7 @@ frappe.ui.form.on('Inward', {
                                 cur_frm.set_value('batch_no', result.batch_no);
                                 frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, 'value', function(response) {
                                     if(response && response.value){
-                                        if(itemGroup != response.value){
+                                        if(result.item_group != response.value){
                                             cur_frm.set_df_property('repack_item_code', 'read_only', 1);
                                         }
                                     }

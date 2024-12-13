@@ -92,37 +92,58 @@ frappe.ui.form.on('Security Inward Registry', {
 				ste_number: frm.doc.ste_number,
 			},
 			callback: function(r) {
+				console.log('response', r.message);
 				if (r.message) {
 					frm.clear_table("transfer_registry");
 					let errors = [];
+					let has_errors = false;
 	
 					if (Array.isArray(r.message)) {
 						r.message.forEach(item => {
 							if (item.error) {
 								errors.push(item.error);
+								has_errors = true;
 							} else if (item.item_code) {
 								let new_row = frm.add_child("transfer_registry");
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
 								frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", item.t_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
 								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
+								frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no.replace('\n', ', '));
 							}
 						});
-	
 						frm.refresh_field("transfer_registry");
 					}
-	
-					if (errors.length > 0) {
+
+					// Store errors for validation
+					frm.doc.transfer_errors = errors;
+
+					if (has_errors) {
+						frm.doc.has_transfer_errors = true;
 						frappe.msgprint({
 							title: __('Errors'),
 							message: errors.join('<br>'),
 							indicator: 'red'
 						});
+					} else {
+						frm.doc.has_transfer_errors = false;
 					}
 				}
 			}
 		});
 	},
+
+	validate: function(frm) {
+		if (frm.doc.has_transfer_errors) {
+			frappe.validated = false;
+			frappe.msgprint({
+				title: __('Validation Error'),
+				message: __(`Cannot save or submit the document due to the following errors:<br><b>${frm.doc.transfer_errors.join('<br>')}</b>`),
+				indicator: 'red'
+			});
+		}
+	},
+		
 	make_dashboard: (frm) => {
 	
 		if (!frm.is_new()) {
@@ -158,14 +179,22 @@ frappe.ui.form.on('Security Inward Registry', {
 	},
 	tracking_id: function(frm) {
 		let tracking_id = frm.doc.tracking_id;
+	
 		if (!tracking_id || tracking_id.trim() === '') {
-			frappe.throw(__('Tracking ID cannot be empty.'));
+			return;
 		} else {
+			
 			let new_row = frm.add_child("customer_return_registry");
 			frappe.model.set_value(new_row.doctype, new_row.name, "tracking_id", tracking_id);
+			frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", frm.doc.default_warehouse);
+			frm.set_value("tracking_id", '');
+			update_tracking_qty(frm);
+	
 			frm.refresh_field("customer_return_registry");
 		}
 	},
+
+	
 	stock_registry_no: function (frm) {
 		
 		if (frm.doc.stock_registry_no) {
@@ -199,7 +228,11 @@ frappe.ui.form.on('Security Inward Registry', {
 	}
 });
 
-// Security Inward Registry Child
+function update_tracking_qty(frm) {
+    let row_count = frm.doc.customer_return_registry ? frm.doc.customer_return_registry.length : 0;
+    frm.set_value("tracking_qty", row_count);
+}
+
 frappe.ui.form.on('Security Inward Registry Child', {
 	qty: function(frm, cdt, cdn) {
 		let child = locals[cdt][cdn];
@@ -228,17 +261,6 @@ frappe.ui.form.on('Security Inward Registry Child', {
         var child = locals[cdt][cdn];
         autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
     }
-});
-
-frappe.ui.form.on('Customer Return for Security Inward Registry', {
-	item_code: function(frm, cdt, cdn) {
-        var child = locals[cdt][cdn];
-        autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
-    },
-	qty: function(frm, cdt, cdn) {
-		var child = locals[cdt][cdn];
-		set_actual_qty(cdt, cdn, child.qty);
-	}
 });
 
 frappe.ui.form.on('Security Inward Registry Transfer Child', {
@@ -274,3 +296,11 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
 function set_actual_qty(cdt, cdn, qty) {
 	frappe.model.set_value(cdt, cdn, "actual_qty", qty);
 }
+
+
+frappe.ui.form.on('Customer Return for Security Inward Registry', {
+	customer_return_registry_remove: function(frm, cdt, cdn) {
+		console.log('Removing row:', cdn);
+		update_tracking_qty(frm);
+	},		
+});

@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "date",
+  "serial_no",
   "item_code",
   "qty",
   "source_warehouse",
@@ -98,11 +99,17 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "STE No"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "label": "Serial No",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-12-11 12:03:03.188742",
+ "modified": "2024-12-13 11:07:50.588751",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry Transfer Child",

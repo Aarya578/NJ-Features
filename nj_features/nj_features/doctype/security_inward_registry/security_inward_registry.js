@@ -93,40 +93,45 @@ frappe.ui.form.on('Security Inward Registry', {
 			},
 			callback: function(r) {
 				console.log('response', r.message);
-				if (r.message) {
-					frm.clear_table("transfer_registry");
-					let errors = [];
-					let has_errors = false;
+				if (r.message.error){
+					frm.set_value('ste_number', '');
+					frappe.throw(r.message.error);
+				}else{
+					if (r.message) {
+						frm.clear_table("transfer_registry");
+						let errors = [];
+						let has_errors = false;
+		
+						if (Array.isArray(r.message)) {
+							r.message.forEach(item => {
+								if (item.error) {
+									errors.push(item.error);
+									has_errors = true;
+								} else if (item.item_code) {
+									let new_row = frm.add_child("transfer_registry");
+									frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
+									frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", item.t_warehouse);
+									frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
+									frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
+									frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no.replace('\n', ', '));
+								}
+							});
+							frm.refresh_field("transfer_registry");
+						}
 	
-					if (Array.isArray(r.message)) {
-						r.message.forEach(item => {
-							if (item.error) {
-								errors.push(item.error);
-								has_errors = true;
-							} else if (item.item_code) {
-								let new_row = frm.add_child("transfer_registry");
-								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
-								frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", item.t_warehouse);
-								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
-								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
-								frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no.replace('\n', ', '));
-							}
-						});
-						frm.refresh_field("transfer_registry");
-					}
-
-					// Store errors for validation
-					frm.doc.transfer_errors = errors;
-
-					if (has_errors) {
-						frm.doc.has_transfer_errors = true;
-						frappe.msgprint({
-							title: __('Errors'),
-							message: errors.join('<br>'),
-							indicator: 'red'
-						});
-					} else {
-						frm.doc.has_transfer_errors = false;
+						// Store errors for validation
+						frm.doc.transfer_errors = errors;
+	
+						if (has_errors) {
+							frm.doc.has_transfer_errors = true;
+							frappe.msgprint({
+								title: __('Errors'),
+								message: errors.join('<br>'),
+								indicator: 'red'
+							});
+						} else {
+							frm.doc.has_transfer_errors = false;
+						}
 					}
 				}
 			}

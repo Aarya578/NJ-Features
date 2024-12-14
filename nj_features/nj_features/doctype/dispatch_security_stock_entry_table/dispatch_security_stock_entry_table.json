@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-12-12 19:38:54.165657",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "stock_entry_name",
+  "serial_no_quantity",
+  "item_code",
+  "source_warehouse",
+  "target_warehouse",
+  "serial_no"
+ ],
+ "fields": [
+  {
+   "fieldname": "stock_entry_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Entry Name",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "serial_no_quantity",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Code"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Small Text",
+   "label": "Serial No"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-12-13 12:58:18.388897",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Dispatch Security Stock Entry Table",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

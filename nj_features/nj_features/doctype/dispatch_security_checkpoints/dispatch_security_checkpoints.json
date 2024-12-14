@@ -9,12 +9,18 @@
  "field_order": [
   "naming_series",
   "scan_serial_no",
+  "delivery_partner_name",
+  "delivery_partner_no",
   "column_break_t5sng",
   "dispatch_type",
+  "vehicle_no",
+  "attach_image_nplp9",
   "section_break_t4y06",
   "dispatch_security_child_table",
   "section_break_aryok",
   "dispatch_security_return_table",
+  "section_break_flwp0",
+  "dispatch_security_stock_entry_table",
   "amended_from"
  ],
  "fields": [
@@ -58,7 +64,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Dispatch Type",
-   "options": "\nSales Order\nPurchase Return",
+   "options": "\nSales Order\nPurchase Return\nTransfer",
    "reqd": 1
   },
   {
@@ -75,11 +81,45 @@
   {
    "fieldname": "section_break_t4y06",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "delivery_partner_name",
+   "fieldtype": "Data",
+   "label": "Delivery Partner Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_partner_no",
+   "fieldtype": "Data",
+   "label": "Delivery Partner No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vehicle_no",
+   "fieldtype": "Data",
+   "label": "Vehicle No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "attach_image_nplp9",
+   "fieldtype": "Attach Image",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_flwp0",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dispatch_security_stock_entry_table",
+   "fieldtype": "Table",
+   "label": "Dispatch Security Stock Entry Table",
+   "options": "Dispatch Security Stock Entry Table",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-23 14:32:01.645488",
+ "modified": "2024-12-13 12:38:25.967860",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

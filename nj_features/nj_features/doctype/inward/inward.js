@@ -134,28 +134,22 @@ frappe.ui.form.on('Inward', {
                         if (r.message) {
                             var result = r.message.result;
                             var serialNo = r.message.serial_no;
-                            var itemGroup = r.message.item_group;
-                            var batch_no =r.message.result.batch_no;
 
                             if(result) {
                                 cur_frm.set_value('base_rate', result.incoming_rate);
                                 cur_frm.set_value('source_warehouse', result.warehouse);
-                            }
-                            if (serialNo) {
-                                cur_frm.set_value('serial_no', serialNo);
-                            }
-                            if (itemGroup) {
-                                cur_frm.set_value('item_group', itemGroup);
+                                cur_frm.set_value('item_group', result.item_group);
+                                cur_frm.set_value('batch_no', result.batch_no);
                                 frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, 'value', function(response) {
                                     if(response && response.value){
-                                        if(itemGroup != response.value){
+                                        if(result.item_group != response.value){
                                             cur_frm.set_df_property('repack_item_code', 'read_only', 1);
                                         }
                                     }
                                 });
                             }
-                            if(batch_no){
-                                cur_frm.set_value('batch_no', batch_no);
+                            if (serialNo) {
+                                cur_frm.set_value('serial_no', serialNo);
                             }
                         }
                     }

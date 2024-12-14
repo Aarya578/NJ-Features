@@ -158,24 +158,25 @@ def get_po_number_details(po_number):
 
         current_date = now_datetime()
 
+        po_restriction_days = frappe.db.get_single_value('NewJaisa Configuration', 'po_restriction_days')
+
         days_difference = date_diff(current_date.date(), po_creation_date.date())
-        if not days_difference > 14:
+        if not days_difference > int(po_restriction_days):
             result = get_po_item_group(po_number)
 
             for row in result:
                 row_res = get_item_code_details(po_number, row['item_code'], row['item_group'])
-                if row_res.get('available_qty')>0:
+                if row_res.get('available_qty') > 0:
                     purchase_inward_security_result.append(row_res)
 
             return purchase_inward_security_result
         else:
-            return {'error': '14 days expired for this Purchase Order'}
+            return {'error': f'{po_restriction_days} days expired for this Purchase Order'}
 
     except Exception as e:
         traceback_info = traceback.format_exc()
         frappe.throw(f"Error on get_po_number_details: {str(e)}\n{traceback_info}")
         return None
-
 
 @frappe.whitelist()
 def get_item_code_details(po_number, item_code, item_group):
@@ -268,7 +269,7 @@ def get_item_code_details_for_transfer(ste_number):
     material_transfer_details = frappe.db.get_all(
         "Stock Entry Detail",
         filters={'parent': ste_number},
-        fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx']
+        fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx', 'serial_no']
     )
 
     result = []
@@ -277,14 +278,21 @@ def get_item_code_details_for_transfer(ste_number):
         s_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['s_warehouse']}, ['location'])
         t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])
 
+        if not s_warehouse_lc or not t_warehouse_lc:
+            result.append({
+                'error': f'Warehouse location cannot be empty at row <br><b>{row["idx"]}  .{row["item_code"]} at {ste_number}</b>'
+            })
+            continue
+        
         if s_warehouse_lc == t_warehouse_lc:
             result.append({
-                'error': f'The source warehouse and target warehouse cannot have the same location at  row {row["idx"]}:{row["item_code"]}</b>'
+                'error': f'The source and target warehouse cannot have the same location at row <br><b>{row["idx"]}  .{row["item_code"]} at {ste_number}</b>'
             })
         else:
             result.append(row)
 
     return result
+
 
 @frappe.whitelist()
 def get_po_item_group(po_number):

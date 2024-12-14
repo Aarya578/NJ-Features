@@ -3,34 +3,42 @@
 
 import json
 import frappe
+import traceback
 from frappe import _
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-    if isinstance(self, str):
-        self = json.loads(self)
-    
-    user_email = create_user(self)
+    try:
+        if isinstance(self, str):
+            self = json.loads(self)
+        
+        user_email = create_user(self)
 
-    if 'status' in user_email:
-        return user_email
-    
-    return_data = { "user_id": user_email }
-    
-    if user_email is not None or user_email != "":
-        if self.get("employee_asset_warehouse") is None:
-            emp_ware = create_emp_ware(self, user_email)
-            if emp_ware is not None:
-                return_data["employee_asset_warehouse"] = emp_ware
-        if self.get("work_warehouse") is None:    
-            work_ware = create_work_ware(self, user_email)
-            if work_ware is not None:
-                return_data["work_warehouse"] = work_ware
-    else:
-        frappe.throw("User not created using email: ", self.get("prefered_email"))
+        if 'status' in user_email:
+            return user_email
+        
+        return_data = { "user_id": user_email }
+        
+        if user_email is not None or user_email != "":
+            if self.get("employee_asset_warehouse") is None:
+                emp_ware = create_emp_ware(self, user_email)
+                if emp_ware is not None:
+                    return_data["employee_asset_warehouse"] = emp_ware
+            if self.get("work_warehouse") is None:    
+                work_ware = create_work_ware(self, user_email)
+                if work_ware is not None:
+                    return_data["work_warehouse"] = work_ware
+        else:
+            frappe.throw("User not created using email: ", self.get("prefered_email"))
 
-    return return_data
+        return return_data
+
+    except Exception as e:
+        frappe.db.rollback()
+        traceback_info = traceback.format_exc()
+        frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
+        return str(e)
 
 def create_user(self):
 
@@ -78,6 +86,10 @@ def create_warehouse(user, department, location, emp_id=None, warehouse_type=Non
     user_full_name = user_data.get('full_name')
     if department and warehouse_type == 'work_ware':
         prefix = frappe.db.get_value('Department', {'name': department}, 'department_prefix')
+        if not prefix:
+            frappe.throw(f"<b>Department Prefix</b> is not defined in <b>Department: {department}</b>")
+            return None
+        
         parent_warehouse = prefix + '-Work-Warehouse - NJ'
         existing_parent = frappe.db.exists('Warehouse', {'name': parent_warehouse, 'disabled': 0})
         

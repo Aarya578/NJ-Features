@@ -168,7 +168,7 @@ scheduler_events = {
 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
 		],
-		"0 24 * * *": [
+		"0 23 * * *": [
 			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		]
 	}

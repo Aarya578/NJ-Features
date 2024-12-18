@@ -63,8 +63,6 @@ frappe.ui.form.on('NJQCA', {
                             if (r && r.variant_of) {
                                 frm.set_value("item_template", r.variant_of);
                                 frm.set_df_property('item_template', 'read_only', 1);
-                                // processItemTemplate(frm);
-                                frm.save();
                             }
                         });
                     } else {
@@ -84,7 +82,22 @@ frappe.ui.form.on('NJQCA', {
         
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        
+        frm.add_custom_button(__('Create QI'), function() {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: {
+                    'docname': cur_frm.doc.name
+                },
+                callback: function(r){
+                    if(r.message){
+                        frm.set_value('qi_name', r.message);
+                        frm.set_df_property('qi_name', 'read_only', 1);
+                    }else{
+                        console.error('QI name is not defined');
+                    }
+                }
+            });
+        }).addClass('btn-primary');
         if (frm.doc.docstatus == 0) {
             
             frm.events.power_on();
@@ -108,16 +121,6 @@ frappe.ui.form.on('NJQCA', {
                 return { filters: filters };
             });
         }
-        // if (frm.doc.docstatus == 0) {
-        //     let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
-            
-        //     for (let i = 0; i < child_table_fieldname.length; i++) {
-        //         if (frm.fields_dict[child_table_fieldname[i]]) {
-        //             let grid = frm.fields_dict[child_table_fieldname[i]].grid;
-        //             set_options_for_attribute_fields_in_child(frm, grid);
-        //         }
-        //     }
-        // }
     },
 
     before_submit: function(frm) {
@@ -536,20 +539,6 @@ frappe.ui.form.on('NJQCA', {
     },
 
     after_save:function(frm){
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-            args: {
-                'docname': cur_frm.doc.name
-            },
-            callback: function(r){
-                if(r.message){
-                    frm.set_value('qi_name', r.message);
-                    frm.set_df_property('qi_name', 'read_only', 1);
-                }else{
-                    console.error('QI name is not defined');
-                }
-            }
-        });
         if (frm.doc.docstatus == 0) {
             let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
             

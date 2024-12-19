@@ -48,7 +48,11 @@ frappe.ui.form.on('Security Inward Registry', {
 		if (frm.doc.docstatus == 1) {
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_total_qty',
-				args: { 'doctype': frm.doc.doctype, 'docname': frm.doc.name }
+				args: { 'doctype': frm.doc.doctype, 'docname': frm.doc.name },
+				callback: function(r) {
+					frm.set_value('total_qty', r.message);
+					frm.refresh_field('total_qty');
+				}
 			});
 		}
 	},
@@ -68,17 +72,18 @@ frappe.ui.form.on('Security Inward Registry', {
 						frm.set_value('po_number', '');
 						frappe.throw(r.message.error);
 					} else {
-						frm.clear_table('purchase_inward_registry');
+						frm.set_value('reference_po_number', frm.doc.po_number);
+						frm.refresh_field('reference_po_number');
+						frm.clear_table('purchase_inward_registry_purchase_child');
 						if (Array.isArray(r.message)) {
 							r.message.forEach(item => {
-								let new_row = frm.add_child("purchase_inward_registry");
+								let new_row = frm.add_child("purchase_inward_registry_purchase_child");
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_group", item.item_group);
-								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
 								frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", frm.doc.default_warehouse);
-								frappe.model.set_value(new_row.doctype, new_row.name, "po_qty", item.po_qty);
 								frappe.model.set_value(new_row.doctype, new_row.name, "available_qty", item.available_qty);
+								frappe.model.set_value(new_row.doctype, new_row.name, "po_number", item.po_number);
 							});
-							frm.refresh_field("purchase_inward_registry");
+							frm.refresh_field("purchase_inward_registry_purchase_child");
 						}
 					}
 				}
@@ -92,7 +97,6 @@ frappe.ui.form.on('Security Inward Registry', {
 				ste_number: frm.doc.ste_number,
 			},
 			callback: function(r) {
-				console.log('response', r.message);
 				if (r.message.error){
 					frm.set_value('ste_number', '');
 					frappe.throw(r.message.error);
@@ -146,8 +150,25 @@ frappe.ui.form.on('Security Inward Registry', {
 				message: __(`Cannot save or submit the document due to the following errors:<br><b>${frm.doc.transfer_errors.join('<br>')}</b>`),
 				indicator: 'red'
 			});
+			return;
 		}
-	},
+	
+		if (frm.doc.registry_type === 'Accept Registry') {
+			frappe.call({
+				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.validate_accept_registry",
+				args: {
+					frm: frm.doc
+				},
+				async: false,
+				callback: function(r) {
+					if (r.message.error) {
+						frappe.validated = false; 
+						frappe.throw(r.message.error); 
+					}
+				}
+			});
+		}
+	},	
 		
 	make_dashboard: (frm) => {
 	
@@ -167,16 +188,26 @@ frappe.ui.form.on('Security Inward Registry', {
 					r.message.sort(function(a, b) { return a.qty > b.qty ? 1 : -1 });
 	
 					var rows = $('<div></div>').appendTo(section);
-	
+
 					(r.message || []).forEach(function(d) {
 						if (d.qty > 0) {
-							$(`<div class='row' style='margin-bottom: 10px;'>
-								<div class='col-sm-7 small' style='padding-top: 3px;'>${d.item_code}</div>
-								<div class='col-sm-4 small' style='padding-top: 3px;'>${d.warehouse}</div>
-								<div class='col-sm-1 small text-right' style='padding-top: 3px;'>${d.qty}</div>
-							</div>`).appendTo(rows);
+							const rowTemplate = frm.doc.registry_type === 'Accept Registry' 
+								? `<div class='row' style='margin-bottom: 10px;'>
+										<div class='col-sm-7 small' style='padding-top: 3px;'>${d.item_code}</div>
+										<div class='col-sm-2 small' style='padding-top: 3px;'>${d.item_group}</div>
+										<div class='col-sm-2 small' style='padding-top: 3px;'>${d.warehouse}</div>
+										<div class='col-sm-1 small text-right' style='padding-top: 3px;'>${d.qty}</div>
+									</div>`
+								: `<div class='row' style='margin-bottom: 10px;'>
+										<div class='col-sm-7 small' style='padding-top: 3px;'>${d.item_group}</div>
+										<div class='col-sm-4 small' style='padding-top: 3px;'>${d.warehouse}</div>
+										<div class='col-sm-1 small text-right' style='padding-top: 3px;'>${d.qty}</div>
+									</div>`;
+					
+							$(rowTemplate).appendTo(rows);
 						}
 					});
+	
 					frm.dashboard.show();
 				}
 			});
@@ -201,36 +232,57 @@ frappe.ui.form.on('Security Inward Registry', {
 
 	
 	stock_registry_no: function (frm) {
-		
-		if (frm.doc.stock_registry_no) {
-			frappe.call({
-				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_stock_registry",
-				args: {stock_registry_no: frm.doc.stock_registry_no},
-				callback: function(r) {
-					if (r && r.message) {
-						if (Array.isArray(r.message.stock_data)) {
-							r.message.stock_data.forEach(item => {
-								let new_row = frm.add_child("transfer_registry");
-								if (r.message.po_number) {
-									frappe.model.set_value(new_row.doctype, new_row.name, "po_no", r.message.po_number);
-								}
-								frappe.model.set_value(new_row.doctype, new_row.name, "qty", item.qty);
-								frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
-								frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.warehouse);
-								frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.reference_name);
-								frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.reference_parent);
-								frappe.model.set_value(new_row.doctype, new_row.name, "reference_doctype", item.reference_doctype);
-							})
-						}
-						frm.refresh_field("transfer_registry");
-					} else {
-						frappe.msgprint("Qty is not available in ", frm.doc.stock_registry_no);
-						frm.set_value('stock_registry_no', '')
+    if (frm.doc.stock_registry_no) {
+        frappe.call({
+            method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_stock_registry",
+            args: { stock_registry_no: frm.doc.stock_registry_no },
+            callback: function (r) {
+                if (r && r.message) {
+                    if (Array.isArray(r.message[0])) {
+
+						frm.clear_table('purchase_inward_registry_child');
+						frm.set_value('reference_po_number', r.message[2]);
+						frm.refresh_field('reference_po_number');
+						
+                        r.message[0].forEach(item => {
+                            let new_row = frm.add_child("purchase_inward_registry_child");
+                            
+                            frappe.model.set_value(new_row.doctype, new_row.name, "item_group", item.item_group);
+                            frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
+                            frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.warehouse);
+                            frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.reference_parent);
+							frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.reference_name);
+							frappe.model.set_value(new_row.doctype, new_row.name, "available_qty", item.available_qty);
+                            frappe.model.set_value(new_row.doctype, new_row.name, "po_qty", item.qty);
+                            frappe.model.set_value(new_row.doctype, new_row.name, "reference_po_number", item.po_number);
+							frappe.model.set_value(new_row.doctype, new_row.name, "reference_item_group", item.reference_item_group);
+
+                        });
+
+                        frm.refresh_field("purchase_inward_registry_child");
+                    }
+					if(Array.isArray(r.message[1])){
+						frm.clear_table('sir_inwarded_qty_table');
+						r.message[1].forEach(item => {
+							let new_row = frm.add_child("sir_inwarded_qty_table");
+
+							frappe.model.set_value(new_row.doctype, new_row.name, "item_group", item.item_group);
+							frappe.model.set_value(new_row.doctype, new_row.name, "received_qty", item.actual_qty);
+							frappe.model.set_value(new_row.doctype, new_row.name, "reference_name", item.name);
+							frappe.model.set_value(new_row.doctype, new_row.name, "reference_parent", item.parent);
+						})
+						frm.refresh_field("sir_inwarded_qty_table");
 					}
-				}
-			})
-		}
-	}
+					
+                } else {
+                    frappe.msgprint(`No records found for ${frm.doc.stock_registry_no}`);
+                    frm.set_value('stock_registry_no', '');
+                }
+            }
+        });
+    }
+}
+
 });
 
 function update_tracking_qty(frm) {
@@ -238,35 +290,70 @@ function update_tracking_qty(frm) {
     frm.set_value("tracking_qty", row_count);
 }
 
+function autofill_warehouse(child_table, warehouse_field, warehouse) {
+	if (warehouse && child_table && child_table.length) {
+		let doctype = child_table[0].doctype;
+		$.each(child_table || [], function(i, item) {
+			
+			if (doctype === "Security Inward Registry Transfer Child") {
+				if (item.source_warehouse === warehouse) {
+					frappe.throw("Source and Target Warehouse can not be same!");
+					frappe.validated = false;
+				}
+			}
+			frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
+			frappe.validated = true;
+		});
+	}
+}
+
+function set_actual_qty(cdt, cdn, qty) {
+	frappe.model.set_value(cdt, cdn, "actual_qty", qty);
+}
+
+
+frappe.ui.form.on('Customer Return for Security Inward Registry', {
+	customer_return_registry_remove: function(frm, cdt, cdn) {
+		update_tracking_qty(frm);
+	},		
+});
+
+
 frappe.ui.form.on('Security Inward Registry Child', {
-	qty: function(frm, cdt, cdn) {
+	received_qty: function(frm, cdt, cdn) {
 		let child = locals[cdt][cdn];
+
 		frappe.call({
 			method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.recieved_qty_details",
 			args: {	
-				received_qty: child.qty,
+				received_qty: child.received_qty,
 				item_code: child.item_code,
-				po_number: frm.doc.po_number,
+				po_number: child.reference_po_number,
 				item_group: child.item_group,
 				available_qty: child.available_qty
 			},
 			callback: function(r) {
 				if (r.message.error) {
 					frappe.model.set_value(cdt, cdn, 'received_qty', parseFloat(0));
+					frappe.model.set_value(cdt, cdn, 'actual_qty', parseFloat(0));
 					frappe.throw(__(r.message.error));
 				}else{
+					frappe.model.set_value(cdt, cdn, 'actual_qty', child.received_qty);
 					frappe.model.set_value(cdt, cdn, 'invoice_value', r.message.part_price);
 				}
+				frm.refresh_field('actual_qty');
 			}
 		});
 
-		set_actual_qty(cdt, cdn, child.qty);
+		// set_actual_qty(cdt, cdn, child.qty);
 	},
 	item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn];
         autofill_warehouse([child], "warehouse", frm.doc.default_warehouse);
     }
 });
+
+
 
 frappe.ui.form.on('Security Inward Registry Transfer Child', {
 	item_code: function(frm, cdt, cdn) {
@@ -281,31 +368,22 @@ frappe.ui.form.on('Security Inward Registry Transfer Child', {
 	}
 });
 
-function autofill_warehouse(child_table, warehouse_field, warehouse) {
-    if (warehouse && child_table && child_table.length) {
-        let doctype = child_table[0].doctype;
-        $.each(child_table || [], function(i, item) {
-			
-			if (doctype === "Security Inward Registry Transfer Child") {
-				if (item.source_warehouse === warehouse) {
-					frappe.throw("Source and Target Warehouse can not be same!");
-					frappe.validated = false;
-				}
-			}
-            frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
-			frappe.validated = true;
-        });
-    }
-}
 
-function set_actual_qty(cdt, cdn, qty) {
-	frappe.model.set_value(cdt, cdn, "actual_qty", qty);
-}
+frappe.ui.form.on('Security Inward Registry Purchase Child', { 	
+    received_qty: function(frm, cdt, cdn) { 		
+        var child = locals[cdt][cdn]; 		
+        const available_qty = child.available_qty; 		
+        const received_qty = child.received_qty; 		
 
-
-frappe.ui.form.on('Customer Return for Security Inward Registry', {
-	customer_return_registry_remove: function(frm, cdt, cdn) {
-		console.log('Removing row:', cdn);
-		update_tracking_qty(frm);
-	},		
+        if (received_qty > available_qty) { 	
+			frappe.model.set_value(cdt, cdn, 'received_qty', parseFloat(0));
+			frappe.model.set_value(cdt, cdn, 'actual_qty', parseFloat(0));		
+            frappe.throw('Received Quantity cannot be greater than Available Quantity'); 		
+        } else { 			
+            frappe.model.set_value(cdt, cdn, 'actual_qty', received_qty); 			
+            frm.refresh_field('actual_qty'); 		
+        } 	
+		frm.refresh_field('received_qty');
+    } 
 });
+

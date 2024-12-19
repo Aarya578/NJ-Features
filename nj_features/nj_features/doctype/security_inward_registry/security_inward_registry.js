@@ -46,12 +46,10 @@ frappe.ui.form.on('Security Inward Registry', {
 		}
 
 		if (frm.doc.docstatus == 1) {
-			console.log('inside submitted doctype');
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_total_qty',
 				args: { 'doctype': frm.doc.doctype, 'docname': frm.doc.name },
 				callback: function(r) {
-					console.log('response', r.message);
 					frm.set_value('total_qty', r.message);
 					frm.refresh_field('total_qty');
 				}
@@ -74,13 +72,11 @@ frappe.ui.form.on('Security Inward Registry', {
 						frm.set_value('po_number', '');
 						frappe.throw(r.message.error);
 					} else {
-						console.log('response', r.message);
 						frm.set_value('reference_po_number', frm.doc.po_number);
 						frm.refresh_field('reference_po_number');
 						frm.clear_table('purchase_inward_registry_purchase_child');
 						if (Array.isArray(r.message)) {
 							r.message.forEach(item => {
-								console.log('items', item);
 								let new_row = frm.add_child("purchase_inward_registry_purchase_child");
 								frappe.model.set_value(new_row.doctype, new_row.name, "item_group", item.item_group);
 								frappe.model.set_value(new_row.doctype, new_row.name, "warehouse", frm.doc.default_warehouse);
@@ -101,7 +97,6 @@ frappe.ui.form.on('Security Inward Registry', {
 				ste_number: frm.doc.ste_number,
 			},
 			callback: function(r) {
-				console.log('response', r.message);
 				if (r.message.error){
 					frm.set_value('ste_number', '');
 					frappe.throw(r.message.error);
@@ -159,7 +154,6 @@ frappe.ui.form.on('Security Inward Registry', {
 		}
 	
 		if (frm.doc.registry_type === 'Accept Registry') {
-			console.log('inside accept registry');
 			frappe.call({
 				method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.validate_accept_registry",
 				args: {
@@ -167,7 +161,6 @@ frappe.ui.form.on('Security Inward Registry', {
 				},
 				async: false,
 				callback: function(r) {
-					console.log('response', r.message);
 					if (r.message.error) {
 						frappe.validated = false; 
 						frappe.throw(r.message.error); 
@@ -185,8 +178,6 @@ frappe.ui.form.on('Security Inward Registry', {
 				method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_qty',
 				args: {frm: frm.doc},
 				callback: (r) => {
-
-					console.log('data_from_make_dashboard', r.message);
 					
 					if (!r.message) {
 						return;
@@ -246,7 +237,6 @@ frappe.ui.form.on('Security Inward Registry', {
             method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_stock_registry",
             args: { stock_registry_no: frm.doc.stock_registry_no },
             callback: function (r) {
-                console.log('response', r);
                 if (r && r.message) {
                     if (Array.isArray(r.message[0])) {
 
@@ -324,7 +314,6 @@ function set_actual_qty(cdt, cdn, qty) {
 
 frappe.ui.form.on('Customer Return for Security Inward Registry', {
 	customer_return_registry_remove: function(frm, cdt, cdn) {
-		console.log('Removing row:', cdn);
 		update_tracking_qty(frm);
 	},		
 });
@@ -333,12 +322,6 @@ frappe.ui.form.on('Customer Return for Security Inward Registry', {
 frappe.ui.form.on('Security Inward Registry Child', {
 	received_qty: function(frm, cdt, cdn) {
 		let child = locals[cdt][cdn];
-		console.log('child ----------- 275', child);
-		console.log('actual_qty', child.actual_qty);
-		console.log('item_code', child.item_code);
-		console.log('po_number', child.reference_po_number);
-		console.log('item_group', child.item_group);
-		console.log('available_qty', child.available_qty);
 
 		frappe.call({
 			method: "nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.recieved_qty_details",

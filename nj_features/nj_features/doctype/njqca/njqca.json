@@ -38,7 +38,6 @@
   "repack_itm_price",
   "original_price",
   "app_statuts",
-  "qi_status",
   "section_break_6sw2s",
   "item_code",
   "column_break_qzvyk",
@@ -377,21 +376,13 @@
    "fieldname": "app_statuts",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "App Statuts",
-   "read_only": 1
-  },
-  {
-   "fieldname": "qi_status",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "QI Status",
-   "read_only": 1
+   "label": "App Statuts"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-18 17:38:57.712179",
+ "modified": "2024-12-19 12:58:37.033760",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

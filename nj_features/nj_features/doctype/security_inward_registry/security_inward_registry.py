@@ -161,8 +161,6 @@ def validate_accept_registry(frm):
                 for row in frm.get('purchase_inward_registry_child', [])
             )
 
-            print(f'Inwarded Total: {inwarded_total}, Received Total: {recieved_total}')
-
             if not int(inwarded_total) != int(recieved_total):
                 inwarded_qty = {}
                 received_qty_details = {}
@@ -190,7 +188,6 @@ def get_child_table(frm):
     valid_table_name = None
 
     if isinstance(frm, dict):
-        print('inside_dict')
         if frm.get('purchase_inward_registry_purchase_child') and len(frm['purchase_inward_registry_purchase_child']) > 0:
             valid_table_name = frm['purchase_inward_registry_purchase_child'][0].get('doctype')
 
@@ -256,8 +253,6 @@ def get_po_number_details(po_number):
                 {'item_group': k, 'available_qty': v} for k, v in grouped_data.items()
             ]
 
-        print(f'purchase_inward_security_result  ---- {purchase_inward_security_result}')
-
         purchase_inward_security_result = get_inwarded_qty_data(po_number, purchase_inward_security_result)
         purchase_inward_security_result = get_sir_inwarded_qty_data(po_number, purchase_inward_security_result)
 
@@ -269,7 +264,6 @@ def get_po_number_details(po_number):
         return None
 
 def get_inwarded_qty_data(po_number, purchase_inward_security_result):
-    print('\n\n')
     query = """
         SELECT irpc.item_group, SUM(irpc.actual_qty) AS available_qty
         FROM `tabSecurity Inward Registry` sir
@@ -280,7 +274,6 @@ def get_inwarded_qty_data(po_number, purchase_inward_security_result):
     """
     
     result = frappe.db.sql(query, po_number, as_dict=True)
-    print('result', result)
 
     for initial in purchase_inward_security_result:
         item_group = initial['item_group']
@@ -305,7 +298,6 @@ def get_sir_inwarded_qty_data(po_number, purchase_inward_security_result):
     """
     
     result = frappe.db.sql(query, (po_number,), as_dict=True)
-    print('Fetched Result:', result)
 
     for initial in purchase_inward_security_result:
         item_group = initial['item_group']
@@ -441,8 +433,6 @@ def get_po_item_group(po_number):
     
     filtered_data = frappe.db.sql(query, (po_number, po_number), as_dict=1)
 
-    print(f'filtered_data ---------------- 323 {filtered_data}')
-
     return filtered_data
 
 
@@ -543,8 +533,6 @@ def get_registry_qty(frm):
 
             out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
 
-            print(f'out_accept_registry -------------- 456 {out}')
-
             if out:
                 return out
     else:
@@ -556,10 +544,7 @@ def get_registry_qty(frm):
                 GROUP BY item_group
             """.format(valid_table_name)
 
-
             out = frappe.db.sql(query, (frm.get('name'),), as_dict=True)
-
-            print(f'out -------------- 456 {out}')
 
             if out:
                 return out
@@ -584,15 +569,12 @@ def get_stock_registry(stock_registry_no):
         """, (stock_registry_no,), as_dict=True)
 
         for row in stock_details:
-            print('\n\n')
             po_qty = frappe.db.get_value(
                 'Purchase Order Item',
                 {'parent': row.po_number, 'item_code': row.item_code, 'item_group': row.item_group},
                 ['qty']
             )
 
-            print(f'po_qty  ---- {row.item_group} ----------------- 504', po_qty)
-            
             total_received_qty = frappe.db.sql("""
                 SELECT SUM(pri.qty) 
                 FROM 
@@ -605,11 +587,7 @@ def get_stock_registry(stock_registry_no):
                     AND pr.docstatus = 1
             """, (row.po_number, row.item_code))[0][0] or 0 
 
-            print(f'total_recieved_qty  ---- {row.item_group} ----------------- 504', total_received_qty)
-            
             available_qty = float(po_qty) - float(total_received_qty)
-
-            print(f'available_qty  {row.item_group} ----------------- 504', available_qty)
 
             row['available_qty'] = available_qty
 
@@ -617,7 +595,6 @@ def get_stock_registry(stock_registry_no):
                                         SELECT * from `tabSecurity Inward Registry Purchase Child`
                                         WHERE parent = %s
                                     """, (stock_registry_no,), as_dict=True)
-        print('dash_board_data ------------------ 504', dash_board_data)
         
         if not stock_details:
             frappe.throw(f"No records found for Stock Registry {stock_registry_no}")
@@ -629,9 +606,6 @@ def get_stock_registry(stock_registry_no):
             else:
                 row['reference_item_group'] = row['item_group']
         
-        print(f'stock_details_data ------------------ 514 {stock_details}')
-        
-
         return stock_details, dash_board_data, get_po_number
 
     except Exception as e:

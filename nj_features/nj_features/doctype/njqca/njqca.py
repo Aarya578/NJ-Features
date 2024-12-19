@@ -422,6 +422,7 @@ def get_repack_items(self):
 
     return get_repack_items_list
 
+
 @frappe.whitelist()
 def after_save_njqca(docname):
     doc = frappe.get_doc("NJQCA", docname)

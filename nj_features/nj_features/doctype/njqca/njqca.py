@@ -364,8 +364,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-    base_url = frappe.utils.get_url()
-    njqi_link = f"{base_url}/app/nj-quality-inspection/{new_qi.name}"
+    base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+    njqi_link = f"{base_url}qi/{new_qi.name}/0"
     frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    
     return True 

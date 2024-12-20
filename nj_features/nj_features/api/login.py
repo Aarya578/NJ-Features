@@ -5,7 +5,7 @@ from frappe import auth
 from frappe.utils import get_url
 from nj_features.hooks import ENCRYPTION_KEY
 from nj_lib.utils.common_utils import get_active_user
-from uat.apps.nj_features.nj_features.nj_features.api.encryption import decrypt
+from nj_features.nj_features.api.encryption import decrypt
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 

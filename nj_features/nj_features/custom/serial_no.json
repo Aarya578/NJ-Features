@@ -1,6 +1,66 @@
 {
-  "custom_fields": [
-    {
+    "custom_fields": [
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2022-07-01 02:28:07.982149",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "purcase_proof",
+      "fieldtype": "Attach Image",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 7,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "item_code",
+      "label": "Purcase Proof",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2017-07-19 18:12:59.222221",
+      "modified_by": "Administrator",
+      "name": "Serial No-purcase_proof",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 0,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 1,
+      "unique": 0,
+      "width": null
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -25,7 +85,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 70,
+      "idx": 75,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -59,8 +119,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -85,7 +145,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 71,
+      "idx": 76,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -119,8 +179,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -145,7 +205,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 72,
+      "idx": 77,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -179,8 +239,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "132"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -205,7 +265,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 73,
+      "idx": 78,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -239,8 +299,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -265,7 +325,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 74,
+      "idx": 79,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -299,8 +359,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -325,7 +385,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 75,
+      "idx": 80,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -359,8 +419,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -385,7 +445,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 77,
+      "idx": 82,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -419,8 +479,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "54"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -445,7 +505,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 78,
+      "idx": 83,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -479,8 +539,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "104"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -505,7 +565,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 79,
+      "idx": 84,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -539,8 +599,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "48"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -565,7 +625,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 80,
+      "idx": 85,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -599,8 +659,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "38"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -625,7 +685,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 81,
+      "idx": 86,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -659,8 +719,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -685,7 +745,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 82,
+      "idx": 87,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -719,8 +779,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -745,7 +805,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 55,
+      "idx": 60,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -779,8 +839,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -805,7 +865,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 57,
+      "idx": 62,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -839,8 +899,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "340"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -865,7 +925,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 54,
+      "idx": 59,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -899,8 +959,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -925,7 +985,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 56,
+      "idx": 61,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -959,8 +1019,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -985,7 +1045,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 85,
+      "idx": 90,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1019,8 +1079,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1045,7 +1105,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 86,
+      "idx": 91,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1079,8 +1139,8 @@
       "translatable": 1,
       "unique": 0,
       "width": "171"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1105,7 +1165,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 87,
+      "idx": 92,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1139,8 +1199,8 @@
       "translatable": 1,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1165,7 +1225,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 88,
+      "idx": 93,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1199,8 +1259,68 @@
       "translatable": 1,
       "unique": 0,
       "width": "203"
-    },
-    {
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 1,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2018-05-03 07:25:33.866752",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": "",
+      "fetch_if_empty": 0,
+      "fieldname": "barcode",
+      "fieldtype": "Data",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 4,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "serial_no",
+      "label": "Barcode",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2022-07-08 13:01:49.159490",
+      "modified_by": "Administrator",
+      "name": "Serial No-barcode",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "vwithv1602@gmail.com",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 1,
+      "unique": 0,
+      "width": "60"
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1225,7 +1345,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 89,
+      "idx": 94,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1259,8 +1379,488 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-06-20 21:56:49.022070",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "serial_no_component",
+      "fieldtype": "Table",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 95,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "section_break_72",
+      "label": "Part List",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-06-20 21:56:49.022070",
+      "modified_by": "Administrator",
+      "name": "Serial No-serial_no_component",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": "Serial No Component",
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-08-27 12:58:18.440414",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "pricing",
+      "fieldtype": "Section Break",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 97,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "past_part_list",
+      "label": "Pricing",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-08-27 12:58:18.440414",
+      "modified_by": "Administrator",
+      "name": "Serial No-pricing",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 0,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-08-27 12:58:19.212422",
+      "default": "0",
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "purchase_price",
+      "fieldtype": "Currency",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 98,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "pricing",
+      "label": "Purchase Price",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-08-27 12:58:19.212422",
+      "modified_by": "Administrator",
+      "name": "Serial No-purchase_price",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "2",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-08-27 12:58:52.032679",
+      "default": "0",
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "preferred_purchase_price_",
+      "fieldtype": "Currency",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 99,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "purchase_price",
+      "label": "Preferred Purchase Price ",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-08-27 12:58:52.032679",
+      "modified_by": "Administrator",
+      "name": "Serial No-preferred_purchase_price_",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "2",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-08-27 12:58:55.114229",
+      "default": "0",
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "current_price",
+      "fieldtype": "Currency",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 101,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "column_break_58",
+      "label": "Current Price",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-08-27 12:58:55.114229",
+      "modified_by": "Administrator",
+      "name": "Serial No-current_price",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "2",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2023-09-26 11:27:23.655411",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "past_part_list",
+      "fieldtype": "Table",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 96,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "serial_no_component",
+      "label": "Past Part list",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2023-09-26 11:27:23.655411",
+      "modified_by": "Administrator",
+      "name": "Serial No-past_part_list",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": "Past Part List",
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-02-17 15:11:53.843116",
+      "default": "0",
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "preferred_a_grade_price",
+      "fieldtype": "Currency",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 102,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "current_price",
+      "label": "Preferred A Grade Price",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-02-17 15:11:53.843116",
+      "modified_by": "Administrator",
+      "name": "Serial No-preferred_a_grade_price",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "2",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-02-26 10:26:00.472343",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "column_break_58",
+      "fieldtype": "Column Break",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 100,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "preferred_purchase_price_",
+      "label": null,
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-02-26 10:26:00.472343",
+      "modified_by": "Administrator",
+      "name": "Serial No-column_break_58",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": null,
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 0,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1319,8 +1919,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1345,7 +1945,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 27,
+      "idx": 31,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1379,8 +1979,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1405,7 +2005,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 28,
+      "idx": 32,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1439,8 +2039,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1465,7 +2065,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 30,
+      "idx": 34,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1499,8 +2099,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1525,7 +2125,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 31,
+      "idx": 35,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1559,8 +2159,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1585,7 +2185,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 29,
+      "idx": 33,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1619,8 +2219,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1645,7 +2245,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 14,
+      "idx": 17,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1679,8 +2279,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1705,7 +2305,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 76,
+      "idx": 81,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1739,8 +2339,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1765,14 +2365,14 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 32,
+      "idx": 38,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
       "in_list_view": 0,
       "in_preview": 0,
       "in_standard_filter": 0,
-      "insert_after": "vendor_warranty_expiry_date",
+      "insert_after": "grade",
       "label": "Origin Section",
       "length": 0,
       "mandatory_depends_on": null,
@@ -1799,8 +2399,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1825,7 +2425,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 34,
+      "idx": 39,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1859,8 +2459,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1885,7 +2485,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 35,
+      "idx": 40,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1919,8 +2519,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -1945,7 +2545,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 36,
+      "idx": 41,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -1979,8 +2579,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2005,7 +2605,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 37,
+      "idx": 42,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2039,8 +2639,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2065,7 +2665,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 38,
+      "idx": 43,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2099,8 +2699,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2125,7 +2725,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 39,
+      "idx": 44,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2159,8 +2759,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2185,7 +2785,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 32,
+      "idx": 36,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2219,8 +2819,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2279,8 +2879,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2305,7 +2905,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 18,
+      "idx": 20,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2339,8 +2939,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2365,7 +2965,7 @@
       "hide_border": 0,
       "hide_days": 0,
       "hide_seconds": 0,
-      "idx": 9,
+      "idx": 10,
       "ignore_user_permissions": 0,
       "ignore_xss_filter": 0,
       "in_global_search": 0,
@@ -2399,10 +2999,130 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-    }
-  ],
-  "custom_perms": [
-    {
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-12-12 18:13:38.382713",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "item_wizard",
+      "fieldtype": "Link",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 10,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "department",
+      "label": "Item Wizard",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-12-12 18:13:38.382713",
+      "modified_by": "user@mail.com",
+      "name": "Serial No-item_wizard",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": "Item Wizards",
+      "owner": "user@mail.com",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 0,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
+     },
+     {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-12-10 13:04:07.549942",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Serial No",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "grade",
+      "fieldtype": "Select",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 37,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "vendor_warranty_expiry_date",
+      "label": "Grade",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-12-10 13:04:07.549942",
+      "modified_by": "postman@mail.com",
+      "name": "Serial No-grade",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": "\nGrade A\nAs Is",
+      "owner": "postman@mail.com",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 1,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 1,
+      "unique": 0,
+      "width": null
+     }
+    ],
+    "custom_perms": [
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2435,8 +3155,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2469,8 +3189,8 @@
       "share": 0,
       "submit": 0,
       "write": 0
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2503,8 +3223,8 @@
       "share": 1,
       "submit": 0,
       "write": 0
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2537,8 +3257,8 @@
       "share": 0,
       "submit": 0,
       "write": 0
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2571,8 +3291,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2605,8 +3325,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2639,8 +3359,8 @@
       "share": 0,
       "submit": 0,
       "write": 1
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2673,11 +3393,11 @@
       "share": 0,
       "submit": 0,
       "write": 1
-    }
-  ],
-  "doctype": "Serial No",
-  "property_setters": [
-    {
+     }
+    ],
+    "doctype": "Serial No",
+    "property_setters": [
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2700,8 +3420,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "1"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2724,8 +3444,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "1"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2748,8 +3468,8 @@
       "property_type": "Check",
       "row_name": null,
       "value": "0"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2772,8 +3492,8 @@
       "property_type": null,
       "row_name": null,
       "value": "281"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2796,8 +3516,8 @@
       "property_type": null,
       "row_name": null,
       "value": "184"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2820,8 +3540,8 @@
       "property_type": null,
       "row_name": null,
       "value": "413"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2844,8 +3564,8 @@
       "property_type": null,
       "row_name": null,
       "value": "98"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2868,8 +3588,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2892,8 +3612,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2916,8 +3636,8 @@
       "property_type": null,
       "row_name": null,
       "value": "340"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2940,8 +3660,8 @@
       "property_type": null,
       "row_name": null,
       "value": "96"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2964,8 +3684,8 @@
       "property_type": null,
       "row_name": null,
       "value": "112"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -2988,8 +3708,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3012,8 +3732,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3036,8 +3756,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3060,8 +3780,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3084,8 +3804,8 @@
       "property_type": null,
       "row_name": null,
       "value": "120"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3108,8 +3828,8 @@
       "property_type": null,
       "row_name": null,
       "value": "90"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3132,8 +3852,8 @@
       "property_type": null,
       "row_name": null,
       "value": "101"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3156,8 +3876,8 @@
       "property_type": null,
       "row_name": null,
       "value": "85"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3180,8 +3900,8 @@
       "property_type": null,
       "row_name": null,
       "value": "91"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3204,8 +3924,8 @@
       "property_type": null,
       "row_name": null,
       "value": "222"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3228,8 +3948,8 @@
       "property_type": null,
       "row_name": null,
       "value": "78"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3252,8 +3972,8 @@
       "property_type": null,
       "row_name": null,
       "value": "114"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3276,8 +3996,8 @@
       "property_type": null,
       "row_name": null,
       "value": "171"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3300,8 +4020,8 @@
       "property_type": null,
       "row_name": null,
       "value": "60"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3324,8 +4044,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3348,8 +4068,8 @@
       "property_type": null,
       "row_name": null,
       "value": "203"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3372,8 +4092,8 @@
       "property_type": null,
       "row_name": null,
       "value": "48"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3396,8 +4116,8 @@
       "property_type": null,
       "row_name": null,
       "value": "104"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3420,8 +4140,8 @@
       "property_type": null,
       "row_name": null,
       "value": "132"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3444,8 +4164,8 @@
       "property_type": null,
       "row_name": null,
       "value": "30"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3468,8 +4188,8 @@
       "property_type": null,
       "row_name": null,
       "value": "38"
-    },
-    {
+     },
+     {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -3492,7 +4212,7 @@
       "property_type": null,
       "row_name": null,
       "value": "54"
-    }
-  ],
-  "sync_on_migrate": 1
-}
+     }
+    ],
+    "sync_on_migrate": 1
+   }

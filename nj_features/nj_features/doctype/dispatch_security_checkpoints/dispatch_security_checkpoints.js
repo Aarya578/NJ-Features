@@ -56,7 +56,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data_for_return',
                     args: { 
-                        serial_no: frm.doc.scan_serial_no            
+                        pr_name: frm.doc.scan_serial_no            
                     },
                     callback: function (r) {
                         console.log(r);
@@ -65,8 +65,6 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                             frm.refresh_field('scan_serial_no');
                             
                             let dispatch_security_return_table = {
-                                "serial_no": r.message.serial_no,
-                                "item_code": r.message.item_code || 'Not Available',
                                 "purchase_invoice": r.message.purchase_invoice || 'Not Available',
                                 "pi_status": r.message.pi_status || 'Not Available',
                                 "purchase_receipt": r.message.purchase_receipt || 'Not Available',
@@ -82,7 +80,57 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                         }
                     }
                 });
-            }           
+            }
+            else if (frm.doc.dispatch_type == 'Transfer') {
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.get_item_code_details_for_transfer",
+                    args: {
+                        ste_number: frm.doc.scan_serial_no,
+                    },
+                    callback: function(r) {
+                        if (r.message) {
+                            frm.set_value('scan_serial_no', '');
+                            frm.refresh_field('scan_serial_no');
+                            frm.clear_table("dispatch_security_stock_entry_table");
+                            let errors = [];
+                            let has_errors = false;
+            
+                            if (Array.isArray(r.message)) {
+                                r.message.forEach(item => {
+                                    if (item.error) {
+                                        errors.push(item.error);
+                                        has_errors = true;
+                                    } else if (item.item_code) {
+                                        let new_row = frm.add_child("dispatch_security_stock_entry_table");
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "stock_entry_name", item.parent);
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "item_code", item.item_code);
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "target_warehouse", item.t_warehouse);
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "source_warehouse", item.s_warehouse);
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "serial_no_quantity", item.qty);
+                                        frappe.model.set_value(new_row.doctype, new_row.name, "serial_no", item.serial_no.replace('\n', ', '));
+                                    }
+                                });
+                                frm.refresh_field("dispatch_security_stock_entry_table");
+                            }
+        
+                            // Store errors for validation
+                            frm.doc.transfer_errors = errors;
+        
+                            if (has_errors) {
+                                frm.doc.has_transfer_errors = true;
+                                frappe.msgprint({
+                                    title: __('Errors'),
+                                    message: errors.join('<br>'),
+                                    indicator: 'red'
+                                });
+                            } else {
+                                frm.doc.has_transfer_errors = false;
+                            }
+                        }
+                    }
+                });
+                
+            }        
         }
     },
 });

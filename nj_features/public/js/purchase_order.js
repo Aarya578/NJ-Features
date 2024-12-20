@@ -2,8 +2,46 @@ frappe.provide("erpnext.buying");
 {% include 'erpnext/public/js/controllers/buying.js' %};
 
 frappe.ui.form.on('Purchase Order', {
-    onload(frm) {
-        $('.col-lg-2.layout-side-section').hide();
+    onload() { $('.col-lg-2.layout-side-section').hide(); },
+
+    refresh: function(frm) {
+        console.log('refreshing....');
+        // if (frm.doc.docstatus == 1 && frm.doc.status != "Closed" && frm.doc.status != "On Hold") {
+            
+        //     // Override Purchase Receipt button
+        //     frm.add_custom_button(__('SIR Purchase Receipt'), function() {
+
+        //         frappe.call({
+        //             method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
+        //             args: { po_number: frm.doc.name },
+        //             callback: function(r) {
+        //                 console.log('response', r.message);
+        //                 if (r && r.message.length > 0) {
+        //                     $.each(r.message, function(i, d) {
+        //                         frappe.model.nj_open_mapped_doc({
+        //                             method: "nj_features.overrides.purchase_order.make_purchase_receipt",
+        //                             frm: cur_frm,
+        //                             args: { sir_name: d.parent },
+        //                             freeze_message: __("Creating PR from Registry ...")
+        //                         });
+        //                     });
+        //                 }
+        //             }
+        //         });
+        //     }, __('Create'));
+
+        //     // Material to Supplier logic
+        //     if (frm.doc.is_subcontracted === "Yes" && me.has_unsupplied_items()) {
+        //         frm.page.remove_inner_button(__('Material to Supplier'), __('Transfer'));
+        //         frm.add_custom_button(__('Material to Supplier'), function() {
+        //             me.make_stock_entry();
+        //         }, __("Transfer"));
+        //     }
+        // }
+    },
+
+    make_purchase_receipt: function(frm) {
+        console.log('making purchase receipt...')
     },
     
     has_warranty(frm) {
@@ -50,3 +88,47 @@ const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
 });
 
 $.extend(cur_frm.cscript, new purchaseOrderValidation({frm: cur_frm}));
+
+frappe.provide("frappe.model");
+
+$.extend(frappe.model, {
+    nj_open_mapped_doc: function(opts) {
+        
+        if (opts.frm && opts.frm.doc.__unsaved) {
+            frappe.throw(
+                __(
+                    "You have unsaved changes in this form. Please save before you continue."
+                )
+            );
+        } else if (!opts.source_name && opts.frm) {
+            opts.source_name = opts.frm.doc.name;
+        } else if (!opts.frm && !opts.source_name) {
+            opts.source_name = null;
+        }
+
+        return frappe.call({
+            type: "POST",
+            method: "nj_features.overrides.purchase_order.make_purchase_receipt",
+            args: {
+                method: opts.method,
+                source_name: opts.source_name,
+                sir_name: opts.args.sir_name || null,
+                args: opts.args,
+            },
+            freeze: true,
+            freeze_message: opts.freeze_message || "",
+            callback: function(r) {
+                if (!r.exc) {
+                    frappe.model.sync(r.message);
+                    if (opts.run_link_triggers) {
+                        frappe.get_doc(
+                            r.message.doctype,
+                            r.message.name
+                        ).__run_link_triggers = true;
+                    }
+                    frappe.set_route("Form", r.message.doctype, r.message.name);
+                }
+            }
+        });
+    }
+});

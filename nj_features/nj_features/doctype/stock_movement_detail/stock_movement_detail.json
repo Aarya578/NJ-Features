@@ -9,6 +9,7 @@
   "s_warehouse",
   "source_department",
   "item_code",
+  "registry_no",
   "column_break_z29dd",
   "t_warehouse",
   "target_department",
@@ -91,11 +92,18 @@
   {
    "fieldname": "column_break_z29dd",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "registry_no",
+   "fieldtype": "Link",
+   "label": "Registry No",
+   "options": "Security Inward Registry",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2024-11-28 11:10:48.618517",
+ "modified": "2024-12-11 12:11:14.555930",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement Detail",

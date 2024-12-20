@@ -24,8 +24,9 @@ def scan_serial_no_data_for_sales(serial_no):
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            WHERE dni.serial_no = %s AND dn.docstatus = 1
-        """, (serial_no,), as_dict=True)
+            WHERE dni.serial_no LIKE %s AND dn.docstatus = 1
+            ORDER BY dn.creation DESC, dn.modified DESC
+        """, ('%' + serial_no + '%',), as_dict=True)
 
         if result:
             delivery_note_data = result[0]
@@ -44,7 +45,10 @@ def scan_serial_no_data_for_sales(serial_no):
                     frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
                     return None
                 elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 0:
-                    frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed, unless it is approved.").format(sales_invoice))
+                    frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed and it is approved.").format(sales_invoice))
+                    return None
+                elif sales_channel != 'Amazon' and si_status == 'Paid' and approved == 0:
+                    frappe.msgprint(_("Sales Invoice '{}' must be approved to proceed.").format(sales_invoice))
                     return None
             else:
                 frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
@@ -69,38 +73,37 @@ def scan_serial_no_data_for_sales(serial_no):
         frappe.throw(e)
 
 @frappe.whitelist()
-def scan_serial_no_data_for_return(serial_no):
+def scan_serial_no_data_for_return(pr_name):
     try:
-        serial_no = serial_no.strip()
-        serial_no_exists = frappe.db.exists('Serial No', serial_no)
-        if not serial_no_exists:
-            frappe.throw(f"Serial No: {serial_no} doesn't exist")
+        pr_name = pr_name.strip()
+        if not frappe.db.exists('Purchase Receipt', pr_name):
+            frappe.throw(f"Serial No or Purchase Receipt: {pr_name} doesn't exist")
             return None
-
-        return_data = frappe.db.sql(f"""SELECT ch.parent as PR, ch.purchase_invoice as PI, 
-                            pr.status as PR_Status, pi.status as PI_Status, ch.item_code
-                            FROM `tabPurchase Receipt Item` ch
-                            LEFT JOIN `tabPurchase Receipt` pr on pr.name = ch.parent
-                            LEFT JOIN `tabPurchase Invoice` pi on pi.name = ch.purchase_invoice
-                            WHERE ch.serial_no = '{serial_no}' AND pr.is_return = 1 
-                            AND ch.purchase_invoice is not null or ch.purchase_invoice != ''
-                            ORDER BY ch.creation DESC, ch.modified DESC limit 1
-                            """, as_dict=True)
-            
+        
+        if pr_name:
+            return_data = frappe.db.sql(f"""select Pr.name as PR, Pr.status as PR_Status , Pr.total as PR_Total, Pi.total as PI_Total,
+                                            Pi.name as PI, Pi.status as PI_Status from `tabPurchase Receipt` Pr
+                                            inner join `tabPurchase Invoice Item` PII 
+                                            inner join `tabPurchase Invoice` Pi
+                                            on PII.purchase_receipt = Pr.name and 
+                                            Pi.name = PII.parent
+                                            where Pr.name = '{pr_name}' and Pr.is_return = 1
+                                """, as_dict=True)            
         if not return_data:
-            frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
+            frappe.msgprint(_("No PR or PI data found for <b>{}</b>").format(pr_name))
             return None
         if not return_data[0].get('PR') and not return_data[0].get('PI'):
-            frappe.msgprint(_("No PR or PI data found for serial number <b>{}</b>").format(serial_no))
+            frappe.msgprint(_("No PR or PI data found for <b>{}</b>").format(pr_name))
             return None
 
         if not return_data[0].get('PR_Status') and not return_data[0].get('PI_Status'):
-            frappe.msgprint(_("Please check the status of PR or PI found for serial number <b>{}</b>").format(serial_no))
+            frappe.msgprint(_("Please check the status of PR or PI for <b>{}</b>").format(pr_name))
             return None
-
+        
+        if not return_data[0].get('PR_Total') or return_data[0].get('PR_Total') >= 0 and return_data[0].get('PI_Total') != return_data[0].get('PR_Total'):
+            frappe.msgprint(_("Please check the total amount of PR or PI found for<b>{}</b>").format(pr_name))
+            return None
         return {
-            'serial_no': serial_no,
-            'item_code': return_data[0].get('item_code'),
             'purchase_receipt': return_data[0].get('PR'),
             'purchase_invoice': return_data[0].get('PI'),
             'pr_status': return_data[0].get('PR_Status'),
@@ -109,3 +112,33 @@ def scan_serial_no_data_for_return(serial_no):
     
     except Exception as e:
         frappe.throw(e)
+
+@frappe.whitelist()
+def get_item_code_details_for_transfer(ste_number):
+    ste_number = ste_number.strip()
+    if not frappe.db.exists('Stock Entry', ste_number):
+        frappe.throw(f"Stock Entry : {ste_number} doesn't exist")
+        return None
+
+    material_transfer_details = frappe.db.get_all(
+        "Stock Entry Detail",
+        filters={'parent': ste_number},
+        fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx', 'serial_no','parent']
+    )
+
+    result = []
+
+    print('mandatory_transfer_details --------------------- 276', material_transfer_details)
+
+    for row in material_transfer_details:
+        s_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['s_warehouse']}, ['location'])
+        t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])
+
+        if s_warehouse_lc == t_warehouse_lc:
+            result.append({
+                'error': f'The source warehouse and target warehouse cannot have the same location at  row <br><b>{row["idx"]}  .{row["item_code"]} at {ste_number}</b>'
+            })
+        else:
+            result.append(row)
+
+    return result

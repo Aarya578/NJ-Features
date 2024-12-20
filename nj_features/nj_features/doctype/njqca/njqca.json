@@ -15,6 +15,7 @@
   "purchase_receipt",
   "serial_no",
   "inspection_type",
+  "qi_name",
   "bios_serialno",
   "item_group",
   "warehouse",
@@ -36,6 +37,7 @@
   "manual_repack_item_code",
   "repack_itm_price",
   "original_price",
+  "app_statuts",
   "section_break_6sw2s",
   "item_code",
   "column_break_qzvyk",
@@ -57,7 +59,9 @@
   "laptop_storage_section",
   "njqca_laptop_storage",
   "section_break_d2ocq",
-  "amended_from"
+  "amended_from",
+  "event_trigger_section",
+  "njqca_event_trigger"
  ],
  "fields": [
   {
@@ -352,12 +356,33 @@
    "fieldtype": "Data",
    "label": "Department",
    "read_only": 1
+  },
+  {
+   "fieldname": "event_trigger_section",
+   "fieldtype": "Section Break",
+   "label": "Event Trigger"
+  },
+  {
+   "fieldname": "njqca_event_trigger",
+   "fieldtype": "Table",
+   "options": "NJQCA Event Trigger"
+  },
+  {
+   "fieldname": "qi_name",
+   "fieldtype": "Data",
+   "label": "QI Name"
+  },
+  {
+   "fieldname": "app_statuts",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "App Statuts"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-27 19:24:37.929176",
+ "modified": "2024-12-19 12:58:37.033760",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -378,6 +403,7 @@
    "write": 1
   },
   {
+   "create": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -390,6 +416,7 @@
    "write": 1
   },
   {
+   "create": 1,
    "email": 1,
    "export": 1,
    "print": 1,

@@ -9,31 +9,40 @@
   "item_code",
   "warehouse",
   "po_qty",
+  "available_qty",
   "received_qty",
+  "unit_value",
   "invoice_value",
-  "unit_value"
+  "reference_name",
+  "reference_parent",
+  "reference_doctype",
+  "reference_po_number",
+  "reference_item_group",
+  "actual_qty"
  ],
  "fields": [
   {
+   "columns": 1,
    "fieldname": "item_group",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
    "options": "Item Group",
-   "reqd": 1,
-   "search_index": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item",
    "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
+   "columns": 2,
    "fieldname": "warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -43,40 +52,83 @@
    "reqd": 1
   },
   {
-   "fieldname": "po_qty",
+   "columns": 1,
+   "fieldname": "invoice_value",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "PO Qty",
-   "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "received_qty",
-   "fieldtype": "Float",
-   "label": "Received Qty",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
-   "fieldname": "invoice_value",
-   "fieldtype": "Data",
    "label": "Invoice Value",
    "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "unit_value",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Unit Value"
+  },
+  {
+   "fieldname": "available_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Available Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "po_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "PO Qty",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "actual_qty",
+   "fieldtype": "Data",
+   "label": "Actual Qty"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Name"
+  },
+  {
+   "fieldname": "reference_parent",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Reference Parent",
+   "options": "Security Inward Registry"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Doctype"
+  },
+  {
+   "fieldname": "received_qty",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Received Qty"
+  },
+  {
+   "fieldname": "reference_item_group",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Item Group",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_po_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "PO No"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-25 18:59:23.951053",
+ "modified": "2024-12-17 17:56:41.854003",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Security Inward Registry Child",

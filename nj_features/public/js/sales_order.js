@@ -94,12 +94,10 @@ frappe.ui.form.on('Sales Order', {
             return;
         }
     },
-    refresh: function(frm) {
-        setTimeout(() => {
-            frm.remove_custom_button('Delivery Note', 'Create');
-            frm.page.remove_inner_button('Delivery Note', 'Create');
-            $('.btn-group.dropdown-menu a:contains("Delivery Note")').parent().remove();
-        }, 300);
+    onload_post_render: function(frm) {
+        frm.remove_custom_button('Delivery Note', 'Create');
+        frm.page.remove_inner_button('Delivery Note', 'Create');
+        $('.btn-group.dropdown-menu a:contains("Delivery Note")').parent().remove();
     },
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {

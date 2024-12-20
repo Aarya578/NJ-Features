@@ -102,7 +102,9 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry"
+	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
+    "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
+    "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
 }
 
 # Document Events
@@ -148,17 +150,17 @@ doc_events = {
 #	]
 # }
 
-# scheduler_events = {
-# 	"cron": {
-# 		# Every ten minutes
-# 		"*/10 * * * *": [
-# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
-# 		],
-# 		"0/30 * * * *": [
-# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
-# 		]
-# 	}
-# }
+scheduler_events = {
+	"cron": {
+		# Every ten minutes
+		"*/2 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+		],
+		"0/30 * * * *": [
+			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
+		]
+	}
+}
 
 scheduler_events = {
 	"cron": {
@@ -167,7 +169,7 @@ scheduler_events = {
 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
 			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
 		],
-		"0 24 * * *": [
+		"0 23 * * *": [
 			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		]
 	}

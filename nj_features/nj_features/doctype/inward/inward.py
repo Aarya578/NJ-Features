@@ -112,33 +112,44 @@ def get_repack_item_code(item_template):
 
 @frappe.whitelist()
 def get_stock_data_from_pr(pr, item_code=None):
-    get_serial_no = ''
-    if pr:
-        sql_query = """
-            SELECT 
-                item_code, warehouse, incoming_rate, posting_date, posting_time, batch_no, serial_no
-            FROM
-                `tabStock Ledger Entry`
-            WHERE
-                voucher_no = %s and item_code = %s
-                AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
-            ORDER BY
-                posting_date DESC, posting_time DESC, creation DESC
-            LIMIT 1
-        """
-        sle = frappe.db.sql(sql_query, (pr, item_code), as_dict=1)
-        
-        item_group = frappe.db.get_value("Item", {"name": sle[0]['item_code']}, "item_group")
-        
-        if sle and sle[0].get('serial_no'):
-            get_serial_no = frappe.db.sql(
-                """SELECT name FROM `tabSerial No` WHERE item_code = %s 
-                AND delivery_document_no IS NULL AND warehouse = %s """,
-                (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
-            )
-            
-    return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None, "item_group": item_group if item_group else None}
+    try:
+        get_serial_no = ''
+        if pr:
+            pri_query = """ SELECT b.name, pri.item_group FROM `tabPurchase Receipt Item` pri
+                            INNER JOIN `tabBatch` b ON b.name = pri.batch_no
+                            WHERE pri.parent = %s AND pri.item_code = %s AND pri.docstatus = 1
+                            AND b.batch_qty > 0
+                            LIMIT 1"""
+            pri_data = frappe.db.sql(pri_query, (pr, item_code), as_dict=True)
 
+            if not pri_data:
+                frappe.throw("No Batch Found for the given Item Code: <b>" + item_code + "</b> in Purchase Receipt: <b>" + pr + "</b>!</b>.")
+            
+            sql_query = """
+                SELECT item_code, warehouse, incoming_rate, serial_no, batch_no
+                FROM `tabStock Ledger Entry`
+                WHERE
+                    voucher_no = %s and item_code = %s and batch_no = %s
+                    AND is_cancelled = 0 AND voucher_type = 'Purchase Receipt'
+                ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                LIMIT 1
+            """
+            sle = frappe.db.sql(sql_query, (pr, item_code, pri_data[0]['name']), as_dict=1)
+            
+            if sle and sle[0].get('serial_no'):
+                get_serial_no = frappe.db.sql(
+                    """SELECT name FROM `tabSerial No` WHERE item_code = %s 
+                    AND delivery_document_no IS NULL AND warehouse = %s """,
+                    (sle[0]['item_code'], sle[0]['warehouse']), as_dict=True
+                )
+
+            if sle:
+                sle[0]['item_group'] = pri_data[0]['item_group']
+                
+        return {"result": sle[0], "serial_no": get_serial_no[0]['name'] if get_serial_no else None}
+    except Exception as e:
+        frappe.throw(str(e))
+        return str(e)
 
 @frappe.whitelist()
 def create_serial_no_and_get_item_code(item_group, brand, model, serial_no=None):

@@ -1,0 +1,102 @@
+{
+ "actions": [],
+ "creation": "2024-11-26 12:55:52.884387",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "data",
+  "tracking_id",
+  "qty",
+  "warehouse",
+  "item_code",
+  "actual_qty",
+  "reference_name",
+  "reference_parent",
+  "reference_doctype"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "default": "Today",
+   "fieldname": "data",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Data",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "tracking_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tracking Id",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "default": "1",
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "actual_qty",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Actual Qty"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Name"
+  },
+  {
+   "fieldname": "reference_parent",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Reference Parent",
+   "options": "Security Inward Registry"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Doctype"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2024-12-12 17:32:04.521888",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Customer Return for Security Inward Registry",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

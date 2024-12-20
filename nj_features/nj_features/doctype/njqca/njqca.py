@@ -55,7 +55,11 @@ def open_draft_qi(self):
     if not inspection_type:
         inspection_type = self.inspection_type
     self.inspection_type = inspection_type
-    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
+
+    if self.bios_serialno:
+        serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
+
+    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
     if existing_qi:
         # Get the existing document
         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
@@ -63,7 +67,7 @@ def open_draft_qi(self):
         new_qi = frappe.new_doc('NJ Quality Inspection')
         
         new_qi.inspection_type = self.inspection_type    
-        new_qi.barcode = self.serial_no
+        new_qi.barcode = serial_num
         new_qi.njqca_laptop_name = self.name
         new_qi.inspected_by = new_qi.owner
         if self.manual_repack_item_code :

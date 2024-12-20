@@ -4,35 +4,44 @@ frappe.provide("erpnext.buying");
 frappe.ui.form.on('Purchase Order', {
     onload() { $('.col-lg-2.layout-side-section').hide(); },
 
-    refresh(frm) {
-        if (frm.doc.docstatus == 1) {
-            if(frm.doc.status != "Closed") {
-				if (frm.doc.status != "On Hold") {
-                    frappe.call({
-                        method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
-                        args: { po_number: frm.doc.name },
-                        callback: function(r) {
-                            
-                            if (r && r.message.length > 0) {
-                                $.each(r.message, function(i, d) {
-                                    
-                                    frm.add_custom_button(__(d.parent), function() {
-                                        
-                                        frappe.model.nj_open_mapped_doc({
-                                            method: "nj_features.overrides.purchase_order.make_purchase_receipt",
-                                            frm: cur_frm,
-                                            args: { sir_name: d.parent },
-                                            freeze_message: __("Creating PR from Registry ...")
-                                        })
-                                    },  __('Create PR from Registry'));
-                                });
-                                cur_frm.page.set_inner_btn_group_as_primary(__('Create PR from Registry'));
-                            }
-                        }
-                    })
-                }
-            }
-        }
+    refresh: function(frm) {
+        console.log('refreshing....');
+        // if (frm.doc.docstatus == 1 && frm.doc.status != "Closed" && frm.doc.status != "On Hold") {
+            
+        //     // Override Purchase Receipt button
+        //     frm.add_custom_button(__('SIR Purchase Receipt'), function() {
+
+        //         frappe.call({
+        //             method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
+        //             args: { po_number: frm.doc.name },
+        //             callback: function(r) {
+        //                 console.log('response', r.message);
+        //                 if (r && r.message.length > 0) {
+        //                     $.each(r.message, function(i, d) {
+        //                         frappe.model.nj_open_mapped_doc({
+        //                             method: "nj_features.overrides.purchase_order.make_purchase_receipt",
+        //                             frm: cur_frm,
+        //                             args: { sir_name: d.parent },
+        //                             freeze_message: __("Creating PR from Registry ...")
+        //                         });
+        //                     });
+        //                 }
+        //             }
+        //         });
+        //     }, __('Create'));
+
+        //     // Material to Supplier logic
+        //     if (frm.doc.is_subcontracted === "Yes" && me.has_unsupplied_items()) {
+        //         frm.page.remove_inner_button(__('Material to Supplier'), __('Transfer'));
+        //         frm.add_custom_button(__('Material to Supplier'), function() {
+        //             me.make_stock_entry();
+        //         }, __("Transfer"));
+        //     }
+        // }
+    },
+
+    make_purchase_receipt: function(frm) {
+        console.log('making purchase receipt...')
     },
     
     has_warranty(frm) {

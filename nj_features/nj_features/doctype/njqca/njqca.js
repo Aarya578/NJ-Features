@@ -49,7 +49,9 @@ frappe.ui.form.on('NJQCA', {
             if (frm.doc.bios_serialno) {
                 frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name', 'model', 'item_code'], (r) => {
                     if (r && r.name && r.model && r.item_code) {
-                        frm.set_value("serial_no", r.name);
+                        if (frm.doc.serial_no == '' || frm.doc.serial_no == null || frm.doc.serial_no == undefined ) {
+                            frm.set_value("serial_no", r.name);
+                        }
                         if (frm.fields_dict.model) {
                             let options = frm.fields_dict.model.df.options || '';
                             if (!options.includes(r.model)) {
@@ -408,7 +410,7 @@ frappe.ui.form.on('NJQCA', {
 	},
 
     validate: function(frm) {
-        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'make', 'manufacturer_model'];
+        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'manufacturer_model'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {

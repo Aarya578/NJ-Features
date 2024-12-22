@@ -55,7 +55,11 @@ def open_draft_qi(self):
     if not inspection_type:
         inspection_type = self.inspection_type
     self.inspection_type = inspection_type
-    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': self.serial_no, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
+
+    if self.bios_serialno:
+        serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
+
+    existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
     if existing_qi:
         # Get the existing document
         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
@@ -63,7 +67,7 @@ def open_draft_qi(self):
         new_qi = frappe.new_doc('NJ Quality Inspection')
         
         new_qi.inspection_type = self.inspection_type    
-        new_qi.barcode = self.serial_no
+        new_qi.barcode = serial_num
         new_qi.njqca_laptop_name = self.name
         new_qi.inspected_by = new_qi.owner
         if self.manual_repack_item_code :
@@ -198,52 +202,61 @@ def open_draft_qi(self):
     #             # child_table.checks = field_name
     #             child_table.item_group = data.get("item_group")
     #             child_table.options = data.get("value")
-
     for data in self.njqca_result_parameters:
-        field_name_check_sql = """
-            SELECT options.quality_check
-            FROM `tabNJ Quality Checks` qc
-            LEFT JOIN `tabNj QC Options` options
-            ON qc.name = options.parent
-            INNER JOIN `tabNJ QC Check List` qc_check
-            ON options.quality_check = qc_check.name
-            AND qc_check.diagnostic_type = 'Automatic'
-            WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
-        """
-        field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+            field_name_check_sql = """
+                SELECT options.quality_check
+                FROM `tabNJ Quality Checks` qc
+                LEFT JOIN `tabNj QC Options` options
+                ON qc.name = options.parent
+                INNER JOIN `tabNJ QC Check List` qc_check
+                ON options.quality_check = qc_check.name
+                AND qc_check.diagnostic_type = 'Automatic'
+                WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
+            """
+            field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+            print("field_name_data------178", field_name_data)
 
-        if field_name_data:
-            for field in field_name_data:
-                name_of_check = field["quality_check"]
-                sql_check_option_automatic = frappe.db.sql("""
-                    SELECT check_options, score 
-                    FROM `tabQC Options` 
-                    WHERE parent = %s
-                """, name_of_check, as_dict=True)
+            if field_name_data:
+                for field in field_name_data:
+                    name_of_check = field["quality_check"]
+                    sql_check_option_automatic = frappe.db.sql("""
+                        SELECT check_options, score 
+                        FROM `tabQC Options` 
+                        WHERE parent = %s
+                    """, name_of_check, as_dict=True)
 
-                # Check if the child already exists
-                child_exists = any(
-                    child.item_group == data.get("item_group") and child.check_name == name_of_check
-                    for child in new_qi.nj_quality_checks
-                )
+                    # Fetch existing child table entries into a set for comparison
+                    existing_entries = {
+                        (child.item_group, child.check_name)
+                        for child in new_qi.nj_quality_checks
+                    }
+                    # Check if the current data exists
+                    if (data.get("item_group"), name_of_check) not in existing_entries:
+                        child_table = new_qi.append("nj_quality_checks", {})
+                        child_table.check_name = name_of_check
+                        child_table.item_group = data.get("item_group")
+                        # Default to data.get('value')
+                        child_table.options = data.get('value')
 
-                if not child_exists:
-                    child_table = new_qi.append("nj_quality_checks", {})
-                    child_table.check_name = name_of_check
-                    child_table.item_group = data.get("item_group")
+                    if sql_check_option_automatic:
+                        for option in sql_check_option_automatic:
+                            option_score = float(option["score"]) if option["score"] is not None else None
+                            data_score = float(data.get("score")) if data.get("score") else None
 
-                    # Default to data.get('value')
-                    child_table.options = data.get('value')
+                            print("Option Score Type:", type(option_score), "Value:", option_score)
+                            print("Data Score Type:", type(data_score), "Value:", data_score)
 
-                if sql_check_option_automatic:
-                    for option in sql_check_option_automatic:
-                        option_score = float(option["score"]) if option["score"] is not None else None
-                        data_score = float(data.get("score")) if data.get("score") else None
-
-                        if option_score == data_score:
-                            child_table.options = option["check_options"] 
-                            break  
-
+                            if option_score == data_score:
+                                print("Match Found! Check Options:", option["check_options"])
+                                
+                                # Check if this combination already exists
+                                if (data.get("item_group"), name_of_check) not in existing_entries:
+                                    child_table = new_qi.append("nj_quality_checks", {})
+                                    child_table.check_name = name_of_check
+                                    child_table.item_group = data.get("item_group")
+                                    child_table.options = option["check_options"]
+                                    existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
+                                break
 
     new_qi.save()
     return new_qi.name
@@ -371,7 +384,12 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
     return True 
 
 class NJQCA(Document):  
-  
+    def on_update(self):
+        print("on_update-----------")
+        inspection_type = get_inspection_type()
+        print("inspection_type",inspection_type,"self.serial_no",self.serial_no)
+        if self.serial_no and inspection_type:
+            open_draft_qi(self)
     def on_submit(self):
         if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
             frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   

@@ -49,7 +49,10 @@ frappe.ui.form.on('NJQCA', {
             if (frm.doc.bios_serialno && frm.doc.item_group == 'Laptops') {
                 frappe.db.get_value('Serial No', {'bios_serial_no': frm.doc.bios_serialno}, ['name', 'model', 'item_code'], (r) => {
                     if (r && r.name && r.model && r.item_code) {
-                        frm.set_value("serial_no", r.name);
+                        if (frm.doc.serial_no == '' || frm.doc.serial_no == null || frm.doc.serial_no == undefined ) {
+                            console.log('serial_no', r.name);
+                            frm.set_value("serial_no", r.name);
+                        }
                         if (frm.fields_dict.model) {
                             let options = frm.fields_dict.model.df.options || '';
                             if (!options.includes(r.model)) {
@@ -82,22 +85,6 @@ frappe.ui.form.on('NJQCA', {
         
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        frm.add_custom_button(__('Create QI'), function() {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: {
-                    'docname': cur_frm.doc.name
-                },
-                callback: function(r){
-                    if(r.message){
-                        frm.set_value('qi_name', r.message);
-                        frm.set_df_property('qi_name', 'read_only', 1);
-                    }else{
-                        console.error('QI name is not defined');
-                    }
-                }
-            });
-        }).addClass('btn-primary');
         if (frm.doc.docstatus == 0) {
             
             frm.events.power_on();
@@ -404,71 +391,71 @@ frappe.ui.form.on('NJQCA', {
         } else {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
-        if (frm.doc.docstatus == 0 && frm.doc.serial_no) {
+        // if (frm.doc.docstatus == 0 && frm.doc.serial_no) {
             
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data',
-                args: {
-                    serial_no: frm.doc.serial_no
-                },
-                callback: function(r) {
-                    if (r && r.message) {
+        //     frappe.call({
+        //         method: 'nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data',
+        //         args: {
+        //             serial_no: frm.doc.serial_no
+        //         },
+        //         callback: function(r) {
+        //             if (r && r.message) {
             
-                        frm.clear_table('njqca_display');
-                        frm.clear_table('njqca_adaptor');
+        //                 frm.clear_table('njqca_display');
+        //                 frm.clear_table('njqca_adaptor');
 
-                        r.message.forEach(item_data => {
-                            if (item_data.item_group.toUpperCase() === "DISPLAY") {
-                                let display_row = frappe.model.add_child(frm.doc, 'njqca_display');
+        //                 r.message.forEach(item_data => {
+        //                     if (item_data.item_group.toUpperCase() === "DISPLAY") {
+        //                         let display_row = frappe.model.add_child(frm.doc, 'njqca_display');
                                 
-                                frappe.model.set_value(display_row.doctype, display_row.name, 'fetched_item_code', item_data.item);
-                                frappe.model.set_value(display_row.doctype, display_row.name, 'calculated_item_code', item_data.item);
-                                frappe.model.set_value(display_row.doctype, display_row.name, 'item_group', item_data.item_group);
-                                frappe.model.set_value(display_row.doctype, display_row.name, 'item_template', item_data.item_template);
-                                frappe.model.set_value(display_row.doctype, display_row.name, 'grade', item_data.grade);
-                            } 
-                            else if (item_data.item_group.toUpperCase() === "LAPTOP ADAPTORS") {
-                                let adaptor_row = frappe.model.add_child(frm.doc, 'njqca_adaptor');
+        //                         frappe.model.set_value(display_row.doctype, display_row.name, 'fetched_item_code', item_data.item);
+        //                         frappe.model.set_value(display_row.doctype, display_row.name, 'calculated_item_code', item_data.item);
+        //                         frappe.model.set_value(display_row.doctype, display_row.name, 'item_group', item_data.item_group);
+        //                         frappe.model.set_value(display_row.doctype, display_row.name, 'item_template', item_data.item_template);
+        //                         frappe.model.set_value(display_row.doctype, display_row.name, 'grade', item_data.grade);
+        //                     } 
+        //                     else if (item_data.item_group.toUpperCase() === "LAPTOP ADAPTORS") {
+        //                         let adaptor_row = frappe.model.add_child(frm.doc, 'njqca_adaptor');
                                 
-                                frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'fetched_item_code', item_data.item);
-                                frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'calculated_item_code', item_data.item);
-                                frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'item_group', item_data.item_group);
-                                frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'item_template', item_data.item_template);
-                                frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'grade', item_data.grade);
-                            }
-                        });
+        //                         frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'fetched_item_code', item_data.item);
+        //                         frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'calculated_item_code', item_data.item);
+        //                         frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'item_group', item_data.item_group);
+        //                         frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'item_template', item_data.item_template);
+        //                         frappe.model.set_value(adaptor_row.doctype, adaptor_row.name, 'grade', item_data.grade);
+        //                     }
+        //                 });
             
-                        frm.refresh_field('njqca_display');
-                        frm.refresh_field('njqca_adaptor');
-                    }
-                    if (frm.doc.docstatus == 0) {
-                        let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
+        //                 frm.refresh_field('njqca_display');
+        //                 frm.refresh_field('njqca_adaptor');
+        //             }
+        //             if (frm.doc.docstatus == 0) {
+        //                 let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
                         
-                        for (let i = 0; i < child_table_fieldname.length; i++) {
-                            if (frm.fields_dict[child_table_fieldname[i]]) {
-                                let grid = frm.fields_dict[child_table_fieldname[i]].grid;
-                                set_options_for_attribute_fields_in_child(frm, grid);
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        //                 for (let i = 0; i < child_table_fieldname.length; i++) {
+        //                     if (frm.fields_dict[child_table_fieldname[i]]) {
+        //                         let grid = frm.fields_dict[child_table_fieldname[i]].grid;
+        //                         set_options_for_attribute_fields_in_child(frm, grid);
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     });
+        // }
 
-        if (frm.doc.docstatus == 0) {
-            let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
+        // if (frm.doc.docstatus == 0) {
+        //     let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
             
-            for (let i = 0; i < child_table_fieldname.length; i++) {
-                if (frm.fields_dict[child_table_fieldname[i]]) {
-                    let grid = frm.fields_dict[child_table_fieldname[i]].grid;
-                    set_options_for_attribute_fields_in_child(frm, grid);
-                }
-            }
-        }
+        //     for (let i = 0; i < child_table_fieldname.length; i++) {
+        //         if (frm.fields_dict[child_table_fieldname[i]]) {
+        //             let grid = frm.fields_dict[child_table_fieldname[i]].grid;
+        //             set_options_for_attribute_fields_in_child(frm, grid);
+        //         }
+        //     }
+        // }
 	},
 
     validate: function(frm) {
-        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'make', 'manufacturer_model'];
+        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'manufacturer_model'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -539,6 +526,20 @@ frappe.ui.form.on('NJQCA', {
     },
 
     after_save:function(frm){
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+            args: {
+                'docname': cur_frm.doc.name
+            },
+            callback: function(r){
+                if(r.message){
+                    frm.set_value('qi_name', r.message);
+                    frm.set_df_property('qi_name', 'read_only', 1);
+                }else{
+                    console.error('QI name is not defined');
+                }
+            }
+        });
         if (frm.doc.docstatus == 0) {
             let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
             

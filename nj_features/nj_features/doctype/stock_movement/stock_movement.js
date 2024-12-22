@@ -167,6 +167,31 @@ frappe.ui.form.on('Stock Movement', {
     default_source_warehouse: function(frm) {
         autofill_warehouse(frm.doc.items, "s_warehouse", frm.doc.default_source_warehouse);
     },
+
+    before_save: function(frm) {
+        console.log('Before saving...');
+        frappe.call({
+            method: "nj_features.nj_features.doctype.stock_movement.stock_movement.validate_stock_movement_for_grade",
+            args: {
+                doc: frm.doc
+            },
+            callback: function(r) {
+                if (r && r.message) {
+                    if (r.message.error) {
+                        console.log('Validation Error:', r.message.error);
+                        frappe.msgprint({
+                            title: __('Error'),
+                            message: __(r.message.error),
+                            indicator: 'red'
+                        });
+                        frappe.validated = false;
+                    } else {
+                        console.log('Validation Response:', r.message);
+                    }
+                }
+            }
+        });
+    },    
 	
     validate: function (frm) {
 

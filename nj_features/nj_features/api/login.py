@@ -5,7 +5,7 @@ from frappe import auth
 from frappe.utils import get_url
 from nj_features.hooks import ENCRYPTION_KEY
 from nj_lib.utils.common_utils import get_active_user
-from nj_features.nj_features.api.encryption import decrypt
+# from nj_features.nj_features.api.encryption import decrypt, encrypt
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 
@@ -13,8 +13,8 @@ from werkzeug.wrappers import Response
 def login(usr, pwd, doctype_url=None):
     try:
         login_manager = frappe.auth.LoginManager()
-        if " " in pwd:
-            pwd = decrypt(pwd, ENCRYPTION_KEY)
+        # if " " in pwd:
+        #     pwd = decrypt(pwd, ENCRYPTION_KEY)
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()
 

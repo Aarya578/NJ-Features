@@ -10,9 +10,11 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseRece
 class CustomPurchaseReceipt(PurchaseReceipt):
 
     def on_submit(self):
+        super(CustomPurchaseReceipt, self).on_submit()
         self.set_registry_no_on_submit()
     
     def on_cancel(self):
+        super(CustomPurchaseReceipt, self).on_cancel()
         self.set_registry_no_on_cancel()
 
     def set_registry_no_on_submit(self):

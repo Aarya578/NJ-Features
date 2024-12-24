@@ -10,40 +10,36 @@
  "field_order": [
   "njqca_information_section",
   "power_on",
-  "purchase_order",
-  "purchase_price",
-  "purchase_receipt",
   "serial_no",
-  "inspection_type",
-  "qi_name",
   "bios_serialno",
-  "item_group",
-  "warehouse",
+  "inspection_type",
   "department",
   "raw_data",
   "base_price",
   "column_break_5mcw7",
   "created",
+  "item_group",
   "brand",
+  "warehouse",
   "data_attr",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
-  "backup_duration_cycle_3",
-  "sudden_drop",
   "column_break_1tl9d",
   "make",
-  "manufacturer_model",
   "repack_item_code",
   "manual_repack_item_code",
+  "qi_name",
+  "backup_duration_cycle_3",
+  "sudden_drop",
   "repack_itm_price",
-  "original_price",
   "app_statuts",
   "section_break_6sw2s",
-  "item_code",
-  "column_break_qzvyk",
+  "manufacturer_model",
   "model",
-  "column_break_kcjxr",
+  "column_break_qzvyk",
+  "item_code",
   "item_template",
+  "section_break_nybo3",
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
@@ -80,8 +76,9 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Item Code",
+   "options": "Item",
    "read_only": 1
   },
   {
@@ -92,7 +89,8 @@
    "fieldname": "base_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Item Unit Price"
+   "label": "Item Unit Price",
+   "precision": "2"
   },
   {
    "fieldname": "section_break_6sw2s",
@@ -134,8 +132,9 @@
   },
   {
    "fieldname": "brand",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Brand",
+   "options": "Brand",
    "read_only": 1
   },
   {
@@ -149,13 +148,6 @@
    "fieldtype": "Data",
    "label": "Automated Repack Item Code",
    "read_only": 1
-  },
-  {
-   "fieldname": "original_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Original Price",
-   "precision": "2"
   },
   {
    "fieldname": "repack_itm_price",
@@ -233,35 +225,10 @@
    "options": "NJQCA Result Parameters"
   },
   {
-   "fieldname": "column_break_kcjxr",
-   "fieldtype": "Column Break"
-  },
-  {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "sudden_drop",
    "fieldtype": "Data",
    "label": "Sudden Drop"
-  },
-  {
-   "fieldname": "purchase_order",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Purchase Order",
-   "options": "Purchase Order"
-  },
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price",
-   "precision": "2"
-  },
-  {
-   "fieldname": "purchase_receipt",
-   "fieldtype": "Link",
-   "label": "Purchase Receipt",
-   "options": "Purchase Receipt",
-   "read_only": 1
   },
   {
    "fieldname": "model",
@@ -292,12 +259,14 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_display.length == 0",
    "fieldname": "section_break_drfru",
    "fieldtype": "Section Break",
    "label": "Display"
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_adaptor.length == 0",
    "fieldname": "processor_section",
    "fieldtype": "Section Break",
    "label": "Adaptor"
@@ -309,6 +278,7 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_ram.length == 0",
    "fieldname": "laptop_ram_section",
    "fieldtype": "Section Break",
    "label": "Laptop Ram"
@@ -320,6 +290,7 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_storage.length == 0",
    "fieldname": "laptop_storage_section",
    "fieldtype": "Section Break",
    "label": "Laptop Storage"
@@ -344,7 +315,7 @@
    "options": "NJQCA PROCESSOR"
   },
   {
-   "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length == 0",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
@@ -353,11 +324,13 @@
    "fetch_from": "warehouse.department",
    "fetch_if_empty": 1,
    "fieldname": "department",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Department",
+   "options": "Department",
    "read_only": 1
   },
   {
+   "collapsible": 1,
    "fieldname": "event_trigger_section",
    "fieldtype": "Section Break",
    "label": "Event Trigger"
@@ -370,19 +343,24 @@
   {
    "fieldname": "qi_name",
    "fieldtype": "Data",
-   "label": "QI Name"
+   "label": "QI Name",
+   "read_only": 1
   },
   {
    "fieldname": "app_statuts",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "App Statuts"
+  },
+  {
+   "fieldname": "section_break_nybo3",
+   "fieldtype": "Section Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-19 12:58:37.033760",
+ "modified": "2024-12-24 14:23:13.279205",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

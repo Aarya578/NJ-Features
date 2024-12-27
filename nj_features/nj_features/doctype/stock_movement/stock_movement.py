@@ -108,8 +108,6 @@ def validate_stock_movement_for_grade(doc):
                 print('d ----------------------- 102', d.as_dict())
                 print('---------------------109--------------------')
 
-                print('warrenty_restriction', d.get('warrenty_restriction'))
-
                 serial_doc = frappe.get_doc('Serial No', row.get('serial_no'))
 
                 check_warranty_expiry(serial_doc)

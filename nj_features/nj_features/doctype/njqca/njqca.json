@@ -17,7 +17,6 @@
   "raw_data",
   "base_price",
   "column_break_5mcw7",
-  "created",
   "item_group",
   "brand",
   "warehouse",
@@ -25,7 +24,6 @@
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
   "column_break_1tl9d",
-  "make",
   "repack_item_code",
   "manual_repack_item_code",
   "qi_name",
@@ -34,9 +32,12 @@
   "repack_itm_price",
   "app_statuts",
   "section_break_6sw2s",
+  "make",
+  "created",
+  "column_break_qzvyk",
   "manufacturer_model",
   "model",
-  "column_break_qzvyk",
+  "column_break_w1v6n",
   "item_code",
   "item_template",
   "section_break_nybo3",
@@ -228,7 +229,8 @@
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "sudden_drop",
    "fieldtype": "Data",
-   "label": "Sudden Drop"
+   "label": "Sudden Drop",
+   "read_only": 1
   },
   {
    "fieldname": "model",
@@ -243,30 +245,33 @@
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_2",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 2"
+   "label": "Backup Duration Cycle 2",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_3",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 3"
+   "label": "Backup Duration Cycle 3",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_1",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 1"
+   "label": "Backup Duration Cycle 1",
+   "read_only": 1
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_display.length == 0",
+   "collapsible_depends_on": "eval: doc.njqca_display.length != 0",
    "fieldname": "section_break_drfru",
    "fieldtype": "Section Break",
    "label": "Display"
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_adaptor.length == 0",
+   "collapsible_depends_on": "eval: doc.njqca_adaptor.length != 0",
    "fieldname": "processor_section",
    "fieldtype": "Section Break",
    "label": "Adaptor"
@@ -278,7 +283,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_laptop_ram.length == 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_ram.length != 0",
    "fieldname": "laptop_ram_section",
    "fieldtype": "Section Break",
    "label": "Laptop Ram"
@@ -290,7 +295,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_laptop_storage.length == 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_storage.length != 0",
    "fieldname": "laptop_storage_section",
    "fieldtype": "Section Break",
    "label": "Laptop Storage"
@@ -315,7 +320,7 @@
    "options": "NJQCA PROCESSOR"
   },
   {
-   "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length == 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length != 0",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
@@ -355,12 +360,16 @@
   {
    "fieldname": "section_break_nybo3",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_w1v6n",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-24 14:23:13.279205",
+ "modified": "2024-12-26 14:58:11.199400",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

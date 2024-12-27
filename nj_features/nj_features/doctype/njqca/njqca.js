@@ -53,9 +53,14 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
 
-        if (frm.doc.manufacturer_model) {
+        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0) {
             get_model(cur_frm.doc.manufacturer_model);
-        } 
+        }
+
+        if (frm.doc.docstatus == 0) {
+
+        }
+        
 	},
     
     validate: function(frm) {
@@ -130,7 +135,7 @@ frappe.ui.form.on('NJQCA', {
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
             args: { 'docname': cur_frm.doc.name },
             callback: function(r){
-                if(r.message){
+                if(r && r.message){
                     frm.set_value('qi_name', r.message);
                 } else { console.error('QI name is not defined'); }
             }
@@ -143,6 +148,7 @@ frappe.ui.form.on('NJQCA', {
                 if (frm.fields_dict[child_table_fieldname[i]]) {
                     let grid = frm.fields_dict[child_table_fieldname[i]].grid;
                     set_options_for_attribute_fields_in_child(frm, grid);
+                    frm.refresh_field(child_table_fieldname[i])
                 }
             }
         }
@@ -399,7 +405,6 @@ frappe.ui.form.on('NJQCA', {
                             frappe.msgprint(__("Item Template is not found using <b>Brand: {0}</b>,<br><b>Model: {1}</b>,<br><b>Item Group: {2}</b>.<br>Please contact <b>NPD Team.</b>", 
                                 [selectedBrand, selectedModel, selectedItemGroup]));
                         }
-                        frm.refresh_field('item_template');
                     }
                 }
             });
@@ -407,13 +412,8 @@ frappe.ui.form.on('NJQCA', {
         } else {
             cur_frm.set_df_property('item_template', 'options', []);
             cur_frm.set_value('item_template', '');
-            frm.refresh_field('item_template');
         }
-    
-        if (cur_frm.doc.error_message) {
-            cur_frm.set_df_property('error_message', 'hidden', 0);
-            cur_frm.refresh_field('error_message');
-        }
+        frm.refresh_field('item_template');
     },
 
     item_template: function(frm) {

@@ -69,13 +69,11 @@ frappe.ui.form.on('Stock Movement', {
         
         // Get the child table data
         // if (frm.doc.scan_grade != '' && changed_item_code != '') {
-        //     console.log("grade");
         //     var new_item_code = ''
         //     frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
         //         .then(function (r) {
         //             if (r.message.name) {
         //                 new_item_code = changed_item_code + "-" + r.message.name
-        //                 console.log("new item code", new_item_code);
         //                 frappe.model.with_doc("Stock Movement", frm.docname, function() {
         //                     var table = frappe.model.get_doc("Stock Movement", frm.docname).items;
         //                     var child_item = table.find(d => d.idx === frm.selected_child);
@@ -169,7 +167,6 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     before_save: function(frm) {
-        console.log('Before saving...');
         frappe.call({
             method: "nj_features.nj_features.doctype.stock_movement.stock_movement.validate_stock_movement_for_grade",
             args: {
@@ -178,15 +175,12 @@ frappe.ui.form.on('Stock Movement', {
             callback: function(r) {
                 if (r && r.message) {
                     if (r.message.error) {
-                        console.log('Validation Error:', r.message.error);
                         frappe.msgprint({
                             title: __('Error'),
                             message: __(r.message.error),
                             indicator: 'red'
                         });
                         frappe.validated = false;
-                    } else {
-                        console.log('Validation Response:', r.message);
                     }
                 }
             }
@@ -227,8 +221,6 @@ frappe.ui.form.on('Stock Movement', {
                             }
                         });
                         $('[data-fieldname="scan_barcode"]').focus();
-                    } else {
-                        console.log("Warehouse is not found");
                     }
                 })(i);
             }
@@ -244,13 +236,11 @@ frappe.ui.form.on('Stock Movement', {
 function executeRemainingCode(frm, changed_item_code) {
     // Get the child table data
     if (frm.doc.scan_grade != '' && changed_item_code != '') {
-        console.log("grade");
         var new_item_code = '';
         frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
             .then(function (r) {
                 if (r.message.name) {
                     new_item_code = changed_item_code + "-" + r.message.name;
-                    console.log("new item code", new_item_code);
                     frappe.model.with_doc("Stock Movement", frm.docname, function() {
                         var table = frappe.model.get_doc("Stock Movement", frm.docname).items;
                         var child_item = table.find(d => d.idx === frm.selected_child);
@@ -322,8 +312,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
     if (item.serial_no || item.item_code) {
         var userRoles = frappe.user_roles;
         var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
-        // Get all employee warehouses
-        console.log("is_default_target_warehouse", cur_frm.doc.is_default_target_warehouse, item.idx);
+        
         if (item.idx > 1 && cur_frm.doc.is_default_target_warehouse == 1) {
             let default_target_warehouse = cur_frm.doc.items[0].t_warehouse 
             frappe.db.get_value('Warehouse', {name: default_target_warehouse}, 'name').then(function(r) {

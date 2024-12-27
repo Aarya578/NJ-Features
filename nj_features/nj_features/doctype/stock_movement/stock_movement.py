@@ -85,70 +85,40 @@ def get_all_emp_warehouse(user):
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
-    print('\n\n')
     try:
         if isinstance(doc, str):
             doc = json.loads(doc)
 
-        print(f'doc ----------------- {doc}')
-        print(f'doc.items ----------------- {doc.get("items")}')
+        error_messages = []
 
-        error_messages = []  # List to collect error messages
+        for row in doc.get('items', []):
+            t_warehouse = row.get('t_warehouse')
+            serial_no = row.get('serial_no')
 
-        for row in doc.get('items'):
-            department = frappe.db.get_value('Warehouse', {'name': row.get('t_warehouse')}, ['department'])
-
+            department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
             if not department:
-                error_messages.append(f"Target warehouse {row.get('t_warehouse')} has no associated department.")
+                error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
                 continue
 
             department_doc = frappe.get_doc('Department', department)
 
-            for d in department_doc.get('stock_movement_restriction_table'):
-                print('d ----------------------- 102', d.as_dict())
-                print('---------------------109--------------------')
+            try:
+                serial_doc = frappe.get_doc('Serial No', serial_no)
+            except frappe.DoesNotExistError:
+                error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
+                continue
 
-                serial_doc = frappe.get_doc('Serial No', row.get('serial_no'))
-
-                check_warranty_expiry(serial_doc)
+            if department_doc.get('warrenty_restriction_check'):
 
                 if check_warranty_expiry(serial_doc):
-                    is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
-                    print('is_component ----------------------- 104', is_component)
-
-                    if not is_component:
-                        for s in serial_doc.get('serial_no_component'):
-                            print('\n\n')
-                            print('s ----------------------- 106', s.as_dict())
-                            print(f'{s.get("item_group")} ---- {d.get("item_group")} ----- s.get("grade") ----- {s.get("grade")} ----- d.get("restricted_grade") ----- {d.get("restricted_grade")}')
-                            
-                            if (s.get('item_group') == d.get('item_group')) and (s.get('grade') in d.get('restricted_grade').split(', ')):
-                                error_messages.append(
-                                    f"Serial No <b>{row.get('serial_no')}</b> for item_group <b>{s.get('item_group')}</b> has a grade <b>{s.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
-                                )
-                    else:
-                        print('it is not a component...132')
-                else:
-                    serial_doc = frappe.get_doc('Serial No', row.get('serial_no'))
-
-                    is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
-                    print('is_component ----------------------- 104', is_component)
-
-                    if not is_component:
-                        for s in serial_doc.get('serial_no_component'):
-                            print('\n\n')
-                            print('s ----------------------- 106', s.as_dict())
-                            print(f'{s.get("item_group")} ---- {d.get("item_group")} ----- s.get("grade") ----- {s.get("grade")} ----- d.get("restricted_grade") ----- {d.get("restricted_grade")}')
-                            
-                            if (s.get('item_group') == d.get('item_group')) and (s.get('grade') in d.get('restricted_grade').split(', ')):
-                                error_messages.append(
-                                    f"Serial No <b>{row.get('serial_no')}</b> for item_group <b>{s.get('item_group')}</b> has a grade <b>{s.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
-                                )
+                    validate_grade_restriction(serial_doc, department_doc, error_messages)
+                    
+            else:
+                validate_grade_restriction(serial_doc, department_doc, error_messages)
 
         if error_messages:
             return {"error": error_messages}
-        else:
-            return {"success": "Validation passed without errors."}
+        return {"success": "Validation passed without errors."}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error in validate_stock_movement_for_grade")
@@ -156,31 +126,42 @@ def validate_stock_movement_for_grade(doc):
 
 
 def check_warranty_expiry(serial_doc):
-
-    print('checking_warrenty_expiry_date')
-
     query = """
         SELECT DATE(creation) AS creation_date, warranty_days 
         FROM `tabPurchase Order` 
         WHERE name = %s
     """
-
     purchase_order = frappe.db.sql(query, serial_doc.get('purchase_order'), as_dict=True)
 
     if not purchase_order:
         frappe.throw("Purchase Order not found for the provided serial document.")
 
-    creation_date = purchase_order[0]['creation_date']
-    warranty_days = purchase_order[0]['warranty_days']
+    creation_date = purchase_order[0].get('creation_date')
+    warranty_days = purchase_order[0].get('warranty_days')
 
     if not warranty_days:
-        return True  
+        return True
 
     warranty_expiry_date = creation_date + timedelta(days=warranty_days)
     today_date = datetime.now().date()
 
     if today_date > warranty_expiry_date:
-        return True 
+        return True
     else:
         remaining_days = (warranty_expiry_date - today_date).days
         frappe.throw(f"The warranty is still valid. <b>{remaining_days} day(s)</b> remaining.")
+
+
+def validate_grade_restriction(serial_doc, department_doc, error_messages):
+    is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
+
+    if not is_component:
+        for component in serial_doc.get('serial_no_component', []):
+            for restriction in department_doc.get('stock_movement_restriction_table', []):
+                restricted_grades = restriction.get('restricted_grade', "").split(", ")
+                if (component.get('item_group') == restriction.get('item_group') and
+                        component.get('grade') in restricted_grades):
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
+                        f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                    )

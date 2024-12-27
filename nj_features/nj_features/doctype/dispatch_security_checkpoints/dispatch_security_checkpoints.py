@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import add_days, nowdate, getdate
 
 class DispatchSecurityCheckpoints(Document):
     pass
@@ -56,6 +57,14 @@ def scan_serial_no_data_for_sales(serial_no):
         else:
             frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
             return None
+        
+        if delivery_note:
+            delivery_note_creation = frappe.db.get_value('Delivery Note', delivery_note, 'creation')
+            if delivery_note_creation:
+                creation_date = getdate(delivery_note_creation)
+                two_days_ago = add_days(nowdate(), -2)
+                if creation_date < getdate(two_days_ago):
+                    frappe.throw("The latest Delivery Note was not created within the last 2 days.")
 
         return {
             'serial_no': serial_no,

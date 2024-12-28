@@ -128,8 +128,8 @@
   {
    "fieldname": "data_attr",
    "fieldtype": "Small Text",
-   "label": "Data Attr",
-   "read_only": 1
+   "hidden": 1,
+   "label": "Data Attr"
   },
   {
    "fieldname": "brand",
@@ -370,7 +370,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-28 12:28:14.640997",
+ "modified": "2024-12-28 17:09:45.264278",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

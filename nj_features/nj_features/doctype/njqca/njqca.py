@@ -61,8 +61,7 @@ def open_draft_qi(self):
             new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
         else:
             new_qi = frappe.new_doc('NJ Quality Inspection')
-            
-            new_qi.inspection_type = self.inspection_type    
+            new_qi.inspection_type = self.inspection_type 
             new_qi.barcode = serial_num
             new_qi.njqca_laptop_name = self.name
             new_qi.inspected_by = new_qi.owner
@@ -262,7 +261,7 @@ def open_draft_qi(self):
             return None
 
     except Exception as e:
-        frappe.throw("error in saving NJ QI", e, str(traceback.format_exc))
+        frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     
 @frappe.whitelist()
@@ -443,26 +442,6 @@ def get_repack_items(self):
     get_repack_items_list.append(get_unpack_items_dict)
 
     return get_repack_items_list
-
-@frappe.whitelist()
-def after_save_njqca(docname):
-    doc = frappe.get_doc("NJQCA", docname)
-    if doc.bios_serialno:
-        # update_serial_no_componont_for_grade(doc)
-        # department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-        # department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
-        
-        if doc.power_on == 'Yes':
-            qi_draft_data = open_draft_qi(doc) 
-            return qi_draft_data
-            # self.save()
-        elif doc.power_on == 'No':
-            frappe.throw(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
-        # else:
-        #     frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
-        # update_serial_no_component_for_njqca(doc)
-    else:
-        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel, serial_no):

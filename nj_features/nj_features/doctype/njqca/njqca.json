@@ -320,6 +320,7 @@
    "options": "NJQCA PROCESSOR"
   },
   {
+   "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length != 0",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
@@ -369,7 +370,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-26 14:58:11.199400",
+ "modified": "2024-12-28 12:28:14.640997",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

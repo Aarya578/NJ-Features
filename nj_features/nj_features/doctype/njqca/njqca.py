@@ -365,6 +365,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                     'item_group': nj_readings_data.get('item_group'),
                     'quality_check': nj_readings_data.get('quality_check'),
                     'item': nj_readings_data.get('item'),
+                    'item_group_idx': nj_readings_data.get('item_group_idx'),
                     'part_serial_no': nj_readings_data.get('part_serial_no'),
                     'previous_grade': nj_readings_data.get('previous_grade'),
                     'available_qty': nj_readings_data.get('available_qty'),
@@ -407,8 +408,7 @@ class NJQCA(Document):
             except Exception as e:
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
-            
-    
+
     def make_stock_entry_using_nj_lib(self):
 
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
@@ -1016,14 +1016,19 @@ def get_sudden_drop(parent_name, item_group):
         return e
         
 @frappe.whitelist()
-def get_njqca_item_template(item_group, brand, model, item_template=None):
-    wizard_list = ''
-    if not item_template:
-        item_template = get_item_template(brand, model, item_group)
-    if item_template:
-        wizard_list = has_item_wizards(item_template)
-        
-    return {'item_template': item_template, 'wizard_list': wizard_list}
+def get_njqca_item_template(item_group, brand, model):
+    try:
+        wizard_list, item_templates = '', None
+
+        item_templates = get_item_template(brand, model, item_group)
+        if item_templates:
+            wizard_list = has_item_wizards(item_templates)
+            
+        return {'item_template': item_templates, 'wizard_list': wizard_list}
+    
+    except Exception as e:
+        frappe.throw(f"An error occurred at get_njqca_item_template: {str(e)}")
+        return None
 
 @frappe.whitelist()
 def get_serial_no_attribute_data(serial_no):
@@ -1099,9 +1104,3 @@ def get_item_code_filtered_data(doctype, txt, searchfield, start, page_len, filt
         as_list=1,
         or_filters=[ ["attribute_value", "like", f"%{txt}%"] ]
     )
-
-def open_njpulse(doctype_url):
-    pwd = frappe.utils.password.get_decrypted_password('User', frappe.session.user)
-    if pwd and doctype_url is not None:
-        return f'https://njpulse.newjaisa.com/api/authenticate?usr={frappe.session.user}&pwd={pwd}&doctype_url=qi/{doctype_url}'
-    return 'https://njpulse.newjaisa.com/'

@@ -57,8 +57,9 @@ frappe.ui.form.on('NJQCA', {
             get_model(cur_frm.doc.manufacturer_model);
         }
 
-        if (frm.doc.docstatus == 0) {
-
+        if (frm.doc.docstatus == 0 && frm.doc.item_template) {
+            cur_frm.set_df_property('item_template', 'read_only', 1);
+            cur_frm.refresh_field('item_template');
         }
         
 	},
@@ -333,81 +334,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
 
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
-                args: {
-                    'model': selectedModel,
-                    'brand': selectedBrand,
-                    'item_group': selectedItemGroup,
-                    'item_template': cur_frm.doc.item_template
-                },
-                callback: function(r) {
-                    if (r.message) {
-    
-                        var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
-    
-                        if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
-                            cur_frm.set_value('item_template', '');
-                            if (itemTemplates.length == 1) {
-                                cur_frm.set_value('item_template', itemTemplates[0]);
-                                cur_frm.set_df_property('item_template', 'read_only', 1);
-    
-                                $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
-                                    'border-radius': '0.25rem',
-                                    'border': '2px solid rgba(173, 216, 230, 0.5)' 
-                                });
-    
-                                var selectedOption = itemTemplates[0];
-                                var wizardList = r.message.wizard_list || [];
-    
-                                if (wizardList.includes(selectedOption)) {
-                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'green');
-                                } else {
-                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
-                                }
-
-                            } else {
-                                cur_frm.set_df_property('item_template', 'read_only', 0);
-                                var wizardList = r.message.wizard_list || [];
-                                cur_frm.set_df_property('item_template', 'options', itemTemplates);
-                                
-                                $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
-                                    'border-radius': '0.25rem',
-                                    'border': '2px solid rgba(173, 216, 230, 0.5)'  
-                                });
-    
-                                frm.fields_dict.item_template.$input.on('change', function() {
-                                    var selectedOption = $(this).val();
-                                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
-                                    if (wizardList.includes(selectedOption)) {
-                                        $(this).closest('.control-input-wrapper').css('border-color', 'green');
-                                    } else {
-                                        $(this).closest('.control-input-wrapper').css('border-color', 'red');
-                                    }
-                                });
-    
-                                frappe.show_alert({
-                                    message: __('Select Item Template'),
-                                    indicator: 'green'
-                                });
-                            }
-
-                        } else {
-                            cur_frm.set_df_property('item_template', 'read_only', 0);
-                            cur_frm.set_value('item_template', '');
-                            cur_frm.set_df_property('item_template', 'options', []);
-                            
-                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
-                                'border-radius': '0.25rem',
-                                'border': '2px solid red'
-                            });
-                            
-                            frappe.msgprint(__("Item Template is not found using <b>Brand: {0}</b>,<br><b>Model: {1}</b>,<br><b>Item Group: {2}</b>.<br>Please contact <b>NPD Team.</b>", 
-                                [selectedBrand, selectedModel, selectedItemGroup]));
-                        }
-                    }
-                }
-            });
+            get_item_template(selectedModel, selectedBrand, selectedItemGroup)
 
         } else {
             cur_frm.set_df_property('item_template', 'options', []);
@@ -503,6 +430,81 @@ function processItemTemplate(frm) {
             }
         });
     }
+}
+
+function get_item_template(model, brand, item_group) {
+    frappe.call({
+        method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
+        args: {
+            'model': model,
+            'brand': brand,
+            'item_group': item_group
+        },
+        callback: function(r) {
+            if (r.message) {
+                var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
+
+                if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
+                    cur_frm.set_value('item_template', '');
+                    if (itemTemplates.length == 1) {
+                        cur_frm.set_value('item_template', itemTemplates[0]);
+                        cur_frm.set_df_property('item_template', 'read_only', 1);
+                        cur_frm.refresh_field('item_template');
+                        $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid rgba(173, 216, 230, 0.5)' 
+                        });
+
+                        var selectedOption = itemTemplates[0];
+                        var wizardList = r.message.wizard_list || [];
+
+                        if (wizardList.includes(selectedOption)) {
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'green');
+                        } else {
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'red');
+                        }
+
+                    } else {
+                        cur_frm.set_df_property('item_template', 'read_only', 0);
+                        var wizardList = r.message.wizard_list || [];
+                        cur_frm.set_df_property('item_template', 'options', itemTemplates);
+                        cur_frm.refresh_field('item_template');
+                        $('[data-fieldname="item_template"]').focus().closest('.control-input-wrapper').css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid rgba(173, 216, 230, 0.5)'  
+                        });
+
+                        frm.fields_dict.item_template.$input.on('change', function() {
+                            var selectedOption = $(this).val();
+                            $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+                            if (wizardList.includes(selectedOption)) {
+                                $(this).closest('.control-input-wrapper').css('border-color', 'green');
+                            } else {
+                                $(this).closest('.control-input-wrapper').css('border-color', 'red');
+                            }
+                        });
+
+                        frappe.show_alert({
+                            message: __('Select Item Template'),
+                            indicator: 'green'
+                        });
+                    }
+
+                } else {
+                    cur_frm.set_value('item_template', '');
+                    cur_frm.set_df_property('item_template', 'options', []);
+                    cur_frm.refresh_field('item_template');
+                    $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({
+                        'border-radius': '0.25rem',
+                        'border': '2px solid red'
+                    });
+                    
+                    frappe.msgprint(__("Item Template is not found using <b>Brand: {0}</b>,<br><b>Model: {1}</b>,<br><b>Item Group: {2}</b>.<br>Please contact <b>NPD Team.</b>", 
+                        [selectedBrand, selectedModel, selectedItemGroup]));
+                }
+            }
+        }
+    });
 }
 
 function get_model(manufacturer_model) {

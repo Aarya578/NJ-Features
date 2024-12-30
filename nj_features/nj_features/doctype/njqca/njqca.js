@@ -53,15 +53,15 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
 
-        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 ) {
+        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 && !frm.doc.model) {
             get_model(cur_frm.doc.manufacturer_model);
         }
-
-        processItemTemplate(frm)
 
         if (frm.doc.docstatus == 0 && !frm.doc.item_template) {
             cur_frm.set_df_property('item_template', 'read_only', 1);
             cur_frm.refresh_field('item_template');
+
+            processItemTemplate(frm)
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {
@@ -334,7 +334,24 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
             processItemTemplate(frm);
         }
+    },
+    after_save:function(frm){
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+            args: {
+                'docname': cur_frm.doc.name
+            },
+            callback: function(r){
+                if(r.message){
+                    frm.set_value('qi_name', r.message);
+                    frm.set_df_property('qi_name', 'read_only', 1);
+                }else{
+                    console.error('QI name is not defined');
+                }
+            }
+        })
     }
+
 });
 
 function processItemTemplate(frm) {

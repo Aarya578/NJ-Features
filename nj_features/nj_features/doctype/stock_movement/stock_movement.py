@@ -85,6 +85,7 @@ def get_all_emp_warehouse(user):
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
+
     try:
         if isinstance(doc, str):
             doc = json.loads(doc)
@@ -92,6 +93,11 @@ def validate_stock_movement_for_grade(doc):
         error_messages = []
 
         for row in doc.get('items', []):
+            has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
+
+            if not has_serialized:
+                continue
+
             t_warehouse = row.get('t_warehouse')
             serial_no = row.get('serial_no')
 

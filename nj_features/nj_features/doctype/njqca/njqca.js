@@ -53,15 +53,15 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
 
-        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 && !frm.doc.model) {
+        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 ) {
             get_model(cur_frm.doc.manufacturer_model);
         }
+
+        processItemTemplate(frm)
 
         if (frm.doc.docstatus == 0 && !frm.doc.item_template) {
             cur_frm.set_df_property('item_template', 'read_only', 1);
             cur_frm.refresh_field('item_template');
-
-            processItemTemplate(frm)
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {

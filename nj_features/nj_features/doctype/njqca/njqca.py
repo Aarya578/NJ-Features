@@ -52,10 +52,13 @@ def get_inspection_type():
 
 def open_draft_qi(self):
     try:
+        if not self.inspection_type:
+            self.inspection_type = get_inspection_type()
+
         if self.bios_serialno:
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
 
-        existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
+        existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':self.inspection_type, 'docstatus': 0}, limit=1)
         if existing_qi:
             # Get the existing document
             new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
@@ -568,8 +571,8 @@ def get_item_code_for_each_part(part_item_group, doc):
             for mapping in part_mapping:
                 last_variant_values = {}
                 item_group = row.get('item_group')
-
                 if item_group == mapping.get('item_group'):
+                    print("\n item_group", item_group, " mapping.get('item_group')", mapping.get('item_group'))
                     if not mapping.get('mappng_fields'): continue
                     if mapping.get('mappng_fields'):
                         variants = mapping.get('mappng_fields').split('::')
@@ -583,12 +586,14 @@ def get_item_code_for_each_part(part_item_group, doc):
                         any_undefined = any(value is None for value in attribute_value.values())
                         cpu_value = unk_cpu if any_undefined else ' - '.join(attribute_value.values())
                         normalize_cpu = normalize_gen(cpu_value)
+                        print("normalize_cpu",normalize_cpu)
                         attribute_object[mapping.get('attribute_name')] = normalize_cpu
 
                     elif item_group.lower() == ram.lower() and (row.get('variant_1') != 'SYSTEM MEMORY' and row.get('variant_1') != '[EMPTY]'):
                         any_undefined = any(value is None for value in attribute_value.values())
                         ram_value = unk_ram if any_undefined else ' '.join(attribute_value.values())
                         attribute_object[mapping.get('attribute_name')] = ram_value
+                        print("ram_value",ram_value)
                         if part_item_group == item_group:
                             if 'RAM Speed' in attribute_object and attribute_object['RAM Speed'] == 'UNBUFFERED MHZ':
                                 attribute_object['RAM Speed'] = 'UNKNOWN SPEED'
@@ -599,8 +604,10 @@ def get_item_code_for_each_part(part_item_group, doc):
                         )
                         if part_item_group == item_group:
                             attribute_object = set_storage_item_code(attribute_object)
+                            print("attribute_object 504",attribute_object)
 
                     if attribute_object and item_group != part_item_group:
+                        print("attribute_object 508",attribute_object)
                         child_attr_data.append(attribute_object)
 
             if part_item_group == item_group == mapping.get('item_group'):
@@ -643,11 +650,13 @@ def get_item_code_for_each_part(part_item_group, doc):
                             'item_template': item_template,
                             'response': 'error'
                         })
-
+        print("part_data",part_data, " | part_item_group", part_item_group, " | doc.get('item_group')", doc.get('item_group'))
         if part_item_group != doc.get('item_group'):
+            print("if")
             return part_data
 
         if part_item_group == doc.get('item_group'):
+            print("else")
             item_template = doc.get('item_template')
             item_template_exists = frappe.db.get_value(
                 'Item',
@@ -689,7 +698,6 @@ def get_part_mapping(doc):
 
             for part in part_mapping:
                 result = get_item_code_for_each_part(part.get("item_group"), doc)
-
                 if result and 'error' not in result:
                     part_data.extend(result)
             
@@ -698,7 +706,7 @@ def get_part_mapping(doc):
             
             return repack_item_code
         except Exception as e:
-            frappe.throw(f"An error occurred: {str(e)}{str(traceback.format_exc())}")
+            frappe.throw(f"An error occurred in get_part_mapping: {str(e)}{str(traceback.format_exc())}")
 
 def consolidate_ram_capacities(data):
     consolidated_data = []

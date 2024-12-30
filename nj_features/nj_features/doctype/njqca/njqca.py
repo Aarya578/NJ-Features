@@ -52,10 +52,10 @@ def get_inspection_type():
 
 def open_draft_qi(self):
     try:
-        inspection_type = get_inspection_type()
-        if not inspection_type:
-            inspection_type = self.inspection_type
-        self.inspection_type = inspection_type
+        inspection_type = self.inspection_type
+
+        if not self.inspection_type:
+            inspection_type = get_inspection_type()
 
         if self.bios_serialno:
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
@@ -86,7 +86,10 @@ def open_draft_qi(self):
             SELECT component_type from `tabComponent` where parent = %s"""
             component_type_data = frappe.db.sql(component_type,(item_wizard_name,),as_dict= True)
             item_group_data = [a['component_type'] for a in component_type_data]
+
         config_data_2_qi = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"config"},"value")
+        if not config_data_2_qi:
+            frappe.throw("NJQCA Config is not found. Please contact IT Team.")
 
         if config_data_2_qi:
             try:
@@ -389,9 +392,13 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-    base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-    njqi_link = f"{base_url}qi/{new_qi.name}/0"
-    frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
+
+    if new_qi.name:
+        base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+        if not base_url:
+            frappe.throw("NJPLUSE URL for QI is not found in NJ Settings. Please contact IT Team.")
+        njqi_link = f"{base_url}qi/{new_qi.name}/0"
+        frappe.msgprint(f"NJ QI has been updated successfully..! <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    
     return True 
 
@@ -981,6 +988,8 @@ def get_part_item_code_filtered_data(item_group):
 def get_sudden_drop(parent_name, item_group):
     try:
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+        if not njqca_battery_item_group:
+            frappe.throw("NJQCA Battery Item Group is not set in NJ Settings. Please contact IT Team.")
         if njqca_battery_item_group == item_group:
 
             delta_query="""WITH FilteredResults AS (

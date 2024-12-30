@@ -165,3 +165,22 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
                         f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                         f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
                     )
+    elif is_component:
+        for restriction in department_doc.get('stock_movement_restriction_table', []):
+            
+            restricted_grades = [grade.upper() for grade in restriction.get('restricted_grade', "").split(", ")]
+            
+            if (serial_doc.get('item_group') == restriction.get('item_group') and
+                    get_item_code_and_warehouse(serial_doc.get('item_code')).upper() in restricted_grades):
+                error_messages.append(
+                    f"Serial No <b>{serial_doc.name}</b> for item_group <b>{serial_doc.get('item_group')}</b> "
+                    f"has a grade <b>{serial_doc.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                )
+
+def get_item_code_and_warehouse(item_code):
+    
+    grade = frappe.db.get_value("Item Variant Attribute", {"parent": item_code, "attribute": "Grade"}, "attribute_value")
+    if not grade:
+        frappe.throw("No 'Grade' found for the given Item Code: <b>" + item_code + "</b>")
+    
+    return grade

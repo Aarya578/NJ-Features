@@ -234,7 +234,7 @@ frappe.ui.form.on('NJQCA', {
                     });
 
                     if(!frappe.user.has_role("IQC Manager") && frm.doc.serial_no){
-                        cur_frm.set_df_property('serial_no', 'read_only', 1);
+                        // cur_frm.set_df_property('serial_no', 'read_only', 1);
                     }
                 }
             });

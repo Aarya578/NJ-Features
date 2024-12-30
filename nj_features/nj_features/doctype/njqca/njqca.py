@@ -266,6 +266,7 @@ def open_draft_qi(self):
             return None
 
     except Exception as e:
+        print("error in saving NJ QI----269", str(e))
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     

@@ -65,8 +65,8 @@ def open_draft_qi(self):
             new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
         else:
             new_qi = frappe.new_doc('NJ Quality Inspection')
-            new_qi.inspection_type = self.inspection_type 
-            new_qi.barcode = serial_num
+            new_qi.inspection_type = inspection_type 
+            new_qi.barcode = self.serial_no if self.serial_no else serial_num
             new_qi.njqca_laptop_name = self.name
             new_qi.inspected_by = new_qi.owner
             if self.manual_repack_item_code :
@@ -356,8 +356,10 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
-    if not barcode or not inspection_type:
-        frappe.throw("Error: Barcode or Inspection Type is not found.")
+    if not barcode:
+        frappe.throw("Error: Barcode is not found.")
+    if not inspection_type:
+        frappe.throw("Error: Inspection Type is not found.")
     
     response = frappe._dict()
     
@@ -495,7 +497,7 @@ def get_info_from_serial_no(doc=None):
         result = {}
         sle = None
         doc_json = json.loads(doc)
-        bio_serial_no_in_ui = None
+        bio_serial_no_in_ui = doc_json['bios_serialno']
 
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 

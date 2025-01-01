@@ -363,7 +363,7 @@ function processItemTemplate(frm) {
                 if (r.message.error) {
                     frappe.msgprint("Serialized Item Code: <b>" + r.message.error + "</b> is not found. Please contact NPD Team");
                 } else if (r.message.repack_item_code.error) {
-                    frappe.msgprint("Error while creating of Repack Item Code: <b>" + r.message.repack_item_code.error + "</b> Please contact NPD Team");
+                    console.log("Error while creating of Repack Item Code: <b>" + r.message.repack_item_code.error + "</b> Please contact NPD Team");
                 } else {
                     frm.set_value('data_attr', r.message.data_attr);
                     frm.set_value('repack_item_code', r.message.repack_item_code);

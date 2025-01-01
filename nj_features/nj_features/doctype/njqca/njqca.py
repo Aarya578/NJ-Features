@@ -9,7 +9,6 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 @frappe.whitelist()
@@ -269,7 +268,6 @@ def open_draft_qi(self):
             return None
 
     except Exception as e:
-        print("error in saving NJ QI----269", str(e))
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     
@@ -495,23 +493,13 @@ def brand_model_validation(brand=None, model=None):
 def get_info_from_serial_no(doc=None):
     try:
         result = {}
+        sle = None
         doc_json = json.loads(doc)
         bio_serial_no_in_ui = None
 
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'bios_serialno' in doc_json:
-            bio_serial_no_in_ui = doc_json['bios_serialno']
-
-            sql_query = """
-                SELECT item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
-                FROM `tabSerial No`
-                WHERE bios_serial_no = %s"""
-
-            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
-
-        elif 'serial_no' in doc_json:
+        if 'serial_no' in doc_json:
 
             serial_no = doc_json['serial_no']
             # get price from Stock Ledger Entry
@@ -520,7 +508,7 @@ def get_info_from_serial_no(doc=None):
                 SELECT item_code, warehouse, purchase_rate,
                     bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
-                WHERE serial_no = %s"""
+                WHERE name = %s"""
 
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
 
@@ -531,6 +519,17 @@ def get_info_from_serial_no(doc=None):
                         frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
                     else:
                         frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""", (bio_serial_no_in_ui,serial_no))
+
+        elif 'bios_serialno' in doc_json:
+            bio_serial_no_in_ui = doc_json['bios_serialno']
+
+            sql_query = """
+                SELECT item_code, warehouse, purchase_rate,
+                    bios_serial_no, model, item_group, brand
+                FROM `tabSerial No`
+                WHERE bios_serial_no = %s"""
+
+            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
 
         if sle and len(sle) > 0:
             sle_entry = sle[0]
@@ -547,6 +546,9 @@ def get_info_from_serial_no(doc=None):
             result['item_group'] = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
 
+        else:
+            return "Serial No is not found."
+            
         sudden_drop = get_sudden_drop(doc_json['name'], doc_json['item_group'])
 
         if sudden_drop:
@@ -567,7 +569,6 @@ def after_save_njqca(docname):
         
         if doc.power_on == 'Yes':
             qi_name = open_draft_qi(doc) 
-            print('getting qi_name -------------- 434 ', qi_name)
             return qi_name
             # self.save()
         elif doc.power_on == 'No':

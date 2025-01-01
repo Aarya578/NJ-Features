@@ -335,7 +335,7 @@ frappe.ui.form.on('NJQCA', {
             processItemTemplate(frm);
         }
     },
-    after_save:function(frm){
+    before_save:function(frm){
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
             args: {

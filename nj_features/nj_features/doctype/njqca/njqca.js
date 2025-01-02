@@ -53,15 +53,15 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
 
-        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 ) {
+        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 && !frm.doc.model) {
             get_model(cur_frm.doc.manufacturer_model);
         }
-
-        processItemTemplate(frm)
 
         if (frm.doc.docstatus == 0 && !frm.doc.item_template) {
             cur_frm.set_df_property('item_template', 'read_only', 1);
             cur_frm.refresh_field('item_template');
+
+            processItemTemplate(frm)
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {
@@ -234,7 +234,7 @@ frappe.ui.form.on('NJQCA', {
                     });
 
                     if(!frappe.user.has_role("IQC Manager") && frm.doc.serial_no){
-                        cur_frm.set_df_property('serial_no', 'read_only', 1);
+                        // cur_frm.set_df_property('serial_no', 'read_only', 1);
                     }
                 }
             });
@@ -334,7 +334,24 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
             processItemTemplate(frm);
         }
+    },
+    before_save:function(frm){
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+            args: {
+                'docname': cur_frm.doc.name
+            },
+            callback: function(r){
+                if(r.message){
+                    frm.set_value('qi_name', r.message);
+                    frm.set_df_property('qi_name', 'read_only', 1);
+                }else{
+                    console.error('QI name is not defined');
+                }
+            }
+        })
     }
+
 });
 
 function processItemTemplate(frm) {
@@ -346,7 +363,7 @@ function processItemTemplate(frm) {
                 if (r.message.error) {
                     frappe.msgprint("Serialized Item Code: <b>" + r.message.error + "</b> is not found. Please contact NPD Team");
                 } else if (r.message.repack_item_code.error) {
-                    frappe.msgprint("Error while creating of Repack Item Code: <b>" + r.message.repack_item_code.error + "</b> Please contact NPD Team");
+                    console.log("Error while creating of Repack Item Code: <b>" + r.message.repack_item_code.error + "</b> Please contact NPD Team");
                 } else {
                     frm.set_value('data_attr', r.message.data_attr);
                     frm.set_value('repack_item_code', r.message.repack_item_code);

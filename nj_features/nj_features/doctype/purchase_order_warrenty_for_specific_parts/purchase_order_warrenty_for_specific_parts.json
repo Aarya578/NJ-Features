@@ -1,0 +1,39 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-12-30 17:16:36.680439",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "warranty_days"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "mandatory_depends_on": "eval:doc.part_warranty == 1\n",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "warranty_days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Warranty Days"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2024-12-31 10:36:10.578141",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Purchase Order Warrenty for Specific Parts",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

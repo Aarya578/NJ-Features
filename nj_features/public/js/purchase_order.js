@@ -132,3 +132,11 @@ $.extend(frappe.model, {
         });
     }
 });
+
+
+frappe.ui.form.on("Purchase Order Warrenty for Specific Parts", {
+    purchase_order_warrenty_for_specific_parts_add: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
+        frappe.model.set_value(cdt, cdn, 'warranty_days', frm.doc.warranty_days);
+    }
+})

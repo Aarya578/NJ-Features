@@ -103,7 +103,7 @@ def open_draft_qi(self):
             latest_qi = existing_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now(), latest_qi.creation)
             
-            if time_diff < 120:  # 1200 seconds = 20 minutes
+            if time_diff < 1200:  # 1200 seconds = 20 minutes
                 # If the process is not 'njqca', reuse existing QI if less than 20 minutes old
                     print("Reusing existing QI----")
                     new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)

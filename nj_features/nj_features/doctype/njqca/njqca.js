@@ -381,7 +381,6 @@ function processItemTemplate(frm) {
                     });
                 }
                 if (r.message.part_data) {
-                    console.log("part_data", r.message.part_data);
                     
                     const partData = JSON.parse(r.message.part_data);
                     frm.clear_table("njqca_laptop_ram");

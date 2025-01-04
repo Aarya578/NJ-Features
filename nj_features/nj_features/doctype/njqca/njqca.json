@@ -1,7 +1,6 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
  "autoname": "NJQCA-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
  "doctype": "DocType",
@@ -58,7 +57,8 @@
   "section_break_d2ocq",
   "amended_from",
   "event_trigger_section",
-  "njqca_event_trigger"
+  "njqca_event_trigger",
+  "pwd"
  ],
  "fields": [
   {
@@ -365,12 +365,18 @@
   {
    "fieldname": "column_break_w1v6n",
    "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "pwd",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "pwd"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-28 17:09:45.264278",
+ "modified": "2025-01-01 15:37:12.064940",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

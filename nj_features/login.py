@@ -1,20 +1,19 @@
+import json
 import frappe
 import traceback
-import json
-from frappe import auth
 from frappe.utils import get_url
-from nj_features.hooks import ENCRYPTION_KEY
 from nj_lib.utils.common_utils import get_active_user
-# from nj_features.nj_features.api.encryption import decrypt, encrypt
+from nj_features.nj_features.api.encryption import Encryption
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 
 @frappe.whitelist(allow_guest=True)
-def login(usr, pwd, doctype_url=None):
+def login(usr, pwd, encrypted_pwd=False, doctype_url=None):
     try:
+        encryption = Encryption()
+        if encrypted_pwd:
+            pwd = encryption.decrypt(pwd)
         login_manager = frappe.auth.LoginManager()
-        # if " " in pwd:
-        #     pwd = decrypt(pwd, ENCRYPTION_KEY)
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()
 
@@ -83,7 +82,6 @@ def login(usr, pwd, doctype_url=None):
                 }
                 response.data = json.dumps(payload)
                 
-                # Redirect to the new URL
                 return redirect(redirect_url)
 
         else:

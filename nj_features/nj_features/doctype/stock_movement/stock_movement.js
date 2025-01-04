@@ -166,13 +166,15 @@ frappe.ui.form.on('Stock Movement', {
         autofill_warehouse(frm.doc.items, "s_warehouse", frm.doc.default_source_warehouse);
     },
 
-    before_save: function(frm) {
+    validate: function (frm) {
+
         frappe.call({
             method: "nj_features.nj_features.doctype.stock_movement.stock_movement.validate_stock_movement_for_grade",
             args: {
                 doc: frm.doc
             },
-            callback: function(r) {
+            async: false, 
+            callback: function (r) {
                 if (r && r.message) {
                     if (r.message.error) {
                         frappe.msgprint({
@@ -180,15 +182,13 @@ frappe.ui.form.on('Stock Movement', {
                             message: __(r.message.error),
                             indicator: 'red'
                         });
-                        frappe.validated = false;
+                        frappe.validated = false; 
+                        return; 
                     }
                 }
             }
         });
-    },    
-	
-    validate: function (frm) {
-
+    
         if (cur_frm.doc.move_stock == 1) {
             for (var i = 0; i < frm.doc.items.length; i++) {
                 (function (index) {
@@ -199,12 +199,17 @@ frappe.ui.form.on('Stock Movement', {
                             args: {
                                 doctype: "Warehouse",
                                 filters: { 'name': t_warehouse },
-                                fieldname: "available_capacity"
+                                fieldname: ["available_capacity", "max_capacity", "qty_after_transaction"]
                             },
                             async: false,
                             callback: function (response) {
                                 if (response && response.message && frm.doc.items[i]) {
-                                    if (frm.doc.items[i].qty > response.message.available_capacity || frm.doc.items[i].qty > (response.message.max_capacity - response.message.qty_after_transaction)) {
+                                    const available_capacity = response.message.available_capacity;
+                                    const max_capacity = response.message.max_capacity;
+                                    const qty_after_transaction = response.message.qty_after_transaction;
+                                    const item_qty = frm.doc.items[i].qty;
+    
+                                    if (item_qty > available_capacity || item_qty > (max_capacity - qty_after_transaction)) {
                                         var msg = frappe.msgprint({
                                             message: `Reached maximum capacity of the warehouse in <strong>"${t_warehouse}"</strong>`,
                                             title: "Message",
@@ -215,17 +220,20 @@ frappe.ui.form.on('Stock Movement', {
                                                 label: "OK"
                                             }
                                         });
-                                        frappe.validated = false;
+                                        frappe.validated = false; 
+                                        return;
                                     }
                                 }
                             }
                         });
+    
                         $('[data-fieldname="scan_barcode"]').focus();
                     }
                 })(i);
             }
         }
-    },
+    }
+    
     // after_submit(frm) {
     //     setTimeout(function(){
     //         frappe.set_route('List', frm.doc.doctype);

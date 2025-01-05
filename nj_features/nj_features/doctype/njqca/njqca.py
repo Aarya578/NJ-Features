@@ -268,6 +268,13 @@ def open_draft_qi(self):
                     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
                 """
                 field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+                item_group_idx= frappe.db.sql("""
+                    SELECT item_group_idx
+                    FROM `tabNj Quality Readings`
+                    WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
+                # print("item_group_idx-------------275----",item_group_idx)
+                if item_group_idx:
+                    item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
 
                 if field_name_data:
                     for field in field_name_data:
@@ -290,6 +297,8 @@ def open_draft_qi(self):
                             child_table.item_group = data.get("item_group")
                             # Default to data.get('value')
                             child_table.options = data.get('value')
+                            if item_group_idx_value:
+                                child_table.item_group_idx = item_group_idx_value
 
                         if sql_check_option_automatic:
                             for option in sql_check_option_automatic:
@@ -304,6 +313,8 @@ def open_draft_qi(self):
                                         child_table.check_name = name_of_check
                                         child_table.item_group = data.get("item_group")
                                         child_table.options = option["check_options"]
+                                        if item_group_idx_value:
+                                            child_table.item_group_idx = item_group_idx_value
                                         existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
                                     break
 
@@ -536,6 +547,7 @@ def brand_model_validation(brand=None, model=None):
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
     try:
+        sle = []
         result = {}
         doc_json = json.loads(doc)
         bio_serial_no_in_ui = None
@@ -552,9 +564,9 @@ def get_info_from_serial_no(doc=None):
                 WHERE bios_serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
-            print('sle===========',sle)
+            # print('sle=======if====',sle)
 
-        elif 'serial_no' in doc_json:
+        if 'serial_no' in doc_json and not sle:
 
             serial_no = doc_json['serial_no']
             # get price from Stock Ledger Entry
@@ -566,7 +578,7 @@ def get_info_from_serial_no(doc=None):
                 WHERE serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-            print('sle===========',sle)
+            # print('sle=====elif======',sle)
 
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
@@ -579,7 +591,7 @@ def get_info_from_serial_no(doc=None):
         if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-            print('sle_entry===========',sle_entry)
+            # print('sle_entry===========',sle_entry)
             result['item_code'] = sle_entry.get('item_code')
             result['warehouse'] = sle_entry.get('warehouse')
             result['base_price'] = sle_entry.get('purchase_rate')
@@ -595,7 +607,7 @@ def get_info_from_serial_no(doc=None):
 
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
-        print('result============', result)
+        # print('result============', result)
         return result
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
@@ -611,7 +623,7 @@ def after_save_njqca(docname):
         
         if doc.power_on == 'Yes':
             qi_name = open_draft_qi(doc) 
-            print('getting qi_name -------------- 434 ', qi_name)
+            # print('getting qi_name -------------- 434 ', qi_name)
             return qi_name
             # self.save()
         elif doc.power_on == 'No':

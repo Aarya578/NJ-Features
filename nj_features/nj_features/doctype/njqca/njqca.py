@@ -47,7 +47,7 @@ def get_inspection_type():
     if inspection_type:
         return inspection_type
     else:
-        frappe.throw("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+        frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
 
 def open_draft_qi(self):
     # try:
@@ -451,6 +451,11 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
+    
+    base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+    if not base_url:
+        frappe.throw("NJPulse URL is not found in NJ Settings.")
+    njqi_link = f"{base_url}qi/{new_qi.name}/0"
     
     frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    

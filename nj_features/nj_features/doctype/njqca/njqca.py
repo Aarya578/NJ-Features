@@ -318,7 +318,11 @@ def open_draft_qi(self):
         new_qi.save()
 
         if new_qi.name:
-            return new_qi.name
+            njpulse_url = "https://njpulse.newjaisa.com/"
+            if self.pwd:
+                njpulse_url = njpulse_url + "api/authenticate?usr=" + self.created + "&pwd=" + self.pwd + "&encrypted_pwd=True&doctype_url=qi/" + new_qi.name
+
+            return {"qi_name": new_qi.name, "njpulse_url": njpulse_url}
         else:
             return None
 
@@ -615,8 +619,8 @@ def after_save_njqca(docname):
         # department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
         
         if doc.power_on == 'Yes':
-            qi_name = open_draft_qi(doc) 
-            return qi_name
+            qi_draft_data = open_draft_qi(doc) 
+            return qi_draft_data
         elif doc.power_on == 'No':
             frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
         # else:

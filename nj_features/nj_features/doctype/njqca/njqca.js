@@ -344,9 +344,11 @@ frappe.ui.form.on('NJQCA', {
                 'docname': cur_frm.doc.name
             },
             callback: function(r){
-                if(r.message){
-                    frm.set_value('qi_name', r.message);
-                    frm.set_df_property('qi_name', 'read_only', 1);
+                if(r && r.message){
+                    frm.set_value('qi_name', r.message.qi_name);
+                    frm.refresh_field('qi_name');
+
+                    window.open(r.message.njpulse_url, "_blank");
                 } else {
                     console.error('QI name is not defined');
                 }

@@ -162,23 +162,30 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_save:function(frm){
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-            args: {
-                'docname': cur_frm.doc.name
-            },
-            callback: function(r){
-                if(r && r.message){
-                    frm.set_value('qi_name', r.message.qi_name);
-                    frm.refresh_field('qi_name');
+    before_save: function(frm) {
+        if (!window.isWindowOpened) {
+            window.isWindowOpened = false; // Initialize flag if not already set
 
-                    window.open(r.message.njpulse_url, "_blank");
-                } else {
-                    console.error('QI name is not defined');
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: {
+                    'docname': cur_frm.doc.name
+                },
+                callback: function(r) {
+                    if (r && r.message) {
+                        frm.set_value('qi_name', r.message.qi_name);
+                        frm.refresh_field('qi_name');
+
+                        if (!window.isWindowOpened) {
+                            window.open(r.message.njpulse_url, "_blank");
+                            window.isWindowOpened = true;
+                        }
+                    } else {
+                        console.error('QI name is not defined');
+                    }
                 }
-            }
-        })
+            });
+        }
     },
 
     before_submit: function(frm) {

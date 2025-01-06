@@ -318,7 +318,9 @@ def open_draft_qi(self):
         new_qi.save()
 
         if new_qi.name:
-            njpulse_url = "https://njpulse.newjaisa.com/"
+            njpulse_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+            if not njpulse_url:
+                frappe.throw("NJPulse URL is not found in NJ Settings.")
             if self.pwd:
                 njpulse_url = njpulse_url + "api/authenticate?usr=" + self.created + "&pwd=" + self.pwd + "&encrypted_pwd=True&doctype_url=qi/" + new_qi.name
 
@@ -449,8 +451,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-    base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-    njqi_link = f"{base_url}qi/{new_qi.name}/0"
+    
     frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    
     return True 

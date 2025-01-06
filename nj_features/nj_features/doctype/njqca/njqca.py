@@ -9,7 +9,6 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_features.nj_features.report.actual_qty_by_warehouse_owner.actual_qty_by_warehouse_owner import execute
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 @frappe.whitelist()
@@ -105,13 +104,11 @@ def open_draft_qi(self):
             
             if time_diff < 1200:  # 1200 seconds = 20 minutes
                 # If the process is not 'njqca', reuse existing QI if less than 20 minutes old
-                    print("Reusing existing QI----")
                     new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                     create_new_qi = False
             else:
                 # Create new QI if more than 20 minutes old
                 create_new_qi = True 
-                print("Creating new QI----")
         
         if create_new_qi:
             new_qi = frappe.new_doc('NJ Quality Inspection')
@@ -315,7 +312,6 @@ def open_draft_qi(self):
             return None
 
     except Exception as e:
-        print("error in saving NJ QI----269", str(e))
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     
@@ -536,6 +532,7 @@ def brand_model_validation(brand=None, model=None):
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
     try:
+        sle = []
         result = {}
         doc_json = json.loads(doc)
         bio_serial_no_in_ui = None
@@ -552,9 +549,8 @@ def get_info_from_serial_no(doc=None):
                 WHERE bios_serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
-            print('sle===========',sle)
 
-        elif 'serial_no' in doc_json:
+        if 'serial_no' in doc_json and not sle:
 
             serial_no = doc_json['serial_no']
             # get price from Stock Ledger Entry
@@ -566,7 +562,6 @@ def get_info_from_serial_no(doc=None):
                 WHERE serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-            print('sle===========',sle)
 
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
@@ -579,7 +574,6 @@ def get_info_from_serial_no(doc=None):
         if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-            print('sle_entry===========',sle_entry)
             result['item_code'] = sle_entry.get('item_code')
             result['warehouse'] = sle_entry.get('warehouse')
             result['base_price'] = sle_entry.get('purchase_rate')
@@ -595,7 +589,6 @@ def get_info_from_serial_no(doc=None):
 
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
-        print('result============', result)
         return result
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
@@ -611,11 +604,9 @@ def after_save_njqca(docname):
         
         if doc.power_on == 'Yes':
             qi_name = open_draft_qi(doc) 
-            print('getting qi_name -------------- 434 ', qi_name)
             return qi_name
-            # self.save()
         elif doc.power_on == 'No':
-            frappe.throw(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
         # else:
         #     frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
         # update_serial_no_component_for_njqca(doc)

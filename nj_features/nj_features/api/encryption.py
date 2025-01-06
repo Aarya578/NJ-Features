@@ -1,4 +1,4 @@
-def encrypt(msg, shift):
+def encrypt(msg, shift=4):
     encrypted_msg = []
     
     for char in msg:
@@ -15,7 +15,7 @@ def encrypt(msg, shift):
     
     return ''.join(encrypted_msg)
 
-def decrypt(encrypted_msg, shift):
+def decrypt(encrypted_msg, shift=4):
     decrypted_msg = []
     
     i = 0

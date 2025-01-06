@@ -423,9 +423,9 @@ function processItemTemplate(frm) {
                         }
                     });
 
-                    frm.model.set_df_property('njqca_laptop_ram', 'collapsible', 1);
-                    frm.model.set_df_property('njqca_laptop_processors', 'collapsible', 1);
-                    frm.model.set_df_property('njqca_laptop_storage', 'collapsible', 1);
+                    frm.set_df_property('laptop_processor_section', 'collapsible', 1);
+                    frm.set_df_property('laptop_ram_section', 'collapsible', 1);
+                    frm.set_df_property('laptop_storage_section', 'collapsible', 1);
 
                     frm.refresh_field("njqca_laptop_ram");
                     frm.refresh_field("njqca_laptop_processors");

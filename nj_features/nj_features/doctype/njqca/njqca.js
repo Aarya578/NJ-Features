@@ -60,6 +60,12 @@ frappe.ui.form.on('NJQCA', {
 
         if (frm.doc.docstatus == 0) {
             processItemTemplate(frm)
+            if (frm.doc.item_template) {
+                frm.set_df_property('item_template', 'read-only', 1)
+                frm.refresh_field('item_template')
+            } else {
+                frm.events.item_template(frm);
+            }
         }
         
         if (frm.doc.docstatus == 0 && !frm.doc.item_group) {

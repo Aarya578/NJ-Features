@@ -265,6 +265,13 @@ def open_draft_qi(self):
                     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
                 """
                 field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+                item_group_idx= frappe.db.sql("""
+                    SELECT item_group_idx
+                    FROM `tabNj Quality Readings`
+                    WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
+                # print("item_group_idx-------------275----",item_group_idx)
+                if item_group_idx:
+                    item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
 
                 if field_name_data:
                     for field in field_name_data:
@@ -287,6 +294,8 @@ def open_draft_qi(self):
                             child_table.item_group = data.get("item_group")
                             # Default to data.get('value')
                             child_table.options = data.get('value')
+                            if item_group_idx_value:
+                                child_table.item_group_idx = item_group_idx_value
 
                         if sql_check_option_automatic:
                             for option in sql_check_option_automatic:
@@ -301,6 +310,8 @@ def open_draft_qi(self):
                                         child_table.check_name = name_of_check
                                         child_table.item_group = data.get("item_group")
                                         child_table.options = option["check_options"]
+                                        if item_group_idx_value:
+                                            child_table.item_group_idx = item_group_idx_value
                                         existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
                                     break
 
@@ -589,6 +600,7 @@ def get_info_from_serial_no(doc=None):
 
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
+
         return result
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"

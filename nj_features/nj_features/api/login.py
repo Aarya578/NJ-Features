@@ -5,13 +5,13 @@ from frappe.utils import get_url
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 from nj_lib.utils.common_utils import get_active_user
-from nj_features.nj_features.api.encryption import Encryption
+from nj_features.nj_features.api.encryption import decrypt
 
 @frappe.whitelist(allow_guest=True)
 def login(usr, pwd, encrypted_pwd=False, doctype_url=None):
     try:
         if encrypted_pwd:
-            pwd = Encryption().decrypt(pwd)
+            pwd = decrypt(pwd)
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()

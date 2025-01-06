@@ -614,21 +614,15 @@ def get_info_from_serial_no(doc=None):
 def after_save_njqca(docname):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
-        # update_serial_no_componont_for_grade(doc)
-        # department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-        # department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
-        
+
         if doc.power_on == 'Yes':
             qi_draft_data = open_draft_qi(doc) 
             return qi_draft_data
         elif doc.power_on == 'No':
             frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
-        # else:
-        #     frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
-        # update_serial_no_component_for_njqca(doc)
+
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
-
 
 def get_item_code_for_each_part(part_item_group, doc):
     item_group, item_template = '', ''

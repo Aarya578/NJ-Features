@@ -251,5 +251,3 @@ user_data_fields = [
 override_whitelisted_methods = {
     "nj_features.nj_features.api.date_time_api.current_date_time": "nj_features.nj_features.api.date_time_api.current_date_time"
 }
-
-ENCRYPTION_KEY = "Kert4590"

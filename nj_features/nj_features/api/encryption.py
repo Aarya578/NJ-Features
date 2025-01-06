@@ -1,31 +1,38 @@
-from nj_features.hooks import ENCRYPTION_KEY
+def encrypt(msg, shift):
+    encrypted_msg = []
+    
+    for char in msg:
+        if char.isalpha():  # For letters, shift by +1
+            if char.islower():
+                encrypted_msg.append(chr(((ord(char) - ord('a') + shift) % 26) + ord('a')))
+            else:
+                encrypted_msg.append(chr(((ord(char) - ord('A') + shift) % 26) + ord('A')))
+        elif char.isdigit():  # For digits, double and format with leading zero
+            doubled_value = int(char) * 2
+            encrypted_msg.append(f"{doubled_value:02d}")  # Ensures two-digit formatting
+        else:  # Special characters remain unchanged
+            encrypted_msg.append(char)
+    
+    return ''.join(encrypted_msg)
 
-class Encryption:
+def decrypt(encrypted_msg, shift):
+    decrypted_msg = []
     
-    # Function to convert binary data to hexadecimal format
-    def to_hex(self, data):
-        return ''.join(f'{ord(c):02x}' for c in data)
+    i = 0
+    while i < len(encrypted_msg):
+        char = encrypted_msg[i]
+        if char.isalpha():  # For letters, shift by -1
+            if char.islower():
+                decrypted_msg.append(chr(((ord(char) - ord('a') - shift) % 26) + ord('a')))
+            else:
+                decrypted_msg.append(chr(((ord(char) - ord('A') - shift) % 26) + ord('A')))
+            i += 1
+        elif char.isdigit():  # For digits, divide by 2
+            doubled_value = int(encrypted_msg[i:i+2])  # Take two digits
+            decrypted_msg.append(str(doubled_value // 2))
+            i += 2  # Skip over the next character because we processed two digits
+        else:  # Special characters remain unchanged
+            decrypted_msg.append(char)
+            i += 1
     
-    # Function to convert hexadecimal string back to binary data
-    def from_hex(self, hex_data):
-        return ''.join(chr(int(hex_data[i:i+2], 16)) for i in range(0, len(hex_data), 2))
-    
-    # Encryption function using XOR cipher
-    def encrypt(self, msg):
-        key = ENCRYPTION_KEY
-        key = (key * (len(msg) // len(key))) + key[:len(msg) % len(key)]  # Repeat the key as needed
-        
-        encrypted_msg = ''.join(chr(ord(msg[i]) ^ ord(key[i])) for i in range(len(msg)))
-        
-        return self.to_hex(encrypted_msg)
-    
-    # Decryption function, same as encrypt due to XOR symmetry
-    def decrypt(self, msg):
-        key = ENCRYPTION_KEY
-        decrypted_data = self.from_hex(msg)  # Convert hex back to binary data
-        
-        # XOR with the key to decrypt
-        key = (key * (len(decrypted_data) // len(key))) + key[:len(decrypted_data) % len(key)]  # Repeat the key
-        decrypted_msg = ''.join(chr(ord(decrypted_data[i]) ^ ord(key[i])) for i in range(len(decrypted_data)))
-        
-        return decrypted_msg
+    return ''.join(decrypted_msg)

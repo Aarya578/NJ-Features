@@ -40,7 +40,7 @@ frappe.ui.form.on('NJQCA', {
                 };
                 
                 if (frm.doc.model) { filters.item_model = frm.doc.model; }
-                if (frm.doc.item_template) { filters.variant_og = frm.doc.item_template; }
+                if (frm.doc.item_template) { filters.variant_of = frm.doc.item_template; }
                 
                 return { filters: filters };
             });

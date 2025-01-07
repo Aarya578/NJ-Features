@@ -350,6 +350,7 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
+                                    $('.primary-action').hide()
                                 }
                             });
                         }, () => { $('.primary-action').hide() })

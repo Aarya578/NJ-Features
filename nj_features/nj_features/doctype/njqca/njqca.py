@@ -580,7 +580,14 @@ def model_change_for_serial_no(newmodel, serial_no):
                     return { "status": 'success' }
                 else:
                     mr_data_query ="""select distinct(item_group) from `tabMaterial Request Item` where serial_no = %s AND post_order_status !='Completed' AND docstatus = 1"""
+                    past_part_list_query = """select distinct(item_group) from `tabPast Part List` where parent = %s"""
                     mr_item_group_data = frappe.db.sql(mr_data_query, (serial_no), as_dict=1)
+                    past_part_list_data = frappe.db.sql(past_part_list_query, (serial_no), as_dict=1)
+                    if past_part_list_data:
+                        for group in past_part_list_data:
+                            if group['item_group'] in not_matched_item_groups:
+                                frappe.throw(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact NPD Team.')
+                                return { "status": 'failed' }
                     for group in mr_item_group_data:
                         if group['item_group'] in not_matched_item_groups:
                             frappe.throw(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact NPD Team.')

@@ -19,12 +19,9 @@ class SalesInvoice(CoreSalesInvoice):
                     a.sales_order = %(sales_order)s
                     AND b.docstatus = 1
             """, {"sales_order": self.items[0].get("sales_order")}, as_dict=True)[0].get('total_grand_total') or 0
-            print("=========total invoiced =amount===24=====", total_invoiced)
 
             sales_order_amount = frappe.db.get_value("Sales Order", self.items[0].get("sales_order"), "grand_total")
-            print("==============sales - orders===amount ===30===", sales_order_amount)
             current_total = total_invoiced + self.grand_total
-            print("====alculate current total after including this invoice====34=", sales_order_amount)
 
             if current_total > sales_order_amount:
                 frappe.throw("Over-Invoicing is not allowed. Current total exceeds Sales Order amount.")

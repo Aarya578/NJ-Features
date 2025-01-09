@@ -40,6 +40,7 @@ frappe.ui.form.on('NJQCA', {
                 };
                 
                 if (frm.doc.model) { filters.item_model = frm.doc.model; }
+                if (frm.doc.item_template) { filters.variant_of = frm.doc.item_template; }
                 
                 return { filters: filters };
             });
@@ -57,11 +58,19 @@ frappe.ui.form.on('NJQCA', {
             get_model(cur_frm.doc.manufacturer_model);
         }
 
-        if (frm.doc.docstatus == 0 && !frm.doc.item_template) {
+        if (frm.doc.docstatus == 0) {
+            processItemTemplate(frm)
+            if (frm.doc.item_template) {
+                frm.set_df_property('item_template', 'read-only', 1)
+                frm.refresh_field('item_template')
+            } else {
+                frm.events.item_template(frm);
+            }
+        }
+        
+        if (frm.doc.docstatus == 0 && !frm.doc.item_group) {
             cur_frm.set_df_property('item_template', 'read_only', 1);
             cur_frm.refresh_field('item_template');
-
-            processItemTemplate(frm)
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {
@@ -150,6 +159,32 @@ frappe.ui.form.on('NJQCA', {
                 set_options_for_attribute_fields_in_child(frm, grid);
                 frm.refresh_field(child_table_fieldname[i])
             }
+        }
+    },
+
+    before_save: function(frm) {
+        if (!window.isWindowOpened) {
+            window.isWindowOpened = false; // Initialize flag if not already set
+
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: {
+                    'docname': cur_frm.doc.name
+                },
+                callback: function(r) {
+                    if (r && r.message) {
+                        frm.set_value('qi_name', r.message.qi_name);
+                        frm.refresh_field('qi_name');
+
+                        if (!window.isWindowOpened) {
+                            window.open(r.message.njpulse_url, "_blank");
+                            window.isWindowOpened = true;
+                        }
+                    } else {
+                        console.error('QI name is not defined');
+                    }
+                }
+            });
         }
     },
 
@@ -315,6 +350,7 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
+                                    $('.primary-action').hide()
                                 }
                             });
                         }, () => { $('.primary-action').hide() })
@@ -334,28 +370,11 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
             processItemTemplate(frm);
         }
-    },
-    before_save:function(frm){
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-            args: {
-                'docname': cur_frm.doc.name
-            },
-            callback: function(r){
-                if(r.message){
-                    frm.set_value('qi_name', r.message);
-                    frm.set_df_property('qi_name', 'read_only', 1);
-                }else{
-                    console.error('QI name is not defined');
-                }
-            }
-        })
     }
-
 });
 
 function processItemTemplate(frm) {
-    if (frm.doc.njqca_item_component && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
+    if (frm.doc.njqca_item_component && frm.doc.power_on == 'Yes') {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
             args: {'doc': frm.doc},
@@ -381,7 +400,6 @@ function processItemTemplate(frm) {
                     });
                 }
                 if (r.message.part_data) {
-                    console.log("part_data", r.message.part_data);
                     
                     const partData = JSON.parse(r.message.part_data);
                     frm.clear_table("njqca_laptop_ram");
@@ -418,6 +436,11 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }
                     });
+
+                    frm.set_df_property('laptop_processor_section', 'collapsible', 1);
+                    frm.set_df_property('laptop_ram_section', 'collapsible', 1);
+                    frm.set_df_property('laptop_storage_section', 'collapsible', 1);
+
                     frm.refresh_field("njqca_laptop_ram");
                     frm.refresh_field("njqca_laptop_processors");
                     frm.refresh_field("njqca_laptop_storage");

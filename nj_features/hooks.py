@@ -106,6 +106,7 @@ override_doctype_class = {
 	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
+    "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
 }
 
 # Document Events
@@ -151,25 +152,25 @@ doc_events = {
 #	]
 # }
 
-scheduler_events = {
-	"cron": {
-		# Every ten minutes
-		"*/2 * * * *": [
-			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
-		],
-		"0/30 * * * *": [
-			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
-		]
-	}
-}
+# scheduler_events = {
+# 	"cron": {
+# 		# Every ten minutes
+# 		"*/2 * * * *": [
+# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.schedule_get_order_details"
+# 		],
+# 		"0/30 * * * *": [
+# 			"nj_features.doctypes.amazon_sales_order.amazon_sales_order.amazon_shiped_status",
+# 		]
+# 	}
+# }
 
 scheduler_events = {
 	"cron": {
-		"0 22 * * *": [
-			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
-			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
-			"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
-		],
+		# "0 22 * * *": [
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
+		# ],
 		"0 23 * * *": [
 			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		]
@@ -251,5 +252,3 @@ user_data_fields = [
 override_whitelisted_methods = {
     "nj_features.nj_features.api.date_time_api.current_date_time": "nj_features.nj_features.api.date_time_api.current_date_time"
 }
-
-ENCRYPTION_KEY = "Kert4590"

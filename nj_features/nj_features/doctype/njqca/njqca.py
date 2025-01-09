@@ -6,7 +6,7 @@ import traceback
 from frappe import _
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard
+from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
@@ -47,36 +47,83 @@ def get_inspection_type():
     if inspection_type:
         return inspection_type
     else:
-        frappe.throw("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+        frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
 
 def open_draft_qi(self):
+    # try:
+    #     inspection_type = get_inspection_type()
+    #     if not inspection_type:
+    #         inspection_type = self.inspection_type
+    #     self.inspection_type = inspection_type
+
+    #     if self.bios_serialno:
+    #         serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
+
+    #     existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
+    #     if existing_qi:
+    #         # Get the existing document
+    #         new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
+    #     else:
+    #         new_qi = frappe.new_doc('NJ Quality Inspection')
+    #         new_qi.inspection_type = self.inspection_type 
+    #         new_qi.barcode = serial_num
+    #         new_qi.njqca_laptop_name = self.name
+    #         new_qi.inspected_by = new_qi.owner
+    #         if self.manual_repack_item_code :
+    #             new_qi.item_code = self.manual_repack_item_code
+    #             new_qi.item_name = self.manual_repack_item_code
+        
+    #     result = get_itm_code_on_barcode(new_qi)
+    #     self.qi_name = new_qi.name
+
+    #     fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
     try:
         inspection_type = self.inspection_type
-
         if not self.inspection_type:
             inspection_type = get_inspection_type()
-
+            
         if self.bios_serialno:
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
 
-        existing_qi = frappe.get_list('NJ Quality Inspection', filters={'barcode': serial_num, 'inspection_type':inspection_type, 'docstatus': 0}, limit=1)
-        if existing_qi:
-            # Get the existing document
-            new_qi = frappe.get_doc('NJ Quality Inspection', existing_qi[0].name)
-        else:
+        # Get all existing QIs for this barcode and inspection type
+        existing_qis = frappe.get_list('NJ Quality Inspection',
+            filters={
+                'barcode': serial_num,
+                'inspection_type': inspection_type
+            },
+            fields=['name', 'creation'],
+            order_by='creation desc'
+        )
+
+        create_new_qi = True
+        new_qi = None
+
+        if existing_qis:
+            latest_qi = existing_qis[0]
+            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now(), latest_qi.creation)
+            
+            if time_diff < 1200:  # 1200 seconds = 20 minutes
+                # If the process is not 'njqca', reuse existing QI if less than 20 minutes old
+                    new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                    create_new_qi = False
+            else:
+                # Create new QI if more than 20 minutes old
+                create_new_qi = True 
+        
+        if create_new_qi:
             new_qi = frappe.new_doc('NJ Quality Inspection')
-            new_qi.inspection_type = inspection_type 
+            new_qi.inspection_type = inspection_type
             new_qi.barcode = self.serial_no if self.serial_no else serial_num
             new_qi.njqca_laptop_name = self.name
             new_qi.inspected_by = new_qi.owner
-            if self.manual_repack_item_code :
+            
+            if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
                 new_qi.item_name = self.manual_repack_item_code
-        
-        result = get_itm_code_on_barcode(new_qi)
-        self.qi_name = new_qi.name
-
-        fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
+            
+            result = get_itm_code_on_barcode(new_qi)
+            self.qi_name = new_qi.name
+            fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
 
         item_wizard_name = new_qi.get('item_wizard')
         item_group_data =''
@@ -85,10 +132,7 @@ def open_draft_qi(self):
             SELECT component_type from `tabComponent` where parent = %s"""
             component_type_data = frappe.db.sql(component_type,(item_wizard_name,),as_dict= True)
             item_group_data = [a['component_type'] for a in component_type_data]
-
         config_data_2_qi = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"config"},"value")
-        if not config_data_2_qi:
-            frappe.throw("NJQCA Config is not found. Please contact IT Team.")
 
         if config_data_2_qi:
             try:
@@ -221,6 +265,13 @@ def open_draft_qi(self):
                     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
                 """
                 field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+                item_group_idx= frappe.db.sql("""
+                    SELECT item_group_idx
+                    FROM `tabNj Quality Readings`
+                    WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
+                # print("item_group_idx-------------275----",item_group_idx)
+                if item_group_idx:
+                    item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
 
                 if field_name_data:
                     for field in field_name_data:
@@ -243,6 +294,8 @@ def open_draft_qi(self):
                             child_table.item_group = data.get("item_group")
                             # Default to data.get('value')
                             child_table.options = data.get('value')
+                            if item_group_idx_value:
+                                child_table.item_group_idx = item_group_idx_value
 
                         if sql_check_option_automatic:
                             for option in sql_check_option_automatic:
@@ -257,13 +310,21 @@ def open_draft_qi(self):
                                         child_table.check_name = name_of_check
                                         child_table.item_group = data.get("item_group")
                                         child_table.options = option["check_options"]
+                                        if item_group_idx_value:
+                                            child_table.item_group_idx = item_group_idx_value
                                         existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
                                     break
 
         new_qi.save()
 
         if new_qi.name:
-            return new_qi.name
+            njpulse_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+            if not njpulse_url:
+                frappe.throw("NJPulse URL is not found in NJ Settings.")
+            if self.pwd:
+                njpulse_url = njpulse_url + "api/authenticate?usr=" + self.created + "&pwd=" + self.pwd + "&encrypted_pwd=True&doctype_url=qi/" + new_qi.name
+
+            return {"qi_name": new_qi.name, "njpulse_url": njpulse_url}
         else:
             return None
 
@@ -356,10 +417,8 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
-    if not barcode:
-        frappe.throw("Error: Barcode is not found.")
-    if not inspection_type:
-        frappe.throw("Error: Inspection Type is not found.")
+    if not barcode or not inspection_type:
+        frappe.throw("Error: Barcode or Inspection Type is not found.")
     
     response = frappe._dict()
     
@@ -392,13 +451,13 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         new_qi.set('item_wizard', response.get('item_wizard'))
     
     new_qi.save()
-
-    if new_qi.name:
-        base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-        if not base_url:
-            frappe.throw("NJPLUSE URL for QI is not found in NJ Settings. Please contact IT Team.")
-        njqi_link = f"{base_url}qi/{new_qi.name}/0"
-        frappe.msgprint(f"NJ QI has been updated successfully..! <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
+    
+    base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+    if not base_url:
+        frappe.throw("NJPulse URL is not found in NJ Settings.")
+    njqi_link = f"{base_url}qi/{new_qi.name}/0"
+    
+    frappe.msgprint(f"NJ Quality readings updated successfully..!! for the QI  <strong><a href='{njqi_link}' target='_blank' > {new_qi.name}</a></strong> ")
    
     return True 
 
@@ -412,6 +471,7 @@ class NJQCA(Document):
             frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
         if self.power_on == 'Yes' and self.repack_item_code != '':
             try:
+                check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 self.make_stock_entry_using_nj_lib()
                 open_draft_qi(self)
                 update_serial_no_componont_for_grade(self)
@@ -461,28 +521,89 @@ def model_change_for_serial_no(newmodel, serial_no):
 
     wizard_query = """Select name from `tabItem Wizards` where model = %s 
                     and part_list_status = 'Completed' order by modified desc"""
-    item_wizard = frappe.db.sql(wizard_query, (newmodel), as_dict=1)
+    new_item_wizard = frappe.db.sql(wizard_query, (newmodel), as_dict=1)
 
     qi_exists = """select name from `tabNJ Quality Inspection` where barcode = %s"""
     kitting_exists = """select name from `tabKitting` where serial_no = %s"""
+    mpc_exists = """select name from `tabMachine Part Changes` where serial_no = %s"""
+    mr_exists = """select parent from `tabMaterial Request Item` where serial_no = %s"""
+
+    
     
     qi_exists_data = frappe.db.sql(qi_exists, (serial_no), as_dict=1)
     kitting_exists_data = frappe.db.sql(kitting_exists,serial_no,as_dict=1)
+    mpc_exists_data = frappe.db.sql(mpc_exists,serial_no,as_dict=1)
+    mr_exists_data = frappe.db.sql(mr_exists,serial_no,as_dict=1)
+    print(qi_exists_data, kitting_exists_data, mpc_exists_data, mr_exists_data)
 
-    if qi_exists_data == [] and kitting_exists_data == []:
-        if item_wizard != []:
-            item_wizard_doc = frappe.get_doc("Item Wizards",item_wizard[0]['name'])
-            serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    serial_no_doc = frappe.get_doc('Serial No', serial_no)
+
+    if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
+        if new_item_wizard != []:
+            item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
             if item_wizard_doc.part_list_status != 'Completed':
-                frappe.throw(f"'Part List' in Item Wizard: {item_wizard[0]['name']} is not completed. Please contact NPD Team.")
+                frappe.throw(f"'Part List' in Item Wizard: {new_item_wizard[0]['name']} is not completed. Please contact NPD Team.")
             if newmodel:
                 serial_no_doc.serial_no_component = []
+                serial_no_doc.save()
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
                 return { "status": 'success' }
         else:
             frappe.throw(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
     else:
-        frappe.msgprint(f"Part List Cannot be changed for Serial No <b>{serial_no}</b>. Because NJ QI or Kitting is Done")
+
+        new_item_wizard_query = """Select component_type,default_item_code from `tabComponent` where parent = %s"""
+        new_item_wizard_data = frappe.db.sql(new_item_wizard_query, (new_item_wizard[0]['name']), as_dict=1)
+
+        Item_code = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'item_code')
+        if Item_code:
+            item_template = frappe.db.get_value('Item', {'name':Item_code}, 'variant_of')
+
+            if item_template:
+                item_wizard = get_latest_item_wizard(item_template, Item_code)
+                old_item_wizard_query = """select component_type,default_item_code from `tabComponent` where parent = %s"""
+                old_item_wizard_data = frappe.db.sql(old_item_wizard_query, (item_wizard), as_dict=1)
+                not_matched_item_groups = []
+                for old in old_item_wizard_data:
+                    for new in new_item_wizard_data:
+                        if old.get('component_type') == new.get('component_type'):
+                            if old.get('default_item_code') == new.get('default_item_code'):
+                                continue
+                            else:
+                                not_matched_item_groups.append(old.get('component_type'))
+
+                if not not_matched_item_groups:
+                    item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
+                    serial_no_doc.serial_no_component = []
+                    serial_no_doc.save()
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                    return { "status": 'success' }
+                else:
+                    mr_data_query ="""select distinct(item_group) from `tabMaterial Request Item` where serial_no = %s AND post_order_status !='Completed' AND docstatus = 1"""
+                    past_part_list_query = """select distinct(item_group) from `tabPast Part List` where parent = %s"""
+                    mr_item_group_data = frappe.db.sql(mr_data_query, (serial_no), as_dict=1)
+                    past_part_list_data = frappe.db.sql(past_part_list_query, (serial_no), as_dict=1)
+                    if past_part_list_data:
+                        for group in past_part_list_data:
+                            if group['item_group'] in not_matched_item_groups:
+                                frappe.throw(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact NPD Team.')
+                                return { "status": 'failed' }
+                    for group in mr_item_group_data:
+                        if group['item_group'] in not_matched_item_groups:
+                            frappe.throw(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact NPD Team.')
+                            return { "status": 'failed' }
+                    else:
+                        item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
+                        serial_no_doc.serial_no_component = []
+                        serial_no_doc.save()
+                        update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                        return { "status": 'success' }
+
+            else:
+                frappe.throw(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
+        else:
+            frappe.throw(f'Item Code {Item_code} not found in Serial No {serial_no}')
+
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
@@ -494,14 +615,25 @@ def brand_model_validation(brand=None, model=None):
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
     try:
+        sle = []
         result = {}
-        sle = None
         doc_json = json.loads(doc)
-        bio_serial_no_in_ui = doc_json['bios_serialno']
+        bio_serial_no_in_ui = None
 
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'serial_no' in doc_json:
+        if 'bios_serialno' in doc_json:
+            bio_serial_no_in_ui = doc_json['bios_serialno']
+
+            sql_query = """
+                SELECT item_code, warehouse, purchase_rate,
+                    bios_serial_no, model, item_group, brand
+                FROM `tabSerial No`
+                WHERE bios_serial_no = %s and status = 'Active' """
+
+            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
+
+        if 'serial_no' in doc_json and not sle:
 
             serial_no = doc_json['serial_no']
             # get price from Stock Ledger Entry
@@ -510,7 +642,7 @@ def get_info_from_serial_no(doc=None):
                 SELECT item_code, warehouse, purchase_rate,
                     bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
-                WHERE name = %s"""
+                WHERE serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
 
@@ -522,21 +654,9 @@ def get_info_from_serial_no(doc=None):
                     else:
                         frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""", (bio_serial_no_in_ui,serial_no))
 
-        elif 'bios_serialno' in doc_json:
-            bio_serial_no_in_ui = doc_json['bios_serialno']
-
-            sql_query = """
-                SELECT item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
-                FROM `tabSerial No`
-                WHERE bios_serial_no = %s"""
-
-            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
-
         if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-
             result['item_code'] = sle_entry.get('item_code')
             result['warehouse'] = sle_entry.get('warehouse')
             result['base_price'] = sle_entry.get('purchase_rate')
@@ -548,14 +668,11 @@ def get_info_from_serial_no(doc=None):
             result['item_group'] = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
 
-        else:
-            return "Serial No is not found."
-            
         sudden_drop = get_sudden_drop(doc_json['name'], doc_json['item_group'])
 
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
-            
+
         return result
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
@@ -565,22 +682,15 @@ def get_info_from_serial_no(doc=None):
 def after_save_njqca(docname):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
-        # update_serial_no_componont_for_grade(doc)
-        # department = frappe.db.get_value('Employee', {'user_id': frappe.session.user}, 'department')
-        # department_setting = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"department"},"value")
-        
+
         if doc.power_on == 'Yes':
-            qi_name = open_draft_qi(doc) 
-            return qi_name
-            # self.save()
+            qi_draft_data = open_draft_qi(doc) 
+            return qi_draft_data
         elif doc.power_on == 'No':
-            frappe.throw(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
-        # else:
-        #     frappe.throw(f"Your Department ' {department} 'is not allocated to do QI")
-        # update_serial_no_component_for_njqca(doc)
+            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
-
 
 def get_item_code_for_each_part(part_item_group, doc):
     item_group, item_template = '', ''
@@ -991,8 +1101,6 @@ def get_part_item_code_filtered_data(item_group):
 def get_sudden_drop(parent_name, item_group):
     try:
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-        if not njqca_battery_item_group:
-            frappe.throw("NJQCA Battery Item Group is not set in NJ Settings. Please contact IT Team.")
         if njqca_battery_item_group == item_group:
 
             delta_query="""WITH FilteredResults AS (

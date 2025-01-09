@@ -106,6 +106,7 @@ override_doctype_class = {
 	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
+    "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
 }
 
 # Document Events

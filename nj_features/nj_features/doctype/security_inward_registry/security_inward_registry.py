@@ -237,7 +237,7 @@ def get_po_number_details(po_number):
             return {'error': f'{po_restriction_days} days expired for this Purchase Order'}
         
         grouped_data = {}
-        
+
         row_res = get_item_code_details(po_number)
 
         for item in row_res:
@@ -249,12 +249,11 @@ def get_po_number_details(po_number):
             else:
                 grouped_data[item_group] = total_qty
 
-            purchase_inward_security_result = [
-                {'item_group': k, 'available_qty': v} for k, v in grouped_data.items()
-            ]
-
-        purchase_inward_security_result = get_inwarded_qty_data(po_number, purchase_inward_security_result)
-        purchase_inward_security_result = get_sir_inwarded_qty_data(po_number, purchase_inward_security_result)
+        purchase_inward_security_result = [
+            {'item_group': k, 'available_qty': v} for k, v in grouped_data.items()
+        ]
+        
+        purchase_inward_security_result = get_combined_inwarded_qty_data(po_number, purchase_inward_security_result)
 
         return purchase_inward_security_result
 
@@ -263,50 +262,33 @@ def get_po_number_details(po_number):
         frappe.throw(f"Error on get_po_number_details: {str(e)}\n{traceback_info}")
         return None
 
-def get_inwarded_qty_data(po_number, purchase_inward_security_result):
+def get_combined_inwarded_qty_data(po_number, purchase_inward_security_result):
     query = """
-        SELECT irpc.item_group, SUM(irpc.actual_qty) AS available_qty
+        SELECT irpc.item_group, 
+               SUM(CASE WHEN sir.po_number = %(po_number)s THEN irpc.actual_qty ELSE 0 END) AS security_available_qty,
+               SUM(CASE WHEN sir.reference_po_number = %(po_number)s THEN irpc.received_qty ELSE 0 END) AS sir_received_qty
         FROM `tabSecurity Inward Registry` sir
         INNER JOIN `tabSecurity Inward Registry Purchase Child` irpc
         ON irpc.parent = sir.name
-        WHERE sir.po_number = %s AND sir.docstatus = 1 AND sir.total_qty > 0
-        GROUP BY irpc.item_group
-    """
-    
-    result = frappe.db.sql(query, po_number, as_dict=True)
-
-    for initial in purchase_inward_security_result:
-        item_group = initial['item_group']
-        initial_qty = initial['available_qty']
-
-        fetched_qty = next((r['available_qty'] for r in result if r['item_group'] == item_group), 0)
-        
-        initial['available_qty'] = initial_qty - fetched_qty
-    
-    return purchase_inward_security_result
-
-def get_sir_inwarded_qty_data(po_number, purchase_inward_security_result):
-    query = """
-        SELECT irpc.item_group, SUM(irpc.received_qty) AS available_qty
-        FROM `tabSecurity Inward Registry` sir
-        INNER JOIN `tabSIR Inwarded Quantity` irpc
-        ON irpc.parent = sir.name
-        WHERE sir.reference_po_number = %s 
+        WHERE (sir.po_number = %(po_number)s OR sir.reference_po_number = %(po_number)s)
         AND sir.docstatus = 1 
         AND sir.total_qty > 0
         GROUP BY irpc.item_group
     """
     
-    result = frappe.db.sql(query, (po_number,), as_dict=True)
+    result = frappe.db.sql(query, {'po_number': po_number}, as_dict=True)
 
     for initial in purchase_inward_security_result:
         item_group = initial['item_group']
         initial_qty = initial['available_qty']
 
-        fetched_qty = next((r['available_qty'] for r in result if r['item_group'] == item_group), 0)
-        
-        initial['available_qty'] = max(0, initial_qty - fetched_qty)
+        matched_row = next((r for r in result if r['item_group'] == item_group), None)
+        if matched_row:
+            security_available_qty = matched_row['security_available_qty'] or 0
+            sir_received_qty = matched_row['sir_received_qty'] or 0
 
+            initial['available_qty'] = max(0, initial_qty - security_available_qty - sir_received_qty)
+    
     return purchase_inward_security_result
 
 

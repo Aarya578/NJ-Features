@@ -13,6 +13,7 @@
   "storage_capacity",
   "os",
   "qty",
+  "bios_serial_no",
   "section_break_tvmby",
   "barcode",
   "section_break_ey6d4",
@@ -115,11 +116,16 @@
    "fieldname": "barcode",
    "fieldtype": "Data",
    "label": "Serial No"
+  },
+  {
+   "fieldname": "bios_serial_no",
+   "fieldtype": "Data",
+   "label": "BIOS Serial No"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-09-06 16:18:21.149604",
+ "modified": "2025-01-10 12:27:23.473732",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

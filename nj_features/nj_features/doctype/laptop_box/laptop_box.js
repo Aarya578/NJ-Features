@@ -89,7 +89,8 @@ frappe.ui.form.on('Laptop Box', {
                         let serial_no_data = r.message;
 
                         frm.set_value("brand", serial_no_data.brand);  
-                        frm.set_value("model", serial_no_data.model);  
+                        frm.set_value("model", serial_no_data.model);
+                        frm.set_value("bios_serial_no", serial_no_data.bios_serial_no);  
 
                        
 

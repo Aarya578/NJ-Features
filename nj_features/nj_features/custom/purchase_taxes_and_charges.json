@@ -1,0 +1,32 @@
+{
+ "custom_fields": [],
+ "custom_perms": [],
+ "doctype": "Purchase Taxes and Charges",
+ "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2021-04-08 17:07:37.055417",
+   "default_value": null,
+   "doc_type": "Purchase Taxes and Charges",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "description",
+   "idx": 0,
+   "modified": "2021-04-08 17:07:37.055417",
+   "modified_by": "arunkoul566@gmail.com",
+   "name": "Purchase Taxes and Charges-description-width",
+   "owner": "arunkoul566@gmail.com",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "width",
+   "property_type": null,
+   "row_name": null,
+   "value": "30"
+  }
+ ],
+ "sync_on_migrate": 1
+}

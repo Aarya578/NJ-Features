@@ -20,6 +20,11 @@ frappe.ui.form.on('Delivery Note', {
         }
         
     },
+    onload_post_render: function(frm) {
+        frm.remove_custom_button('Credit Note', 'Create');
+        frm.page.remove_inner_button('Credit Note', 'Create');
+        $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
+    },
     courier_service: function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",

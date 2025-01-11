@@ -1,7 +1,6 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
  "autoname": "NJQCA-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
  "doctype": "DocType",
@@ -10,40 +9,37 @@
  "field_order": [
   "njqca_information_section",
   "power_on",
-  "purchase_order",
-  "purchase_price",
-  "purchase_receipt",
   "serial_no",
-  "inspection_type",
-  "qi_name",
   "bios_serialno",
-  "item_group",
-  "warehouse",
+  "inspection_type",
   "department",
   "raw_data",
   "base_price",
   "column_break_5mcw7",
-  "created",
+  "item_group",
   "brand",
+  "warehouse",
   "data_attr",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
-  "backup_duration_cycle_3",
-  "sudden_drop",
   "column_break_1tl9d",
-  "make",
-  "manufacturer_model",
   "repack_item_code",
   "manual_repack_item_code",
+  "qi_name",
+  "backup_duration_cycle_3",
+  "sudden_drop",
   "repack_itm_price",
-  "original_price",
   "app_statuts",
   "section_break_6sw2s",
-  "item_code",
+  "make",
+  "created",
   "column_break_qzvyk",
+  "manufacturer_model",
   "model",
-  "column_break_kcjxr",
+  "column_break_w1v6n",
+  "item_code",
   "item_template",
+  "section_break_nybo3",
   "error_message",
   "section_break_56eed",
   "njqca_item_component",
@@ -61,7 +57,8 @@
   "section_break_d2ocq",
   "amended_from",
   "event_trigger_section",
-  "njqca_event_trigger"
+  "njqca_event_trigger",
+  "pwd"
  ],
  "fields": [
   {
@@ -80,8 +77,9 @@
   },
   {
    "fieldname": "item_code",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Item Code",
+   "options": "Item",
    "read_only": 1
   },
   {
@@ -92,7 +90,8 @@
    "fieldname": "base_price",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Item Unit Price"
+   "label": "Item Unit Price",
+   "precision": "2"
   },
   {
    "fieldname": "section_break_6sw2s",
@@ -129,13 +128,14 @@
   {
    "fieldname": "data_attr",
    "fieldtype": "Small Text",
-   "label": "Data Attr",
-   "read_only": 1
+   "hidden": 1,
+   "label": "Data Attr"
   },
   {
    "fieldname": "brand",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Brand",
+   "options": "Brand",
    "read_only": 1
   },
   {
@@ -149,13 +149,6 @@
    "fieldtype": "Data",
    "label": "Automated Repack Item Code",
    "read_only": 1
-  },
-  {
-   "fieldname": "original_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Original Price",
-   "precision": "2"
   },
   {
    "fieldname": "repack_itm_price",
@@ -233,34 +226,10 @@
    "options": "NJQCA Result Parameters"
   },
   {
-   "fieldname": "column_break_kcjxr",
-   "fieldtype": "Column Break"
-  },
-  {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "sudden_drop",
    "fieldtype": "Data",
-   "label": "Sudden Drop"
-  },
-  {
-   "fieldname": "purchase_order",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Purchase Order",
-   "options": "Purchase Order"
-  },
-  {
-   "fieldname": "purchase_price",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "PR Purchase Price",
-   "precision": "2"
-  },
-  {
-   "fieldname": "purchase_receipt",
-   "fieldtype": "Link",
-   "label": "Purchase Receipt",
-   "options": "Purchase Receipt",
+   "label": "Sudden Drop",
    "read_only": 1
   },
   {
@@ -276,28 +245,33 @@
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_2",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 2"
+   "label": "Backup Duration Cycle 2",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_3",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 3"
+   "label": "Backup Duration Cycle 3",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.item_group == \"BATTERY\";",
    "fieldname": "backup_duration_cycle_1",
    "fieldtype": "Data",
-   "label": "Backup Duration Cycle 1"
+   "label": "Backup Duration Cycle 1",
+   "read_only": 1
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_display.length != 0",
    "fieldname": "section_break_drfru",
    "fieldtype": "Section Break",
    "label": "Display"
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_adaptor.length != 0",
    "fieldname": "processor_section",
    "fieldtype": "Section Break",
    "label": "Adaptor"
@@ -309,6 +283,7 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_ram.length != 0",
    "fieldname": "laptop_ram_section",
    "fieldtype": "Section Break",
    "label": "Laptop Ram"
@@ -320,6 +295,7 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_storage.length != 0",
    "fieldname": "laptop_storage_section",
    "fieldtype": "Section Break",
    "label": "Laptop Storage"
@@ -345,6 +321,7 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length != 0",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
@@ -353,11 +330,13 @@
    "fetch_from": "warehouse.department",
    "fetch_if_empty": 1,
    "fieldname": "department",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Department",
+   "options": "Department",
    "read_only": 1
   },
   {
+   "collapsible": 1,
    "fieldname": "event_trigger_section",
    "fieldtype": "Section Break",
    "label": "Event Trigger"
@@ -370,19 +349,34 @@
   {
    "fieldname": "qi_name",
    "fieldtype": "Data",
-   "label": "QI Name"
+   "label": "QI Name",
+   "read_only": 1
   },
   {
    "fieldname": "app_statuts",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "App Statuts"
+  },
+  {
+   "fieldname": "section_break_nybo3",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_w1v6n",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "pwd",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "pwd"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-19 12:58:37.033760",
+ "modified": "2025-01-06 19:34:31.359276",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

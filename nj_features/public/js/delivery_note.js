@@ -21,9 +21,9 @@ frappe.ui.form.on('Delivery Note', {
         
     },
     onload_post_render: function(frm) {
-        frm.remove_custom_button('Return / Credit Note', 'Create');
-        frm.page.remove_inner_button('Return / Credit Note', 'Create');
-        $('.btn-group.dropdown-menu a:contains("Return / Credit Note")').parent().remove();
+        frm.remove_custom_button('Credit Note', 'Create');
+        frm.page.remove_inner_button('Credit Note', 'Create');
+        $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
     courier_service: function(frm) {
         frappe.call({

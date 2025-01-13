@@ -107,6 +107,7 @@ override_doctype_class = {
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
+    "Issue": "nj_features.overrides.issue.CustomIssue"
 }
 
 # Document Events

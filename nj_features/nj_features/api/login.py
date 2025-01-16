@@ -17,7 +17,7 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None):
         login_manager.post_login()
 
     except frappe.AuthenticationError as e:
-        error_message = f"Authentication failed for user: {usr}. Invalid login credentials."
+        error_message = f"Authentication failed for user: {usr}. {str(e)}"
         return {
             "success_key": 0,
             "message": error_message,

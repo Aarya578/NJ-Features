@@ -239,16 +239,40 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
 
 
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
+    result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
+
+    print('result', result)
+    
+    if result is None:
+        error_messages.append(
+            f"Item <b>{serial_doc.get('item_code')}</b> not found. Cannot validate grade restrictions for serial <b>{serial_doc.name}</b>."
+        )
+        return
+
+    lap_grade, lap_item_group = result
+
+    for restriction in department_doc.get('stock_movement_restriction_table', []):
+        restricted_grades = restriction.get('restricted_grade', "").split(", ")
+        restricted_item_group = restriction.get('item_group')
+
+        if lap_item_group == restricted_item_group and lap_grade in restricted_grades:
+            error_messages.append(
+                f"Serial No <b>{serial_doc.name}</b> for item <b>{serial_doc.get('item_code')}</b> "
+                f"with item_group <b>{lap_item_group}</b> has a grade <b>{lap_grade}</b> that is not allowed "
+                f"for department <b>{department_doc.name}</b>."
+            )
+    
     for component in serial_doc.get('serial_no_component', []):
         for restriction in department_doc.get('stock_movement_restriction_table', []):
             restricted_grades = restriction.get('restricted_grade', "").split(", ")
-            if (component.get('item_group') == restriction.get('item_group') and
+            restricted_item_group = restriction.get('item_group')
+
+            if (component.get('item_group') == restricted_item_group and
                     component.get('grade') in restricted_grades):
                 error_messages.append(
                     f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                     f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
                 )
-
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):

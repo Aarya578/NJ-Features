@@ -269,7 +269,6 @@ def open_draft_qi(self):
                     SELECT item_group_idx
                     FROM `tabNj Quality Readings`
                     WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
-                # print("item_group_idx-------------275----",item_group_idx)
                 if item_group_idx:
                     item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
 
@@ -461,11 +460,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
    
     return True 
 
-class NJQCA(Document):  
-    # def on_update(self):
-    #     if self.serial_no and self.inspection_type:
-    #         open_draft_qi(self)
-
+class NJQCA(Document):
     def on_submit(self):
         if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
             frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
@@ -528,13 +523,10 @@ def model_change_for_serial_no(newmodel, serial_no):
     mpc_exists = """select name from `tabMachine Part Changes` where serial_no = %s"""
     mr_exists = """select parent from `tabMaterial Request Item` where serial_no = %s"""
 
-    
-    
     qi_exists_data = frappe.db.sql(qi_exists, (serial_no), as_dict=1)
     kitting_exists_data = frappe.db.sql(kitting_exists,serial_no,as_dict=1)
     mpc_exists_data = frappe.db.sql(mpc_exists,serial_no,as_dict=1)
     mr_exists_data = frappe.db.sql(mr_exists,serial_no,as_dict=1)
-    print(qi_exists_data, kitting_exists_data, mpc_exists_data, mr_exists_data)
 
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
@@ -703,18 +695,16 @@ def get_item_code_for_each_part(part_item_group, doc):
             except json.JSONDecodeError:
                 frappe.throw("Invalid JSON string provided for doc.")
 
-        part_mapping = frappe.get_all(
-            "Part Mapping",
+        part_mapping = frappe.get_all( "Part Mapping",
             filters={"parent": part_item_group},
             fields=["item_group", "mappng_fields", "attribute_name"],
             order_by="idx"
         )
 
-        for row in doc.get('njqca_item_component', []):
+        for mapping in part_mapping:
             attribute_object = {}
             attribute_value = {}
-
-            for mapping in part_mapping:
+            for row in doc.get('njqca_item_component', []):
                 last_variant_values = {}
                 item_group = row.get('item_group')
 
@@ -727,27 +717,88 @@ def get_item_code_for_each_part(part_item_group, doc):
                             last_variant_values[item_group][variant] = row.get(variant)
                         attribute_value = last_variant_values.get(item_group, {})
 
-                    # Handle different item groups (cpu, ram, storage)
                     if item_group.lower() == cpu.lower():
                         any_undefined = any(value is None for value in attribute_value.values())
-                        cpu_value = unk_cpu if any_undefined else ' - '.join(attribute_value.values())
+                        cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
                         normalize_cpu = normalize_gen(cpu_value)
-                        attribute_object[mapping.get('attribute_name')] = normalize_cpu
+                        if normalize_cpu and len(normalize_cpu) > 0:
+                            attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
 
                     elif item_group.lower() == ram.lower() and (row.get('variant_1') != 'SYSTEM MEMORY' and row.get('variant_1') != '[EMPTY]'):
-                        any_undefined = any(value is None for value in attribute_value.values())
-                        ram_value = unk_ram if any_undefined else ' '.join(attribute_value.values())
-                        attribute_object[mapping.get('attribute_name')] = ram_value
-                        if part_item_group == item_group:
-                            if 'RAM Speed' in attribute_object and attribute_object['RAM Speed'] == 'UNBUFFERED MHZ':
-                                attribute_object['RAM Speed'] = 'UNKNOWN SPEED'
 
-                    elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')) and attribute_value.get(list(attribute_value.keys())[0]):
-                        attribute_object[mapping.get('attribute_name')] = (
-                            attribute_value.get(list(attribute_value.keys())[0]) + " SSD" or unk_storage
-                        )
                         if part_item_group == item_group:
-                            attribute_object = set_storage_item_code(attribute_object)
+                            if variant == 'variant_6':
+                                if 'GB' not in row.get(variant):
+                                    continue
+                                    
+                                else:
+                                    attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                                    
+                            if variant == 'variant_7':
+                                if row.get(variant) == '26':
+                                    attribute_object[mapping.get('attribute_name')] = 'DDR4'
+                                elif row.get(variant) == '23':
+                                    attribute_object[mapping.get('attribute_name')] = 'DDR3'
+                                elif 'ddr' in row.get(variant).lower():
+                                    attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                            
+                            if variant == 'variant_8':
+                                match = re.search(r'\d+', row.get(variant))
+                                if match:
+                                    attribute_object[mapping.get('attribute_name')] = f"{match.group()} GHZ"
+                                else:
+                                    attribute_object[mapping.get('attribute_name')] = 'UNKNOWN SPEED'
+                        else:
+                            if variant == 'variant_6':
+                                if 'GB' not in row.get(variant):
+                                    continue
+                                else:
+                                    attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                            
+                    
+                    elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')) and attribute_value.get(list(attribute_value.keys())[0]):
+                        
+                        variant_type = ''
+                        if 'ssd' in row.get('variant_1').lower() or 'nvme' in row.get('variant_6').lower():
+                            variant_type = ' SSD'
+
+                        if variant == 'variant_1':
+
+                            if 'interface' in mapping.get('attribute_name').lower():
+                                interfaces = {
+                                    'SATA': ['sata', 'sata3', 'sata2', 'sata1', 'hdd', 'ssd'],
+                                    'MSATA': ['msata'],
+                                    'M.2 SATA': ['m.2 sata', 'ngff'],
+                                    'M.2 NVME': ['m.2 nvme', 'nvme'],
+                                    'M.2 PCL': ['pcl', 'pcie'],
+                                }
+
+                                for interface, keywords in interfaces.items():
+                                    for keyword in keywords:
+                                        if keyword in row.get(variant):
+                                            attribute_object[mapping.get('attribute_name')] = interface
+
+                                
+                            elif 'type' in mapping.get('attribute_name').lower():
+                                nj_types = {
+                                    'SATA I': ['sata1', 'sata-1'],
+                                    'SATA II': ['sata2', 'sata-2'],
+                                    'SATA III': ['sata3', 'sata-3'],
+                                    'MSATA': ['msata', 'm.2 msata'],
+                                    'M.2 SATA 2280': ['m.2 sata 2280', 'm.2 sata', 'ngff 2280'],
+                                    'M.2 SATA 2242': ['m.2 sata 2242', 'ngff 2242'],
+                                    'M.2 NVMe 2280': ['m.2 nvme 2280', 'nvme 2280', 'pcie 2280'],
+                                    'SSD': ['ssd', 'solid state drive'],
+                                    'HDD': ['hdd', 'hard drive', 'harddisk'],
+                                }
+
+                                for nj_type, keywords in nj_types.items():
+                                    for keyword in keywords:
+                                        if keyword in row.get(variant):
+                                            attribute_object[mapping.get('attribute_name')] = nj_type
+
+                        elif variant == 'variant_10':
+                            attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type
 
                     if attribute_object and item_group != part_item_group:
                         child_attr_data.append(attribute_object)
@@ -762,15 +813,12 @@ def get_item_code_for_each_part(part_item_group, doc):
                 if len(attribute_object) > 1:
                     part_item_code = get_variant_from_value(item_template, [attribute_object])
                     if part_item_code and 'error' not in part_item_code:
-                        part_item_code_from_db = frappe.db.get_value(
-                            "Item",
+                        part_item_code_from_db = frappe.db.get_value("Item",
                             {'item_name': part_item_code, 'has_variants': 0, 'item_group': part_item_group},
                             'name'
                         )
                         if part_item_code_from_db:
-                            item_template = frappe.db.get_value(
-                                'Item', {'name': part_item_code}, 'variant_of'
-                            )
+                            item_template = frappe.db.get_value( 'Item', {'name': part_item_code}, 'variant_of' )
                             part_data.append({
                                 'name': row.get('name'),
                                 'attr_data': attribute_object,
@@ -780,10 +828,10 @@ def get_item_code_for_each_part(part_item_group, doc):
                             })
                     else:
                         part_item_code = frappe.db.get_value('Serial No Component',
-                                                    {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
-                                                    ['item'])
-                        item_template = frappe.db.get_value('Item', {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0},
-                                                            ['variant_of'])
+                                            {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
+                                            ['item'])
+                        item_template = frappe.db.get_value('Item', 
+                                            {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
                         part_data.append({
                             'name': row.get('name'),
                             'part_item_code': part_item_code,
@@ -812,7 +860,9 @@ def get_item_code_for_each_part(part_item_group, doc):
                 return {"error": f'Item Template {item_template} not found'}
 
     except Exception as e:
+        frappe.throw("An error occurred: " + str(e))
         return {"error": f"An error occurred: {str(e)}"}
+        
 
 @frappe.whitelist()
 def get_part_mapping(doc):
@@ -956,45 +1006,47 @@ def consolidate_storage(data):
             result_data.append({'Storage Capacity': consolidated_storage[0]})
 
     return result_data
-
-def set_storage_item_code(obj):
-    if obj :
-        for key,value in obj.items():
-            if value and value.lower() != 'no storage' :
-                if key.lower() == 'storage type':
-                    if value in "NVME DISK SSD ATA DISK SSD DISK SSD SCSI DISK SSD":
-                        obj[key] = NVME_DISK
-                if key.lower() == 'storage interface':
-                    storage_interface_values = frappe.get_all("Item Attribute Value",{'parent':key},'abbr')
-                    abbr_values = [value['abbr'] for value in storage_interface_values]
-                    value = value.split("@")[0]
-                    obj[key] = next((attr for attr in abbr_values if value in attr), None)
-                        
-        if len(obj) == 3:
-            obj[storage_interface] = '2.5"'
-    return obj
                     
-def normalize_gen(gen_str):
-    gen_pattern = r'(CORE [iI]\d+.*?)\s+(\d+)\s+GEN'
+def normalize_gen(cpu_value):
+    if 'core' in cpu_value.lower():
+        match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
+        
+        if match:
+            core = 'CORE ' + match.group(1).upper()
+            alphanumeric_part = match.group(2)
+            
+            numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
+            gen_number = str(int(numeric_part) // 1000)  # Extract the generation number
+            
+            if gen_number == '1':
+                gen_number += 'ST'
+            elif gen_number == '2':
+                gen_number += 'ND'
+            elif gen_number == '3':
+                gen_number += 'RD'
+            else:
+                gen_number += 'TH'
+            
+            return [f"{core} - {gen_number} GEN"]
 
-    match = re.search(gen_pattern, gen_str)
+    if 'ryzen' in cpu_value.lower():
+        match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
+        if match:
+            return [match.group(1).upper()]
+        
+    if 'amd' in cpu_value.lower() and 'ryzen' not in cpu_value.lower():
+        match = re.match(r"([\w\s]+)-([\w\d]+)", cpu_value, re.IGNORECASE)
+    
+        if match:
+            return [match.group(1).upper()]
+        
+    cpu_value_upper = cpu_value.upper()
+    if not match:
+        for cpu_type in ['XEON', 'PENTIUM', 'ATOM']:
+            if cpu_type in cpu_value_upper:
+                return [f"INTEL {cpu_type}"]
 
-    if match:
-        processor_type = match.group(1)
-        gen_number = match.group(2)
-        if gen_number == '1':
-            gen_number = '1ST'
-        elif gen_number == '2':
-            gen_number = '2ND'
-        elif gen_number == '3':
-            gen_number = '3RD'
-        else:
-            gen_number += 'TH'
-
-        normalized_gen = f"{processor_type} {gen_number} GEN"
-        return normalized_gen
-    else:
-        return gen_str
+    return []
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):

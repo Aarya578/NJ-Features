@@ -3,7 +3,7 @@
 
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
-        if (frm.doc.docstatus == 0 && cur_frm.doc.power_on == 'Yes') {
+        if (frm.doc.docstatus == 0) {
             
             $(document).on('frappe.error', function(event, error) {
                 if (error instanceof frappe.TimestampMismatchError) {
@@ -54,23 +54,14 @@ frappe.ui.form.on('NJQCA', {
             cur_frm.set_df_property('error_section_section', 'hidden', 0)
         }
 
-        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0 && !frm.doc.model) {
-            get_model(cur_frm.doc.manufacturer_model);
-        }
-
         if (frm.doc.docstatus == 0) {
             processItemTemplate(frm)
             if (frm.doc.item_template) {
                 frm.set_df_property('item_template', 'read-only', 1)
-                frm.refresh_field('item_template')
             } else {
                 frm.events.item_template(frm);
             }
-        }
-        
-        if (frm.doc.docstatus == 0 && !frm.doc.item_group) {
-            cur_frm.set_df_property('item_template', 'read_only', 1);
-            cur_frm.refresh_field('item_template');
+            frm.refresh_field('item_template')
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {
@@ -82,7 +73,13 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        
+
+        if (frm.doc.docstatus == 0 && !frm.doc.model) {
+            cur_frm.set_df_property('model', 'read_only', 1);
+            cur_frm.refresh_field('model');
+        } else {
+            get_model(frm.doc.manufacturer_model);
+        }
 	},
     
     validate: function(frm) {
@@ -164,7 +161,7 @@ frappe.ui.form.on('NJQCA', {
 
     before_save: function(frm) {
         if (!window.isWindowOpened) {
-            window.isWindowOpened = false; // Initialize flag if not already set
+            window.isWindowOpened = false;
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -269,7 +266,7 @@ frappe.ui.form.on('NJQCA', {
                     });
 
                     if(!frappe.user.has_role("IQC Manager") && frm.doc.serial_no){
-                        // cur_frm.set_df_property('serial_no', 'read_only', 1);
+                        cur_frm.set_df_property('serial_no', 'read_only', 1);
                     }
                 }
             });
@@ -284,10 +281,18 @@ frappe.ui.form.on('NJQCA', {
                 if (!r.work_warehouse) {
                     frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`)
                 } else if (r.work_warehouse != ware) {
-                    let dialog = frappe.confirm(
-                        `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`,
-                        () => {
-                            
+                    let dialog = new frappe.ui.Dialog({
+                        title: "Confirm Stock Transfer",
+                        fields: [
+                            {
+                                fieldtype: "HTML",
+                                fieldname: "message",
+                                options: `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`
+                            }
+                        ],
+		                static:true,
+                        primary_action_label: "Yes, Transfer", 
+                        primary_action: function() {
                             let material_transfer_items = [{
                                 'serial_no': frm.doc.serial_no,
                                 'item_code': frm.doc.item_code,
@@ -304,19 +309,34 @@ frappe.ui.form.on('NJQCA', {
                                 "reference_serial_no": frm.doc.serial_no,
                                 "material_transfer_items": material_transfer_items,
                             }
+                    
                             frappe.call({
                                 method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
                                 args: { 'data': JSON.stringify(data) },
+                                freeze: true,
+                                freeze_message: `<div style="text-align: center;">
+                                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+                                    <br>Transfering Stock... Please Wait
+                                </div>`,
                                 callback: function(response) {
-                                    frm.set_value('warehouse', r.work_warehouse)
-                                    frm.refresh_field('warehouse')
+                                    frm.set_value('warehouse', r.work_warehouse);
+                                    frm.refresh_field('warehouse');
                                 },
-                                error: function(err) { console.log(err); }
-                            })
-                            dialog.hide()
+                                error: function(err) { 
+                                    console.log(err);
+                                }
+                            });
+                    
+                            dialog.hide();
                         },
-                        () => { $('.primary-action').hide() }
-                    );
+                        secondary_action_label: "Cancel",
+                        secondary_action: function() {
+                            $('.primary-action').hide()
+                            dialog.hide();
+                        }
+                    });
+                    
+                    dialog.show();
                 }
             })
         }
@@ -350,7 +370,6 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
-                                    $('.primary-action').hide()
                                 }
                             });
                         }, () => { $('.primary-action').hide() })

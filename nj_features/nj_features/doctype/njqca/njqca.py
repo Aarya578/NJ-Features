@@ -1006,6 +1006,7 @@ def consolidate_storage(data):
     return result_data
                     
 def normalize_gen(cpu_value):
+    match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
         

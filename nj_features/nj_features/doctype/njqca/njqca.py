@@ -621,7 +621,7 @@ def get_info_from_serial_no(doc=None):
             bio_serial_no_in_ui = doc_json['bios_serialno']
 
             sql_query = """
-                SELECT item_code, warehouse, purchase_rate,
+                SELECT name,item_code, warehouse, purchase_rate,
                     bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
                 WHERE bios_serial_no = %s and status = 'Active' """
@@ -634,7 +634,7 @@ def get_info_from_serial_no(doc=None):
             # get price from Stock Ledger Entry
 
             sql_query = """
-                SELECT item_code, warehouse, purchase_rate,
+                SELECT name,item_code, warehouse, purchase_rate,
                     bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
                 WHERE serial_no = %s and status = 'Active' """
@@ -652,6 +652,7 @@ def get_info_from_serial_no(doc=None):
         if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
+            result['serial_no'] = sle_entry.get('name')
             result['item_code'] = sle_entry.get('item_code')
             result['warehouse'] = sle_entry.get('warehouse')
             result['base_price'] = sle_entry.get('purchase_rate')

@@ -295,3 +295,59 @@ def get_item_code_and_warehouse(item_code):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error in get_item_code_and_warehouse")
         return
+    
+
+   
+@frappe.whitelist()
+def get_grades_from_part_list(search_value):
+    query = frappe.db.sql(
+        """
+            SELECT   item_group ,aesthetic_issue , functional_issue
+            FROM `tabSerial No Component`
+            WHERE parent = %s and lower(grade) in ('grade c','grade d')
+        """,
+        search_value,
+        as_dict=True
+    )
+
+    print("query---------285------",query)
+    results = []
+
+    # Loop through each item_group from the query result
+    for row in query:
+        item_group = row['item_group']
+        aesthetic_issue = row['aesthetic_issue']
+        functional_issue = row['functional_issue']
+        damage_types = []
+
+        if aesthetic_issue == 1:
+            damage_types.append("Aesthetic")
+        if functional_issue == 1:
+            damage_types.append("Technical")
+        if not damage_types:  # If both issues are 0
+            damage_types = [""]
+
+        # Fetch department value from the Repairability child table
+        department_query = frappe.db.sql(
+            """
+                SELECT department
+                FROM `tabRepairability`
+                WHERE parent = %s {damage_type_condition}
+            """.format(
+                damage_type_condition="AND damage_type IN %s" if damage_types[0] else ""
+            ),
+            (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
+            as_dict=True,
+            debug=True
+        )
+
+        # If department data is found, append it to the result list
+        if department_query:
+            for department_row in department_query:
+                results.append({
+                    "department": department_row['department']
+                })
+
+    # Return the consolidated results
+    print("results---------", results)
+    return results

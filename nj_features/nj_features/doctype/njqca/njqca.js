@@ -57,7 +57,7 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.docstatus == 0) {
             processItemTemplate(frm)
             if (frm.doc.item_template) {
-                frm.set_df_property('item_template', 'read-only', 1)
+                frm.set_df_property('item_template', 'read_only', 1)
             } else {
                 frm.events.item_template(frm);
             }
@@ -418,6 +418,8 @@ function processItemTemplate(frm) {
                         }
                     });
                 }
+                console.log("r.message.part_data",r.message);
+                
                 if (r.message.part_data) {
                     
                     const partData = JSON.parse(r.message.part_data);
@@ -456,6 +458,11 @@ function processItemTemplate(frm) {
                         }
                     });
 
+                    if (!frm.doc.manual_repack_item_code) {
+                        frm.set_value('manual_repack_item_code', frm.doc.item_code);
+                        frm.refresh_field('manual_repack_item_code');
+                    }
+
                     frm.set_df_property('laptop_processor_section', 'collapsible', 1);
                     frm.set_df_property('laptop_ram_section', 'collapsible', 1);
                     frm.set_df_property('laptop_storage_section', 'collapsible', 1);
@@ -463,16 +470,6 @@ function processItemTemplate(frm) {
                     frm.refresh_field("njqca_laptop_ram");
                     frm.refresh_field("njqca_laptop_processors");
                     frm.refresh_field("njqca_laptop_storage");
-                    // if (frm.doc.docstatus == 0) {
-                    //     let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
-                        
-                    //     for (let i = 0; i < child_table_fieldname.length; i++) {
-                    //         if (frm.fields_dict[child_table_fieldname[i]]) {
-                    //             let grid = frm.fields_dict[child_table_fieldname[i]].grid;
-                    //             set_options_for_attribute_fields_in_child(frm, grid);
-                    //         }
-                    //     }
-                    // }
                 }
                 frm.refresh_field('njqca_item_component');
             }
@@ -756,29 +753,31 @@ function generateAdaptorItemCode(frm, cdt, cdn, child) {
 
     if (Brand && waltage && adaptor_pins && grade) {
         frappe.call({
-            method: "nj_features.nj_features.doctype.njqca.njqca.construct_item_code",
+            method: "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
             args: {
                 item_template: "S-Laptop Adaptors",
-                args_list: adaptor_properties
+                args: adaptor_properties
             },
             callback: function(r) {
-                if (r.message.error) {
-                    frappe.utils.play_sound("error");
-                    var errorMessageString = 'Item code not found: ' + r.message.error;
-                    var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                    $(frm.layout.wrapper).find('.form-message.red').remove();
-                    $(frm.layout.wrapper).prepend(errorDiv);
-                    frm.set_df_property('error_section_section', 'hidden', 0);
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-                    frm.set_df_property('error_section_section', 'hidden', 1);
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = 'Item code not found: ' + r.message.error;
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
+                    } else {
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
+                        frm.set_df_property('error_section_section', 'hidden', 1);
+                    }
                 }
             }
         });
     } else {
         frappe.utils.play_sound("error");
-        var missingFieldsMessage = 'Please fill all the required fields.';
+        var missingFieldsMessage = 'Please fill all the required fields in Adaptor.';
         var errorDiv = $('<div class="form-message red"></div>').html(missingFieldsMessage);
         $(frm.layout.wrapper).find('.form-message.red').remove();
         $(frm.layout.wrapper).prepend(errorDiv);
@@ -807,28 +806,30 @@ function generateStorageItemCode(frm, cdt, cdn, child){
 
     if (storage_type && storage_capacity && storage_interface && storage_length && grade) {
         frappe.call({
-            method: "nj_features.nj_features.doctype.njqca.njqca.construct_item_code",
+            method: "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
             args: {
                 item_template: item_template,
-                args_list: storage_properties
+                args: storage_properties
             },
             callback: function(r) {
-                if (r.message.error) {
-                    frappe.utils.play_sound("error");
-                    var errorMessageString = 'Item code not found: ' + r.message.error;
-                    var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                    $(frm.layout.wrapper).find('.form-message.red').remove();
-                    $(frm.layout.wrapper).prepend(errorDiv);
-                    frm.set_df_property('error_section_section', 'hidden', 0);
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-                    frm.set_df_property('error_section_section', 'hidden', 1);
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = 'Item code not found: ' + r.message.error;
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
+                    } else {
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
+                        frm.set_df_property('error_section_section', 'hidden', 1);
+                    }
                 }
             }
         });
     } else {
-        var missingFieldsMessage = 'Please fill all the required fields.';
+        var missingFieldsMessage = 'Please fill all the required fields in Storage.';
         frappe.utils.play_sound("error");
         var errorDiv = $('<div class="form-message red"></div>').html(missingFieldsMessage);
         $(frm.layout.wrapper).find('.form-message.red').remove();
@@ -852,29 +853,31 @@ function generateProcessorItemCode(frm, cdt, cdn, child) {
 
     if (processor_type && grade) {
         frappe.call({
-            method: "nj_features.nj_features.doctype.njqca.njqca.construct_item_code",
+            method: "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
             args: {
                 item_template: item_template,
-                args_list: processor_properties
+                args: processor_properties
             },
             callback: function(r) {
-                if (r.message.error) {
-                    frappe.utils.play_sound("error");
-                    var errorMessageString = 'Item code not found: ' + r.message.error;
-                    var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                    $(frm.layout.wrapper).find('.form-message.red').remove();
-                    $(frm.layout.wrapper).prepend(errorDiv);
-                    frm.set_df_property('error_section_section', 'hidden', 0);
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-                    frm.set_df_property('error_section_section', 'hidden', 1);
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = 'Item code not found: ' + r.message.error;
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
+                    } else {
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
+                        frm.set_df_property('error_section_section', 'hidden', 1);
+                    }
                 }
             }
         });
     } else {
         frappe.utils.play_sound("error");
-        var missingFieldsMessage = 'Please fill all the required fields.';
+        var missingFieldsMessage = 'Please fill all the required fields in Processor.';
         var errorDiv = $('<div class="form-message red"></div>').html(missingFieldsMessage);
         $(frm.layout.wrapper).find('.form-message.red').remove();
         $(frm.layout.wrapper).prepend(errorDiv);
@@ -909,29 +912,31 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
 
     if (model && display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
         frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.construct_item_code',
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
             args: { 
                 item_template: item_template, 
-                args_list: display_properties,
+                args: display_properties,
             },
             callback: function(r) {
-                if (r.message.error) {
-                    frappe.utils.play_sound("error");
-                    var errorMessageString = 'Item code not found: ' + r.message.error;
-                    var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                    $(frm.layout.wrapper).find('.form-message.red').remove();
-                    $(frm.layout.wrapper).prepend(errorDiv);
-                    frm.set_df_property('error_section_section', 'hidden', 0);
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-                    frm.set_df_property('error_section_section', 'hidden', 1);
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = 'Item code not found: ' + r.message.error;
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
+                    } else {
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
+                        frm.set_df_property('error_section_section', 'hidden', 1);
+                    }
                 }
             }
         });
     } else {
         frappe.utils.play_sound("error");
-        var missingFieldsMessage = 'One or more required attributes are not filled.';
+        var missingFieldsMessage = 'One or more required attributes are not filled in Display.';
         var errorDiv = $('<div class="form-message red"></div>').html(missingFieldsMessage);
         $(frm.layout.wrapper).find('.form-message.red').remove();
         $(frm.layout.wrapper).prepend(errorDiv);
@@ -954,29 +959,31 @@ function generateRamItemCode(frm, cdt, cdn, child) {
     ];
     if (child.ram_type && child.ram_capacity && child.ram_speed && child.grade) {
         frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.construct_item_code',
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
             args: { 
                 item_template: item_template, 
-                args_list: ram_properties,
+                args: ram_properties,
             },
             callback: function(r) {
-                if (r.message.error) {
-                    frappe.utils.play_sound("error");
-                    var errorMessageString = 'Item code not found: ' + r.message.error;
-                    var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                    $(frm.layout.wrapper).find('.form-message.red').remove();
-                    $(frm.layout.wrapper).prepend(errorDiv);
-                    frm.set_df_property('error_section_section', 'hidden', 0);
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
-                    frm.set_df_property('error_section_section', 'hidden', 1);
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = 'Item code not found: ' + r.message.error;
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
+                        frm.set_df_property('error_section_section', 'hidden', 0);
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
+                    } else {
+                        frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
+                        frm.set_df_property('error_section_section', 'hidden', 1);
+                    }
                 }
             }
         });
     } else {
         frappe.utils.play_sound("error");
-        var missingFieldsMessage = 'Please fill all the required fields.';
+        var missingFieldsMessage = 'Please fill all the required fields in RAM.';
         var errorDiv = $('<div class="form-message red"></div>').html(missingFieldsMessage);
         $(frm.layout.wrapper).find('.form-message.red').remove();
         $(frm.layout.wrapper).prepend(errorDiv);

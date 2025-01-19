@@ -8,9 +8,11 @@
  "field_order": [
   "previous_department",
   "changed_by",
+  "previous_role_profile",
   "column_break_czjgg",
   "current_department",
   "changed_on",
+  "current_role__profile",
   "amended_from"
  ],
  "fields": [
@@ -50,12 +52,24 @@
    "options": "Department Change Log",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "previous_role_profile",
+   "fieldtype": "Link",
+   "label": "Previous Role Profile",
+   "options": "Role Profile"
+  },
+  {
+   "fieldname": "current_role__profile",
+   "fieldtype": "Link",
+   "label": "Current Role  Profile",
+   "options": "Role Profile"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-11-23 10:31:23.393238",
+ "modified": "2025-01-18 15:45:31.709102",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Change Log",

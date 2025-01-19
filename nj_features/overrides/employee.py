@@ -207,7 +207,6 @@ def get_previous_department(docname):
     # frappe.db.set_value('Warehouse', docname, 'previous_department', previous_department)
     # frappe.db.commit()
     return previous_department
-
 @frappe.whitelist()
 def department_change_log(docname, cur_department, previous_department):
     changed_by = frappe.session.user
@@ -232,3 +231,24 @@ def department_change_log(docname, cur_department, previous_department):
         new_doc.submit()
 
     return previous_department
+
+
+@frappe.whitelist()
+def get_previous_role_profile(docname):
+    return frappe.db.get_value('Employee', {'name': docname}, 'role_profile') or ''
+   
+
+@frappe.whitelist()
+def role_profile_change_log(user_id, cur_role_profile, previous_role_profile):
+
+    if previous_role_profile != cur_role_profile:
+        changed_by = frappe.session.user
+        new_doc = frappe.new_doc('Department Change Log')
+        new_doc.previous_role_profile = previous_role_profile
+        new_doc.current_role__profile = cur_role_profile
+        new_doc.changed_by = changed_by
+        new_doc.changed_on =  user_id
+        new_doc.save()
+        new_doc.submit()
+    return 'No changes in role profile detected.'
+

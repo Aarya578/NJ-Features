@@ -41,6 +41,8 @@ doctype_js = {
     "Delivery Note": "public/js/delivery_note.js",
     "Sales Invoice": "public/js/sales_invoice.js",
     "Department": "public/js/department.js",
+	"Role Profile": "public/js/role_profile.js",			
+	
 }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order.js",
@@ -119,6 +121,12 @@ doc_events = {
 		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
 		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
 	}
+}
+
+doc_events = {
+    "Purchase Order": {
+        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
+    }
 }
 
 # doc_events = {

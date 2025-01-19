@@ -157,8 +157,9 @@ def get_batch(doc, method=None):
     for item in doc.items:
         set_registry_no(item)
         item_has_batch_no = frappe.db.get_value('Item', {'name': item.item_code}, 'has_batch_no')
-        if item_has_batch_no:
-            batch_id = item.purchase_order + '-' + str(item.idx)
+        item_idx = frappe.db.get_value('Purchase Order Item', {'item_code': item.item_code, 'parent': item.purchase_order, 'docstatus': 1}, 'idx')
+        if item_has_batch_no and item_idx:
+            batch_id = item.purchase_order + '-' + str(item_idx)
             item.batch_no = batch_id
 
             if frappe.db.exists('Batch', batch_id):

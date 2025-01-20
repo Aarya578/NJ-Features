@@ -41,7 +41,8 @@ doctype_js = {
     "Delivery Note": "public/js/delivery_note.js",
     "Sales Invoice": "public/js/sales_invoice.js",
     "Department": "public/js/department.js",
-	"Role Profile": "public/js/role_profile.js",			
+	"Role Profile": "public/js/role_profile.js",
+    "Issue": "public/js/issue.js",			
 	
 }
 doctype_list_js = {

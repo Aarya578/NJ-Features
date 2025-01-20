@@ -541,7 +541,8 @@ def get_stock_registry(stock_registry_no):
             SELECT  
                 poi.item_group, 
                 poi.item_code, 
-                poi.qty, 
+                poi.qty,
+                poi.idx,
                 sir.name AS reference_name, 
                 sir.po_number AS po_number
             FROM `tabSecurity Inward Registry` sir
@@ -553,7 +554,7 @@ def get_stock_registry(stock_registry_no):
         for row in stock_details:
             po_qty = frappe.db.get_value(
                 'Purchase Order Item',
-                {'parent': row.po_number, 'item_code': row.item_code, 'item_group': row.item_group},
+                {'parent': row.po_number, 'item_code': row.item_code, 'item_group': row.item_group, 'idx': row.idx},
                 ['qty']
             )
 
@@ -565,9 +566,9 @@ def get_stock_registry(stock_registry_no):
                     `tabPurchase Receipt` pr ON pri.parent = pr.name
                 WHERE 
                     pri.purchase_order = %s 
-                    AND pri.item_code = %s 
+                    AND pri.item_code = %s AND pri.idx = %s 
                     AND pr.docstatus = 1
-            """, (row.po_number, row.item_code))[0][0] or 0 
+            """, (row.po_number, row.item_code, row.idx))[0][0] or 0 
 
             available_qty = float(po_qty) - float(total_received_qty)
 

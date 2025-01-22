@@ -1,0 +1,129 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-01-22 11:29:52.592566",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date",
+  "serial_no",
+  "stock_entry_name",
+  "stock_entry_creation",
+  "item_group",
+  "item_code",
+  "qty",
+  "t_warehouse",
+  "source_dept",
+  "target_dept",
+  "target_department",
+  "dept_prd",
+  "weightage_value",
+  "wtd_qty"
+ ],
+ "fields": [
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "stock_entry_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Entry Name",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "stock_entry_creation",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Stock Entry Creation"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Qty"
+  },
+  {
+   "fieldname": "t_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "T Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "source_dept",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Dept",
+   "options": "Department"
+  },
+  {
+   "fieldname": "target_dept",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target Dept",
+   "options": "Department"
+  },
+  {
+   "fieldname": "target_department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "dept_prd",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dept Prd"
+  },
+  {
+   "fieldname": "weightage_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Weightage Value"
+  },
+  {
+   "fieldname": "wtd_qty",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Wtd Qty"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-22 11:59:33.293801",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Productivity Child",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

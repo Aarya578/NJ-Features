@@ -424,7 +424,9 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
     response = frappe._dict()
     
     response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
-    
+
+    doc_data = response.get('doc_data')
+
     if response.get('sequence_list_for_nj_readings_data'):
         nj_quality_readings = []
         for nj_readings_data in response.get('sequence_list_for_nj_readings_data'):
@@ -448,8 +450,9 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
     if response.get('initial_mandatory_rows'):
         new_qi.set('mandatory_rows', response.get('initial_mandatory_rows'))
     
-    if response.get('item_wizard'):
-        new_qi.set('item_wizard', response.get('item_wizard'))
+
+    if doc_data and doc_data[0].get('item_wizard'):
+        new_qi.set('item_wizard', doc_data[0].get('item_wizard'))
     
     new_qi.save()
     

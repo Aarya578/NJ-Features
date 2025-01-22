@@ -105,11 +105,14 @@ def validate_mandatory_links(doc, method=None):
     core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
     requires_links = False
     
+    if doc.is_sample:
+        return
+
     for item in doc.items:
         item_group = frappe.db.get_value('Item', item.item_code, 'item_group')
         if item_group in core_item_groups:
             requires_links = True
-            break  
+            break 
     
     if requires_links:
         if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:

@@ -42,7 +42,8 @@ doctype_js = {
     "Sales Invoice": "public/js/sales_invoice.js",
     "Department": "public/js/department.js",
 	"Role Profile": "public/js/role_profile.js",
-    "Issue": "public/js/issue.js",			
+    "Issue": "public/js/issue.js",	
+    # "Stock Entry": "public/js/stock_entry.js"		
 	
 }
 doctype_list_js = {
@@ -110,8 +111,10 @@ override_doctype_class = {
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
-    "Issue": "nj_features.overrides.issue.CustomIssue"
+    "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Stock Entry": "nj_features.overrides.stock_entry.CustomStockEntry"	
 }
+
 
 # Document Events
 # ---------------

@@ -13,168 +13,144 @@
   "variant_4",
   "variant_5",
   "variant_6",
+  "column_break_pcz3k",
+  "part_serial_no",
   "variant_7",
   "variant_8",
   "variant_9",
   "variant_10",
   "variant_11",
-  "column_break_pcz3k",
   "variant_12",
   "variant_13",
   "variant_14",
-  "variant_15",
-  "variant_16",
-  "variant_17",
-  "variant_18",
-  "variant_19",
-  "variant_20",
   "attr_data",
-  "part_serial_no",
-  "item_code",
-  "accept"
+  "item_code"
  ],
  "fields": [
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "item_group",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_1",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 01"
+   "label": "Variant 01",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_8",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 08"
+   "label": "Variant 08",
+   "read_only": 1
   },
   {
    "fieldname": "variant_9",
    "fieldtype": "Data",
-   "label": "Variant 09"
+   "label": "Variant 09",
+   "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "variant_10",
    "fieldtype": "Data",
-   "label": "Variant 10"
+   "in_list_view": 1,
+   "label": "Variant 10",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_2",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 02"
+   "label": "Variant 02",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_3",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 03"
+   "label": "Variant 03",
+   "read_only": 1
   },
   {
    "fieldname": "variant_4",
    "fieldtype": "Data",
-   "label": "Variant 04"
+   "label": "Variant 04",
+   "read_only": 1
   },
   {
    "fieldname": "variant_5",
    "fieldtype": "Data",
-   "label": "Variant 05"
+   "label": "Variant 05",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_6",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 06"
+   "label": "Variant 06",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "variant_7",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Variant 07"
+   "label": "Variant 07",
+   "read_only": 1
   },
   {
    "fieldname": "part_serial_no",
    "fieldtype": "Data",
-   "label": "Part Serial No"
+   "label": "Part Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "variant_11",
    "fieldtype": "Data",
-   "label": "Variant 11"
+   "label": "Variant 11",
+   "read_only": 1
   },
   {
    "fieldname": "variant_12",
    "fieldtype": "Data",
-   "label": "Variant 12"
+   "label": "Variant 12",
+   "read_only": 1
   },
   {
    "fieldname": "variant_13",
    "fieldtype": "Data",
-   "label": "Variant 13"
+   "label": "Variant 13",
+   "read_only": 1
   },
   {
    "fieldname": "variant_14",
    "fieldtype": "Data",
-   "label": "Variant 14"
-  },
-  {
-   "fieldname": "variant_15",
-   "fieldtype": "Data",
-   "label": "Variant 15"
-  },
-  {
-   "fieldname": "variant_16",
-   "fieldtype": "Data",
-   "label": "Variant 16"
-  },
-  {
-   "fieldname": "variant_17",
-   "fieldtype": "Data",
-   "label": "Variant 17"
-  },
-  {
-   "fieldname": "variant_18",
-   "fieldtype": "Data",
-   "label": "Variant 18"
-  },
-  {
-   "fieldname": "variant_19",
-   "fieldtype": "Data",
-   "label": "Variant 19"
-  },
-  {
-   "fieldname": "variant_20",
-   "fieldtype": "Data",
-   "label": "Variant 20"
+   "label": "Variant 14",
+   "read_only": 1
   },
   {
    "fieldname": "attr_data",
    "fieldtype": "Data",
-   "label": "Attr Data"
+   "label": "Attr Data",
+   "read_only": 1
   },
   {
    "fieldname": "item_code",
    "fieldtype": "Data",
-   "label": "Item Code"
-  },
-  {
-   "default": "Yes",
-   "fieldname": "accept",
-   "fieldtype": "Select",
-   "label": "Accept",
-   "options": "Yes\nNo"
+   "label": "Item Code",
+   "read_only": 1
   },
   {
    "columns": 2,
@@ -187,19 +163,19 @@
   },
   {
    "fieldname": "column_break_pcz3k",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "part_config_id",
    "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Part Config ID"
+   "label": "Part Config ID",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-01-18 13:23:36.703686",
+ "modified": "2025-01-22 11:09:32.316171",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Child",

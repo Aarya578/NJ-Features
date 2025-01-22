@@ -12,13 +12,13 @@ class SalesInvoice(CoreSalesInvoice):
                 frappe.throw("Sales Order is missing for the first item.")
 
             total_invoiced_result = frappe.db.sql("""
-                SELECT 
-                    SUM(si.grand_total) AS total_grand_total
-                FROM 
-                    `tabSales Invoice` AS si
-                WHERE 
-                    si.name = %(sales_order)s
-                    AND si.docstatus = 1
+                SELECT SUM(si.grand_total) AS total_grand_total
+                FROM `tabSales Invoice` AS si
+                WHERE si.name IN (
+                        SELECT DISTINCT sii.parent
+                        FROM `tabSales Invoice Item` AS sii
+                        WHERE sii.sales_order = %(sales_order)s
+                    ) AND si.docstatus = 1
             """, {"sales_order": sales_order}, as_dict=True)
 
             # Check if any result was returned

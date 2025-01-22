@@ -62,6 +62,11 @@ frappe.ui.form.on('NJQCA', {
                 frm.events.item_template(frm);
             }
             frm.refresh_field('item_template')
+
+            if (!frm.doc.manual_repack_item_code && frm.doc.item_code) {
+                frm.set_value('manual_repack_item_code', frm.doc.item_code);
+                frm.refresh_field('manual_repack_item_code');
+            }
         }
 
         if (frm.doc.docstatus == 0 && !frm.doc.inspection_type) {
@@ -322,9 +327,7 @@ frappe.ui.form.on('NJQCA', {
                                     frm.set_value('warehouse', r.work_warehouse);
                                     frm.refresh_field('warehouse');
                                 },
-                                error: function(err) { 
-                                    console.log(err);
-                                }
+                                error: function(err) { console.log(err); }
                             });
                     
                             dialog.hide();
@@ -418,7 +421,7 @@ function processItemTemplate(frm) {
                         }
                     });
                 }
-                console.log("r.message.part_data",r.message);
+                console.table(r.message);
                 
                 if (r.message.part_data) {
                     

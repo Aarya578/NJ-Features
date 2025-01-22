@@ -31,8 +31,11 @@
    "label": "Stock Entry Type"
   },
   {
+   "columns": 2,
    "fieldname": "default_source_warehouse",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Default Source Warehouse",
    "read_only": 1
   },
@@ -41,8 +44,11 @@
    "fieldtype": "Column Break"
   },
   {
+   "columns": 2,
    "fieldname": "default_target_warehouse",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Default Target Warehouse",
    "read_only": 1
   },
@@ -127,7 +133,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-18 17:09:14.840120",
+ "modified": "2025-01-21 10:38:26.683144",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",

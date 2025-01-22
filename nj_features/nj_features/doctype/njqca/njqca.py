@@ -119,7 +119,6 @@ def open_draft_qi(self):
             
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
-                new_qi.item_name = self.manual_repack_item_code
             
             result = get_itm_code_on_barcode(new_qi)
             self.qi_name = new_qi.name
@@ -599,7 +598,6 @@ def model_change_for_serial_no(newmodel, serial_no):
         else:
             frappe.throw(f'Item Code {Item_code} not found in Serial No {serial_no}')
 
-
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
     brand = frappe.db.exists('Brand', {'name': brand})
@@ -727,6 +725,9 @@ def get_item_code_for_each_part(part_item_group, doc):
                         if normalize_cpu and len(normalize_cpu) > 0:
                             attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
 
+                        set_part_data(item_group, attribute_object, row, part_data, doc)
+
+
                     elif item_group.lower() == ram.lower() and (row.get('variant_1') != 'SYSTEM MEMORY' and row.get('variant_1') != '[EMPTY]'):
 
                         if part_item_group == item_group:
@@ -750,6 +751,9 @@ def get_item_code_for_each_part(part_item_group, doc):
                                     attribute_object[mapping.get('attribute_name')] = f"{match.group()} GHZ"
                                 else:
                                     attribute_object[mapping.get('attribute_name')] = 'UNKNOWN SPEED'
+
+                            set_part_data(item_group, attribute_object, row, part_data, doc)
+                            
                         else:
                             if variant == 'variant_6':
                                 if 'GB' not in row.get(variant):
@@ -799,49 +803,17 @@ def get_item_code_for_each_part(part_item_group, doc):
                                     for keyword in keywords:
                                         if keyword in row.get(variant):
                                             attribute_object[mapping.get('attribute_name')] = nj_type
-
-                        elif variant == 'variant_10':
+                            
+                            
+                        if variant == 'variant_10':
                             attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type
+                            
+                        set_part_data(item_group, attribute_object, row, part_data, doc)
 
                     if attribute_object and item_group != part_item_group:
                         child_attr_data.append(attribute_object)
-            print("child_attr_data", child_attr_data, "attribute_object", attribute_object)
+                # print("child_attr_data", child_attr_data, "attribute_object", attribute_object)
 
-            if part_item_group == item_group == mapping.get('item_group'):
-                item_template = frappe.db.get_value('Item',
-                    {'item_group': part_item_group, 'has_variants': 1}, 'name' )
-                
-                attribute_object['Grade'] = Grade
-                if len(attribute_object) > 1:
-                    part_item_code = get_variant_from_value(item_template, [attribute_object])
-                    if part_item_code and 'error' not in part_item_code:
-                        part_item_code_from_db = frappe.db.get_value("Item",
-                            {'item_name': part_item_code, 'has_variants': 0, 'item_group': part_item_group},
-                            'name' )
-                        
-                        if part_item_code_from_db:
-                            item_template = frappe.db.get_value( 'Item', {'name': part_item_code}, 'variant_of' )
-                            part_data.append({
-                                'name': row.get('name'),
-                                'attr_data': attribute_object,
-                                'part_item_code': part_item_code,
-                                'item_group': part_item_group,
-                                'item_template': item_template
-                            })
-                    else:
-                        part_item_code = frappe.db.get_value('Serial No Component',
-                                            {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
-                                            ['item'])
-                        item_template = frappe.db.get_value('Item', 
-                                            {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
-                        part_data.append({
-                            'name': row.get('name'),
-                            'part_item_code': part_item_code,
-                            'attr_data': attribute_object,
-                            'item_group': part_item_group,
-                            'item_template': item_template,
-                            'response': 'error'
-                        })
 
         if part_item_group != doc.get('item_group'):
             return part_data
@@ -863,6 +835,44 @@ def get_item_code_for_each_part(part_item_group, doc):
     except Exception as e:
         frappe.throw("An error occurred: " + str(e))
         return {"error": f"An error occurred: {str(e)}"}
+    
+def set_part_data(part_item_group, attribute_object, row, part_data, doc):
+    item_template = frappe.db.get_value('Item',
+        {'item_group': part_item_group, 'has_variants': 1}, 'name' )
+    
+    attribute_object['Grade'] = Grade
+
+    if len(attribute_object) > 1:
+        part_item_code = get_variant_from_value(item_template, [attribute_object])
+        if part_item_code and 'error' not in part_item_code:
+            part_item_code_from_db = frappe.db.get_value("Item",
+                {'item_name': part_item_code, 'has_variants': 0, 'item_group': part_item_group},
+                'name' )
+            
+            if part_item_code_from_db:
+                item_template = frappe.db.get_value( 'Item', {'name': part_item_code}, 'variant_of' )
+                part_data.append({
+                    'name': row.get('name'),
+                    'attr_data': attribute_object,
+                    'part_item_code': part_item_code,
+                    'item_group': part_item_group,
+                    'item_template': item_template
+                })
+        else:
+            part_item_code = frappe.db.get_value('Serial No Component',
+                                {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
+                                ['item'])
+            item_template = frappe.db.get_value('Item', 
+                                {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
+            part_data.append({
+                'name': row.get('name'),
+                'part_item_code': part_item_code,
+                'attr_data': attribute_object,
+                'item_group': part_item_group,
+                'item_template': item_template,
+                'response': 'error'
+            })
+
         
 @frappe.whitelist()
 def get_part_mapping(doc):

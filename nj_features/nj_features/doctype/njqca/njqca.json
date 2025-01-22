@@ -187,8 +187,7 @@
   {
    "fieldname": "njqca_item_component",
    "fieldtype": "Table",
-   "options": "NJQCA Child",
-   "read_only": 1
+   "options": "NJQCA Child"
   },
   {
    "fieldname": "warehouse",
@@ -379,7 +378,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-18 13:24:52.332151",
+ "modified": "2025-01-21 18:23:05.150367",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

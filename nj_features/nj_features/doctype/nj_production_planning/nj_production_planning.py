@@ -126,19 +126,45 @@ def get_department_details(doc):
 
 def calculate_sales_order_rate(item_code_list, days=30):
     """
-    Calculate sales order rates for given item codes
+    Calculate sales order rates for given item codes and include current inventory qty.
     """
     if not item_code_list:
         return item_code_list
-
+    
     item_codes = [item['item_code'] for item in item_code_list]
     if not item_codes:
         return item_code_list
-
-    # Construct the hardcoded SQL query
+    
+    # Fetch current inventory qty for all item codes belonging to the "Packing & Dispatch - NJ" department
     item_codes_string = ', '.join([f"'{code}'" for code in item_codes])  # Hardcode the item codes as strings
+    inventory_warehouse = frappe.db.get_value("Warehouse", {"department": "Packing & Dispatch - NJ"}, "name")
+    print('inventory_data', inventory_warehouse)
+
+    for item in item_code_list:
+        item['item_name'] = frappe.db.get_value("Item", item['item_code'], "item_name")
+        item['item_model'] = frappe.db.get_value("Item", item['item_code'], "item_model")
+        item['item_group'] = frappe.db.get_value("Item", item['item_code'], "item_group")
+    
+    inventory_data = frappe.db.sql(f"""
+        SELECT
+            sn.item_code,
+            count(sn.name) as current_inventory_qty,
+            sn.warehouse
+        FROM
+            `tabSerial No` sn
+        WHERE
+            sn.item_code IN ({item_codes_string})
+            AND sn.warehouse = '{inventory_warehouse}'
+        GROUP BY
+            sn.item_code
+    """, as_dict=True)
+    
+    # Map inventory data to a dictionary for quick lookup
+    inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
+    
+    # Fetch sales data for the past `days`
     sales_rates = frappe.db.sql(f"""
-        SELECT 
+        SELECT
             soi.item_code,
             COUNT(DISTINCT so.name) as total_orders,
             SUM(soi.qty) as total_quantity,
@@ -147,26 +173,26 @@ def calculate_sales_order_rate(item_code_list, days=30):
             MAX(so.transaction_date) as last_sale_date
         FROM
             `tabSales Order` so
-        INNER JOIN 
+        INNER JOIN
             `tabSales Order Item` soi ON so.name = soi.parent
-        WHERE 
+        WHERE
             soi.item_code IN ({item_codes_string})
             AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-        GROUP BY 
+        GROUP BY
             soi.item_code
     """, as_dict=True)
-
-    print("Sales Rates ----------- 158", sales_rates)
-
-    # Map the sales rates to a dictionary for quick lookup
+    
+    # Map sales rates to a dictionary for quick lookup
     sales_rates_dict = {rate['item_code']: rate for rate in sales_rates}
-
-    # Update the item_code_list with sales rate data
+    
+    # Update the item_code_list with sales rate and inventory data
     for item in item_code_list:
         item_code = item['item_code']
-
+        # Add inventory qty
+        item['current_inventory_qty'] = inventory_map.get(item_code, 0)
+        # Add sales data
         if item_code in sales_rates_dict:
             rate_info = sales_rates_dict[item_code]
             item['total_orders'] = rate_info['total_orders']
@@ -181,4 +207,6 @@ def calculate_sales_order_rate(item_code_list, days=30):
             item['first_sale_date'] = None
             item['last_sale_date'] = None
 
+    print('item_code_list ---------------- 209', item_code_list)
+    
     return item_code_list

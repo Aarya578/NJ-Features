@@ -23,7 +23,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                 frappe.msgprint('Please Select Dispatch Type');
                 frm.set_value('scan_serial_no', '');
                 frm.refresh_field('scan_serial_no');
-            } else if (frm.doc.dispatch_type == 'Sales Order') {
+            }else if (frm.doc.dispatch_type == 'Sales Order') {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data_for_sales',
                     args: { serial_no: frm.doc.scan_serial_no },
@@ -31,20 +31,31 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                         if (r.message) {
                             frm.set_value('scan_serial_no', '');
                             frm.refresh_field('scan_serial_no');
-                            
-                            let dispatch_security_child_table = {
-                                "serial_no": r.message.serial_no,
-                                "item_code": r.message.item_code || 'Not Available',
-                                "sales_invoice": r.message.sales_invoice || 'Not Available',
-                                "delivery_note": r.message.delivery_note || 'Not Available',
-                                "si_status": r.message.si_status || 'Not Available',
-                                "dn_status": r.message.dn_status || 'Not Available',
-                                "si_approved": r.message.approved || 'Not Available',
-                                "sales_channel":r.message.sales_channel || 'Not Available'
-                            };
-                            
-                            frm.add_child("dispatch_security_child_table", dispatch_security_child_table);
-                            frm.refresh_field("dispatch_security_child_table");
+            
+                            let exists = false;
+                            if (frm.doc.dispatch_security_child_table) {
+                                exists = frm.doc.dispatch_security_child_table.some(row => 
+                                    row.serial_no === r.message.serial_no
+                                );
+                            }
+            
+                            if (!exists) {
+                                let dispatch_security_child_table = {
+                                    "serial_no": r.message.serial_no,
+                                    "item_code": r.message.item_code || 'Not Available',
+                                    "sales_invoice": r.message.sales_invoice || 'Not Available',
+                                    "delivery_note": r.message.delivery_note || 'Not Available',
+                                    "si_status": r.message.si_status || 'Not Available',
+                                    "dn_status": r.message.dn_status || 'Not Available',
+                                    "si_approved": r.message.approved || 'Not Available',
+                                    "sales_channel": r.message.sales_channel || 'Not Available'
+                                };
+                                frm.add_child("dispatch_security_child_table", dispatch_security_child_table);
+                                frm.refresh_field("dispatch_security_child_table");
+                            } else {
+                                frm.set_value('scan_serial_no', '');
+                                frm.refresh_field('scan_serial_no');
+                            }
                         } else {
                             frm.set_value('scan_serial_no', '');
                             frm.refresh_field('scan_serial_no');
@@ -113,7 +124,6 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                                 frm.refresh_field("dispatch_security_stock_entry_table");
                             }
         
-                            // Store errors for validation
                             frm.doc.transfer_errors = errors;
         
                             if (has_errors) {

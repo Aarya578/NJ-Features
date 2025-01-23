@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-01-17 12:43:20.468198",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "max_total_days",
+  "min_total_days",
+  "target"
+ ],
+ "fields": [
+  {
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Target"
+  },
+  {
+   "fieldname": "min_total_days",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Min Total Days"
+  },
+  {
+   "fieldname": "max_total_days",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Max Total Days"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-17 17:39:21.711921",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Target Kpi",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

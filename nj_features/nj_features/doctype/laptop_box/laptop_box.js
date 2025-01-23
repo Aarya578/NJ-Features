@@ -1,75 +1,3 @@
-
-// frappe.ui.form.on('Laptop Box', {
-//     barcode: function(frm) {
-//         if (frm.doc.barcode) {
-//             frappe.call({
-//                 method: "frappe.client.get",
-//                 args: {
-//                     doctype: "Serial No",
-//                     filters: { name: frm.doc.barcode },
-//                 },
-//                 callback: function(r) {
-//                     if (r.message) {
-//                         let serial_no_data = r.message;
-
-//                         // Fetch the Item document based on item_code from Serial No
-//                         frappe.call({
-//                             method: "frappe.client.get",
-//                             args: {
-//                                 doctype: "Item",
-//                                 name: serial_no_data.item_code,  // Get item code from Serial No
-//                             },
-//                             callback: function(item_data) {
-//                                 if (item_data.message) {
-//                                     let item = item_data.message;
-
-//                                     // Debug: Log all attributes in the child table
-//                                     console.log("Item Variant Attributes:", item.attributes);
-
-//                                     // Loop through the child table 'Item Variant Attribute'
-//                                     if (item.attributes && item.attributes.length > 0) {
-//                                         let processor_type = '';
-//                                         let ram_capacity = '';  // Renaming for clarity
-//                                         let storage_capacity = '';
-
-//                                         item.attributes.forEach(function(attr) {
-//                                             // Check the exact names of attributes
-//                                             if (attr.attribute == "Processor Type") {
-//                                                 processor_type = attr.attribute_value;
-//                                             }
-//                                             if (attr.attribute == "RAM Capacity" || attr.attribute == "RAM Capacity") {
-//                                                 // Add alternate RAM field names here for flexibility
-//                                                 ram_capacity = attr.attribute_value;
-//                                             }
-//                                             if (attr.attribute == "Storage Capacity") {
-//                                                 storage_capacity = attr.attribute_value;
-//                                             }
-//                                         });
-
-//                                         // Set the fetched values in the Laptop Box form
-//                                         frm.set_value("processor_type", processor_type);
-//                                         frm.set_value("ram_capacity", ram_capacity);  // Using ram_capacity now
-//                                         frm.set_value("storage_capacity", storage_capacity);
-//                                     } else {
-//                                         frappe.throw("No attributes found in Item Variant Attribute table.");
-//                                     }
-//                                 } else {
-//                                     frappe.throw("Item not found for the scanned Serial No.");
-//                                 }
-//                             }
-//                         });
-//                     } else {
-//                         frm.set_value("barcode", null);
-//                         frappe.throw(`Serial No <b>'${frm.doc.barcode}'</b> not found. Please select an existing Serial No.`);
-//                     }
-//                 },
-//                 error: function() {
-//                     frappe.throw("Error fetching data for the barcode.");
-//                 }
-//             });
-//         }
-//     }
-// });
 frappe.ui.form.on('Laptop Box', {
     barcode: function(frm) {
         frappe.call({
@@ -91,8 +19,8 @@ frappe.ui.form.on('Laptop Box', {
                         frm.set_value("brand", serial_no_data.brand);  
                         frm.set_value("model", serial_no_data.model);
                         frm.set_value("bios_serial_no", serial_no_data.bios_serial_no);  
-
-                       
+                        frm.set_value("warehouse", serial_no_data.warehouse);  
+                        frm.set_value("item_code", serial_no_data.item_code);  
 
                         frappe.call({
                             method: "frappe.client.get",
@@ -103,8 +31,6 @@ frappe.ui.form.on('Laptop Box', {
                             callback: function(item_data) {
                                 if (item_data.message) {
                                     let item = item_data.message;
-
-                                    console.log("Item Variant Attributes:", item.attributes);
 
                                     if (item.attributes && item.attributes.length > 0) {
                                         let processor_type = '';
@@ -144,7 +70,66 @@ frappe.ui.form.on('Laptop Box', {
                 }
             });
         }
-    }
+    },
+
+    warehouse: function(frm) {
+		frappe.db.get_value("Employee", {"user_id": frappe.session.user, "status": "Active"}, "work_warehouse", function(r) {
+			if (!r.work_warehouse) {
+				frappe.msgprint(__('Please Set Work Warehouse in Employee Profile: <b>{0}</b>.', [frappe.session.user]));
+			}
+			if (r.work_warehouse != frm.doc.warehouse) {
+				
+				let dialog = new frappe.ui.Dialog({
+					title: "Confirm Stock Transfer",
+					fields: [
+						{
+							fieldtype: "HTML",
+							fieldname: "message",
+							options: `Do you want to transfer stock to your Work Warehouse: ${r.work_warehouse}?`
+						}
+					],
+					static:true,
+					primary_action_label: "Yes, Transfer", 
+					primary_action: function() {
+						let material_transfer_items = [{
+							'serial_no': frm.doc.barcode,
+							'item_code': frm.doc.item_code,
+							't_warehouse': r.work_warehouse,
+							's_warehouse': frm.doc.warehouse
+						}];
+		
+						let data = {
+							"doctype": frm.doc.doctype,
+							"series": "LB-.YYYY.-.MM.-",
+							"t_warehouse": r.work_warehouse,
+							"stock_entry_type": "Material Transfer",
+							"reference_serial_no": frm.doc.barcode,
+							"material_transfer_items": material_transfer_items
+						}
+
+						frappe.call({
+							method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+							args: { 'data': JSON.stringify(data) },
+							freeze: true,
+                            freeze_message: `<div style="text-align: center;">
+								<i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+								<br>Transfering Stock... Please Wait
+							</div>`,
+							error: function(err) { console.log(err); }
+						});
+
+						dialog.hide();
+
+                    },
+                    secondary_action_label: "Cancel",
+                    secondary_action: function() {
+                        $('.primary-action').hide()
+                        dialog.hide();
+                        $("button[data-original-title=Print]").hide();
+                    }
+                });
+                dialog.show();
+			} else { $("button[data-original-title=Print]").show(); }
+		})
+	}
 });
-
-

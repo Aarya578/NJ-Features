@@ -2,6 +2,7 @@ frappe.ui.form.on('Department', {
     refresh: function(frm) {
         // console.log("refreshing...")
     },
+       
 });
 
 frappe.ui.form.on('Stock Movement Restriction Child', {
@@ -58,3 +59,11 @@ frappe.ui.form.on('Inventory Details', {
         }
     }
 });
+// Add item_group filter for weightage_table child table
+cur_frm.fields_dict["weightage_table"].grid.get_field("item_group").get_query = function (doc, cdt, cdn) {
+    return {
+        filters: {
+            parent_item_group: ["in", ["Laptop Spare Parts", "Desktop Spares"]]
+        }
+    };
+};

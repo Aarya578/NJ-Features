@@ -3,32 +3,37 @@ from frappe.model.document import Document
 from erpnext.support.doctype.issue.issue import Issue
 
 class CustomIssue(Issue):
-    def validate(self):
-        super().validate()
-        if self.issue_type == "MDT":
-            self.raise_issue_in_model()
-            
-    def raise_issue_in_model(self):
-        try:
-            # Ensure a model is selected
-            if not self.model:
-                frappe.throw("Please select a model before proceeding.")
+    pass
 
-            model_doc = frappe.get_doc("Models", self.model)
+@frappe.whitelist()
+def raise_issue_in_model(doc):
+    try:
+        # Parse the doc if it is a JSON string
+        if isinstance(doc, str):
+            doc = frappe.parse_json(doc)
+        
+        # Check if issue_type is MDT
+        if doc.get("issue_type") == "MDT":
+            # Ensure a model is selected for MDT issue type
+            if not doc.get("model"):
+                frappe.throw("Please select a model before proceeding. Model is mandatory for MDT issues.")
+            
+            # Fetch the Models document
+            model_doc = frappe.get_doc("Models", doc.get("model"))
             
             # If the Models document exists
             if model_doc:
                 # Create a new row for the bdt_model child table
                 new_bdt_row = {
-                    "subject": self.subject,
-                    "issue_id": self.name,
-                    "status": self.status,
-                    "created_date": self.creation
+                    "subject": doc.get("subject"),
+                    "issue_id": doc.get("name"),
+                    "status": doc.get("status"),
+                    "created_date": doc.get("creation")
                 }
-
+                
                 # Append the new row
                 model_doc.append("bdt_model", new_bdt_row)
-
+                
                 # Ignore permission checks and mandatory field validation
                 model_doc.flags.ignore_permission = True
                 model_doc.flags.ignore_mandatory = True
@@ -37,10 +42,13 @@ class CustomIssue(Issue):
                 model_doc.save()
                 frappe.db.commit()
                 
-                # Optional: Notify the user
-                frappe.msgprint(f"Issue {self.name} has been successfully added to the model {self.model}.")
+                # Notify the user
+                frappe.msgprint(f"Issue {doc.get('name')} has been successfully added to the model {doc.get('model')}.")
             else:
-                frappe.throw(f"Model {self.model} not found.")
-        except frappe.DoesNotExistError:
-            frappe.throw(f"Model {self.model} does not exist.")
+                frappe.throw(f"Model {doc.get('model')} not found.")
         
+    except frappe.DoesNotExistError:
+        frappe.throw(f"Model {doc.get('model')} does not exist.")
+    except Exception as e:
+        frappe.log_error(f"Error: {str(e)}", "Raise Issue in Model")
+        frappe.throw("An error occurred while raising the issue in the model.")

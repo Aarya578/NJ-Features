@@ -97,7 +97,27 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
     except Exception as e:
         traceback_info = traceback.format_exc()
         return {'error': str(e), 'traceback': traceback_info}
+    
 
+
+def validate_mandatory_links(doc, method=None):
+
+    core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
+    requires_links = False
+    
+    if doc.is_sample:
+        return
+
+    for item in doc.items:
+        item_group = frappe.db.get_value('Item', item.item_code, 'item_group')
+        if item_group in core_item_groups:
+            requires_links = True
+            break 
+    
+    if requires_links:
+        if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:
+            frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
+      
 def set_missing_values(source, target):
 	target.run_method("set_missing_values")
 	target.run_method("calculate_taxes_and_totals")

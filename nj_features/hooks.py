@@ -41,6 +41,10 @@ doctype_js = {
     "Delivery Note": "public/js/delivery_note.js",
     "Sales Invoice": "public/js/sales_invoice.js",
     "Department": "public/js/department.js",
+	"Role Profile": "public/js/role_profile.js",
+    "Issue": "public/js/issue.js",	
+    # "Stock Entry": "public/js/stock_entry.js"		
+	
 }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order.js",
@@ -107,8 +111,10 @@ override_doctype_class = {
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
-    "Issue": "nj_features.overrides.issue.CustomIssue"
+    "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Stock Entry": "nj_features.overrides.stock_entry.CustomStockEntry"	
 }
+
 
 # Document Events
 # ---------------
@@ -119,6 +125,12 @@ doc_events = {
 		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
 		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
 	}
+}
+
+doc_events = {
+    "Purchase Order": {
+        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
+    }
 }
 
 # doc_events = {

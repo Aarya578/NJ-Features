@@ -120,7 +120,6 @@ def get_department_details(doc):
             if item_code in attributes_map:
                 item.update(attributes_map[item_code])
     
-    # Add sales order rate calculation
     item_code_list = calculate_sales_order_rate(item_code_list)
     
     return item_code_list
@@ -133,14 +132,17 @@ def calculate_sales_order_rate(item_code_list, days=30):
         return item_code_list
 
     item_codes = [item['item_code'] for item in item_code_list]
-    placeholders = ', '.join(['%s'] * len(item_codes))
-    
+    if not item_codes:
+        return item_code_list
+
+    # Construct the hardcoded SQL query
+    item_codes_string = ', '.join([f"'{code}'" for code in item_codes])  # Hardcode the item codes as strings
     sales_rates = frappe.db.sql(f"""
         SELECT 
             soi.item_code,
             COUNT(DISTINCT so.name) as total_orders,
             SUM(soi.qty) as total_quantity,
-            SUM(soi.qty) / %s as daily_sales_rate,
+            SUM(soi.qty) / {days} as daily_sales_rate,
             MIN(so.transaction_date) as first_sale_date,
             MAX(so.transaction_date) as last_sale_date
         FROM
@@ -148,20 +150,23 @@ def calculate_sales_order_rate(item_code_list, days=30):
         INNER JOIN 
             `tabSales Order Item` soi ON so.name = soi.parent
         WHERE 
-            soi.item_code IN ({placeholders})
-            AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+            soi.item_code IN ({item_codes_string})
+            AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
             AND so.docstatus = 1
+            AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY 
             soi.item_code
-    """, tuple([days] + item_codes + [days]), as_dict=True)
+    """, as_dict=True)
 
     print("Sales Rates ----------- 158", sales_rates)
 
+    # Map the sales rates to a dictionary for quick lookup
     sales_rates_dict = {rate['item_code']: rate for rate in sales_rates}
 
+    # Update the item_code_list with sales rate data
     for item in item_code_list:
         item_code = item['item_code']
-        
+
         if item_code in sales_rates_dict:
             rate_info = sales_rates_dict[item_code]
             item['total_orders'] = rate_info['total_orders']

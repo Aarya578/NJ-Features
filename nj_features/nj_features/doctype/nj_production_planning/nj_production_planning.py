@@ -138,7 +138,7 @@ def calculate_sales_order_rate(item_code_list, days=30):
     # Fetch current inventory qty for all item codes belonging to the "Packing & Dispatch - NJ" department
     item_codes_string = ', '.join([f"'{code}'" for code in item_codes])  # Hardcode the item codes as strings
     inventory_warehouse = frappe.db.get_value("Warehouse", {"department": "Packing & Dispatch - NJ"}, "name")
-    print('inventory_data', inventory_warehouse)
+    # print('inventory_data', inventory_warehouse)
 
     for item in item_code_list:
         item['item_name'] = frappe.db.get_value("Item", item['item_code'], "item_name")
@@ -166,23 +166,26 @@ def calculate_sales_order_rate(item_code_list, days=30):
     sales_rates = frappe.db.sql(f"""
         SELECT
             soi.item_code,
-            COUNT(DISTINCT so.name) as total_orders,
-            SUM(soi.qty) as total_quantity,
-            SUM(soi.qty) / {days} as daily_sales_rate,
-            MIN(so.transaction_date) as first_sale_date,
-            MAX(so.transaction_date) as last_sale_date
+            COUNT(DISTINCT so.name) AS total_orders,
+            SUM(soi.qty) AS total_quantity,
+            SUM(soi.qty) / {days} AS daily_sales_rate,
+            MIN(so.creation) AS first_recorded_date,
+            MAX(so.creation) AS last_recorded_date
         FROM
             `tabSales Order` so
         INNER JOIN
             `tabSales Order Item` soi ON so.name = soi.parent
         WHERE
             soi.item_code IN ({item_codes_string})
-            AND so.transaction_date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+            AND so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
-            soi.item_code
+            soi.item_code;
+
     """, as_dict=True)
+
+    print('sales_rates --------------------- 187', sales_rates)
     
     # Map sales rates to a dictionary for quick lookup
     sales_rates_dict = {rate['item_code']: rate for rate in sales_rates}
@@ -207,6 +210,6 @@ def calculate_sales_order_rate(item_code_list, days=30):
             item['first_sale_date'] = None
             item['last_sale_date'] = None
 
-    print('item_code_list ---------------- 209', item_code_list)
+    # print('item_code_list ---------------- 209', item_code_list)
     
     return item_code_list

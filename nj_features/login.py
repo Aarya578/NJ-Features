@@ -55,7 +55,7 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
             api_key = user_data.get('api_key')
 
         if api:
-            frappe.response["message"] = {
+            return {
                 "success_key": 1,
                 "message": "Authentication success",
                 "sid": frappe.session.sid,

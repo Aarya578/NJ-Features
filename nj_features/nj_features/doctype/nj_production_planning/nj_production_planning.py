@@ -183,7 +183,7 @@ def calculate_sales_order_rate(item_code_list, days=30):
                 soi.item_code,
                 COUNT(DISTINCT so.name) AS total_orders,
                 SUM(soi.qty) AS total_quantity,
-                SUM(soi.qty) / {days} AS daily_sales_rate,
+                SUM(soi.qty) / {days} AS daily_sales_rate
             FROM
                 `tabSales Order` so
             INNER JOIN
@@ -217,6 +217,8 @@ def calculate_sales_order_rate(item_code_list, days=30):
                 item['daily_sales_rate'] = 0
                 item['first_sale_date'] = None
                 item['last_sale_date'] = None
+        
+        print('item_code_list', item_code_list)
         
         return item_code_list
     except Exception as e:

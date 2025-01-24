@@ -149,7 +149,15 @@ def calculate_sales_order_rate(item_code_list, days=30):
             return item_code_list
         
         item_codes_string = ', '.join([f"'{code}'" for code in item_codes])
-        inventory_warehouse = frappe.db.get_value("Warehouse", {"department": "Packing & Dispatch - NJ"}, "name")
+        inventory_warehouses = frappe.get_all(
+            "Warehouse", 
+            filters={"department": "Packing & Dispatch - NJ"}, 
+            fields=["name"]
+        )
+
+        warehouse_names = [warehouse["name"] for warehouse in inventory_warehouses]
+
+        warehouse_names_string = "', '".join(warehouse_names)
 
         inventory_data = frappe.db.sql(f"""
             SELECT
@@ -160,10 +168,11 @@ def calculate_sales_order_rate(item_code_list, days=30):
                 `tabSerial No` sn
             WHERE
                 sn.item_code IN ({item_codes_string})
-                AND sn.warehouse = '{inventory_warehouse}'
+                AND sn.warehouse IN ('{warehouse_names_string}')
             GROUP BY
-                sn.item_code
+                sn.item_code, sn.warehouse
         """, as_dict=True)
+
         
         inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
 

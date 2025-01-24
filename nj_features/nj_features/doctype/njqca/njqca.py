@@ -775,7 +775,7 @@ def get_item_code_for_each_part(doc):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
-                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_6', '').lower())):
+                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())):
                                 variant_type = ' SSD'
 
                             if variant == 'variant_1':
@@ -811,8 +811,8 @@ def get_item_code_for_each_part(doc):
                                         for keyword in keywords:
                                             if keyword in row.get(variant):
                                                 attribute_object[mapping.get('attribute_name')] = nj_type
-                                            elif (row.get('variant_6') is not None and 'ssd' in row.get('variant_6', '').lower()):
-                                                attribute_object[mapping.get('attribute_name')] = row.get('variant_6')
+                                            elif (row.get('variant_5') is not None and 'ssd' in row.get('variant_5', '').lower()):
+                                                attribute_object[mapping.get('attribute_name')] = row.get('variant_5')
                                  
                             if variant == 'variant_10':
                                 attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type

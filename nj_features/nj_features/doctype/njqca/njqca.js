@@ -1011,31 +1011,29 @@ function generateRamItemCode(frm, cdt, cdn, child) {
 }
 
 function set_options_for_attribute_fields_in_child(frm, grid) {
-    console.log("");
-    
-    // $.each(grid.grid_rows, function(i, row) {
+    $.each(grid.grid_rows, function(i, row) {
             
-    //     $.each(row.columns, function(j, field) {
+        $.each(row.columns, function(j, field) {
 
-    //         if (field.df.fieldtype === 'Select') {
+            if (field.df.fieldtype === 'Select') {
                 
-    //             frappe.call({
-    //                 method: "erpnext.stock.doctype.item.item.get_item_attribute",
-    //                 args: {
-    //                     parent: field.df.label,
-    //                     attribute_value: ''
-    //                 },
-    //                 callback: function(r) {
-    //                     if (r.message) {
-    //                         var options = r.message.map(function(d) { 
-    //                             return d.attribute_value.toUpperCase(); 
-    //                         });
+                frappe.call({
+                    method: "erpnext.stock.doctype.item.item.get_item_attribute",
+                    args: {
+                        parent: field.df.label,
+                        attribute_value: ''
+                    },
+                    callback: function(r) {
+                        if (r.message) {
+                            var options = r.message.map(function(d) { 
+                                return d.attribute_value.toUpperCase(); 
+                            });
                             
-    //                         frm.set_df_property(grid.df.fieldname, 'options', options, frm.docname, field.df.fieldname, row.doc.name);
-    //                     }
-    //                 }
-    //             });
-    //         }
-    //     });
-    // });
+                            frm.set_df_property(grid.df.fieldname, 'options', options, frm.docname, field.df.fieldname, row.doc.name);
+                        }
+                    }
+                });
+            }
+        });
+    });
 }

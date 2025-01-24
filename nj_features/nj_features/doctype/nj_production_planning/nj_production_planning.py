@@ -166,6 +166,8 @@ def calculate_sales_order_rate(item_code_list, days=30):
         """, as_dict=True)
         
         inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
+
+        print('inventory_map ------- 170', inventory_map)
         
         sales_rates = frappe.db.sql(f"""
             SELECT
@@ -173,8 +175,6 @@ def calculate_sales_order_rate(item_code_list, days=30):
                 COUNT(DISTINCT so.name) AS total_orders,
                 SUM(soi.qty) AS total_quantity,
                 SUM(soi.qty) / {days} AS daily_sales_rate,
-                MIN(so.creation) AS first_recorded_date,
-                MAX(so.creation) AS last_recorded_date
             FROM
                 `tabSales Order` so
             INNER JOIN
@@ -190,17 +190,18 @@ def calculate_sales_order_rate(item_code_list, days=30):
         """, as_dict=True)
 
         sales_rates_dict = {rate['item_code']: rate for rate in sales_rates}
+
+        print('sales_rate_dict', sales_rates_dict)
         
         for item in item_code_list:
             item_code = item['item_code']
             item['current_inventory_qty'] = inventory_map.get(item_code, 0)
             if item_code in sales_rates_dict:
+                print('item_code', item_code)
                 rate_info = sales_rates_dict[item_code]
                 item['total_orders'] = rate_info['total_orders']
                 item['total_sales_qty'] = rate_info['total_quantity']
                 item['daily_sales_rate'] = rate_info['daily_sales_rate']
-                item['first_sale_date'] = rate_info['first_recorded_date']
-                item['last_sale_date'] = rate_info['last_recorded_date']
             else:
                 item['total_orders'] = 0
                 item['total_sales_qty'] = 0

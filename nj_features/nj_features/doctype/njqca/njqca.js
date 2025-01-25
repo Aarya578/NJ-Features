@@ -4,14 +4,6 @@
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
         if (frm.doc.docstatus == 0) {
-            
-            $(document).on('frappe.error', function(event, error) {
-                if (error instanceof frappe.TimestampMismatchError) {
-                    frappe.msgprint(__('The document has been modified externally. Refreshing now.'));
-                    frm.reload_doc();
-                }
-            });
-
             frm.events.serial_no(frm);
         }
     },
@@ -21,6 +13,12 @@ frappe.ui.form.on('NJQCA', {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         if (frm.doc.docstatus == 0) {
+            $(document).on('frappe.error', function(event, error) {
+                if (error instanceof frappe.TimestampMismatchError) {
+                    frappe.msgprint(__('The document has been modified externally. Refreshing now.'));
+                    frm.reload_doc();
+                }
+            });
             
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');
@@ -420,9 +418,9 @@ function processItemTemplate(frm) {
                 }
 
                 if (r.message) {
-                    if (r.message.data_attr !== undefined && r.message.data_attr !== null) {
-                        frm.set_value('data_attr', r.message.data_attr);
-                    }
+                    // if (r.message.data_attr !== undefined && r.message.data_attr !== null) {
+                    //     frm.set_value('data_attr', r.message.data_attr);
+                    // }
                 
                     if (r.message.repack_item_code !== undefined && r.message.repack_item_code !== null) {
                         frm.set_value('repack_item_code', r.message.repack_item_code);

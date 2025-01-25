@@ -241,8 +241,6 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
 
-    print('result', result)
-    
     if result is None:
         error_messages.append(
             f"Item <b>{serial_doc.get('item_code')}</b> not found. Cannot validate grade restrictions for serial <b>{serial_doc.name}</b>."
@@ -296,8 +294,6 @@ def get_item_code_and_warehouse(item_code):
         frappe.log_error(frappe.get_traceback(), "Error in get_item_code_and_warehouse")
         return
     
-
-   
 @frappe.whitelist()
 def get_grades_from_part_list(search_value):
     query = frappe.db.sql(
@@ -310,7 +306,6 @@ def get_grades_from_part_list(search_value):
         as_dict=True
     )
 
-    print("query---------285------",query)
     results = []
 
     # Loop through each item_group from the query result
@@ -337,8 +332,7 @@ def get_grades_from_part_list(search_value):
                 damage_type_condition="AND damage_type IN %s" if damage_types[0] else ""
             ),
             (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
-            as_dict=True,
-            debug=True
+            as_dict=True
         )
 
         # If department data is found, append it to the result list
@@ -349,5 +343,4 @@ def get_grades_from_part_list(search_value):
                 })
 
     # Return the consolidated results
-    print("results---------", results)
     return results

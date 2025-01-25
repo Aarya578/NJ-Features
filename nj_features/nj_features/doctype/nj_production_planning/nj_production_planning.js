@@ -26,10 +26,10 @@ frappe.ui.form.on('NJ Production Planning', {
                             child.processor = item.processor_type ? item.processor_type.toUpperCase() : '';
                             child.ram = item.ram_capacity ? item.ram_capacity.toUpperCase() : '';
                             child.ssd = item.storage_capacity ? item.storage_capacity.toUpperCase() : '';
-                            child.sales_rate = 0.0;
+                            child.sales_rate = item.sales_rate ? item.sales_rate : 0.0;
                             child.inward_inventory = item.inwarded_qty ? item.inwarded_qty : 0.0;
                             child.forward_inventory = item.forwarded_qty ? item.forwarded_qty : 0.0;
-                            child.days_of_inventory = null;
+                            child.days_of_inventory = item.DOI ? item.DOI : 0.0;
                             child.to_make = 0.0;
                         });
 

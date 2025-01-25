@@ -426,7 +426,7 @@ function processItemTemplate(frm) {
                 
                     if (r.message.repack_item_code !== undefined && r.message.repack_item_code !== null) {
                         frm.set_value('repack_item_code', r.message.repack_item_code);
-                        frm.set_value('manual_repack_item_code', r.message.repack_item_code); // Reusing repack_item_code
+                        frm.set_value('manual_repack_item_code', r.message.repack_item_code);
                     }
                     frm.refresh_fields(['repack_item_code', 'manual_repack_item_code', 'data_attr']);
 

@@ -4,6 +4,7 @@ import frappe
 import datetime
 import traceback
 from frappe import _
+from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation
@@ -418,8 +419,11 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
     barcode = new_qi.barcode
-    if not barcode or not inspection_type:
-        frappe.throw("Error: Barcode or Inspection Type is not found.")
+    if not barcode:
+        frappe.throw("Error: Barcode is not found.")
+
+    if not inspection_type:
+        frappe.throw("Error: Inspection Type is not found.")
     
     response = frappe._dict()
     
@@ -475,7 +479,7 @@ class NJQCA(Document):
                 self.make_stock_entry_using_nj_lib()
                 open_draft_qi(self)
                 update_serial_no_componont_for_grade(self)
-                update_serial_no_component_for_njqca(self)
+                # update_serial_no_component_for_njqca(self)
 
             except Exception as e:
                 frappe.db.rollback()
@@ -1301,3 +1305,17 @@ def get_item_code_filtered_data(doctype, txt, searchfield, start, page_len, filt
         as_list=1,
         or_filters=[ ["attribute_value", "like", f"%{txt}%"] ]
     )
+
+@frappe.whitelist()
+def get_result_parameter(name, item_group, parameter):
+    result = frappe.db.sql("""SELECT value FROM `tabNJQCA Result Parameters` 
+                        WHERE item_group = %(item_group)s 
+                        AND parameter = %(parameter)s AND parent = %(name)s""", 
+                        {'name': name, 'item_group': item_group, 'parameter': parameter}, as_dict=True)
+    
+    if result:
+        value = result[0].get('value')
+        base_url = get_url()
+        return f"{base_url}/app/file/{value}"
+    else:
+        return None

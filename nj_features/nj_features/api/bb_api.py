@@ -13,9 +13,9 @@ def get_grading_Authentication(doc, method=None):
             data_url=frappe.db.get_value("NJ Settings",{'parameter':'bb_data_url'},'value')
             password=frappe.db.get_value("NJ Settings",{'parameter':'bb_password'},'value')
             
-            print(url)
-            print(username)
-            print(password)
+            # print(url)
+            # print(username)
+            # print(password)
             if(not url or not username or not password):
                 frappe.throw("Please set the BB login url, username and password in NJ Settings")
                 return
@@ -66,6 +66,7 @@ def get_grading_Authentication(doc, method=None):
                     results = extract_values(grading_results)
                     if not results:
                         frappe.throw("No BB tool results found for this serial number")
+                        return
 
                     for result in results:
                         if isinstance(result, dict):

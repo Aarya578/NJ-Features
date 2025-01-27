@@ -144,7 +144,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
 
     inventory_warehouses = frappe.get_all(
         "Warehouse", 
-        filters={"department": "Packing & Dispatch - NJ", "disabled": 0}, 
+        filters={"department": "Packing & Dispatch - NJ"}, 
         fields=["name"]
     )
     warehouse_names = [warehouse["name"] for warehouse in inventory_warehouses]
@@ -162,7 +162,9 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND sn.warehouse IN ('{warehouse_names_string}')
         GROUP BY
             sn.item_code, sn.warehouse
-    """, as_dict=True)
+    """, explain = 1, debug = 1 , as_dict=True)
+
+    print('inventory_data ----------------- 167', inventory_data)
     
     inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
 
@@ -182,7 +184,9 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
             soi.item_code, DATE(so.creation);
-    """, as_dict=True)
+    """,explain = 1, debug = 1 , as_dict=True)
+
+    print('sales_rates ---------- 187', sales_rates)
 
     sales_map = {}
     for sale in sales_rates:
@@ -194,7 +198,9 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             sales_map[item_code] = {}
         
         sales_map[item_code][sale_date] = total_sales
-
+    
+    print('sales_map -------------- 202', sales_map)
+    
     for item in item_code_list:
         item_code = item['item_code']
         item['current_inventory_qty'] = inventory_map.get(item_code, 0)
@@ -214,6 +220,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             item['total_sales_qty'] = total_sales
             item['sales_rate'] = weighted_sales_rate
         else:
+            print('com')
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
     

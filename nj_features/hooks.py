@@ -124,13 +124,13 @@ doc_events = {
 	"Purchase Receipt": {
 		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
 		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
-	}
-}
-
-doc_events = {
+	},
     "Purchase Order": {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
-    }
+    },
+    "NJQCA": {
+        "on_submit": "nj_features.nj_features.api.bb_api.get_grading_Authentication"
+	}
 }
 
 # doc_events = {

@@ -4,15 +4,13 @@
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
         if (frm.doc.docstatus == 0) {
-            
-            $(document).on('frappe.error', function(event, error) {
-                if (error instanceof frappe.TimestampMismatchError) {
-                    frappe.msgprint(__('The document has been modified externally. Refreshing now.'));
-                    frm.reload_doc();
-                }
-            });
-
             frm.events.serial_no(frm);
+            frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
+            frm.get_field('njqca_laptop_ram').grid.cannot_add_rows = true;
+            frm.get_field('njqca_laptop_storage').grid.cannot_add_rows = true;
+            frm.refresh_field("njqca_laptop_ram");
+            frm.refresh_field("njqca_laptop_processors");
+            frm.refresh_field("njqca_laptop_storage");
         }
     },
     
@@ -21,6 +19,12 @@ frappe.ui.form.on('NJQCA', {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         if (frm.doc.docstatus == 0) {
+            $(document).on('frappe.error', function(event, error) {
+                if (error instanceof frappe.TimestampMismatchError) {
+                    frappe.msgprint(__('The document has been modified externally. Refreshing now.'));
+                    frm.reload_doc();
+                }
+            });
             
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');
@@ -161,16 +165,6 @@ frappe.ui.form.on('NJQCA', {
     
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
-        }
-
-        let child_table_fieldname = ['njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display', 'njqca_adaptor'];
-            
-        for (let i = 0; i < child_table_fieldname.length; i++) {
-            if (frm.fields_dict[child_table_fieldname[i]]) {
-                let grid = frm.fields_dict[child_table_fieldname[i]].grid;
-                set_options_for_attribute_fields_in_child(frm, grid);
-                frm.refresh_field(child_table_fieldname[i])
-            }
         }
     },
 
@@ -420,9 +414,9 @@ function processItemTemplate(frm) {
                 }
 
                 if (r.message) {
-                    if (r.message.data_attr !== undefined && r.message.data_attr !== null) {
-                        frm.set_value('data_attr', r.message.data_attr);
-                    }
+                    // if (r.message.data_attr !== undefined && r.message.data_attr !== null) {
+                    //     frm.set_value('data_attr', r.message.data_attr);
+                    // }
                 
                     if (r.message.repack_item_code !== undefined && r.message.repack_item_code !== null) {
                         frm.set_value('repack_item_code', r.message.repack_item_code);
@@ -451,6 +445,10 @@ function processItemTemplate(frm) {
 
                         if (row.item_group === "Laptop RAM") {
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_ram");
+                            
+                            const child_table_fieldname = 'njqca_laptop_ram';
+                            const grid = frm.fields_dict[child_table_fieldname].grid;
+                            set_options_for_attribute_fields_in_child(frm, grid);
 
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_type', row.attr_data["RAM Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_capacity', row.attr_data["RAM Capacity"]);
@@ -462,6 +460,9 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }else if(row.item_group === "Laptop Processors"){
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_processors");
+                            const child_table_fieldname = 'njqca_laptop_processors';
+                            const grid = frm.fields_dict[child_table_fieldname].grid;
+                            set_options_for_attribute_fields_in_child(frm, grid);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
@@ -470,6 +471,9 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }else if(row.item_group === "LAPTOP STORAGE"){
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_storage");
+                            const child_table_fieldname = 'njqca_laptop_storage';
+                            const grid = frm.fields_dict[child_table_fieldname].grid;
+                            set_options_for_attribute_fields_in_child(frm, grid);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);        
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
@@ -478,12 +482,6 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }
-                    });
-
-                    const child_table_fieldnames = ['njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_laptop_processors'];
-                    child_table_fieldnames.forEach(fieldname => {
-                        const grid = frm.fields_dict[fieldname].grid;
-                        set_options_for_attribute_fields_in_child(frm, grid);
                     });
 
                     frm.refresh_field("njqca_laptop_ram");
@@ -631,34 +629,34 @@ frappe.ui.form.on('NJQCA Adaptor', {
     }
 });
 
-frappe.ui.form.on('NJQCA Laptop Ram', {
+// frappe.ui.form.on('NJQCA Laptop Ram', {
 
-    njqca_laptop_ram_add: function(frm, cdt, cdn) {
+//     njqca_laptop_ram_add: function(frm, cdt, cdn) {
 
-        const child_table_fieldname = 'njqca_laptop_ram';
-        const grid = frm.fields_dict[child_table_fieldname].grid;
+//         const child_table_fieldname = 'njqca_laptop_ram';
+//         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(frm, grid);
-    }, 
+//         set_options_for_attribute_fields_in_child(frm, grid);
+//     }, 
 
-    ram_type: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateRamItemCode(frm, cdt, cdn, child); 
-    },
+//     ram_type: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateRamItemCode(frm, cdt, cdn, child); 
+//     },
 
-    ram_capacity: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateRamItemCode(frm, cdt, cdn, child); 
-    },
-    ram_speed: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateRamItemCode(frm, cdt, cdn, child); 
-    },
-    grade: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateRamItemCode(frm, cdt, cdn, child); 
-    },
-});
+//     ram_capacity: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateRamItemCode(frm, cdt, cdn, child); 
+//     },
+//     ram_speed: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateRamItemCode(frm, cdt, cdn, child); 
+//     },
+//     grade: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateRamItemCode(frm, cdt, cdn, child); 
+//     },
+// });
 
 frappe.ui.form.on('NJQCA Display', {
 
@@ -709,52 +707,52 @@ frappe.ui.form.on('NJQCA Display', {
     },
 })
 
-frappe.ui.form.on('NJQCA PROCESSOR', {
-    njqca_laptop_processors_add: function(frm, cdt, cdn) {
-        const child_table_fieldname = 'njqca_laptop_processors';
-        const grid = frm.fields_dict[child_table_fieldname].grid;
+// frappe.ui.form.on('NJQCA PROCESSOR', {
+//     njqca_laptop_processors_add: function(frm, cdt, cdn) {
+//         const child_table_fieldname = 'njqca_laptop_processors';
+//         const grid = frm.fields_dict[child_table_fieldname].grid;
         
-        set_options_for_attribute_fields_in_child(frm, grid);
-    },
-    processor_type: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateProcessorItemCode(frm, cdt, cdn, child); 
-    },
-    grade: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateProcessorItemCode(frm, cdt, cdn, child); 
-    },
-});
+//         set_options_for_attribute_fields_in_child(frm, grid);
+//     },
+//     processor_type: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateProcessorItemCode(frm, cdt, cdn, child); 
+//     },
+//     grade: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateProcessorItemCode(frm, cdt, cdn, child); 
+//     },
+// });
 
-frappe.ui.form.on('NJQCA Laptop Storage', {
-    njqca_laptop_storage_add: function(frm, cdt, cdn) {
+// frappe.ui.form.on('NJQCA Laptop Storage', {
+//     njqca_laptop_storage_add: function(frm, cdt, cdn) {
 
-        const child_table_fieldname = 'njqca_laptop_storage';
-        const grid = frm.fields_dict[child_table_fieldname].grid;
+//         const child_table_fieldname = 'njqca_laptop_storage';
+//         const grid = frm.fields_dict[child_table_fieldname].grid;
         
-        set_options_for_attribute_fields_in_child(frm, grid);
-    },
-    storage_type: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateStorageItemCode(frm, cdt, cdn, child); 
-    },
-    storage_capacity: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateStorageItemCode(frm, cdt, cdn, child); 
-    },
-    storage_interface: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateStorageItemCode(frm, cdt, cdn, child); 
-    },
-    storage_length: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateStorageItemCode(frm, cdt, cdn, child); 
-    },
-    grade: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateStorageItemCode(frm, cdt, cdn, child); 
-    },
-});
+//         set_options_for_attribute_fields_in_child(frm, grid);
+//     },
+//     storage_type: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateStorageItemCode(frm, cdt, cdn, child); 
+//     },
+//     storage_capacity: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateStorageItemCode(frm, cdt, cdn, child); 
+//     },
+//     storage_interface: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateStorageItemCode(frm, cdt, cdn, child); 
+//     },
+//     storage_length: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateStorageItemCode(frm, cdt, cdn, child); 
+//     },
+//     grade: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateStorageItemCode(frm, cdt, cdn, child); 
+//     },
+// });
 
 function generateAdaptorItemCode(frm, cdt, cdn, child) {
     const item_templates = child.item_template;
@@ -1011,29 +1009,30 @@ function generateRamItemCode(frm, cdt, cdn, child) {
 }
 
 function set_options_for_attribute_fields_in_child(frm, grid) {
+    let selectFields = [];
+    
     $.each(grid.grid_rows, function(i, row) {
-            
         $.each(row.columns, function(j, field) {
-
             if (field.df.fieldtype === 'Select') {
-                
-                frappe.call({
-                    method: "erpnext.stock.doctype.item.item.get_item_attribute",
-                    args: {
-                        parent: field.df.label,
-                        attribute_value: ''
-                    },
-                    callback: function(r) {
-                        if (r.message) {
-                            var options = r.message.map(function(d) { 
-                                return d.attribute_value.toUpperCase(); 
-                            });
-                            
-                            frm.set_df_property(grid.df.fieldname, 'options', options, frm.docname, field.df.fieldname, row.doc.name);
-                        }
-                    }
+                selectFields.push({
+                    fieldname: field.df.fieldname,
+                    rowname: row.doc.name,
+                    label: field.df.label
                 });
             }
         });
+    });
+
+    frappe.call({
+        method: "nj_features.nj_features.doctype.njqca.njqca.get_item_attributes",
+        args: { selected_fields: selectFields },
+        callback: function(r) {
+            if (r.message) {
+                $.each(r.message, function(i, field) {
+                    frm.set_df_property(grid.df.fieldname, 'options', field.options, frm.docname, field.fieldname, field.rowname);
+                    frm.refresh_field(grid.df.fieldname);
+                });
+            }
+        }
     });
 }

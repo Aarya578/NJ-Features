@@ -49,6 +49,7 @@ def get_inspection_type():
         return inspection_type
     else:
         frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+        return None
 
 def open_draft_qi(self):
     # try:
@@ -471,15 +472,29 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
 class NJQCA(Document):
     def on_submit(self):
-        if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
-            frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")   
         if self.power_on == 'Yes' and self.repack_item_code != '':
+            if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
+                frappe.throw("Please fill the Manual Repack Item Code. If there is no option to fill Please Contact NPD Team")
+                return None
+            
+            if self.item_template:
+                tmp_model = frappe.db.get_value('Item', self.item_template, 'item_model')
+                itm_model = frappe.db.get_value('Item', self.manual_repack_item_code, 'item_model')
+                if tmp_model and tmp_model != self.model:
+                    frappe.throw("Model: " + tmp_model + " in Item Template is not matching with Selected Model: " + self.model)
+                    return None
+                
+                if itm_model and itm_model != self.model:
+                    frappe.throw("Model: " + itm_model + " in Manual Repack Item Code is not matching with Selected Model: " + self.model)
+                    return None
+            
             try:
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
-                self.make_stock_entry_using_nj_lib()
+                if self.item_code != self.manual_repack_item_code:
+                    self.make_stock_entry_using_nj_lib()
                 open_draft_qi(self)
                 update_serial_no_componont_for_grade(self)
-                # update_serial_no_component_for_njqca(self)
+                update_serial_no_component_for_njqca(self)
 
             except Exception as e:
                 frappe.db.rollback()
@@ -1319,3 +1334,35 @@ def get_result_parameter(name, item_group, parameter):
         return f"{base_url}/app/file/{value}"
     else:
         return None
+    
+@frappe.whitelist()
+def get_item_attributes(selected_fields):
+    try:
+        if isinstance(selected_fields, str):
+            selected_fields = frappe.parse_json(selected_fields)
+        
+        result = []
+        
+        for field in selected_fields:
+            label = field.get('label')
+            
+            if not label:
+                continue
+            
+            options = get_options_for_label(label)
+            
+            result.append({
+                'fieldname': field.get('fieldname'),
+                'rowname': field.get('rowname'),
+                'options': options
+            })
+        
+        return result
+    
+    except Exception as e:
+        print(f"An error occurred at get_item_attributes: {str(e)}")
+        return str(e)
+
+def get_options_for_label(label):
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
+    return [option['attribute_value'] for option in options]

@@ -494,7 +494,7 @@ class NJQCA(Document):
                     self.make_stock_entry_using_nj_lib()
                 open_draft_qi(self)
                 update_serial_no_componont_for_grade(self)
-                # update_serial_no_component_for_njqca(self)
+                update_serial_no_component_for_njqca(self)
 
             except Exception as e:
                 frappe.db.rollback()
@@ -1334,3 +1334,35 @@ def get_result_parameter(name, item_group, parameter):
         return f"{base_url}/app/file/{value}"
     else:
         return None
+    
+@frappe.whitelist()
+def get_item_attributes(selected_fields):
+    try:
+        if isinstance(selected_fields, str):
+            selected_fields = frappe.parse_json(selected_fields)
+        
+        result = []
+        
+        for field in selected_fields:
+            label = field.get('label')
+            
+            if not label:
+                continue
+            
+            options = get_options_for_label(label)
+            
+            result.append({
+                'fieldname': field.get('fieldname'),
+                'rowname': field.get('rowname'),
+                'options': options
+            })
+        
+        return result
+    
+    except Exception as e:
+        print(f"An error occurred at get_item_attributes: {str(e)}")
+        return str(e)
+
+def get_options_for_label(label):
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
+    return [option['attribute_value'] for option in options]

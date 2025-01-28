@@ -168,10 +168,10 @@ def get_item_template(brand, model, item_group):
         return item_template
     return None
     
-def has_item_wizards(item_template):
+def has_item_wizards(item_template, ignore=False):
     wizard_list = []
     for item in item_template:
-        available_wizard = get_latest_item_wizard(item.get('name'))
+        available_wizard = get_latest_item_wizard(item.get('name'), ignore=ignore)
         if available_wizard:
             wizard_list.append(item.get('name'))
     return wizard_list

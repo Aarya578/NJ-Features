@@ -19,12 +19,6 @@ frappe.ui.form.on('NJQCA', {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         if (frm.doc.docstatus == 0) {
-            $(document).on('frappe.error', function(event, error) {
-                if (error instanceof frappe.TimestampMismatchError) {
-                    frappe.msgprint(__('The document has been modified externally. Refreshing now.'));
-                    frm.reload_doc();
-                }
-            });
             
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');

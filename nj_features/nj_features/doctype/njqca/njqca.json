@@ -186,6 +186,7 @@
    "label": "NJQCA Information"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_item_component",
    "fieldtype": "Table",
    "options": "NJQCA Child"
@@ -226,6 +227,7 @@
    "options": "Inspection Type"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_result_parameters",
    "fieldtype": "Table",
    "options": "NJQCA Result Parameters",
@@ -350,6 +352,7 @@
    "label": "Event Trigger"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_event_trigger",
    "fieldtype": "Table",
    "options": "NJQCA Event Trigger",
@@ -386,7 +389,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-24 19:05:20.116968",
+ "modified": "2025-01-28 17:24:57.845688",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -435,5 +438,6 @@
  ],
  "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "track_changes": 1
 }

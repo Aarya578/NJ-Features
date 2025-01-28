@@ -294,7 +294,6 @@ def open_draft_qi(self):
         return fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
 
     except Exception as e:
-        print(traceback.format_exc())
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     
@@ -664,7 +663,7 @@ def get_info_from_serial_no(doc=None):
             result['model'] = sle_entry.get('model') if sle_entry.get('model') else item_code_data.get('item_model')
             item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            if nj_settings_item_group and nj_settings_item_group != item_group:
+            if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
@@ -1308,17 +1307,22 @@ def get_item_code_filtered_data(doctype, txt, searchfield, start, page_len, filt
 
 @frappe.whitelist()
 def get_result_parameter(name, item_group, parameter):
-    result = frappe.db.sql("""SELECT value FROM `tabNJQCA Result Parameters` 
-                        WHERE item_group = %(item_group)s 
-                        AND parameter = %(parameter)s AND parent = %(name)s""", 
-                        {'name': name, 'item_group': item_group, 'parameter': parameter}, as_dict=True)
+    result_dict = {}
     
-    if result:
-        value = result[0].get('value')
-        base_url = get_url()
-        return f"{base_url}/app/file/{value}"
-    else:
-        return None
+    for param in parameter:
+        result = frappe.db.sql("""SELECT value FROM `tabNJQCA Result Parameters` 
+                                WHERE item_group = %(item_group)s 
+                                AND parameter = %(parameter)s AND parent = %(name)s""", 
+                                {'name': name, 'item_group': item_group, 'parameter': param}, as_dict=True)
+        
+        if result:
+            value = result[0].get('value')
+            base_url = get_url()
+            result_dict[parameter] = f"{base_url}/app/file/{value}"
+        else:
+            result_dict[parameter] = ""
+    
+    return result_dict
     
 @frappe.whitelist()
 def get_item_attributes(selected_fields):

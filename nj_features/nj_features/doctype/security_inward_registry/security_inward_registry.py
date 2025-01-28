@@ -312,8 +312,6 @@ def get_item_code_details(po_number):
         """, (po_number,), as_dict=1)
 
         for row in available_qty_data:
-            if row.get('item_group') == "Generic Services":
-                continue
             parent_item_group = frappe.db.get_value('Item Group', row['item_group'], 'parent_item_group')
             if parent_item_group != 'Products':
                 row['item_group'] = 'Others'

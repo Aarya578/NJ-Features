@@ -265,8 +265,10 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             restricted_grades = restriction.get('restricted_grade', "").split(", ")
             restricted_item_group = restriction.get('item_group')
 
+            print("component_qty ------------ ", component.get('quantity'))
+
             if (component.get('item_group') == restricted_item_group and
-                    component.get('grade') in restricted_grades):
+                    component.get('grade') in restricted_grades and component.get('quantity')) == 1:
                 error_messages.append(
                     f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                     f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
@@ -281,7 +283,6 @@ def validate_component_grade(serial_doc, department_doc, error_messages):
                 f"Serial No <b>{serial_doc.name}</b> for item_group <b>{serial_doc.get('item_group')}</b> "
                 f"has a grade <b>{serial_doc.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
             )
-
 
 def get_item_code_and_warehouse(item_code):
     try:

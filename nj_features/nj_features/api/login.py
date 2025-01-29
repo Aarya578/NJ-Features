@@ -4,6 +4,7 @@ import traceback
 from frappe.utils import get_url
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
+from frappe.sessions import delete_session
 from nj_lib.utils.common_utils import get_active_user
 from nj_features.nj_features.api.encryption import decrypt
 
@@ -117,3 +118,34 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
         }
 
     return frappe.response["message"]
+
+@frappe.whitelist()
+def enforce_session_limit():
+    
+    try:
+        user = frappe.session.user
+        max_sessions = frappe.db.get_value("User", {"name": user}, "simultaneous_sessions")
+        if not max_sessions:
+            max_sessions = 1
+        user_sessions_query = """SELECT sid, lastupdate FROM `tabSessions` WHERE user = %s ORDER BY lastupdate DESC"""
+        user_sessions = frappe.db.sql(user_sessions_query, user, as_dict=1)
+
+        if len(user_sessions) >= max_sessions:
+            sessions_to_remove = len(user_sessions) - (max_sessions - 1)
+
+            for session in user_sessions[:sessions_to_remove]:
+                delete_session(session.sid, reason="Oldest session terminated due to session limit")
+
+            frappe.db.commit()
+
+        return True
+
+    except Exception as e:
+        frappe.db.rollback()
+        traceback_info = traceback.format_exc()
+        return {
+            "success_key": 0,
+            "message": f"Error while logging in user: {user}. error: {str(e)}",
+            "error_code": "UNKNOWN_ERROR",
+            "traceback": traceback_info
+        }

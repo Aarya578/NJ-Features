@@ -96,6 +96,7 @@ def open_draft_qi(self):
                 new_qi.item_code = self.manual_repack_item_code
             
             self.qi_name = get_itm_code_on_barcode(new_qi)
+            new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
 
         # item_wizard_name = new_qi.get('item_wizard')
         # item_group_data =''
@@ -240,16 +241,24 @@ def open_draft_qi(self):
                 WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
             """
             field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
-            item_group_idx= frappe.db.sql("""
-                SELECT item_group_idx
-                FROM `tabNj Quality Readings`
-                WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
+            print("field_name_data--250",field_name_data,"------",data.get("item_group"))
+            new_qi_2 = json.loads(new_qi.as_json())
+            item_group_idx = [
+                    x for x in new_qi_2.get("nj_quality_readings", [])  
+                    if x.get("item_group") == data.get("item_group") 
+                ]
+            # item_group_idx= frappe.db.sql("""
+            #     SELECT item_group_idx
+            #     FROM `tabNj Quality Readings`
+            #     WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
+            # print("item_group_idx--248-----",item_group_idx)
             item_group_idx_value = 0
             
             if item_group_idx:
                 item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
-
+            # print("item_group_idx_value----------251",item_group_idx_value)
             if field_name_data:
+                print("field_name_data--252",field_name_data)
                 for field in field_name_data:
                     name_of_check = field["quality_check"]
                     sql_check_option_automatic = frappe.db.sql("""
@@ -263,35 +272,53 @@ def open_draft_qi(self):
                         (child.item_group, child.check_name)
                         for child in new_qi.get("nj_quality_checks", [])
                     }
-                    # Check if the current data exists
-                    if (data.get("item_group"), name_of_check) not in existing_entries:
-                        child_table = new_qi.append("nj_quality_checks", {})
-                        child_table.check_name = name_of_check
-                        child_table.item_group = data.get("item_group")
-                        # Default to data.get('value')
-                        child_table.options = data.get('value')
-                        if item_group_idx_value:
-                            child_table.item_group_idx = item_group_idx_value
-
-                    if sql_check_option_automatic:
+                    print("existing_entries--254",existing_entries)
+                    
+                    if sql_check_option_automatic and data.get("score"):
                         for option in sql_check_option_automatic:
                             option_score = float(option["score"]) if option["score"] is not None else None
                             data_score = float(data.get("score")) if data.get("score") else None
 
                             if option_score == data_score:
-                                
+                                print("check score matched",data_score,option_score,"option--score")
                                 # Check if this combination already exists
                                 if (data.get("item_group"), name_of_check) not in existing_entries:
                                     child_table = new_qi.append("nj_quality_checks", {})
                                     child_table.check_name = name_of_check
                                     child_table.item_group = data.get("item_group")
                                     child_table.options = option["check_options"]
+                                    child_table.score = option_score
                                     if item_group_idx_value:
                                         child_table.item_group_idx = item_group_idx_value
                                     existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
-                                break
+                                
 
-        return fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
+                    else:
+                        print("entering else condtion ---------287")
+                        if (data.get("item_group"), name_of_check) not in existing_entries:
+                            child_table = new_qi.append("nj_quality_checks", {})
+                            child_table.check_name = name_of_check
+                            child_table.item_group = data.get("item_group")
+                            child_table.options = data.get('value')
+                            child_table.score = data.get('score')
+                            existing_entries.add((data.get("item_group"), name_of_check))
+                            if item_group_idx_value:
+                                child_table.item_group_idx = item_group_idx_value
+                            # print("added----------277",data.get('item_group'))
+        new_qi.save()
+        base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+        if not base_url:
+            frappe.throw("NJPulse URL is not found in NJ Settings.")
+
+        msg_pnt = ""
+        if new_qi.name:
+            njpulse_url = f"{base_url}qi/{new_qi.name}/0"
+            msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
+        else:
+            njpulse_url = base_url
+        
+        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt}  
+
 
     except Exception as e:
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
@@ -427,21 +454,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
         if doc_data and doc_data[0].get('item_wizard'):
             new_qi.set('item_wizard', doc_data[0].get('item_wizard'))
-        
-        new_qi.save()
-        
-        base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-        if not base_url:
-            frappe.throw("NJPulse URL is not found in NJ Settings.")
-
-        msg_pnt = ""
-        if new_qi.name:
-            njpulse_url = f"{base_url}qi/{new_qi.name}/0"
-            msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
-        else:
-            njpulse_url = base_url
-        
-        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt} 
+        return new_qi
 
     except Exception as e:
         frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}\n{traceback.format_exc()}")

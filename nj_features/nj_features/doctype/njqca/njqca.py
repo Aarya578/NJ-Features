@@ -1307,22 +1307,27 @@ def get_item_code_filtered_data(doctype, txt, searchfield, start, page_len, filt
 
 @frappe.whitelist()
 def get_result_parameter(name, item_group, parameter):
-    result_dict = {}
-    
-    for param in parameter:
-        result = frappe.db.sql("""SELECT value FROM `tabNJQCA Result Parameters` 
-                                WHERE item_group = %(item_group)s 
-                                AND parameter = %(parameter)s AND parent = %(name)s""", 
-                                {'name': name, 'item_group': item_group, 'parameter': param}, as_dict=True)
+    try:
+        result_dict = {}
+        if isinstance(parameter, str):
+            parameter = parameter.split(',')
+        for param in parameter:
+            result = frappe.db.sql("""SELECT value FROM `tabNJQCA Result Parameters` 
+                                    WHERE item_group = %(item_group)s 
+                                    AND parameter = %(parameter)s AND parent = %(name)s""", 
+                                    {'name': name, 'item_group': item_group, 'parameter': param}, as_dict=True)
+            param = param.strip()
+            if result:
+                value = result[0].get('value')
+                base_url = get_url()
+                result_dict[param] = f"{base_url}/app/file/{value}"
+            else:
+                result_dict[param] = ""
         
-        if result:
-            value = result[0].get('value')
-            base_url = get_url()
-            result_dict[parameter] = f"{base_url}/app/file/{value}"
-        else:
-            result_dict[parameter] = ""
+        return result_dict
     
-    return result_dict
+    except Exception as e:
+        return str(e)
     
 @frappe.whitelist()
 def get_item_attributes(selected_fields):

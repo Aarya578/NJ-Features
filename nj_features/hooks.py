@@ -130,6 +130,9 @@ doc_events = {
     },
     "NJQCA": {
         "on_submit": "nj_features.nj_features.api.bb_api.get_grading_Authentication"
+	},
+    "User": {
+        "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}
 }
 
@@ -184,9 +187,9 @@ scheduler_events = {
 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
 		# ],
-		# "0 23 * * *": [
-		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
-		# ]
+		"0 23 * * *": [
+			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
+		]
 	}
 }
 

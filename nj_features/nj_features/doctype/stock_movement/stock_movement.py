@@ -268,11 +268,13 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             print("component_qty ------------ ", component.get('quantity'))
 
             if (component.get('item_group') == restricted_item_group and
-                    component.get('grade') in restricted_grades and component.get('quantity')) == 1:
-                error_messages.append(
-                    f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
-                    f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
-                )
+                    component.get('grade') in restricted_grades and
+                    component.get('quantity') == 1):
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
+                        f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                    )
+
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):

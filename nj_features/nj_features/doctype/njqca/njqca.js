@@ -109,14 +109,20 @@ frappe.ui.form.on('NJQCA', {
             args: { 'docname': cur_frm.doc.name },
             callback: function(r) {
                 if (r && r.message) {
-                    if (r.message.njpulse_url && !openedUrls.includes(r.message.njpulse_url)) {
-                        openedUrls.push(r.message.njpulse_url);
+
+                    let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+                    let pwd_njpulse_url = urlToCompare;
+
+                    if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+                        openedUrls.push(urlToCompare);
                         localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
-                        pwd_njpulse_url = r.message.qi_name
-                        if (frm.doc.pwd && r.message.base_url){
-                            pwd_njpulse_url = r.message.base_url + "/qi/" + r.message.qi_name + "/0"
+    
+                        if (frm.doc.pwd && r.message.base_url) {
+                            console.log("in pwd");
+                            
+                            pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
                         }
-                        
+    
                         window.open(pwd_njpulse_url, "_blank");
                     }
 
@@ -129,7 +135,7 @@ frappe.ui.form.on('NJQCA', {
                         $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
 
                         $qiNameWrapper.css('cursor', 'pointer');
-                        $qiNameWrapper.attr('title', 'Click to open ' + r.message.qi_name);
+                        $qiNameWrapper.attr('title', 'Click to open ' + pwd_njpulse_url);
 
                         $qiNameWrapper.on('click', function() {
                             var qiUrl = r.message.njpulse_url;
@@ -146,7 +152,7 @@ frappe.ui.form.on('NJQCA', {
                         frappe.show_alert({
                             message: r.message.msg_pnt,
                             indicator: 'blue'
-                        }, 6);
+                        }, 10);
                     }
 
                 } else {  console.error('QI name is not defined'); }

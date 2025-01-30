@@ -135,11 +135,10 @@ frappe.ui.form.on('NJQCA', {
                         $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
 
                         $qiNameWrapper.css('cursor', 'pointer');
-                        $qiNameWrapper.attr('title', 'Click to open ' + pwd_njpulse_url);
+                        $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
 
                         $qiNameWrapper.on('click', function() {
-                            var qiUrl = r.message.njpulse_url;
-                            window.open(qiUrl, '_blank');
+                            window.open(pwd_njpulse_url, '_blank');
                         });
 
                         $qiNameWrapper.css({

@@ -485,8 +485,10 @@ class NJQCA(Document):
                 if qi_data:
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
-                update_serial_no_componont_for_grade(self)
-                # update_serial_no_component_for_njqca(self)
+                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+                if nj_settings_item_group and self.item_group != nj_settings_item_group:
+                    update_serial_no_componont_for_grade(self)
+                    # update_serial_no_component_for_njqca(self)
 
             except Exception as e:
                 frappe.db.rollback()

@@ -310,14 +310,13 @@ def open_draft_qi(self):
         if not base_url:
             frappe.throw("NJPulse URL is not found in NJ Settings.")
 
-        msg_pnt = ""
         if new_qi.name:
             njpulse_url = f"{base_url}qi/{new_qi.name}/0"
             msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
         else:
             njpulse_url = base_url
         
-        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt}  
+        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt, "base_url": base_url}  
 
 
     except Exception as e:

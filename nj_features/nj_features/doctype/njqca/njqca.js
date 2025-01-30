@@ -101,38 +101,57 @@ frappe.ui.form.on('NJQCA', {
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
-
-        if (!window.isWindowOpened) {
-            window.isWindowOpened = false;
-
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: { 'docname': cur_frm.doc.name },
-                callback: function(r) {
-                    if (r && r.message) {
-                        if (r.message.njpulse_url) {
-                            if (!window.isWindowOpened) {
-                                window.open(r.message.njpulse_url, "_blank");
-                                window.isWindowOpened = true;
-                            }
-                        }
-
-                        if (r.message.qi_name) {
-                            frm.set_value('qi_name', r.message.qi_name);
-                            frm.refresh_field('qi_name');
+        
+        var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
+        
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+            args: { 'docname': cur_frm.doc.name },
+            callback: function(r) {
+                if (r && r.message) {
+                    if (r.message.njpulse_url && !openedUrls.includes(r.message.njpulse_url)) {
+                        openedUrls.push(r.message.njpulse_url);
+                        localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+                        pwd_njpulse_url = r.message.qi_name
+                        if (frm.doc.pwd && r.message.base_url){
+                            pwd_njpulse_url = r.message.base_url + "/qi/" + r.message.qi_name + "/0"
                         }
                         
-                        if (r.message.msg_pnt) {
-                            frappe.show_alert({
-                                message: r.message.msg_pnt,
-                                indicator: 'green'
-                            });
-                        }
+                        window.open(pwd_njpulse_url, "_blank");
+                    }
 
-                    } else {  console.error('QI name is not defined'); }
-                }
-            });
-        }
+                    if (r.message.qi_name) {
+                        frm.set_value('qi_name', r.message.qi_name);
+                        frm.refresh_field('qi_name');
+
+                        var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+
+                        $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+
+                        $qiNameWrapper.css('cursor', 'pointer');
+                        $qiNameWrapper.attr('title', 'Click to open ' + r.message.qi_name);
+
+                        $qiNameWrapper.on('click', function() {
+                            var qiUrl = r.message.njpulse_url;
+                            window.open(qiUrl, '_blank');
+                        });
+
+                        $qiNameWrapper.css({
+                            'user-select': 'none',
+                            'pointer-events': 'auto'
+                        });
+                    }
+
+                    if (r.message.msg_pnt) {
+                        frappe.show_alert({
+                            message: r.message.msg_pnt,
+                            indicator: 'blue'
+                        }, 6);
+                    }
+
+                } else {  console.error('QI name is not defined'); }
+            }
+        });
     },
 
     // before_submit: function(frm) {

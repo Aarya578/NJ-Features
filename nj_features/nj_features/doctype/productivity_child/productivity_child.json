@@ -13,13 +13,19 @@
   "item_group",
   "item_code",
   "qty",
+  "src_warehouse",
   "t_warehouse",
   "source_dept",
   "target_dept",
+  "source_profile",
+  "target_profile",
+  "itemgroup_weightage_value",
   "target_department",
-  "dept_prd",
   "weightage_value",
-  "wtd_qty"
+  "wtd_qty",
+  "dept_prd",
+  "profile_prd",
+  "match_prd_flag"
  ],
  "fields": [
   {
@@ -93,7 +99,7 @@
    "fieldname": "target_department",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Target Department",
+   "label": "Target Departmen",
    "options": "Department"
   },
   {
@@ -113,12 +119,42 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Wtd Qty"
+  },
+  {
+   "fieldname": "src_warehouse",
+   "fieldtype": "Data",
+   "label": "SRC Warehouse"
+  },
+  {
+   "fieldname": "source_profile",
+   "fieldtype": "Data",
+   "label": "Source Profile"
+  },
+  {
+   "fieldname": "target_profile",
+   "fieldtype": "Data",
+   "label": "Target Profile"
+  },
+  {
+   "fieldname": "itemgroup_weightage_value",
+   "fieldtype": "Data",
+   "label": "Itemgroup Weightage Value"
+  },
+  {
+   "fieldname": "profile_prd",
+   "fieldtype": "Data",
+   "label": "Profile Prd"
+  },
+  {
+   "fieldname": "match_prd_flag",
+   "fieldtype": "Data",
+   "label": "Match Prd Flag"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-22 11:59:33.293801",
+ "modified": "2025-01-31 12:22:05.155397",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Productivity Child",

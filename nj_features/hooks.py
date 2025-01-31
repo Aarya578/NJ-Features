@@ -132,6 +132,12 @@ doc_events = {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
     }
 }
+doc_events = {
+    "Employee": {
+        "after_save": "nj_features.overrides.employee.fetch_ramp_level_before_save"
+    }
+}
+
 
 # doc_events = {
 #     "Sales Order": {
@@ -186,14 +192,36 @@ scheduler_events = {
 		# ],
 		"0 23 * * *": [
 			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
-		]
+		],
+        "*/5 * * * *": [
+            "nj_features.overrides.employee.update_employee_experience_table",
+           
+        ],
+        
+        "*/6 * * * *": [
+            # "nj_features.overrides.employee.update_employee_experience_table",
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+        ]
 	}
 }
+# scheduler_events = {
+#     "cron": {
+#         "08 16 * * *": [
+#             "nj_features.overrides.employee.update_continuous_experience"
+#         ]
+#     }
+# }
+
+
+
+
+
+
 
 # Testing
 # -------
 
-# before_tests = "nj_features.install.before_tests"
+# before_tests = "nj_feyour_app_nameatures.install.before_tests"
 
 # Overriding Methods
 # ------------------------------

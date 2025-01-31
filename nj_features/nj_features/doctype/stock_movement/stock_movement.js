@@ -379,9 +379,10 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         
                         let fields = [
                             {
-                                label: 'Target Warehouse',
+                                label: 'Warehouse',
                                 fieldname: 't_warehouse',
-                                fieldtype: 'Data'
+                                fieldtype: 'Data',
+                                options: 'Barcode'
                             },
                             {
                                 label: 'Recommended Warehouse',
@@ -407,10 +408,23 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             label: 'Close',
                             fieldtype: 'Button',
                             click: function() {
-                                // cur_frm.get_field('items').grid.grid_rows_by_docname[cdn].remove();
+                                // / Check if the t_warehouse field is empty before closing
+                                let t_warehouse_value = $('[data-fieldname="t_warehouse"]').val();
+                                if (t_warehouse_value.trim() === '') {
+                                    // If t_warehouse is empty, remove the current row from the table
+                                    let row = cur_frm.fields_dict.items.grid.grid_rows_by_docname[cdn];
+                                    
+                                    if (row) {
+                                        row.remove();  // Remove the row from the grid
+                                    } else {
+                                        console.log('Row not found for the current cdn.');
+                                    }
+                                }
+                                // Hide the dialog after the check
                                 d.hide();
                             }
                         });
+                        
                         
                         let d = new frappe.ui.Dialog({
                             fields: fields,
@@ -419,7 +433,13 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         });
 
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
+                            handleScannerInput(d, 't_warehouse');
                             let t_warehouse_value = $(this).val();
+                            console.log('t_warehouse_value ------------ ', t_warehouse_value);
+                            if (t_warehouse_value.trim() === '') {
+
+                                return; // No further checks or messages, just return
+                            }
                             let isValidWarehouse = false;
                             // Check if t_warehouse_value matches with recommended or centralized warehouse
                             if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {

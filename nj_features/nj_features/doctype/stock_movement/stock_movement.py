@@ -241,8 +241,6 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
 
-    print('result', result)
-    
     if result is None:
         error_messages.append(
             f"Item <b>{serial_doc.get('item_code')}</b> not found. Cannot validate grade restrictions for serial <b>{serial_doc.name}</b>."
@@ -267,12 +265,16 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             restricted_grades = restriction.get('restricted_grade', "").split(", ")
             restricted_item_group = restriction.get('item_group')
 
+            print("component_qty ------------ ", component.get('quantity'))
+
             if (component.get('item_group') == restricted_item_group and
-                    component.get('grade') in restricted_grades):
-                error_messages.append(
-                    f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
-                    f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
-                )
+                    component.get('grade') in restricted_grades and
+                    component.get('quantity') == 1):
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
+                        f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                    )
+
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):
@@ -283,7 +285,6 @@ def validate_component_grade(serial_doc, department_doc, error_messages):
                 f"Serial No <b>{serial_doc.name}</b> for item_group <b>{serial_doc.get('item_group')}</b> "
                 f"has a grade <b>{serial_doc.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
             )
-
 
 def get_item_code_and_warehouse(item_code):
     try:
@@ -296,8 +297,6 @@ def get_item_code_and_warehouse(item_code):
         frappe.log_error(frappe.get_traceback(), "Error in get_item_code_and_warehouse")
         return
     
-
-   
 @frappe.whitelist()
 def get_grades_from_part_list(search_value):
     query = frappe.db.sql(
@@ -310,7 +309,6 @@ def get_grades_from_part_list(search_value):
         as_dict=True
     )
 
-    print("query---------285------",query)
     results = []
 
     # Loop through each item_group from the query result
@@ -337,8 +335,7 @@ def get_grades_from_part_list(search_value):
                 damage_type_condition="AND damage_type IN %s" if damage_types[0] else ""
             ),
             (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
-            as_dict=True,
-            debug=True
+            as_dict=True
         )
 
         # If department data is found, append it to the result list
@@ -349,5 +346,4 @@ def get_grades_from_part_list(search_value):
                 })
 
     # Return the consolidated results
-    print("results---------", results)
     return results

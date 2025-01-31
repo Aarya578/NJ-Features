@@ -46,14 +46,14 @@
   "njqca_result_parameters",
   "laptop_processor_section",
   "njqca_laptop_processors",
-  "section_break_drfru",
-  "njqca_display",
-  "processor_section",
-  "njqca_adaptor",
   "laptop_ram_section",
   "njqca_laptop_ram",
   "laptop_storage_section",
   "njqca_laptop_storage",
+  "section_break_drfru",
+  "njqca_display",
+  "processor_section",
+  "njqca_adaptor",
   "section_break_d2ocq",
   "amended_from",
   "event_trigger_section",
@@ -100,6 +100,8 @@
   {
    "fieldname": "serial_no",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Serial No"
   },
   {
@@ -162,7 +164,6 @@
    "columns": 6,
    "fieldname": "error_message",
    "fieldtype": "Small Text",
-   "in_list_view": 1,
    "label": "Error Message",
    "read_only": 1
   },
@@ -185,6 +186,7 @@
    "label": "NJQCA Information"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_item_component",
    "fieldtype": "Table",
    "options": "NJQCA Child"
@@ -205,6 +207,8 @@
   {
    "fieldname": "bios_serialno",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "BIOS SerialNo",
    "read_only": 1
   },
@@ -217,10 +221,13 @@
   {
    "fieldname": "inspection_type",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Inspection Type",
    "options": "Inspection Type"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_result_parameters",
    "fieldtype": "Table",
    "options": "NJQCA Result Parameters",
@@ -332,6 +339,8 @@
    "fetch_if_empty": 1,
    "fieldname": "department",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Department",
    "options": "Department",
    "read_only": 1
@@ -343,12 +352,14 @@
    "label": "Event Trigger"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "njqca_event_trigger",
    "fieldtype": "Table",
    "options": "NJQCA Event Trigger",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "qi_name",
    "fieldtype": "Data",
    "label": "QI Name",
@@ -378,7 +389,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-21 18:23:05.150367",
+ "modified": "2025-01-28 17:24:57.845688",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -427,5 +438,6 @@
  ],
  "show_name_in_global_search": 1,
  "sort_field": "modified",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "track_changes": 1
 }

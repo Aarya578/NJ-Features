@@ -265,8 +265,7 @@ def get_po_number_details(po_number):
 def get_combined_inwarded_qty_data(po_number, purchase_inward_security_result):
     query = """
         SELECT irpc.item_group, 
-               SUM(CASE WHEN sir.po_number = %(po_number)s THEN irpc.actual_qty ELSE 0 END) AS security_available_qty,
-               SUM(CASE WHEN sir.reference_po_number = %(po_number)s THEN irpc.received_qty ELSE 0 END) AS sir_received_qty
+               SUM(CASE WHEN sir.po_number = %(po_number)s THEN irpc.actual_qty ELSE 0 END) AS security_available_qty
         FROM `tabSecurity Inward Registry` sir
         INNER JOIN `tabSecurity Inward Registry Purchase Child` irpc
         ON irpc.parent = sir.name
@@ -282,12 +281,12 @@ def get_combined_inwarded_qty_data(po_number, purchase_inward_security_result):
         item_group = initial['item_group']
         initial_qty = initial['available_qty']
 
+
         matched_row = next((r for r in result if r['item_group'] == item_group), None)
         if matched_row:
             security_available_qty = matched_row['security_available_qty'] or 0
-            sir_received_qty = matched_row['sir_received_qty'] or 0
 
-            initial['available_qty'] = max(0, initial_qty - security_available_qty - sir_received_qty)
+            initial['available_qty'] = max(0, initial_qty - security_available_qty)
     
     return purchase_inward_security_result
 

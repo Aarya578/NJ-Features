@@ -1,7 +1,8 @@
 frappe.ui.form.on('Department', {
     refresh: function(frm) {
-        console.log('I am Refreshing...');
-    }
+        // console.log("refreshing...")
+    },
+       
 });
 
 frappe.ui.form.on('Stock Movement Restriction Child', {
@@ -20,6 +21,44 @@ frappe.ui.form.on('Stock Movement Restriction Child', {
     }
 });
 
+frappe.ui.form.on('Inventory Details', {
+    warehouse: function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+
+        if (child.iw && child.fw){
+            frappe.model.set_value(cdt, cdn, 'warehouse', '');
+            return
+        }
+
+        if (child.iw || child.fw) {
+            console.log('Warehouse field triggered in child Doctype...');
+
+            if (child.iw) {
+                let inwarded_warehouse = child.inwarded_warehouse ? 
+                    child.inwarded_warehouse.split(',').map(w => w.trim()) : [];
+
+                if (!inwarded_warehouse.includes(child.warehouse)) {
+                    inwarded_warehouse.push(child.warehouse.trim());
+                }
+
+                frappe.model.set_value(cdt, cdn, 'inwarded_warehouse', inwarded_warehouse.join(', '));
+                frappe.model.set_value(cdt, cdn, 'warehouse', '');
+            }
+
+            if (child.fw) {
+                let forwarded_warehouse = child.forwarded_warehouse ? 
+                    child.forwarded_warehouse.split(',').map(w => w.trim()) : [];
+
+                if (!forwarded_warehouse.includes(child.warehouse)) {
+                    forwarded_warehouse.push(child.warehouse.trim());
+                }
+
+                frappe.model.set_value(cdt, cdn, 'forwarded_warehouse', forwarded_warehouse.join(', '));
+                frappe.model.set_value(cdt, cdn, 'warehouse', '');
+            }
+        }
+    }
+});
 // Add item_group filter for weightage_table child table
 cur_frm.fields_dict["weightage_table"].grid.get_field("item_group").get_query = function (doc, cdt, cdn) {
     return {

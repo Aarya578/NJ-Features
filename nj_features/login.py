@@ -8,7 +8,7 @@ from nj_lib.utils.common_utils import get_active_user
 from nj_features.nj_features.api.encryption import decrypt
 
 @frappe.whitelist(allow_guest=True)
-def login(usr, pwd, encrypted_pwd=False, doctype_url=None):
+def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
     try:
         if encrypted_pwd:
             pwd = decrypt(pwd)
@@ -53,6 +53,17 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None):
                 "User", frappe.session.user, fieldname="api_secret"
             )
             api_key = user_data.get('api_key')
+
+        if api:
+            return {
+                "success_key": 1,
+                "message": "Authentication success",
+                "sid": frappe.session.sid,
+                "api_key": api_key,
+                "api_secret": api_generate,
+                "username": user_data.get('username'),
+                "email": user_data.get('email')
+            }
 
         department = frappe.db.get_value('Employee', {'user_id': usr, 'status': 'Active'}, 'department')
 

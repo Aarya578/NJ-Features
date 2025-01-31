@@ -80,6 +80,7 @@ def scan_serial_no_data_for_sales(serial_no):
 
     except Exception as e:
         frappe.throw(e)
+        frappe.traceback()
 
 @frappe.whitelist()
 def scan_serial_no_data_for_return(pr_name):

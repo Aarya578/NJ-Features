@@ -55,11 +55,12 @@ def get_all_emp_warehouse(user):
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
-        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
         centralized_warehouses = {}
+        all_emp_ware = get_child_warehouses(dept_values[1])  
+
 
         for warehouse in all_emp_ware:
             recommended_warehouses[warehouse['name']] = warehouse['available_capacity']
@@ -81,6 +82,23 @@ def get_all_emp_warehouse(user):
         
     except Exception as e:
         return {'error in emp': str(e)}
+    
+def get_child_warehouses(parent_warehouse):
+    all_emp_ware = []  # Initialize list to store all child warehouses
+    
+    # Query for child warehouses that are available and not disabled
+    child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
+    
+    for row in child_warehouses:
+        if row['is_group']:  # If the warehouse is a group, look for its children
+            # Recursively find child warehouses of the group
+            all_emp_ware.extend(get_child_warehouses(row['name']))  # Only add the child warehouses of this group
+        else:
+            all_emp_ware.append(row)  # Add non-group warehouses (actual child warehouses)
+
+    return all_emp_ware  # Return only child warehouses, not the parent
+
+
 
 
 @frappe.whitelist()

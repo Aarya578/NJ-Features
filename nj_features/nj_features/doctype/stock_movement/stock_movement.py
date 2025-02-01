@@ -55,7 +55,9 @@ def get_all_emp_warehouse(user):
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
+        print("default_ww", default_ww)
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
+        print("all_emp_ware", all_emp_ware)
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
@@ -109,11 +111,14 @@ def validate_serial_no_and_department(row, error_messages):
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
         return False
-
+    
+    s_warehouse = row.get('s_warehouse')
     t_warehouse = row.get('t_warehouse')
     serial_no = row.get('serial_no')
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
+    s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
         return False
@@ -130,8 +135,73 @@ def validate_serial_no_and_department(row, error_messages):
         validate_grade_restriction(serial_doc, department_doc, error_messages)
     else:
         validate_grade_restriction(serial_doc, department_doc, error_messages)
+    
+    if s_department and s_department != department:
+        check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
+    else:
+        error_messages.append(f"Source department <b>{s_department}</b> and target department <b>{department}</b> should be different.")
+        return False
 
     return True
+
+
+def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
+
+    print('\n\n\n')
+    print(f"serial_no: {serial_no}, s_warehouse: {s_warehouse}, error_messages: {error_messages}")
+
+    s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+
+    print('s_inspection_type ------------ ', s_inspection_type)
+
+    query = """
+        SELECT se.creation
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON sed.parent = se.name
+        WHERE se.stock_entry_type = "Material Transfer"
+        AND sed.serial_no = %s
+        AND sed.t_warehouse = %s
+        ORDER BY se.creation DESC
+        LIMIT 1
+    """
+
+    result = frappe.db.sql(query, (serial_no, s_warehouse), as_dict=True)
+
+    print('result ------------ ', result)
+
+    if result:
+        creation_time = result[0]["creation"]
+        formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
+        print('formatted_time ------------ ', formatted_time)
+        
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        qi_query = """
+            SELECT name
+            FROM `tabNJ Quality Inspection`
+            WHERE inspection_type = %s AND docstatus = 1
+            AND creation BETWEEN %s AND %s
+            order by creation desc
+            LIMIT 1
+        """
+
+        qi_result = frappe.db.sql(qi_query, (s_inspection_type.get("inspection_type"), formatted_time, current_time), as_dict=True)
+
+        if qi_result:
+            qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+            print('qi_doc ------------ ', qi_doc)
+
+            if qi_doc:
+                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.status != s_inspection_type.get("quality_inspection_status_for_stock_movement"):
+                    expected_status = s_inspection_type.get("quality_inspection_status_for_stock_movement")
+                    actual_status = qi_doc.status
+                    
+                    error_messages.append(
+                        f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b>."
+                    )
+
+        else:
+            error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")
 
 
 def check_warranty_expiry(serial_doc, error_messages):

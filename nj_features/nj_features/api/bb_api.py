@@ -3,87 +3,112 @@ import requests as rs
 import frappe
 import json
 
+
 def get_grading_Authentication(doc, method=None):
     try:
-        print("entered this method ----------get_grading_Authentication-")
-        inspection_type=frappe.db.get_value("NJ Settings",{'parameter':'bb_inspection_type'},'value')
-        # print("inspection_type",inspection_type,doc.inspection_type)
-        if doc.inspection_type==inspection_type:
-            url=frappe.db.get_value("NJ Settings",{'parameter':'bb_login_url'},'value')
-            username=frappe.db.get_value("NJ Settings",{'parameter':'bb_userID'},'value')
-            data_url=frappe.db.get_value("NJ Settings",{'parameter':'bb_data_url'},'value')
-            password=frappe.db.get_value("NJ Settings",{'parameter':'bb_password'},'value')
-            
-            # print(url)
-            # print(username)
-            # print(password)
-            if(not url or not username or not password):
-                frappe.throw("Please set the BB login url, username and password in NJ Settings")
+        # print("entered this method ----------get_grading_Authentication-")
+        inspection_type = frappe.db.get_value("NJ Settings", {'parameter': 'bb_inspection_type'}, 'value')
+
+        if doc.inspection_type == inspection_type:
+            url = frappe.db.get_value("NJ Settings", {'parameter': 'bb_login_url'}, 'value')
+            username = frappe.db.get_value("NJ Settings", {'parameter': 'bb_userID'}, 'value')
+            data_url = frappe.db.get_value("NJ Settings", {'parameter': 'bb_data_url'}, 'value')
+            password = frappe.db.get_value("NJ Settings", {'parameter': 'bb_password'}, 'value')
+
+            if not url or not username or not password:
+                frappe.throw("Please set the BB login URL, username, and password in NJ Settings")
                 return
-            
-            loginurl=url
+
+            loginurl = url
             loginheaders = {
                 "App-Version": "3.4.2",
                 "Content-Type": "application/json"
             }
-            
-
-            loginbody= {
+            loginbody = {
                 "user": {
                     "email": username,
                     "password": password
                 }
             }
-            # print("loginbody",loginbody,type(loginbody))
-            loginresponse = rs.post(loginurl, headers=loginheaders, json=loginbody)
-            # print("loginresponse header",loginresponse.headers)
-            if loginresponse.status_code == 200:
-                # print("loginresponse header",loginresponse.headers)
-                # print("loginresponse header",loginresponse.headers.get("Authorization"))
-                token=loginresponse.headers.get("Authorization")
+
+            try:
+                loginresponse = rs.post(loginurl, headers=loginheaders, json=loginbody, timeout=10)
+                loginresponse.raise_for_status()  # Raises an error for HTTP codes 4xx/5xx
+
+            except rs.exceptions.Timeout:
+                frappe.msgprint("Connection timed out while trying to reach the BB login server.")
+                return
+            except rs.exceptions.ConnectionError:
+                frappe.msgprint("Failed to connect to the BB login server. Please check your network.")
+                return
+            except rs.exceptions.RequestException as e:
+                frappe.msgprint(f"Login request failed: {str(e)}")
+                return
+
+            if loginresponse.status_code != 200:
+                frappe.msgprint("Authentication failed: Invalid credentials or server error.")
+                return
+
+            token = loginresponse.headers.get("Authorization")
+            if not token:
+                frappe.msgprint("Failed to retrieve authentication token from BB server.")
+                return
+
+            result_headers = {
+                "Authorization": token
+            }
+
+            bios_serial_no = doc.bios_serialno
+            params = {
+                "serial_number": bios_serial_no
+            }
+
+            try:
+                resultresponse = rs.get(data_url, params=params, headers=result_headers, timeout=10)
+                resultresponse.raise_for_status()
+
+            except rs.exceptions.Timeout:
+                frappe.msgprint("Connection timed out while fetching grading results.")
+                return
+            except rs.exceptions.ConnectionError:
+                frappe.msgprint("Failed to connect to BB data server. Please check your network.")
+                return
+            except rs.exceptions.RequestException as e:
+                frappe.msgprint(f"Fetching grading results failed: {str(e)}")
+                return
+
+            if resultresponse.status_code != 200:
+                frappe.msgprint("Failed to fetch grading results from BB server.")
+                return
+
+            grading_results = resultresponse.json()
+            # print("grading results------------65-----------", grading_results, " doc.grading_fetched----------", doc.grading_fetched)
+
+            if doc.grading_fetched == 0 or doc.grading_fetched == '' or doc.grading_fetched is None:
+                results = extract_test_values(grading_results)
+                # print("results------------68-----------", results)
+
+                if not results:
+                    frappe.throw("No BB tool results found for this serial number")
+                    return
+
+                for result in results:
+                    # print("results are adding to the table -----------74", result["score"], result["parameter"], result["value"])
+                    doc.append('njqca_result_parameters', {
+                        "parameter": result["parameter"],
+                        "value": result["value"],
+                        "item_group": result.get("item_group", ""),
+                        "score": result["score"]
+                    })
+
+                doc.grading_fetched = 1
                 
-                # print(loginresponse.json())
-                # tokendata=loginresponse.json()
-                # jsontoken=json.load(tokendata)
-                # token=jsontoken.get("Token")
 
-                if(token):
-                    result_headers={
-                        "Authorization":token
-                    }
-                bios_serial_no=doc.bios_serialno
-                # print("bios number:",bios_serial_no)
-            
-                params={
-                    "serial_number":bios_serial_no
-                }
-
-                resultresponse=rs.get(data_url,params=params,headers=result_headers)
-
-                if resultresponse.status_code==200:
-                    # print(resultresponse, type(resultresponse))
-                    grading_results=resultresponse.json()
-                    print("grading results------------65-----------",grading_results)
-                    results = extract_test_values(grading_results)
-                    # print("results------------68-----------",results)
-                    if not results:
-                        frappe.throw("No BB tool results found for this serial number")
-                        return
-
-                    for result in results:
-                        print("results are adding to the table -----------74")
-                        doc.append('njqca_result_parameters', {
-                            "parameter": result["parameter"],
-                            "value": result["value"],
-                            "item_group": result.get("item_group", "") ,
-                            "score": result["score"]
-
-                        })
- 
     except Exception as e:
         print("Error in get_grading_Authentication", str(e))
+        frappe.throw(f"An unexpected error occurred: {str(e)}")
         return traceback.format_exc()
-    
+
 
 def extract_test_values(data):
     """
@@ -128,13 +153,13 @@ def get_item_group_mapping():
     """Returns a dictionary mapping test parameters to their corresponding item groups"""
     return {
         "CPU": "Laptops",
-        "RAM": "LAPTOP RAM",
+        "RAM": "Laptop RAM",
         "BIOS": "MOTHERBOARD",
         "Disk": "LAPTOP STORAGE",
         "Wifi": "WIFI CARD",
         "Video": "CAMERA",
         "Camera": "CAMERA",
-        "Memory": "LAPTOP RAM",
+        "Memory": "Laptop RAM",
         "Battery": "BATTERY",
         "Speaker": "SPEAKER",
         "Keyboard": "KEYBOARD",
@@ -142,7 +167,7 @@ def get_item_group_mapping():
         "Processor": "Laptops",
         "Touch Pad": "TOUCHPAD",
         "Audio Jack": "SPEAKER",
-        "Dead Pixel": "DISPLAY",
+        "Dead Pixel": "Display",
         "Sound Card": "SPEAKER",
         "MotherBoard": "MOTHERBOARD",
         "Motherboard": "MOTHERBOARD",

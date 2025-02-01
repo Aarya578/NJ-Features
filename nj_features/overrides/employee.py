@@ -30,6 +30,8 @@ def create_user_and_warehouse(self):
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
+            if self.get("work_warehouse") is not None:
+                update_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
@@ -40,6 +42,17 @@ def create_user_and_warehouse(self):
         traceback_info = traceback.format_exc()
         frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
         return str(e)
+
+def update_work_warehouse(self):
+    try:
+        query = """
+                    UPDATE `tabWarehouse`
+                    SET department = %s, previous_department = %s
+                    WHERE name = %s
+                """
+        frappe.db.sql(query, (self.get("department"), self.get("previous_department"), self.get("work_warehouse")))
+    except Exception as e:
+        frappe.throw("Error while updating work warehouse: ",e)
 
 def create_user(self):
 

@@ -109,7 +109,7 @@ frappe.ui.form.on('NJQCA', {
             args: { 'docname': cur_frm.doc.name },
             callback: function(r) {
                 if (r && r.message) {
-
+                    console.log("frm.doc.pwd --------", frm.doc.pwd);
                     let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
                     let pwd_njpulse_url = urlToCompare;
 

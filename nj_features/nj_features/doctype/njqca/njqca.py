@@ -702,16 +702,16 @@ def get_info_from_serial_no(doc=None):
 def after_save_njqca(docname):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
-        pass
-        # if doc.power_on == 'Yes':
-        #     qi_draft_data = open_draft_qi(doc)
-        #     return qi_draft_data
-        # elif doc.power_on == 'No':
-        #     frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+        # pass
+        if doc.power_on == 'Yes':
+            qi_draft_data = open_draft_qi(doc)
+            return qi_draft_data
+        elif doc.power_on == 'No':
+            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
 
-    # else:
+    else:
 
-        # frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
 def get_item_code_for_each_part(doc):
     item_group, item_template = '', ''

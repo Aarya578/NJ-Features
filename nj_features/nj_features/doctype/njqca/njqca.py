@@ -10,6 +10,7 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
+from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 @frappe.whitelist()
@@ -241,7 +242,7 @@ def open_draft_qi(self):
                 WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
             """
             field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
-            print("field_name_data--250",field_name_data,"------",data.get("item_group"))
+            # print("field_name_data--250",field_name_data,"-----item group-",data.get("item_group"),"--------param",data.get("parameter"))
             new_qi_2 = json.loads(new_qi.as_json())
             item_group_idx = [
                     x for x in new_qi_2.get("nj_quality_readings", [])  
@@ -266,21 +267,23 @@ def open_draft_qi(self):
                         FROM `tabQC Options` 
                         WHERE parent = %s
                     """, name_of_check, as_dict=True)
-
+                    print("sql_check_option_automatic--253",sql_check_option_automatic,"name of the check -----------",name_of_check,"-------data---",data.get("score"),"---type of score-----",type(data.get("score")))
                     # Fetch existing child table entries into a set for comparison
                     existing_entries = {
                         (child.item_group, child.check_name)
                         for child in new_qi.get("nj_quality_checks", [])
                     }
-                    print("existing_entries--254",existing_entries)
-                    
-                    if sql_check_option_automatic and data.get("score"):
+                    # print("existing_entries--254",existing_entries)
+                    # and (data.get("score")!=None or data.get("score")!='')
+                    if sql_check_option_automatic and data.get("score") is not None:
                         for option in sql_check_option_automatic:
+                            if data.get("score") is not None:  
+                                data_score = float(data.get("score"))
+                            else:
+                                data_score = None
                             option_score = float(option["score"]) if option["score"] is not None else None
-                            data_score = float(data.get("score")) if data.get("score") else None
-
+                            # data_score = float(data.get("score")) 
                             if option_score == data_score:
-                                print("check score matched",data_score,option_score,"option--score")
                                 # Check if this combination already exists
                                 if (data.get("item_group"), name_of_check) not in existing_entries:
                                     child_table = new_qi.append("nj_quality_checks", {})
@@ -294,7 +297,6 @@ def open_draft_qi(self):
                                 
 
                     else:
-                        print("entering else condtion ---------287")
                         if (data.get("item_group"), name_of_check) not in existing_entries:
                             child_table = new_qi.append("nj_quality_checks", {})
                             child_table.check_name = name_of_check
@@ -307,10 +309,12 @@ def open_draft_qi(self):
                             # print("added----------277",data.get('item_group'))
         new_qi.save()
         base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
+        print("base---url",base_url)
         if not base_url:
             frappe.throw("NJPulse URL is not found in NJ Settings.")
 
         if new_qi.name:
+            print("inside -------------------316")
             njpulse_url = f"{base_url}qi/{new_qi.name}/0"
             msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
         else:
@@ -460,6 +464,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
+    def before_submit(self):
+        get_grading_Authentication(self)
     def on_submit(self):
         if self.power_on == 'Yes' and self.repack_item_code != '':
             if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
@@ -478,6 +484,7 @@ class NJQCA(Document):
                     return None
             
             try:
+                # get_grading_Authentication(self)
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 if self.item_code != self.manual_repack_item_code:
                     self.make_stock_entry_using_nj_lib()
@@ -695,15 +702,16 @@ def get_info_from_serial_no(doc=None):
 def after_save_njqca(docname):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
+        pass
+        # if doc.power_on == 'Yes':
+        #     qi_draft_data = open_draft_qi(doc)
+        #     return qi_draft_data
+        # elif doc.power_on == 'No':
+        #     frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
 
-        if doc.power_on == 'Yes':
-            qi_draft_data = open_draft_qi(doc)
-            return qi_draft_data
-        elif doc.power_on == 'No':
-            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+    # else:
 
-    else:
-        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+        # frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
 def get_item_code_for_each_part(doc):
     item_group, item_template = '', ''

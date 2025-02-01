@@ -464,8 +464,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
-    # def before_submit(self):
-    #     get_grading_Authentication(self)
+    def before_submit(self):
+        get_grading_Authentication(self)
     def on_submit(self):
         if self.power_on == 'Yes' and self.repack_item_code != '':
             if self.manual_repack_item_code is None or self.manual_repack_item_code == '':

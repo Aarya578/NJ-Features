@@ -55,11 +55,15 @@ def get_all_emp_warehouse(user):
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
+        print("default_ww", default_ww)
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
+        print("all_emp_ware", all_emp_ware)
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
         centralized_warehouses = {}
+        all_emp_ware = get_child_warehouses(dept_values[1])  
+
 
         for warehouse in all_emp_ware:
             recommended_warehouses[warehouse['name']] = warehouse['available_capacity']
@@ -81,7 +85,21 @@ def get_all_emp_warehouse(user):
         
     except Exception as e:
         return {'error in emp': str(e)}
+    
+def get_child_warehouses(parent_warehouse):
+    all_emp_ware = []  
+    
+    child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
 
+    print('child_warehouses', child_warehouses)
+    
+    for row in child_warehouses:
+        if row['is_group']: 
+            all_emp_ware.extend(get_child_warehouses(row['name']))  
+        else:
+            all_emp_ware.append(row)  
+
+    return all_emp_ware 
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
@@ -109,11 +127,14 @@ def validate_serial_no_and_department(row, error_messages):
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
         return False
-
+    
+    s_warehouse = row.get('s_warehouse')
     t_warehouse = row.get('t_warehouse')
     serial_no = row.get('serial_no')
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
+    s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
         return False
@@ -130,8 +151,72 @@ def validate_serial_no_and_department(row, error_messages):
         validate_grade_restriction(serial_doc, department_doc, error_messages)
     else:
         validate_grade_restriction(serial_doc, department_doc, error_messages)
+    
+    if s_department and s_department != department:
+        check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
+    else:
+        return True
 
     return True
+
+
+def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
+
+    print('\n\n\n')
+    print(f"serial_no: {serial_no}, s_warehouse: {s_warehouse}, error_messages: {error_messages}")
+
+    s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+
+    print('s_inspection_type ------------ ', s_inspection_type)
+
+    query = """
+        SELECT se.creation
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON sed.parent = se.name
+        WHERE se.stock_entry_type = "Material Transfer"
+        AND sed.serial_no = %s
+        AND sed.t_warehouse = %s
+        ORDER BY se.creation DESC
+        LIMIT 1
+    """
+
+    result = frappe.db.sql(query, (serial_no, s_warehouse), as_dict=True)
+
+    print('result ------------ ', result)
+
+    if result:
+        creation_time = result[0]["creation"]
+        formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
+        print('formatted_time ------------ ', formatted_time)
+        
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        qi_query = """
+            SELECT name
+            FROM `tabNJ Quality Inspection`
+            WHERE inspection_type = %s AND docstatus = 1
+            AND creation BETWEEN %s AND %s
+            order by creation desc
+            LIMIT 1
+        """
+
+        qi_result = frappe.db.sql(qi_query, (s_inspection_type.get("inspection_type"), formatted_time, current_time), as_dict=True)
+
+        if qi_result:
+            qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+            print('qi_doc ------------ ', qi_doc)
+
+            if qi_doc:
+                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.status != s_inspection_type.get("quality_inspection_status_for_stock_movement"):
+                    expected_status = s_inspection_type.get("quality_inspection_status_for_stock_movement")
+                    actual_status = qi_doc.status
+                    
+                    error_messages.append(
+                        f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b>."
+                    )
+
+        else:
+            error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")
 
 
 def check_warranty_expiry(serial_doc, error_messages):
@@ -241,8 +326,6 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
 
-    print('result', result)
-    
     if result is None:
         error_messages.append(
             f"Item <b>{serial_doc.get('item_code')}</b> not found. Cannot validate grade restrictions for serial <b>{serial_doc.name}</b>."
@@ -267,12 +350,16 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             restricted_grades = restriction.get('restricted_grade', "").split(", ")
             restricted_item_group = restriction.get('item_group')
 
+            print("component_qty ------------ ", component.get('quantity'))
+
             if (component.get('item_group') == restricted_item_group and
-                    component.get('grade') in restricted_grades):
-                error_messages.append(
-                    f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
-                    f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
-                )
+                    component.get('grade') in restricted_grades and
+                    component.get('quantity') == 1):
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
+                        f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                    )
+
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):
@@ -283,7 +370,6 @@ def validate_component_grade(serial_doc, department_doc, error_messages):
                 f"Serial No <b>{serial_doc.name}</b> for item_group <b>{serial_doc.get('item_group')}</b> "
                 f"has a grade <b>{serial_doc.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
             )
-
 
 def get_item_code_and_warehouse(item_code):
     try:
@@ -296,8 +382,6 @@ def get_item_code_and_warehouse(item_code):
         frappe.log_error(frappe.get_traceback(), "Error in get_item_code_and_warehouse")
         return
     
-
-   
 @frappe.whitelist()
 def get_grades_from_part_list(search_value):
     query = frappe.db.sql(
@@ -310,7 +394,6 @@ def get_grades_from_part_list(search_value):
         as_dict=True
     )
 
-    print("query---------285------",query)
     results = []
 
     # Loop through each item_group from the query result
@@ -337,8 +420,7 @@ def get_grades_from_part_list(search_value):
                 damage_type_condition="AND damage_type IN %s" if damage_types[0] else ""
             ),
             (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
-            as_dict=True,
-            debug=True
+            as_dict=True
         )
 
         # If department data is found, append it to the result list
@@ -349,5 +431,4 @@ def get_grades_from_part_list(search_value):
                 })
 
     # Return the consolidated results
-    print("results---------", results)
     return results

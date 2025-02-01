@@ -6,9 +6,10 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "max_total_days",
-  "min_total_days",
-  "target"
+  "from_days",
+  "to_days",
+  "target",
+  "ramp_level"
  ],
  "fields": [
   {
@@ -18,22 +19,28 @@
    "label": "Target"
   },
   {
-   "fieldname": "min_total_days",
+   "fieldname": "ramp_level",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Min Total Days"
+   "label": "Ramp Level"
   },
   {
-   "fieldname": "max_total_days",
+   "fieldname": "from_days",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Max Total Days"
+   "label": "From Days"
+  },
+  {
+   "fieldname": "to_days",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "To Days"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-17 17:39:21.711921",
+ "modified": "2025-01-31 19:10:58.592895",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Target Kpi",

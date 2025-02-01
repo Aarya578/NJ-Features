@@ -5,6 +5,11 @@ frappe.ui.form.on('Serial No', {
             printQRCode(frm);
         }).addClass('btn-primary');
 
+        if (frappe.user.has_role(["Item Wizard Manager"])) {
+            frm.set_df_property('serial_no_component', 'read_only', 0);
+            frm.refresh_field('serial_no_component');
+        }
+
         frappe.call({
             method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
             args: {

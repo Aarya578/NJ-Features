@@ -1,12 +1,16 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "autoname": "department.-.YY.MM.DD.",
  "creation": "2025-01-22 11:08:26.802138",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "department",
+  "role_profile",
+  "column_break_kzqyd",
+  "from",
+  "to",
   "section_break_yiyhs",
   "productivity_child_table",
   "amended_from"
@@ -36,12 +40,32 @@
   {
    "fieldname": "section_break_yiyhs",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "role_profile",
+   "fieldtype": "Link",
+   "label": "Role Profile",
+   "options": "Role Profile"
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Date",
+   "label": "From"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Date",
+   "label": "To"
+  },
+  {
+   "fieldname": "column_break_kzqyd",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-22 11:32:30.243368",
+ "modified": "2025-01-23 14:36:25.184641",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Productivity",

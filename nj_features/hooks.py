@@ -124,14 +124,18 @@ doc_events = {
 	"Purchase Receipt": {
 		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
 		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
+	},
+    "Purchase Order": {
+        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
+    },
+    "NJQCA": {
+        "on_submit": "nj_features.nj_features.api.bb_api.get_grading_Authentication"
+	},
+    "User": {
+        "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}
 }
 
-doc_events = {
-    "Purchase Order": {
-        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
-    }
-}
 
 # doc_events = {
 #     "Sales Order": {
@@ -177,23 +181,45 @@ doc_events = {
 # 	}
 # }
 
-scheduler_events = {
-	"cron": {
-		# "0 22 * * *": [
-		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
-		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
-		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
-		# ],
-		"0 23 * * *": [
-			"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
-		]
-	}
-}
+# scheduler_events = {
+# 	"cron": {
+# 		# "0 22 * * *": [
+# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
+# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
+# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
+# 		# ],
+# 		# "0 23 * * *": [
+# 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
+# 		# ],
+#         # "*/5 * * * *": [
+#         #     "nj_features.overrides.employee.update_employee_experience_table",
+           
+#         # ],
+        
+#         # "*/6 * * * *": [
+#         #     # "nj_features.overrides.employee.update_employee_experience_table",
+#         #     "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+#         # ]
+# 	}
+# }
+# scheduler_events = {
+#     "cron": {
+#         "08 16 * * *": [
+#             "nj_features.overrides.employee.update_continuous_experience"
+#         ]
+#     }
+# }
+
+
+
+
+
+
 
 # Testing
 # -------
 
-# before_tests = "nj_features.install.before_tests"
+# before_tests = "nj_feyour_app_nameatures.install.before_tests"
 
 # Overriding Methods
 # ------------------------------

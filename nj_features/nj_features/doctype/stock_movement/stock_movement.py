@@ -87,22 +87,19 @@ def get_all_emp_warehouse(user):
         return {'error in emp': str(e)}
     
 def get_child_warehouses(parent_warehouse):
-    all_emp_ware = []  # Initialize list to store all child warehouses
+    all_emp_ware = []  
     
-    # Query for child warehouses that are available and not disabled
     child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
+
+    print('child_warehouses', child_warehouses)
     
     for row in child_warehouses:
-        if row['is_group']:  # If the warehouse is a group, look for its children
-            # Recursively find child warehouses of the group
-            all_emp_ware.extend(get_child_warehouses(row['name']))  # Only add the child warehouses of this group
+        if row['is_group']: 
+            all_emp_ware.extend(get_child_warehouses(row['name']))  
         else:
-            all_emp_ware.append(row)  # Add non-group warehouses (actual child warehouses)
+            all_emp_ware.append(row)  
 
-    return all_emp_ware  # Return only child warehouses, not the parent
-
-
-
+    return all_emp_ware 
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
@@ -158,8 +155,7 @@ def validate_serial_no_and_department(row, error_messages):
     if s_department and s_department != department:
         check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
     else:
-        error_messages.append(f"Source department <b>{s_department}</b> and target department <b>{department}</b> should be different.")
-        return False
+        return True
 
     return True
 

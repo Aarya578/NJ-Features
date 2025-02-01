@@ -310,14 +310,13 @@ def open_draft_qi(self):
         if not base_url:
             frappe.throw("NJPulse URL is not found in NJ Settings.")
 
-        msg_pnt = ""
         if new_qi.name:
             njpulse_url = f"{base_url}qi/{new_qi.name}/0"
             msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
         else:
             njpulse_url = base_url
         
-        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt}  
+        return {'qi_name': new_qi.name if new_qi.name else '', 'njpulse_url': njpulse_url, 'msg_pnt': msg_pnt, "base_url": base_url}  
 
 
     except Exception as e:
@@ -486,8 +485,10 @@ class NJQCA(Document):
                 if qi_data:
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
-                update_serial_no_componont_for_grade(self)
-                # update_serial_no_component_for_njqca(self)
+                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+                if nj_settings_item_group and self.item_group != nj_settings_item_group:
+                    update_serial_no_componont_for_grade(self)
+                    # update_serial_no_component_for_njqca(self)
 
             except Exception as e:
                 frappe.db.rollback()

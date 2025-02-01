@@ -101,38 +101,62 @@ frappe.ui.form.on('NJQCA', {
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
+        
+        var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
+        
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+            args: { 'docname': cur_frm.doc.name },
+            callback: function(r) {
+                if (r && r.message) {
 
-        if (!window.isWindowOpened) {
-            window.isWindowOpened = false;
+                    let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+                    let pwd_njpulse_url = urlToCompare;
 
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: { 'docname': cur_frm.doc.name },
-                callback: function(r) {
-                    if (r && r.message) {
-                        if (r.message.njpulse_url) {
-                            if (!window.isWindowOpened) {
-                                window.open(r.message.njpulse_url, "_blank");
-                                window.isWindowOpened = true;
-                            }
+                    if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+                        openedUrls.push(urlToCompare);
+                        localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+    
+                        if (frm.doc.pwd && r.message.base_url) {
+                            console.log("in pwd");
+                            
+                            pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
                         }
+    
+                        window.open(pwd_njpulse_url, "_blank");
+                    }
 
-                        if (r.message.qi_name) {
-                            frm.set_value('qi_name', r.message.qi_name);
-                            frm.refresh_field('qi_name');
-                        }
-                        
-                        if (r.message.msg_pnt) {
-                            frappe.show_alert({
-                                message: r.message.msg_pnt,
-                                indicator: 'green'
-                            });
-                        }
+                    if (r.message.qi_name) {
+                        frm.set_value('qi_name', r.message.qi_name);
+                        frm.refresh_field('qi_name');
 
-                    } else {  console.error('QI name is not defined'); }
-                }
-            });
-        }
+                        var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+
+                        $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+
+                        $qiNameWrapper.css('cursor', 'pointer');
+                        $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
+
+                        $qiNameWrapper.on('click', function() {
+                            window.open(pwd_njpulse_url, '_blank');
+                        });
+
+                        $qiNameWrapper.css({
+                            'user-select': 'none',
+                            'pointer-events': 'auto'
+                        });
+                    }
+
+                    if (r.message.msg_pnt) {
+                        frappe.show_alert({
+                            message: r.message.msg_pnt,
+                            indicator: 'blue'
+                        }, 10);
+                    }
+
+                } else {  console.error('QI name is not defined'); }
+            }
+        });
     },
 
     // before_submit: function(frm) {

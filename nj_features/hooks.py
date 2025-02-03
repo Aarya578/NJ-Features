@@ -181,27 +181,31 @@ doc_events = {
 # 	}
 # }
 
-# scheduler_events = {
-# 	"cron": {
-# 		# "0 22 * * *": [
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
-# 		# ],
-# 		# "0 23 * * *": [
-# 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
-# 		# ],
-#         # "*/5 * * * *": [
-#         #     "nj_features.overrides.employee.update_employee_experience_table",
+scheduler_events = {
+	"cron": {
+		# "0 22 * * *": [
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
+		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
+		# ],
+		# "0 23 * * *": [
+		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
+		# ],
+        # "*/5 * * * *": [
+        #     "nj_features.overrides.employee.update_employee_experience_table",
            
-#         # ],
+        # ],
         
-#         # "*/6 * * * *": [
-#         #     # "nj_features.overrides.employee.update_employee_experience_table",
-#         #     "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
-#         # ]
-# 	}
-# }
+        "*/10 * * * *": [
+            # "nj_features.overrides.employee.update_employee_experience_table",
+            # "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
+            # "nj_features.nj_features.doctype.productivity_kpi_report.productivity_kpi_report.fetch_and_save_productivity_data"
+			"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",
+
+        
+        ]
+	}
+}
 # scheduler_events = {
 #     "cron": {
 #         "08 16 * * *": [

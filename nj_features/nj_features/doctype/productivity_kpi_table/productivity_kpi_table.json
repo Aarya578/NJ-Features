@@ -1,0 +1,185 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-02-01 18:22:24.486002",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "posting_date",
+  "serial_no",
+  "stock_entry_name",
+  "stock_entry_creation",
+  "item_group",
+  "item_code",
+  "qty",
+  "src_warehouse",
+  "t_warehouse",
+  "source_dept",
+  "column_break_xcz79",
+  "target_dept",
+  "source_profile",
+  "target_profile",
+  "itemgroup_weightage_value",
+  "target_departmen",
+  "weightage_value",
+  "wtd_qty",
+  "dept_prd",
+  "profile_prd",
+  "match_prd_flag",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Data",
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "stock_entry_name",
+   "fieldtype": "Link",
+   "label": "Stock Entry Name",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "stock_entry_creation",
+   "fieldtype": "Data",
+   "label": "Stock Entry Creation"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Data",
+   "label": "Qty"
+  },
+  {
+   "fieldname": "src_warehouse",
+   "fieldtype": "Data",
+   "label": "SRC Warehouse"
+  },
+  {
+   "fieldname": "t_warehouse",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "T Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "source_dept",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Source Dept",
+   "options": "Department"
+  },
+  {
+   "fieldname": "target_dept",
+   "fieldtype": "Link",
+   "label": "Target Dept",
+   "options": "Department"
+  },
+  {
+   "fieldname": "source_profile",
+   "fieldtype": "Data",
+   "label": "Source Profile"
+  },
+  {
+   "fieldname": "target_profile",
+   "fieldtype": "Data",
+   "label": "Target Profile"
+  },
+  {
+   "fieldname": "itemgroup_weightage_value",
+   "fieldtype": "Data",
+   "label": "Itemgroup Weightage Value"
+  },
+  {
+   "fieldname": "target_departmen",
+   "fieldtype": "Data",
+   "label": "Target Departmen",
+   "options": "Department"
+  },
+  {
+   "fieldname": "weightage_value",
+   "fieldtype": "Data",
+   "label": "Weightage Value"
+  },
+  {
+   "fieldname": "wtd_qty",
+   "fieldtype": "Data",
+   "label": "Wtd Qty"
+  },
+  {
+   "fieldname": "dept_prd",
+   "fieldtype": "Data",
+   "label": "Dept Prd"
+  },
+  {
+   "fieldname": "profile_prd",
+   "fieldtype": "Data",
+   "label": "Profile Prd"
+  },
+  {
+   "fieldname": "match_prd_flag",
+   "fieldtype": "Data",
+   "label": "Match Prd Flag"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Productivity Kpi Table",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_xcz79",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-02-01 19:03:10.659266",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Productivity Kpi Table",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

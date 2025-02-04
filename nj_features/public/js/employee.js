@@ -61,7 +61,6 @@ frappe.ui.form.on('Employee', {
                 }
             }
         });
-        console.log('prefered_mail', frm.doc.prefered_email);
         // Log role profile changes
         frappe.call({
             method: "nj_features.overrides.employee.role_profile_change_log",
@@ -71,11 +70,6 @@ frappe.ui.form.on('Employee', {
                 previous_role_profile: frm.doc.previous_role_profile || null,
                 ramp_level: frm.doc.ramp_level || null,
                 previous_ramp: frm.doc.previous_ramp || null
-            },
-            callback: function (r) {
-                if (r.message) {
-                    console.log('Role Profile Change Log:', r.message);
-                }
             }
         });     
     },
@@ -101,7 +95,6 @@ frappe.ui.form.on('Employee', {
                 total_days: calculated_days
             },
             callback: function (response) {
-                console.log("Ramp Level:", response.message);
                 if (response.message) {
                     frm.set_value('ramp_level', response.message); // Update the field in the form
                 }
@@ -116,8 +109,6 @@ frappe.ui.form.on('Employee', {
                 docname: frm.doc.name
             },
             callback(r) {
-                console.log('previous department', r.message);
-                
                 if (r.message) {
                     frm.set_value('previous_department', r.message);
                 }

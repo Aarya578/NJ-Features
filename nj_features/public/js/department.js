@@ -1,10 +1,3 @@
-frappe.ui.form.on('Department', {
-    refresh: function(frm) {
-        // console.log("refreshing...")
-    },
-       
-});
-
 frappe.ui.form.on('Stock Movement Restriction Child', {
     grade: function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
@@ -31,7 +24,6 @@ frappe.ui.form.on('Inventory Details', {
         }
 
         if (child.iw || child.fw) {
-            console.log('Warehouse field triggered in child Doctype...');
 
             if (child.iw) {
                 let inwarded_warehouse = child.inwarded_warehouse ? 

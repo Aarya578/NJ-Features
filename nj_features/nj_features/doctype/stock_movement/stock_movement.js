@@ -19,7 +19,6 @@ frappe.ui.form.on('Stock Movement', {
 
 
     scan_barcode: function () {
-        console.log("scan_barcode========");
         if (cur_frm.doc.scan_barcode) {
             frappe.call({
                 method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
@@ -51,12 +50,9 @@ frappe.ui.form.on('Stock Movement', {
                                 const gradesData = gradesResponse && gradesResponse.message;
                             
                                 if (gradesData && gradesData.length > 0) {
-                                    console.log("Grades Data: ", gradesData);
                             
                                     // Extract department names from the response
                                     const departmentNames = gradesData.map(entry => entry.department);
-                            
-                                    console.log("Departments: ", departmentNames);
                             
                                     // Update the options of the 'suggested_warehouse' field
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
@@ -64,8 +60,6 @@ frappe.ui.form.on('Stock Movement', {
                                     // Optionally, set the first department as the default value
                                     cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
                                 } else {
-                                    console.log("No departments found for the given barcode.");
-                            
                                     // Clear the options if no data is found
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', '');
                                     cur_frm.set_value('suggested_warehouse', '');
@@ -343,7 +337,6 @@ frappe.ui.form.on('Stock Movement Detail', {
             // Set source warehouse based on serial number's warehouse
             if (child.serial_no) {
                 frappe.db.get_value('Serial No', { 'name': child.serial_no }, 'warehouse').then(function (r) {
-                    console.log("Serial no warehouse:", r.message.warehouse);
                     if (r.message && r.message.warehouse) {
                         frappe.model.set_value(child.doctype, child.name, 's_warehouse', r.message.warehouse);
                     }
@@ -453,7 +446,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
                             handleScannerInput(d, 't_warehouse');
                             let t_warehouse_value = $(this).val();
-                            console.log('t_warehouse_value ------------ ', t_warehouse_value);
 
                             if (t_warehouse_value.trim() === '') {
                                 return; // No further checks or messages, just return
@@ -638,7 +630,6 @@ function modify_table_after_scan(frm, data) {
     if (!row_to_modify) {
         row_to_modify = frappe.model.add_child(cur_frm.doc, cur_grid.doctype, 'items');
     }
-    console.log('row_to_modify=========',data);
 	if (data.serial_no != "" && data.serial_no != undefined) {
 		var existing_record = cur_frm.doc.items.find(d => d.serial_no === data.serial_no);
 		if (existing_record) {

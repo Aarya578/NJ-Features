@@ -6,7 +6,6 @@ import json
 
 def get_grading_Authentication(doc, method=None):
     try:
-        # print("entered this method ----------get_grading_Authentication-")
         inspection_type = frappe.db.get_value("NJ Settings", {'parameter': 'bb_inspection_type'}, 'value')
 
         if doc.inspection_type == inspection_type:
@@ -82,18 +81,15 @@ def get_grading_Authentication(doc, method=None):
                 return
 
             grading_results = resultresponse.json()
-            # print("grading results------------65-----------", grading_results, " doc.grading_fetched----------", doc.grading_fetched)
 
             if doc.grading_fetched == 0 or doc.grading_fetched == '' or doc.grading_fetched is None:
                 results = extract_test_values(grading_results)
-                # print("results------------68-----------", results)
 
                 if not results:
-                    frappe.throw("No BB tool results found for this serial number")
+                    frappe.msgprint("No BB tool results found for this serial number")
                     return
 
                 for result in results:
-                    # print("results are adding to the table -----------74", result["score"], result["parameter"], result["value"])
                     doc.append('njqca_result_parameters', {
                         "parameter": result["parameter"],
                         "value": result["value"],
@@ -105,7 +101,6 @@ def get_grading_Authentication(doc, method=None):
                 
 
     except Exception as e:
-        print("Error in get_grading_Authentication", str(e))
         frappe.throw(f"An unexpected error occurred: {str(e)}")
         return traceback.format_exc()
 

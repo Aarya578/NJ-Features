@@ -5,7 +5,6 @@ frappe.ui.form.on('Repack For Non Serialised', {
 	refresh: function(frm) {
 		$('.col-lg-2.layout-side-section').hide();
 		frm.set_query('new_grade', function(){
-			console.log('triggerring new_grade');
 			return {
 				query : "nj_features.nj_features.doctype.repack_for_non_serialised.repack_for_non_serialised.get_new_grade",
 				filters: {

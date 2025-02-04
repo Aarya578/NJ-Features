@@ -138,8 +138,6 @@ def get_item_code_details_for_transfer(ste_number):
 
     result = []
 
-    print('mandatory_transfer_details --------------------- 276', material_transfer_details)
-
     for row in material_transfer_details:
         s_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['s_warehouse']}, ['location'])
         t_warehouse_lc = frappe.db.get_value("Warehouse", {'name': row['t_warehouse']}, ['location'])

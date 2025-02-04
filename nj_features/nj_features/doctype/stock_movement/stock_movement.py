@@ -55,9 +55,7 @@ def get_all_emp_warehouse(user):
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
-        print("default_ww", default_ww)
         all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
-        print("all_emp_ware", all_emp_ware)
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
@@ -91,8 +89,6 @@ def get_child_warehouses(parent_warehouse):
     
     child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
 
-    print('child_warehouses', child_warehouses)
-    
     for row in child_warehouses:
         if row['is_group']: 
             all_emp_ware.extend(get_child_warehouses(row['name']))  
@@ -162,12 +158,7 @@ def validate_serial_no_and_department(row, error_messages):
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
-    print('\n\n\n')
-    print(f"serial_no: {serial_no}, s_warehouse: {s_warehouse}, error_messages: {error_messages}")
-
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
-
-    print('s_inspection_type ------------ ', s_inspection_type)
 
     query = """
         SELECT se.creation
@@ -182,13 +173,9 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
     result = frappe.db.sql(query, (serial_no, s_warehouse), as_dict=True)
 
-    print('result ------------ ', result)
-
     if result:
         creation_time = result[0]["creation"]
         formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
-        print('formatted_time ------------ ', formatted_time)
-        
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         qi_query = """
@@ -204,7 +191,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
         if qi_result:
             qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
-            print('qi_doc ------------ ', qi_doc)
 
             if qi_doc:
                 if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.status != s_inspection_type.get("quality_inspection_status_for_stock_movement"):
@@ -242,7 +228,6 @@ def check_warranty_expiry(serial_doc, error_messages):
         frappe.log_error(frappe.get_traceback(), "Error in check_warranty_expiry")
         error_messages.append(f"Error in warranty expiry check: {str(e)}")
 
-
 def check_general_warranty(serial_doc, purchase_order, error_messages):
     creation_date = purchase_order.get('creation_date')
     warranty_days = purchase_order.get('warranty_days')
@@ -260,13 +245,11 @@ def check_general_warranty(serial_doc, purchase_order, error_messages):
     error_messages.append(f"The warranty is still valid for item_code <b>{serial_doc.get('item_code')}</b>. <b>{remaining_days} day(s)</b> remaining.")
     return False
 
-
 def check_component_warranty(serial_doc, purchase_order, error_messages):
     if purchase_order.get('part_warranty'):
         if purchase_order.get('all_except'):
             return check_specific_part_warranty(serial_doc, purchase_order, error_messages)
         return check_component_expiry(serial_doc, purchase_order, error_messages)
-
 
 def check_specific_part_warranty(serial_doc, purchase_order, error_messages):
     query = """
@@ -282,7 +265,6 @@ def check_specific_part_warranty(serial_doc, purchase_order, error_messages):
         return True
 
     return check_general_warranty(purchase_order, error_messages)
-
 
 def check_component_expiry(serial_doc, purchase_order, error_messages):
     po_doc = frappe.get_doc('Purchase Order', serial_doc.get('purchase_order'))
@@ -349,8 +331,6 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
         for restriction in department_doc.get('stock_movement_restriction_table', []):
             restricted_grades = restriction.get('restricted_grade', "").split(", ")
             restricted_item_group = restriction.get('item_group')
-
-            print("component_qty ------------ ", component.get('quantity'))
 
             if (component.get('item_group') == restricted_item_group and
                     component.get('grade') in restricted_grades and

@@ -242,7 +242,6 @@ def open_draft_qi(self):
                 WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s
             """
             field_name_data = frappe.db.sql(field_name_check_sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
-            # print("field_name_data--250",field_name_data,"-----item group-",data.get("item_group"),"--------param",data.get("parameter"))
             new_qi_2 = json.loads(new_qi.as_json())
             item_group_idx = [
                     x for x in new_qi_2.get("nj_quality_readings", [])  
@@ -252,14 +251,12 @@ def open_draft_qi(self):
             #     SELECT item_group_idx
             #     FROM `tabNj Quality Readings`
             #     WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
-            # print("item_group_idx--248-----",item_group_idx)
             item_group_idx_value = 0
             
             if item_group_idx:
                 item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
-            # print("item_group_idx_value----------251",item_group_idx_value)
+            
             if field_name_data:
-                # print("field_name_data--252",field_name_data)
                 for field in field_name_data:
                     name_of_check = field["quality_check"]
                     sql_check_option_automatic = frappe.db.sql("""
@@ -267,13 +264,11 @@ def open_draft_qi(self):
                         FROM `tabQC Options` 
                         WHERE parent = %s
                     """, name_of_check, as_dict=True)
-                    # print("sql_check_option_automatic--253",sql_check_option_automatic,"name of the check -----------",name_of_check,"-------data---",data.get("score"),"---type of score-----",type(data.get("score")))
                     # Fetch existing child table entries into a set for comparison
                     existing_entries = {
                         (child.item_group, child.check_name)
                         for child in new_qi.get("nj_quality_checks", [])
                     }
-                    # print("existing_entries--254",existing_entries)
                     # and (data.get("score")!=None or data.get("score")!='')
                     if sql_check_option_automatic and data.get("score") is not None:
                         for option in sql_check_option_automatic:
@@ -295,7 +290,6 @@ def open_draft_qi(self):
                                         child_table.item_group_idx = item_group_idx_value
                                     existing_entries.add((data.get("item_group"), name_of_check))  # Add to the set to prevent further duplicates
                                 
-
                     else:
                         if (data.get("item_group"), name_of_check) not in existing_entries:
                             child_table = new_qi.append("nj_quality_checks", {})
@@ -306,15 +300,14 @@ def open_draft_qi(self):
                             existing_entries.add((data.get("item_group"), name_of_check))
                             if item_group_idx_value:
                                 child_table.item_group_idx = item_group_idx_value
-                            # print("added----------277",data.get('item_group'))
+
         new_qi.save()
         base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-        # print("base---url",base_url)
+
         if not base_url:
             frappe.throw("NJPulse URL is not found in NJ Settings.")
 
         if new_qi.name:
-            # print("inside -------------------316")
             njpulse_url = f"{base_url}qi/{new_qi.name}/0"
             msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
         else:
@@ -817,7 +810,6 @@ def get_item_code_for_each_part(doc):
 
                             process_variant_status = False
                             if variant == 'variant_1' and not skip_memory:
-                                # print("variant == 'variant_1' and not skip_memory", skip_memory, row.get('variant_10'))
                                 process_variant_status = process_variant(variant, row, mapping, attribute_object)
 
                             if not process_variant_status and not skip_memory:
@@ -848,7 +840,7 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
-                # print('data_attr', consolidated, 'repack_item_code', repack_item_code, 'part_data', part_data)
+
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}
@@ -1130,7 +1122,6 @@ def get_variant_from_value(item_template=None, args=None):
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
             if variants and variants[0]['parent']:
-                # print("variants[0]['parent']", variants[0]['parent'])
                 return variants[0]['parent']
             else:
                 item_code = construct_item_code(item_template, args_list)
@@ -1291,7 +1282,7 @@ def get_serial_no_attribute_data(serial_no,item_group):
         )
         for item in adap_dis_item_code:
             item['item_template'] = frappe.db.get_value('Item', item['item'], 'variant_of')
-        # print("adap_dis_item_code--------1275",adap_dis_item_code)
+
         if adap_dis_item_code:
             return adap_dis_item_code
         return None

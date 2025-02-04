@@ -12,16 +12,13 @@ def update_department_change_logs():
     Each execution creates new records to track historical changes.
     """
     try:
-        # Fetch all active employees
         employees = frappe.get_all(
             "Employee",
-            filters={"status": "Active"},  # Only get active employees
+            filters={"status": "Active"},
             fields=["user_id", "emp_id", "department", "role_profile", "ramp_level", "target"]
         )
 
-        # Create new log entries for each employee
         for employee in employees:
-            # Create a new log entry each time
             doc = frappe.get_doc({
                 "doctype": "Department Change Log",
                 "user_name": employee.user_id,
@@ -32,9 +29,7 @@ def update_department_change_logs():
                 "target": employee.target,
                 "log_datetime": frappe.utils.now()  # Add timestamp for each entry
             })
-            print("doc=========================34=",doc.as_dict())
             doc.insert()
-            doc.submit()
 
         frappe.db.commit()
         

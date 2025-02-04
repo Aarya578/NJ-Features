@@ -22,8 +22,6 @@ def get_columns():
 
 def get_data(filters):
 
-    print(f'\nFILTERS FROM DJANGO ==========37=========== {filters}\n')
-
     conditions = []
 
     if filters.get("item_group"):
@@ -68,8 +66,6 @@ def get_data(filters):
 
 
 def execute(filters): 
-    print(f'\nFILTERS ==========97=========== {filters}\n')
     columns = get_columns()
-    print(f'COLUMNS =============102============== {columns}')
     data = get_data(filters)
     return columns, data

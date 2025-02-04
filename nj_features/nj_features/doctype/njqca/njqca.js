@@ -5,12 +5,6 @@ frappe.ui.form.on('NJQCA', {
     onload: function(frm) {
         if (frm.doc.docstatus == 0) {
             frm.events.serial_no(frm);
-            frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
-            frm.get_field('njqca_laptop_ram').grid.cannot_add_rows = true;
-            frm.get_field('njqca_laptop_storage').grid.cannot_add_rows = true;
-            frm.refresh_field("njqca_laptop_ram");
-            frm.refresh_field("njqca_laptop_processors");
-            frm.refresh_field("njqca_laptop_storage");
         }
     },
     
@@ -18,6 +12,16 @@ frappe.ui.form.on('NJQCA', {
         
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
+        frm.get_field('njqca_laptop_ram').grid.cannot_add_rows = true;
+        frm.get_field('njqca_laptop_storage').grid.cannot_add_rows = true;
+        frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
+        frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
+        frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
+        frm.refresh_field('njqca_laptop_ram');
+        frm.refresh_field('njqca_laptop_storage');
+        frm.refresh_field('njqca_item_component');
+        frm.refresh_field('njqca_result_parameters');
+        frm.refresh_field('njqca_laptop_processors');
         if (frm.doc.docstatus == 0) {
             
             frm.events.power_on();
@@ -52,6 +56,56 @@ frappe.ui.form.on('NJQCA', {
                     }
                 }
             })
+            
+            frm.set_query("calculated_item_code", "njqca_laptop_processors", function (doc, cdt, cdn) {
+                const row = locals[cdt][cdn];
+                return {
+                    filters: {
+                        item_group: row.item_group,
+                        disabled: 0, has_variants: 0
+                    }
+                }
+            })
+
+            frm.set_query("calculated_item_code", "njqca_laptop_ram", function (doc, cdt, cdn) {
+                const row = locals[cdt][cdn];
+                return {
+                    filters: {
+                        item_group: row.item_group,
+                        disabled: 0, has_variants: 0
+                    }
+                }
+            })
+
+            frm.set_query("calculated_item_code", "njqca_laptop_storage", function (doc, cdt, cdn) {
+                const row = locals[cdt][cdn];
+                return {
+                    filters: {
+                        item_group: row.item_group,
+                        disabled: 0, has_variants: 0
+                    }
+                }
+            })
+
+            // frm.set_query("calculated_item_code", "njqca_display", function (doc, cdt, cdn) {
+            //     const row = locals[cdt][cdn];
+            //     return {
+            //         filters: {
+            //             item_group: row.item_group,
+            //             disabled: 0, has_variants: 0
+            //         }
+            //     }
+            // })
+
+            // frm.set_query("calculated_item_code", "njqca_adapter", function (doc, cdt, cdn) {
+            //     const row = locals[cdt][cdn];
+            //     return {
+            //         filters: {
+            //             item_group: row.item_group,
+            //             disabled: 0, has_variants: 0
+            //         }
+            //     }
+            // })
         }
     },
 
@@ -109,7 +163,6 @@ frappe.ui.form.on('NJQCA', {
             args: { 'docname': cur_frm.doc.name },
             callback: function(r) {
                 if (r && r.message) {
-                    console.log("frm.doc.pwd --------", frm.doc.pwd);
                     let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
                     let pwd_njpulse_url = urlToCompare;
 
@@ -118,8 +171,6 @@ frappe.ui.form.on('NJQCA', {
                         localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
     
                         if (frm.doc.pwd && r.message.base_url) {
-                            console.log("in pwd");
-                            
                             pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
                         }
     
@@ -159,55 +210,54 @@ frappe.ui.form.on('NJQCA', {
         });
     },
 
-    before_submit: function(frm) {
+    // before_submit: function(frm) {
 
-        return new Promise((resolve, reject) => {
-            let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_processors', 
-                'njqca_display',  'njqca_adaptor', 'njqca_laptop_storage' ];
+    //     return new Promise((resolve, reject) => {
+    //         let tablesToCheck = [ c ];
             
-            let mismatches = [];
-            let i = 0;
+    //         let mismatches = [];
+    //         let i = 0;
     
-            tablesToCheck.forEach((table) => {
-                frm.doc[table].forEach((row) => {
-                    if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-                        mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-                    } else if (row.calculated_item_code !== row.fetched_item_code) {
-                        mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-                    }
-                });
-            });
+    //         tablesToCheck.forEach((table) => {
+    //             frm.doc[table].forEach((row) => {
+    //                 if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+    //                     mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
+    //                 } else if (row.calculated_item_code !== row.fetched_item_code) {
+    //                     mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+    //                 }
+    //             });
+    //         });
     
-            if (mismatches.length > 0) {
-                let mismatchMessage = mismatches.join('<br>');
-                frappe.confirm(
-                    `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-                    () => { resolve(); },
-                    () => { reject(); }
-                );
-            } else { resolve(); }
+    //         if (mismatches.length > 0) {
+    //             let mismatchMessage = mismatches.join('<br>');
+    //             frappe.confirm(
+    //                 `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
+    //                 () => { resolve(); },
+    //                 () => { reject(); }
+    //             );
+    //         } else { resolve(); }
 
-        }).then(() => {
-            if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-                frappe.validated = false; 
-                frappe.confirm(
-                    `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-                    () => {
-                        frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-                            () => {
-                                frappe.validated = true;
-                                frm.save('Submit');
-                            },
-                            () => { frm.set_value('repack_item_code', ''); }
-                        );
-                    },
-                    () => { frm.set_value('repack_item_code', ''); }
-                );
-            }
+    //     }).then(() => {
+    //         if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+    //             frappe.validated = false; 
+    //             frappe.confirm(
+    //                 `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
+    //                 () => {
+    //                     frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
+    //                         () => {
+    //                             frappe.validated = true;
+    //                             frm.save('Submit');
+    //                         },
+    //                         () => { frm.set_value('repack_item_code', ''); }
+    //                     );
+    //                 },
+    //                 () => { frm.set_value('repack_item_code', ''); }
+    //             );
+    //         }
     
-            return false;
-        });
-    },
+    //         return false;
+    //     });
+    // },
 
     power_on: function() {
         const isYes = cur_frm.doc.power_on === "Yes";
@@ -244,15 +294,12 @@ frappe.ui.form.on('NJQCA', {
     if (frm.doc.warehouse && frm.doc.serial_no) {
         let ware = cur_frm.doc.warehouse;
         
-        // Fetch Employee data
         frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
             const workWarehouse = r.work_warehouse;
 
-            // Condition: if workWarehouse is not set or is different from the selected warehouse
             if (!workWarehouse) {
                 frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
             } else if (workWarehouse != ware) {
-                // Show confirmation dialog if the warehouse is different
                 let dialog = new frappe.ui.Dialog({
                     title: "Confirm Stock Transfer",
                     fields: [
@@ -275,7 +322,6 @@ frappe.ui.form.on('NJQCA', {
                     static: true,
                     primary_action_label: "Yes, Transfer", 
                     primary_action: function() {
-                        // handleScannerInput(dialog, 'serial_num');
                         let scannedSerialNo = dialog.get_value("serial_num");
                         if (scannedSerialNo !== frm.doc.serial_no) {
                             frappe.msgprint({
@@ -286,7 +332,6 @@ frappe.ui.form.on('NJQCA', {
                             return;
                         }
 
-                        // Proceed with Stock Transfer if serial numbers match
                         let material_transfer_items = [{
                             'serial_no': frm.doc.serial_no,
                             'item_code': frm.doc.item_code,
@@ -304,7 +349,6 @@ frappe.ui.form.on('NJQCA', {
                             "material_transfer_items": material_transfer_items,
                         };
                 
-                        // Call server method to handle stock transfer
                         frappe.call({
                             method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
                             args: { 'data': JSON.stringify(data) },
@@ -314,26 +358,22 @@ frappe.ui.form.on('NJQCA', {
                                 <br>Transferring Stock... Please Wait
                             </div>`,
                             callback: function(response) {
-                                // Update the warehouse field after successful transfer
                                 frm.set_value('warehouse', workWarehouse);
                                 frm.refresh_field('warehouse');
                             },
-                            error: function(err) {
-                                console.log(err);  // Handle error
-                            }
+                            error: function(err) { console.log(err); }
                         });
 
-                        dialog.hide();  // Hide the dialog after the transfer
+                        dialog.hide();
                     },
                     secondary_action_label: "Cancel",
                     secondary_action: function() {
-                        // Hide the primary action and close the dialog
                         $('.primary-action').hide();
                         dialog.hide();
                     }
                 });
 
-                dialog.show();  // Show the dialog box
+                dialog.show();
             }
         });
     }},
@@ -392,11 +432,10 @@ function processItemTemplate(frm) {
             args: {'doc': frm.doc},
             callback: function (r) {
                 if (r.message.error) {
-                    console.log("------395----------get part mapping",r.message)
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),
                         indicator:'red'
-                    }, 5);
+                    }, 10);
                 } 
 
                 if (typeof r.message === 'string') {
@@ -475,13 +514,9 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_capacity', row.attr_data["Storage Capacity"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_interface', row.attr_data["Storage Interface"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_length', row.attr_data["Storage Length"]);
-
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }
-
-                      
-
                     });
 
                     frm.refresh_field("njqca_laptop_ram");
@@ -801,7 +836,6 @@ function generateAdaptorItemCode(frm, cdt, cdn, child) {
         $(frm.layout.wrapper).prepend(errorDiv);
         frm.set_df_property('error_section_section', 'hidden', 0);
     }
-       
 }
 
 function generateStorageItemCode(frm, cdt, cdn, child){
@@ -854,7 +888,6 @@ function generateStorageItemCode(frm, cdt, cdn, child){
         $(frm.layout.wrapper).prepend(errorDiv);
         frm.set_df_property('error_section_section', 'hidden', 0);
     }
-    
 }
 
 function generateProcessorItemCode(frm, cdt, cdn, child) {
@@ -901,14 +934,12 @@ function generateProcessorItemCode(frm, cdt, cdn, child) {
         $(frm.layout.wrapper).prepend(errorDiv);
         frm.set_df_property('error_section_section', 'hidden', 0);
     }
-    
 }
 
 function generateDisplayItemCode(frm, cdt, cdn, child) {
    
     const item_template = child.item_template;
     const row_name = child.reference_row_name;
-    console.log("---------------------903------entered itemcode generation function------903",child);
     let model = child.model;
     let display_tech = child.display_tech;
     let display_pin_type = child.display_pin_type;
@@ -962,7 +993,6 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
         $(frm.layout.wrapper).prepend(errorDiv);
         frm.set_df_property('error_section_section', 'hidden', 0);
     }
-    
 }
 
 function generateRamItemCode(frm, cdt, cdn, child) {
@@ -1041,8 +1071,6 @@ function set_options_for_attribute_fields_in_child(frm, grid) {
 }
 
 
-
-
 frappe.ui.form.on('NJQCA Display', {
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
@@ -1067,34 +1095,22 @@ frappe.ui.form.on('NJQCA Display', {
                 // Update the grid values using set_df_property
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property(
-                            grid.df.fieldname,
-                            'options',
-                            values[fieldname],
-                            frm.docname,
-                            fieldname,
-                            cdn
+                        frm.set_df_property( grid.df.fieldname, 'options',
+                            values[fieldname], frm.docname, fieldname, cdn
                         );
 
-                        // Also update the child doc
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
-                // Refresh the grid
                 frm.refresh_field(grid.df.fieldname);
 
-                // Fetch item_template first, then call generateDisplayItemCode
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-                    console.log("Fetched item_template_data:", item_template_data);
 
-                    // Set item_template
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
 
-                    // Refresh the grid to reflect the updated value
                     frm.refresh_field(grid.df.fieldname);
 
-                    // Now call generateDisplayItemCode, ensuring item_template is set
                     generateDisplayItemCode(frm, cdt, cdn, child);
                 });
 
@@ -1102,7 +1118,6 @@ frappe.ui.form.on('NJQCA Display', {
             }
         });
 
-        // Field name to attribute mapping
         const fieldToAttribute = {
             'model': 'Model',
             'display_tech': 'Display Tech',
@@ -1114,16 +1129,13 @@ frappe.ui.form.on('NJQCA Display', {
             'grade': 'Grade'
         };
 
-        // Load existing values for all fields immediately when dialog opens
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
                 let options = await get_options(attributeName);
 
-                // Set the options for the field
                 d.set_df_property(fieldname, 'options', options);
 
-                // If there's an existing value, select it
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1134,19 +1146,15 @@ frappe.ui.form.on('NJQCA Display', {
 
         d.show();
 
-        // Function to fetch select options dynamically
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
-                console.log("Fetching options for attribute:", attributeName);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
-                        } else {
-                            resolve([]);
-                        }
+                        } else { resolve([]); }
                     },
                     error: function(err) {
                         console.error("API Error:", err);
@@ -1168,11 +1176,10 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
         },
         callback: function(r) {
             if (r.message && r.message.length > 0) {
-                console.log("Fetched item template:", r.message[0].item_template);
-                callback(r.message[0].item_template); // Call callback with fetched data
+                callback(r.message[0].item_template);
             } else {
                 console.warn("No item template found.");
-                callback(''); // Call callback with empty string if no data
+                callback(''); 
             }
         },
         error: function(err) {
@@ -1181,16 +1188,6 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
         }
     });
 }
-
-
-
-
-
-
-
-
-
-
 
 frappe.ui.form.on('NJQCA Adaptor', {
     check_button: async function(frm, cdt, cdn) {
@@ -1212,34 +1209,22 @@ frappe.ui.form.on('NJQCA Adaptor', {
                 // Update the grid values using set_df_property
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property(
-                            grid.df.fieldname,
-                            'options',
-                            values[fieldname],
-                            frm.docname,
-                            fieldname,
-                            cdn
+                        frm.set_df_property( grid.df.fieldname, 'options',
+                            values[fieldname], frm.docname, fieldname, cdn
                         );
 
-                        // Also update the child doc
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
-                // Refresh the grid
                 frm.refresh_field(grid.df.fieldname);
 
-                // Fetch item_template first, then call generateDisplayItemCode
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-                    console.log("Fetched item_template_data:", item_template_data);
 
-                    // Set item_template
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
 
-                    // Refresh the grid to reflect the updated value
                     frm.refresh_field(grid.df.fieldname);
 
-                    // Now call generateDisplayItemCode, ensuring item_template is set
                     generateAdaptorItemCode(frm, cdt, cdn, child);
                 });
 
@@ -1247,7 +1232,6 @@ frappe.ui.form.on('NJQCA Adaptor', {
             }
         });
 
-        // Field name to attribute mapping
         const fieldToAttribute = {
             'brand': 'Brand',
             'wattage_capacity': 'Wattage Capacity',
@@ -1255,16 +1239,13 @@ frappe.ui.form.on('NJQCA Adaptor', {
             'grade': 'Grade'
         };
 
-        // Load existing values for all fields immediately when dialog opens
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
                 let options = await get_options(attributeName);
 
-                // Set the options for the field
                 d.set_df_property(fieldname, 'options', options);
 
-                // If there's an existing value, select it
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1275,19 +1256,15 @@ frappe.ui.form.on('NJQCA Adaptor', {
 
         d.show();
 
-        // Function to fetch select options dynamically
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
-                console.log("Fetching options for attribute:", attributeName);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
-                        } else {
-                            resolve([]);
-                        }
+                        } else { resolve([]); }
                     },
                     error: function(err) {
                         console.error("API Error:", err);
@@ -1306,7 +1283,6 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
 
-        // Create a pop-up dialog
         let d = new frappe.ui.Dialog({
             title: 'Laptop Storage Attributes',
             fields: [
@@ -1318,37 +1294,24 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             ],
             primary_action_label: 'Save',
             primary_action(values) {
-                // Update the grid values using set_df_property
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property(
-                            grid.df.fieldname,
-                            'options',
-                            values[fieldname],
-                            frm.docname,
-                            fieldname,
-                            cdn
+                        frm.set_df_property( grid.df.fieldname, 'options',
+                            values[fieldname], frm.docname, fieldname, cdn
                         );
 
-                        // Also update the child doc
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
-                // Refresh the grid
                 frm.refresh_field(grid.df.fieldname);
 
-                // Fetch item_template first, then call generateDisplayItemCode
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-                    console.log("Fetched item_template_data:", item_template_data);
 
-                    // Set item_template
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
 
-                    // Refresh the grid to reflect the updated value
                     frm.refresh_field(grid.df.fieldname);
 
-                    // Now call generateDisplayItemCode, ensuring item_template is set
                     generateStorageItemCode(frm, cdt, cdn, child);
                 });
 
@@ -1356,7 +1319,6 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             }
         });
 
-        // Field name to attribute mapping
         const fieldToAttribute = {
             'storage_type': 'Storage Type',
             'storage_interface':'Storage Interface',
@@ -1365,16 +1327,13 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             'grade': 'Grade'
         };
 
-        // Load existing values for all fields immediately when dialog opens
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
                 let options = await get_options(attributeName);
 
-                // Set the options for the field
                 d.set_df_property(fieldname, 'options', options);
 
-                // If there's an existing value, select it
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1385,19 +1344,15 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
 
         d.show();
 
-        // Function to fetch select options dynamically
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
-                console.log("Fetching options for attribute:", attributeName);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
-                        } else {
-                            resolve([]);
-                        }
+                        } else { resolve([]); }
                     },
                     error: function(err) {
                         console.error("API Error:", err);
@@ -1409,15 +1364,12 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
     }
 });
 
-
-
 frappe.ui.form.on('NJQCA Laptop Ram', {
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
 
-        // Create a pop-up dialog
         let d = new frappe.ui.Dialog({
             title: 'Laptop Ram Attributes',
             fields: [
@@ -1428,37 +1380,24 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
             ],
             primary_action_label: 'Save',
             primary_action(values) {
-                // Update the grid values using set_df_property
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property(
-                            grid.df.fieldname,
-                            'options',
-                            values[fieldname],
-                            frm.docname,
-                            fieldname,
-                            cdn
+                        frm.set_df_property( grid.df.fieldname, 'options',
+                            values[fieldname], frm.docname, fieldname, cdn
                         );
 
-                        // Also update the child doc
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
-                // Refresh the grid
                 frm.refresh_field(grid.df.fieldname);
 
-                // Fetch item_template first, then call generateDisplayItemCode
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-                    console.log("Fetched item_template_data:", item_template_data);
 
-                    // Set item_template
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
 
-                    // Refresh the grid to reflect the updated value
                     frm.refresh_field(grid.df.fieldname);
 
-                    // Now call generateDisplayItemCode, ensuring item_template is set
                     generateRamItemCode(frm, cdt, cdn, child);
                 });
 
@@ -1466,7 +1405,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
             }
         });
 
-        // Field name to attribute mapping
         const fieldToAttribute = {
             'ram_type': 'RAM Type',
             'ram_capacity':'RAM Capacity',
@@ -1474,16 +1412,13 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
             'grade': 'Grade'
         };
 
-        // Load existing values for all fields immediately when dialog opens
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
                 let options = await get_options(attributeName);
 
-                // Set the options for the field
                 d.set_df_property(fieldname, 'options', options);
 
-                // If there's an existing value, select it
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1494,19 +1429,15 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 
         d.show();
 
-        // Function to fetch select options dynamically
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
-                console.log("Fetching options for attribute:", attributeName);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
-                        } else {
-                            resolve([]);
-                        }
+                        } else { resolve([]); }
                     },
                     error: function(err) {
                         console.error("API Error:", err);
@@ -1519,15 +1450,12 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 });
 
 
-
-
 frappe.ui.form.on('NJQCA PROCESSOR', {
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
 
-        // Create a pop-up dialog
         let d = new frappe.ui.Dialog({
             title: 'Processor Attributes',
             fields: [
@@ -1536,7 +1464,6 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
             ],
             primary_action_label: 'Save',
             primary_action(values) {
-                // Update the grid values using set_df_property
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
                         frm.set_df_property(
@@ -1548,25 +1475,18 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
                             cdn
                         );
 
-                        // Also update the child doc
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
-                // Refresh the grid
                 frm.refresh_field(grid.df.fieldname);
 
-                // Fetch item_template first, then call generateDisplayItemCode
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-                    console.log("Fetched item_template_data:", item_template_data);
 
-                    // Set item_template
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
 
-                    // Refresh the grid to reflect the updated value
                     frm.refresh_field(grid.df.fieldname);
 
-                    // Now call generateDisplayItemCode, ensuring item_template is set
                     generateProcessorItemCode(frm, cdt, cdn, child);
                 });
 
@@ -1574,22 +1494,18 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
             }
         });
 
-        // Field name to attribute mapping
         const fieldToAttribute = {
             'processor_type': 'Processor Type',
             'grade': 'Grade'
         };
 
-        // Load existing values for all fields immediately when dialog opens
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
                 let options = await get_options(attributeName);
 
-                // Set the options for the field
                 d.set_df_property(fieldname, 'options', options);
 
-                // If there's an existing value, select it
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1600,19 +1516,15 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
 
         d.show();
 
-        // Function to fetch select options dynamically
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
-                console.log("Fetching options for attribute:", attributeName);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
-                        } else {
-                            resolve([]);
-                        }
+                        } else {  resolve([]); }
                     },
                     error: function(err) {
                         console.error("API Error:", err);

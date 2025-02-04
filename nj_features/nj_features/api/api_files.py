@@ -320,5 +320,4 @@ def get_battery_status(doc, method=None):
             return {"variant_3_data":variant_3_data, "main_bty_sn":main_bty_sn, "bty_parent_njqca":bty_parent_njqca}
 
     except Exception as e:
-        print(e)
         return

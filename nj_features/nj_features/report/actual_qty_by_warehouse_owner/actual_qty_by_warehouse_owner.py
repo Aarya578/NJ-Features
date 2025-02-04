@@ -48,7 +48,6 @@ def get_data(filters):
     """
 
     data = frappe.db.sql(query1, filters, as_dict=1)
-    print(f"query: {query1}")
     return data
 
 # def filter_serial():

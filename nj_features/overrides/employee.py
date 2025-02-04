@@ -221,7 +221,6 @@ def create_work_ware(self, user_email):
 @frappe.whitelist()
 def get_previous_department(docname):
     previous_department = frappe.db.get_value('Employee', {'name': docname}, 'department')
-    print("==========================",previous_department)
 
     # frappe.db.set_value('Warehouse', docname, 'previous_department', previous_department)
     # frappe.db.commit()
@@ -229,7 +228,7 @@ def get_previous_department(docname):
 # @frappe.whitelist()
 # def get_previous_department(docname):
 #     previous_department = frappe.db.get_value('Department', {'name': docname}, 'department')
-#     print("==========================",previous_department)
+
 @frappe.whitelist()
 def department_change_log(docname, cur_department, previous_department):
     changed_by = frappe.session.user
@@ -243,7 +242,6 @@ def department_change_log(docname, cur_department, previous_department):
     params = {'docname': docname}
     changed_on = frappe.db.sql(query, params, as_dict=True)
     if previous_department != cur_department:
-        print(f'creating department change log')
         new_doc = frappe.new_doc('Department Change Log')
         new_doc.flags.ignore_mandatory = True
         new_doc.previous_department = previous_department
@@ -251,7 +249,6 @@ def department_change_log(docname, cur_department, previous_department):
         new_doc.changed_by = changed_by
         new_doc.changed_on = ', '.join([row['user_id'] for row in changed_on]) if changed_on else 'No user found'
         new_doc.save()
-        new_doc.submit()
 
     return previous_department
 
@@ -275,7 +272,6 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
         new_doc.changed_by = changed_by
         new_doc.changed_on = user_id
         new_doc.save()
-        new_doc.submit()
 
         return "Change log created successfully."
     
@@ -407,9 +403,7 @@ def update_employee_experience_table():
                     
                     # Update the ramp level in the parent document
                     doc.ramp_level = new_ramp_level
-                    print("Updated ramp_level=======================397=======:", new_ramp_level)
                     doc.target = new_target
-                    print("Updated target=======================399=======:", new_target)
                     doc.save()
                     success_count += 1
                 else:
@@ -454,16 +448,9 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
             frappe.throw(_("No ramp level found for the specified filters."))
 
         ramp_level = exp_record[0].ramp_level
-        print("Fetched ramp_level:", ramp_level)
 
         # Update the ramp_level in Employee
-        frappe.db.set_value(
-            "Employee",
-            docname,
-            "ramp_level",
-            ramp_level,
-            update_modified=False
-        )
+        frappe.db.set_value("Employee", docname, "ramp_level", ramp_level, update_modified=False)
 
         # Fetch the role profile document
         role_profile_doc = frappe.get_doc("Role Profile", role_profile)
@@ -478,16 +465,9 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
         if not target:
             frappe.throw(_("No target found in Ramp Table for the specified ramp level."))
 
-        print("Fetched target:", target)
 
         # Update the target field in Employee
-        frappe.db.set_value(
-            "Employee",
-            docname,
-            "target",
-            target,
-            update_modified=False
-        )
+        frappe.db.set_value("Employee", docname, "target", target, update_modified=False)
 
         frappe.db.commit()
         return {
@@ -550,7 +530,3 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
 #             }).insert()
 
 #     frappe.db.commit()
-  
-    
-    
-

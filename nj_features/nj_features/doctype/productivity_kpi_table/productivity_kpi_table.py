@@ -6,8 +6,18 @@ class ProductivityKpiTable(Document):
     pass
 
 def create_kpi_record(row_data):
-    """Create a single ProductivityKpiTable record from query data"""
+    """Create a single ProductivityKpiTable record if it doesn't exist"""
     try:
+        existing = frappe.get_all("Productivity Kpi Table", 
+            filters={
+                "serial_no": row_data.serial_no,
+                "stock_entry_name": row_data.stock_entry_name,
+                "docstatus": 1
+            })
+        
+        if existing:
+            return False
+            
         doc = frappe.get_doc({
             "doctype": "Productivity Kpi Table",
             "posting_date": row_data.posting_date,
@@ -24,7 +34,7 @@ def create_kpi_record(row_data):
             "source_profile": row_data.Source_Profile,
             "target_profile": row_data.Target_Profile,
             "itemgroup_weightage_value": row_data.Itemgroup_weightage_value,
-            "waghtage_value": row_data.weightage_value,
+            "waghtage_value": row_data.weightage_value if hasattr(row_data, 'weightage_value') else None,
             "wtd_qty": row_data.wtd_qty,
             "dept_prd": row_data.dept_prd,
             "profile_prd": row_data.profile_prd,
@@ -33,7 +43,6 @@ def create_kpi_record(row_data):
         doc.insert(ignore_permissions=True)
         doc.submit()
         frappe.db.commit()
-        
         return True
     except Exception as e:
         frappe.log_error(f"Error creating KPI record for {row_data.serial_no}: {str(e)}")
@@ -41,7 +50,7 @@ def create_kpi_record(row_data):
 
 @frappe.whitelist()
 def fetch_and_save_productivity_data():
-    """Fetch productivity data and save each row as a separate document"""
+    """Fetch productivity data and save unique records"""
     query = """
     SELECT 
         ste.posting_date, ste.serial_no, ste.stock_entry_name, 
@@ -74,7 +83,7 @@ def fetch_and_save_productivity_data():
         WHERE 
             a.purpose = 'Material Transfer'
             AND a.docstatus = 1
-            AND a.creation >= (NOW() - INTERVAL 15 DAY)
+            AND a.creation >= DATE_SUB(NOW(), INTERVAL 1 DAY)
             AND b.t_warehouse IS NOT NULL
             AND b.t_warehouse != ''
             AND b.serial_no IS NOT NULL
@@ -95,18 +104,13 @@ def fetch_and_save_productivity_data():
     """
     
     data = frappe.db.sql(query, as_dict=True)
-    print("data====",data)
-    print("data=================95=================",data)
-    
-    # Track statistics
     total_records = len(data)
     successful_saves = 0
     
-    # Process each row
     for row in data:
         if create_kpi_record(row):
             successful_saves += 1
-    # Log the results
+            
     frappe.logger().info(f"Productivity KPI Update: Processed {total_records} records, Successfully saved {successful_saves} records")
     
     return {

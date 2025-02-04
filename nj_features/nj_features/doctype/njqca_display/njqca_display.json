@@ -16,7 +16,8 @@
   "thickness",
   "display_bracket",
   "grade",
-  "item_template"
+  "item_template",
+  "check_button"
  ],
  "fields": [
   {
@@ -28,16 +29,15 @@
    "read_only": 1
   },
   {
-   "columns": 1,
+   "columns": 4,
    "fieldname": "calculated_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Final Item Code",
-   "options": "Item",
-   "read_only": 1
+   "options": "Item"
   },
   {
-   "columns": 1,
+   "columns": 4,
    "fieldname": "fetched_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -46,72 +46,62 @@
    "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "model",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Model"
   },
   {
-   "columns": 1,
    "fieldname": "display_tech",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Display Tech"
   },
   {
-   "columns": 1,
    "fieldname": "display_pin_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Display PIN Type"
   },
   {
-   "columns": 1,
    "fieldname": "display_size",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Display Size"
   },
   {
-   "columns": 1,
    "fieldname": "resolution",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Resolution"
   },
   {
-   "columns": 1,
    "fieldname": "thickness",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Thickness"
   },
   {
-   "columns": 1,
    "fieldname": "display_bracket",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Display Bracket"
   },
   {
-   "columns": 1,
    "fieldname": "grade",
-   "fieldtype": "Select",
-   "in_list_view": 1,
+   "fieldtype": "Data",
    "label": "Grade"
   },
   {
    "fieldname": "item_template",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Item Template",
    "options": "Item"
+  },
+  {
+   "columns": 2,
+   "fieldname": "check_button",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Check Button"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-01-22 10:54:13.434181",
+ "modified": "2025-02-04 17:36:19.144215",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Display",

@@ -12,7 +12,8 @@
   "storage_interface",
   "storage_capacity",
   "storage_length",
-  "grade"
+  "grade",
+  "check_button"
  ],
  "fields": [
   {
@@ -26,35 +27,35 @@
   {
    "columns": 1,
    "fieldname": "storage_type",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Storage Type"
   },
   {
    "columns": 1,
    "fieldname": "storage_interface",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Storage Interface"
   },
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "storage_capacity",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Storage Capacity"
   },
   {
    "columns": 1,
    "fieldname": "storage_length",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Storage Length"
   },
   {
    "columns": 1,
    "fieldname": "grade",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Grade"
   },
@@ -75,11 +76,18 @@
    "label": "Calculated Item Code",
    "options": "Item",
    "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "check_button",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Check Button"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-01-21 17:58:57.547356",
+ "modified": "2025-02-04 17:37:17.327747",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Storage",

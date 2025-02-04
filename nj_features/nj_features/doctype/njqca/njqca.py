@@ -259,7 +259,7 @@ def open_draft_qi(self):
                 item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
             # print("item_group_idx_value----------251",item_group_idx_value)
             if field_name_data:
-                print("field_name_data--252",field_name_data)
+                # print("field_name_data--252",field_name_data)
                 for field in field_name_data:
                     name_of_check = field["quality_check"]
                     sql_check_option_automatic = frappe.db.sql("""
@@ -267,7 +267,7 @@ def open_draft_qi(self):
                         FROM `tabQC Options` 
                         WHERE parent = %s
                     """, name_of_check, as_dict=True)
-                    print("sql_check_option_automatic--253",sql_check_option_automatic,"name of the check -----------",name_of_check,"-------data---",data.get("score"),"---type of score-----",type(data.get("score")))
+                    # print("sql_check_option_automatic--253",sql_check_option_automatic,"name of the check -----------",name_of_check,"-------data---",data.get("score"),"---type of score-----",type(data.get("score")))
                     # Fetch existing child table entries into a set for comparison
                     existing_entries = {
                         (child.item_group, child.check_name)
@@ -309,12 +309,12 @@ def open_draft_qi(self):
                             # print("added----------277",data.get('item_group'))
         new_qi.save()
         base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
-        print("base---url",base_url)
+        # print("base---url",base_url)
         if not base_url:
             frappe.throw("NJPulse URL is not found in NJ Settings.")
 
         if new_qi.name:
-            print("inside -------------------316")
+            # print("inside -------------------316")
             njpulse_url = f"{base_url}qi/{new_qi.name}/0"
             msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>"
         else:
@@ -710,7 +710,6 @@ def after_save_njqca(docname):
             frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
 
     else:
-
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
 def get_item_code_for_each_part(doc):
@@ -740,8 +739,8 @@ def get_item_code_for_each_part(doc):
             )
 
             for row in doc.get('njqca_item_component', []):
-                attribute_object = {}
-                attribute_value = {}
+                skip_ram, skip_memory = False, False
+                attribute_value, attribute_object = {}, {}
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -765,14 +764,17 @@ def get_item_code_for_each_part(doc):
                                 attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
 
                         elif item_group.lower() == ram.lower() and (row.get('variant_1') != 'SYSTEM MEMORY' and row.get('variant_1') != '[EMPTY]'):
-
                             if part_item_group == item_group:
                                 if variant == 'variant_6':
-                                    if 'GB' not in row.get(variant):
+                                    if 'GB' not in row.get(variant) or 'NO MODULE INSTALLED' in row.get(variant):
+                                        skip_ram = True
                                         continue
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = row.get(variant)
-                                        
+                                
+                                if skip_ram:
+                                    continue
+
                                 if variant == 'variant_7':
                                     if row.get(variant) == '26':
                                         attribute_object[mapping.get('attribute_name')] = 'DDR4'
@@ -790,60 +792,39 @@ def get_item_code_for_each_part(doc):
                             
                             else:
                                 if variant == 'variant_6':
-                                    if 'GB' not in row.get(variant):
+                                    if 'GB' not in row.get(variant) or 'NO MODULE INSTALLED' in row.get(variant):
                                         continue
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = row.get(variant)
                         
-                        elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')) and attribute_value.get(list(attribute_value.keys())[0]):
-                            
+                        elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
                             (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())):
                                 variant_type = ' SSD'
 
-                            if variant == 'variant_1':
-
-                                if 'interface' in mapping.get('attribute_name').lower():
-                                    interfaces = {
-                                        'SATA': ['sata', 'sata3', 'sata2', 'sata1', 'hdd', 'ssd'],
-                                        'MSATA': ['msata'],
-                                        'M.2 SATA': ['m.2 sata', 'ngff'],
-                                        'M.2 NVME': ['m.2 nvme', 'nvme'],
-                                        'M.2 PCL': ['pcl', 'pcie'],
-                                    }
-
-                                    for interface, keywords in interfaces.items():
-                                        for keyword in keywords:
-                                            if keyword in row.get(variant):
-                                                attribute_object[mapping.get('attribute_name')] = interface
+                            if variant == 'variant_10': 
+                                if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
+                                    attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type
                                     
-                                elif 'type' in mapping.get('attribute_name').lower():
-                                    nj_types = {
-                                        'SATA I': ['sata1', 'sata-1'],
-                                        'SATA II': ['sata2', 'sata-2'],
-                                        'SATA III': ['sata3', 'sata-3'],
-                                        'MSATA': ['msata', 'm.2 msata'],
-                                        'M.2 SATA 2280': ['m.2 sata 2280', 'm.2 sata', 'ngff 2280'],
-                                        'M.2 SATA 2242': ['m.2 sata 2242', 'ngff 2242'],
-                                        'M.2 NVMe 2280': ['m.2 nvme 2280', 'nvme 2280', 'pcie 2280'],
-                                        'SSD': ['ssd', 'solid state drive'],
-                                        'HDD': ['hdd', 'hard drive', 'harddisk'],
-                                    }
+                                else:
+                                    skip_memory = True
+                                    continue
 
-                                    for nj_type, keywords in nj_types.items():
-                                        for keyword in keywords:
-                                            if keyword in row.get(variant):
-                                                attribute_object[mapping.get('attribute_name')] = nj_type
-                                            elif (row.get('variant_5') is not None and 'ssd' in row.get('variant_5', '').lower()):
-                                                attribute_object[mapping.get('attribute_name')] = row.get('variant_5')
-                                 
-                            if variant == 'variant_10':
-                                attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type
-                                
-                set_part_data(item_group, attribute_object, row, part_data, doc)
+                            if skip_memory:
+                                continue
 
+                            process_variant_status = False
+                            if variant == 'variant_1' and not skip_memory:
+                                # print("variant == 'variant_1' and not skip_memory", skip_memory, row.get('variant_10'))
+                                process_variant_status = process_variant(variant, row, mapping, attribute_object)
+
+                            if not process_variant_status and not skip_memory:
+                                process_variant('variant_6', row, mapping, attribute_object)
+
+                            
+                part_data = set_part_data(item_group, attribute_object, row, part_data, doc)
         parent_item_group = doc.get('item_group')
 
         if parent_item_group:
@@ -867,7 +848,7 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
-
+                # print('data_attr', consolidated, 'repack_item_code', repack_item_code, 'part_data', part_data)
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}
@@ -875,7 +856,44 @@ def get_item_code_for_each_part(doc):
     except Exception as e:
         frappe.throw("An error occurred: " + str(e))
         return {"error": f"An error occurred: {str(e)}"}
-    
+
+def process_variant(variant, row, mapping, attribute_object):
+    if 'interface' in mapping.get('attribute_name').lower() and row.get(variant):
+        interfaces = {
+            'SATA': ['sata', 'sata3', 'sata2', 'sata1', 'hdd', 'ssd'],
+            'MSATA': ['msata'],
+            'M.2 SATA': ['m.2 sata', 'ngff'],
+            'M.2 NVME': ['m.2 nvme', 'nvme'],
+            'M.2 PCL': ['pcl', 'pcie'],
+        }
+
+        for interface, keywords in interfaces.items():
+            for keyword in keywords:
+                if keyword in row.get(variant).lower():
+                    attribute_object[mapping.get('attribute_name')] = interface
+                    return True
+                
+    elif 'type' in mapping.get('attribute_name').lower() and row.get(variant):
+        nj_types = {
+            'SATA I': ['sata1', 'sata-1'],
+            'SATA II': ['sata2', 'sata-2'],
+            'SATA III': ['sata3', 'sata-3'],
+            'MSATA': ['msata', 'm.2 msata'],
+            'M.2 SATA 2280': ['m.2 sata 2280', 'm.2 sata', 'ngff 2280'],
+            'M.2 SATA 2242': ['m.2 sata 2242', 'ngff 2242'],
+            'M.2 NVMe 2280': ['m.2 nvme 2280', 'nvme 2280', 'pcie 2280'],
+            'SSD': ['ssd', 'solid state drive', 'nvme'],
+            'HDD': ['hdd', 'hard drive', 'harddisk'],
+        }
+
+        for nj_type, keywords in nj_types.items():
+            for keyword in keywords:
+                if keyword in row.get(variant).lower():
+                    attribute_object[mapping.get('attribute_name')] = nj_type
+                    return True
+
+    return False
+
 def set_part_data(part_item_group, attribute_object, row, part_data, doc):
     item_template = frappe.db.get_value('Item',
         {'item_group': part_item_group, 'has_variants': 1}, 'name' )
@@ -912,7 +930,9 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                 'item_template': item_template,
                 'response': 'error'
             })
-        
+    
+    return part_data
+
 @frappe.whitelist()
 def get_part_mapping(doc):
     
@@ -935,6 +955,7 @@ def get_part_mapping(doc):
             
         except Exception as e:
             frappe.throw(f"An error occurred: {str(e)}{str(traceback.format_exc())}")
+
 
 def consolidate_ram_capacities(data):
     consolidated_data,ram_consolidation = [], {}
@@ -1087,6 +1108,7 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
+   
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -1108,6 +1130,7 @@ def get_variant_from_value(item_template=None, args=None):
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
             if variants and variants[0]['parent']:
+                # print("variants[0]['parent']", variants[0]['parent'])
                 return variants[0]['parent']
             else:
                 item_code = construct_item_code(item_template, args_list)
@@ -1253,24 +1276,28 @@ def get_njqca_item_template(item_group, brand, model):
         return None
 
 @frappe.whitelist()
-def get_serial_no_attribute_data(serial_no):
-    """
-    Fetch item code for Adaptor and Display based on Serial No.
-    """
-    adap_dis_item_code = frappe.db.get_all(
-        'Serial No Component',
-        filters={
-            'parent': serial_no,
-            'item_group': ('in', ['Display', 'Laptop Adaptors'])
-        },
-        fields=['item', 'item_group', 'grade', 'quantity'],
-    )
-    for item in adap_dis_item_code:
-        item['item_template'] = frappe.db.get_value('Item', item['item'], 'variant_of')
+def get_serial_no_attribute_data(serial_no,item_group):
+    if serial_no and item_group:
+        """
+        Fetch item code for Adaptor and Display based on Serial No.
+        """
+        adap_dis_item_code = frappe.db.get_all(
+            'Serial No Component',
+            filters={
+                'parent': serial_no,
+                'item_group': item_group
+            },
+            fields=['item', 'item_group', 'grade', 'quantity'],
+        )
+        for item in adap_dis_item_code:
+            item['item_template'] = frappe.db.get_value('Item', item['item'], 'variant_of')
+        # print("adap_dis_item_code--------1275",adap_dis_item_code)
+        if adap_dis_item_code:
+            return adap_dis_item_code
+        return None
+    elif not serial_no:
+        frappe.msgprint(f"Serial Number not found for creating item code for this itemgroup{item_group}")
     
-    if adap_dis_item_code:
-        return adap_dis_item_code
-    return None
 
 @frappe.whitelist()
 def update_serial_no_component_for_njqca(doc):
@@ -1356,7 +1383,6 @@ def get_item_attributes(selected_fields):
     try:
         if isinstance(selected_fields, str):
             selected_fields = frappe.parse_json(selected_fields)
-        
         result = []
         
         for field in selected_fields:
@@ -1378,7 +1404,8 @@ def get_item_attributes(selected_fields):
     except Exception as e:
         print(f"An error occurred at get_item_attributes: {str(e)}")
         return str(e)
-
+    
+@frappe.whitelist()
 def get_options_for_label(label):
-    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
-    return [option['attribute_value'] for option in options]
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
+    return [option['abbr'] for option in options]

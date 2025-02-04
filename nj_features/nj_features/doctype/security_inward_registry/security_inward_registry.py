@@ -303,6 +303,7 @@ def get_item_code_details(po_number):
             LEFT JOIN 
                 `tabPurchase Receipt Item` pri ON poi.item_code = pri.item_code 
                 AND pri.purchase_order = poi.parent AND pri.docstatus = 1
+                AND poi.name = pri.purchase_order_item
             LEFT JOIN 
                 `tabPurchase Receipt` pr ON pri.parent = pr.name AND pr.docstatus = 1
             WHERE 

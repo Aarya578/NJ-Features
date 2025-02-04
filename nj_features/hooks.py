@@ -128,9 +128,9 @@ doc_events = {
     "Purchase Order": {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
     },
-    # "NJQCA": {
-    #     "on_submit": "nj_features.nj_features.api.bb_api.get_grading_Authentication"
-	# },
+    "NJQCA": {
+        "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
+	},
     "User": {
         "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}

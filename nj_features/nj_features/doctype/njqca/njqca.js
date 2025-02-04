@@ -159,55 +159,55 @@ frappe.ui.form.on('NJQCA', {
         });
     },
 
-    // before_submit: function(frm) {
+    before_submit: function(frm) {
 
-    //     return new Promise((resolve, reject) => {
-    //         let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_processors', 
-    //             'njqca_display',  'njqca_adaptor', 'njqca_laptop_storage' ];
+        return new Promise((resolve, reject) => {
+            let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_processors', 
+                'njqca_display',  'njqca_adaptor', 'njqca_laptop_storage' ];
             
-    //         let mismatches = [];
-    //         let i = 0;
+            let mismatches = [];
+            let i = 0;
     
-    //         tablesToCheck.forEach((table) => {
-    //             frm.doc[table].forEach((row) => {
-    //                 if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-    //                     mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-    //                 } else if (row.calculated_item_code !== row.fetched_item_code) {
-    //                     mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-    //                 }
-    //             });
-    //         });
+            tablesToCheck.forEach((table) => {
+                frm.doc[table].forEach((row) => {
+                    if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+                        mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
+                    } else if (row.calculated_item_code !== row.fetched_item_code) {
+                        mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+                    }
+                });
+            });
     
-    //         if (mismatches.length > 0) {
-    //             let mismatchMessage = mismatches.join('<br>');
-    //             frappe.confirm(
-    //                 `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-    //                 () => { resolve(); },
-    //                 () => { reject(); }
-    //             );
-    //         } else { resolve(); }
+            if (mismatches.length > 0) {
+                let mismatchMessage = mismatches.join('<br>');
+                frappe.confirm(
+                    `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
+                    () => { resolve(); },
+                    () => { reject(); }
+                );
+            } else { resolve(); }
 
-    //     }).then(() => {
-    //         if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-    //             frappe.validated = false; 
-    //             frappe.confirm(
-    //                 `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-    //                 () => {
-    //                     frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-    //                         () => {
-    //                             frappe.validated = true;
-    //                             frm.save('Submit');
-    //                         },
-    //                         () => { frm.set_value('repack_item_code', ''); }
-    //                     );
-    //                 },
-    //                 () => { frm.set_value('repack_item_code', ''); }
-    //             );
-    //         }
+        }).then(() => {
+            if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+                frappe.validated = false; 
+                frappe.confirm(
+                    `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
+                    () => {
+                        frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
+                            () => {
+                                frappe.validated = true;
+                                frm.save('Submit');
+                            },
+                            () => { frm.set_value('repack_item_code', ''); }
+                        );
+                    },
+                    () => { frm.set_value('repack_item_code', ''); }
+                );
+            }
     
-    //         return false;
-    //     });
-    // },
+            return false;
+        });
+    },
 
     power_on: function() {
         const isYes = cur_frm.doc.power_on === "Yes";
@@ -380,7 +380,7 @@ frappe.ui.form.on('NJQCA', {
 
     item_template: function(frm) {
         if (frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes') {
-            // processItemTemplate(frm);
+            processItemTemplate(frm);
         }
     }
 });
@@ -392,9 +392,10 @@ function processItemTemplate(frm) {
             args: {'doc': frm.doc},
             callback: function (r) {
                 if (r.message.error) {
+                    console.log("------395----------get part mapping",r.message)
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),
-                        indicator:'reed'
+                        indicator:'red'
                     }, 5);
                 } 
 
@@ -472,9 +473,15 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_type', row.attr_data["Storage Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_capacity', row.attr_data["Storage Capacity"]);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'storage_interface', row.attr_data["Storage Interface"]);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'storage_length', row.attr_data["Storage Length"]);
+
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                         }
+
+                      
+
                     });
 
                     frm.refresh_field("njqca_laptop_ram");
@@ -597,31 +604,31 @@ function get_model(manufacturer_model) {
     });
 }
 
-frappe.ui.form.on('NJQCA Adaptor', {
-    njqca_adaptor_add: function(frm, cdt, cdn) {
+// frappe.ui.form.on('NJQCA Adaptor', {
+//     njqca_adaptor_add: function(frm, cdt, cdn) {
 
-        const child_table_fieldname = 'njqca_adaptor';
-        const grid = frm.fields_dict[child_table_fieldname].grid;
+//         const child_table_fieldname = 'njqca_adaptor';
+//         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(frm, grid);
-    },
-    brand: function(frm, cdt, cdn) {
-        const child = locals[cdt][cdn];  
-        generateAdaptorItemCode(frm, cdt, cdn, child); 
-    },
-    wattage_capacity: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateAdaptorItemCode(frm, cdt, cdn, child);
-    },
-    adapter_pin_type: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateAdaptorItemCode(frm, cdt, cdn, child);
-    },
-    grade: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateAdaptorItemCode(frm, cdt, cdn, child);
-    }
-});
+//         set_options_for_attribute_fields_in_child(frm, grid);
+//     },
+//     brand: function(frm, cdt, cdn) {
+//         const child = locals[cdt][cdn];  
+//         generateAdaptorItemCode(frm, cdt, cdn, child); 
+//     },
+//     wattage_capacity: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateAdaptorItemCode(frm, cdt, cdn, child);
+//     },
+//     adapter_pin_type: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateAdaptorItemCode(frm, cdt, cdn, child);
+//     },
+//     grade: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateAdaptorItemCode(frm, cdt, cdn, child);
+//     }
+// });
 
 // frappe.ui.form.on('NJQCA Laptop Ram', {
 
@@ -652,54 +659,54 @@ frappe.ui.form.on('NJQCA Adaptor', {
 //     },
 // });
 
-frappe.ui.form.on('NJQCA Display', {
+// frappe.ui.form.on('NJQCA Display', {
 
-    njqca_display_add: function(frm, cdt, cdn) {
+//     njqca_display_add: function(frm, cdt, cdn) {
 
-        const child_table_fieldname = 'njqca_display';
-        const grid = frm.fields_dict[child_table_fieldname].grid;
+//         const child_table_fieldname = 'njqca_display';
+//         const grid = frm.fields_dict[child_table_fieldname].grid;
 
-        set_options_for_attribute_fields_in_child(frm, grid);
-    },
+//         set_options_for_attribute_fields_in_child(frm, grid);
+//     },
 
-    model: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },
-    display_tech: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },
-    display_pin_type: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },  
+//     model: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },
+//     display_tech: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },
+//     display_pin_type: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },  
     
-    display_size: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },  
+//     display_size: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },  
     
-    resolution: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },  
+//     resolution: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },  
     
-    thickness: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },  
+//     thickness: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },  
     
-    display_bracket: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },  
+//     display_bracket: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },  
     
-    grade: function(frm, cdt, cdn){
-        const child = locals[cdt][cdn];  
-        generateDisplayItemCode(frm, cdt, cdn, child); 
-    },
-})
+//     grade: function(frm, cdt, cdn){
+//         const child = locals[cdt][cdn];  
+//         generateDisplayItemCode(frm, cdt, cdn, child); 
+//     },
+// })
 
 // frappe.ui.form.on('NJQCA PROCESSOR', {
 //     njqca_laptop_processors_add: function(frm, cdt, cdn) {
@@ -766,7 +773,7 @@ function generateAdaptorItemCode(frm, cdt, cdn, child) {
         frappe.call({
             method: "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
             args: {
-                item_template: "S-Laptop Adaptors",
+                item_template: item_templates,
                 args: adaptor_properties
             },
             callback: function(r) {
@@ -898,9 +905,10 @@ function generateProcessorItemCode(frm, cdt, cdn, child) {
 }
 
 function generateDisplayItemCode(frm, cdt, cdn, child) {
+   
     const item_template = child.item_template;
     const row_name = child.reference_row_name;
-
+    console.log("---------------------903------entered itemcode generation function------903",child);
     let model = child.model;
     let display_tech = child.display_tech;
     let display_pin_type = child.display_pin_type;
@@ -922,6 +930,7 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
     }];
 
     if (model && display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
+
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
             args: { 
@@ -1030,3 +1039,587 @@ function set_options_for_attribute_fields_in_child(frm, grid) {
         }
     });
 }
+
+
+
+
+frappe.ui.form.on('NJQCA Display', {
+    check_button: async function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        let item_group = child.item_group;
+        let grid = frm.get_field(child.parentfield);
+
+        // Create a pop-up dialog
+        let d = new frappe.ui.Dialog({
+            title: 'Edit Display Attributes',
+            fields: [
+                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: child.model || '' },
+                { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '' },
+                { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '' },
+                { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '' },
+                { label: 'Resolution', fieldname: 'resolution', fieldtype: 'Select', options: ['Loading...'], default: child.resolution || '' },
+                { label: 'Thickness', fieldname: 'thickness', fieldtype: 'Select', options: ['Loading...'], default: child.thickness || '' },
+                { label: 'Display Bracket', fieldname: 'display_bracket', fieldtype: 'Select', options: ['Loading...'], default: child.display_bracket || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
+            ],
+            primary_action_label: 'Save',
+            primary_action(values) {
+                // Update the grid values using set_df_property
+                Object.keys(values).forEach(fieldname => {
+                    if (values[fieldname]) {
+                        frm.set_df_property(
+                            grid.df.fieldname,
+                            'options',
+                            values[fieldname],
+                            frm.docname,
+                            fieldname,
+                            cdn
+                        );
+
+                        // Also update the child doc
+                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
+                    }
+                });
+
+                // Refresh the grid
+                frm.refresh_field(grid.df.fieldname);
+
+                // Fetch item_template first, then call generateDisplayItemCode
+                fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
+                    console.log("Fetched item_template_data:", item_template_data);
+
+                    // Set item_template
+                    frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
+
+                    // Refresh the grid to reflect the updated value
+                    frm.refresh_field(grid.df.fieldname);
+
+                    // Now call generateDisplayItemCode, ensuring item_template is set
+                    generateDisplayItemCode(frm, cdt, cdn, child);
+                });
+
+                d.hide();
+            }
+        });
+
+        // Field name to attribute mapping
+        const fieldToAttribute = {
+            'model': 'Model',
+            'display_tech': 'Display Tech',
+            'display_pin_type': 'Display PIN Type',
+            'display_size': 'Display Size',
+            'resolution': 'Resolution',
+            'thickness': 'Thickness',
+            'display_bracket': 'Display Bracket',
+            'grade': 'Grade'
+        };
+
+        // Load existing values for all fields immediately when dialog opens
+        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+            try {
+                let attributeName = fieldToAttribute[fieldname];
+                let options = await get_options(attributeName);
+
+                // Set the options for the field
+                d.set_df_property(fieldname, 'options', options);
+
+                // If there's an existing value, select it
+                if (child[fieldname]) {
+                    d.set_value(fieldname, child[fieldname]);
+                }
+            } catch (error) {
+                console.error(`Error loading options for ${fieldname}:`, error);
+            }
+        });
+
+        d.show();
+
+        // Function to fetch select options dynamically
+        async function get_options(attributeName) {
+            return new Promise((resolve, reject) => {
+                console.log("Fetching options for attribute:", attributeName);
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+                    args: { label: attributeName },
+                    callback: function(r) {
+                        if (r.message && Array.isArray(r.message)) {
+                            resolve(r.message);
+                        } else {
+                            resolve([]);
+                        }
+                    },
+                    error: function(err) {
+                        console.error("API Error:", err);
+                        reject(err);
+                    }
+                });
+            });
+        }
+    }
+});
+
+// Function to fetch item_template first, then call generateDisplayItemCode
+function fetch_item_template_disp_adp(frm, item_group, callback) {
+    frappe.call({
+        method: "nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data",
+        args: { 
+            serial_no: frm.doc.serial_no,
+            item_group: item_group
+        },
+        callback: function(r) {
+            if (r.message && r.message.length > 0) {
+                console.log("Fetched item template:", r.message[0].item_template);
+                callback(r.message[0].item_template); // Call callback with fetched data
+            } else {
+                console.warn("No item template found.");
+                callback(''); // Call callback with empty string if no data
+            }
+        },
+        error: function(err) {
+            console.error("API Error:", err);
+            callback('');
+        }
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+frappe.ui.form.on('NJQCA Adaptor', {
+    check_button: async function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        let item_group = "Laptop Adaptors";
+        let grid = frm.get_field(child.parentfield);
+
+        // Create a pop-up dialog
+        let d = new frappe.ui.Dialog({
+            title: 'Edit Adaptor Attributes',
+            fields: [
+                { label: 'Brand', fieldname: 'brand', fieldtype: 'Select', options: ['Loading...'], default: child.brand || '' },
+                { label: 'Wattage Capacity', fieldname: 'wattage_capacity', fieldtype: 'Select', options: ['Loading...'], default: child.wattage_capacity || '' },
+                { label: 'Adapter Pin Type', fieldname: 'adapter_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.adapter_pin_type || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
+            ],
+            primary_action_label: 'Save',
+            primary_action(values) {
+                // Update the grid values using set_df_property
+                Object.keys(values).forEach(fieldname => {
+                    if (values[fieldname]) {
+                        frm.set_df_property(
+                            grid.df.fieldname,
+                            'options',
+                            values[fieldname],
+                            frm.docname,
+                            fieldname,
+                            cdn
+                        );
+
+                        // Also update the child doc
+                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
+                    }
+                });
+
+                // Refresh the grid
+                frm.refresh_field(grid.df.fieldname);
+
+                // Fetch item_template first, then call generateDisplayItemCode
+                fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
+                    console.log("Fetched item_template_data:", item_template_data);
+
+                    // Set item_template
+                    frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
+
+                    // Refresh the grid to reflect the updated value
+                    frm.refresh_field(grid.df.fieldname);
+
+                    // Now call generateDisplayItemCode, ensuring item_template is set
+                    generateAdaptorItemCode(frm, cdt, cdn, child);
+                });
+
+                d.hide();
+            }
+        });
+
+        // Field name to attribute mapping
+        const fieldToAttribute = {
+            'brand': 'Brand',
+            'wattage_capacity': 'Wattage Capacity',
+            'adapter_pin_type': 'Adapter Pin Type',
+            'grade': 'Grade'
+        };
+
+        // Load existing values for all fields immediately when dialog opens
+        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+            try {
+                let attributeName = fieldToAttribute[fieldname];
+                let options = await get_options(attributeName);
+
+                // Set the options for the field
+                d.set_df_property(fieldname, 'options', options);
+
+                // If there's an existing value, select it
+                if (child[fieldname]) {
+                    d.set_value(fieldname, child[fieldname]);
+                }
+            } catch (error) {
+                console.error(`Error loading options for ${fieldname}:`, error);
+            }
+        });
+
+        d.show();
+
+        // Function to fetch select options dynamically
+        async function get_options(attributeName) {
+            return new Promise((resolve, reject) => {
+                console.log("Fetching options for attribute:", attributeName);
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+                    args: { label: attributeName },
+                    callback: function(r) {
+                        if (r.message && Array.isArray(r.message)) {
+                            resolve(r.message);
+                        } else {
+                            resolve([]);
+                        }
+                    },
+                    error: function(err) {
+                        console.error("API Error:", err);
+                        reject(err);
+                    }
+                });
+            });
+        }
+    }
+});
+
+
+frappe.ui.form.on('NJQCA Laptop Storage', {
+    check_button: async function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        let item_group = child.item_group;
+        let grid = frm.get_field(child.parentfield);
+
+        // Create a pop-up dialog
+        let d = new frappe.ui.Dialog({
+            title: 'Laptop Storage Attributes',
+            fields: [
+                { label: 'Storage Type', fieldname: 'storage_type', fieldtype: 'Select', options: ['Loading...'], default: child.storage_type || '' },
+                { label: 'Storage Interface', fieldname: 'storage_interface', fieldtype: 'Select', options: ['Loading...'], default: child.storage_interface || '' },
+                { label: 'Storage Capacity', fieldname: 'storage_capacity', fieldtype: 'Select', options: ['Loading...'], default: child.storage_capacity || '' },
+                { label: 'Storage Length', fieldname: 'storage_length', fieldtype: 'Select', options: ['Loading...'], default: child.storage_length || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
+            ],
+            primary_action_label: 'Save',
+            primary_action(values) {
+                // Update the grid values using set_df_property
+                Object.keys(values).forEach(fieldname => {
+                    if (values[fieldname]) {
+                        frm.set_df_property(
+                            grid.df.fieldname,
+                            'options',
+                            values[fieldname],
+                            frm.docname,
+                            fieldname,
+                            cdn
+                        );
+
+                        // Also update the child doc
+                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
+                    }
+                });
+
+                // Refresh the grid
+                frm.refresh_field(grid.df.fieldname);
+
+                // Fetch item_template first, then call generateDisplayItemCode
+                fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
+                    console.log("Fetched item_template_data:", item_template_data);
+
+                    // Set item_template
+                    frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
+
+                    // Refresh the grid to reflect the updated value
+                    frm.refresh_field(grid.df.fieldname);
+
+                    // Now call generateDisplayItemCode, ensuring item_template is set
+                    generateStorageItemCode(frm, cdt, cdn, child);
+                });
+
+                d.hide();
+            }
+        });
+
+        // Field name to attribute mapping
+        const fieldToAttribute = {
+            'storage_type': 'Storage Type',
+            'storage_interface':'Storage Interface',
+            'storage_capacity': 'Storage Capacity',
+            'storage_length': 'Storage Length',
+            'grade': 'Grade'
+        };
+
+        // Load existing values for all fields immediately when dialog opens
+        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+            try {
+                let attributeName = fieldToAttribute[fieldname];
+                let options = await get_options(attributeName);
+
+                // Set the options for the field
+                d.set_df_property(fieldname, 'options', options);
+
+                // If there's an existing value, select it
+                if (child[fieldname]) {
+                    d.set_value(fieldname, child[fieldname]);
+                }
+            } catch (error) {
+                console.error(`Error loading options for ${fieldname}:`, error);
+            }
+        });
+
+        d.show();
+
+        // Function to fetch select options dynamically
+        async function get_options(attributeName) {
+            return new Promise((resolve, reject) => {
+                console.log("Fetching options for attribute:", attributeName);
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+                    args: { label: attributeName },
+                    callback: function(r) {
+                        if (r.message && Array.isArray(r.message)) {
+                            resolve(r.message);
+                        } else {
+                            resolve([]);
+                        }
+                    },
+                    error: function(err) {
+                        console.error("API Error:", err);
+                        reject(err);
+                    }
+                });
+            });
+        }
+    }
+});
+
+
+
+frappe.ui.form.on('NJQCA Laptop Ram', {
+    check_button: async function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        let item_group = child.item_group;
+        let grid = frm.get_field(child.parentfield);
+
+        // Create a pop-up dialog
+        let d = new frappe.ui.Dialog({
+            title: 'Laptop Ram Attributes',
+            fields: [
+                { label: 'RAM Type', fieldname: 'ram_type', fieldtype: 'Select', options: ['Loading...'], default: child.ram_type || '' },
+                { label: 'RAM Capacity', fieldname: 'ram_capacity', fieldtype: 'Select', options: ['Loading...'], default: child.ram_capacity || '' },
+                { label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', options: ['Loading...'], default: child.ram_speed || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
+            ],
+            primary_action_label: 'Save',
+            primary_action(values) {
+                // Update the grid values using set_df_property
+                Object.keys(values).forEach(fieldname => {
+                    if (values[fieldname]) {
+                        frm.set_df_property(
+                            grid.df.fieldname,
+                            'options',
+                            values[fieldname],
+                            frm.docname,
+                            fieldname,
+                            cdn
+                        );
+
+                        // Also update the child doc
+                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
+                    }
+                });
+
+                // Refresh the grid
+                frm.refresh_field(grid.df.fieldname);
+
+                // Fetch item_template first, then call generateDisplayItemCode
+                fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
+                    console.log("Fetched item_template_data:", item_template_data);
+
+                    // Set item_template
+                    frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
+
+                    // Refresh the grid to reflect the updated value
+                    frm.refresh_field(grid.df.fieldname);
+
+                    // Now call generateDisplayItemCode, ensuring item_template is set
+                    generateRamItemCode(frm, cdt, cdn, child);
+                });
+
+                d.hide();
+            }
+        });
+
+        // Field name to attribute mapping
+        const fieldToAttribute = {
+            'ram_type': 'RAM Type',
+            'ram_capacity':'RAM Capacity',
+            'ram_speed': 'RAM Speed',
+            'grade': 'Grade'
+        };
+
+        // Load existing values for all fields immediately when dialog opens
+        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+            try {
+                let attributeName = fieldToAttribute[fieldname];
+                let options = await get_options(attributeName);
+
+                // Set the options for the field
+                d.set_df_property(fieldname, 'options', options);
+
+                // If there's an existing value, select it
+                if (child[fieldname]) {
+                    d.set_value(fieldname, child[fieldname]);
+                }
+            } catch (error) {
+                console.error(`Error loading options for ${fieldname}:`, error);
+            }
+        });
+
+        d.show();
+
+        // Function to fetch select options dynamically
+        async function get_options(attributeName) {
+            return new Promise((resolve, reject) => {
+                console.log("Fetching options for attribute:", attributeName);
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+                    args: { label: attributeName },
+                    callback: function(r) {
+                        if (r.message && Array.isArray(r.message)) {
+                            resolve(r.message);
+                        } else {
+                            resolve([]);
+                        }
+                    },
+                    error: function(err) {
+                        console.error("API Error:", err);
+                        reject(err);
+                    }
+                });
+            });
+        }
+    }
+});
+
+
+
+
+frappe.ui.form.on('NJQCA PROCESSOR', {
+    check_button: async function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        let item_group = child.item_group;
+        let grid = frm.get_field(child.parentfield);
+
+        // Create a pop-up dialog
+        let d = new frappe.ui.Dialog({
+            title: 'Processor Attributes',
+            fields: [
+                { label: 'Processor Type', fieldname: 'processor_type', fieldtype: 'Select', options: ['Loading...'], default: child.processor_type || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
+            ],
+            primary_action_label: 'Save',
+            primary_action(values) {
+                // Update the grid values using set_df_property
+                Object.keys(values).forEach(fieldname => {
+                    if (values[fieldname]) {
+                        frm.set_df_property(
+                            grid.df.fieldname,
+                            'options',
+                            values[fieldname],
+                            frm.docname,
+                            fieldname,
+                            cdn
+                        );
+
+                        // Also update the child doc
+                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
+                    }
+                });
+
+                // Refresh the grid
+                frm.refresh_field(grid.df.fieldname);
+
+                // Fetch item_template first, then call generateDisplayItemCode
+                fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
+                    console.log("Fetched item_template_data:", item_template_data);
+
+                    // Set item_template
+                    frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
+
+                    // Refresh the grid to reflect the updated value
+                    frm.refresh_field(grid.df.fieldname);
+
+                    // Now call generateDisplayItemCode, ensuring item_template is set
+                    generateProcessorItemCode(frm, cdt, cdn, child);
+                });
+
+                d.hide();
+            }
+        });
+
+        // Field name to attribute mapping
+        const fieldToAttribute = {
+            'processor_type': 'Processor Type',
+            'grade': 'Grade'
+        };
+
+        // Load existing values for all fields immediately when dialog opens
+        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+            try {
+                let attributeName = fieldToAttribute[fieldname];
+                let options = await get_options(attributeName);
+
+                // Set the options for the field
+                d.set_df_property(fieldname, 'options', options);
+
+                // If there's an existing value, select it
+                if (child[fieldname]) {
+                    d.set_value(fieldname, child[fieldname]);
+                }
+            } catch (error) {
+                console.error(`Error loading options for ${fieldname}:`, error);
+            }
+        });
+
+        d.show();
+
+        // Function to fetch select options dynamically
+        async function get_options(attributeName) {
+            return new Promise((resolve, reject) => {
+                console.log("Fetching options for attribute:", attributeName);
+                frappe.call({
+                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+                    args: { label: attributeName },
+                    callback: function(r) {
+                        if (r.message && Array.isArray(r.message)) {
+                            resolve(r.message);
+                        } else {
+                            resolve([]);
+                        }
+                    },
+                    error: function(err) {
+                        console.error("API Error:", err);
+                        reject(err);
+                    }
+                });
+            });
+        }
+    }
+});

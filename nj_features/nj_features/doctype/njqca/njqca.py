@@ -1407,5 +1407,5 @@ def get_item_attributes(selected_fields):
     
 @frappe.whitelist()
 def get_options_for_label(label):
-    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
-    return [option['attribute_value'] for option in options]
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
+    return [option['abbr'] for option in options]

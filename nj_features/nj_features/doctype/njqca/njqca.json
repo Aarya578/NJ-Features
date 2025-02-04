@@ -41,20 +41,20 @@
   "item_template",
   "section_break_nybo3",
   "error_message",
-  "section_break_56eed",
-  "njqca_item_component",
-  "njqca_result_parameters",
   "laptop_processor_section",
   "njqca_laptop_processors",
-  "section_break_drfru",
-  "njqca_display",
-  "processor_section",
-  "njqca_adaptor",
   "laptop_ram_section",
   "njqca_laptop_ram",
   "laptop_storage_section",
   "njqca_laptop_storage",
-  "section_break_d2ocq",
+  "section_break_drfru",
+  "njqca_display",
+  "processor_section",
+  "njqca_adaptor",
+  "section_break_56eed",
+  "njqca_item_component",
+  "section_break_yblqh",
+  "njqca_result_parameters",
   "amended_from",
   "event_trigger_section",
   "njqca_event_trigger",
@@ -169,7 +169,8 @@
   },
   {
    "fieldname": "section_break_56eed",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Part List"
   },
   {
    "fieldname": "amended_from",
@@ -265,14 +266,14 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_display.length != 0",
+   "collapsible_depends_on": "eval: doc.njqca_display && doc.njqca_display.length != 0",
    "fieldname": "section_break_drfru",
    "fieldtype": "Section Break",
    "label": "Display"
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_adaptor.length != 0",
+   "collapsible_depends_on": "eval: doc.njqca_adaptor && doc.njqca_adaptor.length != 0",
    "fieldname": "processor_section",
    "fieldtype": "Section Break",
    "label": "Adaptor"
@@ -284,7 +285,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_laptop_ram.length != 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_ram && doc.njqca_laptop_ram.length != 0",
    "fieldname": "laptop_ram_section",
    "fieldtype": "Section Break",
    "label": "Laptop Ram"
@@ -296,7 +297,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_laptop_storage.length != 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_storage && doc.njqca_laptop_storage.length != 0",
    "fieldname": "laptop_storage_section",
    "fieldtype": "Section Break",
    "label": "Laptop Storage"
@@ -305,10 +306,6 @@
    "fieldname": "njqca_laptop_storage",
    "fieldtype": "Table",
    "options": "NJQCA Laptop Storage"
-  },
-  {
-   "fieldname": "section_break_d2ocq",
-   "fieldtype": "Section Break"
   },
   {
    "fieldname": "njqca_adaptor",
@@ -322,7 +319,7 @@
   },
   {
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.njqca_laptop_processors.length != 0",
+   "collapsible_depends_on": "eval: doc.njqca_laptop_processors && doc.njqca_laptop_processors.length != 0",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
@@ -380,11 +377,17 @@
    "fieldname": "grading_fetched",
    "fieldtype": "Data",
    "label": "Grading Fetched"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_yblqh",
+   "fieldtype": "Section Break",
+   "label": "Result Parameters"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-01 12:46:54.293541",
+ "modified": "2025-02-04 17:16:20.259251",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

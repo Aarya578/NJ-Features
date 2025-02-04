@@ -39,7 +39,7 @@
    "label": "Storage Interface"
   },
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "storage_capacity",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -78,14 +78,16 @@
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "check_button",
    "fieldtype": "Button",
+   "in_list_view": 1,
    "label": "Check Button"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-02-04 13:21:01.677927",
+ "modified": "2025-02-04 17:37:17.327747",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Storage",

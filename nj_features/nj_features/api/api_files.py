@@ -212,6 +212,13 @@ def get_battery_status(doc, method=None):
     try:
         parent_serial_no = doc.serial_no
         njqca = doc.name
+        bty_based_inspection_type = frappe.db.get_value("NJ Settings", {"parameter": "bty_based_inspection_type"}, "value")
+        if not bty_based_inspection_type:
+            frappe.throw("NJ Settings for 'bty_based_inspection_type' is not defined")
+
+        if doc.inspection_type in bty_based_inspection_type:
+            return
+        
         get_bty_serial_nos_query = """select sn.component_serial_no FROM `tabSerial No Component` sn
                                         WHERE sn.item_group = 'battery' 
                                         AND sn.component_serial_no IS NOT NULL 

@@ -107,8 +107,7 @@
    "fieldname": "item_group",
    "fieldtype": "Link",
    "label": "Item Group",
-   "options": "Item Group",
-   "read_only": 1
+   "options": "Item Group"
   },
   {
    "fieldname": "raw_data",
@@ -201,8 +200,7 @@
   {
    "fieldname": "manufacturer_model",
    "fieldtype": "Data",
-   "label": "Manufacturer Model",
-   "read_only": 1
+   "label": "Manufacturer Model"
   },
   {
    "fieldname": "bios_serialno",
@@ -387,7 +385,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-04 17:16:20.259251",
+ "modified": "2025-02-05 14:26:07.629601",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

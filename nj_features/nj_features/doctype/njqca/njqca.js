@@ -277,6 +277,7 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
+                    console.log('r', r);
                     Object.keys(r.message).forEach(field => {
                         frm.set_value(field, r.message[field]);
                         cur_frm.refresh_field(field);
@@ -605,6 +606,8 @@ function get_item_template(model, brand, item_group) {
 }
 
 function get_model(manufacturer_model) {
+    console.log("function is triggered==========609=======");
+    
     
     frappe.call({
         method: 'nj_features.nj_features.doctype.njqca.njqca.get_model',

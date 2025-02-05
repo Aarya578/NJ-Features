@@ -332,9 +332,8 @@ frappe.ui.form.on('Stock Movement Detail', {
         var userRoles = frappe.user_roles;
         var isKitter = userRoles.some(role => role.toLowerCase() === 'kitter');
 
-        if (isKitter) {
+        if (isKitter && cur_frm.doc.transfer_status.toLowerCase() == "racking") {
             
-            // Set source warehouse based on serial number's warehouse
             if (child.serial_no) {
                 frappe.db.get_value('Serial No', { 'name': child.serial_no }, 'warehouse').then(function (r) {
                     if (r.message && r.message.warehouse) {
@@ -344,17 +343,15 @@ frappe.ui.form.on('Stock Movement Detail', {
             }
             
         } else {
-            // Default behavior when user is not a Kitter
+            
             autofill_warehouse([child], "t_warehouse", frm.doc.default_target_warehouse);
             autofill_warehouse([child], "s_warehouse", frm.doc.default_source_warehouse);
         }
 
 
-        // If the transfer status is "Racking", make the source warehouse read-only
-        if (cur_frm.doc.transfer_status == "Racking") {
+        if (cur_frm.doc.transfer_status.toLowerCase() == "racking") {
             frm.set_df_property('items', 'read_only', 1, frm.docname, 's_warehouse', child.name);
             
-            // Create dialog for last record if it is the last item in the list
             var lastRecordIndex = cur_frm.doc.items.length - 1;
             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
                 createDialogForLastRecord(child, cdt, cdn);

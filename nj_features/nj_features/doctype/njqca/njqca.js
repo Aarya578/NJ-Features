@@ -108,7 +108,20 @@ frappe.ui.form.on('NJQCA', {
             // })
         }
     },
-
+    before_submit(frm) {
+		if (frm.doc.manual_repack_item_code!= frm.doc.repack_item_code) {
+			frappe.validated = false; 
+			frappe.confirm('<b>Automated Item Code: '+frm.doc.repack_item_code+'</b> <br> <b>Repack Item Code: '+frm.doc.manual_repack_item_code+'</b> are not same.<br>Are you sure you want to Submit?', 
+			() => {
+				frappe.validated = true;
+				frm.save('Submit')
+			},
+			() => { 
+				frm.set_value('manual_repack_item_code', '');
+			});
+		}
+		return false;
+	},
 	onload_post_render: function(frm) {
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
@@ -426,6 +439,8 @@ frappe.ui.form.on('NJQCA', {
     }
 });
 
+
+
 function processItemTemplate(frm) {
     if (frm.doc.njqca_item_component && frm.doc.power_on == 'Yes') {
         frappe.call({
@@ -483,7 +498,7 @@ function processItemTemplate(frm) {
                             const child_table_fieldname = 'njqca_laptop_ram';
                             const grid = frm.fields_dict[child_table_fieldname].grid;
                             set_options_for_attribute_fields_in_child(frm, grid);
-
+                            show_checkbutton_ram(frm)
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_type', row.attr_data["RAM Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_capacity', row.attr_data["RAM Capacity"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_speed', row.attr_data["RAM Speed"]);
@@ -508,6 +523,7 @@ function processItemTemplate(frm) {
                             const child_table_fieldname = 'njqca_laptop_storage';
                             const grid = frm.fields_dict[child_table_fieldname].grid;
                             set_options_for_attribute_fields_in_child(frm, grid);
+                            show_checkbutton_storage(frm);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);        
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
@@ -517,6 +533,7 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_length', row.attr_data["Storage Length"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
+
                         }
                     });
 
@@ -641,157 +658,6 @@ function get_model(manufacturer_model) {
         }
     });
 }
-
-// frappe.ui.form.on('NJQCA Adaptor', {
-//     njqca_adaptor_add: function(frm, cdt, cdn) {
-
-//         const child_table_fieldname = 'njqca_adaptor';
-//         const grid = frm.fields_dict[child_table_fieldname].grid;
-
-//         set_options_for_attribute_fields_in_child(frm, grid);
-//     },
-//     brand: function(frm, cdt, cdn) {
-//         const child = locals[cdt][cdn];  
-//         generateAdaptorItemCode(frm, cdt, cdn, child); 
-//     },
-//     wattage_capacity: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateAdaptorItemCode(frm, cdt, cdn, child);
-//     },
-//     adapter_pin_type: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateAdaptorItemCode(frm, cdt, cdn, child);
-//     },
-//     grade: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateAdaptorItemCode(frm, cdt, cdn, child);
-//     }
-// });
-
-// frappe.ui.form.on('NJQCA Laptop Ram', {
-
-//     njqca_laptop_ram_add: function(frm, cdt, cdn) {
-
-//         const child_table_fieldname = 'njqca_laptop_ram';
-//         const grid = frm.fields_dict[child_table_fieldname].grid;
-
-//         set_options_for_attribute_fields_in_child(frm, grid);
-//     }, 
-
-//     ram_type: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateRamItemCode(frm, cdt, cdn, child); 
-//     },
-
-//     ram_capacity: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateRamItemCode(frm, cdt, cdn, child); 
-//     },
-//     ram_speed: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateRamItemCode(frm, cdt, cdn, child); 
-//     },
-//     grade: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateRamItemCode(frm, cdt, cdn, child); 
-//     },
-// });
-
-// frappe.ui.form.on('NJQCA Display', {
-
-//     njqca_display_add: function(frm, cdt, cdn) {
-
-//         const child_table_fieldname = 'njqca_display';
-//         const grid = frm.fields_dict[child_table_fieldname].grid;
-
-//         set_options_for_attribute_fields_in_child(frm, grid);
-//     },
-
-//     model: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },
-//     display_tech: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },
-//     display_pin_type: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },  
-    
-//     display_size: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },  
-    
-//     resolution: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },  
-    
-//     thickness: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },  
-    
-//     display_bracket: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },  
-    
-//     grade: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateDisplayItemCode(frm, cdt, cdn, child); 
-//     },
-// })
-
-// frappe.ui.form.on('NJQCA PROCESSOR', {
-//     njqca_laptop_processors_add: function(frm, cdt, cdn) {
-//         const child_table_fieldname = 'njqca_laptop_processors';
-//         const grid = frm.fields_dict[child_table_fieldname].grid;
-        
-//         set_options_for_attribute_fields_in_child(frm, grid);
-//     },
-//     processor_type: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateProcessorItemCode(frm, cdt, cdn, child); 
-//     },
-//     grade: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateProcessorItemCode(frm, cdt, cdn, child); 
-//     },
-// });
-
-// frappe.ui.form.on('NJQCA Laptop Storage', {
-//     njqca_laptop_storage_add: function(frm, cdt, cdn) {
-
-//         const child_table_fieldname = 'njqca_laptop_storage';
-//         const grid = frm.fields_dict[child_table_fieldname].grid;
-        
-//         set_options_for_attribute_fields_in_child(frm, grid);
-//     },
-//     storage_type: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateStorageItemCode(frm, cdt, cdn, child); 
-//     },
-//     storage_capacity: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateStorageItemCode(frm, cdt, cdn, child); 
-//     },
-//     storage_interface: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateStorageItemCode(frm, cdt, cdn, child); 
-//     },
-//     storage_length: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateStorageItemCode(frm, cdt, cdn, child); 
-//     },
-//     grade: function(frm, cdt, cdn){
-//         const child = locals[cdt][cdn];  
-//         generateStorageItemCode(frm, cdt, cdn, child); 
-//     },
-// });
 
 function generateAdaptorItemCode(frm, cdt, cdn, child) {
     const item_templates = child.item_template;
@@ -1075,6 +941,43 @@ function set_options_for_attribute_fields_in_child(frm, grid) {
 
 
 frappe.ui.form.on('NJQCA Display', {
+
+    refresh: function(frm) {
+        show_checkbutton_display(frm);
+        frm.fields_dict.njqca_display.grid.update_docfield_property(
+            'display_tech', 
+            'mandatory_depends_on', 
+            "!doc.fetched_item_code || doc.fetched_item_code != doc.calculated_item_code"
+        );
+    },
+    validate: function(frm) {
+        let missingFields = [];
+
+        (frm.doc.njqca_display || []).forEach(child => {
+            if (!child.fetched_item_code || !child.calculated_item_code) {
+                missingFields.push(child.idx); 
+            }
+        });
+        console.log("missing----------fields------in display--",missingFields)
+        if (missingFields.length > 0) {
+            frappe.msgprint({
+                title: __('Validation Error'),
+                message: __('Please fill mandatory fields for rows: ') + missingFields.join(', '),
+                indicator: 'red'
+            });
+
+            frappe.validated = false; 
+        }
+    },
+    njqca_display_add: function(frm, cdt, cdn) {
+        // Ensure the check button is visible in the new row
+        
+        // Refresh grid after row addition
+        frm.fields_dict['njqca_display'].grid.refresh();
+
+        // Delay execution to ensure the new row is rendered before modifying it
+        setTimeout(() => show_checkbutton_display(frm), 300);
+    },
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
@@ -1193,6 +1096,20 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
 }
 
 frappe.ui.form.on('NJQCA Adaptor', {
+    refresh: function(frm) {
+        show_checkbutton_adaptor(frm);
+    },
+
+    njqca_adaptor_add: function(frm, cdt, cdn) {
+        // Ensure the check button is visible in the new row
+        
+        // Refresh grid after row addition
+        frm.fields_dict['njqca_adaptor'].grid.refresh();
+
+        // Delay execution to ensure the new row is rendered before modifying it
+        setTimeout(() => show_checkbutton_adaptor(frm), 300);
+    },
+
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = "Laptop Adaptors";
@@ -1276,12 +1193,27 @@ frappe.ui.form.on('NJQCA Adaptor', {
                 });
             });
         }
+        
     }
+    
 });
 
 
 frappe.ui.form.on('NJQCA Laptop Storage', {
-    check_button: async function(frm, cdt, cdn) {
+    refresh: function(frm) {
+        show_checkbutton_storage(frm);
+    },
+
+    after_save: function(frm) {
+        if (frm.doc.njqca_laptop_storage && frm.doc.njqca_laptop_storage.length > 0) {
+            console.log("hi--------storage")
+            show_checkbutton_storage(frm);
+        }
+    },
+    validate:function(frm){
+        validate_mandatory_fields(frm)
+    },
+       check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
@@ -1367,7 +1299,43 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
     }
 });
 
+// Helper function to determine if fields should be required
+function shouldBeRequired(child) {
+    return !child.fetched_item_code || 
+           (child.fetched_item_code && child.calculated_item_code && 
+            child.fetched_item_code !== child.calculated_item_code);
+}
+
+// Function to validate mandatory fields for the entire form
+function validate_mandatory_fields(frm) {
+    if (!frm.doc.njqca_laptop_storage) return;
+
+    frm.doc.njqca_laptop_storage.forEach((row, idx) => {
+        if (shouldBeRequired(row)) {
+            ['storage_type', 'storage_interface', 'storage_capacity', 'storage_length', 'grade'].forEach(field => {
+                frm.fields_dict.njqca_laptop_storage.grid.grid_rows[idx].doc[field] = 
+                    frm.fields_dict.njqca_laptop_storage.grid.grid_rows[idx].doc[field] || '';
+                
+                frm.fields_dict.njqca_laptop_storage.grid.grid_rows[idx].toggle_reqd(
+                    field, true
+                );
+            });
+        }
+    });
+}
+
 frappe.ui.form.on('NJQCA Laptop Ram', {
+    refresh: function(frm) {
+        show_checkbutton_ram(frm);
+    },
+
+
+    
+    after_save: function(frm) {
+        if (frm.doc.njqca_laptop_ram && frm.doc.njqca_laptop_ram.length > 0) {
+            show_checkbutton_ram(frm);
+        }
+    },
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
@@ -1454,6 +1422,16 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 
 
 frappe.ui.form.on('NJQCA PROCESSOR', {
+    refresh: function(frm) {
+        show_checkbutton_processors(frm);
+    },
+
+    njqca_laptop_processor_add: function(frm, cdt, cdn) {
+      
+        frm.fields_dict['njqca_laptop_processor'].grid.refresh();
+
+        setTimeout(() => show_checkbutton_processors(frm), 300);
+    },
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
@@ -1538,3 +1516,178 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
         }
     }
 });
+
+
+
+// Function to add check button dynamically
+function show_checkbutton_adaptor(frm) {
+    console.log("Adding check buttons...");
+    
+    frm.fields_dict['njqca_adaptor'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
+        let $row = $(item);
+        let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
+
+        // Remove existing buttons to prevent duplicates
+        $checkButtonCell.empty();
+
+        // Append the custom-styled check button
+        $checkButtonCell.append(
+            `<button class='btn btn-primary btn-xs check-button'
+                     style='padding: 2px 10px;
+                            font-size: 12px;
+                            line-height: 1.5;
+                            border-radius: 3px;
+                            background-color: #589ffc;
+                            border: none;
+                            margin-left: 15px;
+                            width: auto;
+                            min-width: 50px;'>Check</button>`
+        );
+
+        // Attach click event to trigger `check_button`
+        $checkButtonCell.find('.check-button').click(function() {
+            let cdn = $row.attr('data-name');
+            let cdt = frm.fields_dict['njqca_adaptor'].grid.doctype;
+            frm.script_manager.trigger('check_button', cdt, cdn);
+        });
+    });
+}
+
+
+// Function to add check button dynamically
+function show_checkbutton_display(frm) {
+    console.log("Adding check buttons...");
+    
+    frm.fields_dict['njqca_display'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
+        let $row = $(item);
+        let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
+
+        // Remove existing buttons to prevent duplicates
+        $checkButtonCell.empty();
+
+        // Append the custom-styled check button
+        $checkButtonCell.append(
+            `<button class='btn btn-primary btn-xs check-button'
+                     style='padding: 2px 10px;
+                            font-size: 12px;
+                            line-height: 1.5;
+                            border-radius: 3px;
+                            background-color: #589ffc;
+                            border: none;
+                            margin-left: 15px;
+                            width: auto;
+                            min-width: 50px;'>Check</button>`
+        );
+
+        // Attach click event to trigger `check_button`
+        $checkButtonCell.find('.check-button').click(function() {
+            let cdn = $row.attr('data-name');
+            let cdt = frm.fields_dict['njqca_display'].grid.doctype;
+            frm.script_manager.trigger('check_button', cdt, cdn);
+        });
+    });
+}
+
+
+// Function to add check button dynamically
+function show_checkbutton_processors(frm) {
+    console.log("Adding check buttons...");
+    
+    frm.fields_dict['njqca_laptop_processors'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
+        let $row = $(item);
+        let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
+
+        // Remove existing buttons to prevent duplicates
+        $checkButtonCell.empty();
+
+        // Append the custom-styled check button
+        $checkButtonCell.append(
+            `<button class='btn btn-primary btn-xs check-button'
+                     style='padding: 2px 10px;
+                            font-size: 12px;
+                            line-height: 1.5;
+                            border-radius: 3px;
+                            background-color: #589ffc;
+                            border: none;
+                            margin-left: 15px;
+                            width: auto;
+                            min-width: 50px;'>Check</button>`
+        );
+
+        // Attach click event to trigger `check_button`
+        $checkButtonCell.find('.check-button').click(function() {
+            let cdn = $row.attr('data-name');
+            let cdt = frm.fields_dict['njqca_laptop_processors'].grid.doctype;
+            frm.script_manager.trigger('check_button', cdt, cdn);
+        });
+    });
+}
+
+
+// Function to add check button dynamically
+function show_checkbutton_ram(frm) {
+    console.log("Adding check buttons...");
+    
+    frm.fields_dict['njqca_laptop_ram'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
+        let $row = $(item);
+        let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
+
+        // Remove existing buttons to prevent duplicates
+        $checkButtonCell.empty();
+
+        // Append the custom-styled check button
+        $checkButtonCell.append(
+            `<button class='btn btn-primary btn-xs check-button'
+                     style='padding: 2px 10px;
+                            font-size: 12px;
+                            line-height: 1.5;
+                            border-radius: 3px;
+                            background-color: #589ffc;
+                            border: none;
+                            margin-left: 15px;
+                            width: auto;
+                            min-width: 50px;'>Check</button>`
+        );
+
+        // Attach click event to trigger `check_button`
+        $checkButtonCell.find('.check-button').click(function() {
+            let cdn = $row.attr('data-name');
+            let cdt = frm.fields_dict['njqca_laptop_ram'].grid.doctype;
+            frm.script_manager.trigger('check_button', cdt, cdn);
+        });
+    });
+}
+
+// Function to add check button dynamically
+function show_checkbutton_storage(frm) {
+    console.log("Adding check buttons...storage");
+    if ( frm.docstatus===0){
+    frm.fields_dict['njqca_laptop_storage'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
+        let $row = $(item);
+        let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
+
+        // Remove existing buttons to prevent duplicates
+        $checkButtonCell.empty();
+
+        // Append the custom-styled check button
+        $checkButtonCell.append(
+            `<button class='btn btn-primary btn-xs check-button'
+                     style='padding: 2px 10px;
+                            font-size: 12px;
+                            line-height: 1.5;
+                            border-radius: 3px;
+                            background-color: #589ffc;
+                            border: none;
+                            margin-left: 15px;
+                            width: auto;
+                            min-width: 50px;'>Check</button>`
+        );
+
+        // Attach click event to trigger `check_button`
+        $checkButtonCell.find('.check-button').click(function() {
+            let cdn = $row.attr('data-name');
+            let cdt = frm.fields_dict['njqca_laptop_storage'].grid.doctype;
+            frm.script_manager.trigger('check_button', cdt, cdn);
+        });
+    });
+}}

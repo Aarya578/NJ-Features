@@ -919,8 +919,10 @@ def get_item_code_for_each_part(doc):
             if doc.get('item_template'):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
+                print("consolidated---------",consolidated)
+                item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
-
+                print("------------repack_item_code-----843-----",repack_item_code)
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}
@@ -1180,7 +1182,8 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-   
+    print("item_template-----",item_template)
+    print("args-----------",args)
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -1201,6 +1204,7 @@ def get_variant_from_value(item_template=None, args=None):
                 WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
+            print("variants-----------1125",variants)
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:

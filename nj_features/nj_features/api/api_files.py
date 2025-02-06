@@ -321,3 +321,61 @@ def get_battery_status(doc, method=None):
 
     except Exception as e:
         return
+    
+@frappe.whitelist(allow_guest=True)
+def get_backup_duration(doc, method=None):
+    try:
+        parent_name = doc.name
+        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+
+        if njqca_battery_item_group and njqca_battery_item_group == doc.item_group:
+            delta_query="""
+                            WITH parameter_data AS (     
+                            SELECT name, idx, item_group, parameter, value     
+                            FROM `tabNJQCA Result Parameters`     
+                            WHERE parent = %(parent_name)s     
+                            ORDER BY idx 
+                            ),  
+
+                            -- Get all occurrences of Battery_Discharging_Start_Time 
+                            cycle_start AS (     
+                            SELECT idx, parameter     
+                            FROM parameter_data     
+                            WHERE parameter = 'Battery_Discharging_Start_Time' 
+                            ),  
+
+                            -- For each occurrence of Battery_Discharging_Start_Time, calculate the initial value (timestamp) and final value (next timestamp)
+                            cycle_values AS (     
+                            SELECT          
+                                cs.idx AS start_idx,         
+                                pd1.parameter AS initial_timestamp, -- timestamp just before Battery_Discharging_Start_Time         
+                                -- Find the next occurrence of Battery_Discharging_Start_Time and get its timestamp at idx - 2         
+                                COALESCE(             
+                                    (SELECT parameter FROM parameter_data WHERE idx >cs.idx and idx =(select idx-2 from cycle_start where idx>cs.idx)),              
+                                    (SELECT parameter FROM parameter_data ORDER BY idx DESC LIMIT 1) -- if no next occurrence, get last timestamp         
+                                ) AS final_timestamp     
+                            FROM cycle_start cs     
+                            -- Get the timestamp at (idx - 1)     
+                            JOIN parameter_data pd1 ON pd1.idx = cs.idx-1
+                            )  
+
+                            -- Final output: Calculate the time difference between the initial timestamp and final timestamp
+                            SELECT      
+
+                            ROUND(TIME_TO_SEC(TIMEDIFF(final_timestamp, initial_timestamp)) / 60, 2) AS time_difference_in_minutes
+                            FROM cycle_values 
+                            ORDER BY start_idx;
+                            """
+            
+            delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+
+            if delta:
+                i = 1
+                for d in delta:
+                    if i > 4:
+                        break
+                    setattr(doc, f"backup_duration_cycle_{i}", d.time_difference_in_minutes)
+                    i += 1
+            
+    except Exception as e:
+        return

@@ -359,6 +359,7 @@ frappe.ui.form.on('Stock Movement Detail', {
         }
     }
 });
+
 function createDialogForLastRecord(child, cdt, cdn) {
     const item = child;
     if (item.serial_no || item.item_code) {
@@ -438,40 +439,50 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             size: 'small',
                             static: 1
                         });
-
+                        
                         // On blur of the t_warehouse field
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
                             handleScannerInput(d, 't_warehouse');
-                            let t_warehouse_value = $(this).val();
-
-                            if (t_warehouse_value.trim() === '') {
+                            let t_warehouse_value = $(this).val().trim();
+                        
+                            if (t_warehouse_value === '') {
                                 return; // No further checks or messages, just return
                             }
-                            
-                            let isValidWarehouse = false;
-                            // Check if t_warehouse_value matches with recommended or centralized warehouse
-                            if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {
-                                isValidWarehouse = true;
-                            }
-    
+                        
+                            let isValidWarehouse = recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value);
+                        
                             if (isValidWarehouse) {
-                                // Perform validation
-                                frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+                                // Fetch warehouse details
+                                frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function(r) {
                                     if (r.message && r.message.name) {
+                                        console.log('Before setting value:', locals[cdt][cdn]); // Debugging
+                        
+                                        // Directly update the model value for the child table
                                         frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                        d.hide();
+                        
+                                        console.log('After setting value:', locals[cdt][cdn]); // Debugging
+                        
+                                        // Ensure the dialog closes only after confirming the update
+                                        setTimeout(() => { d.hide(); }, 200);
                                     } else {
-                                        frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                        frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not exist. Please enter a valid Warehouse.`);
                                         $('[data-fieldname="scan_barcode"]').focus();
                                     }
-                                    
                                 });
                             } else {
                                 frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not match with recommended or centralized warehouse.`);
-                                $('[data-fieldname="t_warehouse"]').val(''); // Clear the field value
-                                $('[data-fieldname="t_warehouse"]').focus();
+                                $('[data-fieldname="t_warehouse"]').val('').focus(); // Clear and refocus the field
                             }
                         });
+                        
+                        // Prevent form refresh by blocking ENTER key in the dialog
+                        d.$wrapper.on("keydown", function(event) {
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                return false;
+                            }
+                        });
+                        
 
                         // Show the dialog
                         d.show();

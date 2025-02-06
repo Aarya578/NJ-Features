@@ -621,71 +621,151 @@ def brand_model_validation(brand=None, model=None):
     
     return {'brand': brand, 'model': model}
 
+# @frappe.whitelist()
+# def get_info_from_serial_no(doc=None):
+#     try:
+#         sle = []
+#         result = {}
+#         doc_json = json.loads(doc)
+#         bio_serial_no_in_ui = None
+
+#         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
+
+#         if 'bios_serialno' in doc_json:
+#             bio_serial_no_in_ui = doc_json['bios_serialno']
+
+#             sql_query = """
+#                 SELECT name,item_code, warehouse, purchase_rate,
+#                     bios_serial_no, model, item_group, brand
+#                 FROM `tabSerial No`
+#                 WHERE bios_serial_no = %s and status = 'Active' """
+
+#             sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
+
+#         if 'serial_no' in doc_json and not sle:
+
+#             serial_no = doc_json['serial_no']
+#             # get price from Stock Ledger Entry
+
+#             sql_query = """
+#                 SELECT name,item_code, warehouse, purchase_rate,
+#                     bios_serial_no, model, item_group, brand
+#                 FROM `tabSerial No`
+#                 WHERE serial_no = %s and status = 'Active' """
+
+#             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
+
+#             if sle and len(sle) > 0:
+#                 sle_entry = sle[0]
+#                 if sle_entry.get('bios_serial_no'):
+#                     if sle_entry.get('bios_serial_no') != bio_serial_no_in_ui:
+#                         frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
+#                     else:
+#                         frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""", (bio_serial_no_in_ui,serial_no))
+
+#         if sle and len(sle) > 0:
+#             sle_entry = sle[0]
+#             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
+            
+#             result['item_code'] = sle_entry.get('item_code')
+#             result['warehouse'] = sle_entry.get('warehouse')
+#             result['base_price'] = sle_entry.get('purchase_rate')
+#             # result['item_template'] = item_code_data.get('variant_of')
+#             result['repack_itm_price'] = item_code_data.get('valuation_rate')
+#             result['department'] = emp_dept.get('department') if 'department' in emp_dept else None
+#             result['brand'] = sle_entry.get('brand') if sle_entry.get('brand') else item_code_data.get('brand')
+#             result['model'] = sle_entry.get('model') if sle_entry.get('model') else item_code_data.get('item_model')
+#             item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
+#             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+#             if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
+#                 result['item_group'] = item_group
+#                 result['serial_no'] = sle_entry.get('name')
+#             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
+
+#         # sudden_drop = get_sudden_drop(doc_json['name'], doc_json['item_group'])
+#         sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'))
+
+
+#         if sudden_drop:
+#             result['sudden_drop'] = sudden_drop
+
+#         return result
+#     except Exception as e:
+#         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
+
+def check_chromebook_conditions(serial_no):
+    try:
+        serial_entry = frappe.get_value('Serial No', {'serial_no': serial_no}, ['item_group', 'model'], as_dict=True)
+        if serial_entry and serial_entry.get('item_group') == 'Chromebooks':
+            manufacture_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
+            models = frappe.get_all('Manufacturer Model Child', {'parent': manufacture_model}, ['manufacturer_model'])
+            return {'manufacturer_model': models[0].get("manufacturer_model")}
+        # return {'skip_bios_serial_no_check': False}
+    except Exception as e:
+        frappe.log_error(f"Error in check_chromebook_conditions: {str(e)}")
+        return {'skip_bios_serial_no_check': False}
+
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
     try:
         sle = []
         result = {}
         doc_json = json.loads(doc)
-        bio_serial_no_in_ui = None
-
+        bio_serialno_in_ui = doc_json.get('bios_serial_no')
+        serial_no = doc_json.get('serial_no')
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'bios_serialno' in doc_json:
-            bio_serial_no_in_ui = doc_json['bios_serialno']
-
+        if serial_no:
+            chromebook_check = check_chromebook_conditions(serial_no)
+            print("chromebook_check", chromebook_check)
             sql_query = """
-                SELECT name,item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
+                SELECT name, item_code, warehouse, purchase_rate, bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
-                WHERE bios_serial_no = %s and status = 'Active' """
+                WHERE serial_no = %s AND status = 'Active' """
+            sle = frappe.db.sql(sql_query, (serial_no), as_dict=True)
 
-            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
 
-        if 'serial_no' in doc_json and not sle:
-
-            serial_no = doc_json['serial_no']
-            # get price from Stock Ledger Entry
-
-            sql_query = """
-                SELECT name,item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
-                FROM `tabSerial No`
-                WHERE serial_no = %s and status = 'Active' """
-
-            sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-
-            if sle and len(sle) > 0:
+            if sle:
                 sle_entry = sle[0]
-                if sle_entry.get('bios_serial_no'):
-                    if sle_entry.get('bios_serial_no') != bio_serial_no_in_ui:
+                if sle_entry.get('item_group') != 'Chromebooks':  # Skip BIOS Serial No validation for Chromebooks
+                    if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
                         frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
-                    else:
-                        frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""", (bio_serial_no_in_ui,serial_no))
-
-        if sle and len(sle) > 0:
+                    elif bio_serialno_in_ui:
+                        frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
+                                        (bio_serialno_in_ui, serial_no))
+        if sle:
             sle_entry = sle[0]
-            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
+            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')},
+                                              ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=True)
             
-            result['item_code'] = sle_entry.get('item_code')
-            result['warehouse'] = sle_entry.get('warehouse')
-            result['base_price'] = sle_entry.get('purchase_rate')
-            # result['item_template'] = item_code_data.get('variant_of')
-            result['repack_itm_price'] = item_code_data.get('valuation_rate')
-            result['department'] = emp_dept.get('department') if 'department' in emp_dept else None
-            result['brand'] = sle_entry.get('brand') if sle_entry.get('brand') else item_code_data.get('brand')
-            result['model'] = sle_entry.get('model') if sle_entry.get('model') else item_code_data.get('item_model')
-            item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
+            result.update({
+                'item_code': sle_entry.get('item_code'),
+                'item_group': sle_entry.get('item_group'),
+                'warehouse': sle_entry.get('warehouse'),
+                'base_price': sle_entry.get('purchase_rate'),
+                'repack_itm_price': item_code_data.get('valuation_rate'),
+                'department': emp_dept.get('department') if emp_dept else None,
+                'brand': sle_entry.get('brand') or item_code_data.get('brand'),
+                'model': sle_entry.get('model') or item_code_data.get('item_model'),
+                'manufacturer_model': chromebook_check.get('manufacturer_model')
+                #  {'skip_bios_serial_no_check': True, 'manufacturer_model': [{'manufacturer_model': 'Chromebook C640'}]}
+# 
+            })
+
+            print('result', result)
+
+            item_group = sle_entry.get('item_group') or item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
+            if nj_settings_item_group and nj_settings_item_group != doc_json.get('item_group'):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
-            result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
+            result['inspection_type'] = get_inspection_type() if 'inspection_type' not in doc_json else doc_json['inspection_type']
 
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json['item_group'])
-
+        sudden_drop = get_sudden_drop(doc_json.get('name'), doc_json.get('item_group'))
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
+        
+
 
         return result
     except Exception as e:
@@ -839,8 +919,10 @@ def get_item_code_for_each_part(doc):
             if doc.get('item_template'):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
+                print("consolidated---------",consolidated)
+                item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
-
+                print("------------repack_item_code-----843-----",repack_item_code)
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}
@@ -1100,7 +1182,8 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-   
+    print("item_template-----",item_template)
+    print("args-----------",args)
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -1121,6 +1204,7 @@ def get_variant_from_value(item_template=None, args=None):
                 WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
+            print("variants-----------1125",variants)
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:
@@ -1156,7 +1240,7 @@ def construct_item_code(item_template, args_list):
         print(f"An error occurred at construct_item_code: {str(e)}")
 
 @frappe.whitelist()
-def get_model(manufacturer_model):
+def get_model(manufacturer_model=None):
     query, model_list = '', []
 
     if model_list == []:
@@ -1252,7 +1336,7 @@ def get_sudden_drop(parent_name, item_group):
         return e
         
 @frappe.whitelist()
-def get_njqca_item_template(item_group, brand, model):
+def get_njqca_item_template(item_group=None, brand=None, model=None):
     try:
         wizard_list, item_templates = '', None
 

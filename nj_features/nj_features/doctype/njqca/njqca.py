@@ -25,11 +25,11 @@ def update_serial_no_componont_for_grade(self):
             model = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'item_model')
             if model:
                 serial_no_doc.model = model
-        for reading in (self.njqca_item_component):
-            if reading.part_item_code and reading.item_group:
-                for sn in serial_no_doc.serial_no_component:
-                    if reading.item_group == sn.item_group:
-                        sn.item = reading.part_item_code
+        # for reading in (self.njqca_item_component):
+        #     if reading.part_item_code and reading.item_group:
+        #         for sn in serial_no_doc.serial_no_component:
+        #             if reading.item_group == sn.item_group:
+        #                 sn.item = reading.part_item_code
         
         item_template = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'variant_of')
 
@@ -693,50 +693,45 @@ def brand_model_validation(brand=None, model=None):
 #     except Exception as e:
 #         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
 
-def check_chromebook_conditions(serial_no):
-    try:
-        serial_entry = frappe.get_value('Serial No', {'serial_no': serial_no}, ['item_group', 'model'], as_dict=True)
-        if serial_entry and serial_entry.get('item_group') == 'Chromebooks':
-            manufacture_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
-            models = frappe.get_all('Manufacturer Model Child', {'parent': manufacture_model}, ['manufacturer_model'])
-            return {'manufacturer_model': models[0].get("manufacturer_model")}
-        # return {'skip_bios_serial_no_check': False}
-    except Exception as e:
-        frappe.log_error(f"Error in check_chromebook_conditions: {str(e)}")
-        return {'skip_bios_serial_no_check': False}
-
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
     try:
         sle = []
         result = {}
         doc_json = json.loads(doc)
-        bio_serialno_in_ui = doc_json.get('bios_serial_no')
+        bio_serialno_in_ui = doc_json.get('bios_serialno')
         serial_no = doc_json.get('serial_no')
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
         if serial_no:
-            chromebook_check = check_chromebook_conditions(serial_no)
-            print("chromebook_check", chromebook_check)
             sql_query = """
                 SELECT name, item_code, warehouse, purchase_rate, bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
                 WHERE serial_no = %s AND status = 'Active' """
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=True)
 
-
             if sle:
                 sle_entry = sle[0]
-                if sle_entry.get('item_group') != 'Chromebooks':  # Skip BIOS Serial No validation for Chromebooks
-                    if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
-                        frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
-                    elif bio_serialno_in_ui:
-                        frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
-                                        (bio_serialno_in_ui, serial_no))
-        if sle:
+                non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
+                
+                if non_njqca_item_groups and non_njqca_item_groups is not None:
+                    sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
+                    manufacturer_model = frappe.get_all('Manufacturer Model Child', {'parent': sn_model}, ['manufacturer_model'], order_by='idx')
+                
+                    if sle_entry.get('item_group') in non_njqca_item_groups and manufacturer_model and manufacturer_model is not None:
+                        result.update({'manufacturer_model': manufacturer_model[0].get("manufacturer_model"),})
+                    else:
+                        if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
+                            frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
+                        elif bio_serialno_in_ui:
+                            frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
+                                            (bio_serialno_in_ui, serial_no))
+                else:
+                    frappe.throw(f"NJ Settings for non_njqca_item_groups is not defined.")
+        if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')},
-                                              ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=True)
+                                ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=True)
             
             result.update({
                 'item_code': sle_entry.get('item_code'),
@@ -747,12 +742,7 @@ def get_info_from_serial_no(doc=None):
                 'department': emp_dept.get('department') if emp_dept else None,
                 'brand': sle_entry.get('brand') or item_code_data.get('brand'),
                 'model': sle_entry.get('model') or item_code_data.get('item_model'),
-                'manufacturer_model': chromebook_check.get('manufacturer_model')
-                #  {'skip_bios_serial_no_check': True, 'manufacturer_model': [{'manufacturer_model': 'Chromebook C640'}]}
-# 
             })
-
-            print('result', result)
 
             item_group = sle_entry.get('item_group') or item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
@@ -764,10 +754,9 @@ def get_info_from_serial_no(doc=None):
         sudden_drop = get_sudden_drop(doc_json.get('name'), doc_json.get('item_group'))
         if sudden_drop:
             result['sudden_drop'] = sudden_drop
-        
-
 
         return result
+    
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
 
@@ -919,10 +908,8 @@ def get_item_code_for_each_part(doc):
             if doc.get('item_template'):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
-                print("consolidated---------",consolidated)
                 item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
-                print("------------repack_item_code-----843-----",repack_item_code)
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}

@@ -63,6 +63,7 @@
  ],
  "fields": [
   {
+   "default": "Yes",
    "fieldname": "power_on",
    "fieldtype": "Select",
    "label": "Is the system powering on?",
@@ -385,7 +386,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-05 14:26:07.629601",
+ "modified": "2025-02-06 12:30:15.742447",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

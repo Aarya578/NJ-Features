@@ -5,7 +5,8 @@ import json
 import frappe
 import traceback
 from frappe import _
-from datetime import datetime
+# from datetime import datetime
+from datetime import datetime, date
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 
 @frappe.whitelist()
@@ -274,7 +275,22 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
         new_doc.save()
 
         return "Change log created successfully."
-    
+
+
+
+import frappe
+
+@frappe.whitelist()
+def get_role_profiles(department):
+    """Fetch role profiles based on the selected department"""
+    role_profiles = frappe.db.get_all("Role Profile", filters={"department": department}, fields=["name"])
+    print("role profile =================21==================",role_profiles)
+    frappe.logger().info(f"Fetched Role Profiles for {department}: {role_profiles}")  # Debugging
+    return [rp["name"] for rp in role_profiles]
+
+
+
+
 @frappe.whitelist()
 def get_ramp_level(role_profile, total_days):
     try:
@@ -359,74 +375,265 @@ def update_employee_experience(docname, date_of_joining):
     except Exception as e:
         frappe.log_error(f"Error updating employee experience: {str(e)}")
         frappe.throw(f"Error updating employee experience: {str(e)}")
+
 def update_employee_experience_table():
+    """
+    Daily update of experience for all active employees.
+    Fixed date handling for all date formats.
+    """
     try:
         # Get all active employees
-        employees = frappe.get_all("Employee", 
-                                   filters={"status": "Active"}, 
-                                   fields=["name", "date_of_joining"])
+        employees = frappe.get_all(
+            "Employee",
+            filters={"status": "Active"},
+            fields=["name", "date_of_joining", "department", "role_profile"]
+        )
         
-        success_count = 0
-        error_count = 0
+        stats = {
+            "total": len(employees),
+            "success": 0,
+            "errors": 0,
+            "start_time": datetime.now()
+        }
         
         for emp in employees:
             try:
                 doc = frappe.get_doc("Employee", emp.name)
                 
-                # Get the latest experience record with matching department and role profile
-                matching_exp = None
-                for entry in doc.employee_experience_table:
-                    if entry.department == doc.department and entry.role_profile == doc.role_profile:
-                        matching_exp = entry
-                        break
-                
-                if matching_exp: 
-                    # Remove the existing entry
-                    doc.employee_experience_table.remove(matching_exp)
-                    
-                    # Add new entry with incremented days
-                    new_days = int(matching_exp.no_of_days) + 1
-                    
-                    # Get new ramp level and target based on incremented days
-                    ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=new_days)
-                    new_ramp_level = ramp_data.get("ramp_level")
-                    new_target = ramp_data.get("target")
-                    
-                    # Add new record
-                    doc.append("employee_experience_table", {
-                        "department": doc.department,
-                        "role_profile": doc.role_profile,
-                        "no_of_days": str(new_days),
-                        "ramp_level": new_ramp_level,
-                        "target": new_target
-                    })
-                    
-                    # Update the ramp level in the parent document
-                    doc.ramp_level = new_ramp_level
-                    doc.target = new_target
-                    doc.save()
-                    success_count += 1
-                else:
-                    # If no matching experience found, create initial entry
-                    update_employee_experience(emp.name, emp.date_of_joining)
-                    success_count += 1
-                    
-            except Exception as e:
-                error_count += 1
-                frappe.log_error(
-                    f"Error updating experience for employee {emp.name}: {str(e)}",
-                    "Employee Experience Update Error"
+                # Find existing experience entry
+                existing_entry = next(
+                    (entry for entry in doc.employee_experience_table 
+                     if entry.department == doc.department and entry.role_profile == doc.role_profile),
+                    None
                 )
+                
+                # Calculate days
+                if existing_entry:
+                    no_of_days = int(existing_entry.no_of_days) + 1
+                    doc.employee_experience_table.remove(existing_entry)
+                else:
+                    if not doc.previous_department and not doc.previous_role_profile:
+                        # Fixed date handling
+                        join_date = None
+                        if isinstance(emp.date_of_joining, str):
+                            join_date = datetime.strptime(emp.date_of_joining, "%Y-%m-%d").date()
+                        elif isinstance(emp.date_of_joining, datetime):
+                            join_date = emp.date_of_joining.date()
+                        elif isinstance(emp.date_of_joining, date):
+                            join_date = emp.date_of_joining
+                        else:
+                            raise ValueError(f"Unsupported date format for {emp.name}")
+                            
+                        no_of_days = (date.today() - join_date).days + 1
+                    else:
+                        no_of_days = 1
+                
+                # Get ramp data and update
+                ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=no_of_days)
+                
+                # Add new experience entry
+                doc.append("employee_experience_table", {
+                    "department": doc.department,
+                    "role_profile": doc.role_profile,
+                    "ramp_level": ramp_data["ramp_level"],
+                    "target": ramp_data["target"],
+                    "no_of_days": str(no_of_days)
+                })
+                
+                # Update parent document
+                doc.ramp_level = ramp_data["ramp_level"]
+                doc.target = ramp_data["target"]
+                
+                doc.save()
+                stats["success"] += 1
+                print(f"Updated employee: {emp.name} - Days: {no_of_days}")
+                
+            except Exception as e:
+                stats["errors"] += 1
+                error_msg = f"Error updating employee {emp.name}: {str(e)}"
+                print(error_msg)
+                frappe.log_error(error_msg, "Daily Employee Experience Update Error")
                 continue
         
+        # Commit all changes
         frappe.db.commit()
-        frappe.log_error(
-            f"Update complete. Successful updates: {success_count}, Errors: {error_count}",
-            "Employee Experience Update Summary"
+        
+        # Log completion
+        execution_time = datetime.now() - stats["start_time"]
+        summary = (
+            f"Daily update completed in {execution_time}.\n"
+            f"Total Employees: {stats['total']}\n"
+            f"Successful: {stats['success']}\n"
+            f"Errors: {stats['errors']}"
         )
+        print(summary)
+        frappe.log_error(summary, "Daily Employee Experience Update Summary")
         
     except Exception as e:
-        frappe.log_error(f"Error in continuous experience update: {str(e)}")
+        error_msg = f"Critical error in daily experience update: {str(e)}"
+        print(error_msg)
+        frappe.log_error(error_msg)
+
+# def update_employee_experience_table():
+#     """
+#     Daily update of experience for all active employees.
+#     Can be run via bench execute command.
+#     """
+#     try:
+#         # Get all active employees
+#         employees = frappe.get_all(
+#             "Employee",
+#             filters={"status": "Active"},
+#             fields=["name", "date_of_joining", "department", "role_profile"]
+#         )
+        
+#         stats = {
+#             "total": len(employees),
+#             "success": 0,
+#             "errors": 0,
+#             "start_time": datetime.now()
+#         }
+        
+#         for emp in employees:
+#             try:
+#                 doc = frappe.get_doc("Employee", emp.name)
+                
+#                 # Find existing experience entry
+#                 existing_entry = next(
+#                     (entry for entry in doc.employee_experience_table 
+#                      if entry.department == doc.department and entry.role_profile == doc.role_profile),
+#                     None
+#                 )
+                
+#                 # Calculate days
+#                 if existing_entry:
+#                     no_of_days = int(existing_entry.no_of_days) + 1
+#                     doc.employee_experience_table.remove(existing_entry)
+#                 else:
+#                     if not doc.previous_department and not doc.previous_role_profile:
+#                         join_date = (datetime.strptime(emp.date_of_joining, "%Y-%m-%d").date() 
+#                                    if isinstance(emp.date_of_joining, str) 
+#                                    else emp.date_of_joining.date())
+#                         no_of_days = (date.today() - join_date).days + 1
+#                     else:
+#                         no_of_days = 1
+                
+#                 # Get ramp data and update
+#                 ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=no_of_days)
+                
+#                 # Add new experience entry
+#                 doc.append("employee_experience_table", {
+#                     "department": doc.department,
+#                     "role_profile": doc.role_profile,
+#                     "ramp_level": ramp_data["ramp_level"],
+#                     "target": ramp_data["target"],
+#                     "no_of_days": str(no_of_days)
+#                 })
+                
+#                 # Update parent document
+#                 doc.ramp_level = ramp_data["ramp_level"]
+#                 doc.target = ramp_data["target"]
+                
+#                 doc.save()
+#                 stats["success"] += 1
+                
+#                 print(f"Updated employee: {emp.name} - Days: {no_of_days}")
+                
+#             except Exception as e:
+#                 stats["errors"] += 1
+#                 error_msg = f"Error updating employee {emp.name}: {str(e)}"
+#                 print(error_msg)
+#                 frappe.log_error(error_msg, "Daily Employee Experience Update Error")
+#                 continue
+        
+#         # Commit all changes
+#         frappe.db.commit()
+        
+#         # Log completion
+#         execution_time = datetime.now() - stats["start_time"]
+#         summary = (
+#             f"Daily update completed in {execution_time}.\n"
+#             f"Total Employees: {stats['total']}\n"
+#             f"Successful: {stats['success']}\n"
+#             f"Errors: {stats['errors']}"
+#         )
+#         print(summary)
+#         frappe.log_error(summary, "Daily Employee Experience Update Summary")
+        
+#     except Exception as e:
+#         error_msg = f"Critical error in daily experience update: {str(e)}"
+#         print(error_msg)
+#         frappe.log_error(error_msg)
+ 
+# def update_employee_experience_table():
+#     try:
+#         # Get all active employees
+#         employees = frappe.get_all("Employee", 
+#                                    filters={"status": "Active"}, 
+#                                    fields=["name", "date_of_joining"])
+        
+#         success_count = 0
+#         error_count = 0
+        
+#         for emp in employees:
+#             try:
+#                 doc = frappe.get_doc("Employee", emp.name)
+                
+#                 # Get the latest experience record with matching department and role profile
+#                 matching_exp = None
+#                 for entry in doc.employee_experience_table:
+#                     if entry.department == doc.department and entry.role_profile == doc.role_profile:
+#                         matching_exp = entry
+#                         break
+                
+#                 if matching_exp: 
+#                     # Remove the existing entry
+#                     doc.employee_experience_table.remove(matching_exp)
+                    
+#                     # Add new entry with incremented days
+#                     new_days = int(matching_exp.no_of_days) + 1
+                    
+#                     # Get new ramp level and target based on incremented days
+#                     ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=new_days)
+#                     new_ramp_level = ramp_data.get("ramp_level")
+#                     new_target = ramp_data.get("target")
+                    
+#                     # Add new record
+#                     doc.append("employee_experience_table", {
+#                         "department": doc.department,
+#                         "role_profile": doc.role_profile,
+#                         "no_of_days": str(new_days),
+#                         "ramp_level": new_ramp_level,
+#                         "target": new_target
+#                     })
+#                     print(f"Added new experience record for employee==================403=== {emp.name}","========docdata======",doc)
+                    
+#                     # Update the ramp level in the parent document
+#                     doc.ramp_level = new_ramp_level
+#                     doc.target = new_target
+#                     doc.save()
+#                     success_count += 1
+#                 else:
+#                     # If no matching experience found, create initial entry
+#                     update_employee_experience(emp.name, emp.date_of_joining)
+#                     success_count += 1
+                    
+#             except Exception as e:
+#                 error_count += 1
+#                 frappe.log_error(
+#                     f"Error updating experience for employee {emp.name}: {str(e)}",
+#                     "Employee Experience Update Error"
+#                 )
+#                 continue
+        
+#         frappe.db.commit()
+#         frappe.log_error(
+#             f"Update complete. Successful updates: {success_count}, Errors: {error_count}",
+#             "Employee Experience Update Summary"
+#         )
+        
+#     except Exception as e:
+#         frappe.log_error(f"Error in continuous experience update: {str(e)}")
 
 @frappe.whitelist()
 def fetch_and_update_ramp_level(docname, department, role_profile):

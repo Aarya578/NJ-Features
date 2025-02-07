@@ -275,7 +275,22 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
         new_doc.save()
 
         return "Change log created successfully."
-    
+
+
+
+import frappe
+
+@frappe.whitelist()
+def get_role_profiles(department):
+    """Fetch role profiles based on the selected department"""
+    role_profiles = frappe.db.get_all("Role Profile", filters={"department": department}, fields=["name"])
+    print("role profile =================21==================",role_profiles)
+    frappe.logger().info(f"Fetched Role Profiles for {department}: {role_profiles}")  # Debugging
+    return [rp["name"] for rp in role_profiles]
+
+
+
+
 @frappe.whitelist()
 def get_ramp_level(role_profile, total_days):
     try:

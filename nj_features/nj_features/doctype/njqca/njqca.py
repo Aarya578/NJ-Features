@@ -409,7 +409,7 @@ def get_itm_code_on_barcode(new_qi):
         return None
 
 @frappe.whitelist()
-def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0"):
+def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="0"):
     try:
         barcode = new_qi.barcode
         if not barcode:
@@ -420,7 +420,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         
         response = frappe._dict()
         
-        response = validation_for_nj_readings_in_nj_qi(barcode,inspection_type,is_defective)
+        response = validation_for_nj_readings_in_nj_qi(barcode, inspection_type, is_defective, re_check)
 
         doc_data = response.get('doc_data')
 
@@ -549,7 +549,7 @@ def model_change_for_serial_no(newmodel, serial_no):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
     if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
-        if new_item_wizard != []:
+        if new_item_wizard != [] or new_item_wizard is not None:
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
             if item_wizard_doc.part_list_status != 'Completed':
                 frappe.throw(f"'Part List' in Item Wizard: {new_item_wizard[0]['name']} is not completed. Please contact NPD Team.")

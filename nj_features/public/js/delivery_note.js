@@ -1,6 +1,9 @@
 frappe.ui.form.on('Delivery Note', {
    
     refresh: function(frm) {
+        if (frm.doc.__islocal) {
+            frm.set_value("posting_time", frappe.datetime.now_time());
+        }
         if (frm.doc.docstatus === 1) {
             frm.add_custom_button(__('Print QR Code'), function() {
                 var docname = encodeURIComponent(frm.doc.name);

@@ -131,6 +131,9 @@ doc_events = {
     "NJQCA": {
         "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
 	},
+    "NJQCA": {
+        "before_save": "nj_features.nj_features.api.api_files.get_backup_duration"
+	},
     "User": {
         "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}

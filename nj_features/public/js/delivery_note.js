@@ -1,15 +1,28 @@
 frappe.ui.form.on('Delivery Note', {
-   
+
     refresh: function(frm) {
+        if (frm.doc.docstatus === 0) {
+            frm.add_custom_button(__('View'), function() {
+                fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
+            }).addClass('btn-primary');
+
+            frm.add_custom_button(__('Record'), function() {
+                openDjangoUrl(frm.doc.doctype, frm.doc.name);
+            }).addClass('btn-primary');
+        }
+
         if (frm.doc.__islocal) {
             frm.set_value("posting_time", frappe.datetime.now_time());
         }
+
+        frm.remove_custom_button(__('Print QR Code'));
+
         if (frm.doc.docstatus === 1) {
             frm.add_custom_button(__('Print QR Code'), function() {
                 var docname = encodeURIComponent(frm.doc.name);
                 var format = "Delivery Note Barcode";
                 var print_trigger = 1;
-                
+
                 window.open(frappe.urllib.get_full_url("/printview?" +
                     "doctype=" + encodeURIComponent("Delivery Note") +
                     "&name=" + docname +
@@ -18,16 +31,39 @@ frappe.ui.form.on('Delivery Note', {
                     "&no_letterhead=0" +
                     "&_lang=" + (frappe.boot.lang || "en")));
             }).addClass('btn-primary');
-        } else {
-            frm.remove_custom_button(__('Print QR Code'));
         }
-        
     },
+
     onload_post_render: function(frm) {
         frm.remove_custom_button('Credit Note', 'Create');
         frm.page.remove_inner_button('Credit Note', 'Create');
         $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
+
+    validate: function(frm) {
+        console.log("validate");
+    
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
+            args: {
+                doc: frm.doc
+            },
+            callback: function(r) {
+                console.log('r', r);
+                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
+                    frappe.msgprint({
+                        title: __('Validation Error'),
+                        message: r.message.join('<br>'),
+                        indicator: 'red'
+                    });
+                    frappe.validated = false;
+                } else {
+                    frappe.validated = true;
+                }
+            }
+        });
+    },    
+
     courier_service: function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
@@ -183,17 +219,6 @@ frappe.ui.form.on('Delivery Note', {
 // }
 
 
-frappe.ui.form.on('Delivery Note', {
-    refresh: function(frm) {
-        if (frm.doc.docstatus === 0) {
-            frm.add_custom_button(__('Record'), function() {
-                openDjangoUrl(frm.doc.doctype,frm.doc.name);
-            }).addClass('btn-primary');
-        }
-       
-    }
-});
-
 // Function to open the Django URL directly with the DN number
 function openDjangoUrl(doctype,dn_number) {
     // Construct the URL by embedding the dn_number in it
@@ -204,20 +229,6 @@ function openDjangoUrl(doctype,dn_number) {
     })
 }
 
-
-frappe.ui.form.on('Delivery Note', {
-
-    refresh: function(frm) {
-        if (frm.doc.docstatus === 0) {
-            frm.add_custom_button(__('View'), function() {
-            fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
-            }).addClass('btn-primary');
-        }
-       
-    }
-    
-   
-});
 
 function fetchAndDisplayLinks(frm, method, type) {
     frappe.call({

@@ -43,9 +43,8 @@
   },
   {
    "fieldname": "stock_entry_name",
-   "fieldtype": "Link",
-   "label": "Stock Entry Name",
-   "options": "Stock Entry"
+   "fieldtype": "Data",
+   "label": "Stock Entry Name"
   },
   {
    "fieldname": "stock_entry_creation",
@@ -79,8 +78,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "T Warehouse",
-   "options": "Warehouse"
+   "label": "T Warehouse"
   },
   {
    "fieldname": "source_dept",
@@ -114,8 +112,7 @@
   {
    "fieldname": "target_departmen",
    "fieldtype": "Data",
-   "label": "Target Departmen",
-   "options": "Department"
+   "label": "Target Departmen"
   },
   {
    "fieldname": "weightage_value",
@@ -159,7 +156,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-01 19:03:10.659266",
+ "modified": "2025-02-07 11:17:08.686469",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Productivity Kpi Table",

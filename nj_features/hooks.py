@@ -194,19 +194,19 @@ scheduler_events = {
 		# "0 23 * * *": [
 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		# ],
-        # "*/50 * * * *": [
+        # "*/2 * * * *": [
         #     "nj_features.overrides.employee.update_employee_experience_table",
            
-        # ],
+        # ]
 		#     "*/59 * * * *": [
         #     "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         #     # "nj_features.nj_features.doctype.productivity_kpi_report.productivity_kpi_report.fetch_and_save_productivity_data"
 		# 	# "nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",     
         # ],
-        # "*/2 * * * *": [
+        "*/2 * * * *": [
 
-		# 	"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data"     
-        # ]
+			"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data"     
+        ]
 	}
 }
 # scheduler_events = {

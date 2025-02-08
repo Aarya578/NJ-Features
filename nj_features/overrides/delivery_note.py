@@ -123,6 +123,7 @@ def validate_delivery_bios(doc):
     for item in doc.get('items'):
         serial_no = item.get('serial_no', '').strip()
         item_group = item.get("item_group")
+        idx = item.get("idx", "N/A")
 
         if serial_no:
             serial_list = serial_no.split('\n')
@@ -130,6 +131,8 @@ def validate_delivery_bios(doc):
             for serial in serial_list:
                 bios_serial_no = frappe.db.get_value('Serial No', serial, 'bios_serial_no')
                 if not (bios_serial_no and item_group in item_group_list):
-                    error_message.append(f"<b>Serial No {serial} for item group {item_group} has no Bios Serial No.</b>")
+                    error_message.append(
+                        f"<b>Row {idx}</b>: Serial No <b>{serial}</b> for item group <b>{item_group}</b> has no Bios Serial No"
+                    )
 
     return error_message if error_message else True

@@ -42,7 +42,7 @@ frappe.ui.form.on('Delivery Note', {
 
     validate: function(frm) {
         console.log("validate");
-    
+
         frappe.call({
             method: "nj_features.overrides.delivery_note.validate_delivery_bios",
             args: {
@@ -62,7 +62,7 @@ frappe.ui.form.on('Delivery Note', {
                 }
             }
         });
-    },    
+    },
 
     courier_service: function(frm) {
         frappe.call({

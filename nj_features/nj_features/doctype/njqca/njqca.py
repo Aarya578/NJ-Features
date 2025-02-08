@@ -378,25 +378,6 @@ def get_itm_code_on_barcode(new_qi):
             work_warehouse = emp_data.get('work_warehouse')
             if not work_warehouse:
                 frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
-            
-            elif work_warehouse != serial_no_data.warehouse:
-                material_transfer_items = [{
-                    'serial_no': barcode,
-                    't_warehouse': work_warehouse,
-                    'item_code': serial_no_data.item_code,
-                    's_warehouse': serial_no_data.warehouse,
-                }]
-                data = {
-                    "doctype": new_qi.doctype,
-                    "series": "NJ-QI-.YYYY.-.MM.-",
-                    "reference_serial_no": barcode,
-                    "stock_entry_type": "Material Transfer",
-                    "material_transfer_items": material_transfer_items
-                }
-
-                stock_entry_using_nj_lib(data)
-                result['warehouse'] = work_warehouse
-                new_qi.set('warehouse',work_warehouse)
 
         else:
             frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
@@ -1169,8 +1150,6 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-    print("item_template-----",item_template)
-    print("args-----------",args)
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -1191,7 +1170,7 @@ def get_variant_from_value(item_template=None, args=None):
                 WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
             variants = frappe.db.sql(query, (item_template,), as_dict=True)
-            print("variants-----------1125",variants)
+            
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:

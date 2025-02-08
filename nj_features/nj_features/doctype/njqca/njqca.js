@@ -12,13 +12,9 @@ frappe.ui.form.on('NJQCA', {
         
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        frm.get_field('njqca_laptop_ram').grid.cannot_add_rows = true;
-        frm.get_field('njqca_laptop_storage').grid.cannot_add_rows = true;
         frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
         frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
         frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
-        frm.refresh_field('njqca_laptop_ram');
-        frm.refresh_field('njqca_laptop_storage');
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');
         frm.refresh_field('njqca_laptop_processors');
@@ -108,6 +104,7 @@ frappe.ui.form.on('NJQCA', {
             // })
         }
     },
+
     before_submit(frm) {
 		if (frm.doc.manual_repack_item_code!= frm.doc.repack_item_code) {
 			frappe.validated = false; 
@@ -120,6 +117,7 @@ frappe.ui.form.on('NJQCA', {
 		}
 		return false;
 	},
+
 	onload_post_render: function(frm) {
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
@@ -288,13 +286,12 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
-                    console.log('r', r);
                     Object.keys(r.message).forEach(field => {
                         frm.set_value(field, r.message[field]);
                         cur_frm.refresh_field(field);
                     });
 
-                    if(!frappe.user.has_role("IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== ''){
+                    if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== ''){
                         cur_frm.set_df_property('serial_no', 'read_only', 1);
                     }
                 }
@@ -309,92 +306,90 @@ frappe.ui.form.on('NJQCA', {
     },
 
     warehouse: function(frm) {
-    if (frm.doc.warehouse && frm.doc.serial_no) {
-        let ware = cur_frm.doc.warehouse;
-        
-        frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
-            const workWarehouse = r.work_warehouse;
+        if (frm.doc.warehouse && frm.doc.serial_no) {
+            let ware = cur_frm.doc.warehouse;
+            
+            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
+                const workWarehouse = r.work_warehouse;
 
-            if (!workWarehouse) {
-                frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
-            } else if (workWarehouse != ware) {
-                let dialog = new frappe.ui.Dialog({
-                    title: "Confirm Stock Transfer",
-                    fields: [
-                        {
-                            fieldtype: "HTML",
-                            fieldname: "message",
-                            options: `Do you want to transfer stock to your Work Warehouse: ${workWarehouse}?`
-                        },
-                        {
-                            fieldtype: "Data",
-                            fieldname: "serial_num",
-                            label: "Scan Serial No",
-                            options: "Barcode",
-                            change: function() {
-                                handleScannerInput(dialog,'serial_num');
-                            }
-                        }
-                                           
-                    ],
-                    static: true,
-                    primary_action_label: "Yes, Transfer", 
-                    primary_action: function() {
-                        let scannedSerialNo = dialog.get_value("serial_num");
-                        if (scannedSerialNo.toLowerCase() !== frm.doc.serial_no.toLowerCase()) {
-                            frappe.msgprint({
-                                title: 'Serial Number Mismatch',
-                                message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
-                            });
-                            dialog.hide();
-                            return;
-                        }
-
-                        let material_transfer_items = [{
-                            'serial_no': frm.doc.serial_no,
-                            'item_code': frm.doc.item_code,
-                            't_warehouse': workWarehouse,
-                            's_warehouse': frm.doc.warehouse
-                        }];
-                        
-                        let data = {
-                            "doctype": frm.doc.doctype,
-                            "serial_no": frm.doc.serial_no,
-                            "series": "NJ-STE-NJQCA-",
-                            "t_warehouse": workWarehouse,
-                            "stock_entry_type": "Material Transfer",
-                            "reference_serial_no": frm.doc.serial_no,
-                            "material_transfer_items": material_transfer_items,
-                        };
-                
-                        frappe.call({
-                            method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
-                            args: { 'data': JSON.stringify(data) },
-                            freeze: true,
-                            freeze_message: `<div style="text-align: center;">
-                                <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
-                                <br>Transferring Stock... Please Wait
-                            </div>`,
-                            callback: function(response) {
-                                frm.set_value('warehouse', workWarehouse);
-                                frm.refresh_field('warehouse');
+                if (!workWarehouse) {
+                    frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
+                } else if (workWarehouse != ware) {
+                    let dialog = new frappe.ui.Dialog({
+                        title: "Confirm Stock Transfer",
+                        fields: [
+                            {
+                                fieldtype: "HTML",
+                                fieldname: "message",
+                                options: `Do you want to transfer stock to your Work Warehouse: ${workWarehouse}?`
                             },
-                            error: function(err) { console.log(err); }
-                        });
+                            {
+                                fieldtype: "Data",
+                                fieldname: "serial_num",
+                                label: "Scan Serial No",
+                                options: "Barcode",
+                            }
+                                            
+                        ],
+                        static: true,
+                        primary_action_label: "Yes, Transfer", 
+                        primary_action: function() {
+                            let scannedSerialNo = dialog.get_value("serial_num");
+                            if (scannedSerialNo.toLowerCase() !== frm.doc.serial_no.toLowerCase()) {
+                                frappe.msgprint({
+                                    title: 'Serial Number Mismatch',
+                                    message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
+                                });
+                                dialog.hide();
+                                return;
+                            }
 
-                        dialog.hide();
-                    },
-                    secondary_action_label: "Cancel",
-                    secondary_action: function() {
-                        $('.primary-action').hide();
-                        dialog.hide();
-                    }
-                });
+                            let material_transfer_items = [{
+                                'serial_no': frm.doc.serial_no,
+                                'item_code': frm.doc.item_code,
+                                't_warehouse': workWarehouse,
+                                's_warehouse': frm.doc.warehouse
+                            }];
+                            
+                            let data = {
+                                "doctype": frm.doc.doctype,
+                                "serial_no": frm.doc.serial_no,
+                                "series": "NJ-STE-NJQCA-",
+                                "t_warehouse": workWarehouse,
+                                "stock_entry_type": "Material Transfer",
+                                "reference_serial_no": frm.doc.serial_no,
+                                "material_transfer_items": material_transfer_items,
+                            };
+                    
+                            frappe.call({
+                                method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+                                args: { 'data': JSON.stringify(data) },
+                                freeze: true,
+                                freeze_message: `<div style="text-align: center;">
+                                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+                                    <br>Transferring Stock... Please Wait
+                                </div>`,
+                                callback: function(response) {
+                                    frm.set_value('warehouse', workWarehouse);
+                                    frm.refresh_field('warehouse');
+                                },
+                                error: function(err) { console.error(err); }
+                            });
 
-                dialog.show();
-            }
-        });
-    }},
+                            dialog.hide();
+                        },
+                        secondary_action_label: "Cancel",
+                        secondary_action: function() {
+                            $('.primary-action').hide();
+                            dialog.hide();
+                        }
+                    });
+
+                    dialog.show();
+                }
+            });
+        }
+    },
     
     model: function(frm) {
         var selectedModel = frm.doc.model;
@@ -442,8 +437,6 @@ frappe.ui.form.on('NJQCA', {
         }
     }
 });
-
-
 
 function processItemTemplate(frm) {
     if (frm.doc.njqca_item_component && frm.doc.power_on == 'Yes') {
@@ -554,11 +547,7 @@ function processItemTemplate(frm) {
 function get_item_template(model, brand, item_group) {
     frappe.call({
         method: 'nj_features.nj_features.doctype.njqca.njqca.get_njqca_item_template',
-        args: {
-            'model': model,
-            'brand': brand,
-            'item_group': item_group
-        },
+        args: { 'model': model, 'brand': brand, 'item_group': item_group },
         callback: function(r) {
             if (r.message) {
                 var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
@@ -960,7 +949,6 @@ frappe.ui.form.on('NJQCA Display', {
                 missingFields.push(child.idx); 
             }
         });
-        console.log("missing----------fields------in display--",missingFields)
         if (missingFields.length > 0) {
             frappe.msgprint({
                 title: __('Validation Error'),
@@ -1208,7 +1196,6 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
 
     after_save: function(frm) {
         if (frm.doc.njqca_laptop_storage && frm.doc.njqca_laptop_storage.length > 0) {
-            console.log("hi--------storage")
             show_checkbutton_storage(frm);
         }
     },
@@ -1523,7 +1510,6 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
 
 // Function to add check button dynamically
 function show_checkbutton_adaptor(frm) {
-    console.log("Adding check buttons...");
     
     frm.fields_dict['njqca_adaptor'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
         let $row = $(item);
@@ -1558,7 +1544,6 @@ function show_checkbutton_adaptor(frm) {
 
 // Function to add check button dynamically
 function show_checkbutton_display(frm) {
-    console.log("Adding check buttons...");
     
     frm.fields_dict['njqca_display'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
         let $row = $(item);
@@ -1593,7 +1578,6 @@ function show_checkbutton_display(frm) {
 
 // Function to add check button dynamically
 function show_checkbutton_processors(frm) {
-    console.log("Adding check buttons...");
     
     frm.fields_dict['njqca_laptop_processors'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
         let $row = $(item);
@@ -1628,7 +1612,6 @@ function show_checkbutton_processors(frm) {
 
 // Function to add check button dynamically
 function show_checkbutton_ram(frm) {
-    console.log("Adding check buttons...");
     
     frm.fields_dict['njqca_laptop_ram'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
         let $row = $(item);
@@ -1662,7 +1645,7 @@ function show_checkbutton_ram(frm) {
 
 // Function to add check button dynamically
 function show_checkbutton_storage(frm) {
-    console.log("Adding check buttons...storage");
+    
     if ( frm.docstatus===0){
     frm.fields_dict['njqca_laptop_storage'].$wrapper.find('.grid-body .rows .grid-row').each(function(i, item) {
         let $row = $(item);

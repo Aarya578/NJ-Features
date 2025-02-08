@@ -213,12 +213,34 @@ def get_battery_status(doc, method=None):
         parent_serial_no = doc.serial_no
         njqca = doc.name
         bty_based_inspection_type = frappe.db.get_value("NJ Settings", {"parameter": "bty_based_inspection_type"}, "value")
+        
         if not bty_based_inspection_type:
             frappe.throw("NJ Settings for 'bty_based_inspection_type' is not defined")
-
         if doc.inspection_type in bty_based_inspection_type:
             return
-        
+        health_query="""
+                        select replace(value ,'%%','') from `tabNJQCA Result Parameters` where item_group="BATTERY" 
+                        and parameter="Health" and 
+                        parent=%s
+                        order by value desc limit 1
+                    """
+        health=frappe.db.sql(health_query, njqca)
+
+
+        if health and isinstance(health[0], tuple) and len(health[0]) > 0:
+                health_value = health[0][0]
+        else:
+            return  # Extract value safely
+
+        if health_value is not None:
+            try:
+                health_int = int(health_value)  # Convert to integer
+
+                if health_int > 80:
+                    return
+            except ValueError:
+                return
+            
         get_bty_serial_nos_query = """select sn.component_serial_no FROM `tabSerial No Component` sn
                                         WHERE sn.item_group = 'battery' 
                                         AND sn.component_serial_no IS NOT NULL 
@@ -230,7 +252,7 @@ def get_battery_status(doc, method=None):
         
         if not get_bty_serial_nos:
             doc.append('njqca_result_parameters', {
-                        'parameter': 'health_status',
+                        'parameter': 'health_report_status',
                         'item_group': 'BATTERY',
                         'value': 'not found',
                         'score': 1
@@ -288,14 +310,14 @@ def get_battery_status(doc, method=None):
                 if query_data:
                     if query_data[0].result == "pass":
                         doc.append('njqca_result_parameters', {
-                            'parameter': 'health_status',
+                            'parameter': 'health_report_status',
                             'item_group': 'BATTERY',
                             'value': 'pass',
                             'score': 0
                         })
                     elif query_data[0].result == "fail":
                         doc.append('njqca_result_parameters', {
-                            'parameter': 'health_status',
+                            'parameter': 'health_report_status',
                             'item_group': 'BATTERY',
                             'value': 'fail',
                             'score': 41
@@ -303,14 +325,14 @@ def get_battery_status(doc, method=None):
                 else:
                 
                     doc.append('njqca_result_parameters', {
-                        'parameter': 'health_status',
+                        'parameter': 'health_report_status',
                         'item_group': 'BATTERY',
                         'value': 'not found',
                         'score': 1
                     })
             else:
                 doc.append('njqca_result_parameters', {
-                        'parameter': 'health_status',
+                        'parameter': 'health_report_status',
                         'item_group': 'BATTERY',
                         'value': 'not found',
                         'score': 1

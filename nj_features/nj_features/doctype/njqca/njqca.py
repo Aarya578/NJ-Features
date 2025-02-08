@@ -1181,14 +1181,19 @@ def get_variant_from_value(item_template=None, args=None):
 
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
+    print("item_template", item_template)
     try:
         if isinstance(args_list, str):
             args_list = frappe.parse_json(args_list)
         concatenated_string = item_template
 
         for condition_dict in args_list:
+            print('condition_dict', condition_dict)
             for key, value in condition_dict.items():
+                print('value', value)
                 concatenated_string += f"-{value}"
+                print("concatenated_string", concatenated_string)
+        print("concatenated_string", concatenated_string)
 
         query = """
             SELECT item_code FROM `tabItem`

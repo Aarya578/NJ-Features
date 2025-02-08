@@ -219,54 +219,54 @@ frappe.ui.form.on('NJQCA', {
         });
     },
 
-    // before_submit: function(frm) {
+    before_submit: function(frm) {
 
-    //     return new Promise((resolve, reject) => {
-    //         let tablesToCheck = [ c ];
+        return new Promise((resolve, reject) => {
+            let tablesToCheck = [ c ];
             
-    //         let mismatches = [];
-    //         let i = 0;
+            let mismatches = [];
+            let i = 0;
     
-    //         tablesToCheck.forEach((table) => {
-    //             frm.doc[table].forEach((row) => {
-    //                 if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-    //                     mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-    //                 } else if (row.calculated_item_code !== row.fetched_item_code) {
-    //                     mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-    //                 }
-    //             });
-    //         });
+            tablesToCheck.forEach((table) => {
+                frm.doc[table].forEach((row) => {
+                    if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+                        mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
+                    } else if (row.calculated_item_code !== row.fetched_item_code) {
+                        mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+                    }
+                });
+            });
     
-    //         if (mismatches.length > 0) {
-    //             let mismatchMessage = mismatches.join('<br>');
-    //             frappe.confirm(
-    //                 `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-    //                 () => { resolve(); },
-    //                 () => { reject(); }
-    //             );
-    //         } else { resolve(); }
+            if (mismatches.length > 0) {
+                let mismatchMessage = mismatches.join('<br>');
+                frappe.confirm(
+                    `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
+                    () => { resolve(); },
+                    () => { reject(); }
+                );
+            } else { resolve(); }
 
-    //     }).then(() => {
-    //         if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-    //             frappe.validated = false; 
-    //             frappe.confirm(
-    //                 `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-    //                 () => {
-    //                     frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-    //                         () => {
-    //                             frappe.validated = true;
-    //                             frm.save('Submit');
-    //                         },
-    //                         () => { frm.set_value('repack_item_code', ''); }
-    //                     );
-    //                 },
-    //                 () => { frm.set_value('repack_item_code', ''); }
-    //             );
-    //         }
+        }).then(() => {
+            if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+                frappe.validated = false; 
+                frappe.confirm(
+                    `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
+                    () => {
+                        frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
+                            () => {
+                                frappe.validated = true;
+                                frm.save('Submit');
+                            },
+                            () => { frm.set_value('repack_item_code', ''); }
+                        );
+                    },
+                    () => { frm.set_value('repack_item_code', ''); }
+                );
+            }
     
-    //         return false;
-    //     });
-    // },
+            return false;
+        });
+    },
 
     power_on: function() {
         const isYes = cur_frm.doc.power_on === "Yes";
@@ -500,6 +500,7 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_capacity', row.attr_data["RAM Capacity"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_speed', row.attr_data["RAM Speed"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
@@ -510,7 +511,7 @@ function processItemTemplate(frm) {
                             const grid = frm.fields_dict[child_table_fieldname].grid;
                             set_options_for_attribute_fields_in_child(frm, grid);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);                         
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'processor_type', row.attr_data["Processor Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
@@ -522,6 +523,7 @@ function processItemTemplate(frm) {
                             set_options_for_attribute_fields_in_child(frm, grid);
                             show_checkbutton_storage(frm);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);        
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_type', row.attr_data["Storage Type"]);

@@ -481,19 +481,24 @@ function processItemTemplate(frm) {
                     });
                 }
                 
-                if (r.message.part_data) {
+                if (r.message.part_data ) {
                     
                     const partData = r.message.part_data;
+
                     frm.clear_table("njqca_laptop_ram");
                     frm.clear_table("njqca_laptop_processors");
                     frm.clear_table("njqca_laptop_storage")
                     partData.forEach(row => {
+                        // console.log('row==========================491==============', row);
 
                         if (row.item_group === "Laptop RAM") {
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_ram");
+                            // console.log('newRow==========================491==============', newRow);
                             
                             const child_table_fieldname = 'njqca_laptop_ram';
                             const grid = frm.fields_dict[child_table_fieldname].grid;
+                            // console.log("grid=========================================", grid);
+                            
                             set_options_for_attribute_fields_in_child(frm, grid);
                             show_checkbutton_ram(frm)
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_type', row.attr_data["RAM Type"]);
@@ -501,10 +506,12 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_speed', row.attr_data["RAM Speed"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
+                            // console.log("newRow=========================================", newRow);
+                            
                         }else if(row.item_group === "Laptop Processors"){
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_processors");
                             const child_table_fieldname = 'njqca_laptop_processors';
@@ -524,7 +531,7 @@ function processItemTemplate(frm) {
                             show_checkbutton_storage(frm);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);        
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);        
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_type', row.attr_data["Storage Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_capacity', row.attr_data["Storage Capacity"]);

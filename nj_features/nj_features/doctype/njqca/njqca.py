@@ -49,7 +49,7 @@ def get_inspection_type():
     if inspection_type:
         return inspection_type
     else:
-        frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+        frappe.msg#print("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
         return None
 
 def open_draft_qi(self):
@@ -363,24 +363,24 @@ def get_itm_code_on_barcode(new_qi):
 
         if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > datetime.strptime("2024-03-20", "%Y-%m-%d"):
             if serial_no_data.bios_serial_no and serial_no_data.bios_serial_no.startswith('nj') and serial_no_data.bios_serial_no == barcode:
-                frappe.msgprint(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
+                frappe.msg#print(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
                 return {"disable_save": True}
             
             elif serial_no_data.bios_serial_no and serial_no_data.bios_serial_no != barcode:
                 return {"enable_save": True}
             
             elif not serial_no_data.bios_serial_no or serial_no_data.bios_serial_no != barcode:
-                frappe.msgprint(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
+                frappe.msg#print(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
                 return {"disable_save": True}
 
         if serial_no_data.warehouse:
             emp_data = get_active_emp(frappe.session.user)
             work_warehouse = emp_data.get('work_warehouse')
             if not work_warehouse:
-                frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
+                frappe.msg#print(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
 
         else:
-            frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
+            frappe.msg#print(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
             return {"disable_save": True}
         
         return new_qi
@@ -465,7 +465,7 @@ class NJQCA(Document):
                 qi_data = open_draft_qi(self)
                 if qi_data:
                     if qi_data.get('msg_pnt'):
-                        frappe.msgprint(qi_data.get('msg_pnt'))
+                        frappe.msg#print(qi_data.get('msg_pnt'))
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group:
                     update_serial_no_componont_for_grade(self)
@@ -750,7 +750,7 @@ def after_save_njqca(docname):
             qi_draft_data = open_draft_qi(doc)
             return qi_draft_data
         elif doc.power_on == 'No':
-            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+            frappe.msg#print(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
 
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
@@ -891,6 +891,10 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
+
+                part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
+                print("part_data ---------------- ", part_data)
+
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
                 return {'error': f'Item Template not found'}
@@ -941,6 +945,8 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
         {'item_group': part_item_group, 'has_variants': 1}, 'name' )
     
     attribute_object['Grade'] = Grade
+    #print('\n\n\n\n')
+    #print('attribute_object --------------- 945', attribute_object)
 
     if len(attribute_object) > 1:
         part_item_code = get_variant_from_value(item_template, [attribute_object])
@@ -959,19 +965,23 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                     'item_template': item_template
                 })
         else:
-            part_item_code = frappe.db.get_value('Serial No Component',
-                                {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
-                                ['item'])
-            item_template = frappe.db.get_value('Item', 
-                                {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
+            pass
+            # part_item_code = frappe.db.get_value('Serial No Component',
+            #                     {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
+            #                     ['item'])
+            # item_template = frappe.db.get_value('Item', 
+            #                     {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
             part_data.append({
                 'name': row.get('name'),
-                'part_item_code': part_item_code,
+                'part_item_code': "",
                 'attr_data': attribute_object,
                 'item_group': part_item_group,
                 'item_template': item_template,
                 'response': 'error'
             })
+    
+
+    # print('\n\n\nfinal_part_data ---------------- 980', part_data)
     
     return part_data
 
@@ -981,6 +991,7 @@ def get_part_mapping(doc):
     if isinstance(doc, str):
         try:
             doc = json.loads(doc)
+            #print("doc====================984======", doc)
         except json.JSONDecodeError:
             frappe.throw("Invalid JSON string provided for part mapping.")
 
@@ -989,6 +1000,7 @@ def get_part_mapping(doc):
         try:
             nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
                                 fields=["parameter", "value"])
+            #print("nj_settings====================984======", nj_settings)
 
             for param in nj_settings:
                 globals()[param.parameter] = param.value
@@ -1023,7 +1035,7 @@ def consolidate_ram_capacities(data):
                             if existing_type.upper() == type_.upper():
                                 ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB {existing_type.strip()}"
                             else:
-                                frappe.msgprint(f"Different RAM Type is not allowed")
+                                frappe.msg#print(f"Different RAM Type is not allowed")
                                 return
                     else:
                         ram_consolidation[key] = ram_value
@@ -1150,6 +1162,8 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
+    print('item_template', item_template)
+    print('args', args)
     args_list = []
     if args:
         args_list = frappe.parse_json(args)
@@ -1169,7 +1183,10 @@ def get_variant_from_value(item_template=None, args=None):
                 SELECT parent FROM `tabItem Variant Attribute`
                 WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
-            variants = frappe.db.sql(query, (item_template,), as_dict=True)
+
+            variants = frappe.db.sql(query, (item_template,), explain=1, debug=1, as_dict=True)
+
+            # print('variants ----------------- 1183', variants)
             
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
@@ -1181,19 +1198,19 @@ def get_variant_from_value(item_template=None, args=None):
 
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
-    print("item_template", item_template)
+    #print("item_template", item_template)
     try:
         if isinstance(args_list, str):
             args_list = frappe.parse_json(args_list)
         concatenated_string = item_template
 
         for condition_dict in args_list:
-            print('condition_dict', condition_dict)
+            #print('condition_dict', condition_dict)
             for key, value in condition_dict.items():
-                print('value', value)
+                #print('value', value)
                 concatenated_string += f"-{value}"
-                print("concatenated_string", concatenated_string)
-        print("concatenated_string", concatenated_string)
+                #print("concatenated_string", concatenated_string)
+        #print("concatenated_string", concatenated_string)
 
         query = """
             SELECT item_code FROM `tabItem`
@@ -1222,7 +1239,7 @@ def get_model(manufacturer_model=None):
         params = (manufacturer_model)
         model_list = frappe.db.sql(query, params, as_dict=True)
         if not model_list:
-            frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
+            frappe.msg#print(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
     
@@ -1342,7 +1359,7 @@ def get_serial_no_attribute_data(serial_no,item_group):
             return adap_dis_item_code
         return None
     elif not serial_no:
-        frappe.msgprint(f"Serial Number not found for creating item code for this itemgroup{item_group}")
+        frappe.msg#print(f"Serial Number not found for creating item code for this itemgroup{item_group}")
     
 
 @frappe.whitelist()
@@ -1448,10 +1465,92 @@ def get_item_attributes(selected_fields):
         return result
     
     except Exception as e:
-        print(f"An error occurred at get_item_attributes: {str(e)}")
+        #print(f"An error occurred at get_item_attributes: {str(e)}")
         return str(e)
     
 @frappe.whitelist()
 def get_options_for_label(label):
     options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
     return [option['abbr'] for option in options]
+
+
+import frappe
+
+# @frappe.whitelist()
+# def get_fetched_item_code(serial_no, partData):
+#     partData = frappe.parse_json(partData)
+
+#     serial_no_components = frappe.db.sql(
+#         """
+#         SELECT item_group, item FROM `tabSerial No Component`
+#         WHERE parent = %s
+#         """, (serial_no,), as_dict=True
+#     )
+
+#     for data in partData:
+#         print("\n\n\n")
+#         print("data --------------- ", data )
+#         for row in serial_no_components:
+#                 query2 = frappe.db.sql("""
+#                     SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
+#                     FROM `tabItem Variant Attribute`
+#                     WHERE parent = %s
+#                 """, (row.get("item")), as_dict=True)
+
+#                 # Convert query2 to dictionary format
+#                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
+#                 njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()} 
+
+#                 print("njqca_attr_data", njqca_attr_data)
+#                 print("serial_no_attr_data", serial_no_attr_data)
+
+#                 # Check if all attributes match
+
+#                 if serial_no_attr_data == njqca_attr_data:
+#                     data["fetched_item_code"] = row["item"]
+#                     # print('updated_data------------------ ', data)
+
+#     return partData@frappe.whitelist()
+def get_fetched_item_code(serial_no, partData):
+    partData = frappe.parse_json(partData)
+
+    serial_no_components = frappe.db.sql(
+        """
+        SELECT item_group, item FROM `tabSerial No Component`
+        WHERE parent = %s
+        """, (serial_no,), as_dict=True
+    )
+
+    for data in partData:
+        for row in serial_no_components:
+            query2 = frappe.db.sql("""
+                SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
+                FROM `tabItem Variant Attribute`
+                WHERE parent = %s
+            """, (row.get("item")), as_dict=True)
+
+            # Convert query2 to dictionary format
+            serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
+            njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
+
+            # Extract Grade (if available)
+            serial_no_grade = serial_no_attr_data.get("grade", "").upper()
+
+            # Remove "Grade" from comparison
+            serial_no_attr_data.pop("grade", None)
+            njqca_attr_data.pop("grade", None)
+
+            # print("njqca_attr_data", njqca_attr_data)
+            # print("serial_no_attr_data", serial_no_attr_data)
+
+            # Check if all attributes (except Grade) match
+            if serial_no_attr_data == njqca_attr_data:
+                data["fetched_item_code"] = row["item"]
+
+                # Update Grade if a valid grade exists
+                if serial_no_grade and serial_no_grade != "UNKNOWN":
+                    data["attr_data"]["Grade"] = serial_no_grade  # Convert to uppercase
+
+    return partData
+
+

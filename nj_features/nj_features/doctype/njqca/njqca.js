@@ -286,6 +286,8 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
                 args: {'doc': cur_frm.doc},
                 callback: function(r) {
+                    console.log("r get_info_from_serial_no", r);
+                    
                     Object.keys(r.message).forEach(field => {
                         frm.set_value(field, r.message[field]);
                         cur_frm.refresh_field(field);
@@ -421,10 +423,13 @@ frappe.ui.form.on('NJQCA', {
                                     }
                                 }
                             });
-                        }, () => { $('.primary-action').hide() })
+                        }, () => {
+                            if (selectedModel == r.model) {
+                                $('.primary-action').show() 
+                            } else { $('.primary-action').hide() }
+                         })
                 }
             })
-
         }
         get_item_template(selectedModel, selectedBrand, selectedItemGroup)
 

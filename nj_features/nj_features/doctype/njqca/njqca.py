@@ -1184,10 +1184,8 @@ def get_variant_from_value(item_template=None, args=None):
                 WHERE variant_of = %s GROUP BY parent HAVING {}
             """.format(having_clause)
 
-            variants = frappe.db.sql(query, (item_template,), explain=1, debug=1, as_dict=True)
+            variants = frappe.db.sql(query, (item_template,), as_dict=True)
 
-            # print('variants ----------------- 1183', variants)
-            
             if variants and variants[0]['parent']:
                 return variants[0]['parent']
             else:

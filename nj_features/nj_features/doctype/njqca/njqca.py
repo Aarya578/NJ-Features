@@ -1472,7 +1472,6 @@ def get_options_for_label(label):
     return [option['abbr'] for option in options]
 
 
-import frappe
 
 # @frappe.whitelist()
 # def get_fetched_item_code(serial_no, partData):
@@ -1509,6 +1508,9 @@ import frappe
 #                     # print('updated_data------------------ ', data)
 
 #     return partData@frappe.whitelist()
+
+
+@frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
     partData = frappe.parse_json(partData)
 
@@ -1519,7 +1521,13 @@ def get_fetched_item_code(serial_no, partData):
         """, (serial_no,), as_dict=True
     )
 
+    print("________serial_no_components_________", serial_no_components)
+
+    updated_part_data = []  # Store modified data separately
+
     for data in partData:
+        matched = False
+
         for row in serial_no_components:
             query2 = frappe.db.sql("""
                 SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
@@ -1538,17 +1546,40 @@ def get_fetched_item_code(serial_no, partData):
             serial_no_attr_data.pop("grade", None)
             njqca_attr_data.pop("grade", None)
 
-            # print("njqca_attr_data", njqca_attr_data)
-            # print("serial_no_attr_data", serial_no_attr_data)
-
-            # Check if all attributes (except Grade) match
+            # Check if attributes (except Grade) match
             if serial_no_attr_data == njqca_attr_data:
                 data["fetched_item_code"] = row["item"]
+                matched = True
 
-                # Update Grade if a valid grade exists
                 if serial_no_grade and serial_no_grade != "UNKNOWN":
                     data["attr_data"]["Grade"] = serial_no_grade  # Convert to uppercase
+                break  # Stop checking once a match is found
 
-    return partData
+        if not matched:
+            # Find the first matching item_group
+            matching_component = next(
+                (comp for comp in serial_no_components if comp['item_group'] == data.get('item_group', '')),
+                None
+            )
+
+            if matching_component:
+                # print("item_group", matching_component.get("item_group"))
+                # print("item_code", matching_component.get("item"))
+
+                # Add a row for partial match
+                updated_part_data.append({
+                    "fetched_item_code": matching_component['item'],
+                    "attr_data": "",  # Preserve existing attributes
+                    "part_item_code": "",
+                    "item_group": data.get("item_group", "")
+                })
+
+        updated_part_data.append(data)  # Always keep original data
+
+    print("part_data", updated_part_data)
+    return updated_part_data
+
+
+
 
 

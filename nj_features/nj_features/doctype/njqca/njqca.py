@@ -1306,15 +1306,26 @@ def get_sudden_drop(parent_name, item_group):
                             FROM FilteredResults
                         ) AS DeltaValues"""
             
+
+
+            percentage_query="""
+                 select value from `tabNJQCA Result Parameters` where parent=%(parent_name)s  order by idx desc limit 1
+                """
+            percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
+            # print("percentage",percentage)
+            last_percentage = percentage[0].get('value')
+            if last_percentage and int(last_percentage) >=20:
+                return "YES"
+            
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
             delta = delta[0]
-            
+
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
-                return "Yes"
+                return "YES"
             elif(float(delta.get('max_delta'))<3*float(delta.get('avg_delta'))):
-                return f"No, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+                return f"NO, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
             else:
-                return f"Yes, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+                return f"YES, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
         else:
             return None
             

@@ -169,7 +169,11 @@ frappe.ui.form.on('NJQCA', {
         
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-            args: { 'docname': cur_frm.doc.name },
+            args: { 'docname': cur_frm.doc.name,
+                    'brand': cur_frm.doc.brand,
+                    'model': cur_frm.doc.model,
+
+             },
             callback: function(r) {
                 if (r && r.message) {
                     let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');

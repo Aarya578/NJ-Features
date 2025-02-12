@@ -52,7 +52,7 @@ def get_inspection_type():
         frappe.msg#print("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
         return None
 
-def open_draft_qi(self):
+def open_draft_qi(self,brand=None,model=None):
     try:
         serial_num = self.serial_no
         inspection_type = self.inspection_type
@@ -65,15 +65,17 @@ def open_draft_qi(self):
         existing_qis = frappe.get_list('NJ Quality Inspection',
             filters={
                 'barcode': serial_num, 'docstatus': 0,
-                'inspection_type': inspection_type
+                'inspection_type': inspection_type,
+                'brand':brand,
+                'model':model
             },
             fields=['name', 'creation'],
             order_by='creation desc'
         )
-
+        print("existing_qis--------",existing_qis)
         create_new_qi = True
         new_qi = None
-
+        print("brand------",brand,"model----",model)
         if existing_qis:
             latest_qi = existing_qis[0]
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now(), latest_qi.creation)
@@ -92,6 +94,8 @@ def open_draft_qi(self):
             new_qi.barcode = self.serial_no if self.serial_no else serial_num
             new_qi.njqca_laptop_name = self.name
             new_qi.inspected_by = new_qi.owner
+            new_qi.brand = brand
+            new_qi.model = model
             
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
@@ -742,12 +746,12 @@ def get_info_from_serial_no(doc=None):
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
 
 @frappe.whitelist()
-def after_save_njqca(docname):
+def after_save_njqca(docname,brand=None,model=None):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         # pass
         if doc.power_on == 'Yes':
-            qi_draft_data = open_draft_qi(doc)
+            qi_draft_data = open_draft_qi(doc,brand,model)
             return qi_draft_data
         elif doc.power_on == 'No':
             frappe.msg#print(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")

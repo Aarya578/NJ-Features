@@ -11,7 +11,7 @@ from nj_lib.utils.common_utils import get_active_emp, get_active_user
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-    try:
+    # try:
         if isinstance(self, str):
             self = json.loads(self)
         
@@ -27,22 +27,23 @@ def create_user_and_warehouse(self):
                 emp_ware = create_emp_ware(self, user_email)
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
-            if self.get("work_warehouse") is None:    
+            if self.get("work_warehouse") is not None:    
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
-            if self.get("work_warehouse") is not None:
+            if self.get("work_warehouse") is not None and work_ware is not None:
                 update_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
         return return_data
 
-    except Exception as e:
-        frappe.db.rollback()
-        traceback_info = traceback.format_exc()
-        frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
-        return str(e)
+    # except Exception as e:
+    #     print("inside exception....")
+    #     frappe.db.rollback()
+    #     traceback_info = traceback.format_exc()
+    #     frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
+    #     return str(e)
 
 def update_work_warehouse(self):
     try:
@@ -164,59 +165,91 @@ def create_emp_ware(self, user_email):
     employee_asset_dept = frappe.db.get_value('NJ Settings', {'parameter': 'employee_asset_dept'}, 'value')
     emp_ware_data = create_warehouse(user_email, employee_asset_dept, self.get('location'), self.get('emp_id'))
     return emp_ware_data
+    
 
 def create_work_ware(self, user_email):
-    work_warehouse = ''
+    print("Inside create_work_ware -------------------- 169")
+    work_warehouse = []
+
     work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
+
     if work_ware_reqd == 'Yes':
-        warehouse_name = "WK-" + self.get('first_name').title() + "-" + self.get('emp_id')
-        get_work_warehouse_query = "SELECT name FROM `tabWarehouse` WHERE warehouse_name = '{0}' AND disabled = 0".format(warehouse_name)
-        work_warehouse_in_db = frappe.db.sql(get_work_warehouse_query, as_dict=1)
-        if work_warehouse_in_db and work_warehouse_in_db[0]:
-            work_warehouse = work_warehouse_in_db[0].get('name')
-        if work_warehouse is None or work_warehouse == '':
+        warehouse_name = f"WK-{self.get('first_name').title()}-{self.get('emp_id')}"
+
+        work_warehouse_in_db = frappe.db.sql(
+            "SELECT name FROM `tabWarehouse` WHERE warehouse_name = %s AND disabled = 0",
+            (warehouse_name,),
+            as_dict=True
+        )
+
+
+        if work_warehouse_in_db:
+            work_warehouse.append(work_warehouse_in_db[0].get('name'))
+
+        print("work_warehouse ---------------- ", work_warehouse)
+
+        if not work_warehouse:
             work_ware = create_warehouse(user_email, self.get('department'), self.get('location'), self.get('emp_id'), 'work_ware')
         else:
             work_ware = work_warehouse
-            get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_ware, 'disabled': 0}, "department")
 
-            if get_dept_from_warehouse != self.get('department'):
-                get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse)
-                filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
-                conditions = []
-                if filters.get("warehouse_owner"):
-                    conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
-                conditions_sql = " ".join(conditions)
-                query = f"""
+            existing_work_warehouse = self.get("work_warehouse")
+            if existing_work_warehouse:
+                if isinstance(existing_work_warehouse, str):
+                    existing_work_warehouse = [existing_work_warehouse]
+                work_ware.extend(existing_work_warehouse)
+
+            work_ware = list(set(work_ware))
+
+            print("work_ware ---------------- 205 ", work_ware)
+
+            get_dept_from_warehouse = frappe.db.get_values("Warehouse", {'name': ('in', work_ware), 'disabled': 0}, "department", as_dict=True)
+
+            print("get_dept_from_warehouse ---------------- 207 ", get_dept_from_warehouse)
+
+            if get_dept_from_warehouse and self.get('department') not in get_dept_from_warehouse:
+                query = """
                     SELECT SUM(Bin.actual_qty) AS total_qty
-                    FROM tabBin Bin
-                    INNER JOIN tabWarehouse WH ON Bin.warehouse = WH.name
-                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name NOT LIKE 'EMP%' {conditions_sql}
+                    FROM `tabBin` Bin
+                    INNER JOIN `tabWarehouse` WH ON Bin.warehouse = WH.name
+                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name IN %s
                     GROUP BY WH.warehouse_owner;
                 """
 
-                data = frappe.db.sql(query, filters, as_dict=1)
-                
-                if data:
-                    frappe.msgprint(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
-                    return None
+                data = frappe.db.sql(query, (tuple(work_ware),), as_dict=True)
+                if get_dept_from_warehouse:
+                    dept_list = [d.get("department") for d in get_dept_from_warehouse if d.get("department")]
+                    dept_str = ", ".join(dept_list)
                 else:
+                    dept_str = "N/A"  # Or handle the case when no department is found
+
+                if data:
+                    total_qty = sum(d.get("total_qty", 0) for d in data)
+                    frappe.msgprint(
+                        _("Please transfer the stock of <b>{0} Qty(s)</b> to the <b>{1} department</b>").format(
+                            total_qty, dept_str
+                        )
+                    )
+                    return None
+
+                else:
+                    print("inside else ---------------- 229")
                     dept_work_ware = get_dept_work_warehouse(self.get('department'))
                     if dept_work_ware:
-                        get_work_warehouse_doc.parent_warehouse = dept_work_ware
-                        get_work_warehouse_doc.department = self.get('department')
                         try:
+                            get_work_warehouse_doc = frappe.get_doc("Warehouse", work_ware[0])
+                            get_work_warehouse_doc.parent_warehouse = dept_work_ware
+                            get_work_warehouse_doc.department = self.get('department')
                             get_work_warehouse_doc.save(ignore_permissions=True)
                         except Exception as e:
-                            frappe.throw("Error while updating work warehouse: ",e)
+                            frappe.throw(_("Error while updating work warehouse: {0}").format(str(e)))
                     else:
-                        frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
+                        frappe.throw(_("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ"))
                         return None
+
         return work_ware
     else:
         return None
-
-
 
 
 @frappe.whitelist()
@@ -276,10 +309,6 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
 
         return "Change log created successfully."
 
-
-
-import frappe
-
 @frappe.whitelist()
 def get_role_profiles(department):
     """Fetch role profiles based on the selected department"""
@@ -287,8 +316,6 @@ def get_role_profiles(department):
     print("role profile =================21==================",role_profiles)
     frappe.logger().info(f"Fetched Role Profiles for {department}: {role_profiles}")  # Debugging
     return [rp["name"] for rp in role_profiles]
-
-
 
 
 @frappe.whitelist()

@@ -595,12 +595,6 @@ def model_change_for_serial_no(newmodel, serial_no):
         else:
             frappe.throw(f'Item Code {Item_code} not found in Serial No {serial_no}')
 
-@frappe.whitelist()
-def brand_model_validation(brand=None, model=None):
-    brand = frappe.db.exists('Brand', {'name': brand})
-    model = frappe.db.exists('Models', {'name': model})
-    
-    return {'brand': brand, 'model': model}
 
 # @frappe.whitelist()
 # def get_info_from_serial_no(doc=None):

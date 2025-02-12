@@ -105,19 +105,6 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
-    before_submit(frm) {
-		if (frm.doc.manual_repack_item_code!= frm.doc.repack_item_code) {
-			frappe.validated = false; 
-			frappe.confirm('<b>Automated Item Code: '+frm.doc.repack_item_code+'</b> <br> <b>Repack Item Code: '+frm.doc.manual_repack_item_code+'</b> are not same.<br>Are you sure you want to Submit?', 
-			() => {
-				frappe.validated = true;
-				frm.save('Submit')
-			},
-			() => { frm.set_value('manual_repack_item_code', ''); });
-		}
-		return false;
-	},
-
 	onload_post_render: function(frm) {
         if (cur_frm.doc.error_message == "") {
             $(frm.layout.wrapper).find('.form-message.red').remove()
@@ -147,7 +134,7 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: function(frm) {
-        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'manufacturer_model'];
+        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'manufacturer_model', 'model'];
         var errorMessages = [];
         var dbError = [];
         for (var i = 0; i < requiredFields.length; i++) {
@@ -463,15 +450,24 @@ function processItemTemplate(frm) {
                         console.error("Failed to parse message:", e);
                     }
                 }
-
+                console.log("r.message", r.message);
+                
                 if (r.message) {
                     // if (r.message.data_attr !== undefined && r.message.data_attr !== null) {
                     //     frm.set_value('data_attr', r.message.data_attr);
                     // }
                 
                     if (r.message.repack_item_code !== undefined && r.message.repack_item_code !== null) {
-                        frm.set_value('repack_item_code', r.message.repack_item_code);
-                        frm.set_value('manual_repack_item_code', r.message.repack_item_code);
+                        if ('error' in r.message.repack_item_code) {
+                            frappe.utils.play_sound("error");
+                            var errorMessageString = 'Repack Item code not found: ' + r.message.repack_item_code.error;
+                            var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                            $(frm.layout.wrapper).find('.form-message.red').remove();
+                            $(frm.layout.wrapper).prepend(errorDiv);
+                        } else {
+                            frm.set_value('repack_item_code', r.message.repack_item_code);
+                            frm.set_value('manual_repack_item_code', r.message.repack_item_code);
+                        }
                     }
                     frm.refresh_fields(['repack_item_code', 'manual_repack_item_code', 'data_attr']);
 
@@ -1331,8 +1327,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
     refresh: function(frm) {
         show_checkbutton_ram(frm);
     },
-
-
     
     after_save: function(frm) {
         if (frm.doc.njqca_laptop_ram && frm.doc.njqca_laptop_ram.length > 0) {

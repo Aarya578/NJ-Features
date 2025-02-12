@@ -1,0 +1,30 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-02-07 18:42:58.802855",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "error_in_payments"
+ ],
+ "fields": [
+  {
+   "fieldname": "error_in_payments",
+   "fieldtype": "Long Text",
+   "in_list_view": 1,
+   "label": "Error in Payments"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-02-11 12:08:09.031463",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Payment Error Child Table",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

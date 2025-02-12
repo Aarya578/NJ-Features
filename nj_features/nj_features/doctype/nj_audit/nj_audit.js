@@ -6,7 +6,7 @@ frappe.ui.form.on('NJ Audit', {
     },
     
     refresh: function(frm) {
-		handleScannerInput(frm, 'scan_serial_no');
+		// handleScannerInput(frm, 'scan_serial_no');
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
@@ -25,7 +25,7 @@ frappe.ui.form.on('NJ Audit', {
             frm.refresh_field("scan_serial_no");
             frappe.throw("Please select Rack");
         }
-        handleScannerInput(frm, 'scan_serial_no');
+        // handleScannerInput(frm, 'scan_serial_no');
         
         if (frm.doc.scan_serial_no != '' && frm.doc.scan_rack != '') {
             frappe.db.get_value("Serial No", {serial_no: frm.doc.scan_serial_no}, ["name","item_code","item_group", "warehouse", "purchase_rate"], (r) => {

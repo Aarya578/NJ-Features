@@ -12,7 +12,7 @@ from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-    # try:
+
         if isinstance(self, str):
             self = json.loads(self)
         
@@ -38,13 +38,6 @@ def create_user_and_warehouse(self):
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
         return return_data
-
-    # except Exception as e:
-    #     print("inside exception....")
-    #     frappe.db.rollback()
-    #     traceback_info = traceback.format_exc()
-    #     frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
-    #     return str(e)
 
 def update_work_warehouse(self):
     try:
@@ -169,7 +162,6 @@ def create_emp_ware(self, user_email):
     
 
 def create_work_ware(self, user_email):
-    print("Inside create_work_ware -------------------- 169")
     work_warehouse = []
 
     work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
@@ -187,8 +179,6 @@ def create_work_ware(self, user_email):
         if work_warehouse_in_db:
             work_warehouse.append(work_warehouse_in_db[0].get('name'))
 
-        print("work_warehouse ---------------- ", work_warehouse)
-
         if not work_warehouse:
             work_ware = create_warehouse(user_email, self.get('department'), self.get('location'), self.get('emp_id'), 'work_ware')
         else:
@@ -201,12 +191,7 @@ def create_work_ware(self, user_email):
                 work_ware.extend(existing_work_warehouse)
 
             work_ware = list(set(work_ware))
-
-            print("work_ware ---------------- 205 ", work_ware)
-
             get_dept_from_warehouse = frappe.db.get_values("Warehouse", {'name': ('in', work_ware), 'disabled': 0}, "department", as_dict=True)
-
-            print("get_dept_from_warehouse ---------------- 207 ", get_dept_from_warehouse)
 
             if get_dept_from_warehouse and self.get('department') not in get_dept_from_warehouse:
                 query = """
@@ -234,7 +219,6 @@ def create_work_ware(self, user_email):
                     return None
 
                 else:
-                    print("inside else ---------------- 229")
                     dept_work_ware = get_dept_work_warehouse(self.get('department'))
                     if dept_work_ware:
                         try:
@@ -256,13 +240,7 @@ def create_work_ware(self, user_email):
 @frappe.whitelist()
 def get_previous_department(docname):
     previous_department = frappe.db.get_value('Employee', {'name': docname}, 'department')
-
-    # frappe.db.set_value('Warehouse', docname, 'previous_department', previous_department)
-    # frappe.db.commit()
     return previous_department
-# @frappe.whitelist()
-# def get_previous_department(docname):
-#     previous_department = frappe.db.get_value('Department', {'name': docname}, 'department')
 
 @frappe.whitelist()
 def department_change_log(docname, cur_department, previous_department):
@@ -315,7 +293,6 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
 def get_role_profiles(department):
     """Fetch role profiles based on the selected department"""
     role_profiles = frappe.db.get_all("Role Profile", filters={"department": department}, fields=["name"])
-    print("role profile =================21==================",role_profiles)
     frappe.logger().info(f"Fetched Role Profiles for {department}: {role_profiles}")  # Debugging
     return [rp["name"] for rp in role_profiles]
 
@@ -475,12 +452,10 @@ def update_employee_experience_table():
                 
                 doc.save()
                 stats["success"] += 1
-                print(f"Updated employee: {emp.name} - Days: {no_of_days}")
                 
             except Exception as e:
                 stats["errors"] += 1
                 error_msg = f"Error updating employee {emp.name}: {str(e)}"
-                print(error_msg)
                 frappe.log_error(error_msg, "Daily Employee Experience Update Error")
                 continue
         
@@ -495,12 +470,10 @@ def update_employee_experience_table():
             f"Successful: {stats['success']}\n"
             f"Errors: {stats['errors']}"
         )
-        print(summary)
         frappe.log_error(summary, "Daily Employee Experience Update Summary")
         
     except Exception as e:
         error_msg = f"Critical error in daily experience update: {str(e)}"
-        print(error_msg)
         frappe.log_error(error_msg)
 
 @frappe.whitelist()

@@ -5,12 +5,14 @@ import json
 import frappe
 import traceback
 from frappe import _
-from datetime import datetime
+# from datetime import datetime
+from datetime import datetime, date
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 
+from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-    try:
+
         if isinstance(self, str):
             self = json.loads(self)
         
@@ -26,22 +28,16 @@ def create_user_and_warehouse(self):
                 emp_ware = create_emp_ware(self, user_email)
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
-            if self.get("work_warehouse") is None:    
+            if self.get("work_warehouse") is not None:    
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
-            if self.get("work_warehouse") is not None:
+            if self.get("work_warehouse") is not None and work_ware is not None:
                 update_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
         return return_data
-
-    except Exception as e:
-        frappe.db.rollback()
-        traceback_info = traceback.format_exc()
-        frappe.throw(f"Error on save: {str(e)}\n{traceback_info}")
-        return str(e)
 
 def update_work_warehouse(self):
     try:
@@ -163,76 +159,93 @@ def create_emp_ware(self, user_email):
     employee_asset_dept = frappe.db.get_value('NJ Settings', {'parameter': 'employee_asset_dept'}, 'value')
     emp_ware_data = create_warehouse(user_email, employee_asset_dept, self.get('location'), self.get('emp_id'))
     return emp_ware_data
+    
 
 def create_work_ware(self, user_email):
-    work_warehouse = ''
+    work_warehouse = []
+
     work_ware_reqd = frappe.db.get_value('Department', {'name': self.get('department')}, 'work_warehouse_required')
+
     if work_ware_reqd == 'Yes':
-        warehouse_name = "WK-" + self.get('first_name').title() + "-" + self.get('emp_id')
-        get_work_warehouse_query = "SELECT name FROM `tabWarehouse` WHERE warehouse_name = '{0}' AND disabled = 0".format(warehouse_name)
-        work_warehouse_in_db = frappe.db.sql(get_work_warehouse_query, as_dict=1)
-        if work_warehouse_in_db and work_warehouse_in_db[0]:
-            work_warehouse = work_warehouse_in_db[0].get('name')
-        if work_warehouse is None or work_warehouse == '':
+        warehouse_name = f"WK-{self.get('first_name').title()}-{self.get('emp_id')}"
+
+        work_warehouse_in_db = frappe.db.sql(
+            "SELECT name FROM `tabWarehouse` WHERE warehouse_name = %s AND disabled = 0",
+            (warehouse_name,),
+            as_dict=True
+        )
+
+
+        if work_warehouse_in_db:
+            work_warehouse.append(work_warehouse_in_db[0].get('name'))
+
+        if not work_warehouse:
             work_ware = create_warehouse(user_email, self.get('department'), self.get('location'), self.get('emp_id'), 'work_ware')
         else:
             work_ware = work_warehouse
-            get_dept_from_warehouse = frappe.db.get_value("Warehouse", {'name': work_ware, 'disabled': 0}, "department")
 
-            if get_dept_from_warehouse != self.get('department'):
-                get_work_warehouse_doc = frappe.get_doc('Warehouse', work_warehouse)
-                filters = {"warehouse_owner": get_work_warehouse_doc.warehouse_owner}
-                conditions = []
-                if filters.get("warehouse_owner"):
-                    conditions.append(f"AND WH.warehouse_owner = '{filters['warehouse_owner']}'")
-                conditions_sql = " ".join(conditions)
-                query = f"""
+            existing_work_warehouse = self.get("work_warehouse")
+            if existing_work_warehouse:
+                if isinstance(existing_work_warehouse, str):
+                    existing_work_warehouse = [existing_work_warehouse]
+                work_ware.extend(existing_work_warehouse)
+
+            work_ware = list(set(work_ware))
+            get_dept_from_warehouse = frappe.db.get_values("Warehouse", {'name': ('in', work_ware), 'disabled': 0}, "department", as_dict=True)
+
+            if get_dept_from_warehouse and self.get('department') not in get_dept_from_warehouse:
+                query = """
                     SELECT SUM(Bin.actual_qty) AS total_qty
-                    FROM tabBin Bin
-                    INNER JOIN tabWarehouse WH ON Bin.warehouse = WH.name
-                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name NOT LIKE 'EMP%' {conditions_sql}
+                    FROM `tabBin` Bin
+                    INNER JOIN `tabWarehouse` WH ON Bin.warehouse = WH.name
+                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name IN %s
                     GROUP BY WH.warehouse_owner;
                 """
 
-                data = frappe.db.sql(query, filters, as_dict=1)
-                
+                data = frappe.db.sql(query, (tuple(work_ware),), as_dict=True)
+                if get_dept_from_warehouse:
+                    dept_list = [d.get("department") for d in get_dept_from_warehouse if d.get("department")]
+                    dept_str = ", ".join(dept_list)
+                else:
+                    dept_str = "N/A"  # Or handle the case when no department is found
+
                 if data:
-                    frappe.msgprint(_("Please Transfer the stock of <b>{0} quantity(s)</b> to the {1} department").format(data[0].get("total_qty"), get_dept_from_warehouse))
+                    total_qty = sum(d.get("total_qty", 0) for d in data)
+                    frappe.msgprint(
+                        _("Please transfer the stock of <b>{0} Qty(s)</b> to the <b>{1} department</b>").format(
+                            total_qty, dept_str
+                        )
+                    )
                     return None
+
                 else:
                     dept_work_ware = get_dept_work_warehouse(self.get('department'))
                     if dept_work_ware:
-                        get_work_warehouse_doc.parent_warehouse = dept_work_ware
-                        get_work_warehouse_doc.department = self.get('department')
                         try:
+                            get_work_warehouse_doc = frappe.get_doc("Warehouse", work_ware[0])
+                            get_work_warehouse_doc.parent_warehouse = dept_work_ware
+                            get_work_warehouse_doc.department = self.get('department')
                             get_work_warehouse_doc.save(ignore_permissions=True)
                         except Exception as e:
-                            frappe.throw("Error while updating work warehouse: ",e)
+                            frappe.throw(_("Error while updating work warehouse: {0}").format(str(e)))
                     else:
-                        frappe.throw("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ")
+                        frappe.throw(_("Please create Department's Employee Work Warehouse Group i.e: INW-Work-Warehouse - NJ"))
                         return None
+
         return work_ware
     else:
         return None
 
 
-
-
 @frappe.whitelist()
 def get_previous_department(docname):
     previous_department = frappe.db.get_value('Employee', {'name': docname}, 'department')
-    print("==========================",previous_department)
-
-    # frappe.db.set_value('Warehouse', docname, 'previous_department', previous_department)
-    # frappe.db.commit()
     return previous_department
-# @frappe.whitelist()
-# def get_previous_department(docname):
-#     previous_department = frappe.db.get_value('Department', {'name': docname}, 'department')
-#     print("==========================",previous_department)
+
 @frappe.whitelist()
 def department_change_log(docname, cur_department, previous_department):
     changed_by = frappe.session.user
+    update_department_change_logs()
 
     query = """
         SELECT user_id
@@ -243,7 +256,6 @@ def department_change_log(docname, cur_department, previous_department):
     params = {'docname': docname}
     changed_on = frappe.db.sql(query, params, as_dict=True)
     if previous_department != cur_department:
-        print(f'creating department change log')
         new_doc = frappe.new_doc('Department Change Log')
         new_doc.flags.ignore_mandatory = True
         new_doc.previous_department = previous_department
@@ -251,7 +263,6 @@ def department_change_log(docname, cur_department, previous_department):
         new_doc.changed_by = changed_by
         new_doc.changed_on = ', '.join([row['user_id'] for row in changed_on]) if changed_on else 'No user found'
         new_doc.save()
-        new_doc.submit()
 
     return previous_department
 
@@ -275,10 +286,17 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
         new_doc.changed_by = changed_by
         new_doc.changed_on = user_id
         new_doc.save()
-        new_doc.submit()
 
         return "Change log created successfully."
-    
+
+@frappe.whitelist()
+def get_role_profiles(department):
+    """Fetch role profiles based on the selected department"""
+    role_profiles = frappe.db.get_all("Role Profile", filters={"department": department}, fields=["name"])
+    frappe.logger().info(f"Fetched Role Profiles for {department}: {role_profiles}")  # Debugging
+    return [rp["name"] for rp in role_profiles]
+
+
 @frappe.whitelist()
 def get_ramp_level(role_profile, total_days):
     try:
@@ -363,76 +381,100 @@ def update_employee_experience(docname, date_of_joining):
     except Exception as e:
         frappe.log_error(f"Error updating employee experience: {str(e)}")
         frappe.throw(f"Error updating employee experience: {str(e)}")
+
 def update_employee_experience_table():
+    """
+    Daily update of experience for all active employees.
+    Fixed date handling for all date formats.
+    """
     try:
         # Get all active employees
-        employees = frappe.get_all("Employee", 
-                                   filters={"status": "Active"}, 
-                                   fields=["name", "date_of_joining"])
+        employees = frappe.get_all(
+            "Employee",
+            filters={"status": "Active"},
+            fields=["name", "date_of_joining", "department", "role_profile"]
+        )
         
-        success_count = 0
-        error_count = 0
+        stats = {
+            "total": len(employees),
+            "success": 0,
+            "errors": 0,
+            "start_time": datetime.now()
+        }
         
         for emp in employees:
             try:
                 doc = frappe.get_doc("Employee", emp.name)
                 
-                # Get the latest experience record with matching department and role profile
-                matching_exp = None
-                for entry in doc.employee_experience_table:
-                    if entry.department == doc.department and entry.role_profile == doc.role_profile:
-                        matching_exp = entry
-                        break
-                
-                if matching_exp: 
-                    # Remove the existing entry
-                    doc.employee_experience_table.remove(matching_exp)
-                    
-                    # Add new entry with incremented days
-                    new_days = int(matching_exp.no_of_days) + 1
-                    
-                    # Get new ramp level and target based on incremented days
-                    ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=new_days)
-                    new_ramp_level = ramp_data.get("ramp_level")
-                    new_target = ramp_data.get("target")
-                    
-                    # Add new record
-                    doc.append("employee_experience_table", {
-                        "department": doc.department,
-                        "role_profile": doc.role_profile,
-                        "no_of_days": str(new_days),
-                        "ramp_level": new_ramp_level,
-                        "target": new_target
-                    })
-                    
-                    # Update the ramp level in the parent document
-                    doc.ramp_level = new_ramp_level
-                    print("Updated ramp_level=======================397=======:", new_ramp_level)
-                    doc.target = new_target
-                    print("Updated target=======================399=======:", new_target)
-                    doc.save()
-                    success_count += 1
-                else:
-                    # If no matching experience found, create initial entry
-                    update_employee_experience(emp.name, emp.date_of_joining)
-                    success_count += 1
-                    
-            except Exception as e:
-                error_count += 1
-                frappe.log_error(
-                    f"Error updating experience for employee {emp.name}: {str(e)}",
-                    "Employee Experience Update Error"
+                # Find existing experience entry
+                existing_entry = next(
+                    (entry for entry in doc.employee_experience_table 
+                     if entry.department == doc.department and entry.role_profile == doc.role_profile),
+                    None
                 )
+                
+                # Calculate days
+                if existing_entry:
+                    no_of_days = int(existing_entry.no_of_days) + 1
+                    doc.employee_experience_table.remove(existing_entry)
+                else:
+                    if not doc.previous_department and not doc.previous_role_profile:
+                        # Fixed date handling
+                        join_date = None
+                        if isinstance(emp.date_of_joining, str):
+                            join_date = datetime.strptime(emp.date_of_joining, "%Y-%m-%d").date()
+                        elif isinstance(emp.date_of_joining, datetime):
+                            join_date = emp.date_of_joining.date()
+                        elif isinstance(emp.date_of_joining, date):
+                            join_date = emp.date_of_joining
+                        else:
+                            raise ValueError(f"Unsupported date format for {emp.name}")
+                            
+                        no_of_days = (date.today() - join_date).days + 1
+                    else:
+                        no_of_days = 1
+                
+                # Get ramp data and update
+                ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=no_of_days)
+                
+                # Add new experience entry
+                doc.append("employee_experience_table", {
+                    "department": doc.department,
+                    "role_profile": doc.role_profile,
+                    "ramp_level": ramp_data["ramp_level"],
+                    "target": ramp_data["target"],
+                    "no_of_days": str(no_of_days)
+                })
+                
+                # Update parent document
+                doc.ramp_level = ramp_data["ramp_level"]
+                doc.target = ramp_data["target"]
+                
+                doc.save()
+                stats["success"] += 1
+                
+            except Exception as e:
+                stats["errors"] += 1
+                error_msg = f"Error updating employee {emp.name}: {str(e)}"
+                frappe.log_error(error_msg, "Daily Employee Experience Update Error")
                 continue
         
+        # Commit all changes
         frappe.db.commit()
-        frappe.log_error(
-            f"Update complete. Successful updates: {success_count}, Errors: {error_count}",
-            "Employee Experience Update Summary"
+        
+        # Log completion
+        execution_time = datetime.now() - stats["start_time"]
+        summary = (
+            f"Daily update completed in {execution_time}.\n"
+            f"Total Employees: {stats['total']}\n"
+            f"Successful: {stats['success']}\n"
+            f"Errors: {stats['errors']}"
         )
+        frappe.log_error(summary, "Daily Employee Experience Update Summary")
         
     except Exception as e:
-        frappe.log_error(f"Error in continuous experience update: {str(e)}")
+        error_msg = f"Critical error in daily experience update: {str(e)}"
+        frappe.log_error(error_msg)
 
 @frappe.whitelist()
 def fetch_and_update_ramp_level(docname, department, role_profile):
@@ -454,16 +496,9 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
             frappe.throw(_("No ramp level found for the specified filters."))
 
         ramp_level = exp_record[0].ramp_level
-        print("Fetched ramp_level:", ramp_level)
 
         # Update the ramp_level in Employee
-        frappe.db.set_value(
-            "Employee",
-            docname,
-            "ramp_level",
-            ramp_level,
-            update_modified=False
-        )
+        frappe.db.set_value("Employee", docname, "ramp_level", ramp_level, update_modified=False)
 
         # Fetch the role profile document
         role_profile_doc = frappe.get_doc("Role Profile", role_profile)
@@ -478,16 +513,9 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
         if not target:
             frappe.throw(_("No target found in Ramp Table for the specified ramp level."))
 
-        print("Fetched target:", target)
 
         # Update the target field in Employee
-        frappe.db.set_value(
-            "Employee",
-            docname,
-            "target",
-            target,
-            update_modified=False
-        )
+        frappe.db.set_value("Employee", docname, "target", target, update_modified=False)
 
         frappe.db.commit()
         return {
@@ -508,49 +536,3 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
         frappe.throw(_("An unexpected error occurred while updating ramp level and target."))
    
  
-# def update_department_change_log():
-#     """
-#     This function updates the 'Department Change Log' doctype with data from the 'Employee' doctype
-#     every 5 minutes.
-#     """
-
-#     # Fetch all employees
-#     employees = frappe.get_all(
-#         "Employee",
-#         fields=["emp_id", "department", "role_profile", "ramp_level", "target"]
-#     )
-
-#     # Update the 'Department Change Log' for each employee
-#     for employee in employees:
-#         # Check if an existing log entry exists for this emp_id
-#         log_entry = frappe.get_all(
-#             "Department Change Log",
-#             filters={"emp_id": employee.emp_id},
-#             fields=["name"]
-#         )
-
-#         if log_entry:
-#             # Update the existing log entry
-#             log_name = log_entry[0].name
-#             frappe.db.set_value("Department Change Log", log_name, {
-#                 "current_department": employee.department,
-#                 "role_profile": employee.role_profile,
-#                 "ramp_level": employee.ramp_level,
-#                 "target": employee.target
-#             })
-#         else:
-#             # Create a new log entry
-#             frappe.get_doc({
-#                 "doctype": "Department Change Log",
-#                 "emp_id": employee.emp_id,
-#                 "current_department": employee.department,
-#                 "role_profile": employee.role_profile,
-#                 "ramp_level": employee.ramp_level,
-#                 "target": employee.target
-#             }).insert()
-
-#     frappe.db.commit()
-  
-    
-    
-

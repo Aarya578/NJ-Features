@@ -63,11 +63,8 @@ class NJDataImport(Document):
 
 		enqueued_jobs = [d.get("job_name") for d in get_info()]
 
-		print(f'ENQUEUED_JOBS========66=======: {enqueued_jobs}')
 
 		if self.name not in enqueued_jobs:
-			print(f'DOCTYPE ============ 69 =========: {self.reference_doctype}')
-			print('----------------Enqueuing---------------69------------------')
 			enqueue(
 				start_import,
 				queue="default",

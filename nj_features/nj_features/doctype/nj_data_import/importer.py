@@ -107,7 +107,6 @@ class Importer:
 				current_index = (i + 1) + (batch_index * batch_size)
 
 				if set(row_indexes).intersection(set(imported_rows)):
-					print("Skipping imported rows", row_indexes)
 					if total_payload_count > 5:
 						frappe.publish_realtime(
 							"data_import_progress",
@@ -270,15 +269,12 @@ class Importer:
 		successful_records = [log for log in import_log if log.success]
 
 		if successful_records:
-			print()
 			print(
 				"Successfully imported {0} records out of {1}".format(len(successful_records), len(import_log))
 			)
 
 		if failed_records:
-			print("Failed to import {0} records".format(len(failed_records)))
 			file_name = "{0}_import_on_{1}.txt".format(self.doctype, frappe.utils.now())
-			print("Check {0} for errors".format(os.path.join("sites", file_name)))
 			text = ""
 			for w in failed_records:
 				text += "Row Indexes: {0}\n".format(str(w.get("row_indexes", [])))
@@ -296,14 +292,6 @@ class Importer:
 				warnings_by_row.setdefault(w.get("row"), []).append(w)
 			else:
 				other_warnings.append(w)
-
-		for row_number, warnings in warnings_by_row.items():
-			print("Row {0}".format(row_number))
-			for w in warnings:
-				print(w.get("message"))
-
-		for w in other_warnings:
-			print(w.get("message"))
 
 
 class ImportFile:

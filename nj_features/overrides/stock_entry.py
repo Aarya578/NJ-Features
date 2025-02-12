@@ -12,7 +12,6 @@ class CustomStockEntry(StockEntry):
             if not item.source_role_profile or not item.target_role_profile:
                 # Fetch role profiles for the source and target warehouses
                 role_profiles = self.get_target_warehouse_role_profile(item.s_warehouse, item.t_warehouse)
-                print("Role Profiles:", role_profiles)
                 
                 # Assign the fetched profiles if available
                 if role_profiles.get("source_role_profile"):

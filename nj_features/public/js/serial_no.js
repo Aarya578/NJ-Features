@@ -10,37 +10,32 @@ frappe.ui.form.on('Serial No', {
             frm.refresh_field('serial_no_component');
         }
 
-        frappe.call({
-            method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
-            args: {
-                search_value: cur_frm.doc.name
-            },
-            callback: function(gradesResponse) {
-                const gradesData = gradesResponse && gradesResponse.message;
+        // frappe.call({
+        //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
+        //     args: {
+        //         search_value: cur_frm.doc.name
+        //     },
+        //     callback: function(gradesResponse) {
+        //         const gradesData = gradesResponse && gradesResponse.message;
             
-                if (gradesData && gradesData.length > 0) {
-                    console.log("Grades Data: ", gradesData);
+        //         if (gradesData && gradesData.length > 0) {
             
-                    // Extract department names from the response
-                    const departmentNames = gradesData.map(entry => entry.department);
+        //             // Extract department names from the response
+        //             const departmentNames = gradesData.map(entry => entry.department);
             
-                    console.log("Departments: ", departmentNames);
+        //             // Update the options of the 'suggested_warehouse' field
+        //             // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
             
-                    // Update the options of the 'suggested_warehouse' field
-                    // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
+        //             // Optionally, set the first department as the default value
+        //             cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
+        //         } else {
+        //             // Clear the options if no data is found
+        //             // cur_frm.set_df_property('suggested_warehouse', 'options', '');
+        //             cur_frm.set_value('suggested_warehouse', '');
+        //         }
+        //     }
             
-                    // Optionally, set the first department as the default value
-                    cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
-                } else {
-                    console.log("No departments found for the given barcode.");
-            
-                    // Clear the options if no data is found
-                    // cur_frm.set_df_property('suggested_warehouse', 'options', '');
-                    cur_frm.set_value('suggested_warehouse', '');
-                }
-            }
-            
-        });
+        // });
     }
 });
 

@@ -61,7 +61,6 @@ frappe.ui.form.on('Employee', {
                 }
             }
         });
-        console.log('prefered_mail', frm.doc.prefered_email);
         // Log role profile changes
         frappe.call({
             method: "nj_features.overrides.employee.role_profile_change_log",
@@ -71,11 +70,6 @@ frappe.ui.form.on('Employee', {
                 previous_role_profile: frm.doc.previous_role_profile || null,
                 ramp_level: frm.doc.ramp_level || null,
                 previous_ramp: frm.doc.previous_ramp || null
-            },
-            callback: function (r) {
-                if (r.message) {
-                    console.log('Role Profile Change Log:', r.message);
-                }
             }
         });     
     },
@@ -101,7 +95,6 @@ frappe.ui.form.on('Employee', {
                 total_days: calculated_days
             },
             callback: function (response) {
-                console.log("Ramp Level:", response.message);
                 if (response.message) {
                     frm.set_value('ramp_level', response.message); // Update the field in the form
                 }
@@ -109,19 +102,46 @@ frappe.ui.form.on('Employee', {
         });    
     },
     department(frm) {
-        // Fetch and set the previous department on department change
+
         frappe.call({
             method: "nj_features.overrides.employee.get_previous_department",
-            args: {
-                docname: frm.doc.name
-            },
+            args: { docname: frm.doc.name },
             callback(r) {
-                console.log('previous department', r.message);
-                
                 if (r.message) {
                     frm.set_value('previous_department', r.message);
                 }
             }
         });
+
+        // Fetch role profiles based on selected department
+        if (frm.doc.department) {
+            frappe.call({
+                method: "nj_features.overrides.employee.get_role_profiles",
+                args: { department: frm.doc.department },
+                callback(response) {
+                    let role_profiles = response.message || [];
+
+                    frm.set_query('role_profile', function() {
+                        return {
+                            filters: [
+                                ['Role Profile', 'name', 'in', role_profiles]
+                            ]
+                        };
+                    });
+
+                    if (role_profiles.length === 1) {
+                        frm.set_value('role_profile', role_profiles[0]);
+                    } else {
+                        frm.set_value('role_profile', ''); 
+                    }
+                }
+            });
+        } else {
+            // Reset role_profile field if no department is selected
+            frm.set_query('role_profile', function() {
+                return { filters: { name: "" } };
+            });
+            frm.set_value('role_profile', '');
+        }
     }         
 });

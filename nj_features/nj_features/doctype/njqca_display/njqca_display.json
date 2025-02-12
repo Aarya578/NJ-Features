@@ -16,7 +16,8 @@
   "thickness",
   "display_bracket",
   "grade",
-  "item_template"
+  "item_template",
+  "check_button"
  ],
  "fields": [
   {
@@ -28,16 +29,16 @@
    "read_only": 1
   },
   {
-   "columns": 1,
+   "columns": 4,
    "fieldname": "calculated_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Final Item Code",
+   "label": "Calculated Item Code",
    "options": "Item",
    "read_only": 1
   },
   {
-   "columns": 1,
+   "columns": 4,
    "fieldname": "fetched_item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -46,72 +47,71 @@
    "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "model",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Model"
+   "fieldtype": "Data",
+   "label": "Model",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "display_tech",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Display Tech"
+   "fieldtype": "Data",
+   "label": "Display Tech",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "display_pin_type",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Display PIN Type"
+   "fieldtype": "Data",
+   "label": "Display PIN Type",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "display_size",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Display Size"
+   "fieldtype": "Data",
+   "label": "Display Size",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "resolution",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Resolution"
+   "fieldtype": "Data",
+   "label": "Resolution",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "thickness",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Thickness"
+   "fieldtype": "Data",
+   "label": "Thickness",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "display_bracket",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Display Bracket"
+   "fieldtype": "Data",
+   "label": "Display Bracket",
+   "read_only": 1
   },
   {
-   "columns": 1,
    "fieldname": "grade",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Grade"
+   "fieldtype": "Data",
+   "label": "Grade",
+   "read_only": 1
   },
   {
    "fieldname": "item_template",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Item Template",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "check_button",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Check Button"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-01-22 10:54:13.434181",
+ "modified": "2025-02-05 17:02:24.674006",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Display",

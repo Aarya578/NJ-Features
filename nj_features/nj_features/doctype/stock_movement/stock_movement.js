@@ -17,6 +17,7 @@ frappe.ui.form.on('Stock Movement', {
         $("button[data-original-title=Print]").hide();
     },
 
+
     scan_barcode: function () {
         if (cur_frm.doc.scan_barcode) {
             frappe.call({
@@ -49,12 +50,9 @@ frappe.ui.form.on('Stock Movement', {
                                 const gradesData = gradesResponse && gradesResponse.message;
                             
                                 if (gradesData && gradesData.length > 0) {
-                                    console.log("Grades Data: ", gradesData);
                             
                                     // Extract department names from the response
                                     const departmentNames = gradesData.map(entry => entry.department);
-                            
-                                    console.log("Departments: ", departmentNames);
                             
                                     // Update the options of the 'suggested_warehouse' field
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
@@ -62,8 +60,6 @@ frappe.ui.form.on('Stock Movement', {
                                     // Optionally, set the first department as the default value
                                     cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
                                 } else {
-                                    console.log("No departments found for the given barcode.");
-                            
                                     // Clear the options if no data is found
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', '');
                                     cur_frm.set_value('suggested_warehouse', '');
@@ -333,13 +329,30 @@ function executeRemainingCode(frm, changed_item_code) {
 frappe.ui.form.on('Stock Movement Detail', {
     item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn];
-        autofill_warehouse([child], "t_warehouse", cur_frm.doc.default_target_warehouse);
-        autofill_warehouse([child], "s_warehouse", cur_frm.doc.default_source_warehouse);
+        var userRoles = frappe.user_roles;
+        var isKitter = userRoles.some(role => role.toLowerCase() === 'kitter');
 
-        if (cur_frm.doc.transfer_status == "Racking") {
-            frm.set_df_property('items', 'read_only', 1, frm.docname, 's_warehouse', child.name)
+        if (isKitter && cur_frm.doc.transfer_status.toLowerCase() == "racking") {
+            
+            if (child.serial_no) {
+                frappe.db.get_value('Serial No', { 'name': child.serial_no }, 'warehouse').then(function (r) {
+                    if (r.message && r.message.warehouse) {
+                        frappe.model.set_value(child.doctype, child.name, 's_warehouse', r.message.warehouse);
+                    }
+                });
+            }
+            
+        } else {
+            
+            autofill_warehouse([child], "t_warehouse", frm.doc.default_target_warehouse);
+            autofill_warehouse([child], "s_warehouse", frm.doc.default_source_warehouse);
+        }
+
+
+        if (cur_frm.doc.transfer_status.toLowerCase() == "racking") {
+            frm.set_df_property('items', 'read_only', 1, frm.docname, 's_warehouse', child.name);
+            
             var lastRecordIndex = cur_frm.doc.items.length - 1;
-
             if (cur_frm.doc.items.indexOf(child) === lastRecordIndex) {
                 createDialogForLastRecord(child, cdt, cdn);
             }
@@ -354,7 +367,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
         var hasCentralizedRole = userRoles.includes('Centralized Warehouse');
         
         if (item.idx > 1 && cur_frm.doc.is_default_target_warehouse == 1) {
-            let default_target_warehouse = cur_frm.doc.items[0].t_warehouse 
+            let default_target_warehouse = cur_frm.doc.items[0].t_warehouse;
             frappe.db.get_value('Warehouse', {name: default_target_warehouse}, 'name').then(function(r) {
                 if (r.message && r.message.name) {
                     frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
@@ -365,18 +378,16 @@ function createDialogForLastRecord(child, cdt, cdn) {
             });
 
         } else {
-
             frappe.call({
                 method: 'nj_features.nj_features.doctype.stock_movement.stock_movement.get_all_emp_warehouse',
                 args: {'user': frappe.session.user_email},
                 callback: function(response) {
                     if (response.message && response.message.error) {
                         // Handle error
-                        } else {
-                            var recommended = response.message.recommended;
-                            var centralized = response.message.centralized;
-                        // var warehouse_list = response.message.warehouse;
-                        
+                    } else {
+                        var recommended = response.message.recommended;
+                        var centralized = response.message.centralized;
+
                         let fields = [
                             {
                                 label: 'Warehouse',
@@ -408,12 +419,10 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             label: 'Close',
                             fieldtype: 'Button',
                             click: function() {
-                                // / Check if the t_warehouse field is empty before closing
                                 let t_warehouse_value = $('[data-fieldname="t_warehouse"]').val();
+                                // Only remove the row if t_warehouse is empty
                                 if (t_warehouse_value.trim() === '') {
-                                    // If t_warehouse is empty, remove the current row from the table
                                     let row = cur_frm.fields_dict.items.grid.grid_rows_by_docname[cdn];
-                                    
                                     if (row) {
                                         row.remove();  // Remove the row from the grid
                                     } else {
@@ -425,46 +434,56 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             }
                         });
                         
-                        
                         let d = new frappe.ui.Dialog({
                             fields: fields,
                             size: 'small',
                             static: 1
                         });
-
+                        
+                        // On blur of the t_warehouse field
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
                             handleScannerInput(d, 't_warehouse');
-                            let t_warehouse_value = $(this).val();
-                            console.log('t_warehouse_value ------------ ', t_warehouse_value);
-                            if (t_warehouse_value.trim() === '') {
-
+                            let t_warehouse_value = $(this).val().trim();
+                        
+                            if (t_warehouse_value === '') {
                                 return; // No further checks or messages, just return
                             }
-                            let isValidWarehouse = false;
-                            // Check if t_warehouse_value matches with recommended or centralized warehouse
-                            if (recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value)) {
-                                isValidWarehouse = true;
-                            }
-    
+                        
+                            let isValidWarehouse = recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value);
+                        
                             if (isValidWarehouse) {
-                                // Perform validation
-                                frappe.db.get_value('Warehouse', {name: t_warehouse_value}, 'name').then(function(r) {
+                                // Fetch warehouse details
+                                frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function(r) {
                                     if (r.message && r.message.name) {
+                                        console.log('Before setting value:', locals[cdt][cdn]); // Debugging
+                        
+                                        // Directly update the model value for the child table
                                         frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                                        d.hide();
+                        
+                                        console.log('After setting value:', locals[cdt][cdn]); // Debugging
+                        
+                                        // Ensure the dialog closes only after confirming the update
+                                        setTimeout(() => { d.hide(); }, 200);
                                     } else {
-                                        frappe.msgprint(`Warehouse: <strong>"${r.message.name}"</strong> does not exist. Please enter a valid Warehouse.`);
+                                        frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not exist. Please enter a valid Warehouse.`);
                                         $('[data-fieldname="scan_barcode"]').focus();
                                     }
-                                    
                                 });
                             } else {
                                 frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not match with recommended or centralized warehouse.`);
-                                $('[data-fieldname="t_warehouse"]').val(''); // Clear the field value
-                                $('[data-fieldname="t_warehouse"]').focus();
+                                $('[data-fieldname="t_warehouse"]').val('').focus(); // Clear and refocus the field
                             }
                         });
-    
+                        
+                        // Prevent form refresh by blocking ENTER key in the dialog
+                        d.$wrapper.on("keydown", function(event) {
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                return false;
+                            }
+                        });
+                        
+
                         // Show the dialog
                         d.show();
                     }
@@ -475,6 +494,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
         cur_frm.refresh_field('items');
     }
 }
+
 
 // frappe.ui.form.on('Stock Movement Detail', {
 //     item_code: function(frm, cdt, cdn) {
@@ -618,7 +638,6 @@ function modify_table_after_scan(frm, data) {
     if (!row_to_modify) {
         row_to_modify = frappe.model.add_child(cur_frm.doc, cur_grid.doctype, 'items');
     }
-    
 	if (data.serial_no != "" && data.serial_no != undefined) {
 		var existing_record = cur_frm.doc.items.find(d => d.serial_no === data.serial_no);
 		if (existing_record) {

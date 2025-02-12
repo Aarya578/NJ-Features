@@ -106,3 +106,33 @@ def get_link_1(name):
     for item in link:
         item["linked_data"] = nj_setting_value + item["linked_data"]
     return link
+
+
+@frappe.whitelist()
+def validate_delivery_bios(doc):
+    error_message = []
+
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    item_group_list = frappe.db.get_value('NJ Settings', {'parameter': 'bios_item_group'}, ['value'])
+
+    if item_group_list:
+        item_group_list = json.loads(item_group_list)
+
+    for item in doc.get('items'):
+        serial_no = item.get('serial_no', '').strip()
+        item_group = item.get("item_group")
+        idx = item.get("idx", "N/A")
+
+        if serial_no:
+            serial_list = serial_no.split('\n')
+
+            for serial in serial_list:
+                bios_serial_no = frappe.db.get_value('Serial No', serial, 'bios_serial_no')
+                if not (bios_serial_no and item_group in item_group_list):
+                    error_message.append(
+                        f"<b>Row {idx}</b>: Serial No <b>{serial}</b> for item group <b>{item_group}</b> has no Bios Serial No"
+                    )
+
+    return error_message if error_message else True

@@ -201,8 +201,211 @@ def battery_data():
     
     # If battery_serial_no is found, fetch data from NJQCA
     if battery_serial_no:
-        njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_1,sudden_drop FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
-        print("njqca =======================205",njqca_doc)
+        njqca_doc = frappe.db.sql("""SELECT backup_duration_cycle_1,sudden_drop 
+                                  FROM `tabNJQCA` WHERE serial_no = %s""", battery_serial_no, as_dict=True)
         return njqca_doc
     else:
         battery_serial_no = ""
+
+@frappe.whitelist(allow_guest=True)
+def get_battery_status(doc, method=None):
+    try:
+        parent_serial_no = doc.serial_no
+        njqca = doc.name
+        bty_based_inspection_type = frappe.db.get_value("NJ Settings", {"parameter": "bty_based_inspection_type"}, "value")
+        
+        if not bty_based_inspection_type:
+            frappe.throw("NJ Settings for 'bty_based_inspection_type' is not defined")
+        if doc.inspection_type in bty_based_inspection_type:
+            return
+        health_query="""
+                        select replace(value ,'%%','') from `tabNJQCA Result Parameters` where item_group="BATTERY" 
+                        and parameter="Health" and 
+                        parent=%s
+                        order by value desc limit 1
+                    """
+        health=frappe.db.sql(health_query, njqca)
+
+
+        if health and isinstance(health[0], tuple) and len(health[0]) > 0:
+                health_value = health[0][0]
+        else:
+            return  # Extract value safely
+
+        if health_value is not None:
+            try:
+                health_int = int(health_value)  # Convert to integer
+
+                if health_int > 80:
+                    return
+            except ValueError:
+                return
+            
+        get_bty_serial_nos_query = """select sn.component_serial_no FROM `tabSerial No Component` sn
+                                        WHERE sn.item_group = 'battery' 
+                                        AND sn.component_serial_no IS NOT NULL 
+                                        AND sn.component_serial_no <> ''  
+                                        AND sn.parent = %s
+                                    """
+        
+        get_bty_serial_nos = frappe.db.sql(get_bty_serial_nos_query, parent_serial_no)
+        
+        if not get_bty_serial_nos:
+            doc.append('njqca_result_parameters', {
+                        'parameter': 'health_report_status',
+                        'item_group': 'BATTERY',
+                        'value': 'not found',
+                        'score': 1
+                    })
+            return
+
+        if get_bty_serial_nos:
+            variant_3_data, main_bty_sn, bty_parent_njqca = -1, "", ""
+            get_bty_njqca_query = """select variant_3, parent from `tabNJQCA Child`
+                                where parent = (select name from `tabNJQCA` where serial_no = %s and docstatus = 1 order by creation desc limit 1) and item_group="BATTERY"
+                            """
+            
+            for bty_serial_no in get_bty_serial_nos:
+                get_bty_njqca = frappe.db.sql(get_bty_njqca_query, bty_serial_no[0])
+
+                try:
+                    if get_bty_njqca and int(get_bty_njqca[0][0]) > int(variant_3_data):
+                        bty_parent_njqca = get_bty_njqca[0][1]
+                        variant_3_data = get_bty_njqca[0][0]
+                        main_bty_sn = bty_serial_no[0]
+                finally:
+                    continue
+            if bty_parent_njqca is not None and bty_parent_njqca != "":
+                query = """
+                            SELECT
+                                CASE 
+                                    WHEN value > 80 THEN 'pass'
+                                    WHEN value < 60 THEN 'fail'
+                                    ELSE (
+                                        SELECT 
+                                            CASE
+                                                WHEN sudden_drop LIKE '%%no%%' AND (
+                                                    backup_duration_cycle_3 >= 120
+                                                    OR backup_duration_cycle_2 >= 120
+                                                    OR backup_duration_cycle_1 >= 120
+                                                ) THEN 'pass'
+                                                WHEN (backup_duration_cycle_1 IS NULL OR backup_duration_cycle_1 = '') AND 
+                                                    (backup_duration_cycle_2 IS NULL OR backup_duration_cycle_2 = '') AND 
+                                                    (backup_duration_cycle_3 IS NULL OR backup_duration_cycle_3 = '') THEN 'not found'
+                                                ELSE 'fail'
+                                            END
+                                        FROM `tabNJQCA`
+                                        WHERE item_group = 'battery' 
+                                        AND name = %(parent)s
+                                    )
+                                END AS result
+                            FROM `tabNJQCA Result Parameters` 
+                            WHERE item_group = 'battery' 
+                                AND parameter = 'health' 
+                                AND parent = %(njqca)s
+                        
+                    """
+                query_data = frappe.db.sql(query, {'parent': bty_parent_njqca, 'njqca': njqca}, as_dict=True)
+
+                if query_data:
+                    if query_data[0].result == "pass":
+                        doc.append('njqca_result_parameters', {
+                            'parameter': 'health_report_status',
+                            'item_group': 'BATTERY',
+                            'value': 'pass',
+                            'score': 0
+                        })
+                    elif query_data[0].result == "fail":
+                        doc.append('njqca_result_parameters', {
+                            'parameter': 'health_report_status',
+                            'item_group': 'BATTERY',
+                            'value': 'fail',
+                            'score': 41
+                        })
+                else:
+                
+                    doc.append('njqca_result_parameters', {
+                        'parameter': 'health_report_status',
+                        'item_group': 'BATTERY',
+                        'value': 'not found',
+                        'score': 1
+                    })
+            else:
+                doc.append('njqca_result_parameters', {
+                        'parameter': 'health_report_status',
+                        'item_group': 'BATTERY',
+                        'value': 'not found',
+                        'score': 1
+                    })
+
+
+            return {"variant_3_data":variant_3_data, "main_bty_sn":main_bty_sn, "bty_parent_njqca":bty_parent_njqca}
+
+    except Exception as e:
+        return
+    
+@frappe.whitelist(allow_guest=True)
+def get_backup_duration(doc, method=None):
+    try:
+        parent_name = doc.name
+        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+
+        if njqca_battery_item_group and njqca_battery_item_group == doc.item_group:
+            delta_query = """
+                WITH parameter_data AS (     
+                    SELECT name, idx, item_group, parameter, value     
+                    FROM `tabNJQCA Result Parameters`     
+                    WHERE parent = %(parent_name)s     
+                    ORDER BY idx 
+                ),  
+
+                -- Get all occurrences of Battery_Discharging_Start_Time 
+                cycle_start AS (     
+                    SELECT idx, parameter     
+                    FROM parameter_data     
+                    WHERE parameter = 'Battery_Discharging_Start_Time' 
+                ),  
+
+                -- For each occurrence of Battery_Discharging_Start_Time, calculate the initial value (timestamp) and final value (next timestamp)
+                cycle_values AS (     
+                    SELECT          
+                        cs.idx AS start_idx,         
+                        pd1.parameter AS initial_timestamp, -- timestamp just before Battery_Discharging_Start_Time         
+                        -- Find the next occurrence of Battery_Discharging_Start_Time and get its timestamp at idx - 2         
+                        COALESCE(             
+                            (SELECT parameter FROM parameter_data WHERE idx > cs.idx AND idx = (SELECT idx-2 FROM cycle_start WHERE idx > cs.idx LIMIT 1)),              
+                            (SELECT parameter FROM parameter_data ORDER BY idx DESC LIMIT 1) -- if no next occurrence, get last timestamp         
+                        ) AS final_timestamp     
+                    FROM cycle_start cs     
+                    -- Get the timestamp at (idx - 1)     
+                    JOIN parameter_data pd1 ON pd1.idx = cs.idx - 1
+                )  
+
+                -- Final output: Calculate the time difference between the initial timestamp and final timestamp
+                SELECT 
+                    ROUND(
+                        ABS(
+                            IF(
+                                STR_TO_DATE(final_timestamp, '%%H:%%i:%%s') >= STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s'),
+                                TIME_TO_SEC(TIMEDIFF(STR_TO_DATE(final_timestamp, '%%H:%%i:%%s'), STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s'))),
+                                TIME_TO_SEC(TIMEDIFF(ADDTIME(STR_TO_DATE(final_timestamp, '%%H:%%i:%%s'), '24:00:00'), STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s')))
+                            )
+                        ) / 60, 2
+                    ) AS time_difference_in_minutes
+                FROM cycle_values;
+            """
+            
+            delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+            # print("delta", delta)
+            
+            if delta:
+                i = 1
+                for d in delta:
+                    if i > 4:
+                        break
+                    setattr(doc, f"backup_duration_cycle_{i}", d.time_difference_in_minutes)
+                    i += 1
+            
+    except Exception as e:
+        print("error while getting backup duration", e)
+        return

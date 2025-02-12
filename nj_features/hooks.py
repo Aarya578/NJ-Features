@@ -128,9 +128,10 @@ doc_events = {
     "Purchase Order": {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
     },
-    # "NJQCA": {
-    #     "on_submit": "nj_features.nj_features.api.bb_api.get_grading_Authentication"
-	# },
+    "NJQCA": {
+        "before_save": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
+	},
     "User": {
         "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}
@@ -191,18 +192,18 @@ scheduler_events = {
 		# "0 23 * * *": [
 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		# ],
-        # "*/5 * * * *": [
+        # "*/2 * * * *": [
         #     "nj_features.overrides.employee.update_employee_experience_table",
            
+        # ]
+		#     "*/59 * * * *": [
+        #     "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
+        #     # "nj_features.nj_features.doctype.productivity_kpi_report.productivity_kpi_report.fetch_and_save_productivity_data"
+		# 	# "nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",     
         # ],
-        
-        "*/10 * * * *": [
-            # "nj_features.overrides.employee.update_employee_experience_table",
-            # "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
-            # "nj_features.nj_features.doctype.productivity_kpi_report.productivity_kpi_report.fetch_and_save_productivity_data"
-			"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",
+        "*/2 * * * *": [
 
-        
+			"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data"     
         ]
 	}
 }

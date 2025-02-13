@@ -1,0 +1,89 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-02-10 11:00:45.236245",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "settlement_id",
+  "amazon_amount_description",
+  "amazon_order_id",
+  "amazon_amount",
+  "column_break_tmomd",
+  "sales_invoice",
+  "sales_invoice_amount",
+  "section_break_p8srv",
+  "payment_errorrs"
+ ],
+ "fields": [
+  {
+   "fieldname": "settlement_id",
+   "fieldtype": "Data",
+   "label": "Settlement Id"
+  },
+  {
+   "fieldname": "amazon_amount_description",
+   "fieldtype": "Data",
+   "label": "Amazon Amount Description"
+  },
+  {
+   "fieldname": "amazon_order_id",
+   "fieldtype": "Data",
+   "label": "Amazon Order Id"
+  },
+  {
+   "fieldname": "amazon_amount",
+   "fieldtype": "Data",
+   "label": "Amazon Amount"
+  },
+  {
+   "fieldname": "column_break_tmomd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "label": "Sales Invoice",
+   "options": "Sales Invoice"
+  },
+  {
+   "fieldname": "sales_invoice_amount",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Amount"
+  },
+  {
+   "fieldname": "payment_errorrs",
+   "fieldtype": "Table",
+   "label": "Payment Errorrs",
+   "options": "Payment Error Child Table"
+  },
+  {
+   "fieldname": "section_break_p8srv",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-02-10 11:02:22.801355",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Amazon Payment Error Logs",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -159,7 +159,6 @@ def validate_serial_no_and_department(row, error_messages):
     else:
         return True
 
-
     return True
 
 
@@ -203,9 +202,11 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
             print("qi_doc", qi_doc)
 
             if qi_doc:
-                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.status != s_inspection_type.get("quality_inspection_status_for_stock_movement"):
-                    expected_status = s_inspection_type.get("quality_inspection_status_for_stock_movement")
-                    actual_status = qi_doc.status
+                quality_inspection_status_for_stock_movement = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+
+                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
+                    expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                    actual_status = qi_doc.get("status")
                     
                     error_messages.append(
                         f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b>."

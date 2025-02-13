@@ -579,7 +579,6 @@ def model_change_for_serial_no(newmodel, serial_no):
                     past_part_list_query = """select distinct(item_group) from `tabPast Part List` where parent = %s"""
                     mr_item_group_data = frappe.db.sql(mr_data_query, (serial_no), as_dict=1)
                     past_part_list_data = frappe.db.sql(past_part_list_query, (serial_no), as_dict=1)
-                    past_part_list_data.append({'item_group':'Display'})
                     if past_part_list_data or mr_item_group_data:
                         for group in past_part_list_data:
                             if group['item_group'] in not_matched_item_groups:

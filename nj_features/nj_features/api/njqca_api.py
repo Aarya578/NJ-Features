@@ -5,7 +5,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from nj_features.nj_features.doctype.njqca.njqca import model_change_for_serial_no,get_info_from_serial_no, brand_model_validation, get_part_mapping, after_save_njqca, get_model, get_part_item_code_filtered_data, get_manual_repack_item_code_filtered_data
+from nj_features.nj_features.doctype.njqca.njqca import get_info_from_serial_no, get_part_mapping, after_save_njqca, get_model, get_part_item_code_filtered_data
     
 @frappe.whitelist()
 def process_njqca_data():
@@ -86,9 +86,6 @@ def process_njqca_data():
         njqca_doc.manual_repack_item_code = data['manual_repack_item_code']
 
     manual_item_codes = []
-    if 'item_group' in data and 'brand' in data:
-        manual_item_codes = get_manual_repack_item_code_filtered_data(data['item_group'],data['brand'],data['model'])
-
     part_item_codes = ()
     if 'part_item_group' in data:
         part_item_codes = get_part_item_code_filtered_data(data['part_item_group'])

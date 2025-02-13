@@ -36,7 +36,7 @@ def update_serial_no_componont_for_grade(self):
         if item_template:
             item_wizard = get_latest_item_wizard(item_template, serial_no_doc.item_code)
             item_wizard_doc = frappe.get_doc("Item Wizards", {"name": item_wizard})
-            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model)
+            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model,db_insert=False)
         serial_no_doc.save()
 
     except Exception as e:
@@ -533,27 +533,29 @@ def model_change_for_serial_no(newmodel, serial_no):
 
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
+    # print('new_item_wizard', new_item_wizard,'qi_exists_data',qi_exists_data,'kitting_exists_data',kitting_exists_data,'mpc_exists_data',mpc_exists_data,'mr_exists_data',mr_exists_data)
+
     if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
-        if new_item_wizard != [] or new_item_wizard is not None:
+        if new_item_wizard != [] or new_item_wizard is not None or new_item_wizard != '':
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
             if item_wizard_doc.part_list_status != 'Completed':
-                frappe.throw(f"'Part List' in Item Wizard: {new_item_wizard[0]['name']} is not completed. Please contact NPD Team.")
+                frappe.msgprint(f"'Part List' in Item Wizard: {new_item_wizard[0]['name']} is not completed. Please contact NPD Team.")
+                return { "status": 'failed' }
             if newmodel:
                 serial_no_doc.serial_no_component = []
                 serial_no_doc.save()
-                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                 return { "status": 'success' }
         else:
-            frappe.throw(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
+            frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
+            return { "status": 'failed' }
     else:
-
         new_item_wizard_query = """Select component_type,default_item_code from `tabComponent` where parent = %s"""
         new_item_wizard_data = frappe.db.sql(new_item_wizard_query, (new_item_wizard[0]['name']), as_dict=1)
 
         Item_code = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'item_code')
         if Item_code:
             item_template = frappe.db.get_value('Item', {'name':Item_code}, 'variant_of')
-
             if item_template:
                 item_wizard = get_latest_item_wizard(item_template, Item_code)
                 old_item_wizard_query = """select component_type,default_item_code from `tabComponent` where parent = %s"""
@@ -566,38 +568,39 @@ def model_change_for_serial_no(newmodel, serial_no):
                                 continue
                             else:
                                 not_matched_item_groups.append(old.get('component_type'))
-
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     serial_no_doc.save()
-                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                     return { "status": 'success' }
                 else:
                     mr_data_query ="""select distinct(item_group) from `tabMaterial Request Item` where serial_no = %s AND post_order_status !='Completed' AND docstatus = 1"""
                     past_part_list_query = """select distinct(item_group) from `tabPast Part List` where parent = %s"""
                     mr_item_group_data = frappe.db.sql(mr_data_query, (serial_no), as_dict=1)
                     past_part_list_data = frappe.db.sql(past_part_list_query, (serial_no), as_dict=1)
-                    if past_part_list_data:
+                    past_part_list_data.append({'item_group':'Display'})
+                    if past_part_list_data or mr_item_group_data:
                         for group in past_part_list_data:
                             if group['item_group'] in not_matched_item_groups:
-                                frappe.throw(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact NPD Team.')
+                                frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
                                 return { "status": 'failed' }
-                    for group in mr_item_group_data:
-                        if group['item_group'] in not_matched_item_groups:
-                            frappe.throw(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact NPD Team.')
-                            return { "status": 'failed' }
-                    else:
-                        item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
-                        serial_no_doc.serial_no_component = []
-                        serial_no_doc.save()
-                        update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel)
-                        return { "status": 'success' }
-
+                        for group in mr_item_group_data:
+                            if group['item_group'] in not_matched_item_groups:
+                                frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
+                                return { "status": 'failed' }
+                    
+                    item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
+                    serial_no_doc.serial_no_component = []
+                    serial_no_doc.save()
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    return { "status": 'success' }
             else:
-                frappe.throw(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
+                frappe.msprint(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
+                return { "status": 'failed' }
         else:
-            frappe.throw(f'Item Code {Item_code} not found in Serial No {serial_no}')
+            frappe.msgprint(f'Item Code {Item_code} not found in Serial No {serial_no}')
+            return { "status": 'failed' }
 
 @frappe.whitelist()
 def brand_model_validation(brand=None, model=None):
@@ -897,7 +900,6 @@ def get_item_code_for_each_part(doc):
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
                 part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
-                print("part_data ---------------- ", part_data)
 
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
@@ -1536,7 +1538,6 @@ def get_fetched_item_code(serial_no, partData):
         """, (serial_no,), as_dict=True
     )
 
-    print("________serial_no_components_________", serial_no_components)
 
     updated_part_data = []  # Store modified data separately
 
@@ -1591,7 +1592,6 @@ def get_fetched_item_code(serial_no, partData):
 
         updated_part_data.append(data)  # Always keep original data
 
-    print("part_data", updated_part_data)
     return updated_part_data
 
 

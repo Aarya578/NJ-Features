@@ -881,7 +881,7 @@
    "name": "Department-quality_inspection_status_for_stock_movement",
    "no_copy": 0,
    "non_negative": 0,
-   "options": "\nAccepted\nRejected",
+   "options": "\nAccepted\nRejected\nAccepted, Rejected\nIn-Progress",
    "owner": "postman@mail.com",
    "parent": null,
    "parentfield": null,

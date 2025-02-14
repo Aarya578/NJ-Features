@@ -1,6 +1,3 @@
-# Copyright (c) 2024, NewJaisa - IT Team and contributors
-# For license information, please see license.txt
-
 import json
 import frappe
 from frappe import _
@@ -147,8 +144,17 @@ def validate_serial_no_and_department(row, error_messages):
         validate_grade_restriction(serial_doc, department_doc, error_messages)
     else:
         validate_grade_restriction(serial_doc, department_doc, error_messages)
+
+    s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+
+
+    print('s_inspection_type', s_inspection_type, s_department, department)
+
+    if (s_department and 
+    s_department != department and 
+    s_inspection_type.get("inspection_type") and  s_inspection_type.get("inspection_type") is not None and 
+    s_inspection_type.get("quality_inspection_status_for_stock_movement") and s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None):
     
-    if s_department and s_department != department:
         check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
     else:
         return True
@@ -157,6 +163,8 @@ def validate_serial_no_and_department(row, error_messages):
 
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
+
+    print("inside check_qi_validation")
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 
@@ -191,11 +199,14 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
         if qi_result:
             qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+            print("qi_doc", qi_doc)
 
             if qi_doc:
-                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.status != s_inspection_type.get("quality_inspection_status_for_stock_movement"):
-                    expected_status = s_inspection_type.get("quality_inspection_status_for_stock_movement")
-                    actual_status = qi_doc.status
+                quality_inspection_status_for_stock_movement = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+
+                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
+                    expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                    actual_status = qi_doc.get("status")
                     
                     error_messages.append(
                         f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b>."

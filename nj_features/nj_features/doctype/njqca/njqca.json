@@ -39,8 +39,6 @@
   "column_break_w1v6n",
   "item_code",
   "item_template",
-  "section_break_nybo3",
-  "error_message",
   "laptop_processor_section",
   "njqca_laptop_processors",
   "laptop_ram_section",
@@ -66,6 +64,7 @@
    "default": "Yes",
    "fieldname": "power_on",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Is the system powering on?",
    "options": "\nYes\nNo",
    "reqd": 1
@@ -157,15 +156,6 @@
    "hidden": 1,
    "label": "Preferred Price",
    "precision": "2"
-  },
-  {
-   "bold": 1,
-   "columns": 6,
-   "fieldname": "error_message",
-   "fieldtype": "Small Text",
-   "in_list_view": 1,
-   "label": "Error Message",
-   "read_only": 1
   },
   {
    "fieldname": "section_break_56eed",
@@ -357,10 +347,6 @@
    "label": "App Statuts"
   },
   {
-   "fieldname": "section_break_nybo3",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "column_break_w1v6n",
    "fieldtype": "Column Break"
   },
@@ -386,7 +372,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-06 12:30:15.742447",
+ "modified": "2025-02-13 16:18:54.441844",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

@@ -131,12 +131,8 @@ doc_events = {
     "NJQCA": {
         "before_save": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
-	},
-    "User": {
-        "on_login": "nj_features.nj_features.api.login.enforce_session_limit"
 	}
 }
-
 
 # doc_events = {
 #     "Sales Order": {
@@ -202,7 +198,6 @@ scheduler_events = {
 		# 	# "nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",     
         # ],
         "*/2 * * * *": [
-
 			"nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data"     
         ]
 	}
@@ -214,12 +209,6 @@ scheduler_events = {
 #         ]
 #     }
 # }
-
-
-
-
-
-
 
 # Testing
 # -------

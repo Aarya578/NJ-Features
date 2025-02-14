@@ -6,6 +6,7 @@ from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 from nj_lib.utils.common_utils import get_active_user
 from nj_features.nj_features.api.encryption import decrypt
+from nj_features.nj_features.api.login import enforce_session_limit
 
 @frappe.whitelist(allow_guest=True)
 def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
@@ -15,6 +16,7 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()
+        enforce_session_limit(user=usr)
 
     except frappe.AuthenticationError as e:
         error_message = f"Authentication failed for user: {usr}. {str(e)}"

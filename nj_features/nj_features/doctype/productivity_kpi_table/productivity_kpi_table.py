@@ -9,16 +9,16 @@ def create_kpi_record(row_data):
     """Create a single ProductivityKpiTable record if it doesn't exist"""
     try:
         # Check if record with same serial_no and stock_entry_name already exists
-        existing = frappe.get_all("Productivity Kpi Table", 
-            filters={
-                "serial_no": row_data.serial_no,
-                "stock_entry_name": row_data.stock_entry_name  # Ensure uniqueness per stock entry
-            },
-            limit=1  
-        )
+        # existing = frappe.get_all("Productivity Kpi Table", 
+        #     filters={
+        #         "serial_no": row_data.serial_no,
+        #         "stock_entry_name": row_data.stock_entry_name  # Ensure uniqueness per stock entry
+        #     },
+        #     limit=1  
+        # )
         
-        if existing:
-            return False  # Skip insertion if it already exists for the same stock entry
+        # if existing:
+        #     return False  # Skip insertion if it already exists for the same stock entry
 
         # Insert new document
         doc = frappe.get_doc({
@@ -84,51 +84,70 @@ def fetch_and_save_productivity_data():
     
     query = """
             SELECT 
-                a.posting_date,
-                b.serial_no,
-                a.name AS stock_entry_name,
-                a.creation AS stock_entry_creation,
-                c.item_group,
-                b.item_code,
-                b.qty,
-                LAG(b.t_warehouse) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Src_warehouse,
-                b.t_warehouse,
-                LAG(b.target_department) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_dept,
-                b.target_department AS Target_Dept,
-                LAG(b.target_role_profile) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_Profile,
-                b.target_role_profile AS Target_Profile
-            FROM
-                `tabStock Entry` a
-            INNER JOIN
-                `tabStock Entry Detail` b ON a.name = b.parent
-            INNER JOIN
-                `tabItem` c ON b.item_code = c.name
-            WHERE
-                a.purpose = 'Material Transfer'
-                AND a.docstatus = 1
-                AND a.creation >= (TODAY() - INTERVAL 15 DAY)
-                AND b.t_warehouse IS NOT NULL
-                AND b.t_warehouse != ''
-                AND b.serial_no IS NOT NULL
-                AND b.target_department != 'Stock Movement - NJ'
-                AND c.item_group IN ('Laptops','Chromebooks','Chromeboxes','Desktops','Full Set Desktops')
-        ) ste
-        LEFT JOIN 
-            `tabProductivity Department` Pd 
-        ON 
-            ste.Source_dept = Pd.parent 
-            AND ste.Target_Dept = Pd.target_department
-        LEFT JOIN 
-            `tabWeightage` wt 
-        ON 
-            ste.Source_dept = wt.parent 
-            AND ste.item_group = wt.item_group
-        LEFT JOIN 
-            `tabProductivity Profile` Rp 
-        ON 
-            Rp.parent = ste.Source_Profile
-            AND Rp.target_profile = ste.Target_Profile
-        where  ste.Source_dept is not null order by ste.stock_entry_creation asc;
+                ste.posting_date,
+                ste.serial_no,
+                ste.stock_entry_name,
+                ste.stock_entry_creation,
+                ste.item_group,
+                ste.item_code,
+                ste.qty,
+                ste.Src_warehouse,
+                ste.t_warehouse,
+                ste.Source_dept,
+                ste.Target_Dept,
+                ste.Source_Profile,
+                ste.Target_Profile
+            FROM (
+                SELECT 
+                    a.posting_date,
+                    b.serial_no,
+                    a.name AS stock_entry_name,
+                    a.creation AS stock_entry_creation,
+                    c.item_group,
+                    b.item_code,
+                    b.qty,
+                    LAG(b.t_warehouse) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Src_warehouse,
+                    b.t_warehouse,
+                    LAG(b.target_department) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_dept,
+                    b.target_department AS Target_Dept,
+                    LAG(b.target_role_profile) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_Profile,
+                    b.target_role_profile AS Target_Profile
+                FROM
+                    `tabStock Entry` a
+                INNER JOIN
+                    `tabStock Entry Detail` b ON a.name = b.parent
+                INNER JOIN
+                    `tabItem` c ON b.item_code = c.name
+                WHERE
+                    a.purpose = 'Material Transfer'
+                    AND a.docstatus = 1
+                    AND a.creation >= (CURDATE() - INTERVAL 1 DAY)
+                    AND b.t_warehouse IS NOT NULL
+                    AND b.t_warehouse != ''
+                    AND b.serial_no IS NOT NULL
+                    AND b.target_department != 'Stock Movement - NJ'
+                    AND c.item_group IN ('Laptops', 'Chromebooks', 'Chromeboxes', 'Desktops', 'Full Set Desktops')
+            ) ste
+            LEFT JOIN 
+                `tabProductivity Department` Pd 
+            ON 
+                ste.Source_dept = Pd.parent 
+                AND ste.Target_Dept = Pd.target_department
+            LEFT JOIN 
+                `tabWeightage` wt 
+            ON 
+                ste.Source_dept = wt.parent 
+                AND ste.item_group = wt.item_group
+            LEFT JOIN 
+                `tabProductivity Profile` Rp 
+            ON 
+                Rp.parent = ste.Source_Profile
+                AND Rp.target_profile = ste.Target_Profile
+            WHERE 
+                ste.Source_dept IS NOT NULL 
+            ORDER BY 
+                ste.stock_entry_creation ASC;
+
     """
     
     # Fetch data from query
@@ -147,4 +166,3 @@ def fetch_and_save_productivity_data():
         "total_records": total_records,
         "successful_saves": successful_saves
     }
-

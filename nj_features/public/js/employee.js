@@ -101,8 +101,40 @@ frappe.ui.form.on('Employee', {
             }
         });    
     },
-    department(frm) {
 
+    department(frm) {
+        if (!frm.doc.department) {
+            frm.set_query('role_profile', function() {
+                return { filters: { name: "" } };
+            });
+            frm.set_value('role_profile', '');
+            return;
+        }
+
+        frappe.call({
+            method: "nj_features.overrides.employee.get_role_profiles",
+            args: { department: frm.doc.department },
+            callback(response) {
+                let role_profiles = response.message || [];
+
+                frm.set_query('role_profile', function() {
+                    return {
+                        filters: [['Role Profile', 'name', 'in', role_profiles]]
+                    };
+                });
+
+                if (role_profiles.length === 1) {
+                    frm.set_value('role_profile', role_profiles[0]);
+                } else {
+                    frm.set_value('role_profile', ''); 
+                }
+
+                frm.refresh_field('role_profile');  // Ensure UI updates
+            }
+        });
+    },
+
+    before_save(frm) {
         frappe.call({
             method: "nj_features.overrides.employee.get_previous_department",
             args: { docname: frm.doc.name },
@@ -113,35 +145,30 @@ frappe.ui.form.on('Employee', {
             }
         });
 
-        // Fetch role profiles based on selected department
-        if (frm.doc.department) {
-            frappe.call({
-                method: "nj_features.overrides.employee.get_role_profiles",
-                args: { department: frm.doc.department },
-                callback(response) {
-                    let role_profiles = response.message || [];
+        if (!frm.doc.department) return;
 
-                    frm.set_query('role_profile', function() {
-                        return {
-                            filters: [
-                                ['Role Profile', 'name', 'in', role_profiles]
-                            ]
-                        };
+        frappe.call({
+            method: "nj_features.overrides.employee.get_role_profiles",
+            args: { department: frm.doc.department },
+            callback(response) {
+                let role_profiles = response.message || [];
+
+                frm.set_query('role_profile', function() {
+                    return {
+                        filters: [['Role Profile', 'name', 'in', role_profiles]]
+                    };
+                });
+
+                if (!role_profiles.includes(frm.doc.role_profile)) {
+                    frappe.msgprint({
+                        title: __('Invalid Role Profile'),
+                        message: __('The role profile <b>{0}</b> is not allowed for the department <b>{1},Please Contact MIS Team</b>.', 
+                            [frm.doc.role_profile, frm.doc.department]),
+                        indicator: 'red'
                     });
-
-                    if (role_profiles.length === 1) {
-                        frm.set_value('role_profile', role_profiles[0]);
-                    } else {
-                        frm.set_value('role_profile', ''); 
-                    }
+                    frappe.validated = false;
                 }
-            });
-        } else {
-            // Reset role_profile field if no department is selected
-            frm.set_query('role_profile', function() {
-                return { filters: { name: "" } };
-            });
-            frm.set_value('role_profile', '');
-        }
-    }         
+            }
+        });
+    }        
 });

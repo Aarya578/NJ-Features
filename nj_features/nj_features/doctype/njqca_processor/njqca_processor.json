@@ -43,7 +43,6 @@
   },
   {
    "columns": 2,
-   "fetch_from": "processor_type.attribute_value",
    "fieldname": "processor_type",
    "fieldtype": "Data",
    "in_list_view": 1,

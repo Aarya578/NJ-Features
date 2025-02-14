@@ -195,18 +195,30 @@ frappe.ui.form.on('NJQCA', {
 
     before_submit: function(frm) {
 
-        return new Promise((resolve, reject) => {
-            let tablesToCheck = [ c ];
-            
+         return new Promise((resolve, reject) => {
+            let tablesToCheck = [
+                'njqca_laptop_ram', 
+                'njqca_laptop_processors', 
+                'njqca_display', 
+                'njqca_adaptor', 
+                'njqca_laptop_storage'
+            ];
             let mismatches = [];
             let i = 0;
-    
+
             tablesToCheck.forEach((table) => {
                 frm.doc[table].forEach((row) => {
+                    console.log("INSIDE table loop=============================222");
+                    
                     if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
                         mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
                     } else if (row.calculated_item_code !== row.fetched_item_code) {
                         mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+                    }
+    
+                    // Added condition: If fetched_item_code is filled but calculated_item_code is empty, throw an error
+                    if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
+                        frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NP team.`);
                     }
                 });
             });

@@ -16,6 +16,7 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=usr, pwd=pwd)
         login_manager.post_login()
+        enforce_session_limit(user=usr)
 
     except frappe.AuthenticationError as e:
         error_message = f"Authentication failed for user: {usr}. {str(e)}"
@@ -120,14 +121,15 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
     return frappe.response["message"]
 
 @frappe.whitelist()
-def enforce_session_limit():
+def enforce_session_limit(user=None):
     
     try:
-        user = frappe.session.user
+        if user is None:
+            user = frappe.session.user
         max_sessions = frappe.db.get_value("User", {"name": user}, "simultaneous_sessions")
         if not max_sessions:
             max_sessions = 1
-        user_sessions_query = """SELECT sid, lastupdate FROM `tabSessions` WHERE user = %s ORDER BY lastupdate DESC"""
+        user_sessions_query = """SELECT sid, lastupdate FROM `tabSessions` WHERE user = %s ORDER BY lastupdate ASC"""
         user_sessions = frappe.db.sql(user_sessions_query, user, as_dict=1)
 
         if len(user_sessions) >= max_sessions:

@@ -17,14 +17,11 @@ frappe.ui.form.on('Stock Movement', {
         $("button[data-original-title=Print]").hide();
     },
 
-
     scan_barcode: function () {
         if (cur_frm.doc.scan_barcode) {
             frappe.call({
                 method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
-                args: {
-                    search_value: cur_frm.doc.scan_barcode
-                },
+                args: {  search_value: cur_frm.doc.scan_barcode },
                 callback: function(r) {
                     const data = r && r.message;
                     if (r.message.scan === 1) {
@@ -65,7 +62,6 @@ frappe.ui.form.on('Stock Movement', {
                                     cur_frm.set_value('suggested_warehouse', '');
                                 }
                             }
-                            
                         });
                     }
                 }
@@ -148,7 +144,6 @@ frappe.ui.form.on('Stock Movement', {
         //             })
         //         }
         //     })
-
         // }
     },
 
@@ -198,9 +193,7 @@ frappe.ui.form.on('Stock Movement', {
 
         frappe.call({
             method: "nj_features.nj_features.doctype.stock_movement.stock_movement.validate_stock_movement_for_grade",
-            args: {
-                doc: frm.doc
-            },
+            args: { doc: frm.doc },
             async: false, 
             callback: function (r) {
                 if (r && r.message) {
@@ -242,9 +235,7 @@ frappe.ui.form.on('Stock Movement', {
                                             message: `Reached maximum capacity of the warehouse in <strong>"${t_warehouse}"</strong>`,
                                             title: "Message",
                                             primary_action: {
-                                                action: function () {
-                                                    msg.hide();
-                                                },
+                                                action: function () { msg.hide(); },
                                                 label: "OK"
                                             }
                                         });
@@ -341,13 +332,10 @@ frappe.ui.form.on('Stock Movement Detail', {
                     }
                 });
             }
-            
         } else {
-            
             autofill_warehouse([child], "t_warehouse", frm.doc.default_target_warehouse);
             autofill_warehouse([child], "s_warehouse", frm.doc.default_source_warehouse);
         }
-
 
         if (cur_frm.doc.transfer_status.toLowerCase() == "racking") {
             frm.set_df_property('items', 'read_only', 1, frm.docname, 's_warehouse', child.name);
@@ -429,7 +417,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                                         console.log('Row not found for the current cdn.');
                                     }
                                 }
-                                // Hide the dialog after the check
                                 d.hide();
                             }
                         });
@@ -452,17 +439,9 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             let isValidWarehouse = recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value);
                         
                             if (isValidWarehouse) {
-                                // Fetch warehouse details
                                 frappe.db.get_value('Warehouse', { name: t_warehouse_value }, 'name').then(function(r) {
                                     if (r.message && r.message.name) {
-                                        console.log('Before setting value:', locals[cdt][cdn]); // Debugging
-                        
-                                        // Directly update the model value for the child table
                                         frappe.model.set_value(cdt, cdn, 't_warehouse', r.message.name);
-                        
-                                        console.log('After setting value:', locals[cdt][cdn]); // Debugging
-                        
-                                        // Ensure the dialog closes only after confirming the update
                                         setTimeout(() => { d.hide(); }, 200);
                                     } else {
                                         frappe.msgprint(`Warehouse: <strong>"${t_warehouse_value}"</strong> does not exist. Please enter a valid Warehouse.`);
@@ -482,15 +461,11 @@ function createDialogForLastRecord(child, cdt, cdn) {
                                 return false;
                             }
                         });
-                        
-
-                        // Show the dialog
                         d.show();
                     }
                 }
             });
         }
-
         cur_frm.refresh_field('items');
     }
 }

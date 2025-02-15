@@ -41,15 +41,10 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     validate: function(frm) {
-        console.log("validate");
-
         frappe.call({
             method: "nj_features.overrides.delivery_note.validate_delivery_bios",
-            args: {
-                doc: frm.doc
-            },
+            args: { doc: frm.doc },
             callback: function(r) {
-                console.log('r', r);
                 if (r.message && Array.isArray(r.message) && r.message.length > 0) {
                     frappe.msgprint({
                         title: __('Validation Error'),
@@ -57,9 +52,7 @@ frappe.ui.form.on('Delivery Note', {
                         indicator: 'red'
                     });
                     frappe.validated = false;
-                } else {
-                    frappe.validated = true;
-                }
+                } else { frappe.validated = true; }
             }
         });
     },
@@ -67,9 +60,7 @@ frappe.ui.form.on('Delivery Note', {
     courier_service: function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
-            args: {
-                doc: frm.doc
-            },
+            args: { doc: frm.doc },
             callback: function(r) {
                 if (r.message === true) {
                     frm.set_df_property('tracking_id', 'reqd', 0);

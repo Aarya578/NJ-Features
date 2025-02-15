@@ -52,13 +52,11 @@ def get_all_emp_warehouse(user):
             frappe.throw("Enter <strong>Work Warehouse</strong> in Department: {}".format(emp_dept.get('department')))
 
         default_ww = dept_values[0] + '-Work-Warehouse - NJ' if dept_values[0] else ''
-        all_emp_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': dept_values[1], 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity'])
         centralized_parent = frappe.db.get_value('Warehouse', {'centralized': 1, 'disabled': 0}, 'name')
         centralized_ware = frappe.db.get_all('Warehouse', {'parent_warehouse': centralized_parent}, ['name', 'available_capacity'])
         recommended_warehouses = {}
         centralized_warehouses = {}
         all_emp_ware = get_child_warehouses(dept_values[1])  
-
 
         for warehouse in all_emp_ware:
             recommended_warehouses[warehouse['name']] = warehouse['available_capacity']
@@ -72,6 +70,7 @@ def get_all_emp_warehouse(user):
         formatted_recommended = '\n'.join([f"{warehouse}  =>  {capacity} qty" for warehouse, capacity in recommended_warehouses.items()])
         formatted_centralized = '\n'.join([f"{warehouse} => {capacity} qty" for warehouse, capacity in centralized_warehouses.items()])
         warehouse = ','.join(recommended_warehouses.keys())
+        
         return {
             'recommended': formatted_recommended,
             'centralized': formatted_centralized,
@@ -84,13 +83,14 @@ def get_all_emp_warehouse(user):
 def get_child_warehouses(parent_warehouse):
     all_emp_ware = []  
     
-    child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'available_capacity': ('>', 0), 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
+    child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
 
     for row in child_warehouses:
         if row['is_group']: 
             all_emp_ware.extend(get_child_warehouses(row['name']))  
         else:
-            all_emp_ware.append(row)  
+            if row['available_capacity'] and int(row['available_capacity']) > 0:
+                all_emp_ware.append(row)  
 
     return all_emp_ware 
 
@@ -147,9 +147,6 @@ def validate_serial_no_and_department(row, error_messages):
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 
-
-    print('s_inspection_type', s_inspection_type, s_department, department)
-
     if (s_department and 
     s_department != department and 
     s_inspection_type.get("inspection_type") and  s_inspection_type.get("inspection_type") is not None and 
@@ -163,8 +160,6 @@ def validate_serial_no_and_department(row, error_messages):
 
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
-
-    print("inside check_qi_validation")
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 
@@ -199,7 +194,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
         if qi_result:
             qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
-            print("qi_doc", qi_doc)
 
             if qi_doc:
                 quality_inspection_status_for_stock_movement = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
@@ -417,9 +411,7 @@ def get_grades_from_part_list(search_value):
         # If department data is found, append it to the result list
         if department_query:
             for department_row in department_query:
-                results.append({
-                    "department": department_row['department']
-                })
+                results.append({ "department": department_row['department'] })
 
     # Return the consolidated results
     return results

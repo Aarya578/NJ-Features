@@ -1115,44 +1115,51 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
-
+    
         let d = new frappe.ui.Dialog({
             title: 'Laptop Storage Attributes',
             fields: [
-                { label: 'Storage Type', fieldname: 'storage_type', fieldtype: 'Select', options: ['Loading...'], default: child.storage_type || '', reqd: 1 },
-                { label: 'Storage Interface', fieldname: 'storage_interface', fieldtype: 'Select', options: ['Loading...'], default: child.storage_interface || '', reqd: 1 },
-                { label: 'Storage Capacity', fieldname: 'storage_capacity', fieldtype: 'Select', options: ['Loading...'], default: child.storage_capacity || '',reqd: 1 },
-                { label: 'Storage Length', fieldname: 'storage_length', fieldtype: 'Select', options: ['Loading...'], default: child.storage_length || '',reqd: 1 },
-                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '',reqd: 1 },
+                { 
+                    label: 'Storage Type', fieldname: 'storage_type', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.storage_type || '', 
+                    reqd: !child.storage_type, read_only: !!child.storage_type 
+                },
+                { 
+                    label: 'Storage Interface', fieldname: 'storage_interface', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.storage_interface || '', 
+                    reqd: !child.storage_interface, read_only: !!child.storage_interface
+                },
+                { 
+                    label: 'Storage Capacity', fieldname: 'storage_capacity', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.storage_capacity || '', 
+                    reqd: !child.storage_capacity, read_only: !!child.storage_capacity 
+                },
+                { 
+                    label: 'Storage Length', fieldname: 'storage_length', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.storage_length || '', 
+                    reqd: !child.storage_length, read_only: !!child.storage_length 
+                },
+                { 
+                    label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.grade || '', 
+                    reqd: !child.grade, read_only: false  
+                },
             ],
             primary_action_label: 'Save',
             primary_action(values) {
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property( grid.df.fieldname, 'options',
-                            values[fieldname], frm.docname, fieldname, cdn
-                        );
-
+                        frm.set_df_property(grid.df.fieldname, 'options', values[fieldname], frm.docname, fieldname, cdn);
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
-
+    
                 frm.refresh_field(grid.df.fieldname);
-
                 generateStorageItemCode(frm, cdt, cdn, child);
-                
-                // fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-
-                //     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
-
-                //     frm.refresh_field(grid.df.fieldname);
-
-                // });
-
                 d.hide();
             }
         });
-
+    
         const fieldToAttribute = {
             'storage_type': 'Storage Type',
             'storage_interface':'Storage Interface',
@@ -1224,45 +1231,59 @@ function validate_mandatory_fields(frm) {
 }
 
 frappe.ui.form.on('NJQCA Laptop Ram', {
+
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
-
+    
         let d = new frappe.ui.Dialog({
-            title: 'Laptop Ram Attributes',
+            title: 'Laptop RAM Attributes',
             fields: [
-                { label: 'RAM Type', fieldname: 'ram_type', fieldtype: 'Select', options: ['Loading...'], default: child.ram_type || '', reqd: 1 },
-                { label: 'RAM Capacity', fieldname: 'ram_capacity', fieldtype: 'Select', options: ['Loading...'], default: child.ram_capacity || '', reqd: 1 },
-                { label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', options: ['Loading...'], default: child.ram_speed || '', reqd: 1 },
-                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '', reqd: 1 },
+                { 
+                    label: 'RAM Type', fieldname: 'ram_type', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.ram_type || '', 
+                    reqd: !child.ram_type, read_only: !!child.ram_type 
+                },
+                { 
+                    label: 'RAM Capacity', fieldname: 'ram_capacity', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.ram_capacity || '', 
+                    reqd: !child.ram_capacity, read_only: !!child.ram_capacity
+                },
+                { 
+                    label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.ram_speed || '', 
+                    reqd: !child.ram_speed, 
+                    read_only: !!child.ram_speed && child.ram_speed !== "UNKNOWN SPEED" 
+                },
+                { 
+                    label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.grade || '', 
+                    reqd: !child.grade, read_only: false // Grade is always editable
+                },
             ],
             primary_action_label: 'Save',
             primary_action(values) {
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property( grid.df.fieldname, 'options',
-                            values[fieldname], frm.docname, fieldname, cdn
-                        );
-
+                        frm.set_df_property(grid.df.fieldname, 'options', values[fieldname], frm.docname, fieldname, cdn);
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
-
+    
                 frm.refresh_field(grid.df.fieldname);
-
+    
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
-
                     frm.refresh_field(grid.df.fieldname);
-
                     generateRamItemCode(frm, cdt, cdn, child);
                 });
-
+    
                 d.hide();
             }
         });
+
+    
 
         const fieldToAttribute = {
             'ram_type': 'RAM Type',
@@ -1321,45 +1342,42 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
-
+    
         let d = new frappe.ui.Dialog({
             title: 'Processor Attributes',
             fields: [
-                { label: 'Processor Type', fieldname: 'processor_type', fieldtype: 'Select', options: ['Loading...'], default: child.processor_type || '', reqd: 1 },
-                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '', reqd: 1 },
+                { 
+                    label: 'Processor Type', fieldname: 'processor_type', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.processor_type || '', 
+                    reqd: !child.processor_type, read_only: !!child.processor_type 
+                },
+                { 
+                    label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
+                    options: ['Loading...'], default: child.grade || '', 
+                    reqd: !child.grade, read_only: false 
+                },
             ],
             primary_action_label: 'Save',
             primary_action(values) {
                 Object.keys(values).forEach(fieldname => {
                     if (values[fieldname]) {
-                        frm.set_df_property(
-                            grid.df.fieldname,
-                            'options',
-                            values[fieldname],
-                            frm.docname,
-                            fieldname,
-                            cdn
-                        );
-
+                        frm.set_df_property(grid.df.fieldname, 'options', values[fieldname], frm.docname, fieldname, cdn);
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
-
+    
                 frm.refresh_field(grid.df.fieldname);
-
+    
                 fetch_item_template_disp_adp(frm, item_group, function(item_template_data) {
-
                     frappe.model.set_value(cdt, cdn, 'item_template', item_template_data);
-
                     frm.refresh_field(grid.df.fieldname);
-
                     generateProcessorItemCode(frm, cdt, cdn, child);
                 });
-
+    
                 d.hide();
             }
         });
-
+    
         const fieldToAttribute = {
             'processor_type': 'Processor Type',
             'grade': 'Grade'

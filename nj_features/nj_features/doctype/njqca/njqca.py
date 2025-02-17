@@ -1412,40 +1412,10 @@ def get_options_for_label(label):
     return [option['abbr'] for option in options]
 
 
-
-# @frappe.whitelist()
-# def get_fetched_item_code(serial_no, partData):
-#     partData = frappe.parse_json(partData)
-
-#     serial_no_components = frappe.db.sql(
-#         """
-#         SELECT item_group, item FROM `tabSerial No Component`
-#         WHERE parent = %s
-#         """, (serial_no,), as_dict=True
-#     )
-
-#     for data in partData:
-#         for row in serial_no_components:
-#                 query2 = frappe.db.sql("""
-#                     SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
-#                     FROM `tabItem Variant Attribute`
-#                     WHERE parent = %s
-#                 """, (row.get("item")), as_dict=True)
-
-#                 # Convert query2 to dictionary format
-#                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
-#                 njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()} 
-
-#                 # Check if all attributes match
-
-#                 if serial_no_attr_data == njqca_attr_data:
-#                     data["fetched_item_code"] = row["item"]
-
-#     return partData@frappe.whitelist()
-
-
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
+
+    unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
     serial_no_components = frappe.db.sql(
@@ -1455,7 +1425,7 @@ def get_fetched_item_code(serial_no, partData):
         """, (serial_no,), as_dict=True
     )
 
-    updated_part_data = []  # Store modified data separately
+    updated_part_data = []  
 
     for data in partData:
         matched = False
@@ -1467,43 +1437,50 @@ def get_fetched_item_code(serial_no, partData):
                 WHERE parent = %s
             """, (row.get("item")), as_dict=True)
 
-            # Convert query2 to dictionary format
             serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
             njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
 
-            # Extract Grade (if available)
             serial_no_grade = serial_no_attr_data.get("grade", "").upper()
 
-            # Remove "Grade" from comparison
             serial_no_attr_data.pop("grade", None)
             njqca_attr_data.pop("grade", None)
 
-            # Check if attributes (except Grade) match
             if serial_no_attr_data == njqca_attr_data:
+                print('matching record', row.get("item"))
                 data["fetched_item_code"] = row["item"]
                 matched = True
 
                 if serial_no_grade and serial_no_grade != "UNKNOWN":
-                    data["attr_data"]["Grade"] = serial_no_grade  # Convert to uppercase
-                break  # Stop checking once a match is found
+                    data["attr_data"]["Grade"] = serial_no_grade  
+                break 
 
-        if not matched:
-            # Find the first matching item_group
-            matching_component = next(
-                (comp for comp in serial_no_components if comp['item_group'] == data.get('item_group', '')),
-                None
-            )
+            if serial_no_attr_data != njqca_attr_data and row.get("item_group") == data.get("item_group"):
+                unmatched_item_code.append(row.get("item"))
+            else:
+                data["fetched_item_code"] = ""
 
-            if matching_component:
+        # if data.get("fetched_item_code") and not data.get("part_item_code"):
+        #     frappe.throw("Fetched item code and calculated item code are different. Please contact the NPD team.")
 
-                updated_part_data.append({
-                    "fetched_item_code": matching_component['item'],
-                    "attr_data": "",  # Preserve existing attributes
-                    "part_item_code": "",
-                    "item_group": data.get("item_group", "")
-                })
+        updated_part_data.append(data) 
+    
+    partData_fetched_item = sum(
+        [[data.get("part_item_code", ""), data.get("fetched_item_code", "")]
+        for data in partData], []
+        )
 
-        updated_part_data.append(data)  # Always keep original data
+    partData_fetched_item = [item for item in partData_fetched_item if item]
+    serial_no_components_list = [(row.get("item"), row.get("item_group")) for row in serial_no_components]
+
+    for item, item_group in serial_no_components_list:
+        if item not in partData_fetched_item:
+            updated_part_data.append({
+                "fetched_item_code": item,
+                "attr_data": {},
+                "part_item_code": "",
+                "item_group": item_group  
+            })
+
 
     return updated_part_data
 

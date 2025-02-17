@@ -1478,7 +1478,26 @@ def get_fetched_item_code(serial_no, partData):
 
     return updated_part_data
 
-
-
+@frappe.whitelist()
+def get_battery_auto_item_code(name,item_template):
+    try:
+        item_code_query="""
+                        Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" name like 
+                        case 
+                        when 
+                        (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= 120 OR backup_duration_cycle_2 >= 120 OR backup_duration_cycle_1 >= 120) and sudden_drop like "%%NO%%" and name=%(name)s)
+                        Then  "%%A"
+                        else "%%D"
+                        END limit 1;
+                    """
+        result=frappe.db.sql(item_code_query,{'item_templete':item_template,'name':name},as_dict=True)
+        if not result is  None and result:
+            print("result",result[0].get('name'))
+            return result[0].get('name')
+        else:
+            return None
+    except Exception as e:
+        return None
+    
 
 

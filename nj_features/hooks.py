@@ -129,7 +129,7 @@ doc_events = {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
     },
     "NJQCA": {
-        "before_save": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
 	}
 }

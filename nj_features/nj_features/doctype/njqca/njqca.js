@@ -197,18 +197,14 @@ frappe.ui.form.on('NJQCA', {
 
          return new Promise((resolve, reject) => {
             let tablesToCheck = [
-                'njqca_laptop_ram', 
-                'njqca_laptop_processors', 
-                'njqca_display', 
-                'njqca_adaptor', 
-                'njqca_laptop_storage'
+                'njqca_laptop_ram', 'njqca_laptop_processors', 
+                'njqca_display', 'njqca_adaptor', 'njqca_laptop_storage'
             ];
             let mismatches = [];
             let i = 0;
 
             tablesToCheck.forEach((table) => {
                 frm.doc[table].forEach((row) => {
-                    console.log("INSIDE table loop=============================222");
                     
                     if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
                         mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);

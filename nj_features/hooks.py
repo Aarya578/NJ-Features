@@ -33,23 +33,20 @@ app_include_js = "/assets/nj_features/js/nj_features.js"
 # include js in doctype views
 doctype_js = {
     "Item": "public/js/item.js",
+    "Issue": "public/js/issue.js",
     "Employee": "public/js/employee.js",
     "Serial No": "public/js/serial_no.js",
     "Warehouse": "public/js/warehouse.js",
-    "Purchase Order": "public/js/purchase_order.js",
-    "Purchase Receipt": "public/js/purchase_receipt.js",
-    "Delivery Note": "public/js/delivery_note.js",
-    "Sales Invoice": "public/js/sales_invoice.js",
     "Department": "public/js/department.js",
 	"Role Profile": "public/js/role_profile.js",
-    "Issue": "public/js/issue.js",	
-    # "Stock Entry": "public/js/stock_entry.js"		
-	
+    "Delivery Note": "public/js/delivery_note.js",
+    "Sales Invoice": "public/js/sales_invoice.js",
+    "Purchase Order": "public/js/purchase_order.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js",
 }
 doctype_list_js = {
     "Sales Order": "public/js/sales_order.js",
     "Serial No": "public/js/serial_no_list.js",
-    "Purchase Order": "public/js/purchase_order_list.js",
 }
 
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -108,13 +105,12 @@ doctype_list_js = {
 
 override_doctype_class = {
 	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
-    "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
+    "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
-    "Issue": "nj_features.overrides.issue.CustomIssue",
-    "Stock Entry": "nj_features.overrides.stock_entry.CustomStockEntry"	
+    "Stock Entry": "nj_features.overrides.stock_entry.CustomStockEntry",	
+    "Issue": "nj_features.overrides.issue.CustomIssue"
 }
-
 
 # Document Events
 # ---------------

@@ -42,16 +42,45 @@ def update_serial_no_componont_for_grade(self):
     except Exception as e:
         return {f'Error while updating the Serial No Component: {str(e)}'}
 
+# @frappe.whitelist()
+# def get_inspection_type():
+#     emp_dept = get_active_emp(frappe.session.user, fields=['department'])
+#     inspection_type= frappe.db.get_value('Department', {'name': emp_dept.get('department')}, 'inspection_type')
+#     if inspection_type:
+#         return inspection_type
+#     else:
+#         frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+#         return None
 @frappe.whitelist()
 def get_inspection_type():
-    emp_dept = get_active_emp(frappe.session.user, fields=['department'])
-    inspection_type= frappe.db.get_value('Department', {'name': emp_dept.get('department')}, 'inspection_type')
-    if inspection_type:
-        return inspection_type
-    else:
-        frappe.msgprint("<b>Inspection Type</b> is not updated in <b>Department: {0}</b>".format(emp_dept.get('department')))
+    # Get employee's role profile
+    emp_data = get_active_emp(frappe.session.user, fields=['role_profile'])    
+    if not emp_data.get('role_profile'):
+        frappe.msgprint("Role Profile not found for the user")
         return None
-
+    
+    # First try: Get inspection_type directly from Role Profile
+    role_inspection_type = frappe.db.get_value('Role Profile', 
+                                             {'name': emp_data.get('role_profile')}, 
+                                             'inspection_type')
+    if role_inspection_type:
+        return role_inspection_type
+    
+    department = frappe.db.get_value('Role Profile', 
+                                   {'name': emp_data.get('role_profile')}, 
+                                   'department')
+    if not department:
+        frappe.msgprint("<b>Department</b> is not set in Role Profile: {0}".format(emp_data.get('role_profile')))
+        return None
+    
+    dept_inspection_type = frappe.db.get_value('Department', 
+                                             {'name': department}, 
+                                             'inspection_type')    
+    if dept_inspection_type:
+        return dept_inspection_type
+    else:
+        frappe.msgprint("<b>Inspection Type</b> is not updated in either <b>Role Profile</b> or <b>Department: {0}</b>".format(department))
+        return None
 def open_draft_qi(self,brand=None,model=None):
     try:
         serial_num = self.serial_no

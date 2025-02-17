@@ -256,6 +256,7 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_display && doc.njqca_display.length != 0",
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "section_break_drfru",
    "fieldtype": "Section Break",
    "label": "Display"
@@ -263,6 +264,7 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_adaptor && doc.njqca_adaptor.length != 0",
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "processor_section",
    "fieldtype": "Section Break",
    "label": "Adaptor"
@@ -275,6 +277,7 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_laptop_ram && doc.njqca_laptop_ram.length != 0",
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "laptop_ram_section",
    "fieldtype": "Section Break",
    "label": "Laptop Ram"
@@ -287,6 +290,7 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_laptop_storage && doc.njqca_laptop_storage.length != 0",
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "laptop_storage_section",
    "fieldtype": "Section Break",
    "label": "Laptop Storage"
@@ -309,6 +313,7 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: doc.njqca_laptop_processors && doc.njqca_laptop_processors.length != 0",
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "laptop_processor_section",
    "fieldtype": "Section Break",
    "label": "Laptop Processor"
@@ -324,6 +329,7 @@
   },
   {
    "collapsible": 1,
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "event_trigger_section",
    "fieldtype": "Section Break",
    "label": "Event Trigger"
@@ -372,7 +378,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-13 16:18:54.441844",
+ "modified": "2025-02-14 15:03:31.436826",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

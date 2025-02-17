@@ -1511,7 +1511,7 @@ def get_fetched_item_code(serial_no, partData):
 def get_battery_auto_item_code(name,item_template):
     try:
         item_code_query="""
-                        Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" name like 
+                        Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" and name like 
                         case 
                         when 
                         (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= 120 OR backup_duration_cycle_2 >= 120 OR backup_duration_cycle_1 >= 120) and sudden_drop like "%%NO%%" and name=%(name)s)

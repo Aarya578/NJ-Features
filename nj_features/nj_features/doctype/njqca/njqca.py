@@ -914,15 +914,19 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
     
     attribute_object['Grade'] = Grade
 
+    print('item template', item_template)
+
     if len(attribute_object) > 1:
         part_item_code = get_variant_from_value(item_template, [attribute_object])
+        print("=========part item code========919===",part_item_code)
         if part_item_code and 'error' not in part_item_code:
             part_item_code_from_db = frappe.db.get_value("Item",
                 {'item_name': part_item_code, 'has_variants': 0, 'item_group': part_item_group, 'disabled': 0},
                 'name' )
-            
+            print("=========part item code from db========924===",part_item_code_from_db)
             if part_item_code_from_db:
                 new_item_template = frappe.db.get_value( 'Item', {'name': part_item_code}, 'variant_of' )
+                print("=========new item template========927===",new_item_template)
                 part_data.append({
                     'name': row.get('name'),
                     'attr_data': attribute_object,
@@ -930,6 +934,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                     'item_group': part_item_group,
                     'item_template': new_item_template if new_item_template else item_template,
                 })
+                print("=========part data========935===",part_data)
         else:
             # part_item_code = frappe.db.get_value('Serial No Component',
             #                     {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
@@ -944,6 +949,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                 'item_template': item_template,
                 'response': 'error'
             })
+            print("=========part data========950===",part_data)
 
     return part_data
 

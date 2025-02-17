@@ -494,7 +494,8 @@ function processItemTemplate(frm) {
                     frm.clear_table("njqca_laptop_storage")
                     
                     partData.forEach(row => {
-
+                        console.log("row==========497====", row);
+                        
                         if (row.item_group === "Laptop RAM") {
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_ram");
@@ -513,7 +514,8 @@ function processItemTemplate(frm) {
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_processors");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.part_item_code);                         
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);                         
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'processor_type', row.attr_data["Processor Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);

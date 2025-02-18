@@ -983,7 +983,7 @@ frappe.ui.form.on('NJQCA Display', {
             return new Promise((resolve, reject) => {
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName },
+                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
@@ -1095,7 +1095,7 @@ frappe.ui.form.on('NJQCA Adaptor', {
             return new Promise((resolve, reject) => {
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName },
+                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
@@ -1191,7 +1191,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             return new Promise((resolve, reject) => {
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName },
+                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
@@ -1315,7 +1315,10 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
             return new Promise((resolve, reject) => {
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName },
+                    args: { label: attributeName ,
+                        template: frm.doc.item_template,
+                        item_group: item_group
+                    },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
@@ -1406,7 +1409,7 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
             return new Promise((resolve, reject) => {
                 frappe.call({
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName },
+                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);

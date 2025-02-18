@@ -918,15 +918,12 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
 
     if len(attribute_object) > 1:
         part_item_code = get_variant_from_value(item_template, [attribute_object])
-        print("=========part item code========919===",part_item_code)
         if part_item_code and 'error' not in part_item_code:
             part_item_code_from_db = frappe.db.get_value("Item",
                 {'item_name': part_item_code, 'has_variants': 0, 'item_group': part_item_group, 'disabled': 0},
                 'name' )
-            print("=========part item code from db========924===",part_item_code_from_db)
             if part_item_code_from_db:
                 new_item_template = frappe.db.get_value( 'Item', {'name': part_item_code}, 'variant_of' )
-                print("=========new item template========927===",new_item_template)
                 part_data.append({
                     'name': row.get('name'),
                     'attr_data': attribute_object,
@@ -934,7 +931,6 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                     'item_group': part_item_group,
                     'item_template': new_item_template if new_item_template else item_template,
                 })
-                print("=========part data========935===",part_data)
         else:
             # part_item_code = frappe.db.get_value('Serial No Component',
             #                     {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
@@ -949,7 +945,6 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                 'item_template': item_template,
                 'response': 'error'
             })
-            print("=========part data========950===",part_data)
 
     return part_data
 
@@ -1412,10 +1407,22 @@ def get_item_attributes(selected_fields):
         #print(f"An error occurred at get_item_attributes: {str(e)}")
         return str(e)
     
+
+
+    
 @frappe.whitelist()
-def get_options_for_label(label):
-    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
-    return [option['abbr'] for option in options]
+def get_options_for_label(label,template,item_group):
+    print("label",label,"template",template,"item_group---------",item_group)
+    item_wizard = frappe.db.get_value(
+        'Item Wizards', {'item_template': template, 'part_list_status': 'Completed', 'docstatus': 1},
+        'name', order_by='modified DESC'
+    )
+    print("item_wizard------------------",item_wizard)
+   
+    options = frappe.db.get_all('Items Attribute', filters={'parent':item_wizard,'item_attribute':label,'item_group':item_group}, fields=['attribute_value'], order_by='idx')
+
+    print("options------------------",options)
+    return [option['attribute_value'] for option in options]
 
 
 @frappe.whitelist()

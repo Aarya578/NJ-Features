@@ -30,12 +30,16 @@
   {
    "fieldname": "brand",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Brand ",
    "options": "Brand"
   },
   {
    "fieldname": "model",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Model",
    "options": "Models"
   },
@@ -116,6 +120,8 @@
   {
    "fieldname": "barcode",
    "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Serial No"
   },
   {
@@ -142,7 +148,7 @@
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-01-20 02:19:15.451122",
+ "modified": "2025-02-18 11:27:06.806880",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

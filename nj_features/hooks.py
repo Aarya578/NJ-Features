@@ -185,7 +185,7 @@ scheduler_events = {
 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
 		# ],
 		"30 5 * * *": [ 
-        "nj_features.overrides.employee.update_employee_experience_table",
+        	"nj_features.overrides.employee.update_employee_experience_table",
    		 ],
 		# "20 2 * * *": [
         #     # "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",

@@ -1125,6 +1125,7 @@ def normalize_gen(cpu_value):
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
     try:
+        missing_attribute = []
         args_list = []
         if args:
             args_list = frappe.parse_json(args)
@@ -1132,13 +1133,22 @@ def get_variant_from_value(item_template=None, args=None):
         if item_template and args_list:
             conditions = []
 
+            get_attribute_name = frappe.db.sql("SELECT attribute FROM `tabItem Variant Attribute` WHERE parent = %s", (item_template,))
+            attribute_list = [row[0].strip().lower() for row in get_attribute_name]
+            args_attribute_list = [key.lower() for key in args[0]]
+
+            if len(set(attribute_list)) != len(set(args_attribute_list)):
+                item_code = construct_item_code(item_template, args_list)
+                return item_code
+                
+            conditions = []
             for condition_dict in args_list:
                 for key, value in condition_dict.items():
-                    normalized_value = value
-                    conditions.append(f"MAX(attribute = '{key.lower()}' AND attribute_value = '{normalized_value.lower()}') = 1")
+                    normalized_value = value.strip().lower()
+                    conditions.append(f"MAX(attribute = '{key.strip().lower()}' AND attribute_value = '{normalized_value}') = 1")
 
             having_clause = " AND ".join(conditions)
-            
+
             if having_clause:
                 query = """
                     SELECT parent FROM `tabItem Variant Attribute`
@@ -1158,6 +1168,7 @@ def get_variant_from_value(item_template=None, args=None):
     except Exception as e:
         print(f"An error occurred at get_variant_from_value: {str(e)}")
         return None
+
 
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
@@ -1407,22 +1418,10 @@ def get_item_attributes(selected_fields):
         #print(f"An error occurred at get_item_attributes: {str(e)}")
         return str(e)
     
-
-
-    
 @frappe.whitelist()
-def get_options_for_label(label,template,item_group):
-    print("label",label,"template",template,"item_group---------",item_group)
-    item_wizard = frappe.db.get_value(
-        'Item Wizards', {'item_template': template, 'part_list_status': 'Completed', 'docstatus': 1},
-        'name', order_by='modified DESC'
-    )
-    print("item_wizard------------------",item_wizard)
-   
-    options = frappe.db.get_all('Items Attribute', filters={'parent':item_wizard,'item_attribute':label,'item_group':item_group}, fields=['attribute_value'], order_by='idx')
-
-    print("options------------------",options)
-    return [option['attribute_value'] for option in options]
+def get_options_for_label(label):
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
+    return [option['abbr'] for option in options]
 
 
 @frappe.whitelist()

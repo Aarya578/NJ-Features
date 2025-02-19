@@ -36,7 +36,6 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.first_name = sales_order_info.get("customer_name")
                     serial_no_doc.sales_order_id = sales_order_info.get("name")
                     serial_no_doc.order_id = sales_order_info.get("amazon_order_id") or sales_order_info.get("order_id") or sales_order_info.get("shopify_order_id")
-                    serial_no_doc.sales_channel = sales_order_info.get("sales_channel")
                     serial_no_doc.order_date = sales_order_info.get("transaction_date")
                     serial_no_doc.shipped_date = self.get("posting_date")
                     serial_no_doc.deliver_date = sales_order_info.get("delivery_date")

@@ -496,8 +496,6 @@ function processItemTemplate(frm) {
                     frm.clear_table("njqca_laptop_storage")
                     
                     partData.forEach(row => {
-                        console.log("row==========497====", row);
-                        
                         if (row.item_group === "Laptop RAM") {
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_ram");
@@ -1006,8 +1004,6 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
         method: "nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data",
         args: { serial_no: frm.doc.serial_no, item_group: item_group },
         callback: function(r) {
-            console.log("r.message in get_serial_no_attribute_data", r.message);
-            
             if (r.message && r.message.length > 0) {
                 callback(r.message[0].item_template);
             } else {

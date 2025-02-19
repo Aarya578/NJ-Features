@@ -562,8 +562,6 @@ def model_change_for_serial_no(newmodel, serial_no):
 
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
-    # print('new_item_wizard', new_item_wizard,'qi_exists_data',qi_exists_data,'kitting_exists_data',kitting_exists_data,'mpc_exists_data',mpc_exists_data,'mr_exists_data',mr_exists_data)
-
     if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
         if new_item_wizard != [] or new_item_wizard is not None or new_item_wizard != '':
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
@@ -656,7 +654,6 @@ def get_info_from_serial_no(doc=None):
         if 'serial_no' in doc_json and not sle:
 
             serial_no = doc_json['serial_no']
-            # get price from Stock Ledger Entry
 
             sql_query = """
                 SELECT name,item_code, warehouse, purchase_rate,
@@ -705,13 +702,15 @@ def get_info_from_serial_no(doc=None):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
-
+        
+        sudden_drop = ''
         sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'))
 
-        if sudden_drop:
-            result['sudden_drop'] = sudden_drop
+        result['sudden_drop'] = sudden_drop
+        frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
 
         return result
+    
     except Exception as e:
         return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
 
@@ -913,8 +912,6 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
         {'item_group': part_item_group, 'has_variants': 1, 'disabled': 0}, 'name' )
     
     attribute_object['Grade'] = Grade
-
-    print('item template', item_template)
 
     if len(attribute_object) > 1:
         part_item_code = get_variant_from_value(item_template, [attribute_object])
@@ -1248,15 +1245,16 @@ def get_sudden_drop(parent_name, item_group):
                         FROM (
                             SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
                             FROM FilteredResults
-                        ) AS DeltaValues"""
+                        ) AS DeltaValues
+                    """
             
-
-
             percentage_query="""
-                 select value from `tabNJQCA Result Parameters` where parent=%(parent_name)s  order by idx desc limit 1
-                """
+                select value from `tabNJQCA Result Parameters` where parent=%(parent_name)s  order by idx desc limit 1
+            """
+
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
             last_percentage = percentage[0].get('value')
+            
             if last_percentage and int(last_percentage) >=20:
                 return "YES"
             
@@ -1273,7 +1271,7 @@ def get_sudden_drop(parent_name, item_group):
             return None
             
     except Exception as e:
-        return e
+        return ''
         
 @frappe.whitelist()
 def get_njqca_item_template(item_group=None, brand=None, model=None):
@@ -1458,7 +1456,6 @@ def get_fetched_item_code(serial_no, partData):
             njqca_attr_data.pop("grade", None)
 
             if serial_no_attr_data == njqca_attr_data:
-                print('matching record', row.get("item"))
                 data["fetched_item_code"] = row["item"]
                 matched = True
 
@@ -1510,7 +1507,6 @@ def get_battery_auto_item_code(name,item_template):
                     """
         result=frappe.db.sql(item_code_query,{'item_templete':item_template,'name':name},as_dict=True)
         if not result is  None and result:
-            print("result",result[0].get('name'))
             return result[0].get('name')
         else:
             return None

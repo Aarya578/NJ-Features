@@ -21,6 +21,8 @@ def get_department_details(doc):
                 filters={"department": row.get("inwarded_inventory")}, 
                 pluck="name"
             )
+
+            print('inwarded_warehouse', inwarded_warehouse)
             
             for warehouse in inwarded_warehouse:
                 item_counts = frappe.db.sql("""
@@ -72,6 +74,8 @@ def get_department_details(doc):
     item_code_list = []
     all_item_codes = set(item_code_counts.keys()).union(forwarded_item_code_counts.keys())
 
+    print("all_item_codes ------------- 75", all_item_codes)
+
     for item_code in all_item_codes:
         inwarded_qty = item_code_counts.get(item_code, 0)
         forwarded_qty = forwarded_item_code_counts.get(item_code, 0)
@@ -115,14 +119,15 @@ def get_department_details(doc):
                 item_code = item['item_code']
                 if item_code in attributes_map:
                     item.update(attributes_map[item_code])
+        
         except Exception as e:
             frappe.log_error(title="Error Fetching Item Attributes", message=traceback.format_exc())
 
+    print("item_code_list ------------- 121", item_code_list)
     item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
     
-    # Calculate Days of Inventory (DOI) for each item
     for item in item_code_list:
-        if item['sales_rate'] > 0:  # Avoid division by zero
+        if item['sales_rate'] > 0:
             item['DOI'] = item['current_inventory_qty'] / item['sales_rate']
         else:
             item['DOI'] = 0
@@ -162,10 +167,8 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND sn.warehouse IN ('{warehouse_names_string}')
         GROUP BY
             sn.item_code, sn.warehouse
-    """, explain = 1, debug = 1 , as_dict=True)
+    """, as_dict=True)
 
-    print('inventory_data ----------------- 167', inventory_data)
-    
     inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
 
     sales_rates = frappe.db.sql(f"""
@@ -183,10 +186,8 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
-            soi.item_code, DATE(so.creation);
-    """,explain = 1, debug = 1 , as_dict=True)
-
-    print('sales_rates ---------- 187', sales_rates)
+            soi.item_code, DATE(so.creation)
+    """, as_dict=True)
 
     sales_map = {}
     for sale in sales_rates:
@@ -199,8 +200,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
         
         sales_map[item_code][sale_date] = total_sales
     
-    print('sales_map -------------- 202', sales_map)
-    
     for item in item_code_list:
         item_code = item['item_code']
         item['current_inventory_qty'] = inventory_map.get(item_code, 0)
@@ -208,6 +207,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
         if item_code in sales_map:
             total_sales = 0
             weighted_sales_rate = 0
+            total_weight = 0
 
             for day_offset in range(days):
                 sale_date = (getdate(frappe.utils.today()) - timedelta(days=day_offset)).strftime('%Y-%m-%d')
@@ -215,15 +215,13 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
                 day_weight = weights.get(day_offset, 1) 
                 
                 total_sales += day_sales
-                weighted_sales_rate += (day_sales / day_weight)
+                weighted_sales_rate += (day_sales * day_weight)
+                total_weight += day_weight
             
             item['total_sales_qty'] = total_sales
-            item['sales_rate'] = weighted_sales_rate
+            item['sales_rate'] = weighted_sales_rate / total_weight if total_weight != 0 else 0
         else:
-            print('com')
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
     
-    print('item_code_list', item_code_list)
-
     return item_code_list

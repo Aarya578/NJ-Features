@@ -1,9 +1,4 @@
 frappe.ui.form.on('Sales Order', {
-    setup: function(frm) {
-        frm.make_purchase_order = function() {
-            return;
-        }
-    },
     onload_post_render: function(frm) {
         frm.remove_custom_button('Delivery Note', 'Create');
         frm.page.remove_inner_button('Delivery Note', 'Create');

@@ -8,8 +8,8 @@ from frappe import _
 # from datetime import datetime
 from datetime import datetime, date
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
-
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
+
 @frappe.whitelist()
 def create_user_and_warehouse(self):
 
@@ -31,7 +31,7 @@ def create_user_and_warehouse(self):
             if self.get("work_warehouse") is not None:    
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
-                    return_data["work_warehouse"] = work_ware
+                    return_data["work_warehouse"] = work_ware[0]
             if self.get("work_warehouse") is not None and work_ware is not None:
                 update_work_warehouse(self)
         else:
@@ -534,5 +534,3 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
     except Exception as e:
         frappe.log_error(f"Error updating ramp level and target: {str(e)}", "Fetch and Update Ramp Level")
         frappe.throw(_("An unexpected error occurred while updating ramp level and target."))
-   
- 

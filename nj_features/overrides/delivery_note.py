@@ -47,6 +47,7 @@ class CustomDeliveryNote(DeliveryNote):
                 print('sales_order_info', sales_order_info)
 
                 for serial in serial_list:
+                    
                     serial_no_doc = frappe.get_doc('Serial No', serial)
 
                     serial_no_doc.first_name = sales_order_info.get("customer_name")
@@ -196,7 +197,9 @@ def validate_delivery_bios(doc):
 
                     for serial in serial_list:
                         bios_serial_no = frappe.db.get_value('Serial No', serial, 'bios_serial_no')
-                        if (bios_serial_no is None or bios_serial_no.strip() == '') or item_group not in item_group_list:
+                        print('bios_serial_no', bios_serial_no)
+                        print("item_group", item_group, item_group_list)
+                        if (bios_serial_no is None or bios_serial_no.strip() == '') and item_group in item_group_list:
                             error_message.append(
                                 f"<b>Row {idx}</b>: Serial No <b>{serial}</b> for item group <b>{item_group}</b> has no Bios Serial No"
                             )

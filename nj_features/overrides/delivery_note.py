@@ -170,6 +170,13 @@ def get_link_1(name):
 
 @frappe.whitelist()
 def validate_delivery_bios(doc):
+
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+    
+    if doc.get("is_return"):
+        return
+
     error_message = []
 
     bios_settings = frappe.db.get_value("NJ Settings", {"parameter": "bios_settings"}, "value")
@@ -179,20 +186,18 @@ def validate_delivery_bios(doc):
     
     if int(bios_settings):
 
-        if isinstance(doc, str):
-            doc = json.loads(doc)
-
             item_group_list = frappe.db.get_value('NJ Settings', {'parameter': 'bios_item_group'}, ['value'])
 
             if item_group_list:
                 item_group_list = json.loads(item_group_list)
 
             for item in doc.get('items'):
-                serial_no = item.get('serial_no', '').strip()
+                serial_no = item.get('serial_no', None)
                 item_group = item.get("item_group")
                 idx = item.get("idx", "N/A")
 
                 if serial_no:
+                    serial_no = serial_no.strip()
                     serial_list = serial_no.split('\n')
 
                     for serial in serial_list:

@@ -15,6 +15,7 @@ def create_user_and_warehouse(self):
 
         if isinstance(self, str):
             self = json.loads(self)
+            print('self')
         
         user_email = create_user(self)
 
@@ -32,6 +33,7 @@ def create_user_and_warehouse(self):
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware[0]
+
             if self.get("work_warehouse") is not None and work_ware is not None:
                 update_work_warehouse(self)
         else:

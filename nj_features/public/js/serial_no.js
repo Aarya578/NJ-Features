@@ -7,6 +7,8 @@ frappe.ui.form.on('Serial No', {
 
         if (frappe.user.has_role(["Item Wizard Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
+            frm.set_df_property('model','read_only',0);
+            frm.refresh_field('model');
             frm.refresh_field('serial_no_component');
         }
 

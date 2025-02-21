@@ -489,7 +489,8 @@ class NJQCA(Document):
                 if itm_model and itm_model != self.model:
                     frappe.throw("Model: " + itm_model + " in Manual Repack Item Code is not matching with Selected Model: " + self.model)
                     return None
-            
+            if (self.battery_type is None or not self.battery_type) and self.item_group=="BATTERY":
+                frappe.throw("Please fill the Battery Type")
             try:
                 # get_grading_Authentication(self)
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
@@ -954,6 +955,7 @@ def get_part_mapping(doc):
 
         except json.JSONDecodeError:
             frappe.throw("Invalid JSON string provided for part mapping.")
+    validate_battery_storage_score(doc)
 
     if doc.get('njqca_item_component') and doc.get('item_group'):
 
@@ -1512,6 +1514,50 @@ def get_battery_auto_item_code(name,item_template):
             return None
     except Exception as e:
         return None
-    
 
 
+@frappe.whitelist()
+def validate_battery_storage_score(doc):
+    try:
+        parent_name=doc.get('name')
+        item_template=doc.get('item_template')
+        item_wizard=get_latest_item_wizard(item_template)
+        wiz_battery_health=""
+        wiz_storage_health=""
+
+        wizard_criteria_query="""select battery_health,storage_health from `tabItem Wizards` where name=%s;
+        """
+        if item_wizard:
+            wizard_criteria=frappe.db.sql(wizard_criteria_query, (item_wizard), as_dict=True)
+            print("wizard_criteria",wizard_criteria)
+            if wizard_criteria:
+              if wizard_criteria[0].battery_health: 
+                wiz_battery_health=wizard_criteria[0].battery_health
+              if wizard_criteria[0].storage_health:
+                wiz_storage_health=wizard_criteria[0].storage_health
+        else :
+            return
+        
+        storage_query = """select value from `tabNJQCA Result Parameters`
+            where parent=%s and item_group="Laptop storage" and parameter="Health" limit 1;
+        """
+        battery_query="""select value from `tabNJQCA Result Parameters` where parent=%s and item_group="Battery" and parameter="Health" limit 1;"""
+        if wiz_battery_health:
+            battery = frappe.db.sql(battery_query,(parent_name), as_dict=True)
+            if battery and battery[0].value:
+                if int(battery[0].value)>=int(wiz_battery_health):
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 where parent=%(parent_n)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
+                else:
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
+        if wiz_storage_health:
+            storage = frappe.db.sql(storage_query,(parent_name), as_dict=True)
+            if storage and storage[0].value:
+                if int(storage[0].value)>=int(wiz_storage_health):
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0,value="PASS" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
+                else:
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41,value="FAIL" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
+
+    except Exception as e:
+        return 

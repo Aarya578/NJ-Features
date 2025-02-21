@@ -125,6 +125,8 @@ def get_department_details(doc):
 
     print("item_code_list ------------- 121", item_code_list)
     item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
+
+    print("item_code_list ------------------- 129", item_code_list)
     
     for item in item_code_list:
         if item['sales_rate'] > 0:
@@ -134,13 +136,15 @@ def get_department_details(doc):
 
     return item_code_list
 
-def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=None):
+def calculate_sales_order_rate_with_weights(item_code_list, days=7, weights=2):
     if not item_code_list:
         return item_code_list
 
-    if not weights:
-        weights = {i: i + 1 for i in range(days)} 
-    
+    if isinstance(weights, int):
+        weights = {i: (i + 1) * weights for i in range(days)}
+    elif weights is None:
+        weights = {i: i + 1 for i in range(days)}
+
     item_codes = [item['item_code'] for item in item_code_list]
     if not item_codes:
         return item_code_list
@@ -158,23 +162,23 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
     inventory_data = frappe.db.sql(f"""
         SELECT
             sn.item_code,
-            COUNT(sn.name) as current_inventory_qty,
-            sn.warehouse
+            COUNT(sn.name) AS current_inventory_qty
         FROM
             `tabSerial No` sn
         WHERE
             sn.item_code IN ({item_codes_string})
             AND sn.warehouse IN ('{warehouse_names_string}')
         GROUP BY
-            sn.item_code, sn.warehouse
+            sn.item_code
     """, as_dict=True)
 
     inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
 
+    print("item_code_string -------------------", item_codes_string)
+
     sales_rates = frappe.db.sql(f"""
         SELECT
             soi.item_code,
-            DATE(so.creation) AS sale_date,
             SUM(soi.qty) AS total_sales
         FROM
             `tabSales Order` so
@@ -186,42 +190,33 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
-            soi.item_code, DATE(so.creation)
+            soi.item_code
     """, as_dict=True)
 
-    sales_map = {}
-    for sale in sales_rates:
-        item_code = sale['item_code']
-        sale_date = sale['sale_date']
-        total_sales = sale['total_sales']
-        
-        if item_code not in sales_map:
-            sales_map[item_code] = {}
-        
-        sales_map[item_code][sale_date] = total_sales
-    
+    print(f'sales_rate ------------- ', sales_rates)
+
+    sales_map = {sale['item_code']: sale['total_sales'] for sale in sales_rates}
+
     for item in item_code_list:
         item_code = item['item_code']
         item['current_inventory_qty'] = inventory_map.get(item_code, 0)
 
-        if item_code in sales_map:
-            total_sales = 0
-            weighted_sales_rate = 0
-            total_weight = 0
+        total_sales = sales_map.get(item_code, 0) 
 
-            for day_offset in range(days):
-                sale_date = (getdate(frappe.utils.today()) - timedelta(days=day_offset)).strftime('%Y-%m-%d')
-                day_sales = sales_map[item_code].get(sale_date, 0)
-                day_weight = weights.get(day_offset, 1) 
-                
-                total_sales += day_sales
-                weighted_sales_rate += (day_sales * day_weight)
-                total_weight += day_weight
+        if total_sales > 0:
+            weighted_sales_rate = 0
+            total_weight = sum(weights.values())
             
+            for day_offset in range(days):
+                day_weight = weights.get(day_offset, 1) 
+                weighted_sales_rate += (total_sales * day_weight)
+
             item['total_sales_qty'] = total_sales
             item['sales_rate'] = weighted_sales_rate / total_weight if total_weight != 0 else 0
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
     
+    print("item_code_list -------------------", item_code_list)
+
     return item_code_list

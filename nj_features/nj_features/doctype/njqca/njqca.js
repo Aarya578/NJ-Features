@@ -474,7 +474,7 @@ function processItemTemplate(frm) {
                             frm.set_value('manual_repack_item_code', r.message.repack_item_code);
                         }
                     }
-                    frm.refresh_fields(['repack_item_code', 'manual_repack_item_code', 'data_attr']);
+                    frm.refresh_fields(['repack_item_code', 'manual_repack_item_code', 'njqca_result_parameters']);
 
                     const partData = r.message.part_data;
 

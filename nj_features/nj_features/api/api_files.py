@@ -392,7 +392,7 @@ def get_backup_duration(doc, method=None):
                             )
                         ) / 60, 2
                     ) AS time_difference_in_minutes
-                FROM cycle_values;
+                FROM cycle_values ORDER BY start_idx;
             """
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)

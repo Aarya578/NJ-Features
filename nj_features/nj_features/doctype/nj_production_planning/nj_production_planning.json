@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "department",
+  "to_make",
   "nj_production_planning_child",
   "amended_from"
  ],
@@ -31,12 +32,18 @@
    "options": "NJ Production Planning",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.department != ''\n",
+   "fieldname": "to_make",
+   "fieldtype": "Button",
+   "label": "To Make"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-18 10:41:39.198467",
+ "modified": "2025-02-21 10:33:57.740493",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

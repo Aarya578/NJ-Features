@@ -28,6 +28,8 @@
   "qi_name",
   "backup_duration_cycle_3",
   "sudden_drop",
+  "battery_type",
+  "grading_fetched",
   "repack_itm_price",
   "app_statuts",
   "section_break_6sw2s",
@@ -56,8 +58,7 @@
   "amended_from",
   "event_trigger_section",
   "njqca_event_trigger",
-  "pwd",
-  "grading_fetched"
+  "pwd"
  ],
  "fields": [
   {
@@ -380,11 +381,18 @@
    "fieldname": "section_break_yblqh",
    "fieldtype": "Section Break",
    "label": "Result Parameters"
+  },
+  {
+   "depends_on": "eval:doc.item_group == \"BATTERY\";",
+   "fieldname": "battery_type",
+   "fieldtype": "Select",
+   "label": "Battery Type",
+   "options": "\nRefurb\nBDT"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-18 11:23:36.759618",
+ "modified": "2025-02-21 10:53:02.220320",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

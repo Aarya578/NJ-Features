@@ -274,7 +274,7 @@ def check_specific_part_warranty(serial_doc, purchase_order, error_messages):
 def check_component_expiry(serial_doc, purchase_order, error_messages):
     po_doc = frappe.get_doc('Purchase Order', serial_doc.get('purchase_order'))
 
-    for row in po_doc.get('purchase_order_warrenty_for_specific_parts'):
+    for idx, row in enumerate(po_doc.get('purchase_order_warrenty_for_specific_parts'), start=1):
         if row.get("item_group") == serial_doc.get("item_group"):
             warranty_days = row.get('warranty_days')
             creation_date = po_doc.get('creation')
@@ -290,7 +290,10 @@ def check_component_expiry(serial_doc, purchase_order, error_messages):
                     return True
 
                 remaining_days = (warranty_expiry_date - today_date).days
-                error_messages.append(f"The general warranty is still valid. <b>{remaining_days} day(s)</b> remaining.")
+                error_messages.append(
+                    f"Serial No: <b>{serial_doc.get('name')}</b>, Row: <b>{idx}</b> - "
+                    f"The general warranty is still valid. <b>{remaining_days} day(s)</b> remaining."
+                )
                 return False
 
     return True

@@ -1,5 +1,9 @@
 frappe.ui.form.on('Item', {
     refresh: function(frm) {
+        if (frappe.user.has_role('Item Wizard Manager')) {
+            frm.set_df_property('disabled', 'read_only', 0);
+        }
+
         $('.col-lg-2.layout-side-section').hide();
 
         if (frm.doc.has_serial_no == 0 && frm.doc.has_variants == 1) {

@@ -120,24 +120,32 @@ def get_department_details(doc):
             frappe.log_error(title="Error Fetching Item Attributes", message=traceback.format_exc())
 
     print("item_code_list ------------- ", item_code_list)
-    item_code_list = calculate_sales_order_rate_without_weights(item_code_list)
+    item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
 
     print("item_code_list ------------------- ", item_code_list)
     
     for item in item_code_list:
+        print('\n\nitem ----------------------- 128', item)
         if item['sales_rate'] > 0:
-            item['DOI'] = item['current_inventory_qty'] / item['sales_rate']
+            item['DOI'] = item['forwarded_qty'] / item['sales_rate']
+            print('DOI ------------------- ', item['DOI'])
         else:
+            print('coming to else ------------------ 132')
             item['DOI'] = 0
+    
+    print("item_code_list ------------------------ 134", item_code_list)
 
     return item_code_list
 
 
 from datetime import datetime, timedelta
 
-def calculate_sales_order_rate_without_weights(item_code_list, days=7):
+def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_factor=2):
     if not item_code_list:
         return item_code_list
+
+    weights = {i: (i + 1) * weight_factor for i in range(days)}
+    total_weight = sum(weights.values())
 
     item_codes = [item['item_code'] for item in item_code_list]
     if not item_codes:
@@ -171,7 +179,8 @@ def calculate_sales_order_rate_without_weights(item_code_list, days=7):
     sales_data = frappe.db.sql(f"""
         SELECT
             soi.item_code,
-            SUM(soi.qty) AS total_sales_qty
+            DATE(so.creation) AS sale_date,
+            SUM(soi.qty) AS daily_sales
         FROM
             `tabSales Order` so
         INNER JOIN
@@ -182,19 +191,44 @@ def calculate_sales_order_rate_without_weights(item_code_list, days=7):
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
-            soi.item_code
+            soi.item_code, sale_date
+        ORDER BY
+            sale_date DESC
     """, as_dict=True)
 
     print("sales_data ----------- ", sales_data)
 
-    sales_map = {sale['item_code']: sale['total_sales_qty'] for sale in sales_data}
+    sales_map = {}
+    for sale in sales_data:
+        sale_date = sale['sale_date']
+        if not isinstance(sale_date, datetime):
+            sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
+
+        item_code = sale['item_code']
+        sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
+
+    print("sales_map ----------- ", sales_map)
 
     for item in item_code_list:
         item_code = item['item_code']
         item['current_inventory_qty'] = inventory_map.get(item_code, 0)
-        item['total_sales_qty'] = sales_map.get(item_code, 0) 
-        item['sales_rate'] = item['total_sales_qty'] / days 
 
-        print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Sales Rate: {item['sales_rate']}")
+        if item_code in sales_map:
+            total_sales_qty = sum(sales_map[item_code].values())
+            total_weighted_sales = 0
+
+            for day_offset in range(days):
+                sales_date = datetime.today().date() - timedelta(days=day_offset)
+                daily_sales = sales_map[item_code].get(sales_date, 0)
+                weight = weights.get(day_offset, 1)
+                total_weighted_sales += daily_sales * weight
+
+            item['total_sales_qty'] = total_sales_qty
+            item['sales_rate'] = total_weighted_sales 
+        else:
+            item['total_sales_qty'] = 0
+            item['sales_rate'] = 0
+
+        print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Weighted Sales: {item['sales_rate']}")
 
     return item_code_list

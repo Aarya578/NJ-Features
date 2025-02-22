@@ -1539,7 +1539,7 @@ def validate_battery_storage_score(doc):
                 if wizard_criteria[0].bad_sectors:
                     bad_sectors=wizard_criteria[0].bad_sectors
             
-        else :
+        else:
             return
         
         storage_query = """
@@ -1559,7 +1559,7 @@ def validate_battery_storage_score(doc):
             battery = frappe.db.sql(battery_query,(parent_name), as_dict=True)
 
             if battery and battery[0].value:
-                if int(battery[0].value)>=int(wiz_battery_health):
+                if float(battery[0].value)>=float(wiz_battery_health):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
                         where parent=%(parent_name)s and item_group="Battery" and parameter='Health';""",{'parent_name':parent_name})
                 else:
@@ -1571,11 +1571,10 @@ def validate_battery_storage_score(doc):
             bad_sector_data = frappe.db.sql(bad_sector_query,(parent_name), as_dict=True)
 
             if storage and storage[0].value:
-                if ( bad_sector_data and bad_sector_data[0].value and bad_sectors and int(bad_sector_data[0].value) > int(bad_sectors)):
+                if ( bad_sector_data and bad_sector_data[0].value and bad_sectors and float(bad_sector_data[0].value) > float(bad_sectors)):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41,value="FAIL" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
 
-                elif int(storage[0].value) >= int(wiz_storage_health):
-
+                elif float(storage[0].value) >= float(wiz_storage_health):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
                         where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0,value="PASS" 
@@ -1585,7 +1584,6 @@ def validate_battery_storage_score(doc):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41,value="FAIL" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
 
-
     except Exception as e:
-        print("e",traceback.format_exc())
+        frappe.msgprint("Error in BTY Storage Score",traceback.format_exc())
         return 

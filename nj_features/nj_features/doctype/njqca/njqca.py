@@ -1522,42 +1522,70 @@ def validate_battery_storage_score(doc):
         parent_name=doc.get('name')
         item_template=doc.get('item_template')
         item_wizard=get_latest_item_wizard(item_template)
-        wiz_battery_health=""
-        wiz_storage_health=""
+        bad_sectors, wiz_storage_health, wiz_battery_health = "", "", ""
 
-        wizard_criteria_query="""select battery_health,storage_health from `tabItem Wizards` where name=%s;
+        wizard_criteria_query="""
+            select battery_health, storage_health, bad_sectors from `tabItem Wizards` where name=%s;
         """
+
         if item_wizard:
             wizard_criteria=frappe.db.sql(wizard_criteria_query, (item_wizard), as_dict=True)
-            print("wizard_criteria",wizard_criteria)
+
             if wizard_criteria:
-              if wizard_criteria[0].battery_health: 
-                wiz_battery_health=wizard_criteria[0].battery_health
-              if wizard_criteria[0].storage_health:
-                wiz_storage_health=wizard_criteria[0].storage_health
+                if wizard_criteria[0].battery_health: 
+                    wiz_battery_health=wizard_criteria[0].battery_health
+                if wizard_criteria[0].storage_health:
+                    wiz_storage_health=wizard_criteria[0].storage_health
+                if wizard_criteria[0].bad_sectors:
+                    bad_sectors=wizard_criteria[0].bad_sectors
+            
         else :
             return
         
-        storage_query = """select value from `tabNJQCA Result Parameters`
-            where parent=%s and item_group="Laptop storage" and parameter="Health" limit 1;
+        storage_query = """
+            select replace(value, '%%', '') as value from `tabNJQCA Result Parameters`
+            where parent=%s and item_group="Laptop storage" and parameter="Health" limit 1
         """
-        battery_query="""select value from `tabNJQCA Result Parameters` where parent=%s and item_group="Battery" and parameter="Health" limit 1;"""
+        battery_query = """
+            select replace(value, '%%', '') as value from `tabNJQCA Result Parameters` 
+            where parent=%s and item_group="Battery" and parameter="Health" limit 1
+        """
+        bad_sector_query = """
+            select REGEXP_REPLACE(value, '[^0-9]', '') AS value from `tabNJQCA Result Parameters`
+            where parent=%s and item_group="Laptop storage" and parameter="status" and value like '%%bad sector%%' limit 1
+        """
+
         if wiz_battery_health:
             battery = frappe.db.sql(battery_query,(parent_name), as_dict=True)
+
             if battery and battery[0].value:
                 if int(battery[0].value)>=int(wiz_battery_health):
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 where parent=%(parent_n)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
+                        where parent=%(parent_name)s and item_group="Battery" and parameter='Health';""",{'parent_name':parent_name})
                 else:
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 
+                        where parent=%(parent_name)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
+
         if wiz_storage_health:
             storage = frappe.db.sql(storage_query,(parent_name), as_dict=True)
+            bad_sector_data = frappe.db.sql(bad_sector_query,(parent_name), as_dict=True)
+
             if storage and storage[0].value:
-                if int(storage[0].value)>=int(wiz_storage_health):
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0,value="PASS" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
+                if ( bad_sector_data and bad_sector_data[0].value and bad_sectors and int(bad_sector_data[0].value) > int(bad_sectors)):
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41,value="FAIL" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
+
+                elif int(storage[0].value) >= int(wiz_storage_health):
+
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
+                        where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
+                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0,value="PASS" 
+                        where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
+                
                 else:
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41,value="FAIL" where parent=%(parent_name)s and item_group="Laptop storage" and parameter="HDD_Sentinel_Status";""",{'parent_name':parent_name})
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
 
+
     except Exception as e:
+        print("e",traceback.format_exc())
         return 

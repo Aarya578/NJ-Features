@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2023-12-24 20:24:46.550719",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -43,10 +42,9 @@
    "options": "Processor\nRAM\nMemory\nDisplay"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-09-24 18:08:50.561798",
+ "modified": "2025-02-25 10:55:26.614741",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Part Mapping",

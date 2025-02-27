@@ -99,3 +99,22 @@ frappe.ui.misc.about = function() {
 
     frappe.ui.misc.about_dialog.show();
 }
+
+frappe.provide('frappe.user');
+
+$.extend(frappe.user, {
+    get_role_profile: function(user_role_profile = null) {
+        return new Promise(function(resolve, reject) {
+            frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, 'role_profile', function(result) {
+                if (result && result.role_profile !== undefined) {
+
+                    if (user_role_profile !== null) {
+                        if (result.role_profile === user_role_profile) {
+                            resolve(true);
+                        } else { resolve(false); }
+                    } else { resolve(result.role_profile); }
+                } else { resolve(null); }
+            });
+        });
+    }
+});

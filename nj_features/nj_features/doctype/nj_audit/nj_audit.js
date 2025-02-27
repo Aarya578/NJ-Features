@@ -1,4 +1,6 @@
 frappe.ui.form.on('NJ Audit', {
+    setup: function(frm) { fill_audit_and_work_warehouse(frm) },
+
     onload: function(frm) {
         if (frm.doc.docstatus == 0 && !frm.doc.__islocal && frm.doc.__unsaved) {
             frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
@@ -14,8 +16,15 @@ frappe.ui.form.on('NJ Audit', {
     },
 
     onload_post_render: function(frm) {
-        if ((!frm.doc.work_warehouse || !frm.doc.audit_warehouse) && frm.doc.docstatus == 0) { 
-            fill_audit_and_work_warehouse(frm)
+        if (frm.doc.docstatus == 0) {
+            if (!frm.doc.audit_warehouse) {
+                frappe.msgprint("<b>Audit Warehouse</b> is not filled.");
+                $('.primary-action').hide();
+                frappe.validated = false;
+            } else {
+                $('.primary-action').show();
+                frappe.validated = true;
+            }
         }
     },
 
@@ -42,6 +51,15 @@ frappe.ui.form.on('NJ Audit', {
                     frappe.db.get_value('NJ Settings', {'parameter': 'Item Group Check'}, 'value', function(response) {
                         if (response && response.value){
                             if (response.value.includes(nj_audit_items.item_group)) {
+
+                                if (!frm.doc.audit_warehouse) {
+                                    frappe.msgprint("<b>Audit Warehouse</b> is not filled.");
+                                    $('.primary-action').hide();
+                                    frappe.validated = false;
+                                    $('[data-fieldname="scan_serial_no"]').focus();
+                                    return
+                                }
+
                                 frm.add_child("nj_audit_items", nj_audit_items);
                                 frm.refresh_field("nj_audit_items");
             
@@ -78,9 +96,7 @@ frappe.ui.form.on('NJ Audit', {
         if(frm.doc.scan_rack) {
             frappe.call({
                 'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_rack_balance',
-                'args': {
-                    'rack_name': frm.doc.scan_rack
-                },
+                'args': { 'rack_name': frm.doc.scan_rack },
                 callback: function(r) {
                     if (r && r.message) {
                         frm.set_value('rack_balance', r.message)
@@ -100,9 +116,7 @@ frappe.ui.form.on('NJ Audit', {
             'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.move_all_stock',
             'args': {'self': frm.doc },
             callback: function(r) {
-                if (r && r.message) {
-                    update_nj_audit_items(frm)
-                }
+                if (r && r.message) { update_nj_audit_items(frm) }
             }
         })
     }

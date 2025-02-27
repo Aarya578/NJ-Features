@@ -7,8 +7,15 @@ frappe.ui.form.on('Serial No', {
 
         if (frappe.user.has_role(["Item Wizard Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
+            frm.set_df_property('model','read_only',0);
+            frm.refresh_field('model');
             frm.refresh_field('serial_no_component');
         }
+
+        frm.get_field('past_part_list').grid.cannot_add_rows = true;
+        frm.get_field('bag_list').grid.cannot_add_rows = true;
+        frm.refresh_field('past_part_list');
+        frm.refresh_field('bag_list');
 
         // frappe.call({
         //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",

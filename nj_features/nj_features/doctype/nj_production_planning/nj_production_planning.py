@@ -1,7 +1,7 @@
 import json
 import frappe
 import traceback
-from datetime import timedelta
+from datetime import datetime, timedelta, date
 from frappe.utils import getdate
 
 @frappe.whitelist()
@@ -13,7 +13,6 @@ def get_department_details(doc):
     item_code_counts = {}
     forwarded_item_code_counts = {}
 
-    # Process inwarded inventory
     for row in dept_doc.get("inventory_details_child"):
         if row.get("inwarded_inventory"):
             inwarded_warehouse = row.get("inwarded_warehouse").split(",") if row.get("inwarded_warehouse") else frappe.db.get_all(
@@ -21,6 +20,8 @@ def get_department_details(doc):
                 filters={"department": row.get("inwarded_inventory")}, 
                 pluck="name"
             )
+
+            print('inwarded_warehouse', inwarded_warehouse)
             
             for warehouse in inwarded_warehouse:
                 item_counts = frappe.db.sql("""
@@ -41,7 +42,6 @@ def get_department_details(doc):
                     else:
                         item_code_counts[item_code] = count
 
-        # Process forwarded inventory
         if row.get("forwarded_inventory"): 
             forwarded_warehouse = row.get("forwarded_warehouse").split(",") if row.get("forwarded_warehouse") else frappe.db.get_all(
                 "Warehouse", 
@@ -68,9 +68,10 @@ def get_department_details(doc):
                     else:
                         forwarded_item_code_counts[item_code] = count
 
-    # Combine inwarded and forwarded inventory counts
     item_code_list = []
     all_item_codes = set(item_code_counts.keys()).union(forwarded_item_code_counts.keys())
+
+    print("all_item_codes ------------- 75", all_item_codes)
 
     for item_code in all_item_codes:
         inwarded_qty = item_code_counts.get(item_code, 0)
@@ -81,7 +82,6 @@ def get_department_details(doc):
             "forwarded_qty": forwarded_qty
         })
 
-    # Fetch additional item details
     item_codes = [item['item_code'] for item in item_code_list]
     if item_codes:
         try:
@@ -115,27 +115,38 @@ def get_department_details(doc):
                 item_code = item['item_code']
                 if item_code in attributes_map:
                     item.update(attributes_map[item_code])
+        
         except Exception as e:
             frappe.log_error(title="Error Fetching Item Attributes", message=traceback.format_exc())
 
+    print("item_code_list ------------- ", item_code_list)
     item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
+
+    print("item_code_list ------------------- ", item_code_list)
     
-    # Calculate Days of Inventory (DOI) for each item
     for item in item_code_list:
-        if item['sales_rate'] > 0:  # Avoid division by zero
-            item['DOI'] = item['current_inventory_qty'] / item['sales_rate']
+        print('\n\nitem ----------------------- 128', item)
+        if item['sales_rate'] > 0:
+            item['DOI'] = item['forwarded_qty'] / item['sales_rate']
+            print('DOI ------------------- ', item['DOI'])
         else:
+            print('coming to else ------------------ 132')
             item['DOI'] = 0
+    
+    print("item_code_list ------------------------ 134", item_code_list)
 
     return item_code_list
 
-def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=None):
+
+from datetime import datetime, timedelta
+
+def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_factor=2):
     if not item_code_list:
         return item_code_list
 
-    if not weights:
-        weights = {i: i + 1 for i in range(days)} 
-    
+    weights = {i: (i + 1) * weight_factor for i in range(days)}
+    total_weight = sum(weights.values())
+
     item_codes = [item['item_code'] for item in item_code_list]
     if not item_codes:
         return item_code_list
@@ -153,26 +164,23 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
     inventory_data = frappe.db.sql(f"""
         SELECT
             sn.item_code,
-            COUNT(sn.name) as current_inventory_qty,
-            sn.warehouse
+            COUNT(sn.name) AS current_inventory_qty
         FROM
             `tabSerial No` sn
         WHERE
             sn.item_code IN ({item_codes_string})
             AND sn.warehouse IN ('{warehouse_names_string}')
         GROUP BY
-            sn.item_code, sn.warehouse
-    """, explain = 1, debug = 1 , as_dict=True)
+            sn.item_code
+    """, as_dict=True)
 
-    print('inventory_data ----------------- 167', inventory_data)
-    
     inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
 
-    sales_rates = frappe.db.sql(f"""
+    sales_data = frappe.db.sql(f"""
         SELECT
             soi.item_code,
             DATE(so.creation) AS sale_date,
-            SUM(soi.qty) AS total_sales
+            SUM(soi.qty) AS daily_sales
         FROM
             `tabSales Order` so
         INNER JOIN
@@ -183,47 +191,44 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=30, weights=Non
             AND so.docstatus = 1
             AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
         GROUP BY
-            soi.item_code, DATE(so.creation);
-    """,explain = 1, debug = 1 , as_dict=True)
+            soi.item_code, sale_date
+        ORDER BY
+            sale_date DESC
+    """, as_dict=True)
 
-    print('sales_rates ---------- 187', sales_rates)
+    print("sales_data ----------- ", sales_data)
 
     sales_map = {}
-    for sale in sales_rates:
-        item_code = sale['item_code']
+    for sale in sales_data:
         sale_date = sale['sale_date']
-        total_sales = sale['total_sales']
-        
-        if item_code not in sales_map:
-            sales_map[item_code] = {}
-        
-        sales_map[item_code][sale_date] = total_sales
-    
-    print('sales_map -------------- 202', sales_map)
-    
+        if not isinstance(sale_date, datetime):
+            sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
+
+        item_code = sale['item_code']
+        sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
+
+    print("sales_map ----------- ", sales_map)
+
     for item in item_code_list:
         item_code = item['item_code']
         item['current_inventory_qty'] = inventory_map.get(item_code, 0)
 
         if item_code in sales_map:
-            total_sales = 0
-            weighted_sales_rate = 0
+            total_sales_qty = sum(sales_map[item_code].values())
+            total_weighted_sales = 0
 
             for day_offset in range(days):
-                sale_date = (getdate(frappe.utils.today()) - timedelta(days=day_offset)).strftime('%Y-%m-%d')
-                day_sales = sales_map[item_code].get(sale_date, 0)
-                day_weight = weights.get(day_offset, 1) 
-                
-                total_sales += day_sales
-                weighted_sales_rate += (day_sales / day_weight)
-            
-            item['total_sales_qty'] = total_sales
-            item['sales_rate'] = weighted_sales_rate
+                sales_date = datetime.today().date() - timedelta(days=day_offset)
+                daily_sales = sales_map[item_code].get(sales_date, 0)
+                weight = weights.get(day_offset, 1)
+                total_weighted_sales += daily_sales * weight
+
+            item['total_sales_qty'] = total_sales_qty
+            item['sales_rate'] = total_weighted_sales 
         else:
-            print('com')
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
-    
-    print('item_code_list', item_code_list)
+
+        print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Weighted Sales: {item['sales_rate']}")
 
     return item_code_list

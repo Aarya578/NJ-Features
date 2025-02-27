@@ -373,7 +373,7 @@ def get_backup_duration(doc, method=None):
                         pd1.parameter AS initial_timestamp, -- timestamp just before Battery_Discharging_Start_Time         
                         -- Find the next occurrence of Battery_Discharging_Start_Time and get its timestamp at idx - 2         
                         COALESCE(             
-                            (SELECT parameter FROM parameter_data WHERE idx > cs.idx AND idx = (SELECT idx-2 FROM cycle_start WHERE idx > cs.idx LIMIT 1)),              
+                            (SELECT parameter FROM parameter_data WHERE idx > cs.idx AND idx = (SELECT idx-2 FROM cycle_start WHERE idx > cs.idx ORDER BY idx LIMIT 1)),              
                             (SELECT parameter FROM parameter_data ORDER BY idx DESC LIMIT 1) -- if no next occurrence, get last timestamp         
                         ) AS final_timestamp     
                     FROM cycle_start cs     
@@ -392,7 +392,7 @@ def get_backup_duration(doc, method=None):
                             )
                         ) / 60, 2
                     ) AS time_difference_in_minutes
-                FROM cycle_values;
+                FROM cycle_values ORDER BY start_idx;
             """
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)

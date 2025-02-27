@@ -5,7 +5,6 @@ frappe.ui.form.on('Purchase Order', {
     onload() { $('.col-lg-2.layout-side-section').hide(); },
 
     refresh: function(frm) {
-        console.log('refreshing....');
         // if (frm.doc.docstatus == 1 && frm.doc.status != "Closed" && frm.doc.status != "On Hold") {
             
         //     // Override Purchase Receipt button
@@ -15,7 +14,6 @@ frappe.ui.form.on('Purchase Order', {
         //             method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
         //             args: { po_number: frm.doc.name },
         //             callback: function(r) {
-        //                 console.log('response', r.message);
         //                 if (r && r.message.length > 0) {
         //                     $.each(r.message, function(i, d) {
         //                         frappe.model.nj_open_mapped_doc({
@@ -38,10 +36,6 @@ frappe.ui.form.on('Purchase Order', {
         //         }, __("Transfer"));
         //     }
         // }
-    },
-
-    make_purchase_receipt: function(frm) {
-        console.log('making purchase receipt...')
     },
     
     has_warranty(frm) {

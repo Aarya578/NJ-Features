@@ -958,7 +958,7 @@ def get_part_mapping(doc):
 
         except json.JSONDecodeError:
             frappe.throw("Invalid JSON string provided for part mapping.")
-    # validate_battery_storage_score(doc)
+    validate_battery_storage_score(doc)
 
     if doc.get('njqca_item_component') and doc.get('item_group'):
 

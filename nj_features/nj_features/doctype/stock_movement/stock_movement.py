@@ -142,8 +142,8 @@ def validate_serial_no_and_department(row, error_messages):
 
     if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
         validate_grade_restriction(serial_doc, department_doc, error_messages)
-    else:
-        validate_grade_restriction(serial_doc, department_doc, error_messages)
+    # else:
+    #     validate_grade_restriction(serial_doc, department_doc, error_messages)
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 

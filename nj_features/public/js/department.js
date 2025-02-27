@@ -1,15 +1,22 @@
 frappe.ui.form.on('Stock Movement Restriction Child', {
+
     grade: function(frm, cdt, cdn) {
-        let child = locals[cdt][cdn];
+
+        if (locals[cdt][cdn].item_group){
+            let child = locals[cdt][cdn];
         
-        if (child.grade) {
-            let currentGrades = child.restricted_grade ? child.restricted_grade.split(', ') : [];
+            if (child.grade) {
+                let currentGrades = child.restricted_grade ? child.restricted_grade.split(', ') : [];
 
-            if (!currentGrades.includes(child.grade)) {
-                currentGrades.push(child.grade);
+                if (!currentGrades.includes(child.grade)) {
+                    currentGrades.push(child.grade);
+                }
+
+                frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(', '));
             }
-
-            frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(', '));
+        }else{
+            frappe.model.set_value(cdt, cdn, 'grade', '');
+            frappe.throw('Please Select Item Group')
         }
     }
 });

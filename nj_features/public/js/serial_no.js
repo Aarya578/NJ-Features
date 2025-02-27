@@ -1,5 +1,12 @@
 frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
+
+        if (frappe.user.has_role('IT - NJ') || frappe.user.has_role('IT - Developer')) {
+            frm.set_df_property("bios_serial_no", "read_only", false);
+        } else {
+            frm.set_df_property("bios_serial_no", "read_only", true);
+        }
+
         $('.col-lg-2.layout-side-section').hide();
         frm.add_custom_button(__('Print QR Code'), function() {
             printQRCode(frm);

@@ -140,6 +140,8 @@ def get_department_details(doc):
 
 from datetime import datetime, timedelta
 
+from datetime import datetime, timedelta
+
 def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_factor=2):
     if not item_code_list:
         return item_code_list
@@ -201,7 +203,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_facto
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
-        if not isinstance(sale_date, datetime):
+        if isinstance(sale_date, str):  # Fix: Only parse if it's a string
             sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
 
         item_code = sale['item_code']

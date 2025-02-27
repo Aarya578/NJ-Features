@@ -12,10 +12,10 @@ from nj_features.nj_features.doctype.department_change_log.department_change_log
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
-
+    try:
+        work_ware = None
         if isinstance(self, str):
             self = json.loads(self)
-            print('self')
         
         user_email = create_user(self)
 
@@ -29,17 +29,20 @@ def create_user_and_warehouse(self):
                 emp_ware = create_emp_ware(self, user_email)
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
-            if self.get("work_warehouse") is not None:    
+            
+            if self.get("work_warehouse") is None or self.get("work_warehouse") == '':
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware[0]
 
-            if self.get("work_warehouse") is not None and work_ware is not None:
+            if self.get("work_warehouse") != '' and work_ware is not None:
                 update_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
         return return_data
+    except Exception as e:
+        frappe.msgprint("Error while creating user and warehouse: ",traceback.format_exc())
 
 def update_work_warehouse(self):
     try:

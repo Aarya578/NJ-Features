@@ -92,7 +92,7 @@ frappe.ui.form.on('Employee', {
             args: {
                 role_profile: frm.doc.role_profile,
                 // total_days: calculate_total_days(frm.doc.date_of_joining), 
-                total_days: calculated_days
+                total_days: frm.doc.calculated_days
             },
             callback: function (response) {
                 if (response.message) {

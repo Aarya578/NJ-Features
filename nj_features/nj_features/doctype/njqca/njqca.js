@@ -1115,35 +1115,152 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         let child = locals[cdt][cdn];
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
-    
+
+        // Define the detailed relationships between interfaces and lengths
+        const relationshipMap = {
+            'interfaces': {
+                'SATA': ['2.5'],
+                'M.2 NVME': ['2242', '2280'],
+                'M.2 SATA': ['2242', '2230'],
+                'M.2 PCI': ['2280'],
+                'M.SATA': ['2242']
+            },
+            'lengths': {
+                '2.5': ['SATA'],
+                '2242': ['M.2 NVME', 'M.2 SATA','M.SATA'],
+                '2280': ['M.2 NVME', 'M.2 PCI'],
+                '2230': ['M.2 SATA']
+            }
+        };
+
+        // Define the filtered options for both SSD and HDD with the relationships
+        const storage_filters = {
+            'SSD': {
+                interfaces: ['SATA', 'M.2 NVME', 'M.2 SATA', 'M.2 PCI' ,'M.SATA'],
+                lengths: ['2280', '2242', '22110', '2.5']
+            },
+            'HDD': {
+                interfaces: ['SATA'],
+                lengths: ['2.5']
+            }
+        };
+
+        // Helper function to update field options based on selections
+        const updateFieldOptions = (sourceField, targetField) => {
+            const sourceValue = d.get_value(sourceField);
+            const storageType = d.get_value('storage_type');
+            
+            // First apply storage type filter to get the base options
+            let baseOptions = [];
+            if (targetField === 'storage_interface') {
+                baseOptions = storage_filters[storageType]?.interfaces || [];
+            } else if (targetField === 'storage_length') {
+                baseOptions = storage_filters[storageType]?.lengths || [];
+            }
+            
+            // Then apply the relationship filter if a source value is selected
+            if (sourceValue) {
+                let relationshipKey = sourceField === 'storage_interface' ? 'interfaces' : 'lengths';
+                let allowedValues = relationshipMap[relationshipKey][sourceValue] || [];
+                
+                // Intersection of base options and relationship-allowed options
+                let filteredOptions = baseOptions.filter(option => allowedValues.includes(option));
+                d.set_df_property(targetField, 'options', filteredOptions);
+                
+                // Auto-select if only one option and field is empty
+                if (filteredOptions.length === 1 && !d.get_value(targetField)) {
+                    d.set_value(targetField, filteredOptions[0]);
+                }
+                
+                // Clear value if not in filtered list
+                const currentValue = d.get_value(targetField);
+                if (currentValue && !filteredOptions.includes(currentValue)) {
+                    d.set_value(targetField, '');
+                }
+            } else {
+                // If no source value, just use the storage type filter
+                d.set_df_property(targetField, 'options', baseOptions);
+            }
+        };
+
         let d = new frappe.ui.Dialog({
             title: 'Laptop Storage Attributes',
             fields: [
-                { 
-                    label: 'Storage Type', fieldname: 'storage_type', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.storage_type || '', 
-                    reqd: !child.storage_type, read_only: !!child.storage_type 
+                {
+                    label: 'Storage Type',
+                    fieldname: 'storage_type',
+                    fieldtype: 'Select',
+                    options: ['Loading...'],
+                    default: child.storage_type || '',
+                    reqd: !child.storage_type,
+                    read_only: !!child.storage_type,
+                    change: function() {
+                        const storageType = d.get_value('storage_type');
+                        if (storageType) {
+                            // Reset both fields to apply new storage type filters
+                            const interfaceValue = d.get_value('storage_interface');
+                            const lengthValue = d.get_value('storage_length');
+                            
+                            // Set base options first
+                            if (storage_filters[storageType]) {
+                                d.set_df_property('storage_interface', 'options', 
+                                    storage_filters[storageType].interfaces);
+                                d.set_df_property('storage_length', 'options', 
+                                    storage_filters[storageType].lengths);
+                            }
+                            
+                            // Then apply relationship filters if values exist
+                            if (interfaceValue) {
+                                updateFieldOptions('storage_interface', 'storage_length');
+                            }
+                            if (lengthValue) {
+                                updateFieldOptions('storage_length', 'storage_interface');
+                            }
+                        }
+                    }
                 },
-                { 
-                    label: 'Storage Interface', fieldname: 'storage_interface', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.storage_interface || '', 
-                    reqd: !child.storage_interface, read_only: !!child.storage_interface
+                {
+                    label: 'Storage Interface',
+                    fieldname: 'storage_interface',
+                    fieldtype: 'Select',
+                    options: ['Loading...'],
+                    default: child.storage_interface || '',
+                    reqd: !child.storage_interface,
+                    read_only: !!child.storage_interface,
+                    change: function() {
+                        updateFieldOptions('storage_interface', 'storage_length');
+                    }
                 },
-                { 
-                    label: 'Storage Capacity', fieldname: 'storage_capacity', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.storage_capacity || '', 
-                    reqd: !child.storage_capacity, read_only: !!child.storage_capacity 
+                {
+                    label: 'Storage Capacity',
+                    fieldname: 'storage_capacity',
+                    fieldtype: 'Select',
+                    options: ['Loading...'],
+                    default: child.storage_capacity || '',
+                    reqd: !child.storage_capacity,
+                    read_only: !!child.storage_capacity
                 },
-                { 
-                    label: 'Storage Length', fieldname: 'storage_length', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.storage_length || '', 
-                    reqd: !child.storage_length, read_only: !!child.storage_length 
+                {
+                    label: 'Storage Length',
+                    fieldname: 'storage_length',
+                    fieldtype: 'Select',
+                    options: ['Loading...'],
+                    default: child.storage_length || '',
+                    reqd: !child.storage_length,
+                    read_only: !!child.storage_length,
+                    change: function() {
+                        updateFieldOptions('storage_length', 'storage_interface');
+                    }
                 },
-                { 
-                    label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.grade || '', 
-                    reqd: !child.grade, read_only: false  
-                },
+                {
+                    label: 'Grade',
+                    fieldname: 'grade',
+                    fieldtype: 'Select',
+                    options: ['Loading...'],
+                    default: child.grade || '',
+                    reqd: !child.grade,
+                    read_only: false
+                }
             ],
             primary_action_label: 'Save',
             primary_action(values) {
@@ -1153,38 +1270,81 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                         frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
-    
                 frm.refresh_field(grid.df.fieldname);
                 generateStorageItemCode(frm, cdt, cdn, child);
                 d.hide();
             }
         });
-    
+
         const fieldToAttribute = {
             'storage_type': 'Storage Type',
-            'storage_interface':'Storage Interface',
+            'storage_interface': 'Storage Interface',
             'storage_capacity': 'Storage Capacity',
             'storage_length': 'Storage Length',
             'grade': 'Grade'
         };
 
-        Object.keys(fieldToAttribute).forEach(async (fieldname) => {
+        // Load options for all fields
+        for (const [fieldname, attributeName] of Object.entries(fieldToAttribute)) {
             try {
-                let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
-
-                d.set_df_property(fieldname, 'options', options);
-
+                // For interface and length, we'll apply the filters later
+                if (fieldname !== 'storage_interface' && fieldname !== 'storage_length') {
+                    let options = await get_options(attributeName);
+                    d.set_df_property(fieldname, 'options', options);
+                }
+                
+                // Set existing values
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
             } catch (error) {
                 console.error(`Error loading options for ${fieldname}:`, error);
             }
-        });
+        }
+
+        // Initialize storage type options
+        try {
+            let storageTypeOptions = await get_options('Storage Type');
+            d.set_df_property('storage_type', 'options', storageTypeOptions);
+            
+            // Apply storage type filters
+            if (child.storage_type) {
+                d.set_value('storage_type', child.storage_type);
+                
+                if (storage_filters[child.storage_type]) {
+                    // Set interface options based on storage type
+                    d.set_df_property('storage_interface', 'options', 
+                        storage_filters[child.storage_type].interfaces);
+                    
+                    // Set length options based on storage type
+                    d.set_df_property('storage_length', 'options', 
+                        storage_filters[child.storage_type].lengths);
+                }
+            } else {
+                // If no storage type yet, just load all options
+                let interfaceOptions = await get_options('Storage Interface');
+                let lengthOptions = await get_options('Storage Length');
+                
+                d.set_df_property('storage_interface', 'options', interfaceOptions);
+                d.set_df_property('storage_length', 'options', lengthOptions);
+            }
+        } catch (error) {
+            console.error('Error initializing storage type options:', error);
+        }
+
+        // Apply bidirectional filtering based on existing values
+        if (child.storage_interface) {
+            d.set_value('storage_interface', child.storage_interface);
+            updateFieldOptions('storage_interface', 'storage_length');
+        }
+        
+        if (child.storage_length) {
+            d.set_value('storage_length', child.storage_length);
+            updateFieldOptions('storage_length', 'storage_interface');
+        }
 
         d.show();
-
+    
         async function get_options(attributeName) {
             return new Promise((resolve, reject) => {
                 frappe.call({

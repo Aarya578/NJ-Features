@@ -1,12 +1,13 @@
 {
  "actions": [],
- "autoname": "SM-.YYYY.-.MM.-.######",
+ "autoname": "naming_series:",
  "creation": "2024-02-19 05:05:15.733870",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "stock_entry_type",
+  "naming_series",
   "transfer_status",
   "default_source_warehouse",
   "column_break_dfjqd",
@@ -129,11 +130,18 @@
    "fieldtype": "Long Text",
    "label": "Suggested Warehouse",
    "read_only": 1
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "\nSMA-.YYYY.-.MM.-\nSMR-.YYYY.-.MM.-",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-21 10:38:26.683144",
+ "modified": "2025-02-28 15:37:18.727200",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",

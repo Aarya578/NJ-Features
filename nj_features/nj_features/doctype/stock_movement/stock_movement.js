@@ -1,6 +1,5 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
-//Racking and Stock Movement
 $('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"], .icon-btn[data-original-title="Print"]')
     .hide();
 

@@ -9,9 +9,9 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 class StockMovement(Document):
     def on_submit(self):
         try:
-            nj_series = "SMR-.YYYY.-.MM.-"
+            nj_series = "STMR-.YYYY.-.MM.-"
             if self.transfer_status == "Stock Accept":
-                nj_series = "SMA-.YYYY.-.MM.-"
+                nj_series = "STMA-.YYYY.-.MM.-"
 
             material_transfer_items = []
             

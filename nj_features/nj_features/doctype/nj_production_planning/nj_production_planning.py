@@ -175,7 +175,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=10, weight_fact
         GROUP BY 
             sle.item_code, sale_date
         ORDER BY 
-            creation_date ASC
+            sale_date ASC
     """, explain=1, debug=1, as_dict=True)
 
     print('inventory_data -----------------', inventory_data)

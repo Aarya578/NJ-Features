@@ -85,25 +85,21 @@ frappe.ui.form.on('NJ Audit', {
     },
 
     scan_rack: function (frm) {
-        if (frm.doc.scan_rack != '') {
-            frappe.db.get_value('Warehouse', { 'name': frm.doc.scan_rack }, 'name', function(r) {
-                if (r.name != frm.doc.scan_rack) {
-                    frm.set_value("scan_rack", r.name);
-                    frm.refresh_field("scan_rack");
-                }
-            })
-        }
-        if(frm.doc.scan_rack) {
+        if(frm.doc.scan_rack != '') {
             frappe.call({
                 'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.get_rack_balance',
                 'args': { 'rack_name': frm.doc.scan_rack },
                 callback: function(r) {
                     if (r && r.message) {
-                        frm.set_value('rack_balance', r.message)
-                        frm.refresh_field('rack_balance')
-                    }
-                    else{
-                        frm.set_value('rack_balance', 0)
+                        frm.set_value('rack_balance', r.message.serial_count)
+                        if (r.message.scan_rack == '')  {
+                            let rack = frm.doc.scan_rack
+                            frm.set_value('scan_rack', '')
+                            frm.refresh_field('rack_balance')
+                            frappe.throw("Scanned Warehouse: <b>" + rack + "</b> is not found.");
+                            return
+                        }
+                        frm.set_value('scan_rack', r.message.scan_rack)
                         frm.refresh_field('rack_balance')
                     }
                 }

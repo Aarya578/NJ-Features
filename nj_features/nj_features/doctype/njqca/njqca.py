@@ -707,10 +707,11 @@ def get_info_from_serial_no(doc=None):
             if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
-            result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
+        result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
+            
         
         sudden_drop = ''
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('inspection_type'),doc_json.get('manufacturer_model'))
+        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),result['inspection_type'],doc_json.get('manufacturer_model'))
 
         result['sudden_drop'] = sudden_drop
         frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
@@ -1228,10 +1229,10 @@ def get_sudden_drop(parent_name, item_group,doc_inspection_type,manufacturer_mod
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
         if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
-            if not manufacturer_model:
+
+            sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
+            if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit=20
-            else:
-              sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`

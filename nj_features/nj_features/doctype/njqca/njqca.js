@@ -439,7 +439,7 @@ frappe.ui.form.on('NJQCA', {
     }
 });
 
-function trigger_serial_no(frm) {
+function get_info_from_serial_no(frm) {
     if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes') {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',

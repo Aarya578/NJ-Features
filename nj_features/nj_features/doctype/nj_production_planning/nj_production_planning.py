@@ -137,7 +137,7 @@ def get_department_details(doc):
 
     return item_code_list
 
-def calculate_sales_order_rate_with_weights(item_code_list, days=10, weight_factor=2):
+def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_factor=2):
     if not item_code_list:
         return item_code_list
 
@@ -226,7 +226,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=10, weight_fact
                 weight = weights.get(day_offset, 1)
                 total_weighted_sales += daily_sales * weight
 
-            # **Final Weighted Sales Rate Calculation**
             item['total_sales_qty'] = total_sales_qty
             item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
         else:

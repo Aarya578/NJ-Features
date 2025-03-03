@@ -318,6 +318,7 @@ def open_draft_qi(self,brand=None,model=None):
                                     child_table.check_name = name_of_check
                                     child_table.item_group = data.get("item_group")
                                     child_table.options = option["check_options"]
+                                    child_table.automated_check_name = data.get('check_options')
                                     child_table.score = option_score
                                     if item_group_idx_value:
                                         child_table.item_group_idx = item_group_idx_value
@@ -329,6 +330,7 @@ def open_draft_qi(self,brand=None,model=None):
                             child_table.check_name = name_of_check
                             child_table.item_group = data.get("item_group")
                             child_table.options = data.get('value')
+                            child_table.automated_check_name = data.get('value')
                             child_table.score = data.get('score')
                             existing_entries.add((data.get("item_group"), name_of_check))
                             if item_group_idx_value:

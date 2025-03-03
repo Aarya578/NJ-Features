@@ -38,6 +38,7 @@ function openStockEntryForm(stockType) {
             if (stockType === 1) {
                 doc.transfer_status = "Stock Accept";
                 doc.stock_entry_type = "Material Transfer"
+                doc.naming_series = "SMA-.YYYY.-.MM.-"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;
@@ -47,6 +48,7 @@ function openStockEntryForm(stockType) {
             } else if (stockType === 0) {
                 doc.transfer_status = "Racking";
                 doc.stock_entry_type = "Material Transfer"
+                doc.naming_series = "SMR-.YYYY.-.MM.-"
                 if (!response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist.');
                     return;

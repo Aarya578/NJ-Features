@@ -147,13 +147,22 @@ def get_rack_balance(rack_name):
     
     if allowed_item_group_data:
         allowed_item_group_check = allowed_item_group_data.split(",")
+
+    rack_warehouse_in_db_query = """ select name from `tabWarehouse` where name = %s """
+    rack_warehouse_in_db = frappe.db.sql(rack_warehouse_in_db_query, rack_name)
+
+    if rack_warehouse_in_db and rack_warehouse_in_db[0][0]:
+
+        filters = {'warehouse': rack_warehouse_in_db[0][0]}
+            
+        if allowed_item_group_check:
+            filters['item_group'] = ['in', allowed_item_group_check]
+            
+        serials = frappe.db.get_all("Serial No", filters=filters,  fields=['name'])
         
-    filters = {'warehouse': rack_name}
-        
-    if allowed_item_group_check:
-        filters['item_group'] = ['in', allowed_item_group_check]
-        
-    serials = frappe.db.get_all("Serial No", filters=filters,  fields=['name'])
-    
-    serial_count = len(serials)
-    return serial_count
+        serial_count = len(serials)
+
+    return {
+        'serial_count': serial_count,
+        'scan_rack': rack_warehouse_in_db[0][0] if rack_warehouse_in_db else ''
+    }

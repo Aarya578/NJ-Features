@@ -127,6 +127,7 @@ doc_events = {
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
 	}
 }

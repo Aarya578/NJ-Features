@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation
+from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_features.nj_features.api.bb_api import get_grading_Authentication
@@ -318,6 +318,7 @@ def open_draft_qi(self,brand=None,model=None):
                                     child_table.check_name = name_of_check
                                     child_table.item_group = data.get("item_group")
                                     child_table.options = option["check_options"]
+                                    child_table.automated_check_name = data.get('check_options')
                                     child_table.score = option_score
                                     if item_group_idx_value:
                                         child_table.item_group_idx = item_group_idx_value
@@ -329,6 +330,7 @@ def open_draft_qi(self,brand=None,model=None):
                             child_table.check_name = name_of_check
                             child_table.item_group = data.get("item_group")
                             child_table.options = data.get('value')
+                            child_table.automated_check_name = data.get('value')
                             child_table.score = data.get('score')
                             existing_entries.add((data.get("item_group"), name_of_check))
                             if item_group_idx_value:
@@ -471,6 +473,9 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
+
+    def before_save(self):
+        update_storage_type(self)
     def before_submit(self):
         get_grading_Authentication(self)
     def on_submit(self):
@@ -705,7 +710,7 @@ def get_info_from_serial_no(doc=None):
             result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
         sudden_drop = ''
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'))
+        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('inspection_type'),doc_json.get('manufacturer_model'))
 
         result['sudden_drop'] = sudden_drop
         frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
@@ -955,7 +960,6 @@ def get_part_mapping(doc):
 
         except json.JSONDecodeError:
             frappe.throw("Invalid JSON string provided for part mapping.")
-    validate_battery_storage_score(doc)
 
     if doc.get('njqca_item_component') and doc.get('item_group'):
 
@@ -1219,11 +1223,15 @@ def get_model(manufacturer_model=None):
 #     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
-def get_sudden_drop(parent_name, item_group):
-    try:
+def get_sudden_drop(parent_name, item_group,doc_inspection_type,manufacturer_model):
+    try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-        if njqca_battery_item_group == item_group:
-
+        njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
+        if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
+            if not manufacturer_model:
+                sudden_drop_limit=20
+            else:
+              sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
@@ -1257,7 +1265,7 @@ def get_sudden_drop(parent_name, item_group):
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
             last_percentage = percentage[0].get('value')
             
-            if last_percentage and int(last_percentage) >=20:
+            if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
                 return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
@@ -1273,6 +1281,7 @@ def get_sudden_drop(parent_name, item_group):
             return None
             
     except Exception as e:
+        frappe.msgprint(f"An error occurred at get_sudden_drop: {traceback.format_exc()}")
         return ''
         
 @frappe.whitelist()
@@ -1520,24 +1529,24 @@ def get_battery_auto_item_code(name,item_template):
 def validate_battery_storage_score(doc):
     try:
         parent_name=doc.get('name')
-        item_template=doc.get('item_template')
-        item_wizard=get_latest_item_wizard(item_template)
-        bad_sectors, wiz_storage_health, wiz_battery_health = "", "", ""
+        model=doc.get('manufacturer_model')
+        item_wizard=get_item_wizard(model)
+        bad_sectors, wiz_storage_health= "", ""
 
         wizard_criteria_query="""
-            select battery_health, storage_health, bad_sectors from `tabItem Wizards` where name=%s;
+            select fbdt_health_range, rbdt_health_range, cycle_count, storage_health, bad_sectors from `tabItem Wizards` where name=%s;
         """
 
         if item_wizard:
             wizard_criteria=frappe.db.sql(wizard_criteria_query, (item_wizard), as_dict=True)
 
             if wizard_criteria:
-                if wizard_criteria[0].battery_health: 
-                    wiz_battery_health=wizard_criteria[0].battery_health
+
                 if wizard_criteria[0].storage_health:
                     wiz_storage_health=wizard_criteria[0].storage_health
                 if wizard_criteria[0].bad_sectors:
                     bad_sectors=wizard_criteria[0].bad_sectors
+  
             
         else:
             return
@@ -1546,25 +1555,12 @@ def validate_battery_storage_score(doc):
             select replace(value, '%%', '') as value from `tabNJQCA Result Parameters`
             where parent=%s and item_group="Laptop storage" and parameter="Health" limit 1
         """
-        battery_query = """
-            select replace(value, '%%', '') as value from `tabNJQCA Result Parameters` 
-            where parent=%s and item_group="Battery" and parameter="Health" limit 1
-        """
+
         bad_sector_query = """
             select REGEXP_REPLACE(value, '[^0-9]', '') AS value from `tabNJQCA Result Parameters`
             where parent=%s and item_group="Laptop storage" and parameter="status" and value like '%%bad sector%%' limit 1
         """
 
-        if wiz_battery_health:
-            battery = frappe.db.sql(battery_query,(parent_name), as_dict=True)
-
-            if battery and battery[0].value:
-                if float(battery[0].value)>=float(wiz_battery_health):
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
-                        where parent=%(parent_name)s and item_group="Battery" and parameter='Health';""",{'parent_name':parent_name})
-                else:
-                    frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 
-                        where parent=%(parent_name)s and item_group="Battery" and parameter="Health";""",{'parent_name':parent_name})
 
         if wiz_storage_health:
             storage = frappe.db.sql(storage_query,(parent_name), as_dict=True)
@@ -1585,5 +1581,17 @@ def validate_battery_storage_score(doc):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
 
     except Exception as e:
-        frappe.msgprint("Error in BTY Storage Score",traceback.format_exc())
+        frappe.msgprint("Error in NJQCA Storage Score",traceback.format_exc())
         return 
+@frappe.whitelist()
+def update_storage_type(doc):
+    print("Function triggered")
+    """
+    Update the storage_type field in NJQCA Laptop Storage child table
+    based on storage_capacity.
+    """
+    for row in doc.njqca_laptop_storage:  # Replace with actual child table fieldname
+        if row.storage_capacity in ["256 GB", "512 GB"]:
+            row.storage_type = "SSD"
+        elif row.storage_capacity in ["200 GB", "320 GB", "500 GB"]:
+            row.storage_type = "HDD"

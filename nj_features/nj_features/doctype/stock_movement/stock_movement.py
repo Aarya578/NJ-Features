@@ -9,13 +9,16 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 class StockMovement(Document):
     def on_submit(self):
         try:
+            nj_series = "STMR-.YYYY.-.MM.-"
+            if self.transfer_status == "Stock Accept":
+                nj_series = "STMA-.YYYY.-.MM.-"
 
             material_transfer_items = []
             
             stock_entry_data = {
                 "name": self.name,
+                "series": nj_series,
                 "doctype": self.doctype,
-                "series": "STE-SM-.YYYY.-.MM.-",
                 "transfer_status": self.transfer_status,
                 "stock_entry_type": "Material Transfer",
                 "material_transfer_items": material_transfer_items,
@@ -142,8 +145,8 @@ def validate_serial_no_and_department(row, error_messages):
 
     if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
         validate_grade_restriction(serial_doc, department_doc, error_messages)
-    else:
-        validate_grade_restriction(serial_doc, department_doc, error_messages)
+    # else:
+    #     validate_grade_restriction(serial_doc, department_doc, error_messages)
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 

@@ -137,15 +137,15 @@ def get_department_details(doc):
 
     return item_code_list
 
-
-from datetime import datetime, timedelta
-
-def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_factor=2):
+def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_factor=2):
     if not item_code_list:
         return item_code_list
 
+    # Assign weights to days
     weights = {i: (i + 1) * weight_factor for i in range(days)}
-    total_weight = sum(weights.values())
+    total_weight = sum(weights.values())  # Sum of all weights for normalization
+
+    print('total_weight -------------------- 148', total_weight)
 
     item_codes = [item['item_code'] for item in item_code_list]
     if not item_codes:
@@ -162,19 +162,23 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_facto
     warehouse_names_string = "', '".join(warehouse_names)
 
     inventory_data = frappe.db.sql(f"""
-        SELECT
-            sn.item_code,
-            COUNT(sn.name) AS current_inventory_qty
-        FROM
-            `tabSerial No` sn
-        WHERE
-            sn.item_code IN ({item_codes_string})
-            AND sn.warehouse IN ('{warehouse_names_string}')
-        GROUP BY
-            sn.item_code
-    """, as_dict=True)
+        SELECT 
+            sle.qty_after_transaction AS daily_sales, 
+            sle.item_code, 
+            DATE(sle.creation) AS sale_date
+        FROM 
+            `tabStock Ledger Entry` sle
+        WHERE 
+            sle.item_code IN ({item_codes_string})
+            AND sle.warehouse IN ('{warehouse_names_string}')
+            AND sle.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+        GROUP BY 
+            sle.item_code, sale_date
+        ORDER BY 
+            sale_date ASC
+    """, explain=1, debug=1, as_dict=True)
 
-    inventory_map = {inv['item_code']: inv['current_inventory_qty'] for inv in inventory_data}
+    print('inventory_data -----------------', inventory_data)
 
     sales_data = frappe.db.sql(f"""
         SELECT
@@ -194,14 +198,14 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_facto
             soi.item_code, sale_date
         ORDER BY
             sale_date DESC
-    """, as_dict=True)
+    """, explain=1, debug=1, as_dict=True)
 
     print("sales_data ----------- ", sales_data)
 
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
-        if not isinstance(sale_date, datetime):
+        if isinstance(sale_date, str):
             sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
 
         item_code = sale['item_code']
@@ -211,7 +215,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_facto
 
     for item in item_code_list:
         item_code = item['item_code']
-        item['current_inventory_qty'] = inventory_map.get(item_code, 0)
 
         if item_code in sales_map:
             total_sales_qty = sum(sales_map[item_code].values())
@@ -224,11 +227,11 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=7, weight_facto
                 total_weighted_sales += daily_sales * weight
 
             item['total_sales_qty'] = total_sales_qty
-            item['sales_rate'] = total_weighted_sales 
+            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
 
-        print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Weighted Sales: {item['sales_rate']}")
+        print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Weighted Sales Rate: {item['sales_rate']}")
 
     return item_code_list

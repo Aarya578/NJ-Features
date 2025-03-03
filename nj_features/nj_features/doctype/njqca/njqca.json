@@ -20,6 +20,7 @@
   "brand",
   "warehouse",
   "data_attr",
+  "rfq_id",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
   "column_break_1tl9d",
@@ -388,11 +389,17 @@
    "fieldtype": "Select",
    "label": "Battery Type",
    "options": "\nRefurb\nBDT"
+  },
+  {
+   "fieldname": "rfq_id",
+   "fieldtype": "Link",
+   "label": "RFQ ID",
+   "options": "Request for Quotation"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-21 10:53:02.220320",
+ "modified": "2025-03-01 19:30:06.231032",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

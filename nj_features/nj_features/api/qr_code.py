@@ -108,7 +108,7 @@ def print_barcode(doc):
         frappe.msgprint(f"Error printing barcode: {e}")
 
 @frappe.whitelist()
-def create_serial_no(item_code=None, attempt=0):
+def create_serial_no(item_code=None, attempt=0, item_group=None, rfq=False):
     MAX_ATTEMPTS = 4
     
     try:
@@ -116,8 +116,8 @@ def create_serial_no(item_code=None, attempt=0):
             frappe.msgprint("Maximum attempts reached. Unable to generate a unique serial number.")
             return None
         
-        item_doc = frappe.get_doc('Item', item_code)
         if item_doc:
+            item_doc = frappe.get_doc('Item', item_code)
             has_serial_no = item_doc.has_serial_no
             item_group = item_doc.item_group
             
@@ -129,7 +129,9 @@ def create_serial_no(item_code=None, attempt=0):
                     return None
                 
                 prefix = "NJ-"
+
                 serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                
                 frappe.msgprint(f"Generated serial number: {serial_no}")
 
                 if frappe.db.exists("Serial No", {"serial_no": serial_no}):
@@ -141,6 +143,27 @@ def create_serial_no(item_code=None, attempt=0):
             else:
                 frappe.msgprint(f"Item Group or Serial No status is not defined for Item Code: <strong>{item_code}</strong>.")
                 return None
+            
+        elif item_group and rfq:
+            serial_no_prefix = frappe.db.get_value("Item Group", item_group, "serial_no_prefix")
+            
+            if not serial_no_prefix:
+                frappe.msgprint(f"Serial No Prefix is not set for Item Group: {item_group}")
+                return None
+            
+            prefix = "EXT-"
+
+            serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                
+            frappe.msgprint(f"Generated serial number: {serial_no}")
+
+            if frappe.db.exists("Serial No", {"serial_no": serial_no}):
+                frappe.msgprint(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
+                return create_serial_no(item_group, attempt + 1, rfq=True)  # Recursive call with increased attempt count
+            else:
+                generate_and_save_qrcode(serial_no)
+                return serial_no
+
         else:
             frappe.msgprint(f"Item with code <strong>{item_code}</strong> not found.")
             return None

@@ -476,8 +476,10 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
+
     def before_submit(self):
         get_grading_Authentication(self)
+
     def on_submit(self):
         if self.power_on == 'Yes' and self.repack_item_code != '':
             if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
@@ -707,10 +709,10 @@ def get_info_from_serial_no(doc=None):
             if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
-            result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
+        result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
         sudden_drop = ''
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('inspection_type'),doc_json.get('manufacturer_model'))
+        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),result['inspection_type'],doc_json.get('manufacturer_model'))
 
         result['sudden_drop'] = sudden_drop
         frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
@@ -1223,15 +1225,16 @@ def get_model(manufacturer_model=None):
 #     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
-def get_sudden_drop(parent_name, item_group,doc_inspection_type,manufacturer_model):
+def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
         if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
-            if not manufacturer_model:
-                sudden_drop_limit=20
-            else:
-              sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
+            
+            sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
+            if sudden_drop_limit is not None:
+                sudden_drop_limit = 20
+
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
@@ -1585,13 +1588,17 @@ def validate_battery_storage_score(doc):
         return 
 @frappe.whitelist()
 def update_storage_type(doc):
-    print("Function triggered")
-    """
-    Update the storage_type field in NJQCA Laptop Storage child table
-    based on storage_capacity.
-    """
-    for row in doc.njqca_laptop_storage:  # Replace with actual child table fieldname
+    for row in doc.njqca_laptop_storage:
         if row.storage_capacity in ["256 GB", "512 GB"]:
             row.storage_type = "SSD"
         elif row.storage_capacity in ["200 GB", "320 GB", "500 GB"]:
             row.storage_type = "HDD"
+
+@frappe.whitelist()
+def get_item_code_from_rfq_id(rfq_id):
+    item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
+    return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
+
+
+def create_serial_no_based_on_rfq():
+    pass

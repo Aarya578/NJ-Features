@@ -1,8 +1,13 @@
 import json
 import frappe
 import traceback
+from frappe.utils import getdate, flt
+from frappe.model.document import Document
 from datetime import datetime, timedelta, date
-from frappe.utils import getdate
+
+
+class NJProductionPlanning(Document):
+    pass
 
 @frappe.whitelist()
 def get_department_details(doc):
@@ -141,9 +146,8 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_fact
     if not item_code_list:
         return item_code_list
 
-    # Assign weights to days
     weights = {i: (i + 1) * weight_factor for i in range(days)}
-    total_weight = sum(weights.values())  # Sum of all weights for normalization
+    total_weight = sum(weights.values())
 
     print('total_weight -------------------- 148', total_weight)
 
@@ -235,3 +239,21 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_fact
         print(f"Item: {item_code} | Total Sales: {item['total_sales_qty']} | Weighted Sales Rate: {item['sales_rate']}")
 
     return item_code_list
+
+@frappe.whitelist()
+def calculate_to_make(doc, DOI_threshold=10):
+
+    if isinstance(doc, str):
+        doc = frappe.parse_json(doc)
+
+    for item in doc.get("nj_production_planning_child", []):
+        sales_rate = flt(item.get("sales_rate", 0)) 
+        forwarded_qty = flt(item.get("forwarded_qty", 0)) 
+        inwarded_qty = flt(item.get("inwarded_qty", 0)) 
+
+        to_make = (forwarded_qty - inwarded_qty) + (sales_rate * DOI_threshold)
+        to_make = max(0, round(to_make))
+        
+        item["to_make"] = to_make
+
+    return doc.get("nj_production_planning_child", [])

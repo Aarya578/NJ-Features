@@ -17,7 +17,9 @@
   "role_profile",
   "column_break_4ll0x",
   "role",
-  "user"
+  "user",
+  "section_break_a91ou",
+  "table_atxpl"
  ],
  "fields": [
   {
@@ -96,10 +98,19 @@
    "fieldtype": "Link",
    "label": "User",
    "options": "User"
+  },
+  {
+   "fieldname": "section_break_a91ou",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "table_atxpl",
+   "fieldtype": "Table",
+   "options": "Colour Bar"
   }
  ],
  "links": [],
- "modified": "2025-02-18 11:31:59.954531",
+ "modified": "2025-03-03 17:45:43.557437",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Settings",

@@ -2,12 +2,9 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('NJQCA', {
-    onload: function(frm) {
-        if (frm.doc.docstatus == 0) { trigger_serial_no(frm); }
-    },
+    onload: function(frm) { if (frm.doc.docstatus == 0) { trigger_serial_no(frm); }},
     
     refresh: function(frm) {
-        
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
@@ -16,14 +13,14 @@ frappe.ui.form.on('NJQCA', {
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');
         frm.refresh_field('njqca_laptop_processors');
+        
         if (frm.doc.docstatus == 0) {
-            
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');
 
-            frm.set_query("inspection_type", () => {
-                return { filters: { "active": 1 } };
-            });
+            frm.set_query("inspection_type", () => { return { filters: { "active": 1 } }; });
+
+            frm.set_query("rfq_id", () => { return { filters: { "docstatus": 1 } }; });
             
             frm.set_query('manual_repack_item_code', function(r) {
                 var filters = {
@@ -76,26 +73,6 @@ frappe.ui.form.on('NJQCA', {
                     }
                 }
             })
-
-            // frm.set_query("calculated_item_code", "njqca_display", function (doc, cdt, cdn) {
-            //     const row = locals[cdt][cdn];
-            //     return {
-            //         filters: {
-            //             item_group: row.item_group,
-            //             disabled: 0, has_variants: 0
-            //         }
-            //     }
-            // })
-
-            // frm.set_query("calculated_item_code", "njqca_adapter", function (doc, cdt, cdn) {
-            //     const row = locals[cdt][cdn];
-            //     return {
-            //         filters: {
-            //             item_group: row.item_group,
-            //             disabled: 0, has_variants: 0
-            //         }
-            //     }
-            // })
         }
     },
 
@@ -193,6 +170,31 @@ frappe.ui.form.on('NJQCA', {
         });
     },
 
+    rfq_id: function(frm) {
+        if (frm.doc.rfq_id != '') {
+            frm.set_df_property('serial_no', 'read_only', 1); 
+            frm.refresh_field('serial_no');
+
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_item_code_from_rfq_id',
+                args: { 'rfq_id': frm.doc.rfq_id },
+                callback: function(r) {
+                    if (r.message && r.message.length > 0) {
+                        if (r.message.length === 1) {
+                            frm.set_value('item_code', r.message[0].item_code);
+                            frm.set_df_property('item_code', 'read_only', 1);
+                        } else {
+                            let options = r.message.map(item => item.item_code).join('\n');
+                            frm.set_df_property('item_code', 'options', options);
+                            frm.set_df_property('item_code', 'read_only', 0);
+                        }
+                    } else {
+                        frappe.msgprint(__('No items found for this RFQ.'));
+                    }
+                }
+            })
+        }
+    },
     // before_submit: function(frm) {
 
     //      return new Promise((resolve, reject) => {
@@ -298,7 +300,6 @@ frappe.ui.form.on('NJQCA', {
                                 label: "Scan Serial No",
                                 options: "Barcode",
                             }
-                                            
                         ],
                         static: true,
                         primary_action_label: "Yes, Transfer", 
@@ -421,10 +422,36 @@ frappe.ui.form.on('NJQCA', {
                }
            })
         }
+    },
+    before_submit: function(frm) {
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
+            args: { 'parent': frm.doc.name,
+                "item_group":frm.doc.item_group,
+                "doc_inspection_type":frm.doc.inspection_type,
+                "manufacturer_model":frm.doc.manufacturer_model
+             },
+            callback: function(r) {
+                if (r.message) {
+                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message);
+                }
+            }
+        })
+    },
+    item_code: function(frm) {
+        if (frm.doc.item_code != '' && frm.doc.rfq_id != '') {
+            frappe.call({
+                method: 'nj_features.nj_features.api.qr_code.create_serial_no',
+                args: { 'item_code': frm.doc.item_code, "rfq": true },
+                callback: function(r) {
+                    if (r.message) { frm.set_value('serial_no', r.message); }
+                }
+            })
+        }
     }
 });
 
-function trigger_serial_no(frm) {
+function get_info_from_serial_no(frm) {
     if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes') {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',

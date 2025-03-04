@@ -108,8 +108,7 @@ override_doctype_class = {
 	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
-    "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",
-    "Stock Entry": "nj_features.overrides.stock_entry.CustomStockEntry",	
+    "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",	
     "Issue": "nj_features.overrides.issue.CustomIssue"
 }
 
@@ -127,6 +126,7 @@ doc_events = {
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
 	}
 }

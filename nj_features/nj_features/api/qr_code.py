@@ -65,7 +65,7 @@ def print_barcode(doc):
         doc_dict = frappe.parse_json(doc)
         item_code = doc_dict.get('item_code') or doc_dict.get('component')
         serial_no = doc_dict.get('serial_no')
-        qty = doc_dict.get('qty')
+        qty = doc_dict.get('qty', 1)
         
         if serial_no:
             generate_and_save_qrcode(serial_no)
@@ -108,7 +108,7 @@ def print_barcode(doc):
         frappe.msgprint(f"Error printing barcode: {e}")
 
 @frappe.whitelist()
-def create_serial_no(item_code=None, attempt=0):
+def create_serial_no(item_code=None, attempt=0, rfq=False):
     MAX_ATTEMPTS = 4
     
     try:
@@ -129,7 +129,12 @@ def create_serial_no(item_code=None, attempt=0):
                     return None
                 
                 prefix = "NJ-"
+
+                if rfq:
+                    prefix = "EXT-"
+
                 serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                
                 frappe.msgprint(f"Generated serial number: {serial_no}")
 
                 if frappe.db.exists("Serial No", {"serial_no": serial_no}):
@@ -141,6 +146,7 @@ def create_serial_no(item_code=None, attempt=0):
             else:
                 frappe.msgprint(f"Item Group or Serial No status is not defined for Item Code: <strong>{item_code}</strong>.")
                 return None
+
         else:
             frappe.msgprint(f"Item with code <strong>{item_code}</strong> not found.")
             return None

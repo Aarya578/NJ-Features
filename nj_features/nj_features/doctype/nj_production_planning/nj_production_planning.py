@@ -220,7 +220,50 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_fact
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
 
         if item_code not in item_codes:
-            item_code_list.append({'item_code': item_code})
+            # Generate placeholders dynamically
+
+            attribute_data = frappe.db.sql("""
+                SELECT 
+                    LOWER(iva.attribute) AS item_attribute, 
+                    LOWER(iva.attribute_value) AS attribute_value,
+                    iva.parent AS item_code,
+                    i.item_name,
+                    i.item_model,
+                    i.item_group,
+                    i.variant_of as parent
+                FROM `tabItem Variant Attribute` iva
+                INNER JOIN `tabItem` i ON iva.parent = i.name
+                WHERE iva.parent = %s
+            """, (item_code,), as_dict=True)
+
+            print("attribute_data ----------------- 241", attribute_data)
+        
+            attributes_map = {}
+            for row in attribute_data:
+                item_code = row['item_code']
+                attribute = row['item_attribute'].replace(' ', '_')
+                attribute_value = row['attribute_value']
+                if item_code not in attributes_map:
+                    attributes_map[item_code] = {}
+                attributes_map[item_code][attribute] = attribute_value
+                attributes_map[item_code]['item_name'] = row['item_name']
+                attributes_map[item_code]['item_model'] = row['item_model']
+                attributes_map[item_code]['item_group'] = row['item_group']
+                attributes_map[item_code]['parent'] = row['parent']
+            
+            print("attribute_data ----------------- 241", attributes_map)
+            
+            item_code_list.append({
+                "item_code": item_code,
+                "forwarded_qty": 0,
+                "inventory_qty": 0, 
+                "total_sales_qty": 0, 
+                "sales_rate": 0,
+                "item_model": attributes_map[item_code].get("item_model"),
+                "processor_type": attributes_map[item_code].get("processor_type"),
+                "storage_capacity": attributes_map[item_code].get("storage_capacity"), 
+                "ram_capacity": attributes_map[item_code].get("ram_capacity")
+                })
 
     print("sales_map ----------- ", sales_map)
 

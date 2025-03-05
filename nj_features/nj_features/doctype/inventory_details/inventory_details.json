@@ -7,12 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "inwarded_inventory",
-  "warehouse",
-  "iw",
-  "inwarded_warehouse",
-  "forwarded_inventory",
-  "fw",
-  "forwarded_warehouse"
+  "forwarded_inventory"
  ],
  "fields": [
   {
@@ -30,52 +25,12 @@
    "in_list_view": 1,
    "label": "Forwarded Inventory",
    "options": "Department"
-  },
-  {
-   "columns": 2,
-   "fieldname": "inwarded_warehouse",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Inwarded Warehouse",
-   "options": "Warehouse"
-  },
-  {
-   "columns": 1,
-   "fieldname": "forwarded_warehouse",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Forwarded Warehouse",
-   "options": "Warehouse"
-  },
-  {
-   "columns": 1,
-   "fieldname": "warehouse",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Warehouse",
-   "options": "Warehouse"
-  },
-  {
-   "columns": 1,
-   "default": "0",
-   "fieldname": "iw",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "IW"
-  },
-  {
-   "columns": 1,
-   "default": "0",
-   "fieldname": "fw",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "FW"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-21 17:29:04.542216",
+ "modified": "2025-03-05 14:37:10.611309",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inventory Details",

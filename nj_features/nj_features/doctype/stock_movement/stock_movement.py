@@ -143,21 +143,22 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
-    if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
-        validate_grade_restriction(serial_doc, department_doc, error_messages)
-    # else:
-    #     validate_grade_restriction(serial_doc, department_doc, error_messages)
+    if not serial_doc.get("bypass"):
 
-    s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+        if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
+            print('Coming inside')
+            validate_grade_restriction(serial_doc, department_doc, error_messages)
 
-    if (s_department and 
-    s_department != department and 
-    s_inspection_type.get("inspection_type") and  s_inspection_type.get("inspection_type") is not None and 
-    s_inspection_type.get("quality_inspection_status_for_stock_movement") and s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None):
-    
-        check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
-    else:
-        return True
+        s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+
+        if (s_department and 
+        s_department != department and 
+        s_inspection_type.get("inspection_type") and  s_inspection_type.get("inspection_type") is not None and 
+        s_inspection_type.get("quality_inspection_status_for_stock_movement") and s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None):
+        
+            check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
+        else:
+            return True
 
     return True
 

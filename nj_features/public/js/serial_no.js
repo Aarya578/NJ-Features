@@ -50,7 +50,8 @@ frappe.ui.form.on('Serial No', {
         //     }
             
         // });
-    }
+    },
+    
 });
 
 function printQRCode(frm) {

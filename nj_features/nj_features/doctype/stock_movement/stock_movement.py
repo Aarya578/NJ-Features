@@ -162,7 +162,6 @@ def validate_serial_no_and_department(row, error_messages):
 
     return True
 
-
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)

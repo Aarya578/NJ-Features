@@ -1,5 +1,9 @@
 frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
+        applyReadOnlyStyling(frm)
+        let is_read_only = frm.doc.bypass ? 1 : 0;
+        frm.set_df_property("bypass", "read_only", is_read_only);
+        frm.set_df_property("reason_for_warranty_bypass", "read_only", is_read_only);
 
         if (frappe.user.has_role('IT - NJ') || frappe.user.has_role('IT - Developer')) {
             frm.set_df_property("bios_serial_no", "read_only", false);
@@ -51,8 +55,51 @@ frappe.ui.form.on('Serial No', {
             
         // });
     },
+    before_save: (frm)=>{
+        frm.set_df_property("bypass", "read_only", 1);
+        frm.set_df_property("reason_for_warranty_pass", "read_only", 1);
+        frm.refresh_field("bypass");
+        frm.refresh_field("reason_for_warranty_pass");
+    }
     
 });
+
+function applyReadOnlyStyling(frm) {
+    console.log('applyReadOnlyStyling');
+
+    frappe.db.get_value('NJ Settings', 
+        {'doc_type': 'Serial No', 'parameter': 'nc_modifier'}, 'value'
+    ).then(function(r) {
+        if (r.message && r.message.value) {
+            console.log('Role from NJ Settings:', r.message.value);
+            console.log('User has role:', frappe.user.has_role(r.message.value));
+
+            if (!frappe.user.has_role(r.message.value)) {
+                var sectionWrapper = frm.fields_dict['bypass_warranty'].wrapper;
+
+                $(sectionWrapper).css({
+                    'background-color': 'rgba(247, 247, 247, 0.3)',
+                    'border-radius': '8px',
+                    'padding': '10px',
+                    'box-shadow': '0 8px 16px rgba(0, 0, 0, 0.1)'
+                });
+
+                frm.set_df_property("bypass", "read_only", 1);
+                frm.set_df_property("reason_for_warranty_bypass", "read_only", 1);
+                frm.set_df_property('bypass', 'hidden', 1);
+                frm.set_df_property('reason_for_warranty_bypass', 'hidden', 1);
+
+                var lockIconHtml = '<i class="fa fa-lock" style="margin-right: 5px;"></i>';
+                $(sectionWrapper).prepend(lockIconHtml);
+                $(sectionWrapper).append(
+                    '<div>' + __('You are not allowed to edit this section') + '</div>'
+                );
+            }
+        } else {
+            console.error('Failed to retrieve role from NJ Settings:', r.message);
+        }
+    });
+}
 
 function printQRCode(frm) {
     var docname = encodeURIComponent(frm.doc.name);

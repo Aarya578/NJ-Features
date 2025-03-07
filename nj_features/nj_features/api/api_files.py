@@ -213,7 +213,7 @@ def battery_data():
 def get_battery_status(doc, method=None):
     
     try:
-        if doc.item_group == 'BATTERY':
+        if doc.item_group != 'BATTERY':
             return
         parent_serial_no = doc.serial_no
         njqca = doc.name

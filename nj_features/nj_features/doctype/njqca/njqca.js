@@ -22,7 +22,7 @@ frappe.ui.form.on('NJQCA', {
 
             frm.set_query("rfq_id", () => { return { filters: { "docstatus": 1 } }; });
             
-            frm.set_query('manual_repack_item_code', function(r) {
+            frm.set_query("manual_repack_item_code", function(r) {
                 var filters = {
                     disabled: 0, has_variants: 0,
                     brand: frm.doc.brand, item_group: frm.doc.item_group
@@ -119,80 +119,90 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-            args: { 'docname': frm.doc.name, 'brand': frm.doc.brand, 'model': frm.doc.model },
-            callback: function(r) {
-                if (r && r.message) {
-                    let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
-                    let pwd_njpulse_url = urlToCompare;
-
-                    if (urlToCompare && !openedUrls.includes(urlToCompare)) {
-                        openedUrls.push(urlToCompare);
-                        localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+        if (frm.doc.rfq_id == '' || !frm.doc.rfq_id) {
+            
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: { 'docname': frm.doc.name, 'brand': frm.doc.brand, 'model': frm.doc.model },
+                callback: function(r) {
+                    if (r && r.message) {
+                        let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+                        let pwd_njpulse_url = urlToCompare;
     
-                        if (frm.doc.pwd && r.message.base_url) {
-                            pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
+                        if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+                            openedUrls.push(urlToCompare);
+                            localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+        
+                            if (frm.doc.pwd && r.message.base_url) {
+                                pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
+                            }
+                            window.open(pwd_njpulse_url, "_blank");
                         }
-                        window.open(pwd_njpulse_url, "_blank");
-                    }
-
-                    if (r.message.qi_name) {
-                        frm.set_value('qi_name', r.message.qi_name);
-                        frm.refresh_field('qi_name');
-
-                        var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
-                        serial_no:
-                        $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
-
-                        $qiNameWrapper.css('cursor', 'pointer');
-                        $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
-
-                        $qiNameWrapper.on('click', function() {
-                            window.open(pwd_njpulse_url, '_blank');
-                        });
-
-                        $qiNameWrapper.css({
-                            'user-select': 'none',
-                            'pointer-events': 'auto'
-                        });
-                    }
-
-                    if (r.message.msg_pnt) {
-                        frappe.show_alert({
-                            message: r.message.msg_pnt,
-                            indicator: 'blue'
-                        }, 10);
-                    }
-
-                } else {  console.error('QI name is not defined'); }
-            }
-        });
+    
+                        if (r.message.qi_name) {
+                            frm.set_value('qi_name', r.message.qi_name);
+                            frm.refresh_field('qi_name');
+    
+                            var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+                            $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+    
+                            $qiNameWrapper.css('cursor', 'pointer');
+                            $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
+    
+                            $qiNameWrapper.on('click', function() {
+                                window.open(pwd_njpulse_url, '_blank');
+                            });
+    
+                            $qiNameWrapper.css({
+                                'user-select': 'none',
+                                'pointer-events': 'auto'
+                            });
+                        }
+    
+                        if (r.message.msg_pnt) {
+                            frappe.show_alert({
+                                message: r.message.msg_pnt,
+                                indicator: 'blue'
+                            }, 10);
+                        }
+    
+                    } else {  console.error('QI name is not defined'); }
+                }
+            });
+        }
     },
 
     rfq_id: function(frm) {
         if (frm.doc.rfq_id != '') {
-            frm.set_df_property('serial_no', 'read_only', 1); 
-            frm.refresh_field('serial_no');
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_item_code_from_rfq_id',
                 args: { 'rfq_id': frm.doc.rfq_id },
                 callback: function(r) {
                     if (r.message && r.message.length > 0) {
+                        frm.set_df_property('item_code', 'read_only', 0);
+                        frm.set_value('item_code', '');
+
                         if (r.message.length === 1) {
                             frm.set_value('item_code', r.message[0].item_code);
                             frm.set_df_property('item_code', 'read_only', 1);
                         } else {
-                            let options = r.message.map(item => item.item_code).join('\n');
-                            frm.set_df_property('item_code', 'options', options);
-                            frm.set_df_property('item_code', 'read_only', 0);
+                            frm.set_query("item_code", function() { 
+                                return { filters: { "name": ["in", r.message.map(item => item.item_code)] } }; 
+                            });
                         }
+                        frm.set_df_property('serial_no', 'read_only', 1); 
+                        frm.refresh_field('serial_no');
+                        
                     } else {
                         frappe.msgprint(__('No items found for this RFQ.'));
                     }
+                    frm.refresh_field('item_code');
                 }
             })
+        } else {
+            frm.set_df_property('serial_no', 'read_only', 0); 
+            frm.refresh_field('serial_no');
         }
     },
     // before_submit: function(frm) {
@@ -266,8 +276,8 @@ frappe.ui.form.on('NJQCA', {
 
     serial_no: function(frm) {
 		handleScannerInput(frm, 'serial_no');
-        if (frm.doc.docstatus == 0) { trigger_serial_no(frm); }
-        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== ''){
+        if (frm.doc.docstatus == 0 && frm.doc.rfq_id == '') { trigger_serial_no(frm); }
+        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
     },
@@ -277,7 +287,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     warehouse: function(frm) {
-        if (frm.doc.warehouse && frm.doc.serial_no) {
+        if (frm.doc.warehouse && frm.doc.serial_no && frm.doc.rfq_id == '') {
             let ware = cur_frm.doc.warehouse;
             
             frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
@@ -365,10 +375,10 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
-
-        if (selectedModel && selectedBrand && cur_frm.doc.serial_no) {
+        
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no && frm.doc.rfq_id == '') {
             
-            frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no,}, 'model', function(r) {
+            frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
                 if (!r.model) {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
@@ -386,9 +396,7 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
-                                    else if(r.message.status === 'failed'){
-                                        $('.primary-action').hide()
-                                    }
+                                    else if(r.message.status === 'failed'){ $('.primary-action').hide() }
                                 }
                             });
                         }, () => {
@@ -405,36 +413,30 @@ frappe.ui.form.on('NJQCA', {
     },
 
     item_template: function(frm) {
-        if (frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes' &&frm.doc.item_group!="BATTERY") {
+        if (frm.doc.item_template && frm.doc.power_on == 'Yes' && frm.doc.item_group!="BATTERY") {
             processItemTemplate(frm);
-        }else if(frm.doc.item_template && frm.doc.docstatus == 0 && frm.doc.power_on == 'Yes' &&frm.doc.item_group=="BATTERY") {
+        }else if(frm.doc.item_template && frm.doc.power_on == 'Yes' &&frm.doc.item_group=="BATTERY") {
            frappe.call({
                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_auto_item_code',
-               args: {
-                    "name": frm.doc.name,
-                    "item_template": frm.doc.item_template
-                },
+               args: { "name": frm.doc.name, "item_template": frm.doc.item_template },
                callback: function(r) {
-                if(r.message){
-                    frm.set_value('manual_repack_item_code', r.message);
-                    frm.refresh_field('item_template');
+                    if(r.message){
+                        frm.set_value('manual_repack_item_code', r.message);
+                        frm.refresh_field('item_template');
+                    }
                 }
-               }
            })
         }
     },
     before_submit: function(frm) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
-            args: { 'parent': frm.doc.name,
-                "item_group":frm.doc.item_group,
+            args: { 'parent': frm.doc.name, "item_group":frm.doc.item_group,
                 "doc_inspection_type":frm.doc.inspection_type,
                 "manufacturer_model":frm.doc.manufacturer_model
              },
             callback: function(r) {
-                if (r.message) {
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message);
-                }
+                if (r.message) { frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); }
             }
         })
     },
@@ -451,8 +453,8 @@ frappe.ui.form.on('NJQCA', {
     }
 });
 
-function get_info_from_serial_no(frm) {
-    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes') {
+function trigger_serial_no(frm) {
+    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.rfq_id == '') {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
             args: { 'doc': frm.doc },

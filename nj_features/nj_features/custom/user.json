@@ -28,7 +28,7 @@
     "print": 0,
     "read": 1,
     "report": 0,
-    "role": "System Manager",
+    "role": "NJpulse",
     "select": 0,
     "set_user_permissions": 1,
     "share": 0,

@@ -22,6 +22,32 @@ frappe.ui.form.on('Serial No', {
     }
 });
 
+frappe.ui.form.on('User', {
+    refresh() {
+        $('.col-lg-2.layout-side-section').hide();
+        if (!frappe.user.has_role('Developer')) {
+
+            cur_frm.set_df_property('sb1', 'hidden', 1);
+            cur_frm.set_df_property('roles', 'hidden', 1);
+            cur_frm.set_df_property('roles_html', 'hidden', 1);
+            cur_frm.set_df_property('api_access', 'hidden', 1);
+            cur_frm.set_df_property('role_profile_name', 'hidden', 1);
+            cur_frm.refresh_field('sb1');
+            cur_frm.refresh_field('roles');
+            cur_frm.refresh_field('roles_html');
+            cur_frm.refresh_field('api_access');
+            cur_frm.refresh_field('sb_allow_modules');
+            cur_frm.refresh_field('role_profile_name');
+        
+            cur_frm.set_df_property('restrict_ip', 'read_only', 1);
+            cur_frm.set_df_property('simultaneous_sessions', 'read_only', 1);
+
+            cur_frm.refresh_field('restrict_ip');
+            cur_frm.refresh_field('simultaneous_sessions');
+        }
+    }
+});
+
 frappe.ui.form.on('Department', {
     refresh() {
         $('.col-lg-2.layout-side-section').hide();

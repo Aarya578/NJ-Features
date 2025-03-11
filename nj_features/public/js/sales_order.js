@@ -1,9 +1,4 @@
 frappe.ui.form.on('Sales Order', {
-    onload_post_render: function(frm) {
-        frm.remove_custom_button('Delivery Note', 'Create');
-        frm.page.remove_inner_button('Delivery Note', 'Create');
-        $('.btn-group.dropdown-menu a:contains("Delivery Note")').parent().remove();
-    },
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
             validateAmazonOrderID(frm);
@@ -20,9 +15,6 @@ function validateAmazonOrderID(frm) {
 
 
 frappe.listview_settings['Sales Order'] = {
-    onload: function(listview) {
-        viewButton(listview);
-    },
     refresh: function(listview) {
         viewButton(listview);
     },
@@ -44,7 +36,6 @@ function openAmazonSyncForm() {
             if (response.message) {
                 if (response.message.status === 'success') {
                     frappe.msgprint(__(response.message.message));
-                    // Refresh the list view to show the newly synced orders
                     frappe.views.list_view.refresh();
                 } else {
                     frappe.msgprint({
@@ -63,4 +54,3 @@ function openAmazonSyncForm() {
         }
     });
 }
-

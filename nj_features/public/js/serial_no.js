@@ -5,10 +5,8 @@ frappe.ui.form.on('Serial No', {
         frm.set_df_property("bypass", "read_only", is_read_only);
         frm.set_df_property("reason_for_warranty_bypass", "read_only", is_read_only);
 
-        if (frappe.user.has_role('IT - NJ') || frappe.user.has_role('IT - Developer')) {
-            frm.set_df_property("bios_serial_no", "read_only", false);
-        } else {
-            frm.set_df_property("bios_serial_no", "read_only", true);
+        if (frappe.user.has_role('Developer')) {
+            frm.set_df_property("bios_serial_no", "read_only", 0);
         }
 
         $('.col-lg-2.layout-side-section').hide();
@@ -52,28 +50,21 @@ frappe.ui.form.on('Serial No', {
         //             cur_frm.set_value('suggested_warehouse', '');
         //         }
         //     }
-            
         // });
     },
-    before_save: (frm)=>{
+    after_save: (frm)=>{
         frm.set_df_property("bypass", "read_only", 1);
         frm.set_df_property("reason_for_warranty_pass", "read_only", 1);
         frm.refresh_field("bypass");
         frm.refresh_field("reason_for_warranty_pass");
     }
-    
 });
 
 function applyReadOnlyStyling(frm) {
-    console.log('applyReadOnlyStyling');
 
-    frappe.db.get_value('NJ Settings', 
-        {'doc_type': 'Serial No', 'parameter': 'nc_modifier'}, 'value'
-    ).then(function(r) {
+    frappe.db.get_value('NJ Settings', {'doc_type': 'Serial No', 'parameter': 'nc_modifier'}, 
+    'value').then(function(r) {
         if (r.message && r.message.value) {
-            console.log('Role from NJ Settings:', r.message.value);
-            console.log('User has role:', frappe.user.has_role(r.message.value));
-
             if (!frappe.user.has_role(r.message.value)) {
                 var sectionWrapper = frm.fields_dict['bypass_warranty'].wrapper;
 
@@ -108,9 +99,7 @@ function printQRCode(frm) {
 
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
-        args: {
-            data: frm.doc.name
-        }
+        args: { data: frm.doc.name }
     });
 
     frappe.db.get_value('NJ Settings', {'parameter': 'max_qr_copy'}, 'value').then((r) => {
@@ -120,10 +109,8 @@ function printQRCode(frm) {
         frappe.call({
             method: "frappe.client.set_value",
             args: {
-                doctype: "Serial No",
-                name: frm.doc.name,
-                fieldname: "qr_print_count",
-                value: frm.doc.qr_print_count
+                doctype: "Serial No", name: frm.doc.name,
+                fieldname: "qr_print_count", value: frm.doc.qr_print_count
             },
             callback: function(response) {
                 if (frm.doc.qr_print_count > max_copies) {
@@ -193,6 +180,3 @@ function printQRCode(frm) {
         });
     });
 }
-
-
-

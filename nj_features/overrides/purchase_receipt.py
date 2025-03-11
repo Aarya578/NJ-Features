@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from datetime import timedelta
 from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
@@ -191,28 +192,45 @@ def update_serial_no_on_pr_submit(doc, method=None):
                 update_serial_no(serial_no, doc, item)
 
 def update_serial_no(serial_no, doc, item):
+
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     
     if serial_no_doc:
+
+        get_purc_warranty_data = get_purchase_warranty_data(item, item.purchase_order)
+
         has_warrenty = frappe.db.get_value('Purchase Receipt', {'name': doc.name}, 'has_warranty')
         if has_warrenty:
-           serial_no_doc.vendor_warranty_expiry_date = doc.warrenty_till_date
+           serial_no_doc.vendor_warranty_expiry_date = get_purc_warranty_data.get('vendor_warranty_expiry_date') if get_purc_warranty_data.get('vendor_warranty_expiry_date') else doc.warrenty_till_date
         else:
            serial_no_doc.vendor_warranty_expiry_date = None
-        
+
         serial_no_doc.purchase_price = item.base_rate
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
         serial_no_doc.grade = item.grade
         serial_no_doc.supplier = doc.supplier
         serial_no_doc.purchase_warranty_days = doc.warranty_days
-        serial_no_doc.warranty_days = doc.warranty_days
+        serial_no_doc.warranty_days = get_purc_warranty_data.get('warranty_days') if get_purc_warranty_data.get('warranty_days') else doc.warranty_days
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name
         serial_no_doc.purchase_receipt = doc.name
         serial_no_doc.save()
+
+def get_purchase_warranty_data(item, purchase_order):
+
+    purc_doc = frappe.get_doc('Purchase Order', purchase_order)
+    matching_warranty = {}
+
+    if purc_doc:
+        for row in purc_doc.get("purchase_order_warrenty_for_specific_parts"):
+            if row.get("item_group") == item.item_group:
+                matching_warranty["vendor_warranty_expiry_date"] = purc_doc.get("transaction_date") + timedelta(days=row.get("warranty_days"))
+                matching_warranty["warranty_days"] = row.get("warranty_days")
+
+    return matching_warranty
 
 def set_registry_no(item):
 

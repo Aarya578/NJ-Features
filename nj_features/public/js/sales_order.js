@@ -10,6 +10,7 @@ frappe.ui.form.on('Sales Order', {
         });
     }
 });
+
 function validateAmazonOrderID(frm) {
     if (frm.doc.amazon_order_id && frm.doc.amazon_order_id.length < 16) {
         frappe.msgprint(__('Amazon Order ID must be at least 16 characters long.'));

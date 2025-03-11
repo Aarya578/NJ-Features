@@ -17,7 +17,7 @@ frappe.ui.form.on('NJ Production Planning', {
                         console.log('r -------------- ', data);
                         data.forEach(function(item) {
                             let child = frm.add_child('nj_production_planning_child');
-                            child.model = item.item_model ? item.item_model.toUpperCase() : '';
+                            child.model = item.model ? item.model.toUpperCase() : '';
                             child.processor = item.processor_type ? item.processor_type.toUpperCase() : '';
                             child.ram = item.ram_capacity ? item.ram_capacity.toUpperCase() : '';
                             child.ssd = item.storage_capacity ? item.storage_capacity.toUpperCase() : '';

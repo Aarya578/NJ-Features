@@ -18,7 +18,7 @@ def get_department_details(doc):
     item_code_counts = {}
     forwarded_item_code_counts = {}
 
-    model = '1'
+    model = '0'
     fr_config = '1'
 
     if model == '1' and fr_config == '1':
@@ -715,14 +715,15 @@ def calculate_to_make(doc, DOI_threshold=10):
     
     suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc.get("department"))
 
-    print("suggested_serial_no ---------------- ", suggested_serial_no)
-    
-    return doc.get("nj_production_planning_child", [])
-
-
-import frappe
+    return {
+        "to_make": doc.get("nj_production_planning_child", []), 
+        "suggested_serial": suggested_serial_no
+    }
 
 def suggest_to_make_serial_no(nj_pro_child, department=None):
+
+    print("nj_pro_child -------------------------- ", nj_pro_child)
+
     if not nj_pro_child:
         return []
 
@@ -758,4 +759,75 @@ def suggest_to_make_serial_no(nj_pro_child, department=None):
 
     print("get_serial_no ---------------- ", get_serial_no_config)
 
-    print("nj_pro_child ---------------- ", nj_pro_child)
+    if get_serial_no_config:
+
+        item_codes = list(set(item["item_code"].strip() for item in get_serial_no_config))
+
+        if item_codes:
+            placeholders = ", ".join(["%s"] * len(item_codes))  
+            query = f"""
+                SELECT 
+                    LOWER(iva.attribute) AS item_attribute, 
+                    LOWER(iva.attribute_value) AS attribute_value,
+                    iva.parent AS item_code,
+                    i.item_name,
+                    i.item_model,
+                    i.item_group,
+                    i.variant_of AS parent
+                FROM `tabItem Variant Attribute` iva
+                INNER JOIN `tabItem` i ON iva.parent = i.name
+                WHERE iva.parent IN ({placeholders})
+            """
+
+            attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
+
+            attributes_map = {}
+            for row in attribute_data:
+                item_code = row['item_code'].strip().lower()  
+                attribute = row['item_attribute'].replace(' ', '_')  
+                attribute_value = row['attribute_value']
+
+                if item_code not in attributes_map:
+                    attributes_map[item_code] = {
+                        'item_name': row['item_name'],
+                        'model': row['item_model'],
+                        'item_group': row['item_group'],
+                        'parent': row['parent']
+                    }
+
+                attributes_map[item_code][attribute] = attribute_value
+
+            for item in get_serial_no_config:
+                item_code = item['item_code'].strip().lower()  
+                if item_code in attributes_map:
+                    item.update(attributes_map[item_code])
+    
+
+    return get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory)
+
+def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory):
+
+    for child in nj_pro_child:
+
+        if child.get("to_make", 0) > 0:
+
+            for item in get_serial_no_config:
+
+                if (
+                    child.get("model", "").strip().lower() == item.get("model", "").strip().lower() and
+                    child.get("processor", "").strip().lower() == item.get("processor_type", "").strip().lower() and
+                    child.get("ram", "").strip().lower() == item.get("ram_capacity", "").strip().lower() and
+                    child.get("ssd", "").strip().lower() == item.get("storage_capacity", "").strip().lower()
+                ):
+
+                    get_suggested_serial_no = frappe.db.sql("""
+                        SELECT name FROM `tabSerial No`
+                        WHERE warehouse IN %s AND item_code = %s
+                        LIMIT %s
+                    """, (tuple(frw_inventory), item.get("item_code"), child.get("to_make")), as_dict=True)
+                    
+                    suggest_serial_no = [row.get("name") for row in get_suggested_serial_no]
+
+                    item["suggested_serial_no"] = suggest_serial_no
+    
+    return get_serial_no_config

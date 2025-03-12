@@ -391,6 +391,7 @@
    "options": "\nRefurb\nBDT"
   },
   {
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "rfq_id",
    "fieldtype": "Link",
    "label": "RFQ ID",

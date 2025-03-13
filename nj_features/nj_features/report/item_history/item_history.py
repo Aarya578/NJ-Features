@@ -42,6 +42,8 @@ def get_data(filters):
         conditions.append(f"AND sle.voucher_type = '{filters['Doctype']}'")
     if filters.get("department"):
         conditions.append(f"AND d.name = '{filters['department']}'")
+    if filters.get("serial_no"):
+        conditions.append(f"AND (sle.serial_no LIKE '{filters['serial_no']}' OR sle.serial_no LIKE '{filters['serial_no']}\n' OR sle.serial_no LIKE '\n{filters['serial_no']}') OR sle.serial_no LIKE '\n{filters['serial_no']}\n'")
 
     conditions_sql = " ".join(conditions)
 
@@ -64,10 +66,9 @@ def get_data(filters):
     LEFT JOIN `tabWarehouse` w ON sle.warehouse = w.name
     LEFT JOIN `tabUser` u1 ON u1.email = w.warehouse_owner
     LEFT JOIN `tabUser` u2 ON u2.name = stock.owner
-    LEFT JOIN `tabDepartment` d ON d.name = w.department  -- Assuming department is linked with tabWarehouse
+    LEFT JOIN `tabDepartment` d ON d.name = w.department
     WHERE
         sle.is_cancelled = 0
-        AND MATCH(sle.serial_no) AGAINST (%(serial_no)s)
         {conditions_sql}
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC

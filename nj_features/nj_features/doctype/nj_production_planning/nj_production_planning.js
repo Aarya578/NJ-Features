@@ -56,17 +56,16 @@ frappe.ui.form.on('NJ Production Planning', {
             callback: function(r) {
                 if (r.message) {
 
-                    console.log("message ------------------- ", r.message)
-                    let data = r.message.to_make;
-                    let suggested_serial_no_data = r.message.suggested_serial;
-    
-                    // Sort data in descending order based on 'to_make' value
-                    data.sort((a, b) => (b.to_make || 0) - (a.to_make || 0));
-    
+                    console.log("message ------------------- ", r.message);
+                    let data = r.message[0];
+                
                     frm.clear_table('nj_production_planning_child');
-                    frm.clear_table("suggested_serial_no")
-    
+                    frm.clear_table("suggested_serial_no");
+                
+                    data.sort((a, b) => (b.to_make || 0) - (a.to_make || 0));
+
                     data.forEach(function(item) {
+                        console.log("item --------------- ", item.item_code);
                         let child = frm.add_child('nj_production_planning_child');
                         child.model = item.model ? item.model.toUpperCase() : '';
                         child.processor = item.processor ? item.processor.toUpperCase() : '';
@@ -77,21 +76,26 @@ frappe.ui.form.on('NJ Production Planning', {
                         child.forward_inventory = item.forward_inventory ? item.forward_inventory : 0.0;
                         child.days_of_inventory = item.days_of_inventory ? item.days_of_inventory : 0.0;
                         child.to_make = item.to_make ? item.to_make : 0.0;
+                        child.item_code = item.item_code ? item.item_code : "";
                     });
 
-                    suggested_serial_no_data.forEach(function(item){
-                        let child = frm.add_child("suggested_serial_no");
+                    data.sort((a, b) => (b.suggested_serial_no?.length || 0) - (a.suggested_serial_no?.length || 0));
+
+                    data.forEach(function(item) {
+                        let child = frm.add_child('suggested_serial_no');
                         child.model = item.model ? item.model.toUpperCase() : '';
-                        child.processor = item.processor_type ? item.processor_type.toUpperCase() : '';
-                        child.ram = item.ram_capacity ? item.ram_capacity.toUpperCase() : '';
-                        child.ssd = item.storage_capacity ? item.storage_capacity.toUpperCase() : '';
-                        child.item_code = item.item_code ? item.item_code : '';
-                        child.suggested_serial_no = item.suggested_serial_no ? item.suggested_serial_no.join(", ") : '';
-                    })
-    
+                        child.processor = item.processor ? item.processor.toUpperCase() : '';
+                        child.ram = item.ram ? item.ram.toUpperCase() : '';
+                        child.ssd = item.ssd ? item.ssd.toUpperCase() : '';
+                        child.item_code = item.item_code ? item.item_code.toUpperCase() : '';
+                        child.suggested_serial_no = item.suggested_serial_no ? item.suggested_serial_no.join(", ") : "";
+                    });
+                
                     frm.refresh_field('nj_production_planning_child');
                     frm.refresh_field("suggested_serial_no");
+                
                 }
+                
             }
         });
     }

@@ -15,7 +15,8 @@
   "inward_inventory",
   "forward_inventory",
   "days_of_inventory",
-  "to_make"
+  "to_make",
+  "item_code"
  ],
  "fields": [
   {
@@ -107,12 +108,18 @@
    "label": "To Make",
    "read_only": 1,
    "width": "1"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Code"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-21 17:48:08.503890",
+ "modified": "2025-03-13 17:46:44.073117",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning Child",

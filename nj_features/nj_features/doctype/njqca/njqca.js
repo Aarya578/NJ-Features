@@ -99,9 +99,12 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: function(frm) {
-        var requiredFields = ['serial_no', 'item_group', 'warehouse', 'brand', 'manufacturer_model', 'model'];
+        var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
+        if (frm.doc.rfq_id != '') { requiredFields.push('warehouse'); }
+        
         var errorMessages = [];
         var dbError = [];
+        
         for (var i = 0; i < requiredFields.length; i++) {
             var fieldname = requiredFields[i];
             if (!frm.doc[fieldname]) {

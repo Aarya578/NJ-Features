@@ -715,14 +715,13 @@ def calculate_to_make(doc, DOI_threshold=10):
     
     suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc.get("department"))
 
-    print("suggested_serial_no ---------------- ", suggested_serial_no)
-    
-    return doc.get("nj_production_planning_child", [])
+    return doc.get("nj_production_planning_child", []), 
 
-
-import frappe
 
 def suggest_to_make_serial_no(nj_pro_child, department=None):
+
+    print("nj_pro_child -------------------------- ", nj_pro_child)
+
     if not nj_pro_child:
         return []
 
@@ -733,6 +732,8 @@ def suggest_to_make_serial_no(nj_pro_child, department=None):
         dept_doc = frappe.get_doc("Department", department)
     except frappe.DoesNotExistError:
         return [] 
+    
+    model = "1"
 
     frw_inventory = []
 
@@ -758,4 +759,181 @@ def suggest_to_make_serial_no(nj_pro_child, department=None):
 
     print("get_serial_no ---------------- ", get_serial_no_config)
 
-    print("nj_pro_child ---------------- ", nj_pro_child)
+    if get_serial_no_config:
+
+        item_codes = list(set(item["item_code"].strip() for item in get_serial_no_config))
+
+        print("item_codes -------------------- ", item_codes)
+
+        if item_codes:
+            placeholders = ", ".join(["%s"] * len(item_codes))  
+            query = f"""
+                SELECT 
+                    LOWER(iva.attribute) AS item_attribute, 
+                    LOWER(iva.attribute_value) AS attribute_value,
+                    iva.parent AS item_code,
+                    i.item_name,
+                    i.item_model,
+                    i.item_group,
+                    i.variant_of AS parent
+                FROM `tabItem Variant Attribute` iva
+                INNER JOIN `tabItem` i ON iva.parent = i.name
+                WHERE iva.parent IN ({placeholders})
+            """
+
+            attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
+
+            attributes_map = {}
+            for row in attribute_data:
+                item_code = row['item_code'].strip().lower()  
+                attribute = row['item_attribute'].replace(' ', '_')  
+                attribute_value = row['attribute_value']
+
+                if item_code not in attributes_map:
+                    attributes_map[item_code] = {
+                        'item_name': row['item_name'],
+                        'model': row['item_model'],
+                        'item_group': row['item_group'],
+                        'parent': row['parent']
+                    }
+
+                attributes_map[item_code][attribute] = attribute_value
+
+            for item in get_serial_no_config:
+                item_code = item['item_code'].strip().lower()  
+                if item_code in attributes_map:
+                    item.update(attributes_map[item_code])
+    
+    print("get_serial_no_config ---------------- ", get_serial_no_config)
+
+    get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, model)
+
+def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, model):
+
+    model = "0"
+
+    print("\n\n\n\n")
+
+    ref_get_serial_no_config = get_serial_no_config
+
+    print("ref_get_serial_no_config ---------------- ", ref_get_serial_no_config)
+    print("nj_pro_child --------------- ", nj_pro_child)
+
+    if model == "1":
+
+        print("coming to if")
+
+        for child in nj_pro_child:
+
+            print("child ----------------------- ", child)
+
+            if child.get("to_make", 0) > 0:
+                for item in get_serial_no_config:
+                    if (child.get("model", "").strip().lower() == item.get("model", "").strip().lower()):
+                        get_suggested_serial_no = frappe.db.sql("""
+                                SELECT name FROM `tabSerial No`
+                                WHERE warehouse IN %s AND model = %s
+                                LIMIT %s
+                            """, (tuple(frw_inventory), item.get("model"), child.get("to_make")), as_dict=True)
+                        
+                        suggest_serial_no = [row.get("name") for row in get_suggested_serial_no]
+
+                        if len(suggest_serial_no) >= child.get("to_make"):
+                            child["suggested_serial_no"] = suggest_serial_no[:child.get("to_make")]
+
+                        # Step 3: If not enough serials, find alternative serials
+                        remaining_needed = child.get("to_make") - len(suggest_serial_no)
+
+                        print("remaining_needed", remaining_needed)
+
+                        alternative_serial_no = []
+
+                        for alt_item in ref_get_serial_no_config:
+
+                            if child.get("model", "").strip().lower() == alt_item.get("model", "").strip().lower():
+                                # Fetch serial numbers for the alternative configuration
+
+                                print("alt_item ----------------------- 853", alt_item)
+
+                                extra_serials = frappe.db.sql("""
+                                    SELECT name FROM `tabSerial No`
+                                    WHERE warehouse IN %s AND model = %s
+                                    LIMIT %s
+                                """, (tuple(frw_inventory), alt_item.get("item_code"), remaining_needed), as_dict=True)
+
+                                alternative_serial_no.extend([row.get("name") for row in extra_serials])
+                                remaining_needed -= len(extra_serials)
+
+                                if remaining_needed <= 0:
+                                    break  # Stop once we have enough serials
+
+                        # Combine both exact match and alternative serials
+                        child["suggested_serial_no"] = suggest_serial_no + alternative_serial_no
+                        
+
+    else:
+
+        print("coming to else")
+
+        for child in nj_pro_child:
+            if child.get("to_make", 0) > 0:
+                for item in get_serial_no_config:
+                    if (
+                        child.get("model", "").strip().lower() == item.get("model", "").strip().lower() and
+                        child.get("processor", "").strip().lower() == item.get("processor_type", "").strip().lower() and
+                        child.get("ram", "").strip().lower() == item.get("ram_capacity", "").strip().lower() and
+                        child.get("ssd", "").strip().lower() == item.get("storage_capacity", "").strip().lower()
+                    ):
+                        # Step 1: Get serial numbers for the exact match
+                        get_suggested_serial_no = frappe.db.sql("""
+                            SELECT name FROM `tabSerial No`
+                            WHERE warehouse IN %s AND item_code = %s
+                            LIMIT %s
+                        """, (tuple(frw_inventory), item.get("item_code"), child.get("to_make")), as_dict=True)
+                        
+                        suggest_serial_no = [row.get("name") for row in get_suggested_serial_no]
+
+                        print("suggested_serial_no --------------- ", suggest_serial_no, len(suggest_serial_no))
+
+                        # Step 2: If we have enough serials, move to the next item
+                        if len(suggest_serial_no) >= child.get("to_make"):
+                            child["suggested_serial_no"] = suggest_serial_no
+                            child["item_code"] = item.get("item_code")
+                            continue
+
+                        # Step 3: If not enough serials, find alternative serials
+                        remaining_needed = child.get("to_make") - len(suggest_serial_no)
+
+                        print("remaining_needed", remaining_needed)
+
+                        alternative_serial_no = []
+
+                        for alt_item in ref_get_serial_no_config:
+
+                            if (
+                                child.get("model", "").strip().lower() == alt_item.get("model", "").strip().lower() and
+                                child.get("processor", "").strip().lower() == alt_item.get("processor_type", "").strip().lower()
+                            ) and (alt_item.get("item_code") != item.get("item_code")):
+                                # Fetch serial numbers for the alternative configuration
+
+                                print("alt_item ----------------------- 853", alt_item)
+
+                                extra_serials = frappe.db.sql("""
+                                    SELECT name FROM `tabSerial No`
+                                    WHERE warehouse IN %s AND item_code = %s
+                                    LIMIT %s
+                                """, (tuple(frw_inventory), alt_item.get("item_code"), remaining_needed), as_dict=True)
+
+                                alternative_serial_no.extend([row.get("name") for row in extra_serials])
+                                remaining_needed -= len(extra_serials)
+
+                                if remaining_needed <= 0:
+                                    break  # Stop once we have enough serials
+
+                        # Combine both exact match and alternative serials
+                        child["suggested_serial_no"] = suggest_serial_no + alternative_serial_no
+                        child["item_code"] = item.get("item_code")
+
+    print("\n\n\n\n nj_pro_child --------------------------- ", nj_pro_child)    
+
+    return get_serial_no_config

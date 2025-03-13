@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-03-12 10:37:00.702891",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "model",
+  "item_code",
+  "processor",
+  "ram",
+  "ssd",
+  "suggested_serial_no"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Item Code",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "processor",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Processor",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "ram",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ram",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "ssd",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SSD",
+   "read_only": 1
+  },
+  {
+   "columns": 4,
+   "fieldname": "suggested_serial_no",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Suggested Serial No",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-03-13 17:50:29.342073",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Suggested Serial No",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

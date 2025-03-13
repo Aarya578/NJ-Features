@@ -18,16 +18,28 @@ def scan_serial_no_data_for_sales(serial_no):
             frappe.throw(f"Serial No: {serial_no} doesn't exist")
             return None
         
-        result = frappe.db.sql(f"""
-            SELECT dn.name as delivery_note, dn.status as dn_status, dni.serial_no, 
+        serial_no_from_dn_query = """
+            SELECT dn.name as delivery_note, dn.status as dn_status, 
                 dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
                 dni.item_code, si.status as si_status, si.approved, si.sales_channel
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            WHERE dni.serial_no LIKE %s AND dn.docstatus = 1
+            WHERE (
+                dni.serial_no = {0}
+                or dni.serial_no like {1}
+                or dni.serial_no like {2}
+                or dni.serial_no like {3}
+            ) AND dn.docstatus = 1
             ORDER BY dn.creation DESC, dn.modified DESC
-        """, ('%' + serial_no + '%',), as_dict=True)
+        """.format(
+            frappe.db.escape(serial_no),
+            frappe.db.escape("{}\n%".format(serial_no)),
+            frappe.db.escape("%\n{}".format(serial_no)),
+            frappe.db.escape("%\n{}\n%".format(serial_no)),
+        )
+        
+        result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
 
         if result:
             delivery_note_data = result[0]
@@ -80,7 +92,6 @@ def scan_serial_no_data_for_sales(serial_no):
 
     except Exception as e:
         frappe.throw(e)
-        frappe.traceback()
 
 @frappe.whitelist()
 def scan_serial_no_data_for_return(pr_name):
@@ -130,8 +141,7 @@ def get_item_code_details_for_transfer(ste_number):
         frappe.throw(f"Stock Entry : {ste_number} doesn't exist")
         return None
 
-    material_transfer_details = frappe.db.get_all(
-        "Stock Entry Detail",
+    material_transfer_details = frappe.db.get_all("Stock Entry Detail",
         filters={'parent': ste_number},
         fields=['t_warehouse', 'qty', 'item_code', 's_warehouse', 'idx', 'serial_no','parent']
     )

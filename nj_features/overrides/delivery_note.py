@@ -19,50 +19,62 @@ class CustomDeliveryNote(DeliveryNote):
         self._process_serial_numbers()
     
     def _process_customer_details(self):
-
         for item in self.get('items'):
+            serial_no = item.serial_no.strip() if item.serial_no else ""
 
-            serial_no = item.get('serial_no', '').strip()
+            if not serial_no:  # Skip processing if no serial number is provided
+                continue
 
-            if serial_no:
-                serial_list = serial_no.split('\n')
+            serial_list = serial_no.split('\n')
 
-                sales_order_data = frappe.db.sql("""
-                    SELECT so.customer_name, so.name, 
-                        COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                        so.transaction_date, so.delivery_date, 
-                        si.sales_channel
-                    FROM `tabSales Order` so
-                    INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
-                    INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-                    WHERE so.name = %s
-                    LIMIT 1
-                """, (item.against_sales_order,), as_dict=True)
+            if not item.against_sales_order:  # Ensure sales order exists
+                frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
 
-                if not sales_order_data:
-                    frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
+            sales_order_data = frappe.db.sql("""
+                SELECT so.customer_name, so.name, 
+                    COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
+                    so.transaction_date, so.delivery_date, 
+                    si.sales_channel
+                FROM `tabSales Order` so
+                INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
+                INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+                WHERE so.name = %s
+                LIMIT 1
+            """, (item.against_sales_order,), as_dict=True)  # Fixed `item["against_sales_order"]`
 
-                sales_order_info = sales_order_data[0]
+            if not sales_order_data:
+                frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
 
-                print('sales_order_info', sales_order_info)
+            sales_order_info = sales_order_data[0]
 
-                for serial in serial_list:
-                    
+            print('sales_order_info:', sales_order_info)
+
+            for serial in serial_list:
+                serial = serial.strip()  # Ensure no extra whitespace
+                if not serial:
+                    continue  # Skip empty serial numbers
+
+                try:
                     serial_no_doc = frappe.get_doc('Serial No', serial)
+                except frappe.DoesNotExistError:
+                    frappe.throw(f"Serial No {serial} not found in the system")
 
-                    serial_no_doc.first_name = sales_order_info.get("customer_name")
-                    serial_no_doc.sales_order_id = sales_order_info.get("name")
-                    serial_no_doc.order_id = sales_order_info.get("order_id")
-                    serial_no_doc.order_date = sales_order_info.get("transaction_date")
-                    serial_no_doc.shipped_date = self.get("posting_date")
-                    serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
-                    serial_no_doc.sales_channel = sales_order_info.get("sales_channel")
-                    serial_no_doc.mobile_no = 0
-                    serial_no_doc.end_date = 0
-                    serial_no_doc.email_id = ""
-                    serial_no_doc.warranty_start_date_ = ""
+                # Updating Serial No document with sales order details
+                serial_no_doc.first_name = sales_order_info.get("customer_name", "")
+                serial_no_doc.sales_order_id = sales_order_info.get("name", "")
+                serial_no_doc.order_id = sales_order_info.get("order_id", "")
+                serial_no_doc.order_date = sales_order_info.get("transaction_date")
+                serial_no_doc.shipped_date = self.get("posting_date")
+                serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
+                serial_no_doc.sales_channel = sales_order_info.get("sales_channel", "")
+                serial_no_doc.mobile_no = 0
+                serial_no_doc.end_date = 0
+                serial_no_doc.email_id = ""
+                serial_no_doc.warranty_start_date_ = ""
 
-                    serial_no_doc.save(ignore_permissions=True)
+                serial_no_doc.save(ignore_permissions=True)
+
+
     
     def _process_serial_numbers(self):
 

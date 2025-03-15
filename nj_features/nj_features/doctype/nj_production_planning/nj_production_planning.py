@@ -11,331 +11,233 @@ class NJProductionPlanning(Document):
 
 @frappe.whitelist()
 def get_department_details(doc):
-    if isinstance(doc, str):
-        doc = json.loads(doc)
+    doc = parse_document(doc)
+    dept_doc = get_department_document(doc.get("department"))
 
-    dept_doc = frappe.get_doc("Department", {"name": doc.get("department")})
-    item_code_counts = {}
-    forwarded_item_code_counts = {}
-
-    model = '1'
-    fr_config = '1'
-
-    if model == '1' and fr_config == '1':
-        merged_data = {}
-
-        for row in dept_doc.get("inventory_details_child"):
-            # Process Inwarded Inventory
-            if row.get("inwarded_inventory"):
-                inwarded_warehouse = frappe.db.get_all(
-                    "Warehouse",
-                    filters={"department": row.get("inwarded_inventory")},
-                    pluck="name"
-                )
-
-                for warehouse in inwarded_warehouse:
-                    inwarded_counts = frappe.db.sql("""
-                        SELECT COUNT(sn.name) AS count, sn.warehouse, sn.model
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.model
-                    """, (warehouse,), as_dict=True)
-
-                    for item in inwarded_counts:
-                        model_name = item["model"]
-                        if model_name not in merged_data:
-                            merged_data[model_name] = {
-                                "inwarded_count": 0,
-                                "forwarded_count": 0,
-                                "warehouse": item["warehouse"],
-                                "item_codes": {}  # Keeping item_codes as a dictionary
-                            }
-                        merged_data[model_name]["inwarded_count"] += item["count"]
-
-            # Process Forwarded Inventory
-            if row.get("forwarded_inventory"):
-                forwarded_warehouse = frappe.db.get_all(
-                    "Warehouse",
-                    filters={"department": row.get("forwarded_inventory")},
-                    pluck="name"
-                )
-
-                for warehouse in forwarded_warehouse:
-                    forwarded_counts = frappe.db.sql("""
-                        SELECT sn.item_code, COUNT(sn.name) AS count, sn.warehouse, sn.model
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.item_code, sn.model
-                    """, (warehouse,), as_dict=True)
-
-                    for item in forwarded_counts:
-                        model_name = item["model"]
-                        if model_name not in merged_data:
-                            merged_data[model_name] = {
-                                "inwarded_count": 0,
-                                "forwarded_count": 0,
-                                "warehouse": item["warehouse"],
-                                "item_codes": {} 
-                            }
-
-                        merged_data[model_name]["forwarded_count"] += item["count"]
-
-                        item_code = item["item_code"]
-                        if item_code in merged_data[model_name]["item_codes"]:
-                            merged_data[model_name]["item_codes"][item_code] += item["count"]
-                        else:
-                            merged_data[model_name]["item_codes"][item_code] = item["count"]
-
-        print("Merged Data:", merged_data)
-
-        item_code_list = []
-
-        if merged_data:
-            item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data)
-        
-        for item in item_code_list:
-            print('\n\nitem ----------------------- 128', item)
-            if item['sales_rate'] > 0:
-                item['DOI'] = item['forwarded_qty'] / item['sales_rate']
-                print('DOI ------------------- ', item['DOI'])
-            else:
-                print('coming to else ------------------ 132')
-                item['DOI'] = 0
-        
-        print("item_code_list ------------------------ 134", item_code_list)
-
-        return item_code_list
-
-    elif model == '1':
-
-        for row in dept_doc.get("inventory_details_child"):
-            if row.get("inwarded_inventory"):
-                inwarded_warehouse = frappe.db.get_all(
-                    "Warehouse", 
-                    filters={"department": row.get("inwarded_inventory")}, 
-                    pluck="name"
-                )
-
-                for warehouse in inwarded_warehouse:
-                    item_counts = frappe.db.sql("""
-                        SELECT COUNT(sn.name) AS count, sn.warehouse, sn.model
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.model
-                    """, (warehouse,),as_dict=True)
-
-                    for item in item_counts:
-                        model = item['model']
-                        count = item['count']
-                        
-                        if model in item_code_counts:
-                            item_code_counts[model] += count
-                        else:
-                            item_code_counts[model] = count
-
-            if row.get("forwarded_inventory"):
-
-                forwarded_warehouse = frappe.db.get_all(
-                    "Warehouse",
-                    filters={"department": row.get("forwarded_inventory")},
-                    pluck="name"
-                )
-
-                forwarded_warehouse = frappe.db.get_all(
-                    "Warehouse", 
-                    filters={"department": row.get("forwarded_inventory")}, 
-                    pluck="name"
-                )
-                
-                for warehouse in forwarded_warehouse:
-                    item_counts = frappe.db.sql("""
-                        SELECT COUNT(sn.name) AS count, sn.warehouse, sn.model
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.model
-                    """, (warehouse,), as_dict=True)
-
-                    for item in item_counts:
-                        model = item['model']
-                        count = item['count']
-
-                        
-                        if model in forwarded_item_code_counts:
-                            forwarded_item_code_counts[model] += count
-                        else:
-                            forwarded_item_code_counts[model] = count
-
-        item_code_list = []
-        
-        all_item_codes = set(item_code_counts.keys()).union(forwarded_item_code_counts.keys())
-
-        print("all_item_codes ------------------------- 75", all_item_codes)
-
-        for model in all_item_codes:
-            inwarded_qty = item_code_counts.get(model, 0)
-            forwarded_qty = forwarded_item_code_counts.get(model, 0)
-            item_code_list.append({
-                "model": model,
-                "inwarded_qty": inwarded_qty,
-                "forwarded_qty": forwarded_qty
-            })
-        
-        print("item_code_list ---------------- 128", item_code_list)
-
-        item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list)
-
-        print("item_code_list ------------------- ", item_code_list)
-        
-        for item in item_code_list:
-            print('\n\nitem ----------------------- 128', item['forwarded_qty'])
-            if item['sales_rate'] > 0:
-                item['DOI'] = item['forwarded_qty'] / item['sales_rate']
-                print('DOI ------------------- ', item['DOI'])
-            else:
-                print('coming to else ------------------ 132')
-                item['DOI'] = 0
-        
-        print("item_code_list ------------------------ 134", item_code_list)
-
-        return item_code_list
-
+    in_model = dept_doc.get("inwarded_model") 
+    in_config = dept_doc.get("inwarded_config")
+    fw_model = dept_doc.get("forwarded_model") 
+    fw_config = dept_doc.get("forwarded_config")
+    
+    if str(in_model) == '1' and str(in_config) == '1':
+        return process_merged_configuration(dept_doc)
+    elif str(in_model) == '1' and str(fw_model) == '1':
+        return process_model_configuration(dept_doc)
     else:
+        return process_default_configuration(dept_doc)
 
-        for row in dept_doc.get("inventory_details_child"):
-            if row.get("inwarded_inventory"):
-                inwarded_warehouse = frappe.db.get_all(
-                    "Warehouse", 
-                    filters={"department": row.get("inwarded_inventory")}, 
-                    pluck="name"
-                )
+def parse_document(doc):
+    if isinstance(doc, str):
+        return json.loads(doc)
+    return doc
 
-                for warehouse in inwarded_warehouse:
-                    item_counts = frappe.db.sql("""
-                        SELECT sn.item_code, COUNT(sn.name) AS count, sn.warehouse
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.item_code
-                    """, (warehouse,), as_dict=True)
+def get_department_document(department_name):
+    return frappe.get_doc("Department", {"name": department_name})
 
-                    for item in item_counts:
-                        item_code = item['item_code']
-                        count = item['count']
-                        
-                        if item_code in item_code_counts:
-                            item_code_counts[item_code] += count
-                        else:
-                            item_code_counts[item_code] = count
+# Merged Configuration Processing (model=1 and fr_config=1)
+def process_merged_configuration(dept_doc):
+    merged_data = process_inventory_rows(dept_doc)
+    item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data)
+    return calculate_doi(item_code_list)
 
-            if row.get("forwarded_inventory"): 
-                forwarded_warehouse = frappe.db.get_all(
-                    "Warehouse", 
-                    filters={"department": row.get("forwarded_inventory")}, 
-                    pluck="name"
-                )
+def process_inventory_rows(dept_doc):
+    merged_data = {}
+    for row in dept_doc.get("inventory_details_child"):
+        process_inwarded_inventory_merged(row, merged_data)
+        process_forwarded_inventory_merged(row, merged_data)
+    return merged_data
+
+def process_inwarded_inventory_merged(row, merged_data):
+    if row.get("inwarded_inventory"):
+        warehouses = get_warehouses(row.get("inwarded_inventory"))
+        for warehouse in warehouses:
+            counts = get_inwarded_counts_merged(warehouse)
+            update_merged_counts(merged_data, counts, warehouse, "inwarded_count")
+
+def process_forwarded_inventory_merged(row, merged_data):
+    if row.get("forwarded_inventory"):
+        warehouses = get_warehouses(row.get("forwarded_inventory"))
+        for warehouse in warehouses:
+            counts = get_forwarded_counts_merged(warehouse)
+            update_merged_counts(merged_data, counts, warehouse, "forwarded_count")
+
+def get_warehouses(department):
+    return frappe.db.get_all(
+        "Warehouse",
+        filters={"department": department},
+        pluck="name"
+    )
+
+def get_inwarded_counts_merged(warehouse):
+    return frappe.db.sql("""
+        SELECT COUNT(sn.name) AS count, sn.model
+        FROM `tabSerial No` sn
+        JOIN `tabItem Group` i ON sn.item_group = i.name
+        WHERE sn.warehouse = %s
+        AND i.parent_item_group = "Products"
+        GROUP BY sn.model
+    """, (warehouse,), as_dict=True)
+
+def get_forwarded_counts_merged(warehouse):
+    return frappe.db.sql("""
+        SELECT sn.item_code, COUNT(sn.name) AS count, sn.model
+        FROM `tabSerial No` sn
+        JOIN `tabItem Group` i ON sn.item_group = i.name
+        WHERE sn.warehouse = %s
+        AND i.parent_item_group = "Products"
+        GROUP BY sn.item_code, sn.model
+    """, (warehouse,), as_dict=True)
+
+def update_merged_counts(merged_data, counts, warehouse, count_type):
+    for item in counts:
+        model = item.get("model")
+        if not model:
+            continue
+            
+        if model not in merged_data:
+            merged_data[model] = {
+                "inwarded_count": 0,
+                "forwarded_count": 0,
+                "warehouse": warehouse,
+                "item_codes": {}
+            }
+        
+        merged_data[model][count_type] += item.get("count", 0)
+        
+        if count_type == "forwarded_count":
+            item_code = item.get("item_code")
+            if item_code:
+                merged_data[model]["item_codes"][item_code] = merged_data[model]["item_codes"].get(item_code, 0) + item.get("count", 0)
+
+# Model Configuration Processing (model=1)
+def process_model_configuration(dept_doc):
+    inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
+    forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
+    item_code_list = merge_model_counts(inwarded_counts, forwarded_counts)
+    item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list)
+    return calculate_doi(item_code_list)
+
+def get_model_counts(dept_doc, inventory_type):
+    counts = {}
+    for row in dept_doc.get("inventory_details_child"):
+        department = row.get(inventory_type)
+        if department:
+            warehouses = get_warehouses(department)
+            for warehouse in warehouses:
+                query = """
+                    SELECT COUNT(sn.name) AS count, sn.model
+                    FROM `tabSerial No` sn
+                    JOIN `tabItem Group` i ON sn.item_group = i.name
+                    WHERE sn.warehouse = %s
+                    AND i.parent_item_group = "Products"
+                    GROUP BY sn.model
+                """
+                results = frappe.db.sql(query, (warehouse,), as_dict=True)
+                update_counts(counts, results)
+    return counts
+
+def merge_model_counts(inwarded, forwarded):
+    return [{
+        "model": model,
+        "inwarded_qty": inwarded.get(model, 0),
+        "forwarded_qty": forwarded.get(model, 0)
+    } for model in set(inwarded) | set(forwarded)]
+
+# Default Configuration Processing
+def process_default_configuration(dept_doc):
+    inwarded_counts = get_item_counts(dept_doc, "inwarded_inventory")
+    forwarded_counts = get_item_counts(dept_doc, "forwarded_inventory")
+    item_code_list = merge_item_counts(inwarded_counts, forwarded_counts)
+    item_code_list = fetch_item_attributes(item_code_list)
+    item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
+    return calculate_doi(item_code_list)
+
+def get_item_counts(dept_doc, inventory_type):
+    counts = {}
+    for row in dept_doc.get("inventory_details_child"):
+        department = row.get(inventory_type)
+        if department:
+            warehouses = get_warehouses(department)
+            for warehouse in warehouses:
+                query = """
+                    SELECT sn.item_code, COUNT(sn.name) AS count
+                    FROM `tabSerial No` sn
+                    JOIN `tabItem Group` i ON sn.item_group = i.name
+                    WHERE sn.warehouse = %s
+                    AND i.parent_item_group = "Products"
+                    GROUP BY sn.item_code
+                """
+                results = frappe.db.sql(query, (warehouse,), as_dict=True)
+                update_counts(counts, results)
+    return counts
+
+def merge_item_counts(inwarded, forwarded):
+    return [{
+        "item_code": code,
+        "inwarded_qty": inwarded.get(code, 0),
+        "forwarded_qty": forwarded.get(code, 0)
+    } for code in set(inwarded) | set(forwarded)]
+
+def fetch_item_attributes(item_list):
+    item_codes = [item["item_code"] for item in item_list if item.get("item_code")]
+    if not item_codes:
+        return item_list
+        
+    try:
+        placeholders = ", ".join(["%s"] * len(item_codes))
+        attributes = frappe.db.sql(f"""
+            SELECT 
+                LOWER(iva.attribute) AS attribute,
+                LOWER(iva.attribute_value) AS value,
+                iva.parent AS code,
+                i.item_name,
+                i.item_model,
+                i.item_group,
+                i.variant_of
+            FROM `tabItem Variant Attribute` iva
+            JOIN `tabItem` i ON iva.parent = i.name
+            WHERE iva.parent IN ({placeholders})
+        """, tuple(item_codes), as_dict=True)
+        
+        attr_map = {}
+        for attr in attributes:
+            code = attr["code"]
+            if code not in attr_map:
+                attr_map[code] = {
+                    "item_name": attr["item_name"],
+                    "model": attr["item_model"],
+                    "item_group": attr["item_group"],
+                    "parent": attr["variant_of"]
+                }
+            attr_map[code][attr["attribute"].replace(" ", "_")] = attr["value"]
+        
+        for item in item_list:
+            if item["item_code"] in attr_map:
+                item.update(attr_map[item["item_code"]])
                 
-                for warehouse in forwarded_warehouse:
-                    item_counts = frappe.db.sql("""
-                        SELECT sn.item_code, COUNT(sn.name) AS count, sn.warehouse
-                        FROM `tabSerial No` sn
-                        JOIN `tabItem Group` i ON sn.item_group = i.name
-                        WHERE sn.warehouse = %s
-                        AND i.parent_item_group = "Products"
-                        GROUP BY sn.item_code
-                    """, (warehouse,), as_dict=True)
-
-                    for item in item_counts:
-                        item_code = item['item_code']
-                        count = item['count']
-                        
-                        if item_code in forwarded_item_code_counts:
-                            forwarded_item_code_counts[item_code] += count
-                        else:
-                            forwarded_item_code_counts[item_code] = count
-
-        item_code_list = []
+    except Exception:
+        frappe.log_error(title="Attribute Fetch Error", message=traceback.format_exc())
         
-        all_item_codes = set(item_code_counts.keys()).union(forwarded_item_code_counts.keys())
+    return item_list
 
-        print("all_item_codes ------------- 75", all_item_codes)
+# Common Utilities
+def update_counts(count_dict, results):
+    for item in results:
+        key = item.get("model") or item.get("item_code")
+        if key:
+            count_dict[key] = count_dict.get(key, 0) + item.get("count", 0)
 
-        for item_code in all_item_codes:
-            inwarded_qty = item_code_counts.get(item_code, 0)
-            forwarded_qty = forwarded_item_code_counts.get(item_code, 0)
-            item_code_list.append({
-                "item_code": item_code,
-                "inwarded_qty": inwarded_qty,
-                "forwarded_qty": forwarded_qty
-            })
+def calculate_doi(items):
+    for item in items:
+        try:
+            item["DOI"] = item["forwarded_qty"] / item["sales_rate"] if item.get("sales_rate", 0) > 0 else 0
+        except KeyError:
+            item["DOI"] = 0
+    return items
 
-        item_codes = [item['item_code'] for item in item_code_list]
-        
-        if item_codes:
-            
-            try:
-                placeholders = ', '.join(['%s'] * len(item_codes))
-                attribute_data = frappe.db.sql(f"""
-                    SELECT 
-                        LOWER(iva.attribute) AS item_attribute, 
-                        LOWER(iva.attribute_value) AS attribute_value,
-                        iva.parent AS item_code,
-                        i.item_name,
-                        i.item_model,
-                        i.item_group,
-                        i.variant_of as parent
-                    FROM `tabItem Variant Attribute` iva
-                    INNER JOIN `tabItem` i ON iva.parent = i.name
-                    WHERE iva.parent IN ({placeholders})
-                """, tuple(item_codes), as_dict=True)
-            
-                attributes_map = {}
-                for row in attribute_data:
-                    item_code = row['item_code']
-                    attribute = row['item_attribute'].replace(' ', '_')
-                    attribute_value = row['attribute_value']
-                    if item_code not in attributes_map:
-                        attributes_map[item_code] = {}
-                    attributes_map[item_code][attribute] = attribute_value
-                    attributes_map[item_code]['item_name'] = row['item_name']
-                    attributes_map[item_code]['model'] = row['item_model']
-                    attributes_map[item_code]['item_group'] = row['item_group']
-                    attributes_map[item_code]['parent'] = row['parent']
 
-                for item in item_code_list:
-                    item_code = item['item_code']
-                    if item_code in attributes_map:
-                        item.update(attributes_map[item_code])
-            
-            except Exception as e:
-                frappe.log_error(title="Error Fetching Item Attributes", message=traceback.format_exc())
 
-        print("item_code_list ------------- ", item_code_list)
 
-        item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
-
-        print("item_code_list ------------------- ", item_code_list)
-        
-        for item in item_code_list:
-            print('\n\nitem ----------------------- 128', item)
-            if item['sales_rate'] > 0:
-                item['DOI'] = item['forwarded_qty'] / item['sales_rate']
-                print('DOI ------------------- ', item['DOI'])
-            else:
-                print('coming to else ------------------ 132')
-                item['DOI'] = 0
-        
-        print("item_code_list ------------------------ 134", item_code_list)
-
-        return item_code_list
 
 
 def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=7, weight_factor=2):
@@ -933,6 +835,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, model)
                         # Combine both exact match and alternative serials
                         child["suggested_serial_no"] = suggest_serial_no + alternative_serial_no
                         child["item_code"] = item.get("item_code")
+
 
     print("\n\n\n\n nj_pro_child --------------------------- ", nj_pro_child)    
 

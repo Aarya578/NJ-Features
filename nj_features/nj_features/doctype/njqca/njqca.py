@@ -1250,11 +1250,12 @@ def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_m
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
+        sudden_drop_limit=""
         if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
        
             sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
-                sudden_drop_limit=20
+                sudden_drop_limit="20"
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`

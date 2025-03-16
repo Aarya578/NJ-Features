@@ -248,8 +248,8 @@ def get_battery_status(doc, method=None):
                 if wizard_criteria[0].backup_duration_mins:
                     backup_duration_mins=wizard_criteria[0].backup_duration_mins
            
-             
-        
+ 
+    
         # else:
         #     frappe.msgprint("Item Wizard not found for the given manufacturer model.")
         #     doc.append('njqca_result_parameters', {
@@ -268,9 +268,7 @@ def get_battery_status(doc, method=None):
             select value from `tabNJQCA Result Parameters` where parent=%s and item_group="Battery" and parameter="Cycle_count" limit 1
         """
         battery_health = frappe.db.sql(battery_query,(njqca), as_dict=True)
-        print("battery_health:",battery_health)
         cc=frappe.db.sql(cc_query,(njqca), as_dict=True)
-        print("cc:",cc)
 
         if not battery_health and not cc:
             return

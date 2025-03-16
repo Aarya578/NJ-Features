@@ -1529,22 +1529,37 @@ def get_fetched_item_code(serial_no, partData):
     return updated_part_data
 
 @frappe.whitelist()
-def get_battery_auto_item_code(name,item_template):
+def get_battery_auto_item_code(name,item_template,manufacturer_model):
     try:
-        item_code_query="""
-                        Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" and name like 
-                        case 
-                        when 
-                        (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= 120 OR backup_duration_cycle_2 >= 120 OR backup_duration_cycle_1 >= 120) and sudden_drop like "%%NO%%" and name=%(name)s)
-                        Then  "%%A"
-                        else "%%D"
-                        END limit 1;
-                    """
-        result=frappe.db.sql(item_code_query,{'item_templete':item_template,'name':name},as_dict=True)
-        if not result is  None and result:
-            return result[0].get('name')
-        else:
-            return None
+        wizard=get_item_wizard(manufacturer_model)
+        backup_duration="120"
+        if wizard:
+            wizard_criteria_query="""
+                select backup_duration_mins,sudden_drop_limit from `tabItem Wizards` where name=%s ;
+            """
+
+            wizard_criteria=frappe.db.sql(wizard_criteria_query, (wizard), as_dict=True)
+
+            if wizard_criteria:
+                if wizard_criteria[0].backup_duration_mins: 
+                    backup_duration_mins=wizard_criteria[0].backup_duration_mins
+
+
+            item_code_query="""
+                            Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" and name like 
+                            case 
+                            when 
+                            (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= %(backup_duration)s OR backup_duration_cycle_2 >= %(backup_duration)s OR backup_duration_cycle_1 >= %(backup_duration)s) and sudden_drop like "%%NO%%" and name=%(name)s)
+                            Then  "%%A"
+                            else "%%D"
+                            END limit 1;
+                        """
+            backup_duration=int(backup_duration_mins)
+            result=frappe.db.sql(item_code_query,{'item_templete':item_template,'backup_duration':backup_duration,'name':name},as_dict=True)
+            if not result is  None and result:
+                return result[0].get('name')
+            else:
+                return None
     except Exception as e:
         return None
 
@@ -1558,7 +1573,7 @@ def validate_battery_storage_score(doc):
         bad_sectors, wiz_storage_health= "", ""
 
         wizard_criteria_query="""
-            select fbdt_health_range, rbdt_health_range, cycle_count, storage_health, bad_sectors from `tabItem Wizards` where name=%s;
+            select  storage_health, bad_sectors from `tabItem Wizards` where name=%s;
         """
 
         if item_wizard:

@@ -6,19 +6,21 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.docstatus == 0) { 
             trigger_serial_no(frm); 
         }
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
-            args: { 'parent_name': frm.doc.name, 
-                "item_group":frm.doc.item_group,
-                "manufacturer_model":frm.doc.manufacturer_model
-             },
-            callback: function(r) {
-                if (r.message) { 
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
-                    frm.refresh_field('sudden_drop');
+        if (frm.doc.manufacturer_model) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
+                args: { 'parent_name': frm.doc.name, 
+                    "item_group":frm.doc.item_group,
+                    "manufacturer_model":frm.doc.manufacturer_model
+                 },
+                callback: function(r) {
+                    if (r.message) { 
+                        frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                        frm.refresh_field('sudden_drop');
+                    }
                 }
-            }
-        })
+            })
+        }
     },
     
     refresh: function(frm) {

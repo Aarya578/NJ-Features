@@ -247,8 +247,6 @@ def get_battery_status(doc, method=None):
 
                 if wizard_criteria[0].backup_duration_mins:
                     backup_duration_mins=wizard_criteria[0].backup_duration_mins
-           
- 
     
         # else:
         #     frappe.msgprint("Item Wizard not found for the given manufacturer model.")
@@ -460,14 +458,14 @@ def get_battery_status(doc, method=None):
         return
            
     
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist()
 def get_backup_duration(doc, method=None):
+
     try:
         parent_name = doc.name
-        doc_inspection_type=doc.inspection_type
+        
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-        njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
-        if (njqca_battery_item_group and njqca_battery_item_group == doc.item_group) or (doc_inspection_type in njqca_battery_inspection_type):
+        if (njqca_battery_item_group and njqca_battery_item_group == doc.item_group):
             delta_query = """
                         WITH parameter_data AS (     
                                 SELECT name, idx, item_group, parameter, value     
@@ -541,3 +539,6 @@ def get_backup_duration(doc, method=None):
     except Exception as e:
         print("error while getting backup duration", e)
         return
+    
+    finally:
+        get_battery_status(doc)

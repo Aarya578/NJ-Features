@@ -7,10 +7,10 @@ from frappe import _
 from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
+from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_features.nj_features.api.bb_api import get_grading_Authentication
+from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 @frappe.whitelist()
@@ -491,20 +491,23 @@ class NJQCA(Document):
             
             try:
                 # get_grading_Authentication(self)
+                sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
-                if self.item_code != self.manual_repack_item_code and self.rfq_id == '':
+                if self.item_code != self.manual_repack_item_code and self.rfq_id == '' and self.item_group == sn_item_group:
                     self.make_stock_entry_using_nj_lib()
 
                 if self.rfq_id != '':
                     self.create_serial_no_based_on_rfq()
                 
-                qi_data = open_draft_qi(self)
+                if self.item_group == sn_item_group:
+                    qi_data = open_draft_qi(self)
+                
                 if qi_data:
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
                 
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-                if nj_settings_item_group and self.item_group != nj_settings_item_group:
+                if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     update_serial_no_componont_for_grade(self)
                     #update_serial_no_component_for_njqca(self)
 

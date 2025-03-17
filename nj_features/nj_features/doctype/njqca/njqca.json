@@ -23,6 +23,7 @@
   "rfq_id",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
+  "rapid_bdt",
   "column_break_1tl9d",
   "repack_item_code",
   "manual_repack_item_code",
@@ -392,11 +393,16 @@
    "fieldtype": "Link",
    "label": "RFQ ID",
    "options": "Request for Quotation"
+  },
+  {
+   "fieldname": "rapid_bdt",
+   "fieldtype": "Data",
+   "label": "Rapid BDT"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-16 15:52:36.359899",
+ "modified": "2025-03-17 23:14:07.744441",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

@@ -732,11 +732,11 @@ def get_info_from_serial_no(doc=None):
                 result['serial_no'] = sle_entry.get('name')
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
-        sudden_drop = ''
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),result['inspection_type'],doc_json.get('manufacturer_model'))
+        # sudden_drop = ''
+        # sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('manufacturer_model'))
 
-        result['sudden_drop'] = sudden_drop
-        frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
+        # result['sudden_drop'] = sudden_drop
+        # frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
 
         return result
     
@@ -1246,13 +1246,11 @@ def get_model(manufacturer_model=None):
 #     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
-def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_model):
+def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-        njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
         sudden_drop_limit=""
-        if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
-       
+        if (njqca_battery_item_group and njqca_battery_item_group == item_group):       
             sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="20"
@@ -1293,6 +1291,7 @@ def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_m
                 return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+            print("delta:", delta)
             delta = delta[0]
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:

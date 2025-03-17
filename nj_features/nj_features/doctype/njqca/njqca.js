@@ -302,6 +302,11 @@ frappe.ui.form.on('NJQCA', {
         if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
+        
+        frappe.call({
+            method: 'nj_features.nj_features.api.api_files.get_battery_status',
+            args: { 'doc': frm.doc }
+        });
     },
 
     manufacturer_model: function(frm) {

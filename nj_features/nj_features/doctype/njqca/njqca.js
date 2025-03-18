@@ -298,7 +298,7 @@ frappe.ui.form.on('NJQCA', {
 
     serial_no: function(frm) {
 		handleScannerInput(frm, 'serial_no');
-        if (frm.doc.docstatus == 0 && (frm.doc.rfq_id != '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) { trigger_serial_no(frm); }
+        if (frm.doc.docstatus == 0 && (frm.doc.rfq_id == '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) { trigger_serial_no(frm); }
         if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
@@ -337,7 +337,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     warehouse: function(frm) {
-        if (frm.doc.warehouse && frm.doc.serial_no && frm.doc.rfq_id == '') {
+        if (frm.doc.warehouse && frm.doc.serial_no && (frm.doc.rfq_id == '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             let ware = cur_frm.doc.warehouse;
             
             frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {

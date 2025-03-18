@@ -7,10 +7,10 @@ from frappe import _
 from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
+from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_features.nj_features.api.bb_api import get_grading_Authentication
+from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 @frappe.whitelist()
@@ -491,20 +491,23 @@ class NJQCA(Document):
             
             try:
                 # get_grading_Authentication(self)
+                sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
-                if self.item_code != self.manual_repack_item_code and self.rfq_id == '':
+                if self.item_code != self.manual_repack_item_code and self.rfq_id == '' and self.item_group == sn_item_group:
                     self.make_stock_entry_using_nj_lib()
 
                 if self.rfq_id != '':
                     self.create_serial_no_based_on_rfq()
                 
-                qi_data = open_draft_qi(self)
+                if self.item_group == sn_item_group:
+                    qi_data = open_draft_qi(self)
+                
                 if qi_data:
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
                 
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-                if nj_settings_item_group and self.item_group != nj_settings_item_group:
+                if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     update_serial_no_componont_for_grade(self)
                     #update_serial_no_component_for_njqca(self)
 
@@ -732,11 +735,11 @@ def get_info_from_serial_no(doc=None):
                 result['serial_no'] = sle_entry.get('name')
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
-        sudden_drop = ''
-        sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),result['inspection_type'],doc_json.get('manufacturer_model'))
+        # sudden_drop = ''
+        # sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('manufacturer_model'))
 
-        result['sudden_drop'] = sudden_drop
-        frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
+        # result['sudden_drop'] = sudden_drop
+        # frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
 
         return result
     
@@ -1246,15 +1249,14 @@ def get_model(manufacturer_model=None):
 #     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
-def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_model):
+def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-        njqca_battery_inspection_type=frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_inspection_type'}, 'value')
-        if (njqca_battery_item_group and njqca_battery_item_group == item_group) or (doc_inspection_type in njqca_battery_inspection_type):
-       
+        sudden_drop_limit=""
+        if (njqca_battery_item_group and njqca_battery_item_group == item_group):       
             sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
-                sudden_drop_limit=20
+                sudden_drop_limit="20"
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
@@ -1292,6 +1294,7 @@ def get_sudden_drop(parent_name, item_group, doc_inspection_type, manufacturer_m
                 return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+            print("delta:", delta)
             delta = delta[0]
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
@@ -1528,22 +1531,37 @@ def get_fetched_item_code(serial_no, partData):
     return updated_part_data
 
 @frappe.whitelist()
-def get_battery_auto_item_code(name,item_template):
+def get_battery_auto_item_code(name,item_template,manufacturer_model):
     try:
-        item_code_query="""
-                        Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" and name like 
-                        case 
-                        when 
-                        (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= 120 OR backup_duration_cycle_2 >= 120 OR backup_duration_cycle_1 >= 120) and sudden_drop like "%%NO%%" and name=%(name)s)
-                        Then  "%%A"
-                        else "%%D"
-                        END limit 1;
-                    """
-        result=frappe.db.sql(item_code_query,{'item_templete':item_template,'name':name},as_dict=True)
-        if not result is  None and result:
-            return result[0].get('name')
-        else:
-            return None
+        wizard=get_item_wizard(manufacturer_model)
+        backup_duration="120"
+        if wizard:
+            wizard_criteria_query="""
+                select backup_duration_mins,sudden_drop_limit from `tabItem Wizards` where name=%s ;
+            """
+
+            wizard_criteria=frappe.db.sql(wizard_criteria_query, (wizard), as_dict=True)
+
+            if wizard_criteria:
+                if wizard_criteria[0].backup_duration_mins: 
+                    backup_duration_mins=wizard_criteria[0].backup_duration_mins
+
+
+            item_code_query="""
+                            Select name from `tabItem` where item_group="BATTERY" and variant_of=%(item_templete)s and disabled="NO" and name like 
+                            case 
+                            when 
+                            (select 1 from `tabNJQCA` where ( backup_duration_cycle_3 >= %(backup_duration)s OR backup_duration_cycle_2 >= %(backup_duration)s OR backup_duration_cycle_1 >= %(backup_duration)s) and sudden_drop like "%%NO%%" and name=%(name)s)
+                            Then  "%%A"
+                            else "%%D"
+                            END limit 1;
+                        """
+            backup_duration=int(backup_duration_mins)
+            result=frappe.db.sql(item_code_query,{'item_templete':item_template,'backup_duration':backup_duration,'name':name},as_dict=True)
+            if not result is  None and result:
+                return result[0].get('name')
+            else:
+                return None
     except Exception as e:
         return None
 
@@ -1557,7 +1575,7 @@ def validate_battery_storage_score(doc):
         bad_sectors, wiz_storage_health= "", ""
 
         wizard_criteria_query="""
-            select fbdt_health_range, rbdt_health_range, cycle_count, storage_health, bad_sectors from `tabItem Wizards` where name=%s;
+            select  storage_health, bad_sectors from `tabItem Wizards` where name=%s;
         """
 
         if item_wizard:

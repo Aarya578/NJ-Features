@@ -108,7 +108,7 @@ override_doctype_class = {
 	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
-    "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",	
+    # "Sales Invoice": "nj_features.overrides.sales_invoice.SalesInvoice",	
     "Issue": "nj_features.overrides.issue.CustomIssue"
 }
 
@@ -126,8 +126,7 @@ doc_events = {
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
-        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
-        "before_submit": "nj_features.nj_features.api.api_files.get_battery_status"
+        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration"
 	}
 }
 
@@ -177,6 +176,9 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
+        "0 22 * * *": [
+            "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data"
+        ],
         "45 7 * * *": [ 
             "nj_features.overrides.employee.update_employee_experience_table",
         ],		

@@ -72,6 +72,7 @@
    "default": "1",
    "fieldname": "active",
    "fieldtype": "Check",
+   "in_list_view": 1,
    "label": "Active"
   },
   {
@@ -138,7 +139,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-05-24 09:34:59.364100",
+ "modified": "2025-03-14 11:00:51.000014",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

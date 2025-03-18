@@ -2,7 +2,26 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('NJQCA', {
-    onload: function(frm) { if (frm.doc.docstatus == 0) { trigger_serial_no(frm); }},
+    onload: function(frm) { 
+        if (frm.doc.docstatus == 0) { 
+            trigger_serial_no(frm); 
+        }
+        if (frm.doc.manufacturer_model) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
+                args: { 'parent_name': frm.doc.name, 
+                    "item_group":frm.doc.item_group,
+                    "manufacturer_model":frm.doc.manufacturer_model
+                 },
+                callback: function(r) {
+                    if (r.message) { 
+                        frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                        frm.refresh_field('sudden_drop');
+                    }
+                }
+            })
+        }
+    },
     
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
@@ -283,6 +302,11 @@ frappe.ui.form.on('NJQCA', {
         if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
+        
+        frappe.call({
+            method: 'nj_features.nj_features.api.api_files.get_battery_status',
+            args: { 'doc': frm.doc }
+        });
     },
 
     manufacturer_model: function(frm) {
@@ -421,7 +445,7 @@ frappe.ui.form.on('NJQCA', {
         }else if(frm.doc.item_template && frm.doc.power_on == 'Yes' &&frm.doc.item_group=="BATTERY") {
            frappe.call({
                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_auto_item_code',
-               args: { "name": frm.doc.name, "item_template": frm.doc.item_template },
+               args: { "name": frm.doc.name, "item_template": frm.doc.item_template, "manufacturer_model": frm.doc.manufacturer_model },
                callback: function(r) {
                     if(r.message){
                         frm.set_value('manual_repack_item_code', r.message);
@@ -435,11 +459,13 @@ frappe.ui.form.on('NJQCA', {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
             args: { 'parent': frm.doc.name, "item_group":frm.doc.item_group,
-                "doc_inspection_type":frm.doc.inspection_type,
                 "manufacturer_model":frm.doc.manufacturer_model
              },
             callback: function(r) {
-                if (r.message) { frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); }
+                if (r.message) { 
+                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                    frm.refresh_field('sudden_drop');
+                }
             }
         })
     },

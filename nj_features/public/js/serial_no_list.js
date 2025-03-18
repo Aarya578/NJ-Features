@@ -2,7 +2,6 @@ frappe.listview_settings['Serial No'] = {
     onload: function(listview) {
         listview.page.add_inner_button(__('Update Inventory'), function() {
             
-            // Create the dialog
             const dialog = new frappe.ui.Dialog({
                 title: __('Work Warehouse Inventory'),
                 fields: [
@@ -19,14 +18,16 @@ frappe.listview_settings['Serial No'] = {
                                 reqd: 1,
                                 options: 'Item',
                                 in_list_view: 1,
-                                read_only: 1
+                                read_only: 1,
+                                columns: 3
                             },
                             {
                                 label: __('Serial No'),
                                 fieldname: 'serial_no',
                                 fieldtype: 'Link',
                                 options: 'Serial No',
-                                in_list_view: 1
+                                in_list_view: 1,
+                                columns: 2
                             },
                             {
                                 label: __('Yes'),
@@ -34,6 +35,7 @@ frappe.listview_settings['Serial No'] = {
                                 fieldtype: 'Check',
                                 default: 1,
                                 in_list_view: 1,
+                                columns: 1
                             },
                             {
                                 label: __('No'),
@@ -41,6 +43,7 @@ frappe.listview_settings['Serial No'] = {
                                 fieldtype: 'Check',
                                 default: 0,
                                 in_list_view: 1,
+                                columns: 1
                             },
                             {
                                 label: __('User Activity'),
@@ -55,6 +58,7 @@ frappe.listview_settings['Serial No'] = {
                                 fieldname: 'reason',
                                 fieldtype: 'Text Editor',
                                 in_list_view: 1,
+                                columns: 2
                             }
                         ]
                     }
@@ -70,9 +74,7 @@ frappe.listview_settings['Serial No'] = {
                 
                         // Uncheck 'Yes' if 'No' is checked
                         values.work_warehouse_inventory.forEach((row) => {
-                            if (row.no) {
-                                row.yes = false;
-                            }
+                            if (row.no) { row.yes = false; }
                         });
                 
                         dialog.get_field('work_warehouse_inventory').grid.refresh();
@@ -106,16 +108,14 @@ frappe.listview_settings['Serial No'] = {
                                             doc: {
                                                 doctype: 'Daily Individual Report',
                                                 work_warehouse_inventory: values.work_warehouse_inventory,
-                                                warehouse: values.warehouse // Add warehouse value
+                                                warehouse: values.warehouse
                                             }
                                         },
                                         callback: function(r) {
                                             if (!r.exc) {
                                                 frappe.call({
                                                     method: 'frappe.client.submit',
-                                                    args: {
-                                                        doc: r.message
-                                                    },
+                                                    args: { doc: r.message },
                                                     callback: function(r) {
                                                         if (!r.exc) {
                                                             frappe.msgprint(__('Report submitted successfully.'));
@@ -133,15 +133,11 @@ frappe.listview_settings['Serial No'] = {
                         }
                     }
                 }
-                
-                
-            
             });
 
             // Fetch serial number data and populate the dialog's table
             frappe.call({
                 method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
-                args: {},
                 callback: function (r) {
                     if (!r.exc) {
                         // Clear existing table data
@@ -161,25 +157,20 @@ frappe.listview_settings['Serial No'] = {
 
                         dialog.fields_dict.work_warehouse_inventory.grid.refresh();
                         
-                        // Attach event listeners after populating the table
                         dialog.fields_dict.work_warehouse_inventory.$wrapper.on('change', 'input[data-fieldname="yes"]', function () {
                             toggle_checkboxes(this);
                         });
 
                         dialog.fields_dict.work_warehouse_inventory.$wrapper.on('change', 'input[data-fieldname="no"]', function () {
                             toggle_checkboxes(this);
-                        });                    }
+                        });                    
+                    }
                 }
-                
             });
-
             dialog.show();
             
         }).addClass('btn-primary');
-        
     },
-   
-    
 }
 
 // function toggle_checkboxes(field) {
@@ -208,12 +199,11 @@ function toggle_checkboxes(field) {
             yes_field.prop('checked', false).change();
         }
     } else {
-        // If both checkboxes are unchecked, check one by default
         if (!yes_field.is(':checked') && !no_field.is(':checked')) {
             if (field.dataset.fieldname === 'yes') {
-                no_field.prop('checked', true).change(); // Check "no" if "yes" was unchecked
+                no_field.prop('checked', true).change();
             } else {
-                yes_field.prop('checked', true).change(); // Check "yes" if "no" was unchecked
+                yes_field.prop('checked', true).change();
             }
         }
     }

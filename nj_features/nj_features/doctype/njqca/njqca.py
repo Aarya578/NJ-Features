@@ -510,11 +510,17 @@ class NJQCA(Document):
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     update_serial_no_componont_for_grade(self)
                     #update_serial_no_component_for_njqca(self)
+                self.check_for_repack_access()
 
             except Exception as e:
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
-
+    
+    def check_for_repack_access(self):
+        user = frappe.session.user
+        if not frappe.db.get_value('Role Profile', {'name': frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')}, 'restrict_repack') and self.item_code != self.repack_item_code:
+            frappe.throw("You don't have access to Repack to change the item code from <b>" + self.item_code + "</b> to <b>" + self.repack_item_code + "</b>")
+	
     def make_stock_entry_using_nj_lib(self):
 
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')

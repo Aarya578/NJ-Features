@@ -15,7 +15,7 @@ frappe.ui.form.on('NJQCA', {
                  },
                 callback: function(r) {
                     if (r.message) { 
-                        frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                        frm.set_value( 'sudden_drop', r.message); 
                         frm.refresh_field('sudden_drop');
                     }
                 }
@@ -298,15 +298,38 @@ frappe.ui.form.on('NJQCA', {
 
     serial_no: function(frm) {
 		handleScannerInput(frm, 'serial_no');
-        if (frm.doc.docstatus == 0 && frm.doc.rfq_id == '') { trigger_serial_no(frm); }
+        if (frm.doc.docstatus == 0 && (frm.doc.rfq_id != '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) { trigger_serial_no(frm); }
         if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
-        
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { 'doc': frm.doc }
+            args: { 'doc': frm.doc },
+            callback: function(r) {
+                if(r.message){
+                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                    if(r.message == "PASS"){
+                        
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                    }else if(r.message == "FAIL"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                    }else if(r.message == "Unknown"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "1");
+                    }
+                }
+                frm.refresh_field("njqca_result_parameters");
+            }
         });
+        
     },
 
     manufacturer_model: function(frm) {

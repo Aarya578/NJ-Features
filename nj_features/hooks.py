@@ -182,9 +182,13 @@ scheduler_events = {
         ],		
         "50 8 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
-        ]
+        ],
+        # "*/2 * * * *": [
+        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
+        # ]
     }
 }
+
 # scheduler_events = {
 # 	"cron": {
 # 		# "0 22 * * *": [

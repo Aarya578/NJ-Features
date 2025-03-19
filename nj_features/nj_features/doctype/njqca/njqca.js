@@ -3,9 +3,7 @@
 
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) { 
-        if (frm.doc.docstatus == 0) { 
-            trigger_serial_no(frm); 
-        }
+        
         if (frm.doc.manufacturer_model) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
@@ -34,6 +32,7 @@ frappe.ui.form.on('NJQCA', {
         frm.refresh_field('njqca_laptop_processors');
         
         if (frm.doc.docstatus == 0) {
+            trigger_serial_no(frm);
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');
 
@@ -506,7 +505,7 @@ frappe.ui.form.on('NJQCA', {
 });
 
 function trigger_serial_no(frm) {
-    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.rfq_id == '') {
+    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && (frm.doc.rfq_id == '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
             args: { 'doc': frm.doc },

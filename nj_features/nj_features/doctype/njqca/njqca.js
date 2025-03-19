@@ -3,9 +3,7 @@
 
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) { 
-        if (frm.doc.docstatus == 0) { 
-            trigger_serial_no(frm); 
-        }
+        
         if (frm.doc.manufacturer_model) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
@@ -34,6 +32,7 @@ frappe.ui.form.on('NJQCA', {
         frm.refresh_field('njqca_laptop_processors');
         
         if (frm.doc.docstatus == 0) {
+            trigger_serial_no(frm);
             frm.events.power_on();
             handleScannerInput(frm, 'serial_no');
 
@@ -119,7 +118,7 @@ frappe.ui.form.on('NJQCA', {
     
     validate: function(frm) {
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
-        if (frm.doc.rfq_id != '') { requiredFields.push('warehouse'); }
+        if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) { requiredFields.push('warehouse'); }
         
         var errorMessages = [];
         var dbError = [];
@@ -141,7 +140,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if (frm.doc.rfq_id == '' || !frm.doc.rfq_id) {
+        if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -195,7 +194,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     rfq_id: function(frm) {
-        if (frm.doc.rfq_id != '') {
+        if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) {
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_item_code_from_rfq_id',
@@ -298,38 +297,10 @@ frappe.ui.form.on('NJQCA', {
 
     serial_no: function(frm) {
 		handleScannerInput(frm, 'serial_no');
-        if (frm.doc.docstatus == 0 && (frm.doc.rfq_id != '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) { trigger_serial_no(frm); }
-        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && frm.doc.rfq_id == ''){
+        if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) { trigger_serial_no(frm); }
+        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
-        frappe.call({
-            method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { 'doc': frm.doc },
-            callback: function(r) {
-                if(r.message){
-                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-                    if(r.message == "PASS"){
-                        
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
-                    }else if(r.message == "FAIL"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
-                    }else if(r.message == "Unknown"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "1");
-                    }
-                }
-                frm.refresh_field("njqca_result_parameters");
-            }
-        });
-        
     },
 
     manufacturer_model: function(frm) {
@@ -337,7 +308,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     warehouse: function(frm) {
-        if (frm.doc.warehouse && frm.doc.serial_no && frm.doc.rfq_id == '') {
+        if (frm.doc.warehouse && frm.doc.serial_no && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             let ware = cur_frm.doc.warehouse;
             
             frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
@@ -426,7 +397,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
         
-        if (selectedModel && selectedBrand && cur_frm.doc.serial_no && frm.doc.rfq_id == '') {
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
@@ -478,6 +449,34 @@ frappe.ui.form.on('NJQCA', {
            })
         }
     },
+    before_save: function(frm) {
+        frappe.call({
+            method: 'nj_features.nj_features.api.api_files.get_battery_status',
+            args: { 'doc': frm.doc },
+            callback: function(r) {
+                if(r.message){
+                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                    if(r.message == "PASS"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                    }else if(r.message == "FAIL"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                    }else if(r.message == "Unknown"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "1");
+                    }
+                }
+                frm.refresh_field("njqca_result_parameters");
+            }
+        });
+    },
     before_submit: function(frm) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
@@ -493,7 +492,7 @@ frappe.ui.form.on('NJQCA', {
         })
     },
     item_code: function(frm) {
-        if (frm.doc.item_code != '' && frm.doc.rfq_id != '') {
+        if (frm.doc.item_code != '' && (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined)) {
             frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.create_serial_no',
                 args: { 'item_code': frm.doc.item_code, "rfq": true },
@@ -506,7 +505,7 @@ frappe.ui.form.on('NJQCA', {
 });
 
 function trigger_serial_no(frm) {
-    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.rfq_id == '') {
+    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_serial_no',
             args: { 'doc': frm.doc },

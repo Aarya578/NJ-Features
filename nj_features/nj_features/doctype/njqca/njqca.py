@@ -518,9 +518,15 @@ class NJQCA(Document):
     
     def check_for_repack_access(self):
         user = frappe.session.user
-        if not frappe.db.get_value('Role Profile', {'name': frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')}, 'restrict_repack') and self.item_code != self.repack_item_code:
-            frappe.throw("You don't have access to Repack to change the item code from <b>" + self.item_code + "</b> to <b>" + self.repack_item_code + "</b>")
-	
+        role_profile = frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')
+        
+        if not frappe.db.get_value('Role Profile', {'name': role_profile}, 'restrict_repack'):
+            item_code = self.item_code if self.item_code else ""
+            repack_item_code = self.manual_repack_item_code if self.manual_repack_item_code else ""
+
+            if item_code != repack_item_code:
+                frappe.throw(f"You don't have access to Repack to change the item code from <b>{item_code}</b> to <b>{repack_item_code}</b>")
+
     def make_stock_entry_using_nj_lib(self):
 
         accounting_cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')

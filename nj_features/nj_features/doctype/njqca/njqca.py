@@ -747,6 +747,7 @@ def get_info_from_serial_no(doc=None):
             if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
+                result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
         # sudden_drop = ''

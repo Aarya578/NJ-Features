@@ -112,6 +112,7 @@ def open_draft_qi(self, brand=None, model=None):
             new_qi.inspected_by = new_qi.owner
             new_qi.brand = brand
             new_qi.model = model
+            new_qi.warehouse = self.warehouse
             
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
@@ -363,7 +364,6 @@ def get_itm_code_on_barcode(new_qi):
             "bios_serial_number": serial_no_data.bios_serial_no,
             "item_group": serial_no_data.item_group,
             "item_name": serial_no_data.item_name,
-            "warehouse": serial_no_data.warehouse,
             "base_price": serial_no_data.purchase_rate
         }
 
@@ -490,17 +490,19 @@ class NJQCA(Document):
                 frappe.throw("Please fill the <b>Battery Type</b>")
             
             try:
+                qi_data = None
                 # get_grading_Authentication(self)
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 if self.item_code != self.manual_repack_item_code and self.rfq_id == '' and self.item_group == sn_item_group:
                     self.make_stock_entry_using_nj_lib()
 
-                if self.rfq_id != '':
+                if self.rfq_id != '' and self.rfq_id is not None:
+                    print("self.rfq_id", self.rfq_id)
                     self.create_serial_no_based_on_rfq()
                 
                 if self.item_group == sn_item_group:
-                    qi_data = open_draft_qi(self)
+                    qi_data = open_draft_qi(self,self.brand,self.model)
                 
                 if qi_data:
                     if qi_data.get('msg_pnt'):
@@ -510,7 +512,7 @@ class NJQCA(Document):
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     update_serial_no_componont_for_grade(self)
                     #update_serial_no_component_for_njqca(self)
-                self.check_for_repack_access()
+                # self.check_for_repack_access()
 
             except Exception as e:
                 frappe.db.rollback()

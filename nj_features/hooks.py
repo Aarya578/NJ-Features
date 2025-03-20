@@ -185,9 +185,9 @@ scheduler_events = {
         "50 8 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
-        # "*/2 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
-        # ]
+        "0 0 2 * *": [
+            "nj_features.nj_features.doctype.doc_attachment.doc_attachment.DocAttachment.clear_old_logs"
+        ]
     }
 }
 

@@ -807,7 +807,6 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
 def update_to_make_for_serial(doc):
 
     for child in doc.get("suggested_serial_no", []):
-        print("child ---------------- ", child.as_dict())
         if child.get("suggested_serial_no"):
             serial_no_info = child.get("suggested_serial_no").split(", ")
             for serial_no in serial_no_info:

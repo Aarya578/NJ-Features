@@ -183,11 +183,11 @@ scheduler_events = {
             "nj_features.overrides.employee.update_employee_experience_table",
         ],		
         "50 8 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
-        # "*/2 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
-        # ]
+        "*/10 * * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",
+        ]
     }
 }
 

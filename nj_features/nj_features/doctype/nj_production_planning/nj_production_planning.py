@@ -32,7 +32,9 @@ def get_department_details():
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)
         elif str(in_model) == '1' and str(fw_model) == '1':
-            process_model_configuration(dept_doc)
+            data = process_model_configuration(dept_doc)
+            new_doc = create_production_planning(data, dept.get("name"))
+            calculate_to_make(new_doc, DOI_threshold=10)
         elif str(in_config) == '1' and str(fw_config) == '1':
             data = process_default_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
@@ -54,6 +56,7 @@ def create_production_planning(data, department):
         child.forward_inventory = item.get("forwarded_qty", 0.0)
         child.days_of_inventory = item.get("DOI", 0.0)
         child.to_make = item.get("to_make", 0.0)
+        child.item_code = item.get("item_code", "")
 
     new_doc.insert()
     frappe.db.commit()
@@ -71,7 +74,9 @@ def get_department_document(department_name):
 # Merged Configuration Processing (model=1 and fr_config=1)
 def process_merged_configuration(dept_doc):
     merged_data = process_inventory_rows(dept_doc)
-    item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data)
+    days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
+    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
+    item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data, days=int(days), weight_factor=int(weight_factor))
     return calculate_doi(item_code_list)
 
 def process_inventory_rows(dept_doc):
@@ -148,7 +153,9 @@ def process_model_configuration(dept_doc):
     inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
     forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
     item_code_list = merge_model_counts(inwarded_counts, forwarded_counts)
-    item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list)
+    days = frappe.db.get_single_value("NJ Production Planning Settings", "days") or 30
+    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor") or 1.0
+    item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list, days=int(days), weight_factor=int(weight_factor))
     return calculate_doi(item_code_list)
 
 def get_model_counts(dept_doc, inventory_type):
@@ -183,7 +190,9 @@ def process_default_configuration(dept_doc):
     forwarded_counts = get_item_counts(dept_doc, "forwarded_inventory")
     item_code_list = merge_item_counts(inwarded_counts, forwarded_counts)
     item_code_list = fetch_item_attributes(item_code_list)
-    item_code_list = calculate_sales_order_rate_with_weights(item_code_list)
+    days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
+    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
+    item_code_list = calculate_sales_order_rate_with_weights(item_code_list, days=int(days), weight_factor=int(weight_factor))
     return calculate_doi(item_code_list)
 
 def get_item_counts(dept_doc, inventory_type):
@@ -270,7 +279,7 @@ def calculate_doi(items):
     return items
 
 
-def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=7, weight_factor=2):
+def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
         item_code_list = {}
 
@@ -395,7 +404,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
     return updated_item_code_list
 
-def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=7, weight_factor=2):
+def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
         item_code_list = []
 
@@ -470,7 +479,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=7, we
     return updated_item_code_list
 
 
-def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_factor=2):
+def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
         item_code_list = []
 
@@ -593,6 +602,8 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=20, weight_fact
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
+    
+    print(updated_item_code_list)
 
     return updated_item_code_list
 
@@ -741,6 +752,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
     else:
 
         for child in doc.get("nj_production_planning_child", []):
+            print("child -------------- ", child.as_dict())
             if child.get("to_make", 0) > 0:
                 matched_serials = []
                 remaining_needed = child.get("to_make")
@@ -795,7 +807,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                     "ram": child.get("ram", "").strip().upper(),
                     "ssd": child.get("ssd", "").strip().upper(),
                     "suggested_serial_no": ", ".join(matched_serials),
-                    "item_code": item.get("item_code") if matched_serials else None,
+                    "item_code": child.get("item_code") if matched_serials else None,
                 })
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})

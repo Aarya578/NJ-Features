@@ -112,14 +112,14 @@
   {
    "fieldname": "item_code",
    "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Item Code"
+   "label": "Item Code",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-13 17:46:44.073117",
+ "modified": "2025-03-21 12:13:19.271338",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning Child",

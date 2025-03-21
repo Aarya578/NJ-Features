@@ -801,3 +801,16 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
     doc.update({"suggested_serial_no": suggested_serial_no_data})
     doc.save()
     frappe.db.commit()
+
+    update_to_make_for_serial(doc)
+
+def update_to_make_for_serial(doc):
+
+    for child in doc.get("suggested_serial_no", []):
+        if child.get("suggested_serial_no"):
+            serial_no_info = child.get("suggested_serial_no").split(", ")
+            for serial_no in serial_no_info:
+                serial_no_doc = frappe.get_doc("Serial No", serial_no)
+                serial_no_doc.to_make = child.get("item_code")
+                serial_no_doc.save()
+                frappe.db.commit()

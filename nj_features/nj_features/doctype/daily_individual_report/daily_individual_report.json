@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "autoname": "naming_series:",
  "creation": "2024-08-07 19:41:37.969750",
  "doctype": "DocType",
@@ -67,7 +68,7 @@
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-17 16:30:00.990478",
+ "modified": "2025-03-19 18:10:19.370586",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Daily Individual Report",

@@ -4,7 +4,7 @@
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) { 
         
-        if (frm.doc.manufacturer_model) {
+        if (frm.doc.manufacturer_model && frm.doc.docstatus == 0) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
                 args: { 'parent_name': frm.doc.name, 

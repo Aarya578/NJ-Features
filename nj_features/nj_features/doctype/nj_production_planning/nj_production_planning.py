@@ -287,22 +287,56 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     total_weight = sum(weights.values())
 
     sales_data = frappe.db.sql(f"""
-        SELECT
-            soi.item_code,
-            DATE(so.creation) AS sale_date,
-            SUM(soi.qty) AS daily_sales
-        FROM
-            `tabSales Order` so
-        INNER JOIN
-            `tabSales Order Item` soi ON so.name = soi.parent
-        WHERE
-            so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-            AND so.docstatus = 1
-            AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-        GROUP BY
-            soi.item_code, sale_date
-        ORDER BY
-            sale_date DESC
+        WITH SalesData AS (
+                -- Fetch data for stock items directly from Sales Order Item
+                SELECT
+                    soi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(soi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabSales Order Item` soi ON so.name = soi.parent
+                INNER JOIN
+                    `tabItem` i ON soi.item_code = i.item_code
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND i.is_stock_item = 1  -- Only take stock items
+                GROUP BY
+                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+
+                UNION ALL
+
+                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
+                SELECT
+                    pi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(pi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabPacked Item` pi ON so.name = pi.parent
+                INNER JOIN
+                    `tabItem` i ON pi.item_code = i.item_code
+                INNER JOIN
+                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    -- Only take packed items from non-stock (bundle) items
+                GROUP BY
+                    pi.item_code, i.item_name, i.is_stock_item, sale_date
+            )
+            SELECT * FROM SalesData
+            ORDER BY sale_date DESC
     """, as_dict=True)
 
     sales_map = {}
@@ -412,22 +446,56 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
     total_weight = sum(weights.values())
 
     sales_data = frappe.db.sql(f"""
-        SELECT
-            soi.item_code,
-            DATE(so.creation) AS sale_date,
-            SUM(soi.qty) AS daily_sales
-        FROM
-            `tabSales Order` so
-        INNER JOIN
-            `tabSales Order Item` soi ON so.name = soi.parent
-        WHERE
-            so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-            AND so.docstatus = 1
-            AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-        GROUP BY
-            soi.item_code, sale_date
-        ORDER BY
-            sale_date DESC
+        WITH SalesData AS (
+                -- Fetch data for stock items directly from Sales Order Item
+                SELECT
+                    soi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(soi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabSales Order Item` soi ON so.name = soi.parent
+                INNER JOIN
+                    `tabItem` i ON soi.item_code = i.item_code
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND i.is_stock_item = 1  -- Only take stock items
+                GROUP BY
+                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+
+                UNION ALL
+
+                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
+                SELECT
+                    pi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(pi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabPacked Item` pi ON so.name = pi.parent
+                INNER JOIN
+                    `tabItem` i ON pi.item_code = i.item_code
+                INNER JOIN
+                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    -- Only take packed items from non-stock (bundle) items
+                GROUP BY
+                    pi.item_code, i.item_name, i.is_stock_item, sale_date
+            )
+            SELECT * FROM SalesData
+            ORDER BY sale_date DESC
     """, explain=1, debug=1, as_dict=True)
 
     updated_sales_data = []
@@ -495,44 +563,61 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         fields=["name"]
     )
 
-    warehouse_names = [warehouse["name"] for warehouse in inventory_warehouses]
-    warehouse_names_string = "', '".join(warehouse_names) if warehouse_names else "''"
-
-    inventory_data = frappe.db.sql(f"""
-        SELECT 
-            sle.qty_after_transaction AS daily_sales, 
-            sle.item_code, 
-            DATE(sle.creation) AS sale_date
-        FROM 
-            `tabStock Ledger Entry` sle
-        WHERE 
-            sle.item_code IN ({item_codes_string})
-            AND sle.warehouse IN ('{warehouse_names_string}')
-            AND sle.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-        GROUP BY 
-            sle.item_code, sale_date
-        ORDER BY 
-            sale_date ASC
-    """, explain=1, debug=1, as_dict=True)
-
     sales_data = frappe.db.sql(f"""
-        SELECT
-            soi.item_code,
-            DATE(so.creation) AS sale_date,
-            SUM(soi.qty) AS daily_sales
-        FROM
-            `tabSales Order` so
-        INNER JOIN
-            `tabSales Order Item` soi ON so.name = soi.parent
-        WHERE
-            so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-            AND so.docstatus = 1
-            AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-        GROUP BY
-            soi.item_code, sale_date
-        ORDER BY
-            sale_date DESC
+        WITH SalesData AS (
+                -- Fetch data for stock items directly from Sales Order Item
+                SELECT
+                    soi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(soi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabSales Order Item` soi ON so.name = soi.parent
+                INNER JOIN
+                    `tabItem` i ON soi.item_code = i.item_code
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND i.is_stock_item = 1  -- Only take stock items
+                GROUP BY
+                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+
+                UNION ALL
+
+                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
+                SELECT
+                    pi.item_code,
+                    i.item_name,
+                    i.is_stock_item,
+                    DATE(so.creation) AS sale_date,
+                    SUM(pi.qty) AS daily_sales
+                FROM
+                    `tabSales Order` so
+                INNER JOIN
+                    `tabPacked Item` pi ON so.name = pi.parent
+                INNER JOIN
+                    `tabItem` i ON pi.item_code = i.item_code
+                INNER JOIN
+                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
+                WHERE
+                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                    AND so.docstatus = 1
+                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    -- Only take packed items from non-stock (bundle) items
+                GROUP BY
+                    pi.item_code, i.item_name, i.is_stock_item, sale_date
+            )
+            SELECT * FROM SalesData
+            ORDER BY sale_date DESC
+
     """, explain=1, debug=1, as_dict=True)
+
+    print("sales_data ------------------- ", sales_data)    
 
     sales_map = {}
     for sale in sales_data:

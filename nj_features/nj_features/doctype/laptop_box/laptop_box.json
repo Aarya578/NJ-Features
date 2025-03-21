@@ -19,6 +19,7 @@
   "item_code",
   "section_break_ey6d4",
   "customer_care",
+  "whatsapp",
   "section_break_gtgp7",
   "refurb_by",
   "section_break_fdsi5",
@@ -144,11 +145,18 @@
    "label": "Item Code",
    "options": "Item",
    "print_hide": 1
+  },
+  {
+   "default": "+91 8088403455",
+   "fieldname": "whatsapp",
+   "fieldtype": "Data",
+   "label": "WhatsApp ",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-02-18 11:27:06.806880",
+ "modified": "2025-03-21 11:00:44.341544",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

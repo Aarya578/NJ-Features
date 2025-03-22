@@ -361,7 +361,7 @@ def get_battery_status(doc, method=None):
                 if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins and sudden_drop_limit:
 
                     if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
-                        query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':backup_duration_mins,'sudden_drop_limit':sudden_drop_limit,'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
+                        query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':int(sudden_drop_limit),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
                     else:
                         query_data=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
                         if query_data:
@@ -380,10 +380,9 @@ def get_battery_status(doc, method=None):
             battery_Data_parent_name=battery_Data_parent_name_result[0].name
             if battery_Data_parent_name and backup_duration_mins and sudden_drop_limit:
                 if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
-                    status_query=fbdt_status_query
+                    battery_status=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':sudden_drop_limit,'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
                 else:
-                    status_query=rbdt_status_query
-                battery_status=frappe.db.sql(status_query,{'backup_duration_mins':backup_duration_mins,'sudden_drop_limit':sudden_drop_limit,'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
+                    battery_status=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
                 if battery_status:
                     if battery_status[0].battery_status=='PASS':
                         frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 

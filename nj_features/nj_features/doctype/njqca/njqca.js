@@ -465,12 +465,12 @@ frappe.ui.form.on('NJQCA', {
                         frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
                         frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
                         frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
                     }else if(r.message == "Unknown"){
                         frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
                         frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
                         frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "1");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
                     }
                 }
                 frm.refresh_field("njqca_result_parameters");

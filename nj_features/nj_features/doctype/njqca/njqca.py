@@ -1307,9 +1307,12 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
 
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
             last_percentage = percentage[0].get('value')
-            
-            if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
-                return "YES"
+
+            rbdt_status = frappe.db.get_value('NJQCA', {'name': parent_name}, 'rbdt_status')
+        
+            if rbdt_status==None or rbdt_status=="":
+                if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
+                    return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
             print("delta:", delta)

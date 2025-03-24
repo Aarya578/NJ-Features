@@ -381,7 +381,7 @@ def get_itm_code_on_barcode(new_qi):
                 new_qi.set(key,attribute_values.get(key))
             result.update(preferred_prices)
 
-        if serial_no_data.rfq_id == '':
+        if serial_no_data.rfq_id is None:
             current_date = datetime.date.today()
             serial_item_date = serial_no_data.purchase_date
             difference = (current_date - serial_item_date).days
@@ -398,7 +398,7 @@ def get_itm_code_on_barcode(new_qi):
                     frappe.msgprint(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
                     return {"disable_save": True}
 
-        if serial_no_data.warehouse and serial_no_data.rfq_id == '':
+        if serial_no_data.warehouse and serial_no_data.rfq_id is None:
             emp_data = get_active_emp(frappe.session.user)
             work_warehouse = emp_data.get('work_warehouse')
             if not work_warehouse:
@@ -494,11 +494,10 @@ class NJQCA(Document):
                 # get_grading_Authentication(self)
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
-                if self.item_code != self.manual_repack_item_code and self.rfq_id == '' and self.item_group == sn_item_group:
+                if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group:
                     self.make_stock_entry_using_nj_lib()
 
-                if self.rfq_id != '' and self.rfq_id is not None:
-                    print("self.rfq_id", self.rfq_id)
+                if self.rfq_id is not None:
                     self.create_serial_no_based_on_rfq()
                 
                 if self.item_group == sn_item_group:
@@ -512,7 +511,7 @@ class NJQCA(Document):
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     update_serial_no_componont_for_grade(self)
                     #update_serial_no_component_for_njqca(self)
-                # self.check_for_repack_access()
+                self.check_for_repack_access()
 
             except Exception as e:
                 frappe.db.rollback()
@@ -733,7 +732,6 @@ def get_info_from_serial_no(doc=None):
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
             
             result.update({
-                'item_code': sle_entry.get('item_code'),
                 'warehouse': sle_entry.get('warehouse'),
                 'base_price': sle_entry.get('purchase_rate'),
                 'repack_itm_price': item_code_data.get('valuation_rate'),
@@ -747,7 +745,12 @@ def get_info_from_serial_no(doc=None):
             if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
+
+            if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
+            else:
+                result['item_code'] = sle_entry.get('item_code')
+                
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
         # sudden_drop = ''

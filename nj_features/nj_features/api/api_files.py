@@ -354,7 +354,7 @@ def get_battery_status(doc, method=None):
                             variant_3_data, main_bty_sn, bty_parent_njqca = -1, "", ""
                             get_bty_njqca_query = """select variant_3, parent from `tabNJQCA Child`
                                                 where parent = ( SELECT name FROM `tabNJQCA` where serial_no=%s and docstatus=1 and item_group="BATTERY" and 
-                                                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "")) and item_group="BATTERY"
+                                                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1) and item_group="BATTERY"
                                             """
                             if get_bty_serial_nos.__len__() > 1:
                                 for bty_serial_no in get_bty_serial_nos:

@@ -73,6 +73,20 @@ frappe.ui.form.on('Delivery Note', {
 });
 
 
+frappe.ui.form.on('Packed Item', {
+    serial_no: function(frm, cdt, cdn) {
+        if (!frm.doc.name || frm.doc.__islocal) {  
+            frappe.msgprint({
+                title: __('Save Required'),
+                message: __('Please save the document before entering the Serial Number.'),
+                indicator: 'red'
+            });
+            frappe.model.set_value(cdt, cdn, 'serial_no', '');  // Clear the field
+        }
+    }
+});
+
+
 // // Create the modal HTML and inject it into the body
 // $(document).ready(function() {
 //     var modalHTML = `

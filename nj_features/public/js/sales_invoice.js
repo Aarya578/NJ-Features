@@ -2,13 +2,13 @@ frappe.ui.form.on('Sales Invoice', {
     refresh: function(frm) {
         handleScannerInput(frm, 'scan_barcode');
         // Ensure the button is shown even if update_stock == 1
-		var from_delivery_note = frm.doc.items.some(item => item.delivery_note ? true : false);
+		// var from_delivery_note = frm.doc.items.some(item => item.delivery_note ? true : false);
 
-		if (!from_delivery_note && !frm.doc.is_delivered_by_supplier) {
-			frm.add_custom_button(__('Delivery Note'),
+		// if (!from_delivery_note && !frm.doc.is_delivered_by_supplier) {
+		// 	frm.add_custom_button(__('Delivery Note'),
 			
-            () => frm.cscript['Make Delivery Note'](), __('Create'));
-		}
+        //     () => frm.cscript['Make Delivery Note'](), __('Create'));
+		// }
     },
     scan_barcode: function(frm) {
         handleScannerInput(frm, 'scan_barcode');

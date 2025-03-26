@@ -110,7 +110,6 @@ override_doctype_class = {
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Sales Invoice": "nj_features.overrides.sales_invoice.CustomSalesInvoice",	
     "Issue": "nj_features.overrides.issue.CustomIssue",
-    "Status Updater": "nj_features.overrides.status_updater.CustomStatusUpdater"
 }
 
 # Document Events

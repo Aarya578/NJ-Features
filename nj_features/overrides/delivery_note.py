@@ -6,7 +6,7 @@ import json
 from frappe import _
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_lib.utils.common_utils import get_latest_item_wizard
-from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
+# from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 
 class CustomDeliveryNote(DeliveryNote):
     def on_submit(self):
@@ -277,96 +277,23 @@ def validate_delivery_bios(doc):
     return error_message if error_message else True
 
 
-
-# @frappe.whitelist()
-# def send_sales_invoice_email_on_delivery_note(doc, method=None):
-#     """Sends a Sales Invoice PDF to the customer when a Delivery Note is submitted."""
-
-#     try:
-#         # Find linked Sales Invoice
-#         sales_invoice = frappe.get_value("Delivery Note Item", {"parent": doc.name}, "against_sales_invoice")
-#         print("sales inovide------284-", sales_invoice)
-#         if not sales_invoice:
-#             frappe.msgprint(f"⚠️ No Sales Invoice found for Delivery Note {doc.name}. Email not sent.")
-#             return
-
-#         # Fetch Sales Invoice document
-#         sales_invoice_doc = frappe.get_doc("Sales Invoice", sales_invoice)
-
-#         # Fetch customer email
-#         customer_email = frappe.db.get_value("Customer", sales_invoice_doc.customer, "email_id")
-#         print("customer email-----------294--", customer_email)
-#         if not customer_email:
-#             customer_email = frappe.db.get_value(
-#                 "Dynamic Link",
-#                 {"link_doctype": "Customer", "link_name": doc.customer, "parenttype": "Address"},
-#                 "parent"
-#             )
-#             if customer_email:
-#                 customer_email = frappe.db.get_value("Address", customer_email, "email_id")
-#                 print("Customer email from Address:", customer_email)
-
-#         if not customer_email:
-#             frappe.msgprint(f"⚠️ No email found for customer {sales_invoice_doc.customer}. Email not sent.")
-#             return
-        
-#         print("-----------58-si")
-
-#         # Generate PDF attachment for Sales Invoice
-#         pdf_data = frappe.attach_print("Sales Invoice", sales_invoice, print_format="Standard")
-
-#         subject = f"Invoice {sales_invoice_doc.name} - Payment Details"
-#         message = f"""
-#         <p>Dear {sales_invoice_doc.customer_name},</p>
-#         <p>Please find attached your Sales Invoice <b>{sales_invoice_doc.name}</b>.</p>
-#         <p>Thank you for your business!</p>
-#         <br>
-#         <p>Best regards,</p>
-#         <p>New Jaisa Technologies</p>
-#         """
-
-#         # Specify sender email explicitly
-#         sender_email = frappe.db.get_value('NJ Settings', {'parameter': 'sender_mail'}, ['value'])
-#         cc_emails = None
-
-#         # Send email with PDF attachment
-#         frappe.sendmail(
-#             recipients=[customer_email],
-#             cc=cc_emails or [],
-#             subject=subject,
-#             message=message,
-#             reference_doctype=sales_invoice_doc.doctype,
-#             reference_name=sales_invoice_doc.name,
-#             attachments=[pdf_data],
-#             sender=sender_email,
-#             now=True
-#         )
-
-#         frappe.msgprint(f"📧 Email sent successfully to {customer_email} with Sales Invoice {sales_invoice_doc.name}.")
-
-#     except Exception as e:
-#         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
-#         frappe.throw(f"⚠️ Failed to send email: {str(e)}")
-
-
 @frappe.whitelist()
 def send_sales_invoice_email_on_delivery_note(doc, method=None):
     """Sends a single email with order readiness details and Sales Invoice PDF when a Delivery Note is submitted."""
     try:
         order_id = None
+
         # Find linked Sales Invoice
         sales_invoice = frappe.get_value("Delivery Note Item", {"parent": doc.name}, "against_sales_invoice")
-        print("Sales Invoice linked:", sales_invoice)
         if not sales_invoice:
             frappe.msgprint(f"⚠️ No Sales Invoice found for Delivery Note {doc.name}. Email not sent.")
             return
 
         # Fetch Sales Invoice document
         sales_invoice_doc = frappe.get_doc("Sales Invoice", sales_invoice)
-        # customer_email = "dedasor518@doishy.com"
+
         # Fetch customer email
         customer_email = frappe.db.get_value("Customer", sales_invoice_doc.customer, "email_id")
-        print("Customer email:", customer_email)
         if not customer_email:
             customer_email = frappe.db.get_value(
                 "Dynamic Link",
@@ -375,7 +302,6 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
             )
             if customer_email:
                 customer_email = frappe.db.get_value("Address", customer_email, "email_id")
-                print("Customer email from Address:", customer_email)
 
         if not customer_email:
             frappe.msgprint(f"⚠️ No email found for customer {sales_invoice_doc.customer}. Email not sent.")
@@ -383,47 +309,58 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
 
         pdf_data = frappe.attach_print("Sales Invoice", sales_invoice, print_format="Standard")
 
-        # Order tracking details
+        # Fetch tracking details
         tracking_id = doc.get("tracking_id")
+        tracking_courier = doc.get("courier_service")
+        billing_address = doc.get("address_display")
+        # Fetch Order ID from Sales Order
         against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc.name}, "against_sales_order")
-
         order_values = frappe.db.get_value(
-        "Sales Order", 
-        {"name": against_sales_order}, 
-        ["order_id", "amazon_order_id", "shopify_order_id"]
+            "Sales Order", 
+            {"name": against_sales_order}, 
+            ["order_id", "amazon_order_id", "shopify_order_id"]
         )
-        print("order_values-------------------260-----------in dn submission", order_values)
+
         if order_values:
-            # Get the first non-empty value
             order_id = next((value for value in order_values if value), None)
 
-        # order_id = frappe.get_value("Sales Order", {"name": sales_invoice_doc.items[0].sales_order}, "order_id")
+        # Fetch sender email from NJ Settings
+        sender_email = frappe.db.get_value('NJ Settings', {'parameter': 'sender_mail'}, ['value'])
 
-        # Combined email content
-        subject = f"Your Order {order_id} is Ready & Invoice {sales_invoice_doc.name} Attached"
+        # Dictionary of courier tracking links
+        courier_tracking_data = {
+            'CriticaLog': 'https://criticalog.com/tracking/',
+            'Tirupati Courier Tracking': 'http://www.shreetirupaticourier.net/',
+            'Shiprocket Manifest': 'https://www.shiprocket.in/shipment-tracking/'
+        }
+
+        # Get the tracking link based on courier service
+        tracking_link = courier_tracking_data.get(tracking_courier, None)
+        tracking_info = ""
+        if tracking_link and tracking_id:
+            tracking_info = f"<p><b>Courier Partner:</b> {tracking_courier}</p><p><b>Tracking Number:</b> {tracking_id}</p><p><b>Track your order here:</b> <a href='{tracking_link}'>{tracking_link}</a></p>"
+
+        # Email content
+        subject = f"Your Order {order_id} is Ready – with Tacking Id {tracking_id} "
 
         message = f"""
         <p>Dear {sales_invoice_doc.customer_name},</p>
-        <p>Your order with Order ID <b>{order_id}</b> is now ready for pickup.</p>
-        <p><b>Tracking Number:</b> {tracking_id}</p>
-        <p>Please find attached your Sales Invoice <b>{sales_invoice_doc.name}</b>.</p>
+        <p>We are pleased to inform you that your order <b>{order_id}</b> is now ready for pickup & it will be deliver to <b>{billing_address}</b>.</p>
+        {tracking_info}
         <br>
-        <p>Thank you for your business!</p>
+        <p>Thank you for choosing New Jaisa Technologies.</p>
         <p>Best regards,</p>
-        <p>New Jaisa Technologies</p>
+        <p><b>New Jaisa Technologies</b></p>
         """
 
-        # Fetch sender email
-        sender_email = frappe.db.get_value('NJ Settings', {'parameter': 'sender_mail'}, ['value'])
-
-        # Send a single email with message and invoice attachment
+        # Send email with invoice attachment
         frappe.sendmail(
             recipients=[customer_email],
             subject=subject,
             message=message,
             reference_doctype=sales_invoice_doc.doctype,
             reference_name=sales_invoice_doc.name,
-            attachments=[pdf_data],
+            # attachments=[pdf_data],
             sender=sender_email,
             now=True
         )

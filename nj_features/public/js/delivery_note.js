@@ -55,6 +55,19 @@ frappe.ui.form.on('Delivery Note', {
                 } else { frappe.validated = true; }
             }
         });
+        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
+        console.log("first_so---------59", first_so);
+        if (first_so && frm.doc.is_return === 0) {
+            frappe.call({
+                method: "nj_features.overrides.delivery_note.get_cod_amount",
+                args: { so_name: first_so },
+                callback: function(res) {
+                    if (res.message) {
+                        frm.set_value("cod_amount", res.message); 
+                    }
+                }
+            });
+        }
     },
 
     courier_service: function(frm) {

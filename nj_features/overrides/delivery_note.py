@@ -7,11 +7,14 @@ from frappe import _
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_lib.utils.common_utils import get_latest_item_wizard
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
-
+SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
+TOKEN = "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"
+import requests
 class CustomDeliveryNote(DeliveryNote):
     def on_submit(self):
         super().on_submit()
-        send_sales_invoice_email_on_delivery_note(self, method=None)
+        if self.is_return==0:
+            send_sales_invoice_email_on_delivery_note(self, method=None)
         # send_delivery_note_email(self, method=None)
         # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
         # order_id = None
@@ -344,13 +347,14 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
         subject = f"Your Order {order_id} is Ready – with Tacking Id {tracking_id} "
 
         message = f"""
-        <p>Dear {sales_invoice_doc.customer_name},</p>
-        <p>We are pleased to inform you that your order <b>{order_id}</b> is now ready for pickup & it will be deliver to <b>{billing_address}</b>.</p>
+         <p>Dear {sales_invoice_doc.customer_name},</p>
+        <p>We are pleased to inform you that your order <b>{order_id}</b> is now ready for pickup and will be delivered to:</p>
+        <p><b>Shipping Address:</b><br>{billing_address}</p>
         {tracking_info}
         <br>
-        <p>Thank you for choosing New Jaisa Technologies.</p>
+        <p>Thank you for choosing <b>NewJaisa Technologies</b>.</p>
         <p>Best regards,</p>
-        <p><b>New Jaisa Technologies</b></p>
+        <p><b>NewJaisa Technologies</b></p>
         """
 
         # Send email with invoice attachment
@@ -370,3 +374,32 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
         frappe.throw(f"⚠️ Failed to send email: {str(e)}")
+
+
+@frappe.whitelist()
+def get_cod_amount(so_name):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": TOKEN
+        }
+        order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
+        print("order_id-----520----",order_id)
+        # Construct the full URL with the order_id as name
+        url = f"{SHOPIFY_URL}{order_id}"
+
+        response = requests.get(url, headers=headers)  # Use GET since we're fetching order details
+        data = response.json()
+        # print("data-----521----",data)
+        if "orders" in data and data["orders"]:
+            print("523------entered")
+            order = data["orders"][0]  
+            cod_amount  = order.get("total_outstanding", 0)
+
+            print("cod_amount--------39",cod_amount)
+            return cod_amount
+            
+
+    except Exception as e:
+        print(f"Error in create_shopify_review_url: {e}")
+        return None

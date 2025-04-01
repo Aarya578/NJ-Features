@@ -336,6 +336,31 @@
     }
   ],
   "doctype": "Stock Entry",
-  "property_setters": [],
+  "property_setters": [
+    {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "creation": "2025-04-01 12:08:51.867244",
+      "default_value": null,
+      "doc_type": "Stock Entry",
+      "docstatus": 0,
+      "doctype_or_field": "DocType",
+      "field_name": null,
+      "idx": 0,
+      "modified": "2025-04-01 12:08:51.867244",
+      "modified_by": "Administrator",
+      "name": "Stock Entry-main-autoname",
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "property": "autoname",
+      "property_type": "Data",
+      "row_name": null,
+      "value": "timestamp.#####"
+    }
+  ],
   "sync_on_migrate": 1
 }

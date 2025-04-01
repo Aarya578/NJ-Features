@@ -100,7 +100,6 @@ frappe.ui.form.on('Laptop Box', {
 		
 						let data = {
 							"doctype": frm.doc.doctype,
-							"series": "LB-.YYYY.-.MM.-",
 							"t_warehouse": r.work_warehouse,
 							"stock_entry_type": "Material Transfer",
 							"reference_serial_no": frm.doc.barcode,
@@ -119,7 +118,6 @@ frappe.ui.form.on('Laptop Box', {
 						});
 
 						dialog.hide();
-
                     },
                     secondary_action_label: "Cancel",
                     secondary_action: function() {

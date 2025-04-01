@@ -3,12 +3,9 @@
 
 import frappe,json
 from frappe.model.document import Document
-from nj_lib.utils.common_utils import get_active_emp,get_active_item_code
 from erpnext.controllers.item_variant import get_variant
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-
-
-
+from nj_lib.utils.common_utils import get_active_emp, get_active_item_code
 
 
 class RepackForNonSerialised(Document):
@@ -17,7 +14,6 @@ class RepackForNonSerialised(Document):
         stock_data = {
             "name": self.name,
             "doctype": self.doctype,
-            "series": "NJ-STE-NS-REP-",
             "stock_entry_type": "Repack",
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
@@ -29,17 +25,17 @@ def get_repack_items(self):
     get_repack_items_list = []
 
     get_repack_items_dict = {
+        "qty": self.quantity,
 		"repack_item_code": self.item_code,
         "repack_item_source_warehouse": self.warehouse,
-        "qty": self.quantity,
         "repack_item_base_price": self.item_code_price
 	}
     get_repack_items_list.append(get_repack_items_dict)
 
     get_unpack_items_dict = {
+        "qty": self.quantity,
         "unpack_item_code": self.repack_item_code,
         "unpack_item_target_warehouse": self.warehouse,
-        "qty": self.quantity,
         "unpack_item_base_price": self.repack_item_code_price
     }
     get_repack_items_list.append(get_unpack_items_dict)
@@ -108,26 +104,19 @@ def get_new_grade(doctype, txt, searchfield, start, page_len, filters):
 
     grade = filters.get('grade')
 
-    get_grade = """
-                    SELECT name from `tabGrade` where name <> %s
-                """
+    get_grade = """ SELECT name from `tabGrade` where name <> %s"""
 
     parent = frappe.db.sql(get_grade, (grade), as_dict=1)
 
     filtered_data = [item['name'] for item in parent]
 
-    filters_data = [
-        ["name", "in", filtered_data],
-    ]
+    filters_data = [ ["name", "in", filtered_data] ]
 
     return frappe.get_all(
         "Grade",
         filters=filters_data,
-        fields=["name"],
-        as_list=1,
-        or_filters=[
-            ["name", "like", f"%{txt}%"]
-        ]
+        fields=["name"], as_list=1,
+        or_filters=[ ["name", "like", f"%{txt}%"] ]
     )
 
 @frappe.whitelist()
@@ -146,6 +135,3 @@ def get_valuation_rate(item_code,grade):
     for part in part_percentage:
         if part.get('grade') == grade:
             return valuation_rate_for_grade_a * (int(part.get('part_value_percentage'))/100)
-
-    
-

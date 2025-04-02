@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import frappe
 import datetime
 import traceback
@@ -12,6 +13,9 @@ from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
+
+frappe.utils.logger.set_log_level("DEBUG")
+logger = frappe.logger("njqca", allow_site=True, file_count=1)
 
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
@@ -491,17 +495,27 @@ class NJQCA(Document):
             
             try:
                 qi_data = None
-                # get_grading_Authentication(self)
+                self.check_for_repack_access()
+                s1 = time.time()
+                logger.debug(f"Time for '{self.name}'")
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
+                logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
+                
                 if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group:
+                    s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
-
+                    logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
+                
                 if self.rfq_id is not None:
+                    s3 = time.time()
                     self.create_serial_no_based_on_rfq()
+                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_group == sn_item_group:
+                    s4 = time.time()
                     qi_data = open_draft_qi(self,self.brand,self.model)
+                    logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
                 if qi_data:
                     if qi_data.get('msg_pnt'):
@@ -509,13 +523,19 @@ class NJQCA(Document):
                 
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
+                    s5 = time.time()
                     update_serial_no_componont_for_grade(self)
-                    #update_serial_no_component_for_njqca(self)
-                self.check_for_repack_access()
+                    logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
+                    
+                    # s6 = time.time()
+                    # update_serial_no_component_for_njqca(self)
+                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
+            finally:
+                logger.debug("")
     
     def check_for_repack_access(self):
         user = frappe.session.user

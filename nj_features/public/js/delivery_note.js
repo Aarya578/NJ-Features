@@ -63,7 +63,9 @@ frappe.ui.form.on('Delivery Note', {
                 args: { so_name: first_so },
                 callback: function(res) {
                     if (res.message) {
-                        frm.set_value("cod_amount", res.message); 
+                        console.log("res.message",res.message)
+                        frm.set_value("cod_amount", res.message.cod_amount); 
+                        frm.set_value("shopify_order_id", res.message.order_id); 
                     }
                 }
             });

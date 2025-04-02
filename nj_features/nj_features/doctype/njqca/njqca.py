@@ -535,7 +535,6 @@ class NJQCA(Document):
         stock_data = {
             "name": self.name,
             "doctype": self.doctype,
-            "series": "NJ-STE-NJQCA-",
             "stock_entry_type": "Repack",
             "repack_items": get_repack_items(self),
             "expense_account": accounting_cost_account
@@ -1316,7 +1315,6 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
-            print("delta:", delta)
             delta = delta[0]
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:

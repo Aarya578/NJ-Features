@@ -375,7 +375,6 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
         frappe.throw(f"⚠️ Failed to send email: {str(e)}")
 
-
 @frappe.whitelist()
 def get_cod_amount(so_name):
     try:
@@ -384,22 +383,23 @@ def get_cod_amount(so_name):
             "X-Shopify-Access-Token": TOKEN
         }
         order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
-        print("order_id-----520----",order_id)
-        # Construct the full URL with the order_id as name
+        print("order_id-----520----", order_id)
+
         url = f"{SHOPIFY_URL}{order_id}"
 
-        response = requests.get(url, headers=headers)  # Use GET since we're fetching order details
+        response = requests.get(url, headers=headers)
         data = response.json()
-        # print("data-----521----",data)
+
         if "orders" in data and data["orders"]:
             print("523------entered")
             order = data["orders"][0]  
-            cod_amount  = order.get("total_outstanding", 0)
+            cod_amount = order.get("total_outstanding", 0)
 
-            print("cod_amount--------39",cod_amount)
-            return cod_amount
-            
+            print("cod_amount--------39", cod_amount)
+            return {"order_id": order_id, "cod_amount": cod_amount}
+
+        return {"order_id": order_id, "cod_amount": 0}
 
     except Exception as e:
-        print(f"Error in create_shopify_review_url: {e}")
-        return None
+        frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
+        return {"order_id": None, "cod_amount": 0}

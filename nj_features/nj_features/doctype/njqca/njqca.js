@@ -449,34 +449,8 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     before_save: function(frm) {
-        frappe.call({
-            method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { 'doc': frm.doc },
-            callback: function(r) {
-                if(r.message){
-                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-                    if(r.message == "PASS"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
-                    }else if(r.message == "FAIL"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
-                    }else if(r.message == "Unknown"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
-                    }
-                }
-                frm.refresh_field("njqca_result_parameters");
-            }
-        });
-    },
-    before_submit: function(frm) {
+
+        console.log("triggering before save...");
 
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
@@ -513,6 +487,37 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         }
+
+        frappe.call({
+            method: 'nj_features.nj_features.api.api_files.get_battery_status',
+            args: { 'doc': frm.doc },
+            callback: function(r) {
+                if(r.message){
+                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                    if(r.message == "PASS"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                    }else if(r.message == "FAIL"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
+                    }else if(r.message == "Unknown"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                    }
+                }
+                frm.refresh_field("njqca_result_parameters");
+            }
+        });
+    },
+    before_submit: function(frm) {
+
+        
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',

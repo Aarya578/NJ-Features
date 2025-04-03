@@ -471,42 +471,28 @@ class NJQCA(Document):
         update_storage_type(self)
 
     def before_submit(self):
-        # get_grading_Authentication(self)
-        pass
+        get_grading_Authentication(self)
 
-    # def on_submit(self):
-    #     if self.power_on == 'Yes' and self.repack_item_code != '':
-    #         # if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
-    #         #     frappe.throw("Please fill <b>Manual Repack Item Code</b>.")
-    #         #     return None
+    def on_submit(self):
+        if self.power_on == 'Yes' and self.repack_item_code != '':
+            if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
+                frappe.throw("Please fill <b>Manual Repack Item Code</b>.")
+                return None
             
-    #         if self.item_template:
-    #             tmp_model = frappe.db.get_value('Item', self.item_template, 'item_model')
-    #             itm_model = frappe.db.get_value('Item', self.manual_repack_item_code, 'item_model')
-    #             if tmp_model and tmp_model != self.model:
-    #                 frappe.throw("Model: <b>" + tmp_model + "</b> in Item Template is not matching with Selected Model: <b>" + self.model + "</b>")
-    #                 return None
+            if self.item_template:
+                tmp_model = frappe.db.get_value('Item', self.item_template, 'item_model')
+                itm_model = frappe.db.get_value('Item', self.manual_repack_item_code, 'item_model')
+                if tmp_model and tmp_model != self.model:
+                    frappe.throw("Model: <b>" + tmp_model + "</b> in Item Template is not matching with Selected Model: <b>" + self.model + "</b>")
+                    return None
                 
-    #             if itm_model and itm_model != self.model:
-    #                 frappe.throw("Model: <b>" + itm_model + "</b> in Manual Repack Item Code is not matching with Selected Model: <b>" + self.model + "</b>")
-    #                 return None
+                if itm_model and itm_model != self.model:
+                    frappe.throw("Model: <b>" + itm_model + "</b> in Manual Repack Item Code is not matching with Selected Model: <b>" + self.model + "</b>")
+                    return None
             
-    #         if (self.battery_type is None or not self.battery_type) and self.item_group=="BATTERY":
-    #             frappe.throw("Please fill the <b>Battery Type</b>")
+            if (self.battery_type is None or not self.battery_type) and self.item_group=="BATTERY":
+                frappe.throw("Please fill the <b>Battery Type</b>")
             
-    #         try:
-    #             qi_data = None
-    #             # get_grading_Authentication(self)
-    #             sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
-    #             check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
-    #             if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group:
-    #                 self.make_stock_entry_using_nj_lib()
-
-    #             if self.rfq_id is not None:
-    #                 self.create_serial_no_based_on_rfq()
-                
-    #             if self.item_group == sn_item_group:
-    #                 qi_data = open_draft_qi(self,self.brand,self.model)
             try:
                 qi_data = None
                 self.check_for_repack_access()
@@ -531,19 +517,10 @@ class NJQCA(Document):
                     qi_data = open_draft_qi(self,self.brand,self.model)
                     logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
-    #             if qi_data:
-    #                 if qi_data.get('msg_pnt'):
-    #                     frappe.msgprint(qi_data.get('msg_pnt'))
+                if qi_data:
+                    if qi_data.get('msg_pnt'):
+                        frappe.msgprint(qi_data.get('msg_pnt'))
                 
-    #             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-    #             if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
-    #                 update_serial_no_componont_for_grade(self)
-    #                 #update_serial_no_component_for_njqca(self)
-    #             self.check_for_repack_access()
-
-    #         except Exception as e:
-    #             frappe.db.rollback()
-    #             frappe.throw("Error during submission: " + str(e))
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     s5 = time.time()
@@ -1698,10 +1675,6 @@ def update_storage_type(doc):
 def get_item_code_from_rfq_id(rfq_id):
     item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
     return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
-
-import json
-import frappe
-from frappe import _
 
 # Configuration for parameter type detection
 PARAMETER_TYPE_MAPPING = {

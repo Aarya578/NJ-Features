@@ -1678,7 +1678,6 @@ def get_item_code_from_rfq_id(rfq_id):
 
 # Configuration for parameter type detection
 PARAMETER_TYPE_MAPPING = {
-    # Time-related parameters (values converted to seconds for comparison)
     'time': [
         'time',
         'restart',
@@ -1688,14 +1687,12 @@ PARAMETER_TYPE_MAPPING = {
         'delay',
         'switching_time'
     ],
-    # Speed-related parameters (values in MB/s, GB/s etc.)
     'speed': [
         'speed',
         'transfer_rate',
         'bandwidth',
         'throughput'
     ],
-    # Size-related parameters (values in KB, MB, GB etc.)
     'size': [
         'size',
         'capacity',
@@ -1746,7 +1743,12 @@ def update_performance_criteria(doc):
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
     if not item_wizard_doc.get("performance_config_criteria"):
-        criteria_doc = json.loads(criteria_doc) if (criteria_doc := frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')) else frappe.msgprint(_("<b>NJ Settings not found for Performance Criteria.</b>"), alert=True) or None
+
+        criteria_doc = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+        if not criteria_doc:
+            return {"error": "NJ Settings not found for Performance Criteria."}
+        else:
+            criteria_doc = json.loads(criteria_doc)
 
         njqca_results = doc.get("njqca_result_parameters", [])
         evaluation_results = []
@@ -1798,7 +1800,7 @@ def update_performance_criteria(doc):
                 }
     
     else:
-        
+
         for row in item_wizard_doc.get("performance_config_criteria"):
             row_data = {
                 "processor": row.get("processor", "").lower(),
@@ -1915,7 +1917,6 @@ def compare_parameter(param_name, actual_value, expected_range):
             return False, f"{actual_value} doesn't match expected {expected_range}"
                 
         else:
-            # Default comparison (exact match)
             if str(actual_value).strip() == str(expected_range).strip():
                 return True, f"{actual_value} matches expected {expected_range}"
             return False, f"{actual_value} doesn't match expected {expected_range}"
@@ -1931,14 +1932,12 @@ def convert_to_seconds(time_str):
         
     time_str = str(time_str).strip()
     
-    # Handle decimal seconds format
     if "second" in time_str.lower():
         try:
             return float(time_str.split()[0])
         except (ValueError, IndexError):
             return 0
     
-    # Handle h/m/s format
     hours = 0
     minutes = 0
     seconds = 0
@@ -1964,7 +1963,6 @@ def parse_time_range(range_str):
     range_str = str(range_str).lower()
     numbers = extract_numbers(range_str)
     
-    # Determine unit
     unit = 'sec'
     if 'min' in range_str:
         unit = 'min'
@@ -1976,7 +1974,6 @@ def parse_time_range(range_str):
     else:
         min_val = max_val = 0
     
-    # Convert to seconds
     if unit == 'min':
         return min_val * 60, max_val * 60
     return min_val, max_val
@@ -2047,11 +2044,9 @@ def update_njqca_doc(njqca_name, evaluation_results):
     try:
         njqca_doc = frappe.get_doc("NJQCA", njqca_name)
         
-        # Clear existing results if any
         if hasattr(njqca_doc, "performance_evaluation"):
             njqca_doc.performance_evaluation = []
         
-        # Add new evaluation results
         for result in evaluation_results:
             njqca_doc.append("performance_evaluation", {
                 "parameter": result["parameter"],

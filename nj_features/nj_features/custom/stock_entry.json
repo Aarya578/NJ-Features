@@ -359,7 +359,7 @@
       "property": "autoname",
       "property_type": "Data",
       "row_name": null,
-      "value": "timestamp.#####"
+      "value": "hash"
     }
   ],
   "sync_on_migrate": 1

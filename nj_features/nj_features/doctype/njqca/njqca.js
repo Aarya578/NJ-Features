@@ -120,14 +120,25 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
+
+        console.log("selectedModel:", selectedModel);
+        console.log("selectedBrand:", selectedBrand);
+        console.log("selectedItemGroup:", selectedItemGroup);
         
         if (selectedModel) {
-            console.log("Model, Brand and Item Group are selected.");
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
-                    if (r.message) {
+                    console.log(r.message);
+                    if (r.message.error) {
+                        frappe.msgprint({
+                            title: __("Error"),
+                            message: r.message.error,
+                            indicator: "red"
+                        });
+                        frappe.validated = false;
+                    } else if (r.message) {
                         console.log(r.message);
                         
                         let existingRow = null;
@@ -153,7 +164,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         }
-
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
         if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) { requiredFields.push('warehouse'); }
         

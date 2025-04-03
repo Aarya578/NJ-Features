@@ -117,6 +117,43 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: function(frm) {
+        var selectedModel = frm.doc.model;
+        var selectedBrand = frm.doc.brand;
+        var selectedItemGroup = frm.doc.item_group;
+        
+        if (selectedModel) {
+            console.log("Model, Brand and Item Group are selected.");
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
+                args: { 'doc': frm.doc },
+                callback: function(r) {
+                    if (r.message) {
+                        console.log(r.message);
+                        
+                        let existingRow = null;
+        
+                        (frm.doc.njqca_result_parameters || []).forEach(row => {
+                            if (row.parameter === r.message.parameter) {
+                                existingRow = row;
+                            }
+                        });
+        
+                        if (existingRow) {
+                            frappe.model.clear_doc(existingRow.doctype, existingRow.name);
+                        }
+        
+                        var child = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                        frappe.model.set_value(child.doctype, child.name, 'parameter', r.message.parameter);
+                        frappe.model.set_value(child.doctype, child.name, 'value', r.message.value);
+                        frappe.model.set_value(child.doctype, child.name, 'item_group', r.message.item_group);
+                        frappe.model.set_value(child.doctype, child.name, 'score', r.message.score);
+                        
+                        frm.refresh_field("njqca_result_parameters");
+                    }
+                }
+            });
+        }
+
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
         if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) { requiredFields.push('warehouse'); }
         
@@ -450,44 +487,6 @@ frappe.ui.form.on('NJQCA', {
     },
     before_save: function(frm) {
 
-        console.log("triggering before save...");
-
-        var selectedModel = frm.doc.model;
-        var selectedBrand = frm.doc.brand;
-        var selectedItemGroup = frm.doc.item_group;
-        
-        if (selectedModel & selectedBrand && selectedItemGroup) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
-                args: { 'doc': frm.doc },
-                callback: function(r) {
-                    if (r.message) {
-                        console.log(r.message);
-                        
-                        let existingRow = null;
-        
-                        (frm.doc.njqca_result_parameters || []).forEach(row => {
-                            if (row.parameter === r.message.parameter) {
-                                existingRow = row;
-                            }
-                        });
-        
-                        if (existingRow) {
-                            frappe.model.clear_doc(existingRow.doctype, existingRow.name);
-                        }
-        
-                        var child = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-                        frappe.model.set_value(child.doctype, child.name, 'parameter', r.message.parameter);
-                        frappe.model.set_value(child.doctype, child.name, 'value', r.message.value);
-                        frappe.model.set_value(child.doctype, child.name, 'item_group', r.message.item_group);
-                        frappe.model.set_value(child.doctype, child.name, 'score', r.message.score);
-                        
-                        frm.refresh_field("njqca_result_parameters");
-                    }
-                }
-            });
-        }
-
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
             args: { 'doc': frm.doc },
@@ -516,8 +515,6 @@ frappe.ui.form.on('NJQCA', {
         });
     },
     before_submit: function(frm) {
-
-        
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',

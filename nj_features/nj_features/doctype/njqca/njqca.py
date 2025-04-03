@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import frappe
 import datetime
 import traceback
@@ -12,6 +13,9 @@ from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
+
+frappe.utils.logger.set_log_level("DEBUG")
+logger = frappe.logger("njqca", allow_site=True, file_count=1)
 
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
@@ -491,17 +495,27 @@ class NJQCA(Document):
             
             try:
                 qi_data = None
-                # get_grading_Authentication(self)
+                self.check_for_repack_access()
+                s1 = time.time()
+                logger.debug(f"Time for '{self.name}'")
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
+                logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
+                
                 if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group:
+                    s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
-
+                    logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
+                
                 if self.rfq_id is not None:
+                    s3 = time.time()
                     self.create_serial_no_based_on_rfq()
+                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_group == sn_item_group:
+                    s4 = time.time()
                     qi_data = open_draft_qi(self,self.brand,self.model)
+                    logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
                 if qi_data:
                     if qi_data.get('msg_pnt'):
@@ -509,13 +523,19 @@ class NJQCA(Document):
                 
                 nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
+                    s5 = time.time()
                     update_serial_no_componont_for_grade(self)
-                    #update_serial_no_component_for_njqca(self)
-                self.check_for_repack_access()
+                    logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
+                    
+                    # s6 = time.time()
+                    # update_serial_no_component_for_njqca(self)
+                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
+            finally:
+                logger.debug("")
     
     def check_for_repack_access(self):
         user = frappe.session.user
@@ -1655,3 +1675,388 @@ def update_storage_type(doc):
 def get_item_code_from_rfq_id(rfq_id):
     item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
     return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
+
+# Configuration for parameter type detection
+PARAMETER_TYPE_MAPPING = {
+    'time': [
+        'time',
+        'restart',
+        'excel_time',
+        'duration',
+        'latency',
+        'delay',
+        'switching_time'
+    ],
+    'speed': [
+        'speed',
+        'transfer_rate',
+        'bandwidth',
+        'throughput'
+    ],
+    'size': [
+        'size',
+        'capacity',
+        'storage',
+        'file_size'
+    ]
+}
+
+@frappe.whitelist()
+def update_performance_criteria(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+    
+    item_code = doc.get("manual_repack_item_code")  
+
+    if not item_code:
+        frappe.msgprint(_("Item code is missing."), alert=True)
+        return
+
+    # Get item configuration
+    get_item_config = '''
+        SELECT 
+            LOWER(iva.attribute) AS attribute,
+            LOWER(iva.attribute_value) AS value
+        FROM `tabItem Variant Attribute` iva
+        WHERE iva.parent = %s
+    '''
+    item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
+    transformed_data = transform_item_config(item_config)
+
+    # Get latest submitted Item Wizard
+    item_wizard_list = frappe.get_all(
+        "Item Wizards",
+        filters={
+            "model": doc.get("model"),
+            "item_template": doc.get("item_template"),
+            "docstatus": 1  
+        },
+        fields=["name"],
+        order_by="modified desc",
+        limit_page_length=1
+    )
+
+    if not item_wizard_list:
+        frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
+        return
+    
+    item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
+
+    if not item_wizard_doc.get("performance_config_criteria"):
+
+        criteria_doc = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+        if not criteria_doc:
+            return {"error": "NJ Settings not found for Performance Criteria."}
+        else:
+            criteria_doc = json.loads(criteria_doc)
+
+        njqca_results = doc.get("njqca_result_parameters", [])
+        evaluation_results = []
+            
+        for criteria_row in criteria_doc:
+            param_name = criteria_row.get("parameter")
+            param_range = criteria_row.get("parameter_value")
+            njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+            
+            if njqca_param:
+                njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+                
+                evaluation_results.append({
+                    "parameter": param_name,
+                    "njqca_value": njqca_value,
+                    "expected_range": param_range,
+                    "status": "Pass" if is_passing else "Fail",
+                    "message": message
+                })
+        
+        frappe.logger().info("\nEvaluation Results:")
+        for result in evaluation_results:
+            frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+        
+        update_njqca_doc(doc.get("name"), evaluation_results)
+        
+        resulting_values =  {
+            "evaluation_results": evaluation_results,
+        }
+
+        if resulting_values.get("evaluation_results"):
+            for entry in resulting_values.get("evaluation_results", []):
+                if entry.get("status") == "Fail":
+                    return {
+                        "parameter": "performance_status",
+                        "value": "FAIL",
+                        "score": 41,
+                        "item_group": "Software Configuration",
+                        "part_config_id": 0,
+                        }
+
+            return {
+                "parameter": "performance_status",
+                "value": "PASS",
+                "score": 0,
+                "item_group": "Software Configuration",
+                "part_config_id": 0
+                }
+    
+    else:
+
+        for row in item_wizard_doc.get("performance_config_criteria"):
+            row_data = {
+                "processor": row.get("processor", "").lower(),
+                "ram": row.get("ram", "").lower(),
+                "ssd": row.get("ssd", "").lower()
+            }
+
+            if transformed_data == row_data:
+                criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
+                njqca_results = doc.get("njqca_result_parameters", [])
+                
+                evaluation_results = []
+                
+                for criteria_row in criteria_doc.get("criteria_child"):
+                    param_name = criteria_row.get("parameter")
+                    param_range = criteria_row.get("parameter_value")
+                    
+                    njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+                    
+                    if njqca_param:
+                        njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                        is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+                        
+                        evaluation_results.append({
+                            "parameter": param_name,
+                            "njqca_value": njqca_value,
+                            "expected_range": param_range,
+                            "status": "Pass" if is_passing else "Fail",
+                            "message": message
+                        })
+                
+                frappe.logger().info("\nEvaluation Results:")
+                for result in evaluation_results:
+                    frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+                
+                update_njqca_doc(doc.get("name"), evaluation_results)
+                
+                resulting_values =  {
+                    "evaluation_results": evaluation_results,
+                    "criteria_name": criteria_doc.name
+                }
+
+                if resulting_values.get("evaluation_results"):
+                    for entry in resulting_values.get("evaluation_results", []):
+                        if entry.get("status") == "Fail":
+                            return {
+                                "parameter": "performance_status",
+                                "value": "FAIL",
+                                "score": 41,
+                                "item_group": "Software Configuration",
+                                "part_config_id": 0,
+                                }
+
+                    return {
+                        "parameter": "performance_status",
+                        "value": "PASS",
+                        "score": 0,
+                        "item_group": "Software Configuration",
+                        "part_config_id": 0
+                        }
+
+def transform_item_config(item_config):
+    """Transforms item attribute data into a structured dictionary."""
+    attribute_map = {
+        "storage capacity": "ssd",
+        "ram capacity": "ram",
+        "processor type": "processor"
+    }
+
+    transformed_data = {}
+    for item in item_config:
+        attribute = item.get("attribute")
+        value = item.get("value")
+        if attribute in attribute_map:
+            transformed_key = attribute_map[attribute]
+            transformed_data[transformed_key] = value.lower() 
+    return transformed_data
+
+def get_parameter_type(param_name):
+    """Determine the parameter type based on its name."""
+    param_name_lower = param_name.lower()
+    for param_type, keywords in PARAMETER_TYPE_MAPPING.items():
+        if any(keyword in param_name_lower for keyword in keywords):
+            return param_type
+    return None
+
+def compare_parameter(param_name, actual_value, expected_range):
+    """Compare actual value with expected range and return pass/fail status."""
+    try:
+        param_type = get_parameter_type(param_name)
+        
+        if param_type == 'time':
+            actual_seconds = convert_to_seconds(actual_value)
+            min_sec, max_sec = parse_time_range(expected_range)
+            
+            if min_sec <= actual_seconds <= max_sec:
+                return True, f"{actual_value} is within range {expected_range}"
+            return False, f"{actual_value} is outside range {expected_range}"
+                
+        elif param_type == 'speed':
+            actual_speed = extract_number(actual_value)
+            min_speed, max_speed = parse_speed_range(expected_range)
+            
+            if min_speed <= actual_speed <= max_speed:
+                return True, f"{actual_value} is within range {expected_range}"
+            return False, f"{actual_value} is outside range {expected_range}"
+                
+        elif param_type == 'size':
+            actual_size = convert_to_bytes(actual_value)
+            expected_size = convert_to_bytes(expected_range)
+            
+            if actual_size == expected_size:
+                return True, f"{actual_value} matches expected {expected_range}"
+            return False, f"{actual_value} doesn't match expected {expected_range}"
+                
+        else:
+            if str(actual_value).strip() == str(expected_range).strip():
+                return True, f"{actual_value} matches expected {expected_range}"
+            return False, f"{actual_value} doesn't match expected {expected_range}"
+                
+    except Exception as e:
+        frappe.log_error(f"Error comparing parameter {param_name}: {str(e)}")
+        return False, f"Comparison error: {str(e)}"
+
+def convert_to_seconds(time_str):
+    """Convert time string to seconds."""
+    if not time_str or str(time_str).lower() == "none":
+        return 0
+        
+    time_str = str(time_str).strip()
+    
+    if "second" in time_str.lower():
+        try:
+            return float(time_str.split()[0])
+        except (ValueError, IndexError):
+            return 0
+    
+    hours = 0
+    minutes = 0
+    seconds = 0
+    
+    parts = time_str.split()
+    for part in parts:
+        part = part.lower()
+        if 'h' in part:
+            hours = float(part.replace('h', ''))
+        elif 'm' in part:
+            minutes = float(part.replace('m', ''))
+        elif 's' in part:
+            seconds_str = part.replace('s', '')
+            seconds = float(seconds_str) if '.' in seconds_str else int(seconds_str)
+    
+    return hours * 3600 + minutes * 60 + seconds
+
+def parse_time_range(range_str):
+    """Parse time range into min and max seconds."""
+    if not range_str:
+        return 0, 0
+    
+    range_str = str(range_str).lower()
+    numbers = extract_numbers(range_str)
+    
+    unit = 'sec'
+    if 'min' in range_str:
+        unit = 'min'
+    
+    if len(numbers) >= 2:
+        min_val, max_val = numbers[0], numbers[1]
+    elif numbers:
+        min_val = max_val = numbers[0]
+    else:
+        min_val = max_val = 0
+    
+    if unit == 'min':
+        return min_val * 60, max_val * 60
+    return min_val, max_val
+
+def parse_speed_range(range_str):
+    """Parse speed range into min and max values."""
+    numbers = extract_numbers(range_str)
+    if len(numbers) >= 2:
+        return numbers[0], numbers[1]
+    elif numbers:
+        return numbers[0], numbers[0]
+    return 0, 0
+
+def extract_numbers(text):
+    """Extract all numbers from a string."""
+    numbers = []
+    for word in str(text).split():
+        cleaned = ''.join(c for c in word if c.isdigit() or c == '.')
+        if cleaned:
+            try:
+                numbers.append(float(cleaned))
+            except ValueError:
+                continue
+    return numbers
+
+def extract_number(value_str):
+    """Extract the first number from a string."""
+    numbers = extract_numbers(value_str)
+    return numbers[0] if numbers else 0
+
+def convert_to_bytes(size_str):
+    """Convert size string to bytes."""
+    if not size_str:
+        return 0
+    
+    size_str = str(size_str).upper()
+    parts = size_str.split()
+    
+    if not parts:
+        return 0
+    
+    try:
+        size = float(parts[0])
+    except ValueError:
+        return 0
+    
+    if len(parts) == 1:
+        return size
+    
+    unit = parts[1]
+    size_map = {
+        'KB': 1024,
+        'MB': 1024 * 1024,
+        'GB': 1024 * 1024 * 1024,
+        'TB': 1024 * 1024 * 1024 * 1024
+    }
+    
+    for unit_key, multiplier in size_map.items():
+        if unit_key in unit:
+            return size * multiplier
+    return size
+
+def update_njqca_doc(njqca_name, evaluation_results):
+    """Update the NJQCA document with evaluation results."""
+    if not njqca_name or not evaluation_results:
+        return
+    
+    try:
+        njqca_doc = frappe.get_doc("NJQCA", njqca_name)
+        
+        if hasattr(njqca_doc, "performance_evaluation"):
+            njqca_doc.performance_evaluation = []
+        
+        for result in evaluation_results:
+            njqca_doc.append("performance_evaluation", {
+                "parameter": result["parameter"],
+                "actual_value": str(result["njqca_value"]),
+                "expected_range": str(result["expected_range"]),
+                "status": result["status"],
+                "message": result["message"]
+            })
+        
+        njqca_doc.save()
+        frappe.db.commit()
+    except Exception as e:
+        frappe.log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")

@@ -21,7 +21,6 @@ class Inward(Document):
             "name": self.name,
             "doctype": self.doctype,
             "stock_entry_type": "Repack",
-            "series": "STE-INW-.YYYY.-.MM.-",
             "repack_items": get_repack_items(self)
         }
         stock_data_str = json.dumps(stock_data)

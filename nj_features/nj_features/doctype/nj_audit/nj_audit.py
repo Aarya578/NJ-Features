@@ -19,11 +19,10 @@ def move_all_stock(self):
     serial_numbers_seen = set()
     
     stock_entry_data = {
+        "name": self.get('name'),
+        "doctype": self.get('doctype'),
         "stock_entry_type": "Material Transfer",
         "material_transfer_items": stock_entry_for_material_transfer_or_repack_items,
-        "series": "STE-AD-.YYYY.-.MM.-",
-        "doctype": self.get('doctype'),
-        "name": self.get('name'),
     }
     
     for row in self.get('nj_audit_items'):

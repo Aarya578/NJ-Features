@@ -473,3 +473,5 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                 
                 if missing_checks:
                     frappe.msgprint(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
+        return {"order_id": None, "cod_amount": 0}

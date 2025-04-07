@@ -32,6 +32,7 @@
   "sudden_drop",
   "battery_type",
   "grading_fetched",
+  "no_of_bdt",
   "repack_itm_price",
   "app_statuts",
   "section_break_6sw2s",
@@ -57,10 +58,10 @@
   "njqca_item_component",
   "section_break_yblqh",
   "njqca_result_parameters",
-  "amended_from",
   "event_trigger_section",
   "njqca_event_trigger",
-  "pwd"
+  "pwd",
+  "amended_from"
  ],
  "fields": [
   {
@@ -399,11 +400,17 @@
    "fieldtype": "Data",
    "label": "Rapid BDT",
    "read_only": 1
+  },
+  {
+   "fieldname": "no_of_bdt",
+   "fieldtype": "Data",
+   "label": "No of BDT",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-18 02:48:17.739373",
+ "modified": "2025-04-05 12:32:11.049552",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

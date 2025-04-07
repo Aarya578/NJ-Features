@@ -6,6 +6,14 @@ frappe.ui.form.on('Knowledge Base', {
     refresh: function (frm) {
         $('.col-lg-2.layout-side-section').hide();
         addAttachmentButtons(frm);
+    },
+    before_save: function (frm) {
+        frappe.call({
+            method: "nj_features.nj_features.doctype.knowledge_base.knowledge_base.validate_links",
+            args: {
+                doc: frm.doc
+            },
+        })
     }
 });
 

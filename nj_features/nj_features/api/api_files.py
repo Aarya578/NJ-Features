@@ -406,7 +406,7 @@ def get_backup_duration(doc, method=None):
         
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         if (njqca_battery_item_group and njqca_battery_item_group == doc.item_group):
-            delta_query = """
+            rapid_query = """
                         WITH parameter_data AS (     
                                 SELECT name, idx, item_group, parameter, value     
                                 FROM `tabNJQCA Result Parameters`     
@@ -466,8 +466,57 @@ def get_backup_duration(doc, method=None):
                 ) AS subquery
                 ORDER BY start_idx;
             """
-            
-            delta = frappe.db.sql(delta_query, ( parent_name), as_dict=True)
+
+            delta_query = """
+                        WITH parameter_data AS (     
+                                SELECT name, idx, item_group, parameter, value     
+                                FROM `tabNJQCA Result Parameters`     
+                                WHERE parent = %s 
+                                ORDER BY idx 
+                            ),  
+
+                            -- Get all occurrences of Battery_Discharging_Start_Time 
+                            cycle_start AS (     
+                                SELECT idx, parameter     
+                                FROM parameter_data     
+                                WHERE parameter = 'Battery_Discharging_Start_Time' 
+                            ),  
+
+                            -- For each occurrence of Battery_Discharging_Start_Time, calculate the initial value (timestamp) and final value (next timestamp)
+                            cycle_values AS (     
+                                SELECT          
+                                    cs.idx AS start_idx,         
+                                    pd1.parameter AS initial_timestamp,
+                                    pd1.value as initial_percentage,-- timestamp just before Battery_Discharging_Start_Time         
+                                    -- Find the next occurrence of Battery_Discharging_Start_Time and get its timestamp at idx - 2         
+                                    COALESCE(             
+                                        (SELECT parameter FROM parameter_data WHERE idx > cs.idx AND idx = (SELECT idx-2 FROM cycle_start WHERE idx > cs.idx order by idx LIMIT 1)),              
+                                        (SELECT parameter FROM parameter_data ORDER BY idx DESC LIMIT 1) -- if no next occurrence, get last timestamp         
+                                    ) AS final_timestamp
+                                FROM cycle_start cs     
+                                -- Get the timestamp at (idx - 1)     
+                                JOIN parameter_data pd1 ON pd1.idx = cs.idx - 1
+                            )  
+                    SELECT
+                        ROUND(
+                            ABS(
+                                IF(
+                                    STR_TO_DATE(final_timestamp, '%%H:%%i:%%s') >= STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s'),
+                                    TIME_TO_SEC(TIMEDIFF(STR_TO_DATE(final_timestamp, '%%H:%%i:%%s'), STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s'))),
+                                    TIME_TO_SEC(TIMEDIFF(ADDTIME(STR_TO_DATE(final_timestamp, '%%H:%%i:%%s'), '24:00:00'), STR_TO_DATE(initial_timestamp, '%%H:%%i:%%s')))
+                                )
+                            ) / 60, 2
+                        ) AS total_backup
+                    FROM cycle_values
+                ORDER BY start_idx;
+            """   
+            rbdt_status = frappe.db.get_value('NJQCA', {'name': parent_name}, 'rapid_bdt')
+        
+            if rbdt_status==None or rbdt_status=="":
+                      
+                delta = frappe.db.sql(delta_query, ( parent_name), as_dict=True)
+            else:
+                delta = frappe.db.sql(rapid_query, ( parent_name), as_dict=True)
             if delta:
                 i = 1
                 for d in delta:
@@ -478,3 +527,6 @@ def get_backup_duration(doc, method=None):
             
     except Exception as e:
         print("error while getting backup duration", e)
+    
+
+    

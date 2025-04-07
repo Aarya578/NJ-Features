@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-03 15:33:04.518241",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "serial_no",
+  "mreq_no",
+  "item",
+  "sb_qty",
+  "allocated_qty",
+  "mr_qty",
+  "status",
+  "allocated_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mreq_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "MREQ No",
+   "options": "Material Request",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_qty",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Stock Balance Qty",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "allocated_qty",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Allocated Qty"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mr_qty",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "MR Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "allocated_status",
+   "fieldtype": "Data",
+   "label": "Allocated Status",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-04-04 18:24:12.610306",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Laptop Allocation Child",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

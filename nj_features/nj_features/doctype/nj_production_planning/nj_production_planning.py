@@ -331,6 +331,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -490,6 +491,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -608,6 +610,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date

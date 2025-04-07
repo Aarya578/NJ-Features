@@ -24,7 +24,7 @@ def allocate_laptop_parts():
             ) 
             AND item_group = "Laptops"
         )
-    """, as_dict=True)
+    """,explain=1, debug=1, as_dict=True)
 
     if not mr_items:
         frappe.msgprint("No open Material Requests found for Laptop Displays.")

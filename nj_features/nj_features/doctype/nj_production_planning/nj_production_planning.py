@@ -846,8 +846,9 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                 remaining_needed = child.get("to_make")
 
                 for item in get_serial_no_config:
+                    print("item ----------------- ",item)
                     if (
-                        child.get("model", "").strip().lower() == item.get("model", "").strip().lower() and
+                        child.get("model", "").strip().lower() == item.get("model", "").strip().lower() if item.get("model") else "" and
                         child.get("processor", "").strip().lower() == item.get("processor_type", "").strip().lower() and
                         child.get("ram", "").strip().lower() == item.get("ram_capacity", "").strip().lower() and
                         child.get("ssd", "").strip().lower() == item.get("storage_capacity", "").strip().lower()

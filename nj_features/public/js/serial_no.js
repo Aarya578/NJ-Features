@@ -13,6 +13,9 @@ frappe.ui.form.on('Serial No', {
         frm.add_custom_button(__('Print QR Code'), function() {
             printQRCode(frm);
         }).addClass('btn-primary');
+        frm.add_custom_button(__('Generate Report'), function() {
+            get_report_data(frm);
+        }).addClass('btn-primary');
 
         if (frappe.user.has_role(["Item Wizard Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
@@ -178,5 +181,14 @@ function printQRCode(frm) {
                 }
             }
         });
+    });
+}
+
+
+
+function  get_report_data(frm) {
+    frappe.call({
+        method: 'nj_p1_features.overrides.serial_no.get_checks_data',
+        args: { serial_no: frm.doc.name }
     });
 }

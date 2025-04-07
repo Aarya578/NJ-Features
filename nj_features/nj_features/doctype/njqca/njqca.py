@@ -535,6 +535,7 @@ class NJQCA(Document):
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
             finally:
+                logger.debug(f"Total Time for '{self.name}': {time.time()-s1:.2f} seconds")
                 logger.debug("")
     
     def check_for_repack_access(self):
@@ -628,7 +629,6 @@ def model_change_for_serial_no(newmodel, serial_no):
         if new_item_wizard != [] or new_item_wizard is not None or new_item_wizard != '':
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
             if item_wizard_doc.part_list_status != 'Completed':
-                frappe.msgprint(f"'Part List' in Item Wizard: {new_item_wizard[0]['name']} is not completed. Please contact NPD Team.")
                 return { "status": 'failed' }
             if newmodel:
                 serial_no_doc.serial_no_component = []
@@ -1291,9 +1291,9 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         sudden_drop_limit=""
         if (njqca_battery_item_group and njqca_battery_item_group == item_group):       
-            sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'Docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
+            sudden_drop_limit=frappe.db.get_value('Item Wizards', {'manufacture_model': manufacturer_model, 'docstatus': '1','part_list_status':'Completed'}, 'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
-                sudden_drop_limit="20"
+                sudden_drop_limit="15"
             delta_query="""WITH FilteredResults AS (
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
@@ -1327,7 +1327,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
             last_percentage = percentage[0].get('value')
 
-            rbdt_status = frappe.db.get_value('NJQCA', {'name': parent_name}, 'rbdt_status')
+            rbdt_status = frappe.db.get_value('NJQCA', {'name': parent_name}, 'rapid_bdt')
         
             if rbdt_status==None or rbdt_status=="":
                 if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
@@ -1613,9 +1613,7 @@ def validate_battery_storage_score(doc):
         item_wizard=get_item_wizard(model)
         bad_sectors, wiz_storage_health= "", ""
 
-        wizard_criteria_query="""
-            select  storage_health, bad_sectors from `tabItem Wizards` where name=%s;
-        """
+        wizard_criteria_query="""select storage_health, bad_sectors from `tabItem Wizards` where name=%s;"""
 
         if item_wizard:
             wizard_criteria=frappe.db.sql(wizard_criteria_query, (item_wizard), as_dict=True)
@@ -1626,7 +1624,6 @@ def validate_battery_storage_score(doc):
                     wiz_storage_health=wizard_criteria[0].storage_health
                 if wizard_criteria[0].bad_sectors:
                     bad_sectors=wizard_criteria[0].bad_sectors
-  
             
         else:
             return
@@ -1640,7 +1637,6 @@ def validate_battery_storage_score(doc):
             select REGEXP_REPLACE(value, '[^0-9]', '') AS value from `tabNJQCA Result Parameters`
             where parent=%s and item_group="Laptop storage" and parameter="status" and value like '%%bad sector%%' limit 1
         """
-
 
         if wiz_storage_health:
             storage = frappe.db.sql(storage_query,(parent_name), as_dict=True)
@@ -1662,7 +1658,8 @@ def validate_battery_storage_score(doc):
 
     except Exception as e:
         frappe.msgprint("Error in NJQCA Storage Score",traceback.format_exc())
-        return 
+        return
+    
 @frappe.whitelist()
 def update_storage_type(doc):
     for row in doc.njqca_laptop_storage:
@@ -1703,164 +1700,167 @@ PARAMETER_TYPE_MAPPING = {
 
 @frappe.whitelist()
 def update_performance_criteria(doc):
-    if isinstance(doc, str):
-        doc = json.loads(doc)
-    
-    item_code = doc.get("manual_repack_item_code")  
+    try:
+        if isinstance(doc, str):
+            doc = json.loads(doc)
+        
+        item_code = doc.get("manual_repack_item_code")  
 
-    if not item_code:
-        frappe.msgprint(_("Item code is missing."), alert=True)
-        return
+        if not item_code:
+            frappe.msgprint(_("Item code is missing."), alert=True)
+            return
 
-    # Get item configuration
-    get_item_config = '''
-        SELECT 
-            LOWER(iva.attribute) AS attribute,
-            LOWER(iva.attribute_value) AS value
-        FROM `tabItem Variant Attribute` iva
-        WHERE iva.parent = %s
-    '''
-    item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
-    transformed_data = transform_item_config(item_config)
+        get_item_config = '''
+            SELECT 
+                LOWER(iva.attribute) AS attribute,
+                LOWER(iva.attribute_value) AS value
+            FROM `tabItem Variant Attribute` iva
+            WHERE iva.parent = %s
+        '''
+        item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
+        transformed_data = transform_item_config(item_config)
 
-    # Get latest submitted Item Wizard
-    item_wizard_list = frappe.get_all(
-        "Item Wizards",
-        filters={
-            "model": doc.get("model"),
-            "item_template": doc.get("item_template"),
-            "docstatus": 1  
-        },
-        fields=["name"],
-        order_by="modified desc",
-        limit_page_length=1
-    )
+        # Get latest submitted Item Wizard
+        item_wizard_list = frappe.get_all(
+            "Item Wizards",
+            filters={
+                "model": doc.get("model"),
+                "item_template": doc.get("item_template"),
+                "docstatus": 1, "part_list_status": "Completed"
+            },
+            fields=["name"],
+            order_by="modified desc",
+            limit_page_length=1
+        )
 
-    if not item_wizard_list:
-        frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
-        return
-    
-    item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
+        if not item_wizard_list:
+            frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
+            return
+        
+        item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
-    if not item_wizard_doc.get("performance_config_criteria"):
+        if not item_wizard_doc.get("performance_config_criteria"):
 
-        criteria_doc = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
-        if not criteria_doc:
-            return {"error": "NJ Settings not found for Performance Criteria."}
-        else:
-            criteria_doc = json.loads(criteria_doc)
+            criteria_doc = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+            if not criteria_doc:
+                return {"error": "NJ Settings not found for Performance Criteria."}
+            else:
+                criteria_doc = json.loads(criteria_doc)
 
-        njqca_results = doc.get("njqca_result_parameters", [])
-        evaluation_results = []
-            
-        for criteria_row in criteria_doc:
-            param_name = criteria_row.get("parameter")
-            param_range = criteria_row.get("parameter_value")
-            njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
-            
-            if njqca_param:
-                njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+            njqca_results = doc.get("njqca_result_parameters", [])
+            evaluation_results = []
                 
-                evaluation_results.append({
-                    "parameter": param_name,
-                    "njqca_value": njqca_value,
-                    "expected_range": param_range,
-                    "status": "Pass" if is_passing else "Fail",
-                    "message": message
-                })
-        
-        frappe.logger().info("\nEvaluation Results:")
-        for result in evaluation_results:
-            frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-        
-        update_njqca_doc(doc.get("name"), evaluation_results)
-        
-        resulting_values =  {
-            "evaluation_results": evaluation_results,
-        }
-
-        if resulting_values.get("evaluation_results"):
-            for entry in resulting_values.get("evaluation_results", []):
-                if entry.get("status") == "Fail":
-                    return {
-                        "parameter": "performance_status",
-                        "value": "FAIL",
-                        "score": 41,
-                        "item_group": "Software Configuration",
-                        "part_config_id": 0,
-                        }
-
-            return {
-                "parameter": "performance_status",
-                "value": "PASS",
-                "score": 0,
-                "item_group": "Software Configuration",
-                "part_config_id": 0
-                }
-    
-    else:
-
-        for row in item_wizard_doc.get("performance_config_criteria"):
-            row_data = {
-                "processor": row.get("processor", "").lower(),
-                "ram": row.get("ram", "").lower(),
-                "ssd": row.get("ssd", "").lower()
+            for criteria_row in criteria_doc:
+                param_name = criteria_row.get("parameter")
+                param_range = criteria_row.get("parameter_value")
+                njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+                
+                if njqca_param:
+                    njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                    is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+                    
+                    evaluation_results.append({
+                        "parameter": param_name,
+                        "njqca_value": njqca_value,
+                        "expected_range": param_range,
+                        "status": "Pass" if is_passing else "Fail",
+                        "message": message
+                    })
+            
+            frappe.logger().info("\nEvaluation Results:")
+            for result in evaluation_results:
+                frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+            
+            update_njqca_doc(doc.get("name"), evaluation_results)
+            
+            resulting_values =  {
+                "evaluation_results": evaluation_results,
             }
 
-            if transformed_data == row_data:
-                criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
-                njqca_results = doc.get("njqca_result_parameters", [])
-                
-                evaluation_results = []
-                
-                for criteria_row in criteria_doc.get("criteria_child"):
-                    param_name = criteria_row.get("parameter")
-                    param_range = criteria_row.get("parameter_value")
-                    
-                    njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
-                    
-                    if njqca_param:
-                        njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                        is_passing, message = compare_parameter(param_name, njqca_value, param_range)
-                        
-                        evaluation_results.append({
-                            "parameter": param_name,
-                            "njqca_value": njqca_value,
-                            "expected_range": param_range,
-                            "status": "Pass" if is_passing else "Fail",
-                            "message": message
-                        })
-                
-                frappe.logger().info("\nEvaluation Results:")
-                for result in evaluation_results:
-                    frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-                
-                update_njqca_doc(doc.get("name"), evaluation_results)
-                
-                resulting_values =  {
-                    "evaluation_results": evaluation_results,
-                    "criteria_name": criteria_doc.name
+            if resulting_values.get("evaluation_results"):
+                for entry in resulting_values.get("evaluation_results", []):
+                    if entry.get("status") == "Fail":
+                        return {
+                            "parameter": "performance_status",
+                            "value": "FAIL",
+                            "score": 41,
+                            "item_group": "Software Configuration",
+                            "part_config_id": 0,
+                            }
+
+                return {
+                    "parameter": "performance_status",
+                    "value": "PASS",
+                    "score": 0,
+                    "item_group": "Software Configuration",
+                    "part_config_id": 0
+                    }
+        
+        else:
+
+            for row in item_wizard_doc.get("performance_config_criteria"):
+                row_data = {
+                    "processor": row.get("processor", "").lower(),
+                    "ram": row.get("ram", "").lower(),
+                    "ssd": row.get("ssd", "").lower()
                 }
 
-                if resulting_values.get("evaluation_results"):
-                    for entry in resulting_values.get("evaluation_results", []):
-                        if entry.get("status") == "Fail":
-                            return {
-                                "parameter": "performance_status",
-                                "value": "FAIL",
-                                "score": 41,
-                                "item_group": "Software Configuration",
-                                "part_config_id": 0,
-                                }
+                if transformed_data == row_data:
+                    criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
+                    njqca_results = doc.get("njqca_result_parameters", [])
+                    
+                    evaluation_results = []
+                    
+                    for criteria_row in criteria_doc.get("criteria_child"):
+                        param_name = criteria_row.get("parameter")
+                        param_range = criteria_row.get("parameter_value")
+                        
+                        njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+                        
+                        if njqca_param:
+                            njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                            is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+                            
+                            evaluation_results.append({
+                                "parameter": param_name,
+                                "njqca_value": njqca_value,
+                                "expected_range": param_range,
+                                "status": "Pass" if is_passing else "Fail",
+                                "message": message
+                            })
+                    
+                    frappe.logger().info("\nEvaluation Results:")
+                    for result in evaluation_results:
+                        frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+                    
+                    update_njqca_doc(doc.get("name"), evaluation_results)
+                    
+                    resulting_values =  {
+                        "evaluation_results": evaluation_results,
+                        "criteria_name": criteria_doc.name
+                    }
 
-                    return {
-                        "parameter": "performance_status",
-                        "value": "PASS",
-                        "score": 0,
-                        "item_group": "Software Configuration",
-                        "part_config_id": 0
-                        }
+                    if resulting_values.get("evaluation_results"):
+                        for entry in resulting_values.get("evaluation_results", []):
+                            if entry.get("status") == "Fail":
+                                return {
+                                    "parameter": "performance_status",
+                                    "value": "FAIL",
+                                    "score": 41,
+                                    "item_group": "Software Configuration",
+                                    "part_config_id": 0,
+                                    }
+
+                        return {
+                            "parameter": "performance_status",
+                            "value": "PASS",
+                            "score": 0,
+                            "item_group": "Software Configuration",
+                            "part_config_id": 0
+                            }
+    except Exception as e:
+        frappe.msgprint(f"An error occurred: {str(e)}")
+        return None
 
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""

@@ -478,3 +478,6 @@ def get_backup_duration(doc, method=None):
             
     except Exception as e:
         print("error while getting backup duration", e)
+    
+
+    

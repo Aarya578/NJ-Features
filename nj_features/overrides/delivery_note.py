@@ -384,6 +384,9 @@ def get_cod_amount(so_name):
         }
         order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
         print("order_id-----520----", order_id)
+        if not order_id:
+            order_id = frappe.get_value("Sales Order", {"name": so_name}, "order_id")
+
 
         url = f"{SHOPIFY_URL}{order_id}"
 

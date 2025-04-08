@@ -31,7 +31,8 @@ class CustomDeliveryNote(DeliveryNote):
                 raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
         print("order_id-----520----", order_id)
-        trigger_fulfillment(order_id,raw_order_id)
+        if order_id:
+            trigger_fulfillment(order_id,raw_order_id)
         qi_mandatory_checks_on_dn_submit(self, method=None)
         if self.is_return==0:
             send_sales_invoice_email_on_delivery_note(self, method=None)

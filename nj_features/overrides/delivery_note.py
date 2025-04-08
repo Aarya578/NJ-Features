@@ -32,6 +32,7 @@ class CustomDeliveryNote(DeliveryNote):
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
                 
         trigger_fulfillment(order_id)
+        qi_mandatory_checks_on_dn_submit(self, method=None)
         if self.is_return==0:
             send_sales_invoice_email_on_delivery_note(self, method=None)
         # send_delivery_note_email(self, method=None)
@@ -442,6 +443,7 @@ def get_cod_amount(so_name):
 
 
 
+
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -562,3 +564,72 @@ def trigger_fulfillment(order_id):
             frappe.throw("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+
+@frappe.whitelist()  
+def qi_mandatory_checks_on_dn_submit(doc, method=None):
+    """
+    Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
+    Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
+    """
+    for item in doc.items:
+        if item.serial_no:
+            serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
+            for serial_no in serial_nos:
+                # Fetch only submitted NJ Quality Inspection names linked to the Serial No in descending order of creation
+                qi_names = frappe.db.sql(
+                    """
+                    SELECT name FROM `tabNJ Quality Inspection`
+                    WHERE barcode = %s AND docstatus = 1
+                    ORDER BY creation DESC
+                    """,
+                    (serial_no,), as_list=True
+                )
+                
+                if not qi_names:
+                    frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
+                
+                # Fetch all mandatory checks
+                mandatory_checks = frappe.db.sql(
+                    """
+                    SELECT name FROM `tabNJ QC Check List` WHERE mandatory = 1
+                    """,
+                    as_list=True
+                )
+                
+                mandatory_check_names = {check[0] for check in mandatory_checks}
+                passed_checks = set()
+                failed_checks = {}
+                missing_checks = mandatory_check_names.copy()
+                
+                for qi_name in qi_names:
+                    # Fetch NJ Checks for the given Quality Inspection
+                    nj_checks = frappe.db.sql(
+                        """
+                        SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
+                        """,
+                        (qi_name[0],), as_dict=True
+                    )
+                    
+                    nj_check_names = {check.check_name for check in nj_checks}
+                    missing_checks -= nj_check_names  # Remove found checks from missing checks list
+                    
+                    for check in nj_checks:
+                        if check.check_name in mandatory_check_names:
+                            if check.score == 0:
+                                passed_checks.add(check.check_name)  # Mark check as passed
+                            elif check.check_name not in passed_checks:  # Only consider failed if never passed before
+                                failed_checks[check.check_name] = qi_name[0]
+                    
+                    # If all mandatory checks are found and passed, stop checking further QIs
+                    if passed_checks == mandatory_check_names:
+                        frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
+                        break
+                
+                if failed_checks:
+                    error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
+                    frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
+                
+                if missing_checks:
+                    frappe.msgprint(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
+        return {"order_id": None, "cod_amount": 0}

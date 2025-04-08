@@ -27,7 +27,7 @@ def get_department_details():
         fw_model = dept_doc.get("forwarded_model") 
         fw_config = dept_doc.get("forwarded_config")
 
-        if str(in_model) == '1' and str(in_config) == '1':
+        if str(in_model) == '1' and str(fw_model) == '1':
             data = process_merged_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)
@@ -331,6 +331,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -490,6 +491,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -608,6 +610,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
+                    AND i.is_stock_item = 1
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -843,12 +846,14 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                 remaining_needed = child.get("to_make")
 
                 for item in get_serial_no_config:
+                    print("item ----------------- ",item)
                     if (
-                        child.get("model", "").strip().lower() == item.get("model", "").strip().lower() and
-                        child.get("processor", "").strip().lower() == item.get("processor_type", "").strip().lower() and
-                        child.get("ram", "").strip().lower() == item.get("ram_capacity", "").strip().lower() and
-                        child.get("ssd", "").strip().lower() == item.get("storage_capacity", "").strip().lower()
-                    ):
+                        (child.get("model") or "").strip().lower() == (item.get("model") or "").strip().lower() and
+                        (child.get("processor") or "").strip().lower() == (item.get("processor_type") or "").strip().lower() and
+                        (child.get("ram") or "").strip().lower() == (item.get("ram_capacity") or "").strip().lower() and
+                        (child.get("ssd") or "").strip().lower() == (item.get("storage_capacity") or "").strip().lower()
+                        ):
+
                         exact_serials = frappe.db.sql("""
                             SELECT name FROM `tabSerial No`
                             WHERE warehouse IN %s AND item_code = %s
@@ -867,10 +872,11 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                 if remaining_needed > 0:
                     for alt_item in ref_get_serial_no_config:
                         if (
-                            child.get("model", "").strip().lower() == alt_item.get("model", "").strip().lower() and
-                            child.get("processor", "").strip().lower() == alt_item.get("processor_type", "").strip().lower() and
+                            (child.get("model") or "").strip().lower() == (alt_item.get("model") or "").strip().lower() and
+                            (child.get("processor") or "").strip().lower() == (alt_item.get("processor_type") or "").strip().lower() and
                             alt_item.get("item_code") != item.get("item_code")
-                        ):
+                            ):
+
                             extra_serials = frappe.db.sql("""
                                 SELECT name FROM `tabSerial No`
                                 WHERE warehouse IN %s AND item_code = %s

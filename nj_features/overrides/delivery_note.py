@@ -130,7 +130,7 @@ class CustomDeliveryNote(DeliveryNote):
                     continue  # Skip empty serial numbers
 
                 try:
-                    serial_no_doc = frappe.get_doc('Serial No', serial)
+                    serial_no_doc = frappe.get_doc('Serial No', serial, for_update=True)
                 except frappe.DoesNotExistError:
                     frappe.throw(f"Serial No {serial} not found in the system")
 

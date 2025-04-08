@@ -565,7 +565,7 @@ def trigger_fulfillment(order_id,original_order_id=None):
             frappe.throw("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
-
+        
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """
@@ -632,5 +632,3 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                 
                 if missing_checks:
                     frappe.msgprint(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
-
-        return {"order_id": None, "cod_amount": 0}

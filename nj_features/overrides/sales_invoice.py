@@ -5,6 +5,7 @@ from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 class CustomSalesInvoice(SalesInvoice):
 
     def before_submit(self):
+        super().before_submit()
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
 

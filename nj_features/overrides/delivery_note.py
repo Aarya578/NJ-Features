@@ -30,8 +30,8 @@ class CustomDeliveryNote(DeliveryNote):
             if not order_id:
                 raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-                
-        trigger_fulfillment(order_id)
+        print("order_id-----520----", order_id)
+        trigger_fulfillment(order_id,raw_order_id)
         qi_mandatory_checks_on_dn_submit(self, method=None)
         if self.is_return==0:
             send_sales_invoice_email_on_delivery_note(self, method=None)
@@ -445,7 +445,7 @@ def get_cod_amount(so_name):
 
 
 @frappe.whitelist(allow_guest=True)
-def trigger_fulfillment(order_id):
+def trigger_fulfillment(order_id,original_order_id=None):
     try:
         headers = {
             "Content-Type": "application/json",
@@ -465,12 +465,13 @@ def trigger_fulfillment(order_id):
                 frappe.throw("Shopify Order ID not found.")
 
             fulfillment_status = order.get("fulfillment_status")
+            print("----468-----orderid-",order_id)
             so_name = frappe.db.sql("""
                 SELECT name FROM `tabSales Order`
                 WHERE shopify_order_id = %s OR order_id = %s
                 LIMIT 1
-            """, (order_id, order_id), as_dict=True)
-
+            """, (original_order_id, original_order_id), as_dict=True)
+            print("so_name----473-", so_name)
             if so_name:
                 so_name = so_name[0].name
             else:

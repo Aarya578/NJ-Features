@@ -1,7 +1,14 @@
+frappe.ui.form.on('Department', {
+    refresh: function(frm) {
+        frm.set_query('linked_warehouse', function(doc) {
+			return { filters: { "is_group": 1 } };
+		});
+    }
+})
+
 frappe.ui.form.on('Stock Movement Restriction Child', {
 
     grade: function(frm, cdt, cdn) {
-
         if (locals[cdt][cdn].item_group){
             let child = locals[cdt][cdn];
         
@@ -58,6 +65,7 @@ frappe.ui.form.on('Inventory Details', {
         }
     }
 });
+
 // Add item_group filter for weightage_table child table
 cur_frm.fields_dict["weightage_table"].grid.get_field("item_group").get_query = function (doc, cdt, cdn) {
     return {

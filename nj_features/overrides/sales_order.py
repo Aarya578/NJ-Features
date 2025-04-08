@@ -8,16 +8,23 @@ MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillment
 import uuid
 class CustomSalesOrder(SalesOrder):
     def on_submit(self):
-        if self.shopify_order_id and len(self.shopify_order_id<7):
+        raw_order_id = None
 
-            raw_order_id = self.shopify_order_id
-        if self.order_id:
+        if self.shopify_order_id:
+            stripped_id = self.shopify_order_id.lstrip('#')
+            if len(stripped_id) < 7:
+                raw_order_id = self.shopify_order_id
+
+        if not raw_order_id and self.order_id:
             raw_order_id = self.order_id
-        if self.shopify_order_number:
-            raw_order_id = self.shopify_order_number
-        order_id = raw_order_id.lstrip('#') if raw_order_id else None
-        trigger_fulfillment(order_id)
 
+        if not raw_order_id and self.shopify_order_number:
+            raw_order_id = self.shopify_order_number
+
+        order_id = raw_order_id.lstrip('#') if raw_order_id else None
+
+        if order_id:
+            trigger_fulfillment(order_id)
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):

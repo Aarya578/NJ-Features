@@ -193,7 +193,7 @@ def update_serial_no_on_pr_submit(doc, method=None):
 
 def update_serial_no(serial_no, doc, item):
 
-    serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     
     if serial_no_doc:

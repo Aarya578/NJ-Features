@@ -902,10 +902,90 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                 })
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
+    allocated_lap = allocate_laptop_parts(doc)
+    print("\n\n\nallocated_lap", allocated_lap)
+    doc.update({"laptop_allocation": allocated_lap})
     doc.save()
     frappe.db.commit()
 
     update_to_make_for_serial(doc)
+
+def allocate_laptop_parts(doc):
+
+    serial_list = []
+
+    for row in doc.get("suggested_serial_no"):
+        if row.suggested_serial_no:
+            serial_list.extend([s.strip() for s in row.suggested_serial_no.split(",") if s.strip()])
+
+    if not serial_list:
+        frappe.msgprint("No suggested serial numbers found in the latest production planning.")
+        return []
+
+    mr_items = frappe.db.sql("""
+        SELECT parent AS material_request, item_code, serial_no AS against_serial_no, 
+               stock_qty, qty AS mr_qty, item_group
+        FROM `tabMaterial Request Item` 
+        WHERE post_order_status IN ("Not Completed", " ") 
+        AND serial_no IN %(serial_list)s
+    """, {"serial_list": tuple(serial_list)}, as_dict=True)
+
+    if not mr_items:
+        frappe.msgprint("No Material Requests found for the suggested serial numbers.")
+        return []
+
+    warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
+    if not warehouses:
+        frappe.msgprint("No warehouses found under 'Stores - NJ' department.")
+        return []
+
+    # Fetch stock data for the items
+    stock_data = {}
+    stock_results = frappe.db.sql("""
+        SELECT item_code, SUM(actual_qty) AS total_qty 
+        FROM `tabBin` 
+        WHERE warehouse IN %s 
+        GROUP BY item_code
+    """, (tuple(warehouses),), as_dict=True)
+
+    for stock in stock_results:
+        stock_data[stock["item_code"]] = flt(stock["total_qty"])
+
+    # Group items by serial number
+    grouped_by_serial = {}
+
+    for item in mr_items:
+        serial_no = item["against_serial_no"]
+        item_code = item["item_code"]
+        mr_qty = flt(item["mr_qty"])
+        available_stock = stock_data.get(item_code, 0)
+
+        allocated_status = "Allocated" if available_stock >= mr_qty else "Not Allocated"
+        status = "Available" if available_stock > 0 else "Not Available"
+
+        row = {
+            "mreq_no": item["material_request"],
+            "item": item_code,
+            "item_group": item["item_group"],
+            "serial_no": serial_no,
+            "mr_qty": mr_qty,
+            "sb_qty": available_stock,
+            "status": status,
+            "allocated_qty": mr_qty if allocated_status == "Allocated" else 0,
+            "allocated_status": allocated_status
+        }
+
+        grouped_by_serial.setdefault(serial_no, []).append(row)
+
+    # Only keep serials where all items are allocated
+    final_result = []
+    for serial_no, items in grouped_by_serial.items():
+        if all(item["allocated_status"] == "Allocated" for item in items):
+            final_result.extend(items)
+    
+    print("final_result", final_result)
+    
+    return final_result
 
 def update_to_make_for_serial(doc):
 

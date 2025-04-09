@@ -211,8 +211,7 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.barcode = serial_no
         serial_no_doc.grade = item.grade
         serial_no_doc.supplier = doc.supplier
-        serial_no_doc.purchase_warranty_days = doc.warranty_days
-        serial_no_doc.warranty_days = get_purc_warranty_data.get('warranty_days') if get_purc_warranty_data.get('warranty_days') else doc.warranty_days
+        serial_no_doc.purchase_warranty_days = get_purc_warranty_data.get('warranty_days') if get_purc_warranty_data.get('warranty_days') else doc.warranty_days
         serial_no_doc.purchase_order = item.purchase_order
         serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name

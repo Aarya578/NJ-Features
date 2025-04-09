@@ -20,7 +20,7 @@ logger = frappe.logger("njqca", allow_site=True, file_count=1)
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
     try:
-        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no, for_update=True)
         serial_no_doc.bios_serial_no = self.bios_serialno
         serial_no_doc.purchase_price = self.base_price
         serial_no_doc.current_price = self.base_price
@@ -1391,7 +1391,7 @@ def update_serial_no_component_for_njqca(doc):
     if isinstance(doc, str):
         doc = json.loads(doc)
 
-    serial_no_doc = frappe.get_doc("Serial No", doc.get('serial_no'))
+    serial_no_doc = frappe.get_doc("Serial No", doc.get('serial_no'), for_update=True)
 
     attribute_table = [
         {

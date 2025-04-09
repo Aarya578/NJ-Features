@@ -105,29 +105,8 @@ frappe.ui.form.on('NJ Audit', {
                 }
             })
         }
-    },
-
-    after_save: function(frm) {
-        frappe.call({
-            'method': 'nj_features.nj_features.doctype.nj_audit.nj_audit.move_all_stock',
-            'args': {'self': frm.doc },
-            callback: function(r) {
-                if (r && r.message) { update_nj_audit_items(frm) }
-            }
-        })
     }
 });
-
-function update_nj_audit_items(frm) {
-    frm.doc.nj_audit_items.forEach(function(item) {
-        if (item.s_warehouse !== item.t_rack_warehouse) {
-            frappe.model.set_value(item.doctype, item.name, 's_warehouse', item.t_rack_warehouse);
-        }
-    });
-    
-    frm.refresh_field('nj_audit_items');
-    frm.save()
-}
 
 function fill_audit_and_work_warehouse(frm) {
     

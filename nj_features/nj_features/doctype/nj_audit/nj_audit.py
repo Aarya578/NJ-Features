@@ -7,7 +7,8 @@ from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class NJAudit(Document):
-    pass
+    def on_submit(self):
+        move_all_stock(self)
         
 @frappe.whitelist()
 def move_all_stock(self):
@@ -37,7 +38,11 @@ def move_all_stock(self):
                 serial_numbers_seen.add(row.get('serial_no'))
     
     if stock_entry_for_material_transfer_or_repack_items:
-        return stock_entry_using_nj_lib(stock_entry_data)
+        nj_audit_stock_entry = stock_entry_using_nj_lib(stock_entry_data)
+        if nj_audit_stock_entry:
+            for row in self.get('nj_audit_items'):
+                if row.get('s_warehouse') != row.get('t_rack_warehouse'):
+                    row.db_set('s_warehouse', row.get('t_rack_warehouse'))
     return None
 
 @frappe.whitelist()

@@ -16,12 +16,12 @@ frappe.ui.form.on('Laptop Allocation', {
 				frm.clear_table('laptop_allocation_child');
 		
 				if (data) {
-					data.sort((a, b) => {
-						if (a.item_code === b.item_code) {
-							return b.available_stock - a.available_stock;
-						}
-						return a.item_code.localeCompare(b.item_code); 
-					});
+					// data.sort((a, b) => {
+					// 	if (a.item_code === b.item_code) {
+					// 		return b.available_stock - a.available_stock;
+					// 	}
+					// 	return a.item_code.localeCompare(b.item_code); 
+					// });
 		
 					data.forEach((item) => {
 						let child = frm.add_child('laptop_allocation_child', {});
@@ -32,6 +32,7 @@ frappe.ui.form.on('Laptop Allocation', {
 						child.mr_qty = item.mr_qty;
 						child.status = item.status;
 						child.allocated_status = item.allocated_status;
+						child.against_item_code = item.against_item_code;
 					});
 				}
 				frm.refresh_field('laptop_allocation_child');

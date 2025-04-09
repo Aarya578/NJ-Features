@@ -219,6 +219,7 @@ def open_draft_qi(self, brand=None, model=None):
                     child_table.check_name = name_of_check
                     # child_table.checks = field_name
                     child_table.options = options_value
+                    child_table.automated_check_name = options_value
                     child_table.item_group = item_group_value
         
         # for data in self.njqca_result_parameters:

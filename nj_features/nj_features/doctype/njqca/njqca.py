@@ -14,8 +14,8 @@ from nj_features.nj_features.doctype.inward.inward import get_item_template,has_
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
-frappe.utils.logger.set_log_level("DEBUG")
-logger = frappe.logger("njqca", allow_site=True, file_count=1)
+# frappe.utils.logger.set_log_level("DEBUG")
+# logger = frappe.logger("njqca", allow_site=True, file_count=5)
 
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
@@ -470,6 +470,8 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
+        # self.battery_readings()
+        # self.update_serial_no_readings()
 
     def before_submit(self):
         get_grading_Authentication(self)
@@ -585,6 +587,82 @@ class NJQCA(Document):
             frappe.db.rollback()
             print("Error in create_serial_no_based_on_rfq", traceback.format_exc())
             return None
+
+
+    def update_serial_no_readings(self):
+        # Fetch relevant parameters from NJQCA Result Parameters
+        results = frappe.db.sql("""
+            SELECT parameter, value 
+            FROM `tabNJQCA Result Parameters` 
+            WHERE item_group = 'MOTHERBOARD' 
+            AND parent = %s
+            AND parameter IN (
+                'Average_CPU_Load_IDLE', 
+                'Average_Discharge_Rate_HEAVY', 
+                'Average_Discharge_Rate_IDLE', 
+                'Average_CPU_Load_HEAVY'
+            )
+        """, (self.name,), as_dict=True)
+        # print("results:=====================", results)
+        if not self.serial_no:
+            frappe.throw("Serial No not set on NJQCA document.")
+
+        # Get Serial No doc
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        # print("serial_no_doc:=====================", serial_no_doc)
+        # Map result parameters to Serial No field names
+        parameter_map = {
+            'Average_CPU_Load_IDLE': 'average_cpu_load_idle',
+            'Average_Discharge_Rate_IDLE': 'average_discharge_rate_idle',
+            'Average_CPU_Load_HEAVY': 'average_cpu_load_heavy',
+            'Average_Discharge_Rate_HEAVY': 'average_discharge_rate_heavy'
+        }
+
+        # print('parameter_map:========================', parameter_map)
+        # Update Serial No fields
+        for row in results:
+            field_name = parameter_map.get(row.parameter)
+            if field_name:
+                serial_no_doc.set(field_name, row.value)
+
+        serial_no_doc.save(ignore_permissions=True)
+
+
+    def battery_readings(self):
+        if self.item_group != 'BATTERY':
+            return  # Only apply for Battery items
+
+        if not self.serial_no:
+            frappe.throw("Serial No not set on NJQCA document.")
+
+        # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
+        battery_data = frappe.db.get_value(
+            "NJQCA Child",
+            {
+                "parent": self.name,
+                "item_group": "BATTERY"
+            },
+            ["variant_3", "variant_8", "variant_10"],
+            as_dict=True
+        )
+        # print("battery_data:=====================", battery_data)
+        # logger.info(f"==========battery_data=========={battery_data}")
+
+        if not battery_data:
+            frappe.msgprint("No battery readings found in NJQCA Child.")
+            return
+
+        # Get Serial No doc
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        # print("serial_no_doc:=====================", serial_no_doc)
+        # logger.info(f"==========serial_no_doc=========={serial_no_doc}")
+
+        # Map values to Serial No fields
+        serial_no_doc.full_charge_capacity = battery_data.variant_3
+        serial_no_doc.current_charge_capacity = battery_data.variant_8
+        serial_no_doc.health = battery_data.variant_10
+
+        serial_no_doc.save(ignore_permissions=True)
 
 def get_repack_items(self):
     get_repack_items_list = []

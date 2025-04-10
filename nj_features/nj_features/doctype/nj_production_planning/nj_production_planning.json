@@ -10,6 +10,7 @@
   "to_make",
   "nj_production_planning_child",
   "suggested_serial_no",
+  "laptop_allocation",
   "amended_from"
  ],
  "fields": [
@@ -45,12 +46,18 @@
    "fieldtype": "Table",
    "label": "Suggested Serial No",
    "options": "Suggested Serial No"
+  },
+  {
+   "fieldname": "laptop_allocation",
+   "fieldtype": "Table",
+   "label": "Laptop Allocation",
+   "options": "Laptop Allocation Child"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-12 10:37:31.521290",
+ "modified": "2025-04-08 12:12:22.885481",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

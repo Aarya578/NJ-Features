@@ -1,8 +1,10 @@
 # Copyright (c) 2024, NewJaisa - IT Team and contributors
 # For license information, please see license.txt
 
+import json
 import frappe
 from datetime import timedelta
+from frappe.utils import getdate, nowdate
 from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
@@ -257,3 +259,24 @@ def set_registry_no(item):
         if sir_names:
             item.sir_registry_no = ', '.join(sir_names)
             item.sir_actual_qty = ', '.join(sir_actual_qty)
+
+@frappe.whitelist()
+def check_for_warranty_validity(doc):
+    
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    name = doc.get("name")
+    vendor_warranty_expiry_date = doc.get("vendor_warranty_expiry_date")
+
+    if not vendor_warranty_expiry_date or not name:
+        return
+
+    expiry_date = getdate(vendor_warranty_expiry_date)
+    today = getdate(nowdate())
+
+    is_warranty_valid = 1 if expiry_date >= today else 0
+
+    frappe.db.set_value(doc.get("doctype"), name, "warranty_valid_check", is_warranty_valid)
+
+    return {"warranty_valid_check": is_warranty_valid}

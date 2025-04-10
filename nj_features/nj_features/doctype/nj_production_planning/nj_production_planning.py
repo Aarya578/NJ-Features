@@ -48,9 +48,9 @@ def create_production_planning(data, department):
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
         child.model = item.get("model", "").upper()
-        child.processor = item.get("processor_type", "").upper()
-        child.ram = item.get("ram_capacity", "").upper()
-        child.ssd = item.get("storage_capacity", "").upper()
+        child.processor = item.get("processor_type", "").upper() if item.get("processor_type", "") else ""
+        child.ram = item.get("ram_capacity", "").upper() if item.get("ram_capacity", "") else ""
+        child.ssd = item.get("storage_capacity", "").upper() if item.get("storage_capacity", "") else ""
         child.sales_rate = item.get("sales_rate", 0.0)
         child.inward_inventory = item.get("inwarded_qty", 0.0)
         child.forward_inventory = item.get("forwarded_qty", 0.0)

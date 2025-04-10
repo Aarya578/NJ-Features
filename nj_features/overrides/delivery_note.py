@@ -33,7 +33,11 @@ class CustomDeliveryNote(DeliveryNote):
         print("order_id-----520----", order_id)
         if order_id and self.is_return==0:
             trigger_fulfillment(order_id,raw_order_id,shopify_order_no)
+
+        
+
         qi_mandatory_checks_on_dn_submit(self, method=None)
+
         if self.is_return==0:
             send_sales_invoice_email_on_delivery_note(self, method=None)
         # send_delivery_note_email(self, method=None)
@@ -567,7 +571,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
     except Exception as e:
         frappe.throw(str(e))
         
-
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """

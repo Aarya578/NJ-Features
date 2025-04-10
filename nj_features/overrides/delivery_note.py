@@ -19,7 +19,7 @@ class CustomDeliveryNote(DeliveryNote):
         
         against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
         raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
-
+        shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
             order_id = raw_order_id.lstrip('#')
         else:
@@ -31,9 +31,9 @@ class CustomDeliveryNote(DeliveryNote):
                 raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
         print("order_id-----520----", order_id)
-        if order_id:
-            trigger_fulfillment(order_id,raw_order_id)
-        qi_mandatory_checks_on_dn_submit(self, method=None)
+        if order_id and self.is_return==0:
+            trigger_fulfillment(order_id,raw_order_id,shopify_order_no)
+        #qi_mandatory_checks_on_dn_submit(self, method=None)
         if self.is_return==0:
             send_sales_invoice_email_on_delivery_note(self, method=None)
         # send_delivery_note_email(self, method=None)
@@ -446,7 +446,7 @@ def get_cod_amount(so_name):
 
 
 @frappe.whitelist(allow_guest=True)
-def trigger_fulfillment(order_id,original_order_id=None):
+def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
     try:
         headers = {
             "Content-Type": "application/json",
@@ -469,9 +469,9 @@ def trigger_fulfillment(order_id,original_order_id=None):
             print("----468-----orderid-",order_id)
             so_name = frappe.db.sql("""
                 SELECT name FROM `tabSales Order`
-                WHERE shopify_order_id = %s OR order_id = %s
+                WHERE shopify_order_id = %s OR order_id = %s OR shopify_order_number = %s and docstatus = 1
                 LIMIT 1
-            """, (original_order_id, original_order_id), as_dict=True)
+            """, (original_order_id, original_order_id,shopify_order_no), as_dict=True)
             print("so_name----473-", so_name)
             if so_name:
                 so_name = so_name[0].name
@@ -562,8 +562,8 @@ def trigger_fulfillment(order_id,original_order_id=None):
                         frappe.throw("Fulfillment creation failed.")
                 else:
                     frappe.throw("Fulfillment Order not found.")
-        else:
-            frappe.throw("Order not found.")
+        # else:
+        #     frappe.throw("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
         

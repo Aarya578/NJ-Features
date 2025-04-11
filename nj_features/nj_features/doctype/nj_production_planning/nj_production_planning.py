@@ -88,7 +88,10 @@ def process_inventory_rows(dept_doc):
 
 def process_inwarded_inventory_merged(row, merged_data):
     if row.get("inwarded_inventory"):
-        warehouses = get_warehouses(row.get("inwarded_inventory"))
+        if row.get("inwarded_warehouse_list"):
+            warehouses = row.get("inwarded_warehouse_list").split(",")
+        else:
+            warehouses = get_warehouses(row.get("inwarded_inventory"))
         for warehouse in warehouses:
             counts = get_inwarded_counts_merged(warehouse)
             update_merged_counts(merged_data, counts, warehouse, "inwarded_count")
@@ -163,7 +166,10 @@ def get_model_counts(dept_doc, inventory_type):
     for row in dept_doc.get("inventory_details_child"):
         department = row.get(inventory_type)
         if department:
-            warehouses = get_warehouses(department)
+            if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
+                warehouses = row.get("inwarded_warehouse_list").split(",")
+            else:
+                warehouses = get_warehouses(department)
             for warehouse in warehouses:
                 query = """
                     SELECT COUNT(sn.name) AS count, sn.model
@@ -200,7 +206,10 @@ def get_item_counts(dept_doc, inventory_type):
     for row in dept_doc.get("inventory_details_child"):
         department = row.get(inventory_type)
         if department:
-            warehouses = get_warehouses(department)
+            if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
+                warehouses = row.get("inwarded_warehouse_list").split(",")
+            else:
+                warehouses = get_warehouses(department)
             for warehouse in warehouses:
                 query = """
                     SELECT sn.item_code, COUNT(sn.name) AS count

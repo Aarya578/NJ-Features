@@ -10,6 +10,7 @@
   "is_active",
   "item_group",
   "item_code",
+  "item_name",
   "actual_qty",
   "shopify_variant_id",
   "sync_status",
@@ -56,11 +57,17 @@
    "fieldname": "sync_error",
    "fieldtype": "Data",
    "label": "Sync Error"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Link",
+   "label": "Item Name",
+   "options": "Item"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-11 16:20:15.528998",
+ "modified": "2025-04-11 17:59:11.559907",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

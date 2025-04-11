@@ -191,6 +191,12 @@ scheduler_events = {
         ]
     }
 }
+scheduler_events = {
+    "hourly": [
+        "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
+        "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify"
+    ]
+}
 
 # scheduler_events = {
 # 	"cron": {

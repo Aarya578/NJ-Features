@@ -8,6 +8,13 @@ frappe.ui.form.on('Sales Order', {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
             validateAmazonOrderID(frm);
         });
+    },
+
+    after_save: function(frm) {
+        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+            frm.set_value('shipping_address_name', frm.doc.customer_address);
+            frm.refresh_field('shipping_address_name');
+        }
     }
 });
 

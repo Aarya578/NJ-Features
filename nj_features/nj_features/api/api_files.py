@@ -4,6 +4,8 @@ import frappe
 import random
 import traceback
 from nj_lib.utils.common_utils import get_item_wizard
+from nj_lib.utils.common_utils import latest_repacked_battery_serialno
+                                      
 
 @frappe.whitelist()
 def on_submit(doc, handler=""):
@@ -219,9 +221,10 @@ def get_battery_status(doc, method=None):
             return 
         parent_serial_no = doc.serial_no
         njqca = doc.name
+        bios_serial_no=doc.bios_serialno
         model=doc.manufacturer_model
         item_wizard=get_item_wizard(model)
-        wiz_fbdt_health_range,wiz_rbdt_health_range,cycle_count ,backup_duration_mins,sudden_drop_limit= ["70","80"],["80","100"],"500","120","20"
+        wiz_fbdt_health_range,wiz_rbdt_health_range,cycle_count ,backup_duration_mins,sudden_drop_limit= ["70","80"],["80","100"],"500","120","15"
 
         wizard_criteria_query="""
             select fbdt_health_range, rbdt_health_range, cycle_count, backup_duration_mins,sudden_drop_limit from `tabItem Wizards` where name=%s ;
@@ -289,7 +292,7 @@ def get_battery_status(doc, method=None):
         
         serial_no_battery_data_query="""
             SELECT name FROM `tabNJQCA` where serial_no=%s and docstatus=1 and item_group="BATTERY" and 
-                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1;
+                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") and bios_serialno=%(bios_serial_no)s order by modified DESC limit 1;
             """
         
         fbdt_status_query="""
@@ -321,57 +324,36 @@ def get_battery_status(doc, method=None):
                     ELSE ''
                     END AS battery_status
                     FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
-            """
-        get_bty_serial_nos_query = """
-            select sn.component_serial_no FROM `tabSerial No Component` sn
-                WHERE sn.item_group = 'battery' 
-                AND sn.component_serial_no IS NOT NULL 
-                AND sn.component_serial_no <> ''  
-                AND sn.parent = %s
-            """     
+            """ 
 
-        get_bty_serial_nos = frappe.db.sql(get_bty_serial_nos_query, parent_serial_no)
+        get_bty_serial_no= latest_repacked_battery_serialno(parent_serial_no)
 
-        if not get_bty_serial_nos is None:
+        if  get_bty_serial_no :
             
-            if get_bty_serial_nos:
-                variant_3_data, main_bty_sn, bty_parent_njqca = -1, "", ""
-                get_bty_njqca_query = """select variant_3, parent from `tabNJQCA Child`
-                                    where parent = ( SELECT name FROM `tabNJQCA` where serial_no=%s and docstatus=1 and item_group="BATTERY" and 
-                                    (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1) and item_group="BATTERY"
-                                """
-                if get_bty_serial_nos.__len__() > 1:
-                    for bty_serial_no in get_bty_serial_nos:
-                        get_bty_njqca = frappe.db.sql(get_bty_njqca_query, bty_serial_no[0])
+            bty_parent_njqca =  ""
+            get_bty_njqca_query = """ SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and bios_serialno=%(bios_serialno)s
+                                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1"
+                            """
 
-                        try:
-                            if get_bty_njqca and int(get_bty_njqca[0][0]) > int(variant_3_data):
-                                bty_parent_njqca = get_bty_njqca[0][1]
-                                variant_3_data = get_bty_njqca[0][0]
-                                
-                        except Exception as e:
-                            pass
+            get_bty_njqca = frappe.db.sql(get_bty_njqca_query, get_bty_serial_no)
+            if get_bty_njqca:
+                bty_parent_njqca = get_bty_njqca[0][1]
+        
 
+            if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins and sudden_drop_limit:
+
+                if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
+                    query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':int(sudden_drop_limit),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
                 else:
-                    get_bty_njqca = frappe.db.sql(get_bty_njqca_query, get_bty_serial_nos[0][0])
-                    if get_bty_njqca:
-                        bty_parent_njqca = get_bty_njqca[0][1]
-            
+                    query_data=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
+                    if query_data:
+                        if query_data[0].battery_status=='PASS':
+                            frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
+                            where parent=%(parent_name)s and item_group="Battery" ;""",{'parent_name':njqca})
 
-                if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins and sudden_drop_limit:
-
-                    if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
-                        query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':int(sudden_drop_limit),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
-                    else:
-                        query_data=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
-                        if query_data:
-                            if query_data[0].battery_status=='PASS':
-                                frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
-                                where parent=%(parent_name)s and item_group="Battery" ;""",{'parent_name':njqca})
-
-                                return "PASS"
-                            else:
-                                return "FAIL"
+                            return "PASS"
+                        else:
+                            return "FAIL"
           
 
         battery_Data_parent_name=""

@@ -1,7 +1,6 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:item_code",
  "creation": "2025-04-11 14:45:28.893399",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -14,7 +13,9 @@
   "actual_qty",
   "shopify_variant_id",
   "sync_status",
-  "sync_error"
+  "sync_error",
+  "so_qty",
+  "updated_qty"
  ],
  "fields": [
   {
@@ -40,7 +41,7 @@
   },
   {
    "fieldname": "shopify_variant_id",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Shopify Variant Id"
   },
   {
@@ -60,14 +61,23 @@
   },
   {
    "fieldname": "item_name",
-   "fieldtype": "Link",
-   "label": "Item Name",
-   "options": "Item"
+   "fieldtype": "Text",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "so_qty",
+   "fieldtype": "Data",
+   "label": "So Qty"
+  },
+  {
+   "fieldname": "updated_qty",
+   "fieldtype": "Data",
+   "label": "Updated Qty"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-11 17:59:11.559907",
+ "modified": "2025-04-12 16:20:32.899780",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

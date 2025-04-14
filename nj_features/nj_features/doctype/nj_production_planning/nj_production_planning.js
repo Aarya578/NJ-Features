@@ -65,7 +65,6 @@ frappe.ui.form.on('NJ Production Planning', {
                     data.sort((a, b) => (b.to_make || 0) - (a.to_make || 0));
 
                     data.forEach(function(item) {
-                        console.log("item --------------- ", item.item_code);
                         let child = frm.add_child('nj_production_planning_child');
                         child.model = item.model ? item.model.toUpperCase() : '';
                         child.processor = item.processor ? item.processor.toUpperCase() : '';

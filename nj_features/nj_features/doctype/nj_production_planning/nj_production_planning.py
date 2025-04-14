@@ -1036,6 +1036,8 @@ def allocate_laptop_parts(doc):
     from operator import itemgetter
     final_result.sort(key=itemgetter("serial_no", "mreq_no"))
 
+    final_result = allocate_serial_no_for_battery(final_result)
+
     return final_result
 
 def allocated_other_part(item):
@@ -1137,3 +1139,13 @@ def update_to_make_for_serial(doc):
                 serial_no_doc.to_make = child.get("item_code")
                 serial_no_doc.save()
                 frappe.db.commit()
+
+def allocate_serial_no_for_battery(final_result):
+    print("final_result ----------------- 1144 ", final_result)
+    for row in final_result:
+        print(f"\n row ------------ {row}")
+
+        if row.get("item_code").lower() == "battery":
+            # row["allocated_status"] = "Allocated"
+            # row["allocated_serial_no"] = row.get("serial_no")
+            

@@ -1,6 +1,6 @@
 {
-    "custom_fields": [
-     {
+  "custom_fields": [
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -59,8 +59,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -119,8 +119,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -179,8 +179,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -239,8 +239,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -299,8 +299,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -359,8 +359,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -419,8 +419,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -479,8 +479,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -539,8 +539,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -599,8 +599,8 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
+    },
+    {
       "_assign": null,
       "_comments": null,
       "_liked_by": null,
@@ -659,70 +659,70 @@
       "translatable": 0,
       "unique": 0,
       "width": null
-     },
-     {
-        "_assign": null,
-        "_comments": null,
-        "_liked_by": null,
-        "_user_tags": null,
-        "allow_in_quick_entry": 0,
-        "allow_on_submit": 0,
-        "bold": 0,
-        "collapsible": 0,
-        "collapsible_depends_on": null,
-        "columns": 0,
-        "creation": "2024-11-23 11:15:29.759501",
-        "default": null,
-        "depends_on": null,
-        "description": null,
-        "docstatus": 0,
-        "dt": "Warehouse",
-        "fetch_from": null,
-        "fetch_if_empty": 0,
-        "fieldname": "previous_department",
-        "fieldtype": "Link",
-        "hidden": 0,
-        "hide_border": 0,
-        "hide_days": 0,
-        "hide_seconds": 0,
-        "idx": 19,
-        "ignore_user_permissions": 0,
-        "ignore_xss_filter": 0,
-        "in_global_search": 0,
-        "in_list_view": 0,
-        "in_preview": 0,
-        "in_standard_filter": 0,
-        "insert_after": "department",
-        "label": "Previous Department",
-        "length": 0,
-        "mandatory_depends_on": null,
-        "modified": "2024-11-23 11:15:29.759501",
-        "modified_by": "Administrator",
-        "name": "Warehouse-previous_department",
-        "no_copy": 0,
-        "non_negative": 0,
-        "options": "Department",
-        "owner": "Administrator",
-        "parent": null,
-        "parentfield": null,
-        "parenttype": null,
-        "permlevel": 0,
-        "precision": "",
-        "print_hide": 0,
-        "print_hide_if_no_value": 0,
-        "print_width": null,
-        "read_only": 0,
-        "read_only_depends_on": null,
-        "report_hide": 0,
-        "reqd": 0,
-        "search_index": 0,
-        "translatable": 0,
-        "unique": 0,
-        "width": null
+    },
+    {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "allow_in_quick_entry": 0,
+      "allow_on_submit": 0,
+      "bold": 0,
+      "collapsible": 0,
+      "collapsible_depends_on": null,
+      "columns": 0,
+      "creation": "2024-11-23 11:15:29.759501",
+      "default": null,
+      "depends_on": null,
+      "description": null,
+      "docstatus": 0,
+      "dt": "Warehouse",
+      "fetch_from": null,
+      "fetch_if_empty": 0,
+      "fieldname": "previous_department",
+      "fieldtype": "Link",
+      "hidden": 0,
+      "hide_border": 0,
+      "hide_days": 0,
+      "hide_seconds": 0,
+      "idx": 19,
+      "ignore_user_permissions": 0,
+      "ignore_xss_filter": 0,
+      "in_global_search": 0,
+      "in_list_view": 0,
+      "in_preview": 0,
+      "in_standard_filter": 0,
+      "insert_after": "department",
+      "label": "Previous Department",
+      "length": 0,
+      "mandatory_depends_on": null,
+      "modified": "2024-11-23 11:15:29.759501",
+      "modified_by": "Administrator",
+      "name": "Warehouse-previous_department",
+      "no_copy": 0,
+      "non_negative": 0,
+      "options": "Department",
+      "owner": "Administrator",
+      "parent": null,
+      "parentfield": null,
+      "parenttype": null,
+      "permlevel": 0,
+      "precision": "",
+      "print_hide": 0,
+      "print_hide_if_no_value": 0,
+      "print_width": null,
+      "read_only": 0,
+      "read_only_depends_on": null,
+      "report_hide": 0,
+      "reqd": 0,
+      "search_index": 0,
+      "translatable": 0,
+      "unique": 0,
+      "width": null
     }
-    ],
-    "custom_perms": [],
-    "doctype": "Warehouse",
-    "property_setters": [],
-    "sync_on_migrate": 1
-   }
+  ],
+  "custom_perms": [],
+  "doctype": "Warehouse",
+  "property_setters": [],
+  "sync_on_migrate": 1
+}

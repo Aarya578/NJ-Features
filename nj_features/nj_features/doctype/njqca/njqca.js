@@ -240,6 +240,23 @@ frappe.ui.form.on('NJQCA', {
         }
     },
 
+    inspection_type: function(frm) {
+        if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_serialno',
+                args: { 'bios_serial_no': frm.doc.name, 
+                    "inspection_type":frm.doc.inspection_type,
+                 },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value( 'serial_no', r.message); 
+                        frm.refresh_field('serial_no');
+                    }
+                }
+            })
+        }
+    },
+
     rfq_id: function(frm) {
         if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) {
 

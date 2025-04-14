@@ -14,8 +14,8 @@ from nj_features.nj_features.doctype.inward.inward import get_item_template,has_
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
-# frappe.utils.logger.set_log_level("DEBUG")
-# logger = frappe.logger("njqca", allow_site=True, file_count=5)
+frappe.utils.logger.set_log_level("DEBUG")
+logger = frappe.logger("njqca", allow_site=True, file_count=1)
 
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
@@ -470,13 +470,14 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
-        # self.battery_readings()
-        # self.update_serial_no_readings()
+
 
     def before_submit(self):
         get_grading_Authentication(self)
 
     def on_submit(self):
+        self.battery_readings()
+        self.update_serial_no_readings()
         if self.power_on == 'Yes' and self.repack_item_code != '':
             if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
                 frappe.throw("Please fill <b>Manual Repack Item Code</b>.")
@@ -589,8 +590,45 @@ class NJQCA(Document):
             return None
 
 
+    # def update_serial_no_readings(self):
+    #     # Fetch relevant parameters from NJQCA Result Parameters
+    #     results = frappe.db.sql("""
+    #         SELECT parameter, value 
+    #         FROM `tabNJQCA Result Parameters` 
+    #         WHERE item_group = 'MOTHERBOARD' 
+    #         AND parent = %s
+    #         AND parameter IN (
+    #             'Average_CPU_Load_IDLE', 
+    #             'Average_Discharge_Rate_HEAVY', 
+    #             'Average_Discharge_Rate_IDLE', 
+    #             'Average_CPU_Load_HEAVY'
+    #         )
+    #     """, (self.name,), as_dict=True)
+    #     # print("results:=====================", results)
+    #     if not self.serial_no:
+    #         frappe.throw("Serial No not set on NJQCA document.")
+
+    #     # Get Serial No doc
+    #     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+    #     # print("serial_no_doc:=====================", serial_no_doc)
+    #     # Map result parameters to Serial No field names
+    #     parameter_map = {
+    #         'Average_CPU_Load_IDLE': 'average_cpu_load_idle',
+    #         'Average_Discharge_Rate_IDLE': 'average_discharge_rate_idle',
+    #         'Average_CPU_Load_HEAVY': 'average_cpu_load_heavy',
+    #         'Average_Discharge_Rate_HEAVY': 'average_discharge_rate_heavy'
+    #     }
+
+    #     # print('parameter_map:========================', parameter_map)
+    #     # Update Serial No fields
+    #     for row in results:
+    #         field_name = parameter_map.get(row.parameter)
+    #         if field_name:
+    #             serial_no_doc.set(field_name, row.value)
+
+    #     serial_no_doc.save(ignore_permissions=True)
     def update_serial_no_readings(self):
-        # Fetch relevant parameters from NJQCA Result Parameters
+    # Fetch relevant parameters from NJQCA Result Parameters
         results = frappe.db.sql("""
             SELECT parameter, value 
             FROM `tabNJQCA Result Parameters` 
@@ -603,13 +641,13 @@ class NJQCA(Document):
                 'Average_CPU_Load_HEAVY'
             )
         """, (self.name,), as_dict=True)
-        # print("results:=====================", results)
+
         if not self.serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
 
         # Get Serial No doc
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-        # print("serial_no_doc:=====================", serial_no_doc)
+
         # Map result parameters to Serial No field names
         parameter_map = {
             'Average_CPU_Load_IDLE': 'average_cpu_load_idle',
@@ -618,22 +656,78 @@ class NJQCA(Document):
             'Average_Discharge_Rate_HEAVY': 'average_discharge_rate_heavy'
         }
 
-        # print('parameter_map:========================', parameter_map)
         # Update Serial No fields
         for row in results:
             field_name = parameter_map.get(row.parameter)
             if field_name:
                 serial_no_doc.set(field_name, row.value)
 
+        # Also set reference to the NJQCA doc
+        serial_no_doc.set("njqca_reference_name", self.name)
+
         serial_no_doc.save(ignore_permissions=True)
 
 
+
+    # def battery_readings(self):
+    #     if self.item_group != 'BATTERY':
+    #         return  # Only apply for Battery items
+
+    #     if not self.serial_no:
+    #         frappe.throw("Serial No not set on NJQCA document.")
+
+    #     # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
+    #     battery_data = frappe.db.get_value(
+    #         "NJQCA Child",
+    #         {
+    #             "parent": self.name,
+    #             "item_group": "BATTERY"
+    #         },
+    #         ["variant_3", "variant_8", "variant_10"],
+    #         as_dict=True
+    #     )
+    #     # print("battery_data:=====================", battery_data)
+    #     # logger.info(f"==========battery_data=========={battery_data}")
+
+    #     if not battery_data:
+    #         frappe.msgprint("No battery readings found in NJQCA Child.")
+    #         return
+
+    #     # Get Serial No doc
+    #     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+    #     # print("serial_no_doc:=====================", serial_no_doc)
+    #     # logger.info(f"==========serial_no_doc=========={serial_no_doc}")
+
+    #     # Map values to Serial No fields
+    #     serial_no_doc.full_charge_capacity = battery_data.variant_3
+    #     serial_no_doc.current_charge_capacity = battery_data.variant_8
+    #     serial_no_doc.health = battery_data.variant_10
+
+    #     serial_no_doc.save(ignore_permissions=True)
     def battery_readings(self):
+        # Check if NJQCA's item group is BATTERY
+        logger.info(f"==========battery_readings=============709==========")
         if self.item_group != 'BATTERY':
-            return  # Only apply for Battery items
+            frappe.msgprint("Item group is not 'BATTERY'. Skipping update.")
+            return
 
         if not self.serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
+
+        # Check if backup_duration_cycle_1 is more than 60
+        if not self.backup_duration_cycle_1 or float(self.backup_duration_cycle_1) <= 60:
+            frappe.msgprint("Backup Duration Cycle 1 is 60 or less. Skipping update.")
+            return
+
+        # Fetch Serial No doc
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        logger.info(f"==========serial_no_doc=========={serial_no_doc}")
+        print(f"==========serial_no_doc=========={serial_no_doc}")
+
+        # Check if Serial No's item group is Battery
+        if serial_no_doc.item_group != 'Battery':
+            frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
+            return
 
         # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
         battery_data = frappe.db.get_value(
@@ -645,24 +739,47 @@ class NJQCA(Document):
             ["variant_3", "variant_8", "variant_10"],
             as_dict=True
         )
-        # print("battery_data:=====================", battery_data)
-        # logger.info(f"==========battery_data=========={battery_data}")
+        logger.info(f"==========battery_data=========={battery_data}")
+        print(f"==========battery_data=========={battery_data}")
 
         if not battery_data:
             frappe.msgprint("No battery readings found in NJQCA Child.")
             return
 
-        # Get Serial No doc
-        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-        # print("serial_no_doc:=====================", serial_no_doc)
-        # logger.info(f"==========serial_no_doc=========={serial_no_doc}")
-
-        # Map values to Serial No fields
+        # Update basic battery fields
         serial_no_doc.full_charge_capacity = battery_data.variant_3
         serial_no_doc.current_charge_capacity = battery_data.variant_8
         serial_no_doc.health = battery_data.variant_10
 
+        # Fetch cpu_load and discharge_rate values
+        readings = frappe.db.sql("""
+            SELECT cpu_load, discharge_rate 
+            FROM `tabNJQCA Result Parameters` 
+            WHERE parent = %s
+        """, (self.name,), as_dict=True)
+        logger.info(f"==========readings=========={readings}")
+        print(f"==========readings=========={readings}")
+
+        if readings:
+            total_cpu = sum(float(row.cpu_load) for row in readings if row.cpu_load is not None)
+            total_discharge = sum(float(row.discharge_rate) for row in readings if row.discharge_rate is not None)
+            count = len(readings)
+
+            average_cpu_load = round(total_cpu / count, 3) if count else 0
+            logger.info(f"==========average_cpu_load=========={average_cpu_load}")
+            print(f"==========average_cpu_load=========={average_cpu_load}")
+            average_discharge_rate = round(total_discharge / count, 3) if count else 0
+            logger.info(f"==========average_discharge_rate=========={average_discharge_rate}")
+            print(f"==========average_discharge_rate=========={average_discharge_rate}")
+
+            # Update average fields in Serial No
+            serial_no_doc.battery_average_cpu_load = average_cpu_load
+            serial_no_doc.battery_average_discharge_rate = average_discharge_rate
+
         serial_no_doc.save(ignore_permissions=True)
+        frappe.msgprint("Battery readings and averages updated successfully.")
+
+
 
 def get_repack_items(self):
     get_repack_items_list = []

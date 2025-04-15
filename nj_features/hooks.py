@@ -174,8 +174,8 @@ doc_events = {
 # 		]
 # 	}
 # }
-
 scheduler_events = {
+    
     "cron": {
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data"
@@ -186,17 +186,19 @@ scheduler_events = {
         "50 8 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
-        "*/10 * * * *": [
-            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",
+         "0 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
+        ],
+        "5 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify"
+        ],
+        "10 * * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ]
+
     }
 }
-scheduler_events = {
-    "hourly": [
-        "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
-        # "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify"
-    ]
-}
+
 
 # scheduler_events = {
 # 	"cron": {

@@ -37,21 +37,25 @@ def fetch_and_stage_inventory_sync():
             total_actual_qty DESC;
     """, as_dict=True)
     print("results----39---", results)
+    item_to_variant_map = {}
     for row in results:
         if float(row.total_actual_qty) <= 0:
             continue
 
         item_codes = row.item_codes.split(", ")
+        for item_code in item_codes:
+            item_to_variant_map[item_code] = row.shopify_variant_id
         item_groups = row.item_groups.split(", ") if row.item_groups else []
 
         for idx, item_code in enumerate(item_codes):
             item_group = item_groups[idx] if idx < len(item_groups) else ""
 
+                        # Before inserting a new document
             existing = frappe.get_all("NJ Inventory Sync Main", filters={
                 "shopify_variant_id": row.shopify_variant_id,
-                # "item_name": item_code
+                "item_code": item_code
             }, fields=["name", "actual_qty", "sync_status", "is_active"])
-            print("existing---------",existing)
+
             if existing:
                 existing_doc = existing[0]
                 if float(row.total_actual_qty) != float(existing_doc.actual_qty):
@@ -73,7 +77,9 @@ def fetch_and_stage_inventory_sync():
                     doc.insert()
                 except frappe.UniqueValidationError as e:
                     error_msg = f"Duplicate item_code: {item_code} — {str(e)}"
-                    frappe.log_error(frappe.get_traceback(), error_msg)
+                    # Truncate the error message to 140 characters
+                    truncated_error_msg = error_msg[:140]
+                    frappe.log_error(frappe.get_traceback(), truncated_error_msg)
 
                     # Try to fetch the existing doc and update syncerror field
                     try:
@@ -89,7 +95,9 @@ def fetch_and_stage_inventory_sync():
 
                 except Exception as e:
                     error_msg = f"General error for item_code: {item_code} — {str(e)}"
-                    frappe.log_error(frappe.get_traceback(), error_msg)
+                    # Truncate the error message to 140 characters
+                    truncated_error_msg = error_msg[:140]
+                    frappe.log_error(frappe.get_traceback(), truncated_error_msg)
                     try:
                         doc.syncerror = error_msg
                         doc.flags.ignore_permissions = True
@@ -98,7 +106,6 @@ def fetch_and_stage_inventory_sync():
                         frappe.log_error(frappe.get_traceback(), f"Failed to log syncerror for item_code: {item_code}")
                     continue
 
-    # Step 2: Update pending_qty and updated_qty using Sales Order data
     open_so_data = frappe.db.sql("""
         SELECT 
             so_data.sales_order,
@@ -154,20 +161,29 @@ def fetch_and_stage_inventory_sync():
             so_data.sales_order, so_data.item_code;
     """, as_dict=True)
     print("so_data----70---", open_so_data)
-    for row in open_so_data:
-        inventory_docs = frappe.get_all("NJ Inventory Sync Main", filters={
-            "item_name": row.item_code
-        }, fields=["name", "actual_qty"])
+    try:
+        for row in open_so_data:
+            item_code = row.item_code
+            shopify_variant_id = item_to_variant_map.get(item_code)
 
-        for doc in inventory_docs:
-            actual_qty = float(doc.actual_qty or 0)
-            so_qty = float(row.pending_qty or 0)
-            updated_qty = actual_qty - so_qty
+            if not shopify_variant_id:
+                continue
+            inventory_docs = frappe.get_all("NJ Inventory Sync Main", filters={
+                "item_name": row.item_code,
+                "shopify_variant_id": shopify_variant_id
+            }, fields=["name", "actual_qty"])
 
-            frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
-                "so_qty": so_qty,
-                "updated_qty": updated_qty
-            })
+            for doc in inventory_docs:
+                actual_qty = float(doc.actual_qty or 0)
+                so_qty = float(row.pending_qty or 0)
+                updated_qty = actual_qty - so_qty
+
+                frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
+                    "so_qty": so_qty,
+                    "updated_qty": updated_qty
+                })
+    except Exception as e:
+        print("Error updating pending_qty and updated_qty:", str(e))
 
 
 

@@ -938,6 +938,8 @@ def allocate_laptop_parts(doc):
         AND serial_no IN %(serial_list)s
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
 
+    print("mr_items ------------------ ", mr_items)
+
     if not mr_items:
         frappe.msgprint("No Material Requests found for the suggested serial numbers.")
         return []
@@ -1036,7 +1038,7 @@ def allocate_laptop_parts(doc):
     from operator import itemgetter
     final_result.sort(key=itemgetter("serial_no", "mreq_no"))
 
-    final_result = allocate_serial_no_for_battery(final_result)
+    final_results = allocate_serial_no_for_battery(final_result)
 
     return final_result
 
@@ -1142,10 +1144,68 @@ def update_to_make_for_serial(doc):
 
 def allocate_serial_no_for_battery(final_result):
     print("final_result ----------------- 1144 ", final_result)
-    for row in final_result:
-        print(f"\n row ------------ {row}")
 
-        if row.get("item_code").lower() == "battery":
-            # row["allocated_status"] = "Allocated"
-            # row["allocated_serial_no"] = row.get("serial_no")
-            
+    for row in final_result:
+        print(f"\nProcessing row ------------ {row}")
+        
+        if row.get("item_group", "").lower() == "battery":
+            item_code = row.get("item")
+            mreq_no = row.get("mreq_no")
+            item_group = row.get("item_group")
+
+            valid_serials = []  # Reset per item
+
+            nj_warehouses = frappe.get_all(
+                "Warehouse", 
+                filters={"department": "Stores - NJ"},
+                pluck="name"
+            )
+
+            if not nj_warehouses:
+                print("No NJ warehouses found.")
+                continue
+
+            serials = frappe.get_all(
+                "Serial No", 
+                filters={
+                    "item_code": item_code,
+                    "warehouse": ["in", nj_warehouses]
+                },
+                fields=["name", "full_charge_capacity", "battery_average_discharge_rate"]
+            )
+
+            print(f"Serials found for item {item_code}: {serials}")
+
+            for serial in serials:
+                try:
+                    if not serial.get("full_charge_capacity") or not serial.get("battery_average_discharge_rate"):
+                        continue
+
+                    full = float(serial.get("full_charge_capacity") or 0)
+                    avg = float(serial.get("battery_average_discharge_rate") or 0)
+
+                    if avg != 0:
+                        battery_life = full / avg
+                        if battery_life > 2:
+                            valid_serials.append(serial.get("name"))
+                except Exception as e:
+                    print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
+
+
+            print(f"Valid serials for allocation to {item_code}: {valid_serials}")
+
+            if valid_serials:
+                try:
+                    frappe.db.set_value(
+                        "Material Request Item",
+                        {
+                            "parent": mreq_no,
+                            "item_code": item_code,
+                            "item_group": item_group
+                        },
+                        "allocated_serial_no",
+                        ", ".join(valid_serials)
+                    )
+                    print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
+                except Exception as e:
+                    print(f"Failed to set allocated_serial_no for {item_code}: {e}")

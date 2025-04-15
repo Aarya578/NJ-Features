@@ -32,7 +32,7 @@ class CustomDeliveryNote(DeliveryNote):
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
         print("order_id-----520----", order_id)
         if order_id and self.is_return==0:
-            trigger_fulfillment(order_id,raw_order_id,shopify_order_no)
+            trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
 
         
 
@@ -411,20 +411,21 @@ def get_cod_amount(so_name):
             "X-Shopify-Access-Token": TOKEN
         }
 
-        raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
+        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+
+        # Try primary field
+        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
             order_id = raw_order_id.lstrip('#')
         else:
             # Try alternative fields
-            raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "order_id")
+            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
             if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_number")
+                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-        # print("order_id-----520----", order_id)
 
         if not order_id:
             return {"order_id": None, "cod_amount": 0}
@@ -434,10 +435,8 @@ def get_cod_amount(so_name):
         data = response.json()
 
         if "orders" in data and data["orders"]:
-            # print("523------entered")
             order = data["orders"][0]
             cod_amount = order.get("total_outstanding", 0)
-            # print("cod_amount--------39", cod_amount)
             return {"order_id": order_id, "cod_amount": cod_amount}
 
         return {"order_id": order_id, "cod_amount": 0}
@@ -449,8 +448,9 @@ def get_cod_amount(so_name):
 
 
 
+
 @frappe.whitelist(allow_guest=True)
-def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
+def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):
     try:
         headers = {
             "Content-Type": "application/json",
@@ -471,18 +471,18 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
 
             fulfillment_status = order.get("fulfillment_status")
             print("----468-----orderid-",order_id)
-            so_name = frappe.db.sql("""
-                SELECT name FROM `tabSales Order`
-                WHERE shopify_order_id = %s OR order_id = %s OR shopify_order_number = %s and docstatus = 1
-                LIMIT 1
-            """, (original_order_id, original_order_id,shopify_order_no), as_dict=True)
-            print("so_name----473-", so_name)
-            if so_name:
-                so_name = so_name[0].name
-            else:
-                frappe.throw("Sales Order not found.")
+            # so_name = frappe.db.sql("""
+            #     SELECT name FROM `tabDelivery Note Item`
+            #     WHERE shopify_order_id = %s OR order_id = %s OR shopify_order_number = %s and docstatus = 1 
+            #     LIMIT 1
+            # """, (original_order_id, original_order_id,shopify_order_no), as_dict=True)
+            # print("so_name----473-", so_name)
+            # if so_name:
+            #     so_name = so_name[0].name
+            # else:
+            #     frappe.throw("Sales Order not found.")
 
-            dn_name = frappe.db.get_value("Delivery Note Item", {"against_sales_order": so_name}, "parent")
+            # dn_name = frappe.db.get_value("Delivery Note Item", {"against_sales_order": so_name}, "parent")
             tracking_data = frappe.db.get_value("Delivery Note", {"name": dn_name}, ["tracking_id", "courier_service"])
 
             if not tracking_data:
@@ -768,6 +768,7 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
 #                 # Throw error if any check is missing
 #                 if missing_checks:
 #                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """

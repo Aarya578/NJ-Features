@@ -36,8 +36,7 @@
    "fieldname": "item_code",
    "fieldtype": "Link",
    "label": "Item Code",
-   "options": "Item",
-   "unique": 1
+   "options": "Item"
   },
   {
    "fieldname": "shopify_variant_id",
@@ -56,7 +55,7 @@
   },
   {
    "fieldname": "sync_error",
-   "fieldtype": "Data",
+   "fieldtype": "Text",
    "label": "Sync Error"
   },
   {
@@ -77,7 +76,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-12 16:20:32.899780",
+ "modified": "2025-04-15 16:20:46.459259",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

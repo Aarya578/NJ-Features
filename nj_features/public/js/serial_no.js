@@ -2,16 +2,15 @@ frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
         applyReadOnlyStyling(frm)
 
-        frappe.call({
-            method: 'nj_features.overrides.purchase_receipt.check_for_warranty_validity',
-            args: { doc: frm.doc },
-            callback: function(r) {
-                if (r.message) {
-                    console.log("refresing warranty_valid_check", r.message.warranty_valid_check);
-                    frm.refresh_field('warranty_valid_check');
-                }
-            }
-        });
+        // frappe.call({
+        //     method: 'nj_features.overrides.purchase_receipt.check_for_warranty_validity',
+        //     args: { doc: frm.doc },
+        //     callback: function(r) {
+        //         if (r.message) {
+        //             console.log("refresing warranty_valid_check", r.message.warranty_valid_check);
+        //         }
+        //     }
+        // });
 
         let is_read_only = frm.doc.bypass ? 1 : 0;
         frm.set_df_property("bypass", "read_only", is_read_only);

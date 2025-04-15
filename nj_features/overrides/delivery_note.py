@@ -411,20 +411,21 @@ def get_cod_amount(so_name):
             "X-Shopify-Access-Token": TOKEN
         }
 
-        raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
+        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+
+        # Try primary field
+        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
             order_id = raw_order_id.lstrip('#')
         else:
             # Try alternative fields
-            raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "order_id")
+            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
             if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_number")
+                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-        # print("order_id-----520----", order_id)
 
         if not order_id:
             return {"order_id": None, "cod_amount": 0}
@@ -434,10 +435,8 @@ def get_cod_amount(so_name):
         data = response.json()
 
         if "orders" in data and data["orders"]:
-            # print("523------entered")
             order = data["orders"][0]
             cod_amount = order.get("total_outstanding", 0)
-            # print("cod_amount--------39", cod_amount)
             return {"order_id": order_id, "cod_amount": cod_amount}
 
         return {"order_id": order_id, "cod_amount": 0}
@@ -445,6 +444,7 @@ def get_cod_amount(so_name):
     except Exception as e:
         frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
         return {"order_id": None, "cod_amount": 0}
+
 
 
 

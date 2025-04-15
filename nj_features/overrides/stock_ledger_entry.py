@@ -8,7 +8,7 @@ class CustomStockLedgerEntry(StockLedgerEntry):
     def db_update(self):
         super().db_update()
         self.update_available_capacity_in_warehouse()
-        self.notify_warehouse_owner_if_applicable()
+        # self.notify_warehouse_owner_if_applicable()
         
     def update_available_capacity_in_warehouse(self):
         warehouse_doc_data = frappe.get_doc('Warehouse', self.warehouse)

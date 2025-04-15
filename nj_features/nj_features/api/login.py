@@ -47,7 +47,8 @@ def login(usr, pwd, encrypted_pwd=False, doctype_url=None, api=False):
                 api_key = frappe.generate_hash(length=15)
                 user_details.api_key = api_key
             user_details.api_secret = api_secret
-            user_details.save()
+            user_details.save(ignore_permissions=True)
+            frappe.db.commit()
             api_generate = api_secret
             api_key = api_key
         else:

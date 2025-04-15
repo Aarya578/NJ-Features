@@ -31,7 +31,7 @@ def get_department_details():
             data = process_merged_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)
-        elif str(in_model) == '1' and str(fw_model) == '1':
+        elif str(in_model) == '1' and str(fw_config) == '1':
             data = process_model_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)

@@ -27,7 +27,7 @@ def fetch_and_stage_inventory_sync():
             `tabDepartment` d ON w.department = d.name
         WHERE 
             i.item_group IN ('Laptops', 'Desktops', 'MacBooks')
-            AND i.has_variants = 0
+            AND i.has_variants = 0 
             AND d.department_name IN ('Packing & Dispatch', 'BG - Adaptor QC')
         GROUP BY 
             pb.shopify_variant_id
@@ -48,8 +48,8 @@ def fetch_and_stage_inventory_sync():
             item_group = item_groups[idx] if idx < len(item_groups) else ""
 
             existing = frappe.get_all("NJ Inventory Sync Main", filters={
-                # "shopify_variant_id": row.shopify_variant_id,
-                "item_name": item_code
+                "shopify_variant_id": row.shopify_variant_id,
+                # "item_name": item_code
             }, fields=["name", "actual_qty", "sync_status", "is_active"])
             print("existing---------",existing)
             if existing:
@@ -69,7 +69,34 @@ def fetch_and_stage_inventory_sync():
                 doc.shopify_variant_id = row.shopify_variant_id
                 doc.sync_status = "Queued"
                 doc.is_active = 1
-                doc.insert()
+                try:
+                    doc.insert()
+                except frappe.UniqueValidationError as e:
+                    error_msg = f"Duplicate item_code: {item_code} — {str(e)}"
+                    frappe.log_error(frappe.get_traceback(), error_msg)
+
+                    # Try to fetch the existing doc and update syncerror field
+                    try:
+                        existing_doc_name = frappe.get_value("NJ Inventory Sync Main", {"item_code": item_code}, "name")
+                        if existing_doc_name:
+                            frappe.db.set_value("NJ Inventory Sync Main", existing_doc_name, {
+                                "syncerror": error_msg
+                            })
+                    except Exception:
+                        frappe.log_error(frappe.get_traceback(), f"Failed to set syncerror for duplicate item_code: {item_code}")
+
+                    continue
+
+                except Exception as e:
+                    error_msg = f"General error for item_code: {item_code} — {str(e)}"
+                    frappe.log_error(frappe.get_traceback(), error_msg)
+                    try:
+                        doc.syncerror = error_msg
+                        doc.flags.ignore_permissions = True
+                        doc.insert()
+                    except Exception:
+                        frappe.log_error(frappe.get_traceback(), f"Failed to log syncerror for item_code: {item_code}")
+                    continue
 
     # Step 2: Update pending_qty and updated_qty using Sales Order data
     open_so_data = frappe.db.sql("""
@@ -153,16 +180,19 @@ def sync_inventory_to_shopify():
         "X-Shopify-Access-Token": token,
         "Content-Type": "application/json"
     }
+    
     print("headers-----71", headers)
     queued = frappe.get_all("NJ Inventory Sync Main", filters={
         "sync_status": "Queued",
-        "is_active": 1
-    }, fields=["name", "item_code", "actual_qty", "shopify_variant_id"])
+        "is_active": 1,
+    "shopify_variant_id": ["in", ["43748392042678", "43748392075446", "43748392108214"]],
+   }, fields=["name", "item_code", "actual_qty", "shopify_variant_id","updated_qty"])
     print("queued-----78", queued)
     for row in queued:
+        print("row-----79", row)
         variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()]
         print("variant_ids-----80", variant_ids)
-        if not variant_ids or float(row.actual_qty) <= 0:
+        if not variant_ids or float(row.actual_qty) <= 0 or float(row.updated_qty) <= 0:
             continue
 
         for variant_id in variant_ids:
@@ -172,24 +202,39 @@ def sync_inventory_to_shopify():
                 variant_data = variant_resp.json()
 
                 inventory_item_id = variant_data["variant"]["inventory_item_id"]
-
+                print("inventory_item_id-----88", inventory_item_id)
                 update_url = f"{shop}/admin/api/2023-01/inventory_levels/set.json"
+                print("update_url-----89", update_url)
+                print("row.updated_qty-----90", row.updated_qty)
+                print("row.actual_qty-----91", row.actual_qty)
+                updated_qty = row.updated_qty
+                actual_qty = row.actual_qty
+
+                # Skip if both are None or <= 0
+                if not updated_qty and not actual_qty:
+                    continue
+                available = None
+                if updated_qty and float(updated_qty) > 0:
+                    available = int(float(updated_qty))
+                elif actual_qty and float(actual_qty) > 0:
+                    available = int(float(actual_qty))
+                else:
+                    continue 
                 payload = {
                     "location_id": location_id,
                     "inventory_item_id": inventory_item_id,
-                    "available": int(float(row.updated_qty)) if float(row.updated_qty) > 0 else int(float(row.actual_qty))
+                    "available":available
 
                 }
-
+                print("payload-----90", payload)
                 update_resp = rs.post(update_url, headers=headers, data=json.dumps(payload))
+                print("update_resp-----91", update_resp)
                 if update_resp.status_code != 200:
                     frappe.log_error(f"Shopify Inventory Update Error for {variant_id}", update_resp.text)
 
             except Exception as e:
                 frappe.log_error(f"Inventory sync failed for {variant_id}", str(e))
                 continue
-
-        # Mark record as completed and inactive
         frappe.db.set_value("NJ Inventory Sync Main", row.name, {
             "sync_status": "Completed",
             "is_active": 0

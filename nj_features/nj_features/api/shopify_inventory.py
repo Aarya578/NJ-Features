@@ -201,14 +201,18 @@ def sync_inventory_to_shopify():
     queued = frappe.get_all("NJ Inventory Sync Main", filters={
         "sync_status": "Queued",
         "is_active": 1,
-    "shopify_variant_id": ["in", ["43748392042678", "43748392075446", "43748392108214"]],
+        "shopify_variant_id": ["in", ["43748392042678", "43748392075446", "43748392108214","43765186953398","43792147873974","43792147841206","43792147611830","42205312909494","43790420967606"]],
    }, fields=["name", "item_code", "actual_qty", "shopify_variant_id","updated_qty"])
     print("queued-----78", queued)
     for row in queued:
         print("row-----79", row)
         variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()]
         print("variant_ids-----80", variant_ids)
-        if not variant_ids or float(row.actual_qty) <= 0 or float(row.updated_qty) <= 0:
+        if (
+                not variant_ids 
+                or (row.actual_qty is None or float(row.actual_qty) <= 0)
+                or (row.updated_qty is not None and float(row.updated_qty) <= 0)
+            ):
             continue
 
         for variant_id in variant_ids:

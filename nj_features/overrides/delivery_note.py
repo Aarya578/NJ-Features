@@ -6,6 +6,9 @@ import json
 from frappe import _
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_lib.utils.common_utils import get_latest_item_wizard
+from datetime import timedelta
+import re
+from frappe.utils import add_days, nowdate, getdate, add_years
 import uuid
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
@@ -871,3 +874,51 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                 # Throw error if any check is missing
                 if missing_checks:
                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+import json
+import re
+from datetime import timedelta
+import frappe
+from frappe.utils import add_days, nowdate, getdate, add_years
+
+@frappe.whitelist()
+def get_warranty_data(doc):
+    if isinstance(doc, str):
+        try:
+            doc = json.loads(doc)
+        except json.JSONDecodeError:
+            frappe.throw("Invalid JSON string provided for warranty data.")
+
+    warranty_info = []
+
+    dn_items = frappe.db.sql("""
+        SELECT item_code 
+        FROM `tabDelivery Note Item` 
+        WHERE parent = %s
+    """, (doc.get('name'),), as_dict=True)
+
+    for item in dn_items:
+        item_code = item.get("item_code")
+        item_group = frappe.db.get_value('Item', item_code, 'item_group')
+
+        if item_group != "Warranty":
+            continue
+
+        item_name = frappe.db.get_value('Item', item_code, 'item_name')
+
+        match = re.search(r'(\d+)\s*YEAR', item_name.upper())
+        if not match:
+            continue
+
+        warranty_years = int(match.group(1))
+        dn_date = getdate(doc.get('creation')) if doc.get('creation') else getdate(nowdate())
+        warranty_start_date = add_days(dn_date, 5)
+        warranty_end_date = add_years(warranty_start_date, warranty_years)
+
+        warranty_info.append({
+            "item_code": item_code,
+            "warranty_start_date": warranty_start_date,
+            "warranty_end_date": warranty_end_date,
+            "warranty_years": warranty_years
+        })
+
+    return warranty_info

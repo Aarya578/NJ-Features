@@ -41,6 +41,7 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     validate: function(frm) {
+        console.log()
         frappe.call({
             method: "nj_features.overrides.delivery_note.validate_delivery_bios",
             args: { doc: frm.doc },
@@ -70,6 +71,29 @@ frappe.ui.form.on('Delivery Note', {
                 }
             });
         }
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.get_warranty_data",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    const warranty = r.message[0]; // use first item
+                    console.log("warranty--", warranty);
+                    console.log("warranty.warranty_start_date--", warranty.warranty_start_date);
+                    // This is where the fix is needed
+                    if (warranty.warranty_start_date) {
+                        frm.set_value("warranty_start_date", warranty.warranty_start_date);
+                    }
+                    if (warranty.warranty_end_date) {
+                        frm.set_value("warranty_end_date", warranty.warranty_end_date);
+                    }
+                    
+                    // Refresh the form to make sure changes are applied
+                    frm.refresh_field("warranty_start_date");
+                    frm.refresh_field("warranty_end_date");
+                }
+            }
+        });
+        
     },
 
     courier_service: function(frm) {

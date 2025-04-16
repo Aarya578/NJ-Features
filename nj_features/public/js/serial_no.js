@@ -199,7 +199,7 @@ function printQRCode(frm) {
 
 function  get_report_data(frm) {
     frappe.call({
-        method: 'nj_p1_features.overrides.serial_no.get_checks_data',
+        method: 'nj_p1_features.overrides.serial_no.generate_customer_data',
         args: { serial_no: frm.doc.name }
     });
 }

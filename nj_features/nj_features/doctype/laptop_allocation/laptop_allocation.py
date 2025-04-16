@@ -141,8 +141,7 @@ def allocate_laptop_parts():
     return final_result
 
 def allocated_other_part(item):
-    print("\n\n\n\n\n\n\n\n*************************************************")
-    print("\n\n\n\nitem ------------------ ", item)
+    print("\n\nitem ------------------ ", item)
 
     item_code = item.get("item_code")
     if not item_code:
@@ -229,15 +228,13 @@ def allocated_other_part(item):
                                 """, {
                                     "warehouses": tuple(warehouses),
                                     "item_code": items["item_code"]
-                                },explain=1, debug=1, as_dict=True)
+                                }, as_dict=True)
 
                             print("stock_results ---------------- ", stock_results)
 
                             for stock in stock_results:
                                 stock_data[stock["item_code"]] = flt(stock["total_qty"])
                             
-                            print("stock_data ---------------- ", stock_data)
-                            print("items ---------------- ", items)
                             
                             available_stock = stock_data.get(items.get("item_code"), 0)
 

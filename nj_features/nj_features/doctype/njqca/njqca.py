@@ -531,9 +531,9 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                     
-                    # s6 = time.time()
-                    # update_serial_no_component_for_njqca(self)
-                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
+                    s6 = time.time()
+                    update_serial_no_component_for_njqca(self)
+                    logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -881,6 +881,8 @@ def get_info_from_serial_no(doc=None):
 
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
+            elif (doc_json['item_group']) in nj_settings_item_group:
+                pass
             else:
                 result['item_code'] = sle_entry.get('item_code')
                 
@@ -1404,7 +1406,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         sudden_drop_limit=""
-        if (njqca_battery_item_group and njqca_battery_item_group == item_group):       
+        if (njqca_battery_item_group and  item_group in njqca_battery_item_group):       
             sudden_drop_limit = frappe.db.get_value('Item Wizards',{'manufacture_model': ['like', f'%{manufacturer_model}%'], 'docstatus': '1', 'part_list_status': 'Completed'},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
@@ -1412,16 +1414,9 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
                             WHERE idx >= (
-                                SELECT idx 
+                                SELECT idx-1
                                 FROM `tabNJQCA Result Parameters`
-                                WHERE parent = %(parent_name)s 
-                                AND parameter = (
-                                    SELECT value 
-                                    FROM `tabNJQCA Result Parameters`
-                                    WHERE parent = %(parent_name)s
-                                        AND parameter = 'Battery_Discharging_Start_Time'
-                                    ORDER BY idx DESC LIMIT 1
-                                )
+                                WHERE parent = %(parent_name)s and parameter = 'Battery_Discharging_Start_Time' ORDER BY idx DESC LIMIT 1
                             )
                             AND parameter <> 'Battery_Discharging_Start_Time'
                             AND parent = %(parent_name)s

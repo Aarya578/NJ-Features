@@ -570,6 +570,205 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         #     frappe.throw("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+        
+# @frappe.whitelist()  
+# def qi_mandatory_checks_on_dn_submit(doc, method=None):
+#     """
+#     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
+#     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
+#     """
+#     for item in doc.items:
+#         if item.serial_no:
+#             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
+#             for serial_no in serial_nos:
+#                 # Fetch only submitted NJ Quality Inspection names linked to the Serial No in descending order of creation
+#                 qi_names = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ Quality Inspection`
+#                     WHERE barcode = %s AND docstatus = 1
+#                     ORDER BY creation DESC
+#                     """,
+#                     (serial_no,), as_list=True
+#                 )
+#                 print("qi_names----", qi_names)
+                
+#                 if not qi_names:
+#                     frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
+                
+#                 # Fetch all mandatory checks
+#                 mandatory_checks = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ QC Check List` 
+#                     WHERE name IN (
+#                         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
+#                         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
+#                         WHERE njqc.item_group IN (
+#                             SELECT component_type FROM `tabComponent` 
+#                             WHERE parent = (
+#                                 SELECT item_wizard FROM `tabSerial No` 
+#                                 WHERE name = %s
+#                             )
+#                         )
+#                     )
+#                     AND mandatory = 1
+#                     """,
+#                     (serial_no,),
+#                     as_dict=True
+#                 )
+
+#                 print("mandatory_checks----", mandatory_checks)
+                
+#                 # Use 'name' key instead of index 0
+#                 mandatory_check_names = {check['name'] for check in mandatory_checks}
+#                 passed_checks = set()
+#                 failed_checks = {}
+#                 missing_checks = mandatory_check_names.copy()
+                
+#                 for qi_name in qi_names:
+#                     # Fetch NJ Checks for the given Quality Inspection
+#                     nj_checks = frappe.db.sql(
+#                         """
+#                         SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
+#                         """,
+#                         (qi_name[0],), as_dict=True
+#                     )
+                    
+#                     nj_check_names = {check.check_name for check in nj_checks}
+#                     missing_checks -= nj_check_names  # Remove found checks from missing checks list
+                    
+#                     for check in nj_checks:
+#                         if check.check_name in mandatory_check_names:
+#                             if check.score == 0:
+#                                 passed_checks.add(check.check_name)  # Mark check as passed
+#                             elif check.check_name not in passed_checks:  # Only consider failed if never passed before
+#                                 failed_checks[check.check_name] = qi_name[0]
+                    
+#                     # If all mandatory checks are found and passed, stop checking further QIs
+#                     if passed_checks == mandatory_check_names:
+#                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
+#                         break
+                
+#                 if failed_checks:
+#                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
+#                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
+                
+#                 if missing_checks:
+#                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+# @frappe.whitelist()  
+# def qi_mandatory_checks_on_dn_submit(doc, method=None):
+#     """
+#     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
+#     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
+#     Skips validation if no mandatory checks exist for the serial number.
+#     """
+#     for item in doc.items:
+#         if item.serial_no:
+#             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
+#             for serial_no in serial_nos:
+
+#                 # Fetch all mandatory checks for the serial number
+#                 # mandatory_checks = frappe.db.sql(
+#                 #     """
+#                 #     SELECT name FROM `tabNJ QC Check List` 
+#                 #     WHERE name IN (
+#                 #         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
+#                 #         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
+#                 #         WHERE njqc.item_group IN (
+#                 #             SELECT component_type FROM `tabComponent` 
+#                 #             WHERE parent = (
+#                 #                 SELECT item_wizard FROM `tabSerial No` 
+#                 #                 WHERE name = %s
+#                 #             )
+#                 #         )
+#                 #     )
+#                 #     AND mandatory = 1
+#                 #     """,
+#                 #     (serial_no,),
+#                 #     as_dict=True
+#                 # )
+#                 mandatory_checks = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ QC Check List` 
+#                     WHERE name IN (
+#                         SELECT quality_check 
+#                         FROM `tabNJ Quality Checks` njqc 
+#                         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
+#                         JOIN `tabInspection Type` it ON it.name = njqc.inspection_type
+#                         WHERE 
+#                             it.active = 1 AND
+#                             njqc.item_group IN (
+#                                 SELECT component_type 
+#                                 FROM `tabComponent` 
+#                                 WHERE parent = (
+#                                     SELECT item_wizard 
+#                                     FROM `tabSerial No` 
+#                                     WHERE name = %s
+#                                 )
+#                             )
+#                     )
+#                     AND mandatory = 1
+#                     """,
+#                     (serial_no,),
+#                     as_dict=True
+#                 )
+
+
+#                 # ✅ Skip validation if no mandatory checks found
+#                 if not mandatory_checks:
+#                     continue
+
+#                 # Fetch submitted NJ Quality Inspections
+#                 qi_names = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ Quality Inspection`
+#                     WHERE barcode = %s AND docstatus = 1
+#                     ORDER BY creation DESC
+#                     """,
+#                     (serial_no,), as_list=True
+#                 )
+
+#                 if not qi_names:
+#                     frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
+
+#                 # Prepare sets
+#                 mandatory_check_names = {check['name'] for check in mandatory_checks}
+#                 passed_checks = set()
+#                 failed_checks = {}
+#                 missing_checks = mandatory_check_names.copy()
+
+#                 for qi_name in qi_names:
+#                     # Fetch NJ Checks from QI
+#                     nj_checks = frappe.db.sql(
+#                         """
+#                         SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
+#                         """,
+#                         (qi_name[0],), as_dict=True
+#                     )
+
+#                     nj_check_names = {check.check_name for check in nj_checks}
+#                     missing_checks -= nj_check_names
+
+#                     for check in nj_checks:
+#                         if check.check_name in mandatory_check_names:
+#                             if check.score == 0:
+#                                 passed_checks.add(check.check_name)
+#                             elif check.check_name not in passed_checks:
+#                                 failed_checks[check.check_name] = qi_name[0]
+
+#                     # If all mandatory checks are passed, stop checking further QIs
+#                     if passed_checks == mandatory_check_names:
+#                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
+#                         break
+
+#                 # Throw error if any check failed
+#                 if failed_checks:
+#                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
+#                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
+
+#                 # Throw error if any check is missing
+#                 if missing_checks:
+#                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """

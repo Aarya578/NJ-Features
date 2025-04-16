@@ -290,63 +290,63 @@ frappe.ui.form.on('NJQCA', {
             frm.refresh_field('serial_no');
         }
     },
-    // before_submit: function(frm) {
+    before_submit: function(frm) {
 
-    //      return new Promise((resolve, reject) => {
-    //         let tablesToCheck = [
-    //             'njqca_laptop_ram', 'njqca_laptop_processors', 
-    //             'njqca_display', 'njqca_adaptor', 'njqca_laptop_storage'
-    //         ];
-    //         let mismatches = [];
-    //         let i = 0;
+         return new Promise((resolve, reject) => {
+            let tablesToCheck = [
+                'njqca_laptop_ram', 'njqca_laptop_processors', 
+                'njqca_display', 'njqca_adaptor', 'njqca_laptop_storage'
+            ];
+            let mismatches = [];
+            let i = 0;
 
-    //         tablesToCheck.forEach((table) => {
-    //             frm.doc[table].forEach((row) => {
+            tablesToCheck.forEach((table) => {
+                frm.doc[table].forEach((row) => {
                     
-    //                 if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-    //                     mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-    //                 } else if (row.calculated_item_code !== row.fetched_item_code) {
-    //                     mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-    //                 }
+                    if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+                        mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
+                    } else if (row.calculated_item_code !== row.fetched_item_code) {
+                        mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+                    }
 
-    //                 // Added condition: If fetched_item_code is filled but calculated_item_code is empty, throw an error
-    //                 if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
-    //                     frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NPD team.`);
-    //                 }
+                    // Added condition: If fetched_item_code is filled but calculated_item_code is empty, throw an error
+                    if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
+                        frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NPD team.`);
+                    }
                     
-    //             });
-    //         });
+                });
+            });
     
-    //         if (mismatches.length > 0) {
-    //             let mismatchMessage = mismatches.join('<br>');
-    //             frappe.confirm(
-    //                 `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-    //                 () => { resolve(); },
-    //                 () => { reject(); }
-    //             );
-    //         } else { resolve(); }
+            if (mismatches.length > 0) {
+                let mismatchMessage = mismatches.join('<br>');
+                frappe.confirm(
+                    `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
+                    () => { resolve(); },
+                    () => { reject(); }
+                );
+            } else { resolve(); }
 
-    //     }).then(() => {
-    //         if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-    //             frappe.validated = false; 
-    //             frappe.confirm(
-    //                 `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-    //                 () => {
-    //                     frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-    //                         () => {
-    //                             frappe.validated = true;
-    //                             frm.save('Submit');
-    //                         },
-    //                         () => { frm.set_value('repack_item_code', ''); }
-    //                     );
-    //                 },
-    //                 () => { frm.set_value('repack_item_code', ''); }
-    //             );
-    //         }
+        }).then(() => {
+            if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+                frappe.validated = false; 
+                frappe.confirm(
+                    `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
+                    () => {
+                        frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
+                            () => {
+                                frappe.validated = true;
+                                frm.save('Submit');
+                            },
+                            () => { frm.set_value('repack_item_code', ''); }
+                        );
+                    },
+                    () => { frm.set_value('repack_item_code', ''); }
+                );
+            }
     
-    //         return false;
-    //     });
-    // },
+            return false;
+        });
+    },
 
     power_on: function() {
         const isYes = cur_frm.doc.power_on === "Yes";

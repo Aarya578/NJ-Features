@@ -721,9 +721,7 @@
       "width": null
     }
   ],
-  "custom_perms": [],
-  "doctype": "Warehouse",
-  "property_setters": [
+  "custom_perms": [
     {
       "_assign": null,
       "_comments": null,
@@ -756,7 +754,6 @@
       "set_user_permissions": 0,
       "share": 0,
       "submit": 0,
-      "user_permission_doctypes": null,
       "write": 0
     },
     {
@@ -791,9 +788,10 @@
       "set_user_permissions": 0,
       "share": 0,
       "submit": 0,
-      "user_permission_doctypes": null,
       "write": 0
     }
   ],
+  "doctype": "Warehouse",
+  "property_setters": [],
   "sync_on_migrate": 1
 }

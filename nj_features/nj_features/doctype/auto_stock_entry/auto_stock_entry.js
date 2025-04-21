@@ -5,6 +5,23 @@ frappe.ui.form.on('Auto Stock Entry', {
 
 	setup: function(frm) { fill_work_warehouse(frm) },
 
+	onload: function(frm) {
+		$(document).on('keydown', function(event) {
+			if (event.ctrlKey && event.shiftKey && event.key === 'B') {
+				
+				new frappe.ui.Scanner({
+					dialog: true,
+					multiple: false,
+					on_scan: function on_scan(data) {
+						if (data && data.result && data.result.text) {
+							frm.set_value('serial_no', data.result.text);
+						}
+					}
+				});
+			}
+		})
+	},
+
 	refresh: function() {
         $('.primary-action').hide();
 		$('[data-fieldname="serial_no"]').focus();

@@ -7,7 +7,14 @@ frappe.ui.form.on('Sales Invoice', {
 			frm.add_custom_button(__('Delivery Note'),
             () => frm.cscript['Make Delivery Note'](), __('Create'));
 		}
+    },
+    after_save: function(frm) {
+        if (!frm.doc.allocate_advances_automatically) {
+            console.log('get_advances-----trigger');
+            frm.trigger('get_advances');
+        }
     }
+
 });
 
 // frappe.ui.form.on('Sales Invoice Item', {

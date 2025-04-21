@@ -15,11 +15,20 @@ frappe.ui.form.on('Auto Stock Entry', {
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.submit_ste',
 				args: { serial_no: frm.doc.serial_no, t_warehouse: frm.doc.default_target_warehouse },
+				freeze: true,
+				freeze_message: `<div style="text-align: center;">
+					<i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+					<br>Transferring Stock... Please Wait
+				</div>`,
 				callback: function(r) {
 					if (r && r.message) {
 						frm.set_value('serial_no', '')
 						frm.refresh_field('serial_no')
 					}
+				},
+				error: function(err) {
+					frm.set_value('serial_no', '')
+					frm.refresh_field('serial_no')
 				}
 			})
 			$('[data-fieldname="serial_no"]').focus();

@@ -6,6 +6,9 @@ import json
 from frappe import _
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_lib.utils.common_utils import get_latest_item_wizard
+from datetime import timedelta
+import re
+from frappe.utils import add_days, nowdate, getdate, add_years
 import uuid
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
@@ -32,7 +35,7 @@ class CustomDeliveryNote(DeliveryNote):
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
         print("order_id-----520----", order_id)
         if order_id and self.is_return==0:
-            trigger_fulfillment(order_id,raw_order_id,shopify_order_no)
+            trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
 
         
 
@@ -411,20 +414,21 @@ def get_cod_amount(so_name):
             "X-Shopify-Access-Token": TOKEN
         }
 
-        raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_id")
+        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+
+        # Try primary field
+        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
             order_id = raw_order_id.lstrip('#')
         else:
             # Try alternative fields
-            raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "order_id")
+            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
             if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", {"name": so_name}, "shopify_order_number")
+                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-        # print("order_id-----520----", order_id)
 
         if not order_id:
             return {"order_id": None, "cod_amount": 0}
@@ -434,10 +438,8 @@ def get_cod_amount(so_name):
         data = response.json()
 
         if "orders" in data and data["orders"]:
-            # print("523------entered")
             order = data["orders"][0]
             cod_amount = order.get("total_outstanding", 0)
-            # print("cod_amount--------39", cod_amount)
             return {"order_id": order_id, "cod_amount": cod_amount}
 
         return {"order_id": order_id, "cod_amount": 0}
@@ -449,8 +451,9 @@ def get_cod_amount(so_name):
 
 
 
+
 @frappe.whitelist(allow_guest=True)
-def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
+def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):
     try:
         headers = {
             "Content-Type": "application/json",
@@ -471,18 +474,18 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
 
             fulfillment_status = order.get("fulfillment_status")
             print("----468-----orderid-",order_id)
-            so_name = frappe.db.sql("""
-                SELECT name FROM `tabSales Order`
-                WHERE shopify_order_id = %s OR order_id = %s OR shopify_order_number = %s and docstatus = 1
-                LIMIT 1
-            """, (original_order_id, original_order_id,shopify_order_no), as_dict=True)
-            print("so_name----473-", so_name)
-            if so_name:
-                so_name = so_name[0].name
-            else:
-                frappe.throw("Sales Order not found.")
+            # so_name = frappe.db.sql("""
+            #     SELECT name FROM `tabDelivery Note Item`
+            #     WHERE shopify_order_id = %s OR order_id = %s OR shopify_order_number = %s and docstatus = 1 
+            #     LIMIT 1
+            # """, (original_order_id, original_order_id,shopify_order_no), as_dict=True)
+            # print("so_name----473-", so_name)
+            # if so_name:
+            #     so_name = so_name[0].name
+            # else:
+            #     frappe.throw("Sales Order not found.")
 
-            dn_name = frappe.db.get_value("Delivery Note Item", {"against_sales_order": so_name}, "parent")
+            # dn_name = frappe.db.get_value("Delivery Note Item", {"against_sales_order": so_name}, "parent")
             tracking_data = frappe.db.get_value("Delivery Note", {"name": dn_name}, ["tracking_id", "courier_service"])
 
             if not tracking_data:
@@ -654,6 +657,121 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None):
                 
 #                 if missing_checks:
 #                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+# @frappe.whitelist()  
+# def qi_mandatory_checks_on_dn_submit(doc, method=None):
+#     """
+#     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
+#     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
+#     Skips validation if no mandatory checks exist for the serial number.
+#     """
+#     for item in doc.items:
+#         if item.serial_no:
+#             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
+#             for serial_no in serial_nos:
+
+#                 # Fetch all mandatory checks for the serial number
+#                 # mandatory_checks = frappe.db.sql(
+#                 #     """
+#                 #     SELECT name FROM `tabNJ QC Check List` 
+#                 #     WHERE name IN (
+#                 #         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
+#                 #         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
+#                 #         WHERE njqc.item_group IN (
+#                 #             SELECT component_type FROM `tabComponent` 
+#                 #             WHERE parent = (
+#                 #                 SELECT item_wizard FROM `tabSerial No` 
+#                 #                 WHERE name = %s
+#                 #             )
+#                 #         )
+#                 #     )
+#                 #     AND mandatory = 1
+#                 #     """,
+#                 #     (serial_no,),
+#                 #     as_dict=True
+#                 # )
+#                 mandatory_checks = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ QC Check List` 
+#                     WHERE name IN (
+#                         SELECT quality_check 
+#                         FROM `tabNJ Quality Checks` njqc 
+#                         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
+#                         JOIN `tabInspection Type` it ON it.name = njqc.inspection_type
+#                         WHERE 
+#                             it.active = 1 AND
+#                             njqc.item_group IN (
+#                                 SELECT component_type 
+#                                 FROM `tabComponent` 
+#                                 WHERE parent = (
+#                                     SELECT item_wizard 
+#                                     FROM `tabSerial No` 
+#                                     WHERE name = %s
+#                                 )
+#                             )
+#                     )
+#                     AND mandatory = 1
+#                     """,
+#                     (serial_no,),
+#                     as_dict=True
+#                 )
+
+
+#                 # ✅ Skip validation if no mandatory checks found
+#                 if not mandatory_checks:
+#                     continue
+
+#                 # Fetch submitted NJ Quality Inspections
+#                 qi_names = frappe.db.sql(
+#                     """
+#                     SELECT name FROM `tabNJ Quality Inspection`
+#                     WHERE barcode = %s AND docstatus = 1
+#                     ORDER BY creation DESC
+#                     """,
+#                     (serial_no,), as_list=True
+#                 )
+
+#                 if not qi_names:
+#                     frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
+
+#                 # Prepare sets
+#                 mandatory_check_names = {check['name'] for check in mandatory_checks}
+#                 passed_checks = set()
+#                 failed_checks = {}
+#                 missing_checks = mandatory_check_names.copy()
+
+#                 for qi_name in qi_names:
+#                     # Fetch NJ Checks from QI
+#                     nj_checks = frappe.db.sql(
+#                         """
+#                         SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
+#                         """,
+#                         (qi_name[0],), as_dict=True
+#                     )
+
+#                     nj_check_names = {check.check_name for check in nj_checks}
+#                     missing_checks -= nj_check_names
+
+#                     for check in nj_checks:
+#                         if check.check_name in mandatory_check_names:
+#                             if check.score == 0:
+#                                 passed_checks.add(check.check_name)
+#                             elif check.check_name not in passed_checks:
+#                                 failed_checks[check.check_name] = qi_name[0]
+
+#                     # If all mandatory checks are passed, stop checking further QIs
+#                     if passed_checks == mandatory_check_names:
+#                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
+#                         break
+
+#                 # Throw error if any check failed
+#                 if failed_checks:
+#                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
+#                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
+
+#                 # Throw error if any check is missing
+#                 if missing_checks:
+#                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """
@@ -666,26 +784,15 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
             for serial_no in serial_nos:
 
+                # Get item_code and item_group from Serial No
+                item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
+                item_group = frappe.db.get_value("Item", item_code, "item_group")
+
+                # Skip validation if item group is not 'Laptops'
+                if item_group != "Laptops":
+                    continue
+
                 # Fetch all mandatory checks for the serial number
-                # mandatory_checks = frappe.db.sql(
-                #     """
-                #     SELECT name FROM `tabNJ QC Check List` 
-                #     WHERE name IN (
-                #         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
-                #         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
-                #         WHERE njqc.item_group IN (
-                #             SELECT component_type FROM `tabComponent` 
-                #             WHERE parent = (
-                #                 SELECT item_wizard FROM `tabSerial No` 
-                #                 WHERE name = %s
-                #             )
-                #         )
-                #     )
-                #     AND mandatory = 1
-                #     """,
-                #     (serial_no,),
-                #     as_dict=True
-                # )
                 mandatory_checks = frappe.db.sql(
                     """
                     SELECT name FROM `tabNJ QC Check List` 
@@ -711,7 +818,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                     (serial_no,),
                     as_dict=True
                 )
-
 
                 # ✅ Skip validation if no mandatory checks found
                 if not mandatory_checks:
@@ -768,3 +874,51 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                 # Throw error if any check is missing
                 if missing_checks:
                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+import json
+import re
+from datetime import timedelta
+import frappe
+from frappe.utils import add_days, nowdate, getdate, add_years
+
+@frappe.whitelist()
+def get_warranty_data(doc):
+    if isinstance(doc, str):
+        try:
+            doc = json.loads(doc)
+        except json.JSONDecodeError:
+            frappe.throw("Invalid JSON string provided for warranty data.")
+
+    warranty_info = []
+
+    dn_items = frappe.db.sql("""
+        SELECT item_code 
+        FROM `tabDelivery Note Item` 
+        WHERE parent = %s
+    """, (doc.get('name'),), as_dict=True)
+
+    for item in dn_items:
+        item_code = item.get("item_code")
+        item_group = frappe.db.get_value('Item', item_code, 'item_group')
+
+        if item_group != "Warranty":
+            continue
+
+        item_name = frappe.db.get_value('Item', item_code, 'item_name')
+
+        match = re.search(r'(\d+)\s*YEAR', item_name.upper())
+        if not match:
+            continue
+
+        warranty_years = int(match.group(1))
+        dn_date = getdate(doc.get('creation')) if doc.get('creation') else getdate(nowdate())
+        warranty_start_date = add_days(dn_date, 5)
+        warranty_end_date = add_years(warranty_start_date, warranty_years)
+
+        warranty_info.append({
+            "item_code": item_code,
+            "warranty_start_date": warranty_start_date,
+            "warranty_end_date": warranty_end_date,
+            "warranty_years": warranty_years
+        })
+
+    return warranty_info

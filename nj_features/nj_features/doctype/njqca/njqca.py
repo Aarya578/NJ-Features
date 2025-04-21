@@ -531,9 +531,9 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                     
-                    # s6 = time.time()
-                    # update_serial_no_component_for_njqca(self)
-                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
+                    s6 = time.time()
+                    update_serial_no_component_for_njqca(self)
+                    logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -589,44 +589,6 @@ class NJQCA(Document):
             print("Error in create_serial_no_based_on_rfq", traceback.format_exc())
             return None
 
-
-    # def update_serial_no_readings(self):
-    #     # Fetch relevant parameters from NJQCA Result Parameters
-    #     results = frappe.db.sql("""
-    #         SELECT parameter, value 
-    #         FROM `tabNJQCA Result Parameters` 
-    #         WHERE item_group = 'MOTHERBOARD' 
-    #         AND parent = %s
-    #         AND parameter IN (
-    #             'Average_CPU_Load_IDLE', 
-    #             'Average_Discharge_Rate_HEAVY', 
-    #             'Average_Discharge_Rate_IDLE', 
-    #             'Average_CPU_Load_HEAVY'
-    #         )
-    #     """, (self.name,), as_dict=True)
-    #     # print("results:=====================", results)
-    #     if not self.serial_no:
-    #         frappe.throw("Serial No not set on NJQCA document.")
-
-    #     # Get Serial No doc
-    #     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-    #     # print("serial_no_doc:=====================", serial_no_doc)
-    #     # Map result parameters to Serial No field names
-    #     parameter_map = {
-    #         'Average_CPU_Load_IDLE': 'average_cpu_load_idle',
-    #         'Average_Discharge_Rate_IDLE': 'average_discharge_rate_idle',
-    #         'Average_CPU_Load_HEAVY': 'average_cpu_load_heavy',
-    #         'Average_Discharge_Rate_HEAVY': 'average_discharge_rate_heavy'
-    #     }
-
-    #     # print('parameter_map:========================', parameter_map)
-    #     # Update Serial No fields
-    #     for row in results:
-    #         field_name = parameter_map.get(row.parameter)
-    #         if field_name:
-    #             serial_no_doc.set(field_name, row.value)
-
-    #     serial_no_doc.save(ignore_permissions=True)
     def update_serial_no_readings(self):
     # Fetch relevant parameters from NJQCA Result Parameters
         results = frappe.db.sql("""
@@ -666,121 +628,76 @@ class NJQCA(Document):
         serial_no_doc.set("njqca_reference_name", self.name)
 
         serial_no_doc.save(ignore_permissions=True)
+        frappe.db.commit()
 
-
-
-    # def battery_readings(self):
-    #     if self.item_group != 'BATTERY':
-    #         return  # Only apply for Battery items
-
-    #     if not self.serial_no:
-    #         frappe.throw("Serial No not set on NJQCA document.")
-
-    #     # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
-    #     battery_data = frappe.db.get_value(
-    #         "NJQCA Child",
-    #         {
-    #             "parent": self.name,
-    #             "item_group": "BATTERY"
-    #         },
-    #         ["variant_3", "variant_8", "variant_10"],
-    #         as_dict=True
-    #     )
-    #     # print("battery_data:=====================", battery_data)
-    #     # logger.info(f"==========battery_data=========={battery_data}")
-
-    #     if not battery_data:
-    #         frappe.msgprint("No battery readings found in NJQCA Child.")
-    #         return
-
-    #     # Get Serial No doc
-    #     serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-    #     # print("serial_no_doc:=====================", serial_no_doc)
-    #     # logger.info(f"==========serial_no_doc=========={serial_no_doc}")
-
-    #     # Map values to Serial No fields
-    #     serial_no_doc.full_charge_capacity = battery_data.variant_3
-    #     serial_no_doc.current_charge_capacity = battery_data.variant_8
-    #     serial_no_doc.health = battery_data.variant_10
-
-    #     serial_no_doc.save(ignore_permissions=True)
     def battery_readings(self):
         # Check if NJQCA's item group is BATTERY
-        logger.info(f"==========battery_readings=============709==========")
         if self.item_group != 'BATTERY':
             frappe.msgprint("Item group is not 'BATTERY'. Skipping update.")
             return
-
+       
         if not self.serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
-
+        
         # Check if backup_duration_cycle_1 is more than 60
         if not self.backup_duration_cycle_1 or float(self.backup_duration_cycle_1) <= 60:
             frappe.msgprint("Backup Duration Cycle 1 is 60 or less. Skipping update.")
             return
-
-        # Fetch Serial No doc
-        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
-        logger.info(f"==========serial_no_doc=========={serial_no_doc}")
-        print(f"==========serial_no_doc=========={serial_no_doc}")
-
-        # Check if Serial No's item group is Battery
-        if serial_no_doc.item_group != 'Battery':
-            frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
-            return
-
-        # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
-        battery_data = frappe.db.get_value(
-            "NJQCA Child",
-            {
-                "parent": self.name,
-                "item_group": "BATTERY"
-            },
-            ["variant_3", "variant_8", "variant_10"],
-            as_dict=True
-        )
-        logger.info(f"==========battery_data=========={battery_data}")
-        print(f"==========battery_data=========={battery_data}")
-
-        if not battery_data:
-            frappe.msgprint("No battery readings found in NJQCA Child.")
-            return
-
-        # Update basic battery fields
-        serial_no_doc.full_charge_capacity = battery_data.variant_3
-        serial_no_doc.current_charge_capacity = battery_data.variant_8
-        serial_no_doc.health = battery_data.variant_10
-
-        # Fetch cpu_load and discharge_rate values
-        readings = frappe.db.sql("""
-            SELECT cpu_load, discharge_rate 
-            FROM `tabNJQCA Result Parameters` 
-            WHERE parent = %s
-        """, (self.name,), as_dict=True)
-        logger.info(f"==========readings=========={readings}")
-        print(f"==========readings=========={readings}")
-
-        if readings:
-            total_cpu = sum(float(row.cpu_load) for row in readings if row.cpu_load is not None)
-            total_discharge = sum(float(row.discharge_rate) for row in readings if row.discharge_rate is not None)
-            count = len(readings)
-
-            average_cpu_load = round(total_cpu / count, 3) if count else 0
-            logger.info(f"==========average_cpu_load=========={average_cpu_load}")
-            print(f"==========average_cpu_load=========={average_cpu_load}")
-            average_discharge_rate = round(total_discharge / count, 3) if count else 0
-            logger.info(f"==========average_discharge_rate=========={average_discharge_rate}")
-            print(f"==========average_discharge_rate=========={average_discharge_rate}")
-
-            # Update average fields in Serial No
-            serial_no_doc.battery_average_cpu_load = average_cpu_load
-            serial_no_doc.battery_average_discharge_rate = average_discharge_rate
-
-        serial_no_doc.save(ignore_permissions=True)
-        frappe.msgprint("Battery readings and averages updated successfully.")
-
-
-
+        
+        try:
+            # Fetch Serial No doc
+            serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+            # Check if Serial No's item group is Battery
+            if serial_no_doc.item_group != 'BATTERY':
+                frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
+                return
+            
+            # Fetch variant_3, variant_8, variant_10 from NJQCA Child table
+            battery_data = frappe.db.get_value(
+                "NJQCA Child",
+                {
+                    "parent": self.name,
+                    "item_group": "BATTERY"
+                },
+                ["variant_3", "variant_8", "variant_10"],
+                as_dict=True
+            )
+            
+            if not battery_data:
+                frappe.msgprint("No battery readings found in NJQCA Child.")
+                return
+            
+            # Update basic battery fields
+            serial_no_doc.full_charge_capacity = battery_data.variant_3
+            serial_no_doc.current_charge_capacity = battery_data.variant_8
+            serial_no_doc.health = battery_data.variant_10
+            
+            # Fetch cpu_load and discharge_rate values
+            readings = frappe.db.sql("""
+                SELECT cpu_load, discharge_rate
+                FROM `tabNJQCA Result Parameters`
+                WHERE parent = %s
+            """, (self.name,), as_dict=True)
+            # logger.info(f"==========readings=========={readings}")
+            
+            if readings:
+                total_cpu = sum(float(row.cpu_load) for row in readings if row.cpu_load is not None)
+                total_discharge = sum(float(row.discharge_rate) for row in readings if row.discharge_rate is not None)
+                count = len(readings)
+                average_cpu_load = round(total_cpu / count, 3) if count else 0
+                # logger.info(f"==========average_cpu_load=========={average_cpu_load}")             
+                average_discharge_rate = round(total_discharge / count, 3) if count else 0                
+                # Update average fields in Serial No
+                serial_no_doc.battery_average_cpu_load = average_cpu_load
+                serial_no_doc.battery_average_discharge_rate = average_discharge_rate                
+                serial_no_doc.save(ignore_permissions=True)
+                frappe.db.commit()            
+                frappe.msgprint("Battery readings and averages updated successfully.")
+                
+        except Exception as e:
+            logger.error(f"Error updating battery readings: {str(e)}")
+            frappe.log_error(f"Failed to save Serial No: {str(e)}")
+            frappe.msgprint(f"Error saving battery data: {str(e)}")
 def get_repack_items(self):
     get_repack_items_list = []
 
@@ -926,6 +843,7 @@ def get_info_from_serial_no(doc=None):
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
+                print("non_njqca_item_groups================92999===============", non_njqca_item_groups)
 
                 if non_njqca_item_groups and non_njqca_item_groups is not None:
                     sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
@@ -957,12 +875,14 @@ def get_info_from_serial_no(doc=None):
 
             item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            if (nj_settings_item_group and nj_settings_item_group != doc_json['item_group']):
+            if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
 
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
+            elif (doc_json['item_group']) in nj_settings_item_group:
+                pass
             else:
                 result['item_code'] = sle_entry.get('item_code')
                 
@@ -1486,7 +1406,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         sudden_drop_limit=""
-        if (njqca_battery_item_group and njqca_battery_item_group == item_group):       
+        if (njqca_battery_item_group and  item_group in njqca_battery_item_group):       
             sudden_drop_limit = frappe.db.get_value('Item Wizards',{'manufacture_model': ['like', f'%{manufacturer_model}%'], 'docstatus': '1', 'part_list_status': 'Completed'},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
@@ -1494,16 +1414,9 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                             SELECT value, idx 
                             FROM `tabNJQCA Result Parameters`
                             WHERE idx >= (
-                                SELECT idx 
+                                SELECT idx-1
                                 FROM `tabNJQCA Result Parameters`
-                                WHERE parent = %(parent_name)s 
-                                AND parameter = (
-                                    SELECT value 
-                                    FROM `tabNJQCA Result Parameters`
-                                    WHERE parent = %(parent_name)s
-                                        AND parameter = 'Battery_Discharging_Start_Time'
-                                    ORDER BY idx DESC LIMIT 1
-                                )
+                                WHERE parent = %(parent_name)s and parameter = 'Battery_Discharging_Start_Time' ORDER BY idx DESC LIMIT 1
                             )
                             AND parameter <> 'Battery_Discharging_Start_Time'
                             AND parent = %(parent_name)s
@@ -2256,3 +2169,53 @@ def update_njqca_doc(njqca_name, evaluation_results):
         frappe.db.commit()
     except Exception as e:
         frappe.log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")
+        
+@frappe.whitelist()
+def get_battery_serialno(bios_serial_no,inspection_type):
+    try:
+        inspection_types = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"get_battery_serial_no"},"value")
+
+        if inspection_types is not None and inspection_types:
+            if inspection_type in inspection_types:
+                pass
+            else:
+                return ""
+        else:
+            return ""
+
+        nj_serial_no_query="""
+        Select name from `tabSerial No` where bios_serial_no=%s limit 1;          
+        """
+        serial_no=frappe.db.sql(nj_serial_no_query,bios_serial_no,as_dict=1)
+        nj_serial_no=""
+        if serial_no:
+            nj_serial_no=serial_no[0].name
+        if nj_serial_no is not None and nj_serial_no:
+            query=f"""
+                SELECT tot_sed.serial_no as battery_serial_no
+                FROM `tabStock Entry Detail` AS sed
+                INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+                INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+                WHERE
+                    (sed.serial_no = {nj_serial_no} OR 
+                        sed.serial_no LIKE CONCAT({nj_serial_no}, '\\n%') OR 
+                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}) OR 
+                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}, '\\n%')) AND
+                    stock_entry.purpose = 'Repack' AND 
+                    stock_entry.docstatus = 1 AND
+                    tot_sed.s_warehouse IS NOT NULL AND 
+                    tot_sed.item_group = 'Battery' AND
+                ORDER BY stock_entry.creation DESC
+                LIMIT 1        
+            """
+            data=frappe.db.sql(query,as_dict=1)
+
+            if data is not None and data:  
+                print(data)
+                return data[0].get("battery_serial_no")
+            else:
+                return ""
+        else:
+            return ""
+    except Exception as e:
+        return ""

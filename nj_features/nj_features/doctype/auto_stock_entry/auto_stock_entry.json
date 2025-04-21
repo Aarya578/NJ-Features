@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "creation": "2025-04-15 16:20:12.392084",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "default_target_warehouse",
+  "column_break_xpwx6",
+  "serial_no"
+ ],
+ "fields": [
+  {
+   "fieldname": "default_target_warehouse",
+   "fieldtype": "Read Only",
+   "in_list_view": 1,
+   "label": "Default Target Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "label": "Serial No",
+   "options": "Barcode"
+  },
+  {
+   "fieldname": "column_break_xpwx6",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "hide_toolbar": 1,
+ "links": [],
+ "modified": "2025-04-15 18:41:03.026584",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Auto Stock Entry",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "select": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Auto Stock Entry",
+   "select": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

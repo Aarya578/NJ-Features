@@ -36,12 +36,11 @@ def fetch_and_stage_inventory_sync():
         ORDER BY 
             total_actual_qty DESC;
     """, as_dict=True)
-    print("results----39---", results)
+    # print("results----39---", results)
     item_to_variant_map = {}
     for row in results:
         if float(row.total_actual_qty) <= 0:
             continue
-
         item_codes = row.item_codes.split(", ")
         for item_code in item_codes:
             item_to_variant_map[item_code] = row.shopify_variant_id
@@ -160,7 +159,7 @@ def fetch_and_stage_inventory_sync():
         ORDER BY 
             so_data.sales_order, so_data.item_code;
     """, as_dict=True)
-    print("so_data----70---", open_so_data)
+    # print("so_data----70---", open_so_data)
     try:
         for row in open_so_data:
             item_code = row.item_code
@@ -201,9 +200,8 @@ def sync_inventory_to_shopify():
     queued = frappe.get_all("NJ Inventory Sync Main", filters={
         "sync_status": "Queued",
         "is_active": 1,
-        "shopify_variant_id": ["in", ["43748392042678", "43748392075446", "43748392108214","43765186953398","43792147873974","43792147841206","43792147611830","42205312909494","43790420967606"]],
    }, fields=["name", "item_code", "actual_qty", "shopify_variant_id","updated_qty"])
-    print("queued-----78", queued)
+    # print("queued-----78", queued)
     for row in queued:
         print("row-----79", row)
         variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()]
@@ -260,3 +258,67 @@ def sync_inventory_to_shopify():
             "is_active": 0
         })
         frappe.db.commit()
+
+
+@frappe.whitelist()
+def get_all_variant_ids():
+    import requests
+    token = "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"
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+
+    base_url = "https://newjaisa.myshopify.com/admin/api/2024-01/products.json"
+    params = {
+        "limit": 250,
+        "fields": "id,title,variants,product_type"
+    }
+
+    variant_ids_added = 0
+    variant_ids_skipped = 0
+
+    while base_url:
+        response = requests.get(base_url, headers=headers, params=params)
+        if response.status_code != 200:
+            frappe.log_error(f"Error fetching Shopify products: {response.text}")
+            break
+
+        products = response.json().get("products", [])
+
+        for product in products:
+            product_type = product.get("product_type") or "Default"
+
+            # Check if Item Group exists
+            item_group_exists = frappe.db.exists("Item Group", {"name": product_type})
+
+            for variant in product.get("variants", []):
+                variant_id = str(variant.get("id"))
+                print("variant_id-----", variant_id)
+
+                if not frappe.db.exists("NJ Inventory Sync Main", {"shopify_variant_id": variant_id}):
+                    doc = frappe.new_doc("NJ Inventory Sync Main")
+                    doc.shopify_variant_id = variant_id
+                    if item_group_exists:
+                        doc.item_group = product_type
+                    doc.actual_qty = 0
+                    doc.updated_qty = 0
+                    doc.is_active =1
+                    doc.insert(ignore_permissions=True)
+                    variant_ids_added += 1
+
+        # Handle pagination
+        link_header = response.headers.get("Link")
+        if link_header and 'rel="next"' in link_header:
+            links = link_header.split(",")
+            next_url = None
+            for link in links:
+                if 'rel="next"' in link:
+                    next_url = link.split(";")[0].strip()[1:-1]
+                    break
+            base_url = next_url
+            params = {}  # Reset params since URL has them
+        else:
+            base_url = None
+
+    frappe.msgprint(f"{variant_ids_added} variant IDs added successfully.")

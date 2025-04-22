@@ -843,7 +843,6 @@ def get_info_from_serial_no(doc=None):
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
-                print("non_njqca_item_groups================92999===============", non_njqca_item_groups)
 
                 if non_njqca_item_groups and non_njqca_item_groups is not None:
                     sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
@@ -2211,7 +2210,6 @@ def get_battery_serialno(bios_serial_no,inspection_type):
             data=frappe.db.sql(query,as_dict=1)
 
             if data is not None and data:  
-                print(data)
                 return data[0].get("battery_serial_no")
             else:
                 return ""

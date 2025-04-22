@@ -10,11 +10,9 @@ frappe.ui.form.on('Sales Invoice', {
     },
     after_save: function(frm) {
         if (!frm.doc.allocate_advances_automatically) {
-            console.log('get_advances-----trigger');
             frm.trigger('get_advances');
         }
     }
-
 });
 
 // frappe.ui.form.on('Sales Invoice Item', {

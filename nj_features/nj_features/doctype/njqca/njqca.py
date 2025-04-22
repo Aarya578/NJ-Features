@@ -2177,9 +2177,9 @@ def get_battery_serialno(bios_serial_no,inspection_type):
 
         if inspection_types is not None and inspection_types:
             if inspection_type in inspection_types:
-                pass
-            else:
                 return ""
+            else:
+                pass
         else:
             return ""
 

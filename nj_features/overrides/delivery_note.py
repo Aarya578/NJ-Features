@@ -5,6 +5,7 @@ import re
 import json
 import frappe
 import requests
+import traceback
 from frappe import _
 from datetime import datetime, timedelta
 from nj_lib.utils.common_utils import get_latest_item_wizard
@@ -19,145 +20,155 @@ MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillment
 
 class CustomDeliveryNote(DeliveryNote):
     def on_submit(self):
-        super().on_submit()
-        
-        against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
-        raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
-        shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
-        if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
-            order_id = raw_order_id.lstrip('#')
-        else:
-            raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "order_id")
-            order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-            if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+        try:
+            super().on_submit()
+            
+            against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+            raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
+            shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+            if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
+                order_id = raw_order_id.lstrip('#')
+            else:
+                raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "order_id")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-        
-        if order_id and self.is_return==0:
-            trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
 
-        qi_mandatory_checks_on_dn_submit(self, method=None)
+                if not order_id:
+                    raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+                    order_id = raw_order_id.lstrip('#') if raw_order_id else None
+            
+            if order_id and self.is_return==0:
+                trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
 
-        if self.is_return==0:
-            send_sales_invoice_email_on_delivery_note(self, method=None)
-        # send_delivery_note_email(self, method=None)
-        # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
-        # order_id = None
-        # order_values = frappe.db.get_value(
-        # "Sales Order", 
-        # {"name": against_sales_order}, 
-        # ["order_id", "amazon_order_id", "shopify_order_id"]
-        # )
-        # Get the first non-empty value
-        # if order_values:
-        #     order_id = next((value for value in order_values if value), None)
+            qi_mandatory_checks_on_dn_submit(self, method=None)
 
-            # if order_id:
-            #     awb_data = check_courie_service(order_id)
+            if self.is_return==0:
+                send_sales_invoice_email_on_delivery_note(self, method=None)
+            
+            # send_delivery_note_email(self, method=None)
+            # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+            # order_id = None
+            # order_values = frappe.db.get_value(
+            # "Sales Order", 
+            # {"name": against_sales_order}, 
+            # ["order_id", "amazon_order_id", "shopify_order_id"]
+            # )
+            # Get the first non-empty value
+            # if order_values:
+            #     order_id = next((value for value in order_values if value), None)
 
-            #     # Initialize variables
-            #     awb_code = None
-            #     courier_name = None
-            #     label_url = None
+                # if order_id:
+                #     awb_data = check_courie_service(order_id)
 
-            #     if awb_data and awb_data.get("message"):
-            #         awb_info = awb_data["message"].get("awb", {})
-            #         label_info = awb_data["message"].get("label", {})
+                #     # Initialize variables
+                #     awb_code = None
+                #     courier_name = None
+                #     label_url = None
 
-            #         # Extract AWB code only if successfully generated
-            #         if isinstance(awb_info, dict) and awb_info.get("status_code") == 400:
-            #             print("AWB generation failed:", awb_info.get("message"))
-            #             awb_code = awb_info.get("message").split("Current AWB")[-1].strip()
-            #         elif isinstance(awb_info, dict):
-            #             awb_code = awb_info.get("awb_code")  # Adjust based on actual API response
+                #     if awb_data and awb_data.get("message"):
+                #         awb_info = awb_data["message"].get("awb", {})
+                #         label_info = awb_data["message"].get("label", {})
 
-            #         # Extract courier name if available
-            #         if awb_code:
-            #             courier_name = "Extract Courier Name Logic Here"  # Adjust this if the courier name is provided in the response
+                #         # Extract AWB code only if successfully generated
+                #         if isinstance(awb_info, dict) and awb_info.get("status_code") == 400:
+                #             print("AWB generation failed:", awb_info.get("message"))
+                #             awb_code = awb_info.get("message").split("Current AWB")[-1].strip()
+                #         elif isinstance(awb_info, dict):
+                #             awb_code = awb_info.get("awb_code")  # Adjust based on actual API response
 
-            #         # Extract label URL
-            #         if isinstance(label_info, dict) and label_info.get("label_created") == 1:
-            #             label_url = label_info.get("label_url")
+                #         # Extract courier name if available
+                #         if awb_code:
+                #             courier_name = "Extract Courier Name Logic Here"  # Adjust this if the courier name is provided in the response
 
-            #     # Assign extracted values
-            #     self.tracking_id = awb_code
-            #     self.courier_partner = courier_name
-            #     self.shipping_label = label_url
+                #         # Extract label URL
+                #         if isinstance(label_info, dict) and label_info.get("label_created") == 1:
+                #             label_url = label_info.get("label_url")
 
-        if not self.is_return:
-            self._process_customer_details()
-            return
-        
-        self._process_serial_numbers()
+                #     # Assign extracted values
+                #     self.tracking_id = awb_code
+                #     self.courier_partner = courier_name
+                #     self.shipping_label = label_url
+
+            if not self.is_return:
+                self._process_customer_details()
+                return
+            
+            self._process_serial_numbers()
+
+        except Exception as e:
+            error_message = f"An error occurred during on_submit:\n{traceback.format_exc()}"
+            frappe.db.rollback()
+            frappe.throw(error_message)
     
     def _process_customer_details(self):
-        for item in self.get('items'):
-            serial_no = item.serial_no.strip() if item.serial_no else ""
+        try:
+            for item in self.get('items'):
+                serial_no = item.serial_no.strip() if item.serial_no else ""
 
-            if not serial_no:
-                continue
-
-            serial_list = serial_no.split('\n')
-
-            if not item.against_sales_order:  # Ensure sales order exists
-                frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
-
-            sales_order_data = frappe.db.sql("""
-                SELECT so.customer_name, so.name, 
-                    COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                    so.transaction_date, so.delivery_date, 
-                    si.sales_channel, addr.email_id, addr.phone,
-                    IFNULL(so.shipping_address, so.address_display) AS so_address
-                FROM `tabSales Order` so
-                INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
-                INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-                INNER JOIN `tabDynamic Link` link ON link.link_name = so.customer
-                INNER JOIN tabAddress addr ON addr.name = link.parent
-                WHERE so.name = %s
-                LIMIT 1
-            """, (item.against_sales_order,), as_dict=True)  # Fixed `item["against_sales_order"]`
-
-            if not sales_order_data:
-                frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
-
-            sales_order_info = sales_order_data[0]
-
-            for serial in serial_list:
-                serial = serial.strip()
-                if not serial:
+                if not serial_no:
                     continue
 
-                try:
-                    serial_no_doc = frappe.get_doc('Serial No', serial, for_update=True)
-                except frappe.DoesNotExistError:
-                    frappe.throw(f"Serial No {serial} not found in the system")
+                serial_list = serial_no.split('\n')
 
-                serial_no_doc.first_name = sales_order_info.get("customer_name", "")
-                serial_no_doc.sales_order_id = sales_order_info.get("name", "")
-                serial_no_doc.order_id = sales_order_info.get("order_id", "")
-                serial_no_doc.order_date = sales_order_info.get("transaction_date")
-                serial_no_doc.shipped_date = self.get("posting_date")
-                serial_no_doc.tracking_id = self.get("tracking_id")
-                serial_no_doc.courier_name = self.get("courier_service")
-                serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
-                serial_no_doc.sales_channel = sales_order_info.get("sales_channel", "")
-                serial_no_doc.mobile_no = sales_order_info.get("phone", "")
-                serial_no_doc.end_date = 0
-                serial_no_doc.email_id = sales_order_info.get("email_id", "")
-                serial_no_doc.address = sales_order_info.get("so_address", "")
-                serial_no_doc.warranty_start_date_ = self.get("posting_date")
+                if not item.against_sales_order:
+                    frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
 
-                posting_date_str = self.get("posting_date")
+                sales_order_data = frappe.db.sql("""
+                    SELECT so.customer_name, so.name, 
+                        COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
+                        so.transaction_date, so.delivery_date, 
+                        si.sales_channel, addr.email_id, addr.phone,
+                        IFNULL(so.shipping_address, so.address_display) AS so_address
+                    FROM `tabSales Order` so
+                    INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
+                    INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+                    INNER JOIN `tabDynamic Link` link ON link.link_name = so.customer
+                    INNER JOIN tabAddress addr ON addr.name = link.parent
+                    WHERE so.name = %s
+                    LIMIT 1
+                """, (item.against_sales_order,), as_dict=True)  # Fixed `item["against_sales_order"]`
 
-                # Convert string to datetime object
-                posting_date = datetime.strptime(posting_date_str, "%Y-%m-%d")
+                if not sales_order_data:
+                    frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
 
-                # Add 365 days
-                end_date = posting_date + timedelta(days=365)
-                print("end_date",end_date)
+                sales_order_info = sales_order_data[0]
 
-                serial_no_doc.save(ignore_permissions=True)
+                for serial in serial_list:
+                    serial = serial.strip()
+                    if not serial:
+                        continue
+
+                    try:
+                        serial_no_doc = frappe.get_doc('Serial No', serial, for_update=True)
+                    
+                    except frappe.DoesNotExistError:
+                        frappe.throw(f"Serial No {serial} not found in the system")
+
+                    serial_no_doc.first_name = sales_order_info.get("customer_name", "")
+                    serial_no_doc.sales_order_id = sales_order_info.get("name", "")
+                    serial_no_doc.order_id = sales_order_info.get("order_id", "")
+                    serial_no_doc.order_date = sales_order_info.get("transaction_date")
+                    serial_no_doc.shipped_date = self.get("posting_date")
+                    serial_no_doc.tracking_id = self.get("tracking_id")
+                    serial_no_doc.courier_name = self.get("courier_service")
+                    serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
+                    serial_no_doc.sales_channel = sales_order_info.get("sales_channel", "")
+                    serial_no_doc.mobile_no = sales_order_info.get("phone", "")
+                    serial_no_doc.email_id = sales_order_info.get("email_id", "")
+                    serial_no_doc.address = sales_order_info.get("so_address", "")
+                    serial_no_doc.warranty_start_date_ = self.get("posting_date")
+
+                    posting_date_raw = self.get("posting_date")
+                    if isinstance(posting_date_raw, str):
+                        end_date = datetime.strptime(posting_date_raw, "%Y-%m-%d")
+                    else:
+                        end_date = posting_date_raw
+
+                    serial_no_doc.end_date = end_date + timedelta(days=365)
+
+                    serial_no_doc.save(ignore_permissions=True)
+
+        except Exception as e:
+            frappe.throw("Error in _process_customer_details",str(e))
     
     def _process_serial_numbers(self):
 
@@ -331,9 +342,9 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
             if customer_email:
                 customer_email = frappe.db.get_value("Address", customer_email, "email_id")
 
-        if not customer_email:
-            frappe.msgprint(f"⚠️ No email found for customer {sales_invoice_doc.customer}. Email not sent.")
-            return
+        # if not customer_email:
+        #     frappe.msgprint(f"⚠️ No email found for customer {sales_invoice_doc.customer}. Email not sent.")
+        #     return
 
         pdf_data = frappe.attach_print("Sales Invoice", sales_invoice, print_format="Standard")
 
@@ -392,8 +403,6 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
 
     except Exception as e:
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
-        frappe.throw(f"⚠️ Failed to send email: {str(e)}")
-
 
 @frappe.whitelist()
 def get_cod_amount(so_name):

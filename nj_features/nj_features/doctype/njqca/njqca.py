@@ -476,6 +476,7 @@ class NJQCA(Document):
         get_grading_Authentication(self)
 
     def on_submit(self):
+        self.update_item_groups()
         self.battery_readings()
         self.update_serial_no_readings()
         if self.power_on == 'Yes' and self.repack_item_code != '':
@@ -698,6 +699,86 @@ class NJQCA(Document):
             logger.error(f"Error updating battery readings: {str(e)}")
             frappe.log_error(f"Failed to save Serial No: {str(e)}")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
+
+    def update_item_groups(self):
+        if self.inspection_type != "Final QC":
+            return
+
+        serial_no = self.serial_no
+        if not serial_no:
+            frappe.msgprint("Serial No not found in serial no field. QC Reports not updated.")
+            return
+
+        try:
+            if not frappe.db.exists("Serial No", serial_no):
+                frappe.msgprint(f"Serial No {serial_no} does not exist in the system.")
+                return
+
+            serial_doc = frappe.get_doc("Serial No", serial_no)
+
+            # Fetch NJQCA Child rows
+            child_data = frappe.get_all(
+                "NJQCA Child",
+                filters={"parent": self.name},
+                fields=[
+                    "item_group", "variant_1", "variant_2", "variant_3",
+                    "variant_6", "variant_7", "variant_8", "variant_10"
+                ]
+            )
+
+            # Mapping item group to specific variants
+            field_map = {
+                "Laptop RAM": ["variant_6", "variant_7", "variant_8"],
+                "Laptop Processors": ["variant_1", "variant_6", "variant_7"],
+                "LAPTOP STORAGE": ["variant_6", "variant_10"],
+                "WIFI CARD": ["variant_1", "variant_2", "variant_3"]
+            }
+
+            # Clear existing item_group_report entries
+            serial_doc.item_group_report = []
+
+            for row in child_data:
+                item_group = row.item_group
+                if item_group not in field_map:
+                    continue
+
+                # Conditional checks for Laptop RAM
+                if item_group == "Laptop RAM":
+                    if not all([row.variant_6, row.variant_7, row.variant_8]):
+                        continue  # skip if any required RAM field is missing
+
+                # Conditional checks for LAPTOP STORAGE
+                if item_group == "LAPTOP STORAGE":
+                    if not row.variant_6 or not row.variant_10:
+                        continue  # skip if required fields missing
+                    try:
+                        storage_size = int(row.variant_10.split()[0])  # Assumes format like "256 GB"
+                        if storage_size < 64:
+                            continue  # skip if not >64 GB
+                    except:
+                        continue  # skip if can't parse size
+
+                # Compose specification value
+                variant_fields = field_map[item_group]
+                values = [row.get(field) for field in variant_fields if row.get(field)]
+
+                if values:
+                    specification = ", ".join(values)
+                    serial_doc.append("item_group_report", {
+                        "part": item_group,
+                        "specification": specification
+                    })
+
+            serial_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+
+        except Exception as e:
+            frappe.log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
+
+
+
+
+        
 def get_repack_items(self):
     get_repack_items_list = []
 

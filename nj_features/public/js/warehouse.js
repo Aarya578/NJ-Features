@@ -3,6 +3,9 @@ frappe.ui.form.on('Warehouse', {
         if(frm.doc.warehouse_type){
             frm.set_df_property('department', 'read_only', 1);
         }
+        frm.set_query('ase_user', function() {
+            return { filters: { "enabled": 1 } };
+        });
     },
     department: function(frm) {
         let cur_department = frm.doc.department;

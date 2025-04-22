@@ -39,15 +39,15 @@ frappe.ui.form.on('Auto Stock Entry', {
 				</div>`,
 				callback: function(r) {
 					if (r && r.message) {
-						frm.set_value('serial_no', '')
-						frm.refresh_field('serial_no')
+						frappe.utils.play_sound('submit')
 					}
 				},
 				error: function(err) {
-					frm.set_value('serial_no', '')
-					frm.refresh_field('serial_no')
+					frappe.utils.play_sound('error')
 				}
 			})
+			frm.set_value('serial_no', '')
+			frm.refresh_field('serial_no')
 			$('[data-fieldname="serial_no"]').focus();
 		}
 	}
@@ -61,6 +61,7 @@ function fill_work_warehouse(frm) {
 				frm.set_value('default_target_warehouse', r.message.work_warehouse)
 				frm.refresh_field('default_target_warehouse')
 			}
-		}
+		},
+		error: function(err) { frappe.utils.play_sound('error') }
 	})
 }

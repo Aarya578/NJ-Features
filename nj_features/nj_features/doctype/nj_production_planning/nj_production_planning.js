@@ -14,7 +14,6 @@ frappe.ui.form.on('NJ Production Planning', {
                     if (r.message) {
                         let data = r.message;
                         frm.clear_table('nj_production_planning_child');
-                        console.log('r -------------- ', data);
                         data.forEach(function(item) {
                             let child = frm.add_child('nj_production_planning_child');
                             child.model = item.model ? item.model.toUpperCase() : '';
@@ -56,7 +55,6 @@ frappe.ui.form.on('NJ Production Planning', {
             callback: function(r) {
                 if (r.message) {
 
-                    console.log("message ------------------- ", r.message);
                     let data = r.message[0];
                 
                     frm.clear_table('nj_production_planning_child');

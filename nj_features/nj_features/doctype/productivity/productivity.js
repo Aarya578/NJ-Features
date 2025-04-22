@@ -2,7 +2,6 @@ frappe.ui.form.on('Productivity', {
     department: function (frm) {
         if (frm.doc.department) {
             // Fetch data using the server-side function
-            console.log('cur_frm', cur_frm.doc);
             frappe.call({
                 method: "nj_features.nj_features.doctype.productivity.productivity.fetch_productivity_data",
                 args: {
@@ -43,7 +42,6 @@ frappe.ui.form.on('Productivity', {
 });
 
 function filter_productivity_table(frm) {
-    console.log('triggering...');
     if (frm.doc.from && frm.doc.to) {
         // Convert "from" and "to" to Date objects for comparison
         let from_date = frappe.datetime.str_to_obj(frm.doc.from);
@@ -66,7 +64,6 @@ function populate_productivity_table(frm, data) {
 
     // Add rows to the child table
     data.forEach(row => {
-        console.log(" ------------------ ", row)
         let child = frm.add_child("productivity_child_table");
         child.posting_date = row.posting_date;
         child.serial_no = row.serial_no;

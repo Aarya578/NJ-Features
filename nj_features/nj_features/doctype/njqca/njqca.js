@@ -120,17 +120,12 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
-
-        console.log("selectedModel:", selectedModel);
-        console.log("selectedBrand:", selectedBrand);
-        console.log("selectedItemGroup:", selectedItemGroup);
         
         if (selectedModel) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
-                    console.log(r.message);
                     if (r.message.error) {
                         frappe.msgprint({
                             title: __("Error"),
@@ -139,7 +134,6 @@ frappe.ui.form.on('NJQCA', {
                         });
                         frappe.validated = false;
                     } else if (r.message) {
-                        console.log(r.message);
                         
                         let existingRow = null;
         

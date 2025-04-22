@@ -45,10 +45,10 @@ def submit_ste(t_warehouse, serial_no):
 
 @frappe.whitelist()
 def get_work_warehouse():
-	emp_data = frappe.db.get_value('Employee', {'user_id': frappe.session.user, 'status': 'Active'}, ['work_warehouse'], as_dict=1)
-	if emp_data is None:
-		frappe.throw("No Active Employee data found for user: {0}".format(frappe.session.user))
-	if not emp_data.get('work_warehouse'):
-		frappe.throw(f"Work warehouse is missing for <b>Employee: {frappe.session.user}</b>.")
+	ase_data = frappe.db.get_value('Warehouse', {'ase_user': frappe.session.user, 'disabled': 0}, ['name'], as_dict=1)
+	if ase_data is None:
+		frappe.throw("No warehouse found for ASE user: {0}".format(frappe.session.user))
+	if not ase_data.get('name'):
+		frappe.throw(f"Warehouse is missing for <b>User: {frappe.session.user}</b>. Fill ASE User")
 
-	return {"work_warehouse": emp_data.get('work_warehouse')}
+	return {"work_warehouse": ase_data.get('name')}

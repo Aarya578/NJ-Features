@@ -25,7 +25,7 @@ frappe.ui.form.on('Serial No', {
 frappe.ui.form.on('User', {
     refresh() {
         $('.col-lg-2.layout-side-section').hide();
-        if (!frappe.user.has_role('Developer')) {
+        if (!frappe.user.has_role('Developer') || !frappe.user.has_role('User Access Modification')) {    
 
             cur_frm.set_df_property('sb1', 'hidden', 1);
             cur_frm.set_df_property('roles', 'hidden', 1);
@@ -144,3 +144,239 @@ $.extend(frappe.user, {
         });
     }
 });
+
+// Zoom function in scanner
+frappe.provide("frappe.ui");
+
+frappe.ui.Scanner = class Scanner {
+	constructor(options) {
+		this.dialog = null;
+		this.handler = null;
+		this.options = options;
+		this.is_alive = false;
+		this.scan_area_id = null;
+
+		this.zoomStep = 0.2;
+		this.lastZoom = 1.0;
+		this.maxZoom = 10.0;
+		this.minZoom = 1.0;
+
+		this.autoZooming = false;
+		this.autoZoomAllowed = true;
+		this.zoomUnsupportedAlertShown = false;
+
+		if (!("multiple" in this.options)) {
+			this.options.multiple = false;
+		}
+
+		if (options.container) {
+			this.$scan_area = $(options.container);
+			this.scan_area_id = frappe.dom.set_unique_id(this.$scan_area);
+		}
+
+		if (options.dialog) {
+			this.dialog = this.make_dialog();
+			this.dialog.show();
+		}
+	}
+
+	make_dialog() {
+		let me = this;
+		let dialog = new frappe.ui.Dialog({
+			title: __("Scan QR Code"),
+			fields: [{ fieldtype: "HTML", fieldname: "scan_area" }],
+			on_page_show() {
+				me.$scan_area = dialog.get_field("scan_area").$wrapper;
+				me.$scan_area.addClass("barcode-scanner");
+				me.scan_area_id = frappe.dom.set_unique_id(me.$scan_area);
+				me.scan();
+			},
+			on_hide() {
+				me.stop_scan();
+			}
+		});
+		return dialog;
+	}
+
+	scan() { this.load_lib().then(() => this.start_scan()); }
+
+	start_scan() {
+		if (!this.handler) { this.handler = new Html5Qrcode(this.scan_area_id); }
+
+		const config = {
+			fps: 10,
+			qrbox: 250,
+			experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+			rememberLastUsedCamera: true,
+			supportedScanTypes: window.Html5QrcodeScanType
+				? [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+				: undefined,
+			videoConstraints: {
+				facingMode: "environment",
+				focusMode: "continuous"
+			}
+		};
+
+		this.handler
+			.start(
+				{ facingMode: "environment", focusMode: "continuous" },
+				config,
+				(decodedText, decodedResult) => {
+					this.autoZooming = false;
+					this.autoZoomAllowed = false;
+
+					if (this.options.on_scan) {
+						try {
+							this.options.on_scan(decodedResult);
+						} catch (err) {
+							frappe.show_alert({ message: err, indicator: "red" }, 2);
+						}
+					}
+
+					if (!this.options.multiple) {
+						this.stop_scan();
+						this.hide_dialog();
+					}
+				},
+				(errorMessage) => {
+					if (
+						this.autoZoomAllowed &&
+						!this.autoZooming &&
+						errorMessage.includes("No MultiFormat Readers")
+					) {
+						this.autoZooming = true;
+						this.tryZoomUntilDecode();
+					}
+				}
+			)
+			.then(() => {
+				this.is_alive = true;
+				this.enablePinchZoom(`#${this.scan_area_id}`);
+			})
+			.catch((err) => {
+				this.is_alive = false;
+				this.hide_dialog();
+				frappe.show_alert({
+					message: "Scanner error: " + err,
+					indicator: "red"
+				}, 2);
+			});
+	}
+
+	async tryZoomUntilDecode() {
+		const interval = 1000;
+		while (this.autoZooming && this.autoZoomAllowed && this.lastZoom < this.maxZoom) {
+			await new Promise((r) => setTimeout(r, interval));
+			this.lastZoom = Math.min(this.lastZoom + this.zoomStep, this.maxZoom);
+			this.applyZoom(this.lastZoom);
+		}
+		this.autoZooming = false;
+	}
+
+	applyZoom(zoomLevel) {
+		const video = document.querySelector(`#${this.scan_area_id} video`);
+		if (!video || !video.srcObject) return;
+
+		const track = video.srcObject.getVideoTracks()[0];
+		if (track && typeof track.getCapabilities === "function") {
+			const capabilities = track.getCapabilities();
+
+			if (!capabilities.zoom) {
+				if (!this.zoomUnsupportedAlertShown) {
+					this.zoomUnsupportedAlertShown = true;
+					frappe.show_alert({
+						message: "Zoom not supported on this device.",
+						indicator: "red"
+					}, 10);
+				}
+				return;
+			}
+
+			track
+				.applyConstraints({ advanced: [{ zoom: zoomLevel }] })
+				.catch((err) =>
+					frappe.show_alert({
+						message: "Zoom failed: " + err,
+						indicator: "red"
+					}, 2)
+				);
+		}
+	}
+
+	enablePinchZoom(selector) {
+		const el = document.querySelector(selector);
+		if (!el) return;
+
+		let evCache = [];
+		let prevDiff = -1;
+
+		el.style.touchAction = "none";
+
+		el.onpointerdown = (ev) => { evCache.push(ev); };
+
+		el.onpointermove = (ev) => {
+			const index = evCache.findIndex((e) => e.pointerId === ev.pointerId);
+			if (index >= 0) evCache[index] = ev;
+
+			if (evCache.length === 2) {
+				this.autoZoomAllowed = false;
+				this.autoZooming = false;
+
+				const dx = evCache[0].clientX - evCache[1].clientX;
+				const dy = evCache[0].clientY - evCache[1].clientY;
+				const curDiff = Math.sqrt(dx * dx + dy * dy);
+
+				if (prevDiff > 0) {
+					if (curDiff > prevDiff) {
+						this.lastZoom = Math.min(this.lastZoom + this.zoomStep, this.maxZoom);
+						this.applyZoom(this.lastZoom);
+					} else if (curDiff < prevDiff) {
+						this.lastZoom = Math.max(this.lastZoom - this.zoomStep, this.minZoom);
+						this.applyZoom(this.lastZoom);
+					}
+				}
+				prevDiff = curDiff;
+			}
+		};
+
+		const clearCache = (ev) => {
+			evCache = evCache.filter((e) => e.pointerId !== ev.pointerId);
+			if (evCache.length < 2) prevDiff = -1;
+		};
+
+		el.onpointerup = clearCache;
+		el.onpointercancel = clearCache;
+		el.onpointerout = clearCache;
+		el.onpointerleave = clearCache;
+	}
+
+	stop_scan() {
+		if (this.handler && this.is_alive) {
+			this.handler.stop().then(() => {
+				this.is_alive = false;
+				if (this.$scan_area) {
+					this.$scan_area.empty();
+				}
+				this.hide_dialog();
+			});
+		}
+	}
+
+	hide_dialog() { this.dialog && this.dialog.hide(); }
+
+	load_lib() {
+		return new Promise((resolve) => {
+			if (typeof Html5QrcodeScanType === "undefined") {
+				window.Html5QrcodeScanType = {
+					SCAN_TYPE_CAMERA: 2,
+					SCAN_TYPE_FILE: 1
+				};
+			}
+
+			frappe.require(
+				"/assets/frappe/node_modules/html5-qrcode/dist/html5-qrcode.min.js",
+				() => { resolve(); }
+			);
+		});
+	}
+};

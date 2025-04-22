@@ -412,8 +412,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                                     let row = cur_frm.fields_dict.items.grid.grid_rows_by_docname[cdn];
                                     if (row) {
                                         row.remove();  // Remove the row from the grid
-                                    } else {
-                                        console.log('Row not found for the current cdn.');
                                     }
                                 }
                                 d.hide();

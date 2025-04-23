@@ -125,7 +125,7 @@ frappe.ui.form.on('NJQCA', {
         console.log("selectedBrand:", selectedBrand);
         console.log("selectedItemGroup:", selectedItemGroup);
         
-        if (selectedModel) {
+        if (selectedModel && selectedItemGroup != "BATTERY") {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
@@ -165,6 +165,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
+
         if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) { requiredFields.push('warehouse'); }
         
         var errorMessages = [];
@@ -187,7 +188,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && selectedItemGroup != "BATTERY") {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -491,7 +492,10 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        get_item_template(selectedModel, selectedBrand, selectedItemGroup)
+
+        if (selectedItemGroup != "BATTERY") {
+            get_item_template(selectedModel, selectedBrand, selectedItemGroup)
+        }
 
         frm.refresh_field('item_template');
     },

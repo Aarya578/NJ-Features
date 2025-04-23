@@ -2264,31 +2264,33 @@ def get_battery_serialno(bios_serial_no,inspection_type):
             return ""
 
         nj_serial_no_query="""
-        Select name from `tabSerial No` where bios_serial_no=%s limit 1;          
+            Select name from `tabSerial No` where bios_serial_no=%s limit 1;          
         """
         serial_no=frappe.db.sql(nj_serial_no_query,bios_serial_no,as_dict=1)
+
         nj_serial_no=""
         if serial_no:
             nj_serial_no=serial_no[0].name
+
         if nj_serial_no is not None and nj_serial_no:
-            query=f"""
-                SELECT tot_sed.serial_no as battery_serial_no
-                FROM `tabStock Entry Detail` AS sed
-                INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-                INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-                WHERE
-                    (sed.serial_no = {nj_serial_no} OR 
-                        sed.serial_no LIKE CONCAT({nj_serial_no}, '\\n%') OR 
-                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}) OR 
-                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}, '\\n%')) AND
-                    stock_entry.purpose = 'Repack' AND 
-                    stock_entry.docstatus = 1 AND
-                    tot_sed.s_warehouse IS NOT NULL AND 
-                    tot_sed.item_group = 'Battery'
-                ORDER BY stock_entry.creation DESC
-                LIMIT 1        
-            """
-            data=frappe.db.sql(query,as_dict=1)
+            query="""
+                    SELECT tot_sed.serial_no as battery_serial_no
+                    FROM `tabStock Entry Detail` AS sed
+                    INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+                    INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+                    WHERE
+                        (sed.serial_no = %(serial_no)s OR 
+                            sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+                        stock_entry.purpose = 'Repack' AND 
+                        stock_entry.docstatus = 1 AND
+                        tot_sed.s_warehouse IS NOT NULL AND 
+                        tot_sed.item_group = 'Battery'
+                    ORDER BY stock_entry.creation DESC
+                    LIMIT 1
+                """
+            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
 
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
@@ -2296,5 +2298,6 @@ def get_battery_serialno(bios_serial_no,inspection_type):
                 return ""
         else:
             return ""
+        
     except Exception as e:
-        frappe.msgprint(f"An error occurred at get_battery_serialno: {traceback.format_exc()}")
+        return ""

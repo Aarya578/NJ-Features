@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "module.-.doc_type.-.parameter.-.##",
  "creation": "2024-01-30 19:54:30.744284",
  "doctype": "DocType",
@@ -110,7 +109,7 @@
   }
  ],
  "links": [],
- "modified": "2025-04-03 11:57:56.695284",
+ "modified": "2025-04-23 13:38:03.021646",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Settings",
@@ -147,6 +146,30 @@
    "select": 1,
    "share": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "role": "Auto Stock Entry",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "role": "Stock User",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "role": "Tech MR & Transfer Access",
+   "select": 1,
+   "share": 1
   }
  ],
  "sort_field": "modified",

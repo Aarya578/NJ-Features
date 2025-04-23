@@ -30,13 +30,11 @@ frappe.ui.form.on('Stock Movement Restriction Child', {
 
 frappe.ui.form.on('Inventory Details', {
     inwarded_warehouse: function(frm, cdt, cdn) {
-        console.log("cdt, cdn", cdt, cdn)
         let child = locals[cdt][cdn];
 
         if (child) {
 
             if (child) {
-                console.log("child",child)
                 let inwarded_warehouse_list = child.inwarded_warehouse_list ? 
                     child.inwarded_warehouse_list.split(',').map(w => w.trim()) : [];
 

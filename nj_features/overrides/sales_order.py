@@ -9,22 +9,22 @@ import uuid
 class CustomSalesOrder(SalesOrder):
     def on_submit(self):
         raw_order_id = None
+        if self.order_type!="Maintenance":
+            if self.shopify_order_id:
+                stripped_id = self.shopify_order_id.lstrip('#')
+                if len(stripped_id) < 7:
+                    raw_order_id = self.shopify_order_id
 
-        if self.shopify_order_id:
-            stripped_id = self.shopify_order_id.lstrip('#')
-            if len(stripped_id) < 7:
-                raw_order_id = self.shopify_order_id
+            # if not raw_order_id and self.order_id:
+            #     raw_order_id = self.order_id
 
-        if not raw_order_id and self.order_id:
-            raw_order_id = self.order_id
+            if not raw_order_id and self.shopify_order_number:
+                raw_order_id = self.shopify_order_number
 
-        if not raw_order_id and self.shopify_order_number:
-            raw_order_id = self.shopify_order_number
+            order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-        order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-        if order_id:
-            trigger_fulfillment(order_id)
+            if order_id:
+                trigger_fulfillment(order_id)
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
@@ -33,7 +33,7 @@ def trigger_fulfillment(order_id):
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": TOKEN
         }
-        # print("order_id-----26----", order_id)
+        print("order_id-----26---in so-", order_id)
         # Step 1: Fetch Order Details
         url = f"{SHOPIFY_URL}{order_id}"
         response = requests.get(url, headers=headers)  
@@ -87,10 +87,10 @@ def trigger_fulfillment(order_id):
                     fulfillment_id = fulfillment_data["fulfillment"]["id"]
                     return {"status": "success", "fulfillment_id": fulfillment_id}
                 else:
-                    frappe.throw("Fulfillment creation failed.")
+                    frappe.msgprint("Fulfillment creation failed.")
             else:
-                frappe.throw("Fulfillment Order not found.")
+                frappe.msgprint("Fulfillment Order not found.")
         else:
-            frappe.throw("Order not found.")
+            frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))

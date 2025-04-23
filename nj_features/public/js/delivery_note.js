@@ -56,20 +56,39 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
         let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        console.log("first_so---------59", first_so);
         if (first_so) {
             frappe.call({
                 method: "nj_features.overrides.delivery_note.get_cod_amount",
                 args: { so_name: first_so },
                 callback: function(res) {
                     if (res.message) {
-                        console.log("res.message",res.message)
                         frm.set_value("cod_amount", res.message.cod_amount); 
                         frm.set_value("shopify_order_id", res.message.order_id); 
                     }
                 }
             });
         }
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.get_warranty_data",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    const warranty = r.message[0]; // use first item
+                    // This is where the fix is needed
+                    if (warranty.warranty_start_date) {
+                        frm.set_value("warranty_start_date", warranty.warranty_start_date);
+                    }
+                    if (warranty.warranty_end_date) {
+                        frm.set_value("warranty_end_date", warranty.warranty_end_date);
+                    }
+                    
+                    // Refresh the form to make sure changes are applied
+                    frm.refresh_field("warranty_start_date");
+                    frm.refresh_field("warranty_end_date");
+                }
+            }
+        });
+        
     },
 
     courier_service: function(frm) {
@@ -87,14 +106,12 @@ frappe.ui.form.on('Delivery Note', {
     },
     fetch_cod: function(frm) {
         let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        console.log("first_so---------90", first_so);
         if (first_so) {
             frappe.call({
                 method: "nj_features.overrides.delivery_note.get_cod_amount",
                 args: { so_name: first_so },
                 callback: function(res) {
                     if (res.message) {
-                        console.log("res.message",res.message)
                         frm.set_value("cod_amount", res.message.cod_amount); 
                         frm.set_value("shopify_order_id", res.message.order_id); 
                     }

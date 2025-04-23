@@ -120,17 +120,12 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
-
-        console.log("selectedModel:", selectedModel);
-        console.log("selectedBrand:", selectedBrand);
-        console.log("selectedItemGroup:", selectedItemGroup);
         
         if (selectedModel && selectedItemGroup != "BATTERY") {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
-                    console.log(r.message);
                     if (r.message.error) {
                         frappe.msgprint({
                             title: __("Error"),
@@ -139,7 +134,6 @@ frappe.ui.form.on('NJQCA', {
                         });
                         frappe.validated = false;
                     } else if (r.message) {
-                        console.log(r.message);
                         
                         let existingRow = null;
         
@@ -238,23 +232,6 @@ frappe.ui.form.on('NJQCA', {
                     } else {  console.error('QI name is not defined'); }
                 }
             });
-        }
-    },
-
-    inspection_type: function(frm) {
-        if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_serialno',
-                args: { 'bios_serial_no': frm.doc.name, 
-                    "inspection_type":frm.doc.inspection_type,
-                 },
-                callback: function(r) {
-                    if (r.message) { 
-                        frm.set_value( 'serial_no', r.message); 
-                        frm.refresh_field('serial_no');
-                    }
-                }
-            })
         }
     },
 
@@ -518,6 +495,22 @@ frappe.ui.form.on('NJQCA', {
     },
     before_save: function(frm) {
 
+        if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_serialno',
+                args: { 
+                    "bios_serial_no": frm.doc.bios_serialno, 
+                    "inspection_type":frm.doc.inspection_type,
+                },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value( 'serial_no', r.message); 
+                        frm.refresh_field('serial_no');
+                    }
+                }
+            })
+        }
+
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
             args: { 'doc': frm.doc },
@@ -559,7 +552,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         })
-        
     },
 
     item_code: function(frm) {

@@ -955,9 +955,14 @@ def get_info_from_serial_no(doc=None):
 
             item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
+            # if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
+            #     result['item_group'] = item_group
+            #     result['serial_no'] = sle_entry.get('name')
+            doc_item_group = doc_json.get('item_group')  # safely get it
+            if doc_item_group and doc_item_group not in nj_settings_item_group:
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
+
 
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')

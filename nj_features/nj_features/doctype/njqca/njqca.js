@@ -121,7 +121,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
         
-        if (selectedModel) {
+        if (selectedModel && selectedItemGroup != "BATTERY") {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
@@ -159,6 +159,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
+
         if (frm.doc.rfq_id !== '' && frm.doc.rfq_id !== null && frm.doc.rfq_id !== undefined) { requiredFields.push('warehouse'); }
         
         var errorMessages = [];
@@ -181,7 +182,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && selectedItemGroup != "BATTERY") {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -231,23 +232,6 @@ frappe.ui.form.on('NJQCA', {
                     } else {  console.error('QI name is not defined'); }
                 }
             });
-        }
-    },
-
-    inspection_type: function(frm) {
-        if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_serialno',
-                args: { 'bios_serial_no': frm.doc.name, 
-                    "inspection_type":frm.doc.inspection_type,
-                 },
-                callback: function(r) {
-                    if (r.message) { 
-                        frm.set_value( 'serial_no', r.message); 
-                        frm.refresh_field('serial_no');
-                    }
-                }
-            })
         }
     },
 
@@ -485,7 +469,10 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        get_item_template(selectedModel, selectedBrand, selectedItemGroup)
+
+        if (selectedItemGroup != "BATTERY") {
+            get_item_template(selectedModel, selectedBrand, selectedItemGroup)
+        }
 
         frm.refresh_field('item_template');
     },
@@ -507,6 +494,22 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     before_save: function(frm) {
+
+        if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_serialno',
+                args: { 
+                    "bios_serial_no": frm.doc.bios_serialno, 
+                    "inspection_type":frm.doc.inspection_type,
+                },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value( 'serial_no', r.message); 
+                        frm.refresh_field('serial_no');
+                    }
+                }
+            })
+        }
 
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
@@ -549,7 +552,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             }
         })
-        
     },
 
     item_code: function(frm) {

@@ -2284,7 +2284,7 @@ def get_battery_serialno(bios_serial_no,inspection_type):
                     stock_entry.purpose = 'Repack' AND 
                     stock_entry.docstatus = 1 AND
                     tot_sed.s_warehouse IS NOT NULL AND 
-                    tot_sed.item_group = 'Battery' AND
+                    tot_sed.item_group = 'Battery'
                 ORDER BY stock_entry.creation DESC
                 LIMIT 1        
             """
@@ -2297,4 +2297,4 @@ def get_battery_serialno(bios_serial_no,inspection_type):
         else:
             return ""
     except Exception as e:
-        return ""
+        frappe.msgprint(f"An error occurred at get_battery_serialno: {traceback.format_exc()}")

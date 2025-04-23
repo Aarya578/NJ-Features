@@ -2293,7 +2293,7 @@ def get_battery_serialno(bios_serial_no,inspection_type):
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
             else:
-                return ""
+                return nj_serial_no
         else:
             return ""
         

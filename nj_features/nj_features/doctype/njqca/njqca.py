@@ -471,10 +471,6 @@ class NJQCA(Document):
     def before_save(self):
         update_storage_type(self)
 
-
-    def before_submit(self):
-        get_grading_Authentication(self)
-
     def on_submit(self):
         self.update_item_groups()
         self.battery_readings()
@@ -2254,6 +2250,8 @@ def update_njqca_doc(njqca_name, evaluation_results):
 def get_battery_serialno(bios_serial_no,inspection_type):
     try:
         inspection_types = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"get_battery_serial_no"},"value")
+
+        print("inspection_types --------------- ", inspection_types)
 
         if inspection_types is not None and inspection_types:
             if inspection_type in inspection_types:

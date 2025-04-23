@@ -532,9 +532,9 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                     
-                    s6 = time.time()
-                    update_serial_no_component_for_njqca(self)
-                    logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
+                    # s6 = time.time()
+                    # update_serial_no_component_for_njqca(self)
+                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()

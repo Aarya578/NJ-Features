@@ -34,6 +34,19 @@ frappe.ui.form.on('Delivery Note', {
         }
     },
 
+
+
+        onload: function(frm) {
+            // console.log("inside snapmint function ====================");
+            
+            const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
+            if (snapmintItem) {
+                frm.set_value("courier_service", "Shiprocket Manifest");
+                frm.set_df_property("courier_service", "read_only", 1);
+            }
+        }
+
+    ,
     onload_post_render: function(frm) {
         frm.remove_custom_button('Credit Note', 'Create');
         frm.page.remove_inner_button('Credit Note', 'Create');
@@ -119,6 +132,9 @@ frappe.ui.form.on('Delivery Note', {
             });
         }
     }
+
+
+
 });
 
 

@@ -768,7 +768,7 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
             for serial_no in serial_nos:
 
-                # Get item_code and item_group from Serial No
+                # Get item_code and item_group fromfrom Serial No
                 item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
                 item_group = frappe.db.get_value("Item", item_code, "item_group")
 

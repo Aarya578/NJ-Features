@@ -22,13 +22,15 @@ frappe.ui.form.on('Auto Stock Entry', {
 		})
 	},
 
-	refresh: function() {
+	refresh: function(frm) {
         $('.primary-action').hide();
 		$('[data-fieldname="serial_no"]').focus();
+		handleScannerInput(frm, 'serial_no');
 	},
 
 	serial_no: function(frm) {
 		if (frm.doc.serial_no) {
+			handleScannerInput(frm, 'serial_no');
 			frappe.call({
 				method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.submit_ste',
 				args: { serial_no: frm.doc.serial_no, t_warehouse: frm.doc.default_target_warehouse },

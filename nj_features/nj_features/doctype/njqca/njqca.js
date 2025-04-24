@@ -468,7 +468,7 @@ frappe.ui.form.on('NJQCA', {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                 }
 
-                if(selectedModel && selectedModel != r.model){
+                if(selectedModel && selectedModel != r.model && selectedItemGroup && selectedItemGroup == "Laptops"){
                     frappe.confirm('Model in SerialNo and NJQCA are Different. Do you want to change the part list?',
                         () => {
                             frappe.call({

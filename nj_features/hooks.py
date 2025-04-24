@@ -196,7 +196,10 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ],
         "15 * * * *": [
-            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.corrected_updated_qty"
+            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify.corrected_updated_qty"
+        ],
+        "20 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify.start_shopify_inventory_sync"
         ]
 
     }

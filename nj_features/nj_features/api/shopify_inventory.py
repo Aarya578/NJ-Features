@@ -1,45 +1,63 @@
 import requests as rs
-import frappe
-import json
+import frappe ,requests
+import json , time
 shop = "https://newjaisa.myshopify.com"
-location_id = 65940881590
+# location_id = 65940881590
+location_id = 65940800500
+import logging
+import os
+
+log_dir = frappe.get_site_path("logs")
+log_file = os.path.join(log_dir, "shopify_inventory_sync.log")
+
+logging.basicConfig(
+    filename=log_file,
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = frappe.logger("shopify inventory", allow_site=True, file_count=1)
+
+# logger = logging.getLogger(__name__)
 @frappe.whitelist()
 def fetch_and_stage_inventory_sync():
     # Step 1: Inventory sync from product bundle
     results = frappe.db.sql("""
-        SELECT 
-            pb.shopify_variant_id,
-            COUNT(DISTINCT i.item_code) AS item_code_count,
-            GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-            GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-            CAST(SUM(b.actual_qty) AS DECIMAL(10, 2)) AS total_actual_qty
-        FROM 
-            `tabProduct Bundle` pb
-        JOIN 
-            `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-        JOIN 
-            `tabItem` i ON pbi.item_code = i.item_code
-        JOIN 
-            `tabBin` b ON i.item_code = b.item_code
-        JOIN 
-            `tabWarehouse` w ON b.warehouse = w.name
-        JOIN 
-            `tabDepartment` d ON w.department = d.name
-        WHERE 
-            i.item_group IN ('Laptops', 'Desktops', 'MacBooks')
-            AND i.has_variants = 0 
-            AND d.department_name IN ('Packing & Dispatch', 'BG - Adaptor QC')
-        GROUP BY 
-            pb.shopify_variant_id
-        HAVING 
-            total_actual_qty > 0
-        ORDER BY 
-            total_actual_qty DESC;
+            SELECT 
+                pb.shopify_variant_id,
+                COUNT(DISTINCT i.item_code) AS item_code_count,
+                GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
+                GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
+                CAST(SUM(CASE 
+                    WHEN d.department_name IN ('Packing & Dispatch', 'BG - Adaptor QC') THEN b.actual_qty 
+                    ELSE 0 
+                END) AS DECIMAL(10, 2)) AS total_actual_qty
+            FROM 
+                `tabProduct Bundle` pb
+            JOIN 
+                `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+            JOIN 
+                `tabItem` i ON pbi.item_code = i.item_code
+            LEFT JOIN 
+                `tabBin` b ON i.item_code = b.item_code
+            LEFT JOIN 
+                `tabWarehouse` w ON b.warehouse = w.name
+            LEFT JOIN 
+                `tabDepartment` d ON w.department = d.name
+            WHERE 
+                i.item_group IN ('Laptops', 'Desktops', 'MacBooks')
+                AND i.has_variants = 0
+            GROUP BY 
+                pb.shopify_variant_id
+            HAVING 
+                total_actual_qty >= 0
+            ORDER BY 
+                total_actual_qty DESC;
     """, as_dict=True)
-    # print("results----39---", results)
+    print("results----39---", results)
     item_to_variant_map = {}
     for row in results:
-        if float(row.total_actual_qty) <= 0:
+        if float(row.total_actual_qty) < 0:
             continue
         item_codes = row.item_codes.split(", ")
         for item_code in item_codes:
@@ -48,8 +66,6 @@ def fetch_and_stage_inventory_sync():
 
         for idx, item_code in enumerate(item_codes):
             item_group = item_groups[idx] if idx < len(item_groups) else ""
-
-                        # Before inserting a new document
             existing = frappe.get_all("NJ Inventory Sync Main", filters={
                 "shopify_variant_id": row.shopify_variant_id,
                 "item_code": item_code
@@ -159,32 +175,38 @@ def fetch_and_stage_inventory_sync():
         ORDER BY 
             so_data.sales_order, so_data.item_code;
     """, as_dict=True)
-    # print("so_data----70---", open_so_data)
+    print("so_data----70--------------", open_so_data)
     try:
+        # Step 1: Aggregate total pending qty per item_code
+        pending_qty_map = {}
         for row in open_so_data:
             item_code = row.item_code
-            shopify_variant_id = item_to_variant_map.get(item_code)
+            pending_qty = float(row.pending_qty or 0)
+            if item_code in pending_qty_map:
+                pending_qty_map[item_code] += pending_qty
+            else:
+                pending_qty_map[item_code] = pending_qty
 
-            if not shopify_variant_id:
-                continue
+        # Step 2: For each item_code, update all matching inventory docs
+        for item_code, total_so_qty in pending_qty_map.items():
             inventory_docs = frappe.get_all("NJ Inventory Sync Main", filters={
-                "item_name": row.item_code,
-                "shopify_variant_id": shopify_variant_id
+                "item_name": item_code
             }, fields=["name", "actual_qty"])
 
             for doc in inventory_docs:
                 actual_qty = float(doc.actual_qty or 0)
-                so_qty = float(row.pending_qty or 0)
-                updated_qty = actual_qty - so_qty
-
+                
+                if total_so_qty >= actual_qty:
+                    updated_qty = 0
+                else:
+                    updated_qty = actual_qty - total_so_qty
+                # print("updated_qty--------------", updated_qty,"row.item_code---------",row.item_code)
                 frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
-                    "so_qty": so_qty,
+                    "so_qty": total_so_qty,
                     "updated_qty": updated_qty
                 })
     except Exception as e:
         print("Error updating pending_qty and updated_qty:", str(e))
-
-
 
 @frappe.whitelist()
 def sync_inventory_to_shopify():
@@ -196,20 +218,20 @@ def sync_inventory_to_shopify():
         "Content-Type": "application/json"
     }
     
-    print("headers-----71", headers)
+    # print("headers-----71", headers)
     queued = frappe.get_all("NJ Inventory Sync Main", filters={
         "sync_status": "Queued",
         "is_active": 1,
    }, fields=["name", "item_code", "actual_qty", "shopify_variant_id","updated_qty"])
     # print("queued-----78", queued)
     for row in queued:
-        print("row-----79", row)
+        # print("row-----79", row)
         variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()]
-        print("variant_ids-----80", variant_ids)
+        # print("variant_ids-----80", variant_ids)
         if (
                 not variant_ids 
-                or (row.actual_qty is None or float(row.actual_qty) <= 0)
-                or (row.updated_qty is not None and float(row.updated_qty) <= 0)
+                or (row.actual_qty is None or float(row.actual_qty) <0)
+                or (row.updated_qty is not None and float(row.updated_qty) <0)
             ):
             continue
 
@@ -220,11 +242,11 @@ def sync_inventory_to_shopify():
                 variant_data = variant_resp.json()
 
                 inventory_item_id = variant_data["variant"]["inventory_item_id"]
-                print("inventory_item_id-----88", inventory_item_id)
+                # print("inventory_item_id-----88", inventory_item_id)
                 update_url = f"{shop}/admin/api/2023-01/inventory_levels/set.json"
-                print("update_url-----89", update_url)
-                print("row.updated_qty-----90", row.updated_qty)
-                print("row.actual_qty-----91", row.actual_qty)
+                # print("update_url-----89", update_url)
+                # print("row.updated_qty-----90", row.updated_qty)
+                # print("row.actual_qty-----91", row.actual_qty)
                 updated_qty = row.updated_qty
                 actual_qty = row.actual_qty
 
@@ -232,18 +254,20 @@ def sync_inventory_to_shopify():
                 if not updated_qty and not actual_qty:
                     continue
                 available = None
-                if updated_qty and float(updated_qty) > 0:
-                    available = int(float(updated_qty))
-                elif actual_qty and float(actual_qty) > 0:
-                    available = int(float(actual_qty))
+                if updated_qty is not None:
+                    available = int(float(updated_qty))  # allows 0 and 0.0
+                elif actual_qty is not None:
+                    available = int(float(actual_qty))   # fallback
                 else:
-                    continue 
+                    continue
+
                 payload = {
                     "location_id": location_id,
                     "inventory_item_id": inventory_item_id,
                     "available":available
 
                 }
+                time.sleep(0.5)
                 print("payload-----90", payload)
                 update_resp = rs.post(update_url, headers=headers, data=json.dumps(payload))
                 print("update_resp-----91", update_resp)
@@ -259,6 +283,122 @@ def sync_inventory_to_shopify():
         })
         frappe.db.commit()
 
+@frappe.whitelist()
+def sync_inventory_to_shopify_2(batch_size=50, start=0):
+    logger.info(f"Processing batch starting at {start} with size {batch_size}")
+    token = "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"
+
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+
+    queued = frappe.get_all(
+        "NJ Inventory Sync Main", 
+        filters={"sync_status": "Queued", "is_active": 1},
+        fields=["name", "item_code", "actual_qty", "shopify_variant_id", "updated_qty"],
+        start=start,
+        page_length=batch_size
+    )
+    print("queued-----78", queued)
+    logger.info(f"Found {len(queued)} records to process.")
+
+    processed_count = 0
+
+    for row in queued:
+        print("row-----79", row,"processed_count------", processed_count)
+        logger.info(f"Processing row: {row}")
+        try:
+            variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()] if row.shopify_variant_id else []
+        except Exception as e:
+            logger.error(f"Error parsing variant IDs: {e}")
+            variant_ids = []
+
+        if not variant_ids or (row.actual_qty is None or float(row.actual_qty) < 0) or (row.updated_qty is not None and float(row.updated_qty) < 0):
+            logger.info(f"Skipping row {row.name} due to missing or invalid data")
+            continue
+
+        logger.info(f"Variant IDs: {variant_ids}")
+        sync_success = True
+
+        for variant_id in variant_ids:
+            try:
+                variant_url = f"{shop}/admin/api/2023-01/variants/{variant_id}.json"
+                logger.info(f"Getting variant info from: {variant_url}")
+                variant_resp = requests.get(variant_url, headers=headers)
+                logger.info(f"Variant response code: {variant_resp.status_code}")
+
+                if variant_resp.status_code != 200:
+                    logger.error(f"Failed to get variant info for {variant_id}: {variant_resp.text}")
+                    sync_success = False
+                    continue
+
+                variant_data = variant_resp.json()
+                inventory_item_id = variant_data["variant"]["inventory_item_id"]
+                logger.info(f"Inventory item ID: {inventory_item_id}")
+
+                available = int(float(row.updated_qty)) if row.updated_qty is not None else int(float(row.actual_qty))
+                payload = {
+                    "location_id": location_id,
+                    "inventory_item_id": inventory_item_id,
+                    "available": available
+                }
+                time.sleep(0.5)
+                update_url = f"{shop}/admin/api/2023-01/inventory_levels/set.json"
+                update_resp = requests.post(update_url, headers=headers, data=json.dumps(payload))
+
+                if update_resp.status_code != 200:
+                    logger.error(f"Failed to update inventory for {variant_id}: {update_resp.text}")
+                    sync_success = False
+            except Exception as e:
+                logger.error(f"Exception during sync for {variant_id}: {str(e)}")
+                sync_success = False
+                continue
+        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+            "sync_status": "Completed",
+            "is_active": 1
+        })
+
+        new_status = "Synced" if sync_success else "Failed"
+        processed_count += 1
+        logger.info(f"Processed count: {processed_count}")
+
+        if processed_count % 10 == 0:
+            frappe.db.commit()
+
+    frappe.db.commit()
+
+    total_remaining = frappe.db.count("NJ Inventory Sync Main", filters={"sync_status": "Queued", "is_active": 1})
+    print("total_remaining-------------------371",total_remaining)
+    if total_remaining > 0:
+        print("start,------",start)
+        logger.info(f"{total_remaining} records still queued. Scheduling next batch from {start + batch_size}")
+        print("total_remaining-------------------372",total_remaining,"start + batch_size",start + batch_size)
+        try:
+            frappe.enqueue(
+                sync_inventory_to_shopify_2,
+                batch_size=batch_size,
+                start=start + batch_size,
+                queue='long',
+                timeout=4500
+            )
+            print("next batch enqueued","start + batch_size",start + batch_size,"start------",start)
+        except Exception as e:
+            print("exception----in queue-",e)
+            logger.error(f"Failed to enqueue next batch: {str(e)}")
+
+        logger.info(f"Processed {processed_count} records. Scheduled next batch.")
+        return f"Processed {processed_count} records. Scheduled next batch."
+
+    logger.info(f"Completed processing {processed_count} records.")
+    return f"Completed processing {processed_count} records."
+
+# Function to initiate the batch process
+@frappe.whitelist()
+def start_shopify_inventory_sync(batch_size=50):
+    """Start the inventory sync process with batching"""
+    print("--------------39---",batch_size)
+    return sync_inventory_to_shopify_2(batch_size=int(batch_size), start=0)
 
 @frappe.whitelist()
 def get_all_variant_ids():
@@ -303,7 +443,7 @@ def get_all_variant_ids():
                         doc.item_group = product_type
                     doc.actual_qty = 0
                     doc.updated_qty = 0
-                    doc.is_active =1
+                    doc.is_active = 0
                     doc.insert(ignore_permissions=True)
                     variant_ids_added += 1
 
@@ -322,3 +462,21 @@ def get_all_variant_ids():
             base_url = None
 
     frappe.msgprint(f"{variant_ids_added} variant IDs added successfully.")
+@frappe.whitelist()
+def corrected_updated_qty():
+    docs = frappe.get_all("NJ Inventory Sync Main", fields=["name", "actual_qty", "so_qty"])
+
+    for doc in docs:
+        actual_qty = float(doc.actual_qty or 0)
+        so_qty = float(doc.so_qty or 0)
+
+        updated_qty = 0.0 if so_qty > actual_qty else actual_qty - so_qty
+
+        frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
+            "updated_qty": updated_qty
+        })
+
+    frappe.db.commit()
+
+
+

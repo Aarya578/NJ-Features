@@ -471,11 +471,8 @@ class NJQCA(Document):
     def before_save(self):
         update_storage_type(self)
 
-
-    def before_submit(self):
-        get_grading_Authentication(self)
-
     def on_submit(self):
+        self.update_item_groups()
         self.battery_readings()
         self.update_serial_no_readings()
         if self.power_on == 'Yes' and self.repack_item_code != '':
@@ -531,9 +528,9 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                     
-                    s6 = time.time()
-                    update_serial_no_component_for_njqca(self)
-                    logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
+                    # s6 = time.time()
+                    # update_serial_no_component_for_njqca(self)
+                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -698,6 +695,86 @@ class NJQCA(Document):
             logger.error(f"Error updating battery readings: {str(e)}")
             frappe.log_error(f"Failed to save Serial No: {str(e)}")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
+
+    def update_item_groups(self):
+        if self.inspection_type != "Final QC":
+            return
+
+        serial_no = self.serial_no
+        if not serial_no:
+            frappe.msgprint("Serial No not found in serial no field. QC Reports not updated.")
+            return
+
+        try:
+            if not frappe.db.exists("Serial No", serial_no):
+                frappe.msgprint(f"Serial No {serial_no} does not exist in the system.")
+                return
+
+            serial_doc = frappe.get_doc("Serial No", serial_no)
+
+            # Fetch NJQCA Child rows
+            child_data = frappe.get_all(
+                "NJQCA Child",
+                filters={"parent": self.name},
+                fields=[
+                    "item_group", "variant_1", "variant_2", "variant_3",
+                    "variant_6", "variant_7", "variant_8", "variant_10"
+                ]
+            )
+
+            # Mapping item group to specific variants
+            field_map = {
+                "Laptop RAM": ["variant_6", "variant_7", "variant_8"],
+                "Laptop Processors": ["variant_1", "variant_6", "variant_7"],
+                "LAPTOP STORAGE": ["variant_6", "variant_10"],
+                "WIFI CARD": ["variant_1", "variant_2", "variant_3"]
+            }
+
+            # Clear existing item_group_report entries
+            serial_doc.item_group_report = []
+
+            for row in child_data:
+                item_group = row.item_group
+                if item_group not in field_map:
+                    continue
+
+                # Conditional checks for Laptop RAM
+                if item_group == "Laptop RAM":
+                    if not all([row.variant_6, row.variant_7, row.variant_8]):
+                        continue  # skip if any required RAM field is missing
+
+                # Conditional checks for LAPTOP STORAGE
+                if item_group == "LAPTOP STORAGE":
+                    if not row.variant_6 or not row.variant_10:
+                        continue  # skip if required fields missing
+                    try:
+                        storage_size = int(row.variant_10.split()[0])  # Assumes format like "256 GB"
+                        if storage_size < 64:
+                            continue  # skip if not >64 GB
+                    except:
+                        continue  # skip if can't parse size
+
+                # Compose specification value
+                variant_fields = field_map[item_group]
+                values = [row.get(field) for field in variant_fields if row.get(field)]
+
+                if values:
+                    specification = ", ".join(values)
+                    serial_doc.append("item_group_report", {
+                        "part": item_group,
+                        "specification": specification
+                    })
+
+            serial_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+
+        except Exception as e:
+            frappe.log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
+
+
+
+
+        
 def get_repack_items(self):
     get_repack_items_list = []
 
@@ -843,7 +920,6 @@ def get_info_from_serial_no(doc=None):
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
-                print("non_njqca_item_groups================92999===============", non_njqca_item_groups)
 
                 if non_njqca_item_groups and non_njqca_item_groups is not None:
                     sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
@@ -875,9 +951,14 @@ def get_info_from_serial_no(doc=None):
 
             item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
             nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
+            # if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
+            #     result['item_group'] = item_group
+            #     result['serial_no'] = sle_entry.get('name')
+            doc_item_group = doc_json.get('item_group')  # safely get it
+            if doc_item_group and doc_item_group not in nj_settings_item_group:
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
+
 
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
@@ -2175,47 +2256,51 @@ def get_battery_serialno(bios_serial_no,inspection_type):
     try:
         inspection_types = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"get_battery_serial_no"},"value")
 
+        print("inspection_types --------------- ", inspection_types)
+
         if inspection_types is not None and inspection_types:
             if inspection_type in inspection_types:
-                pass
-            else:
                 return ""
+            else:
+                pass
         else:
             return ""
 
         nj_serial_no_query="""
-        Select name from `tabSerial No` where bios_serial_no=%s limit 1;          
+            Select name from `tabSerial No` where bios_serial_no=%s limit 1;          
         """
         serial_no=frappe.db.sql(nj_serial_no_query,bios_serial_no,as_dict=1)
+
         nj_serial_no=""
         if serial_no:
             nj_serial_no=serial_no[0].name
+
         if nj_serial_no is not None and nj_serial_no:
-            query=f"""
-                SELECT tot_sed.serial_no as battery_serial_no
-                FROM `tabStock Entry Detail` AS sed
-                INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-                INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-                WHERE
-                    (sed.serial_no = {nj_serial_no} OR 
-                        sed.serial_no LIKE CONCAT({nj_serial_no}, '\\n%') OR 
-                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}) OR 
-                        sed.serial_no LIKE CONCAT('%\\n', {nj_serial_no}, '\\n%')) AND
-                    stock_entry.purpose = 'Repack' AND 
-                    stock_entry.docstatus = 1 AND
-                    tot_sed.s_warehouse IS NOT NULL AND 
-                    tot_sed.item_group = 'Battery' AND
-                ORDER BY stock_entry.creation DESC
-                LIMIT 1        
-            """
-            data=frappe.db.sql(query,as_dict=1)
+            query="""
+                    SELECT tot_sed.serial_no as battery_serial_no
+                    FROM `tabStock Entry Detail` AS sed
+                    INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+                    INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+                    WHERE
+                        (sed.serial_no = %(serial_no)s OR 
+                            sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+                        stock_entry.purpose = 'Repack' AND 
+                        stock_entry.docstatus = 1 AND
+                        tot_sed.s_warehouse IS NOT NULL AND 
+                        tot_sed.item_group = 'Battery'
+                    ORDER BY stock_entry.creation DESC
+                    LIMIT 1
+                """
+            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
 
             if data is not None and data:  
-                print(data)
                 return data[0].get("battery_serial_no")
             else:
-                return ""
+                return nj_serial_no
         else:
             return ""
+        
     except Exception as e:
         return ""

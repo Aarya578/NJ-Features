@@ -34,6 +34,19 @@ frappe.ui.form.on('Delivery Note', {
         }
     },
 
+
+
+        onload: function(frm) {
+            // console.log("inside snapmint function ====================");
+            
+            const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
+            if (snapmintItem) {
+                frm.set_value("courier_service", "Shiprocket Manifest");
+                frm.set_df_property("courier_service", "read_only", 1);
+            }
+        }
+
+    ,
     onload_post_render: function(frm) {
         frm.remove_custom_button('Credit Note', 'Create');
         frm.page.remove_inner_button('Credit Note', 'Create');
@@ -41,7 +54,6 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     validate: function(frm) {
-        console.log()
         frappe.call({
             method: "nj_features.overrides.delivery_note.validate_delivery_bios",
             args: { doc: frm.doc },
@@ -57,14 +69,12 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
         let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        console.log("first_so---------59", first_so);
         if (first_so) {
             frappe.call({
                 method: "nj_features.overrides.delivery_note.get_cod_amount",
                 args: { so_name: first_so },
                 callback: function(res) {
                     if (res.message) {
-                        console.log("res.message",res.message)
                         frm.set_value("cod_amount", res.message.cod_amount); 
                         frm.set_value("shopify_order_id", res.message.order_id); 
                     }
@@ -77,8 +87,6 @@ frappe.ui.form.on('Delivery Note', {
             callback: function(r) {
                 if (r.message && r.message.length > 0) {
                     const warranty = r.message[0]; // use first item
-                    console.log("warranty--", warranty);
-                    console.log("warranty.warranty_start_date--", warranty.warranty_start_date);
                     // This is where the fix is needed
                     if (warranty.warranty_start_date) {
                         frm.set_value("warranty_start_date", warranty.warranty_start_date);
@@ -111,14 +119,12 @@ frappe.ui.form.on('Delivery Note', {
     },
     fetch_cod: function(frm) {
         let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        console.log("first_so---------90", first_so);
         if (first_so) {
             frappe.call({
                 method: "nj_features.overrides.delivery_note.get_cod_amount",
                 args: { so_name: first_so },
                 callback: function(res) {
                     if (res.message) {
-                        console.log("res.message",res.message)
                         frm.set_value("cod_amount", res.message.cod_amount); 
                         frm.set_value("shopify_order_id", res.message.order_id); 
                     }
@@ -126,6 +132,9 @@ frappe.ui.form.on('Delivery Note', {
             });
         }
     }
+
+
+
 });
 
 

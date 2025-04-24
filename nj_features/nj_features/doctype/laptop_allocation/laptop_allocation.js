@@ -2,17 +2,11 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Laptop Allocation', {
-	refresh: function(frm) {
-		console.log("refreshing....")
-	},
-
 	allocate: function(frm){
-
 		frappe.call({
 			method: 'nj_features.nj_features.doctype.laptop_allocation.laptop_allocation.allocate_laptop_parts',
 			callback: function(r) {
 				let data = r.message;
-				console.log("allocate_laptop_parts", r.message);
 				frm.clear_table('laptop_allocation_child');
 		
 				if (data) {
@@ -38,6 +32,5 @@ frappe.ui.form.on('Laptop Allocation', {
 				frm.refresh_field('laptop_allocation_child');
 			}
 		});
-		
 	}
 });

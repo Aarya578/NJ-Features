@@ -1,8 +1,11 @@
 frappe.ui.form.on('Warehouse', {
     refresh: function(frm) {
-        if(frm.doc.warehouse_type){
+        if(frm.doc.warehouse_type == "Employee Personal Warehouse"){
             frm.set_df_property('department', 'read_only', 1);
         }
+        frm.set_query('ase_user', function() {
+            return { filters: { "enabled": 1 } };
+        });
     },
     department: function(frm) {
         let cur_department = frm.doc.department;

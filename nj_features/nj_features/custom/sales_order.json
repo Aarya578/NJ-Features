@@ -481,7 +481,42 @@
       "width": null
     }
   ],
-  "custom_perms": [],
+  "custom_perms": [
+    {
+      "_assign": null,
+      "_comments": null,
+      "_liked_by": null,
+      "_user_tags": null,
+      "amend": 1,
+      "cancel": 1,
+      "create": 1,
+      "creation": "2024-10-11 17:56:07.371747",
+      "delete": 0,
+      "docstatus": 0,
+      "email": 0,
+      "export": 0,
+      "idx": 2,
+      "if_owner": 0,
+      "import": 0,
+      "modified": "2024-10-11 17:56:07.371747",
+      "modified_by": "postman@mail.com",
+      "name": "39ff4523459",
+      "owner": "postman@mail.com",
+      "parent": "Sales Order",
+      "parentfield": "permissions",
+      "parenttype": "DocType",
+      "permlevel": 0,
+      "print": 0,
+      "read": 1,
+      "report": 0,
+      "role": "Salesforce",
+      "select": 1,
+      "set_user_permissions": 0,
+      "share": 0,
+      "submit": 1,
+      "write": 1
+    }
+  ],
   "doctype": "Sales Order",
   "property_setters": [
     {

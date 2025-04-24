@@ -24,6 +24,13 @@ class CustomDeliveryNote(DeliveryNote):
             super().on_submit()
             
             against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+            if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+            # Skip the trigger_fulfillment for Snapmint series
+                qi_mandatory_checks_on_dn_submit(self, method=None)
+                if self.is_return == 0:
+                    send_sales_invoice_email_on_delivery_note(self, method=None)
+                return
+            
             raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
             shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
             if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
@@ -43,6 +50,7 @@ class CustomDeliveryNote(DeliveryNote):
 
             if self.is_return==0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
+
             
             # send_delivery_note_email(self, method=None)
             # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")

@@ -8,6 +8,8 @@ MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillment
 import uuid
 class CustomSalesOrder(SalesOrder):
     def on_submit(self):
+        if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
+            return
         raw_order_id = None
         if self.order_type!="Maintenance":
             if self.shopify_order_id:

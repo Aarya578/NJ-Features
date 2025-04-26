@@ -453,7 +453,7 @@
    "in_preview": 0,
    "in_standard_filter": 0,
    "insert_after": "inspection_type",
-   "label": "Restrict Repack",
+   "label": "Allow Repack",
    "length": 0,
    "mandatory_depends_on": null,
    "modified": "2025-03-18 17:23:09.708358",

@@ -473,6 +473,7 @@ class NJQCA(Document):
 
     def on_submit(self):
         self.update_item_groups()
+        self.validate_item_code_match()
         self.battery_readings()
         self.update_serial_no_readings()
         if self.power_on == 'Yes' and self.repack_item_code != '':
@@ -539,6 +540,7 @@ class NJQCA(Document):
                 logger.debug(f"Total Time for '{self.name}': {time.time()-s1:.2f} seconds")
                 logger.debug("")
     
+
     def check_for_repack_access(self):
         user = frappe.session.user
         role_profile = frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')
@@ -585,6 +587,27 @@ class NJQCA(Document):
             frappe.db.rollback()
             print("Error in create_serial_no_based_on_rfq", traceback.format_exc())
             return None
+
+    def validate_item_code_match(self):
+        # print("validate_item_code_match==========================")
+        
+        if self.item_group != "Laptops":
+            return
+            
+        setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
+        # print("setting_value==========================", setting_value)
+        
+        if not setting_value:
+            return
+            
+        allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
+        # print("allowed_inspection_types==========================", allowed_inspection_types)
+        
+        if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
+            # print("self.inspection_type==========================", self.inspection_type)
+            if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
+                frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+
 
     def update_serial_no_readings(self):
     # Fetch relevant parameters from NJQCA Result Parameters

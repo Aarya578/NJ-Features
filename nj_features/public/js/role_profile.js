@@ -1,13 +1,26 @@
 frappe.ui.form.on('Role Profile', {
-    validate: function(frm) {
-        let total_weightage = 0;
-             
-        (frm.doc.kpi_parameter_table || []).forEach(row => {
-            if (row.weightage) { total_weightage += row.weightage; }
-        });
-
-        if (total_weightage > 100) {
-            frappe.throw(__('Weightage exceeds 100. Please adjust the values in the KPI Parameter Table.'));
-        }
+    refresh: function(frm) {
+        frm.fields_dict['productivity_profile_table'].grid.get_field('target_profile').get_query = function(doc, cdt, cdn) {
+            let department = doc.department;
+            
+            if (!department) {
+                return {
+                    filters: {
+                        'name': ['=', 'no_match_will_be_found_123456789']
+                    }
+                };
+            } else {
+                return {
+                    filters: {
+                        'department': department
+                    }
+                };
+            }
+        };
+    },
+    
+    // Update filters when department changes
+    department: function(frm) {
+        frm.trigger('refresh');
     }
 });

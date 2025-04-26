@@ -473,6 +473,7 @@ class NJQCA(Document):
 
     def on_submit(self):
         self.update_item_groups()
+        self.validate_item_code_match()
         self.battery_readings()
         self.update_serial_no_readings()
         if self.power_on == 'Yes' and self.repack_item_code != '':
@@ -539,6 +540,7 @@ class NJQCA(Document):
                 logger.debug(f"Total Time for '{self.name}': {time.time()-s1:.2f} seconds")
                 logger.debug("")
     
+
     def check_for_repack_access(self):
         user = frappe.session.user
         role_profile = frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')
@@ -585,6 +587,27 @@ class NJQCA(Document):
             frappe.db.rollback()
             print("Error in create_serial_no_based_on_rfq", traceback.format_exc())
             return None
+
+    def validate_item_code_match(self):
+        # print("validate_item_code_match==========================")
+        
+        if self.item_group != "Laptops":
+            return
+            
+        setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
+        # print("setting_value==========================", setting_value)
+        
+        if not setting_value:
+            return
+            
+        allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
+        # print("allowed_inspection_types==========================", allowed_inspection_types)
+        
+        if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
+            # print("self.inspection_type==========================", self.inspection_type)
+            if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
+                frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+
 
     def update_serial_no_readings(self):
     # Fetch relevant parameters from NJQCA Result Parameters
@@ -1487,8 +1510,11 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
         njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
         sudden_drop_limit=""
-        if (njqca_battery_item_group and  item_group in njqca_battery_item_group):       
-            sudden_drop_limit = frappe.db.get_value('Item Wizards',{'manufacture_model': ['like', f'%{manufacturer_model}%'], 'docstatus': '1', 'part_list_status': 'Completed'},'sudden_drop_limit')
+        iw=""
+        if (njqca_battery_item_group and  item_group in njqca_battery_item_group):
+            iw=get_item_wizard(manufacturer_model)
+            if iw:
+               sudden_drop_limit = frappe.db.get_value('Item Wizards',{'name': iw},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
             delta_query="""WITH FilteredResults AS (
@@ -1501,6 +1527,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                             )
                             AND parameter <> 'Battery_Discharging_Start_Time'
                             AND parent = %(parent_name)s
+                            AND value >=%(sudden_drop_limit)s
                             ORDER BY idx
                         )
                         SELECT MAX(delta) AS max_delta, AVG(delta) AS avg_delta
@@ -1511,7 +1538,13 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     """
             
             percentage_query="""
-                select value from `tabNJQCA Result Parameters` where parent=%(parent_name)s  order by idx desc limit 1
+                    SELECT value
+                    FROM `tabNJQCA Result Parameters`
+                    WHERE
+                        parent = %(parent_name)s
+                        AND value REGEXP '^[0-9]+$'
+                    ORDER BY idx DESC
+                    LIMIT 1;
             """
 
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
@@ -1523,7 +1556,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                 if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
                     return "YES"
             
-            delta = frappe.db.sql(delta_query, {'parent_name': parent_name}, as_dict=True)
+            delta = frappe.db.sql(delta_query, {'parent_name': parent_name, 'sudden_drop_limit': sudden_drop_limit}, as_dict=True)
             delta = delta[0]
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:

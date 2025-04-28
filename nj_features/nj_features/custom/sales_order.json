@@ -658,7 +658,7 @@
       "delete": 0,
       "docstatus": 0,
       "email": 0,
-      "export": 0,
+      "export": 1,
       "idx": 4,
       "if_owner": 0,
       "import": 0,

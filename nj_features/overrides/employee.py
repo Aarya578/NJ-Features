@@ -77,13 +77,15 @@ def update_department_in_work_warehouse(self):
             dept_str = "N/A"
 
         if data:
-            total_qty = sum(d.get("total_qty", 0) for d in data)
-            frappe.msgprint(
-                _("Please transfer the stock of <b>{0} Qty(s)</b> to <b>{1}</b> department.").format(
-                    total_qty, dept_str
+            total_qty = sum((d.get("total_qty") or 0) for d in data)
+
+            if total_qty > 0:
+                frappe.msgprint(
+                    _("Please transfer the stock of <b>{0} Qty(s)</b> to <b>{1}</b> department.").format(
+                        total_qty, dept_str
+                    )
                 )
-            )
-            return None
+                return None
 
     else:
         dept_work_ware = get_dept_work_warehouse(self.get('department'))

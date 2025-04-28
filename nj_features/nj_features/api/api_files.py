@@ -291,7 +291,7 @@ def get_battery_status(doc, method=None):
         
         
         serial_no_battery_data_query="""
-            SELECT name FROM `tabNJQCA` where serial_no=%s and docstatus=1 and item_group="BATTERY" and 
+            SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and 
                 (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") and bios_serialno=%(bios_serial_no)s order by modified DESC limit 1;
             """
         
@@ -335,7 +335,7 @@ def get_battery_status(doc, method=None):
                                 (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1"
                             """
 
-            get_bty_njqca = frappe.db.sql(get_bty_njqca_query, get_bty_serial_no)
+            get_bty_njqca = frappe.db.sql(get_bty_njqca_query, {'serial_no':get_bty_serial_no,'bios_serialno':bios_serial_no})
             if get_bty_njqca:
                 bty_parent_njqca = get_bty_njqca[0][1]
         
@@ -357,7 +357,7 @@ def get_battery_status(doc, method=None):
           
 
         battery_Data_parent_name=""
-        battery_Data_parent_name_result=frappe.db.sql(serial_no_battery_data_query,(parent_serial_no), as_dict=True)
+        battery_Data_parent_name_result=frappe.db.sql(serial_no_battery_data_query,{'serial_no':parent_serial_no,'bios_serial_no':bios_serial_no}, as_dict=True)
         if battery_Data_parent_name_result:
             battery_Data_parent_name=battery_Data_parent_name_result[0].name
             if battery_Data_parent_name and backup_duration_mins and sudden_drop_limit:

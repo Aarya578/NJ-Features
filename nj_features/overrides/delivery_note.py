@@ -22,82 +22,137 @@ class CustomDeliveryNote(DeliveryNote):
     def on_submit(self):
         try:
             super().on_submit()
-            
             against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+            
+            # Early return for Snapmint orders (skipping trigger_fulfillment)
+            if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+                qi_mandatory_checks_on_dn_submit(self, method=None)
+                if self.is_return == 0:
+                    send_sales_invoice_email_on_delivery_note(self, method=None)
+                
+                if not self.is_return:
+                    self._process_customer_details()
+                return
+            
+            # For non-Snapmint orders, proceed with normal flow
             raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
             shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+            
             if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
                 order_id = raw_order_id.lstrip('#')
             else:
                 raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "order_id")
                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
+                
                 if not order_id:
                     raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
                     order_id = raw_order_id.lstrip('#') if raw_order_id else None
             
-            if order_id and self.is_return==0:
-                trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
-
+            if order_id and self.is_return == 0:
+                trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
+            
             qi_mandatory_checks_on_dn_submit(self, method=None)
-
-            if self.is_return==0:
+            
+            if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
             
-            # send_delivery_note_email(self, method=None)
-            # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
-            # order_id = None
-            # order_values = frappe.db.get_value(
-            # "Sales Order", 
-            # {"name": against_sales_order}, 
-            # ["order_id", "amazon_order_id", "shopify_order_id"]
-            # )
-            # Get the first non-empty value
-            # if order_values:
-            #     order_id = next((value for value in order_values if value), None)
-
-                # if order_id:
-                #     awb_data = check_courie_service(order_id)
-
-                #     # Initialize variables
-                #     awb_code = None
-                #     courier_name = None
-                #     label_url = None
-
-                #     if awb_data and awb_data.get("message"):
-                #         awb_info = awb_data["message"].get("awb", {})
-                #         label_info = awb_data["message"].get("label", {})
-
-                #         # Extract AWB code only if successfully generated
-                #         if isinstance(awb_info, dict) and awb_info.get("status_code") == 400:
-                #             print("AWB generation failed:", awb_info.get("message"))
-                #             awb_code = awb_info.get("message").split("Current AWB")[-1].strip()
-                #         elif isinstance(awb_info, dict):
-                #             awb_code = awb_info.get("awb_code")  # Adjust based on actual API response
-
-                #         # Extract courier name if available
-                #         if awb_code:
-                #             courier_name = "Extract Courier Name Logic Here"  # Adjust this if the courier name is provided in the response
-
-                #         # Extract label URL
-                #         if isinstance(label_info, dict) and label_info.get("label_created") == 1:
-                #             label_url = label_info.get("label_url")
-
-                #     # Assign extracted values
-                #     self.tracking_id = awb_code
-                #     self.courier_partner = courier_name
-                #     self.shipping_label = label_url
-
             if not self.is_return:
                 self._process_customer_details()
                 return
             
             self._process_serial_numbers()
-
+            
         except Exception as e:
             error_message = f"An error occurred during on_submit:\n{traceback.format_exc()}"
             frappe.db.rollback()
             frappe.throw(error_message)
+#     def on_submit(self):
+#         try:
+#             super().on_submit()
+            
+#             against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+#             if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+#             # Skip the trigger_fulfillment for Snapmint series
+#                 qi_mandatory_checks_on_dn_submit(self, method=None)
+#                 if self.is_return == 0:
+#                     send_sales_invoice_email_on_delivery_note(self, method=None)
+#                 return
+            
+#             raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
+#             shopify_order_no = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+#             if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
+#                 order_id = raw_order_id.lstrip('#')
+#             else:
+#                 raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "order_id")
+#                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
+
+#                 if not order_id:
+#                     raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_number")
+#                     order_id = raw_order_id.lstrip('#') if raw_order_id else None
+            
+#             if order_id and self.is_return==0:
+#                 trigger_fulfillment(order_id,raw_order_id,shopify_order_no,self.name)
+
+#             qi_mandatory_checks_on_dn_submit(self, method=None)
+
+#             if self.is_return==0:
+#                 send_sales_invoice_email_on_delivery_note(self, method=None)
+
+            
+#             # send_delivery_note_email(self, method=None)
+#             # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+#             # order_id = None
+#             # order_values = frappe.db.get_value(
+#             # "Sales Order", 
+#             # {"name": against_sales_order}, 
+#             # ["order_id", "amazon_order_id", "shopify_order_id"]
+#             # )
+#             # Get the first non-empty value
+#             # if order_values:
+#             #     order_id = next((value for value in order_values if value), None)
+
+#                 # if order_id:
+#                 #     awb_data = check_courie_service(order_id)
+
+#                 #     # Initialize variables
+#                 #     awb_code = None
+#                 #     courier_name = None
+#                 #     label_url = None
+
+#                 #     if awb_data and awb_data.get("message"):
+#                 #         awb_info = awb_data["message"].get("awb", {})
+#                 #         label_info = awb_data["message"].get("label", {})
+
+#                 #         # Extract AWB code only if successfully generated
+#                 #         if isinstance(awb_info, dict) and awb_info.get("status_code") == 400:
+#                 #             print("AWB generation failed:", awb_info.get("message"))
+#                 #             awb_code = awb_info.get("message").split("Current AWB")[-1].strip()
+#                 #         elif isinstance(awb_info, dict):
+#                 #             awb_code = awb_info.get("awb_code")  # Adjust based on actual API response
+
+#                 #         # Extract courier name if available
+#                 #         if awb_code:
+#                 #             courier_name = "Extract Courier Name Logic Here"  # Adjust this if the courier name is provided in the response
+
+#                 #         # Extract label URL
+#                 #         if isinstance(label_info, dict) and label_info.get("label_created") == 1:
+#                 #             label_url = label_info.get("label_url")
+
+#                 #     # Assign extracted values
+#                 #     self.tracking_id = awb_code
+#                 #     self.courier_partner = courier_name
+#                 #     self.shipping_label = label_url
+
+#             if not self.is_return:
+#                 self._process_customer_details()
+#                 return
+            
+#             self._process_serial_numbers()
+
+        # except Exception as e:
+        #     error_message = f"An error occurred during on_submit:\n{traceback.format_exc()}"
+        #     frappe.db.rollback()
+        #     frappe.throw(error_message)
     
     def _process_customer_details(self):
         try:
@@ -562,86 +617,8 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
     except Exception as e:
         frappe.throw(str(e))
         
-# @frappe.whitelist()  
-# def qi_mandatory_checks_on_dn_submit(doc, method=None):
-#     """
-#     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
-#     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
-#     """
-#     for item in doc.items:
-#         if item.serial_no:
-#             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
-#             for serial_no in serial_nos:
-#                 # Fetch only submitted NJ Quality Inspection names linked to the Serial No in descending order of creation
-#                 qi_names = frappe.db.sql(
-#                     """
-#                     SELECT name FROM `tabNJ Quality Inspection`
-#                     WHERE barcode = %s AND docstatus = 1
-#                     ORDER BY creation DESC
-#                     """,
-#                     (serial_no,), as_list=True
-#                 )
-                
-#                 if not qi_names:
-#                     frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
-                
-#                 # Fetch all mandatory checks
-#                 mandatory_checks = frappe.db.sql(
-#                     """
-#                     SELECT name FROM `tabNJ QC Check List` 
-#                     WHERE name IN (
-#                         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
-#                         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
-#                         WHERE njqc.item_group IN (
-#                             SELECT component_type FROM `tabComponent` 
-#                             WHERE parent = (
-#                                 SELECT item_wizard FROM `tabSerial No` 
-#                                 WHERE name = %s
-#                             )
-#                         )
-#                     )
-#                     AND mandatory = 1
-#                     """,
-#                     (serial_no,),
-#                     as_dict=True
-#                 )
 
-#                 # Use 'name' key instead of index 0
-#                 mandatory_check_names = {check['name'] for check in mandatory_checks}
-#                 passed_checks = set()
-#                 failed_checks = {}
-#                 missing_checks = mandatory_check_names.copy()
-                
-#                 for qi_name in qi_names:
-#                     # Fetch NJ Checks for the given Quality Inspection
-#                     nj_checks = frappe.db.sql(
-#                         """
-#                         SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
-#                         """,
-#                         (qi_name[0],), as_dict=True
-#                     )
-                    
-#                     nj_check_names = {check.check_name for check in nj_checks}
-#                     missing_checks -= nj_check_names  # Remove found checks from missing checks list
-                    
-#                     for check in nj_checks:
-#                         if check.check_name in mandatory_check_names:
-#                             if check.score == 0:
-#                                 passed_checks.add(check.check_name)  # Mark check as passed
-#                             elif check.check_name not in passed_checks:  # Only consider failed if never passed before
-#                                 failed_checks[check.check_name] = qi_name[0]
-                    
-#                     # If all mandatory checks are found and passed, stop checking further QIs
-#                     if passed_checks == mandatory_check_names:
-#                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
-#                         break
-                
-#                 if failed_checks:
-#                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
-#                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
-                
-#                 if missing_checks:
-#                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
+
 # @frappe.whitelist()  
 # def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #     """
@@ -654,26 +631,15 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
 #             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
 #             for serial_no in serial_nos:
 
+#                 # Get item_code and item_group fromfrom Serial No
+#                 item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
+#                 item_group = frappe.db.get_value("Item", item_code, "item_group")
+
+#                 # Skip validation if item group is not 'Laptops'
+#                 if item_group != "Laptops":
+#                     continue
+
 #                 # Fetch all mandatory checks for the serial number
-#                 # mandatory_checks = frappe.db.sql(
-#                 #     """
-#                 #     SELECT name FROM `tabNJ QC Check List` 
-#                 #     WHERE name IN (
-#                 #         SELECT quality_check FROM `tabNJ Quality Checks` njqc 
-#                 #         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
-#                 #         WHERE njqc.item_group IN (
-#                 #             SELECT component_type FROM `tabComponent` 
-#                 #             WHERE parent = (
-#                 #                 SELECT item_wizard FROM `tabSerial No` 
-#                 #                 WHERE name = %s
-#                 #             )
-#                 #         )
-#                 #     )
-#                 #     AND mandatory = 1
-#                 #     """,
-#                 #     (serial_no,),
-#                 #     as_dict=True
-#                 # )
 #                 mandatory_checks = frappe.db.sql(
 #                     """
 #                     SELECT name FROM `tabNJ QC Check List` 
@@ -755,14 +721,19 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
 #                 # Throw error if any check is missing
 #                 if missing_checks:
 #                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
-
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """
     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
-    Skips validation if no mandatory checks exist for the serial number.
+    Skips validation if:
+    - No mandatory checks exist for the serial number
+    - The Delivery Note is a return (is_return = 1)
     """
+    # Skip validation if the delivery note is a return
+    if doc.is_return:
+        # frappe.msgprint("Skipping quality inspection checks as this is a return delivery note.")
+        return
     for item in doc.items:
         if item.serial_no:
             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
@@ -803,7 +774,7 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                     as_dict=True
                 )
 
-                # ✅ Skip validation if no mandatory checks found
+                # Skip validation if no mandatory checks found
                 if not mandatory_checks:
                     continue
 
@@ -845,20 +816,16 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                             elif check.check_name not in passed_checks:
                                 failed_checks[check.check_name] = qi_name[0]
 
-                    # If all mandatory checks are passed, stop checking further QIs
                     if passed_checks == mandatory_check_names:
                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
                         break
 
-                # Throw error if any check failed
                 if failed_checks:
                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
 
-                # Throw error if any check is missing
                 if missing_checks:
                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
-
 @frappe.whitelist()
 def get_warranty_data(doc):
     if isinstance(doc, str):

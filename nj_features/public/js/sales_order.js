@@ -1,4 +1,21 @@
 frappe.ui.form.on('Sales Order', {
+    refresh: function(frm) {
+        if (frm.doc.status !== 'Closed' && frm.doc.status !== 'On Hold') {
+            frm.add_custom_button('Initiate Refund', function() {
+                frappe.call({
+                    method: 'nj_lib.nj_lib.doctype.nj_refund.nj_refund.create_refund_record_from_so',
+                    args: {
+                        sales_order: frm.doc.name
+                    },
+                    callback: function(r) {
+                        if (r.message) {
+                            frappe.msgprint(r.message);
+                        }
+                    }
+                });
+            });
+        }  
+    },
     onload_post_render: function(frm) {
         frm.remove_custom_button('Delivery Note', 'Create');
         $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();

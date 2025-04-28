@@ -1,23 +1,33 @@
 frappe.ui.form.on('Employee', {
     refresh(frm) {
-        // Hide sidebar and specific fields
         $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
-        frm.set_df_property('company', 'hidden', 1);    
+        frm.set_df_property('company', 'hidden', 1);
+        
+        frm.set_query('work_warehouse', function() {
+            return { filters: { warehouse_owner: frm.doc.user_id?frm.doc.user_id:frm.doc.prefered_email } };
+        });
+
+        frm.set_query('department', function() {
+            return { filters: { disabled: 0 } };
+        });
+
+        frm.set_query('reports_to', function() {
+            return { filters: { status: "Active" } };
+        });
+
+        frm.set_query('employee_asset_warehouse', function() {
+            return { filters: { warehouse_owner: frm.doc.user_id?frm.doc.user_id:frm.doc.prefered_email, disabled: 0, warehouse_type: "Employee Personal Warehouse" } };
+        });
     },
 
     after_save: function(frm) {
         if (frm.doc.department && frm.doc.role_profile && frm.doc.date_of_joining) {
-            // First update experience table
             frappe.call({
                 method: "nj_features.overrides.employee.update_employee_experience",
-                args: {
-                    docname: frm.doc.name,
-                    date_of_joining: frm.doc.date_of_joining
-                },
+                args: { docname: frm.doc.name, date_of_joining: frm.doc.date_of_joining },
                 callback: function(response) {
                     if (!response.exc) {
-                        // After experience table is updated, fetch and update ramp level
                         frappe.call({
                             method: "nj_features.overrides.employee.fetch_and_update_ramp_level",
                             args: {
@@ -36,7 +46,8 @@ frappe.ui.form.on('Employee', {
                 }
             });
         }
-    },    
+    },
+
     validate(frm) {
         // Ensure validations run only when required
         frappe.validated = false;
@@ -73,13 +84,11 @@ frappe.ui.form.on('Employee', {
             }
         });     
     },
+
     role_profile(frm) {
-        // Fetch and set the previous role profile on role profile change
         frappe.call({
             method: "nj_features.overrides.employee.get_previous_role_profile",
-            args: {
-                docname: frm.doc.name
-            },
+            args: { docname: frm.doc.name },
             callback(r) {
                 if (r.message) {
                     frm.set_value('previous_role_profile', r.message);

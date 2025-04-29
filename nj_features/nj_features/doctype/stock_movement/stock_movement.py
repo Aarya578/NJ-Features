@@ -280,6 +280,8 @@ def validate_serial_no_and_department(row, error_messages):
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
 
+    s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+
     s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
 
     query = """
@@ -288,12 +290,12 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
         JOIN `tabStock Entry` se ON sed.parent = se.name
         WHERE se.stock_entry_type = "Material Transfer"
         AND sed.serial_no = %s
-        AND sed.t_warehouse = %s
+        AND sed.target_department = %s
         ORDER BY se.creation DESC
         LIMIT 1
     """
 
-    result = frappe.db.sql(query, (serial_no, s_warehouse), as_dict=True)
+    result = frappe.db.sql(query, (serial_no, s_department), as_dict=True)
 
     if result:
         creation_time = result[0]["creation"]

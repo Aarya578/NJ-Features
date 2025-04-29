@@ -8,7 +8,11 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class StockMovement(Document):
     def on_submit(self):
+        # self.validate_supplier_return()
         try:
+            # if self.get("make_supplier_return"):
+            #     self.validate_supplier_return()
+            #     return 
             nj_series = "STMR-.YYYY.-.MM.-"
             if self.transfer_status == "Stock Accept":
                 nj_series = "STMA-.YYYY.-.MM.-"
@@ -42,6 +46,119 @@ class StockMovement(Document):
         except Exception as e:
             frappe.db.rollback()
             frappe.throw("Error while submitting Stock Entry: ", e)
+
+    
+
+    def validate_supplier_return(self):
+        """
+        Validate item codes when making supplier return
+        - Called during Stock Movement Document submission
+        - Checks if scanned serial item matches purchase receipt item
+        - If they don't match, create a stock entry using make_stock_entry_using_nj_lib
+        """
+        # Check the value of make_supplier_return field (0 or 1)
+        if self.make_supplier_return == 1:  # Check if the checkbox is checked (1)
+            # Loop through items in the document
+            for item in self.items:
+                if item.serial_no:
+                    # For each serial number in the item
+                    for serial_no in item.serial_no.split('\n'):
+                        if serial_no:
+                            # Fetch details from Serial No document
+                            serial_doc = frappe.get_doc("Serial No", serial_no.strip())
+                            serial_item_code = serial_doc.item_code
+                            
+                            # Get Purchase Receipt from Serial No
+                            purchase_receipt = serial_doc.purchase_document_no
+                            # print("purchase_receipt========70=============", purchase_receipt)
+                            
+                            if purchase_receipt:
+                                # Query the Purchase Receipt Item child table to get the item code
+                                purchase_item_code = frappe.db.get_value(
+                                    "Purchase Receipt Item",
+                                    {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no}%"]},
+                                    ["item_code"],
+                                )
+                                # print("purchase_item_code=========================", purchase_item_code)
+                                
+                                # Check if the item codes DON'T match
+                                if serial_item_code != purchase_item_code:
+
+                                    print('inside if condition')
+                                    self.make_stock_entry_using_nj_lib()
+
+    def make_stock_entry_using_nj_lib(self):
+        """
+        Create a stock entry (repack) when serial no item code doesn't match purchase receipt
+        """
+        cost_account = frappe.db.get_single_value('NewJaisa Configuration', 'default_operational_cost_account')
+        stock_data = {
+            "name": self.name,
+            "doctype": self.doctype,
+            "stock_entry_type": "Repack",
+            "expense_account": cost_account
+        }
+        
+        repack_items_data = self.get_repack_items()
+        # print("repack_items_dataaaa=============100========", repack_items_data)
+        if repack_items_data and (len(repack_items_data) > 1):
+            stock_data["repack_items"] = repack_items_data
+            # print("stock_data=====================", stock_data)
+            stock_entry_using_nj_lib(stock_data)
+
+    def get_repack_items(self):
+        """
+        Prepare repack items data for stock entry
+        """
+        return_unpack_items_data = []
+        # print("self=====================", self.as_dict())
+
+        main_item = self.items[0]
+        # Add the main repack item (item being taken out)
+        main_repack_item = {
+            'repack_item_code': main_item.item_code,
+            'repack_serial_no': main_item.serial_no,
+            # 'repack_item_base_price': self.base_price,
+            'repack_item_source_warehouse': main_item.s_warehouse,  # FIXED
+        }
+        return_unpack_items_data.append(main_repack_item)
+
+        # Fetch Serial No document
+        serial_no_value = main_item.serial_no.strip()
+        serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
+        # print("serial_no_doc=====================", serial_no_doc)
+
+        # Fetch Purchase Receipt linked to Serial No
+        purchase_receipt = serial_no_doc.purchase_document_no
+        # print("purchase_receipt=====================", purchase_receipt)
+
+        if not purchase_receipt:
+            frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
+
+        # Fetch Purchase Item Code
+        if not main_item.serial_no:
+            frappe.throw("Serial No is missing in the Stock Movement Item.")
+        purchase_item_code = frappe.db.get_value(
+            "Purchase Receipt Item",
+            {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no_value}%"]},
+            "item_code",
+        )
+        # print("purchase_item_code=========================", purchase_item_code)
+
+        if not purchase_item_code:
+            frappe.throw(f"Could not find the purchase item for Serial No: {serial_no_value}")
+
+        # Add the unpack item (item being put in)
+        unpack_item = {
+            'unpack_serial_no': main_item.serial_no,
+            'unpack_item_code': purchase_item_code,
+            'unpack_item_target_warehouse': main_item.t_warehouse,  # FIXED
+            # 'unpack_item_base_price': self.repack_item_price,
+        }
+        return_unpack_items_data.append(unpack_item)
+
+        return return_unpack_items_data
+
 
 @frappe.whitelist()
 def get_all_emp_warehouse(user):

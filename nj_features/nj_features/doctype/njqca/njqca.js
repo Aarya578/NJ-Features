@@ -46,7 +46,7 @@ frappe.ui.form.on('NJQCA', {
                     brand: frm.doc.brand, item_group: frm.doc.item_group
                 };
                 
-                if (frm.doc.model) { filters.item_model = frm.doc.model; }
+                // if (frm.doc.model) { filters.item_model = frm.doc.model; }
                 if (frm.doc.item_template) { filters.variant_of = frm.doc.item_template; }
                 
                 return { filters: filters };

@@ -717,10 +717,14 @@ def calculate_to_make(doc, DOI_threshold=10):
         forwarded_qty = flt(item.get("forward_inventory", 0)) 
         inwarded_qty = flt(item.get("inward_inventory", 0)) 
 
-        to_make = (forwarded_qty - inwarded_qty) + (sales_rate * DOI_threshold)
-        to_make = max(0, round(to_make))
+        if forwarded_qty == 0:
+            item.update({"to_make": 0})
+            continue
+        else:
+            to_make = (forwarded_qty - inwarded_qty) + (sales_rate * DOI_threshold)
+            to_make = max(0, round(to_make))
         
-        item.update({"to_make": to_make})
+            item.update({"to_make": to_make})
 
     suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []),doc, doc.get("department"))
 
@@ -1153,12 +1157,16 @@ def allocate_serial_no_for_battery(final_result):
     for row in final_result:
         print(f"\nProcessing row ------------ {row}")
         
+        if not row:
+            print("Skipping None row")
+            continue
+
         if row.get("item_group", "").lower() == "battery":
             item_code = row.get("item")
             mreq_no = row.get("mreq_no")
             item_group = row.get("item_group")
 
-            valid_serials = []  # Reset per item
+            valid_serials = []
 
             nj_warehouses = frappe.get_all(
                 "Warehouse", 
@@ -1195,7 +1203,6 @@ def allocate_serial_no_for_battery(final_result):
                             valid_serials.append(serial.get("name"))
                 except Exception as e:
                     print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
-
 
             print(f"Valid serials for allocation to {item_code}: {valid_serials}")
 

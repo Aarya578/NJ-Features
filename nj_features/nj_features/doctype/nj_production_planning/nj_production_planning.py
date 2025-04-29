@@ -1031,6 +1031,10 @@ def allocate_laptop_parts(doc):
                     virtual_stock_data[item_code_res] -= mr_qty
 
     final_result = []
+
+    if not grouped_by_serial:
+        return final_result
+
     for serial_no, items in grouped_by_serial.items():
         if all(item["allocated_status"] == "Allocated" for item in items):
             final_result.extend(items)
@@ -1068,7 +1072,8 @@ def allocated_other_part(item):
 
     item_wizard_name = frappe.db.get_value("Serial No", {'name': item.get("against_serial_no")}, 'item_wizard')
     if not item_wizard_name:
-        frappe.throw(f"Item Wizard not found for serial no: {item.get('against_serial_no')}")
+        return []
+        # frappe.throw(f"Item Wizard not found for serial no: {item.get('against_serial_no')}")
 
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_name)
 

@@ -10,6 +10,7 @@
   "naming_series",
   "transfer_status",
   "default_source_warehouse",
+  "make_supplier_return",
   "column_break_dfjqd",
   "is_default_target_warehouse",
   "default_target_warehouse",
@@ -137,11 +138,17 @@
    "label": "Series",
    "options": "\nSMA-.YYYY.-.MM.-\nSMR-.YYYY.-.MM.-",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "make_supplier_return",
+   "fieldtype": "Check",
+   "label": "Make Supplier Return"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-28 15:37:18.727200",
+ "modified": "2025-04-28 12:28:39.300699",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",

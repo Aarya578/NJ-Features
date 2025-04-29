@@ -542,7 +542,7 @@ frappe.ui.form.on('NJQCA', {
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
-            args: { 'parent': frm.doc.name, "item_group":frm.doc.item_group,
+            args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
                 "manufacturer_model":frm.doc.manufacturer_model
              },
             callback: function(r) {

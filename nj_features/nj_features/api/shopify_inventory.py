@@ -176,6 +176,7 @@ def fetch_and_stage_inventory_sync():
                         nj_inventory_log.error("\n",frappe.get_traceback(), f"190 - Failed to log syncerror for item_code: {item_code}")
                     continue
 
+    nj_inventory_log.save(ignore_permissions=True)
     open_so_data = frappe.db.sql("""
         SELECT 
             so_data.sales_order,
@@ -261,6 +262,7 @@ def fetch_and_stage_inventory_sync():
                 })
     except Exception as e:
         nj_inventory_log.error("\nError updating pending_qty and updated_qty:", str(e))
+        nj_inventory_log.save(ignore_permissions=True)
 
 @frappe.whitelist()
 def sync_inventory_to_shopify():
@@ -392,9 +394,11 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
 
                 if update_resp.status_code != 200:
                     nj_inventory_log.error(f"\nFailed to update inventory for {variant_id}: {update_resp.text}")
+                    nj_inventory_log.save(ignore_permissions=True)
                     sync_success = False
             except Exception as e:
                 nj_inventory_log.error(f"\nException during sync for {variant_id}: {str(e)}")
+                nj_inventory_log.save(ignore_permissions=True)
                 sync_success = False
                 continue
         frappe.db.set_value("NJ Inventory Sync Main", row.name, {
@@ -424,11 +428,14 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
             )
         except Exception as e:
             nj_inventory_log.error(f"\n440 - Failed to enqueue next batch: {str(e)}")
+            nj_inventory_log.save(ignore_permissions=True)
 
         nj_inventory_log.error(f"\n442 - Processed {processed_count} records. Scheduled next batch.")
+        nj_inventory_log.save(ignore_permissions=True)
         return f"Processed {processed_count} records. Scheduled next batch."
 
     nj_inventory_log.error(f"\nCompleted processing {processed_count} records.")
+    nj_inventory_log.save(ignore_permissions=True)
     return f"Completed processing {processed_count} records."
 
 # Function to initiate the batch process

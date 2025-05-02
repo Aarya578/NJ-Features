@@ -34,9 +34,11 @@ def fetch_and_stage_inventory_sync():
             Main_Data AS (
                 SELECT 
                     pb.shopify_variant_id,
+                    i.name AS item_code,
+                    i.item_group,
                     COUNT(DISTINCT i.item_code) AS item_code_count,
                     GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-                     GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
+                    GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                     b.actual_qty AS total_actual_qty,
                     CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
                     ps.total_actual_qty_for_parent
@@ -75,39 +77,7 @@ def fetch_and_stage_inventory_sync():
                 md.shopify_variant_id
             ORDER BY 
                 total_actual_qty DESC;""", as_dict=True)
-
-    # results = frappe.db.sql("""
-    #         SELECT 
-    #             pb.shopify_variant_id,
-    #             COUNT(DISTINCT i.item_code) AS item_code_count,
-    #             GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-    #             GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-    #             CAST(SUM(CASE 
-    #                 WHEN d.department_name IN ('Packing & Dispatch', 'BG - Adaptor QC') THEN b.actual_qty 
-    #                 ELSE 0 
-    #             END) AS DECIMAL(10, 2)) AS total_actual_qty
-    #         FROM 
-    #             `tabProduct Bundle` pb
-    #         JOIN 
-    #             `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-    #         JOIN 
-    #             `tabItem` i ON pbi.item_code = i.item_code
-    #         LEFT JOIN 
-    #             `tabBin` b ON i.item_code = b.item_code
-    #         LEFT JOIN 
-    #             `tabWarehouse` w ON b.warehouse = w.name
-    #         LEFT JOIN 
-    #             `tabDepartment` d ON w.department = d.name
-    #         WHERE 
-    #             i.item_group IN ('Laptops', 'Desktops', 'MacBooks')
-    #             AND i.has_variants = 0
-    #         GROUP BY 
-    #             pb.shopify_variant_id
-    #         HAVING 
-    #             total_actual_qty >= 0
-    #         ORDER BY 
-    #             total_actual_qty DESC;
-    # """, as_dict=True)
+    
     nj_inventory_log.error("\n\nresults", results)
     item_to_variant_map = {}
     for row in results:
@@ -152,7 +122,7 @@ def fetch_and_stage_inventory_sync():
                     truncated_error_msg = error_msg[:140]
                     frappe.log_error(frappe.get_traceback(), truncated_error_msg)
                     nj_inventory_log.error("\n168 - Duplicate item_code: %s", item_code, "\n", frappe.get_traceback())
-
+                    nj_inventory_log.save(ignore_permissions=True)
                     # Try to fetch the existing doc and update syncerror field
                     try:
                         existing_doc_name = frappe.get_value("NJ Inventory Sync Main", {"item_code": item_code}, "name")
@@ -162,18 +132,20 @@ def fetch_and_stage_inventory_sync():
                             })
                     except Exception:
                         nj_inventory_log.error("\n", frappe.get_traceback(), f"178 - Failed to set syncerror for duplicate item_code: {item_code}")
-
+                        nj_inventory_log.save(ignore_permissions=True)
                     continue
 
                 except Exception as e:
                     error_msg = f"General error for item_code: {item_code} — {str(e)}"
                     nj_inventory_log.error("\n184 - Error in sync_inventory_to_shopify",frappe.get_traceback())
+                    nj_inventory_log.save(ignore_permissions=True)
                     try:
                         doc.syncerror = error_msg
                         doc.flags.ignore_permissions = True
                         doc.insert()
                     except Exception:
                         nj_inventory_log.error("\n",frappe.get_traceback(), f"190 - Failed to log syncerror for item_code: {item_code}")
+                        nj_inventory_log.save(ignore_permissions=True)
                     continue
 
     nj_inventory_log.save(ignore_permissions=True)

@@ -6,22 +6,11 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "days_of_inventory",
-  "column_break_v3cb1",
   "days",
   "column_break_srtyq",
   "weight_factor"
  ],
  "fields": [
-  {
-   "fieldname": "days_of_inventory",
-   "fieldtype": "Data",
-   "label": "Days Of Inventory"
-  },
-  {
-   "fieldname": "column_break_v3cb1",
-   "fieldtype": "Column Break"
-  },
   {
    "fieldname": "days",
    "fieldtype": "Data",
@@ -40,7 +29,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-03-21 12:32:04.242730",
+ "modified": "2025-05-02 12:20:39.874246",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning Settings",

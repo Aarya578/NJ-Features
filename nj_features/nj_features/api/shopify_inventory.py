@@ -33,13 +33,11 @@ def fetch_and_stage_inventory_sync():
 
             Main_Data AS (
                 SELECT 
-                    pb.shopify_variant_id,
-                    i.name AS item_code,
-                    i.item_group,
+                    pb.shopify_variant_id, i.name AS item_code, i.item_group,
                     COUNT(DISTINCT i.item_code) AS item_code_count,
                     GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                     GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                    b.actual_qty AS total_actual_qty,
+                    b.actual_qty,
                     CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
                     ps.total_actual_qty_for_parent
                 FROM 

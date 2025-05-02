@@ -29,11 +29,13 @@
   {
    "fieldname": "target",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Target"
   },
   {
    "fieldname": "value_",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Value </>",
    "options": "\n>\n<"
   },
@@ -45,7 +47,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-05-02 14:29:08.179143",
+ "modified": "2025-05-02 17:33:49.749998",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "KPI Parameter",

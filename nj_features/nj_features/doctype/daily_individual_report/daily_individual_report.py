@@ -44,16 +44,20 @@ def get_serial_no_data():
     """
 
     work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
-
+    
     word_warehouse = [row.get("warehouse") for row in work_warehouse]
 
-    serial_no_data = frappe.get_all('Serial No',
-        filters={
-            'warehouse': ['in', word_warehouse],
-        },
-        fields=['item_code', 'serial_no', 'warehouse']
-    )
-    
+    if not word_warehouse:
+        frappe.msgprint("No warehouse found for user: {0}".format(frappe.session.user))
+        return []
+
+    placeholders = ', '.join(['%s'] * len(word_warehouse))
+    query = f"""SELECT item_code, serial_no, warehouse
+                FROM `tabSerial No` 
+                WHERE warehouse is not null AND warehouse IN ({placeholders})"""
+
+    serial_no_data = frappe.db.sql(query, tuple(word_warehouse), as_dict=True)
+
     return serial_no_data
 
 @frappe.whitelist()

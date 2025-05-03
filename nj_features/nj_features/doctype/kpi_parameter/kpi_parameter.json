@@ -8,7 +8,9 @@
  "field_order": [
   "parameter",
   "weightage",
-  "data_l21q2"
+  "value_",
+  "target",
+  "data_kjurt"
  ],
  "fields": [
   {
@@ -25,14 +27,27 @@
    "label": "Weightage"
   },
   {
-   "fieldname": "data_l21q2",
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Target"
+  },
+  {
+   "fieldname": "value_",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Value </>",
+   "options": "\n>\n<"
+  },
+  {
+   "fieldname": "data_kjurt",
    "fieldtype": "Data"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-04-24 14:39:49.018525",
+ "modified": "2025-05-02 17:33:49.749998",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "KPI Parameter",

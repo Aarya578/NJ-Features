@@ -17,10 +17,34 @@ frappe.ui.form.on('Role Profile', {
                 };
             }
         };
+        
     },
-    
+
+
     // Update filters when department changes
     department: function(frm) {
         frm.trigger('refresh');
     }
 });
+
+frappe.ui.form.on('KPI Parameter', {
+    target: function(frm, cdt, cdn) {
+      let row = locals[cdt][cdn];
+      if (row._skip_validation) return;      
+      let target_value = String(row.target).replace('%', '').trim();
+      let numeric_value = parseFloat(target_value);
+      
+      if (numeric_value < 1 || numeric_value > 100 || isNaN(numeric_value)) {
+        frappe.msgprint(__('Target must be between 1% and 100%'));
+        
+        row._skip_validation = true;
+        frappe.model.set_value(cdt, cdn, 'target', '');
+        setTimeout(() => { row._skip_validation = false; }, 0);
+      } else {
+        row._skip_validation = true;
+        frappe.model.set_value(cdt, cdn, 'target', numeric_value + '%');
+        setTimeout(() => { row._skip_validation = false; }, 0);
+      }
+    }
+  });
+

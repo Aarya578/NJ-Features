@@ -30,6 +30,14 @@ frappe.listview_settings['Serial No'] = {
                                 columns: 2
                             },
                             {
+                                label: __('Warehouse'),
+                                fieldname: 'warehouse',
+                                fieldtype: 'Link',
+                                options: 'Warehouse',
+                                in_list_view: 1,
+                                columns: 1
+                            },
+                            {
                                 label: __('Yes'),
                                 fieldname: 'yes',
                                 fieldtype: 'Check',
@@ -95,41 +103,44 @@ frappe.listview_settings['Serial No'] = {
                                 message: __('Reason is mandatory when No is checked in row(s): {0}', [missingReasonRows.join(', ')])
                             });
                         } else {
-                            // Fetch the warehouse from the logged-in user's Employee record
-                            frappe.db.get_value('Employee', { 'user_id': frappe.session.user_email }, 'work_warehouse', function(x) {
-                                if (x && x.work_warehouse) {
-                                    // Add warehouse to the report before submitting
-                                    values.warehouse = x.work_warehouse;
-                
-                                    // Submit the report
-                                    frappe.call({
-                                        method: 'frappe.client.save',
-                                        args: {
-                                            doc: {
-                                                doctype: 'Daily Individual Report',
-                                                work_warehouse_inventory: values.work_warehouse_inventory,
-                                                warehouse: values.warehouse
-                                            }
-                                        },
-                                        callback: function(r) {
-                                            if (!r.exc) {
-                                                frappe.call({
-                                                    method: 'frappe.client.submit',
-                                                    args: { doc: r.message },
-                                                    callback: function(r) {
-                                                        if (!r.exc) {
-                                                            frappe.msgprint(__('Report submitted successfully.'));
-                                                            dialog.hide();
+
+                            frappe.call({
+                                method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
+                                callback: function (r) {
+                                    // Fetch the warehouse from the logged-in user's Employee record
+                                    if (r.message) {
+                                        console.log("r,message", r.message);
+                                        frappe.call({
+                                            method: 'frappe.client.save',
+                                            args: {
+                                                doc: {
+                                                    doctype: 'Daily Individual Report',
+                                                    work_warehouse_inventory: values.work_warehouse_inventory,
+                                                    warehouse: r.message,
+                                                    created_by: frappe.session.user
+                                                }
+                                            },
+                                            callback: function(r) {
+                                                if (!r.exc) {
+                                                    frappe.call({
+                                                        method: 'frappe.client.submit',
+                                                        args: { doc: r.message },
+                                                        callback: function(r) {
+                                                            if (!r.exc) {
+                                                                frappe.msgprint(__('Report submitted successfully.'));
+                                                                dialog.hide();
+                                                            }
                                                         }
-                                                    }
-                                                });
+                                                    });
+                                                }
                                             }
-                                        }
-                                    });
-                                } else {
-                                    frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
+                                        });
+                                    } else {
+                                        frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
+                                    }
                                 }
-                            });
+                            })
+                            
                         }
                     }
                 }
@@ -149,6 +160,7 @@ frappe.listview_settings['Serial No'] = {
                             dialog.fields_dict.work_warehouse_inventory.df.data.push({
                                 item_code: row.item_code,
                                 serial_no: row.serial_no,
+                                warehouse: row.warehouse,
                                 yes: 1,
                                 no: 0,
                                 user_activity: 'Log Out'

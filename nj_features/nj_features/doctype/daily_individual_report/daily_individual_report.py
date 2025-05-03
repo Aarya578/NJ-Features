@@ -32,17 +32,32 @@ def fetch_data_imports():
     data_imports.sort(key=lambda x: sort_order.get(x['status'].lower(), 4))
     return data_imports
 
-
 @frappe.whitelist()
 def get_serial_no_data():
     user = frappe.session.user
-    emp_data = get_active_emp(user)
-    serial_no_data = frappe.get_all('Serial No',
-        filters={
-            'warehouse': emp_data.get('work_warehouse'),
-        },
-        fields=['item_code', 'serial_no']
-    )
+    # emp_data = get_active_emp(user)
+
+    get_work_warehouse_query = """
+        SELECT DISTINCT name AS warehouse, warehouse_owner
+        FROM `tabWarehouse` 
+        WHERE name like '%%EMP%%' AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
+    """
+
+    work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
+    
+    word_warehouse = [row.get("warehouse") for row in work_warehouse]
+
+    if not word_warehouse:
+        frappe.msgprint("No warehouse found for user: {0}".format(frappe.session.user))
+        return []
+
+    placeholders = ', '.join(['%s'] * len(word_warehouse))
+    query = f"""SELECT item_code, serial_no, warehouse
+                FROM `tabSerial No` 
+                WHERE warehouse is not null AND warehouse IN ({placeholders})"""
+
+    serial_no_data = frappe.db.sql(query, tuple(word_warehouse), as_dict=True)
+
     return serial_no_data
 
 @frappe.whitelist()
@@ -170,3 +185,20 @@ def send_email_to_user(recipient_email, subject, message,cc_emails=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Email Sending Failed")
         frappe.throw(f"Failed to send email: {str(e)}")
+
+@frappe.whitelist()
+def get_emp_warehouses():
+
+    user = frappe.session.user
+
+    get_work_warehouse_query = """
+        SELECT DISTINCT name AS warehouse, warehouse_owner
+        FROM `tabWarehouse` 
+        WHERE name like '%%EMP%%' AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
+    """
+
+    work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
+
+    word_warehouse = [row.get("warehouse") for row in work_warehouse]
+
+    return ','.join(word_warehouse)

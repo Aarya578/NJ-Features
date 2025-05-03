@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_copy": 1,
  "creation": "2025-04-11 14:45:28.893399",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -8,17 +8,25 @@
  "field_order": [
   "is_active",
   "item_group",
+  "column_break_ouzyo",
   "item_code",
+  "section_break_fuwsz",
   "item_name",
+  "section_break_wxyvn",
   "actual_qty",
+  "so_qty",
+  "column_break_jlzc3",
+  "parent_qty",
+  "updated_qty",
+  "column_break_fmwfa",
   "shopify_variant_id",
   "sync_status",
-  "sync_error",
-  "so_qty",
-  "updated_qty"
+  "section_break_m3tvl",
+  "sync_error"
  ],
  "fields": [
   {
+   "columns": 1,
    "default": "0",
    "fieldname": "is_active",
    "fieldtype": "Check",
@@ -33,14 +41,18 @@
    "options": "Item Group"
   },
   {
+   "columns": 1,
    "fieldname": "item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Item Code",
    "options": "Item"
   },
   {
+   "columns": 1,
    "fieldname": "shopify_variant_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Shopify Variant Id"
   },
   {
@@ -49,8 +61,10 @@
    "label": "Actual Qty"
   },
   {
+   "columns": 1,
    "fieldname": "sync_status",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Sync status"
   },
   {
@@ -66,17 +80,49 @@
   {
    "fieldname": "so_qty",
    "fieldtype": "Data",
-   "label": "So Qty"
+   "label": "SO Qty"
   },
   {
+   "columns": 1,
    "fieldname": "updated_qty",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Updated Qty"
+  },
+  {
+   "fieldname": "column_break_ouzyo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_fuwsz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_wxyvn",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_jlzc3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "parent_qty",
+   "fieldtype": "Data",
+   "label": "Parent Qty"
+  },
+  {
+   "fieldname": "column_break_fmwfa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_m3tvl",
+   "fieldtype": "Section Break"
   }
  ],
- "index_web_pages_for_search": 1,
+ "hide_toolbar": 1,
+ "in_create": 1,
  "links": [],
- "modified": "2025-04-15 16:20:46.459259",
+ "modified": "2025-04-30 17:10:04.841192",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",
@@ -91,8 +137,22 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
+   "select": 1,
    "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1
   }
  ],
  "sort_field": "modified",

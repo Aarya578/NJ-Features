@@ -50,7 +50,12 @@ def create_user_and_warehouse(self):
         frappe.msgprint("Error while creating user and warehouse: ", traceback.format_exc())
 
 def update_department_in_work_warehouse(self):
-    work_ware = frappe.db.get_all("Warehouse", {'warehouse_owner': self.get("user_id"), 'disabled': 0, 'warehouse_type': ['!=', 'Employee Personal Warehouse']}, pluck="name")
+    work_ware = frappe.db.get_all( "Warehouse",
+        {
+            'warehouse_owner': self.get("user_id"), 'disabled': 0,
+            'warehouse_type': ['!=', 'Employee Personal Warehouse']
+        }, pluck="name"
+    )
 
     existing_work_warehouse = self.get("work_warehouse")
     if existing_work_warehouse:
@@ -59,9 +64,13 @@ def update_department_in_work_warehouse(self):
         work_ware.extend(existing_work_warehouse)
 
     work_ware = list(set(work_ware))
-    get_dept_from_warehouse = frappe.db.get_values("Warehouse", {'name': ('in', work_ware), 'disabled': 0}, "department", as_dict=True)
 
-    if get_dept_from_warehouse and self.get('department') not in get_dept_from_warehouse:
+    get_dept_from_warehouse = frappe.db.get_values("Warehouse",
+        {'name': ('in', work_ware), 'disabled': 0},
+        ["name", "department"], as_dict=True
+    )
+
+    if get_dept_from_warehouse and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse]:
         query = """
             SELECT SUM(Bin.actual_qty) AS total_qty
             FROM `tabBin` Bin
@@ -70,20 +79,20 @@ def update_department_in_work_warehouse(self):
         """
 
         data = frappe.db.sql(query, (tuple(work_ware),), as_dict=True)
-        if get_dept_from_warehouse:
-            dept_list = [d.get("department") for d in get_dept_from_warehouse if d.get("department")]
-            dept_str = ", ".join(dept_list)
-        else:
-            dept_str = "N/A"
+
+        warehouse_info = [
+            f"{d['name']} (Dept: {d['department'] or 'N/A'})"
+            for d in get_dept_from_warehouse
+        ]
+        warehouse_str = ", ".join(warehouse_info)
 
         if data:
             total_qty = sum((d.get("total_qty") or 0) for d in data)
 
             if total_qty > 0:
                 frappe.msgprint(
-                    _("Please transfer the stock of <b>{0} Qty(s)</b> to <b>{1}</b> department.").format(
-                        total_qty, dept_str
-                    )
+                    _("Please transfer the stock of <b>{0} Qty(s)</b> from the following warehouses: <br><b>{1}</b>").format(
+                        total_qty, warehouse_str)
                 )
                 return None
 

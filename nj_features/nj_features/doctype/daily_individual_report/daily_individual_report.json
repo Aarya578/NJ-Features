@@ -52,7 +52,7 @@
   },
   {
    "fieldname": "warehouse",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Warehouse",
@@ -68,7 +68,7 @@
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-03-19 18:10:19.370586",
+ "modified": "2025-04-28 18:36:56.438699",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Daily Individual Report",

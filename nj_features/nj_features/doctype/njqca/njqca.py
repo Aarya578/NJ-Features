@@ -1556,7 +1556,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                 if last_percentage and int(last_percentage) >= int(sudden_drop_limit):
                     return "YES"
             
-            delta = frappe.db.sql(delta_query, {'parent_name': parent_name, 'sudden_drop_limit': sudden_drop_limit}, as_dict=True)
+            delta = frappe.db.sql(delta_query, {'parent_name': parent_name, 'sudden_drop_limit': int(sudden_drop_limit)}, as_dict=True)
             delta = delta[0]
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:

@@ -178,7 +178,8 @@ scheduler_events = {
     
     "cron": {
         "0 22 * * *": [
-            "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data"
+            "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
+            "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report"
         ],
         "45 7 * * *": [ 
             "nj_features.overrides.employee.update_employee_experience_table",

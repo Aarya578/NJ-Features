@@ -185,7 +185,7 @@ scheduler_events = {
         "45 7 * * *": [ 
             "nj_features.overrides.employee.update_employee_experience_table",
         ],		
-        "*/1 * * * *": [
+        "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
         "50 8 * * *": [

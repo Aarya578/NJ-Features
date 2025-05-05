@@ -6,46 +6,64 @@ from frappe.model.document import Document
 from frappe.utils import get_link_to_form
 from erpnext.selling.doctype.product_bundle.product_bundle import ProductBundle
 
-class CustomeProductBundle(ProductBundle):
-    pass  # your overrides here if needed
+class CustomProductBundle(ProductBundle):
+    pass 
 
-# ✅ This function must be at top level!
+
 
 def update_product_bundle_quantities():
-    # Run your SQL query
+    # Step 1: Fetch item_code and count from Serial No
+    
     data = frappe.db.sql("""
         SELECT 
-            pb.shopify_variant_id,
-            CAST(SUM(b.actual_qty) AS DECIMAL(10, 2)) AS total_actual_qty
+            a.item_code,
+            COUNT(a.item_code) AS item_code_count
         FROM 
-            `tabProduct Bundle` pb
-        LEFT JOIN 
-            `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-        LEFT JOIN 
-            tabItem i ON pbi.item_code = i.item_code
-        LEFT JOIN 
-            tabBin b ON i.item_code = b.item_code
-        LEFT JOIN 
-            tabWarehouse w ON b.warehouse = w.name
+            `tabSerial No` a
+        INNER JOIN 
+            `tabWarehouse` b ON a.warehouse = b.name
         WHERE 
-            i.item_group IN ('Laptops', 'Desktops', 'MacBooks','Chromebooks')
-            AND w.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
+            a.item_group IN ('Desktops', 'Chromeboxes', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'MacBooks') 
+            AND a.warehouse != ''
+            AND b.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
         GROUP BY 
-            pb.shopify_variant_id
+            a.item_code
+        ORDER BY item_code_count DESC
     """, as_dict=True)
 
-    for row in data:
-        if row.shopify_variant_id and row.total_actual_qty is not None:
-            try:
-                # Update the Product Bundle quantity
-                pb_doc = frappe.get_doc("Product Bundle", {"shopify_variant_id": row.shopify_variant_id})
-                print("pb_doc===============", pb_doc)
-                pb_doc.quantity = row.total_actual_qty
-                print(" pb_doc.quantity==============", pb_doc.quantity)
-                pb_doc.save(ignore_permissions=True)
-                frappe.db.commit()
-                frappe.logger().info(f"Updated Product Bundle {pb_doc.name}: Quantity = {row.total_actual_qty}")
-            except frappe.DoesNotExistError:
-                frappe.logger().warning(f"No Product Bundle found for variant {row.shopify_variant_id}")
-            except Exception as e:
-                frappe.logger().error(f"Error updating Product Bundle: {e}")
+    # Step 2: Create a mapping of item_code → item_code_count
+    item_code_count_map = {
+        row.item_code.strip(): row.item_code_count
+        for row in data if row.item_code
+    }
+
+    # Step 3: Loop through all Product Bundles
+    all_bundles = frappe.get_all("Product Bundle", fields=["name"])
+    
+    for pb in all_bundles:
+        pb_doc = frappe.get_doc("Product Bundle", pb.name)
+
+        # Step 4: Match child item codes with query item codes
+        matched_codes = {
+            d.item_code for d in pb_doc.items
+            if d.item_code in item_code_count_map
+        }
+        print("matched_codes      =======",matched_codes)
+
+        if not matched_codes:
+            continue  # Skip if no matching item_code
+
+        # Step 5: Sum the item_code_count for matched codes
+        total_count = sum(item_code_count_map[code] for code in matched_codes)
+        print("total_count      =======",total_count)
+
+        if total_count:
+            pb_doc.quantity = total_count
+            pb_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            print(f"Updated {pb_doc.name}: Quantity = {total_count}")
+        else:
+            print(f"Skipped {pb_doc.name}: No valid item_code_count found.")
+
+
+

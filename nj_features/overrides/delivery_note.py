@@ -7,7 +7,7 @@ import frappe
 import requests
 import traceback
 from frappe import _
-from apps.frappe.frappe.utils import now
+from frappe.utils import now
 from datetime import datetime, timedelta
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years

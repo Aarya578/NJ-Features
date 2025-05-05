@@ -40,7 +40,8 @@ def get_serial_no_data():
     get_work_warehouse_query = """
         SELECT DISTINCT name AS warehouse, warehouse_owner
         FROM `tabWarehouse` 
-        WHERE name like '%%EMP%%' AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
+        WHERE (name like '%%EMP%%' OR name like '%%TR2025%%' OR name like '%%NJVEN%%') 
+        AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
     """
 
     work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
@@ -194,7 +195,8 @@ def get_emp_warehouses():
     get_work_warehouse_query = """
         SELECT DISTINCT name AS warehouse, warehouse_owner
         FROM `tabWarehouse` 
-        WHERE name like '%%EMP%%' AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
+        WHERE (name like '%%EMP%%' OR name like '%%TR2025%%' OR name like '%%NJVEN%%')
+        AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
     """
 
     work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)

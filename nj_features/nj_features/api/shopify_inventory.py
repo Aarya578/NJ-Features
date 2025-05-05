@@ -9,52 +9,37 @@ location_id = 65940800500
 
 @frappe.whitelist()
 def fetch_and_stage_inventory_sync():
-    # Step 1: Inventory sync from product bundle
     nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
+    nj_inventory_log.error = ""
     results = frappe.db.sql("""WITH Parent_Stock AS (
-                SELECT 
-                    CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
+                SELECT CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
                     CAST(SUM(b.actual_qty) AS DECIMAL(10, 2)) AS total_actual_qty_for_parent
-                FROM 
-                    tabItem i
+                FROM tabItem i
                 INNER JOIN 
                     `tabItem Variant Attribute` proc ON i.name = proc.parent 
                     AND proc.attribute LIKE '%Processor%'
-                LEFT JOIN 
-                    tabBin b ON i.item_code = b.item_code
-                LEFT JOIN 
-                    tabWarehouse w ON b.warehouse = w.name
+                LEFT JOIN tabBin b ON i.item_code = b.item_code
+                LEFT JOIN tabWarehouse w ON b.warehouse = w.name
                 WHERE 
                     i.item_group IN ('Laptops', 'Desktops', 'MacBooks', 'Chromebooks')
                     AND w.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
-                GROUP BY 
-                    parent
+                GROUP BY parent
             ),
 
             Main_Data AS (
                 SELECT 
-                    pb.shopify_variant_id, i.name AS item_code, i.item_group,
-                    COUNT(DISTINCT i.item_code) AS item_code_count,
-                    GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-                    GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                    b.actual_qty,
+                    pb.shopify_variant_id, i.item_code, i.item_group, b.actual_qty, 
                     CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
                     ps.total_actual_qty_for_parent
-                FROM 
-                    `tabProduct Bundle` pb
-                LEFT JOIN 
-                    `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                LEFT JOIN 
-                    tabItem i ON pbi.item_code = i.item_code
+                FROM `tabProduct Bundle` pb
+                LEFT JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                LEFT JOIN tabItem i ON pbi.item_code = i.item_code
                 LEFT JOIN 
                     `tabItem Variant Attribute` proc ON i.name = proc.parent 
                     AND proc.attribute LIKE '%Processor%'
-                LEFT JOIN 
-                    tabBin b ON i.item_code = b.item_code
-                LEFT JOIN 
-                    tabWarehouse w ON b.warehouse = w.name
-                LEFT JOIN 
-                    Parent_Stock ps ON ps.parent = CONCAT(i.item_model, ' ', proc.attribute_value)
+                LEFT JOIN tabBin b ON i.item_code = b.item_code
+                LEFT JOIN tabWarehouse w ON b.warehouse = w.name
+                LEFT JOIN Parent_Stock ps ON ps.parent = CONCAT(i.item_model, ' ', proc.attribute_value)
                 WHERE 
                     i.item_group IN ('Laptops', 'Desktops', 'MacBooks', 'Chromebooks')
                     AND w.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
@@ -69,15 +54,13 @@ def fetch_and_stage_inventory_sync():
                 GROUP_CONCAT(DISTINCT md.parent ORDER BY md.parent SEPARATOR ', ') AS parents,
                 GROUP_CONCAT(DISTINCT md.total_actual_qty_for_parent ORDER BY md.parent SEPARATOR ', ') AS parentwise_total_actual_qty,
                 CAST(SUM(DISTINCT md.total_actual_qty_for_parent) AS DECIMAL(10,2)) AS summed_parent_total_actual_qty
-            FROM 
-                Main_Data md
-            GROUP BY 
-                md.shopify_variant_id
-            ORDER BY 
-                total_actual_qty DESC;""", as_dict=True)
-    
-    nj_inventory_log.error("\n\nresults", results)
+            FROM Main_Data md
+            GROUP BY md.shopify_variant_id
+            ORDER BY total_actual_qty DESC
+        """, as_dict=True)
+
     item_to_variant_map = {}
+
     for row in results:
         if float(row.total_actual_qty) < 0:
             continue
@@ -91,14 +74,14 @@ def fetch_and_stage_inventory_sync():
             existing = frappe.get_all("NJ Inventory Sync Main", filters={
                 "shopify_variant_id": row.shopify_variant_id,
                 "item_code": item_code
-            }, fields=["name", "actual_qty", "sync_status", "is_active"])
+            }, fields=["name", "actual_qty", "sync_status", "is_active", "parent_qty"])
 
             if existing:
                 existing_doc = existing[0]
                 if float(row.total_actual_qty) != float(existing_doc.actual_qty):
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                         "actual_qty": row.total_actual_qty,
-                        "parent_qty": row.total_actual_qty_for_parent,
+                        "parent_qty": row.summed_parent_total_actual_qty,
                         "sync_status": "Queued",
                         "is_active": 1
                     })
@@ -107,7 +90,7 @@ def fetch_and_stage_inventory_sync():
                 doc.item_code = item_code
                 doc.item_name = item_code
                 doc.actual_qty = row.total_actual_qty
-                doc.parent_qty = row.total_actual_qty_for_parent
+                doc.parent_qty = row.summed_parent_total_actual_qty
                 doc.item_group = item_group
                 doc.shopify_variant_id = row.shopify_variant_id
                 doc.sync_status = "Queued"
@@ -116,12 +99,10 @@ def fetch_and_stage_inventory_sync():
                     doc.insert()
                 except frappe.UniqueValidationError as e:
                     error_msg = f"Duplicate item_code: {item_code} — {str(e)}"
-                    # Truncate the error message to 140 characters
                     truncated_error_msg = error_msg[:140]
                     frappe.log_error(frappe.get_traceback(), truncated_error_msg)
-                    nj_inventory_log.error("\n168 - Duplicate item_code: %s", item_code, "\n", frappe.get_traceback())
+                    nj_inventory_log.error += f"\n168 - Duplicate item_code: {item_code}\n{frappe.get_traceback()}"
                     nj_inventory_log.save(ignore_permissions=True)
-                    # Try to fetch the existing doc and update syncerror field
                     try:
                         existing_doc_name = frappe.get_value("NJ Inventory Sync Main", {"item_code": item_code}, "name")
                         if existing_doc_name:
@@ -129,26 +110,24 @@ def fetch_and_stage_inventory_sync():
                                 "syncerror": error_msg
                             })
                     except Exception:
-                        nj_inventory_log.error("\n", frappe.get_traceback(), f"178 - Failed to set syncerror for duplicate item_code: {item_code}")
+                        nj_inventory_log.error += f"\n178 - Failed to set syncerror for duplicate item_code: {item_code}\n{frappe.get_traceback()}"
                         nj_inventory_log.save(ignore_permissions=True)
                     continue
 
                 except Exception as e:
                     error_msg = f"General error for item_code: {item_code} — {str(e)}"
-                    nj_inventory_log.error("\n184 - Error in sync_inventory_to_shopify",frappe.get_traceback())
+                    nj_inventory_log.error += f"\n184 - Error in sync_inventory_to_shopify: {frappe.get_traceback()}"
                     nj_inventory_log.save(ignore_permissions=True)
                     try:
                         doc.syncerror = error_msg
                         doc.flags.ignore_permissions = True
                         doc.insert()
                     except Exception:
-                        nj_inventory_log.error("\n",frappe.get_traceback(), f"190 - Failed to log syncerror for item_code: {item_code}")
+                        nj_inventory_log.error += f"\n190 - Failed to log syncerror for item_code: {item_code}\n{frappe.get_traceback()}"
                         nj_inventory_log.save(ignore_permissions=True)
                     continue
 
-    nj_inventory_log.save(ignore_permissions=True)
-    open_so_data = frappe.db.sql("""
-        SELECT 
+    open_so_data = frappe.db.sql("""SELECT 
             so_data.sales_order,
             so_data.item_code,
             so_data.item_group,
@@ -203,7 +182,6 @@ def fetch_and_stage_inventory_sync():
     """, as_dict=True)
 
     try:
-        # Step 1: Aggregate total pending qty per item_code
         pending_qty_map = {}
         for row in open_so_data:
             item_code = row.item_code
@@ -213,25 +191,26 @@ def fetch_and_stage_inventory_sync():
             else:
                 pending_qty_map[item_code] = pending_qty
 
-        # Step 2: For each item_code, update all matching inventory docs
         for item_code, total_so_qty in pending_qty_map.items():
-            inventory_docs = frappe.get_all("NJ Inventory Sync Main", filters={
-                "item_name": item_code
-            }, fields=["name", "actual_qty"])
-
+            inventory_docs = frappe.get_all("NJ Inventory Sync Main", 
+                filters={ "item_code": item_code }, fields=["name", "actual_qty", "parent_qty"])
+            
             for doc in inventory_docs:
-                actual_qty = math.floor(0.4 * doc.total_qty) if float(doc.actual_qty or 0) <= 3 and doc.total_qty >= 10 else float(doc.actual_qty or 0)
-                
-                if total_so_qty >= actual_qty:
+                updated_actual_qty = float(doc.parent_qty) if doc.parent_qty else float(doc.actual_qty or 0)
+
+                if total_so_qty >= updated_actual_qty:
                     updated_qty = 0
                 else:
-                    updated_qty = actual_qty - total_so_qty
+                    updated_qty = updated_actual_qty - total_so_qty
                 frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
                     "so_qty": total_so_qty,
                     "updated_qty": updated_qty
                 })
+                nj_inventory_log.error += f"docname: {doc.name}, actual_qty: {updated_actual_qty}, so_qty: {total_so_qty}, updated_qty: {updated_qty}"
+
+        nj_inventory_log.save(ignore_permissions=True)
     except Exception as e:
-        nj_inventory_log.error("\nError updating pending_qty and updated_qty:", str(e))
+        nj_inventory_log.error += f"\nError updating pending_qty and updated_qty: {str(e)}\n{frappe.get_traceback()}"
         nj_inventory_log.save(ignore_permissions=True)
 
 @frappe.whitelist()
@@ -244,9 +223,9 @@ def sync_inventory_to_shopify():
     }
     
     queued = frappe.get_all("NJ Inventory Sync Main", filters={
-        "sync_status": "Queued",
-        "is_active": 1,
-   }, fields=["name", "item_code", "actual_qty", "shopify_variant_id","updated_qty"])
+        "sync_status": "Queued", "is_active": 1,
+        }, fields=["name", "item_code", "actual_qty", "shopify_variant_id", "updated_qty"])
+    
     for row in queued:
         variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()]
         if (
@@ -302,7 +281,7 @@ def sync_inventory_to_shopify():
 @frappe.whitelist()
 def sync_inventory_to_shopify_2(batch_size=50, start=0):
     nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
-    nj_inventory_log.error(f"Processing batch starting at {start} with size {batch_size}")
+    nj_inventory_log.error += f"Processing batch starting at {start} with size {batch_size}"
     token = "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"
 
     headers = {
@@ -317,40 +296,40 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
         start=start,
         page_length=batch_size
     )
-    nj_inventory_log.error(f"\nFound {len(queued)} records to process.")
+    nj_inventory_log.error += f"\nFound {len(queued)} records to process."
 
     processed_count = 0
 
     for row in queued:
-        nj_inventory_log.error(f"\nProcessing row: {row}")
+        nj_inventory_log.error += f"\nProcessing row: {row}"
         try:
             variant_ids = [v.strip() for v in row.shopify_variant_id.split(",") if v.strip()] if row.shopify_variant_id else []
         except Exception as e:
-            nj_inventory_log.error(f"\nError parsing variant IDs: {e}")
+            nj_inventory_log.error += f"\nError parsing variant IDs: {e}"
             variant_ids = []
 
         if not variant_ids or (row.actual_qty is None or float(row.actual_qty) < 0) or (row.updated_qty is not None and float(row.updated_qty) < 0):
-            nj_inventory_log.error(f"\nSkipping row {row.name} due to missing or invalid data")
+            nj_inventory_log.error += f"\nSkipping row {row.name} due to missing or invalid data"
             continue
 
-        nj_inventory_log.error(f"\nVariant IDs: {variant_ids}")
+        nj_inventory_log.error += f"\nVariant IDs: {variant_ids}"
         sync_success = True
 
         for variant_id in variant_ids:
             try:
-                variant_url = f"\n{shop}/admin/api/2023-01/variants/{variant_id}.json"
-                nj_inventory_log.error(f"\nGetting variant info from: {variant_url}")
+                variant_url = f"{shop}/admin/api/2023-01/variants/{variant_id}.json"
+                nj_inventory_log.error += f"\nGetting variant info from: {variant_url}"
                 variant_resp = requests.get(variant_url, headers=headers)
-                nj_inventory_log.error(f"\nVariant response code: {variant_resp.status_code}")
+                nj_inventory_log.error += f"\nVariant response code: {variant_resp.status_code}"
 
                 if variant_resp.status_code != 200:
-                    nj_inventory_log.error(f"\nFailed to get variant info for {variant_id}: {variant_resp.text}")
+                    nj_inventory_log.error += f"\nFailed to get variant info for {variant_id}: {variant_resp.text}"
                     sync_success = False
                     continue
 
                 variant_data = variant_resp.json()
                 inventory_item_id = variant_data["variant"]["inventory_item_id"]
-                nj_inventory_log.error(f"\nInventory item ID: {inventory_item_id}")
+                nj_inventory_log.error += f"\nInventory item ID: {inventory_item_id}"
 
                 available = int(float(row.updated_qty)) if row.updated_qty is not None else int(float(row.actual_qty))
                 payload = {
@@ -363,22 +342,20 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
                 update_resp = requests.post(update_url, headers=headers, data=json.dumps(payload))
 
                 if update_resp.status_code != 200:
-                    nj_inventory_log.error(f"\nFailed to update inventory for {variant_id}: {update_resp.text}")
-                    nj_inventory_log.save(ignore_permissions=True)
+                    nj_inventory_log.error += f"\nFailed to update inventory for {variant_id}: {update_resp.text}"
                     sync_success = False
             except Exception as e:
-                nj_inventory_log.error(f"\nException during sync for {variant_id}: {str(e)}")
-                nj_inventory_log.save(ignore_permissions=True)
+                nj_inventory_log.error += f"\nException during sync for {variant_id}: {str(e)}"
                 sync_success = False
                 continue
+
         frappe.db.set_value("NJ Inventory Sync Main", row.name, {
             "sync_status": "Completed",
             "is_active": 1
         })
 
-        new_status = "Synced" if sync_success else "Failed"
         processed_count += 1
-        nj_inventory_log.error(f"\nProcessed count: {processed_count}")
+        nj_inventory_log.error += f"\nProcessed count: {processed_count}"
 
         if processed_count % 10 == 0:
             frappe.db.commit()
@@ -387,7 +364,7 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
 
     total_remaining = frappe.db.count("NJ Inventory Sync Main", filters={"sync_status": "Queued", "is_active": 1})
     if total_remaining > 0:
-        nj_inventory_log.error(f"\n{total_remaining} records still queued. Scheduling next batch from {start + batch_size}")
+        nj_inventory_log.error += f"\n{total_remaining} records still queued. Scheduling next batch from {start + batch_size}"
         try:
             frappe.enqueue(
                 sync_inventory_to_shopify_2,
@@ -397,14 +374,13 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
                 timeout=4500
             )
         except Exception as e:
-            nj_inventory_log.error(f"\n440 - Failed to enqueue next batch: {str(e)}")
-            nj_inventory_log.save(ignore_permissions=True)
+            nj_inventory_log.error += f"\nFailed to enqueue next batch: {str(e)}"
 
-        nj_inventory_log.error(f"\n442 - Processed {processed_count} records. Scheduled next batch.")
+        nj_inventory_log.error += f"\nProcessed {processed_count} records. Scheduled next batch."
         nj_inventory_log.save(ignore_permissions=True)
         return f"Processed {processed_count} records. Scheduled next batch."
 
-    nj_inventory_log.error(f"\nCompleted processing {processed_count} records.")
+    nj_inventory_log.error += f"\nCompleted processing {processed_count} records."
     nj_inventory_log.save(ignore_permissions=True)
     return f"Completed processing {processed_count} records."
 

@@ -7,6 +7,7 @@ import frappe
 import requests
 import traceback
 from frappe import _
+from apps.frappe.frappe.utils import now
 from datetime import datetime, timedelta
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years
@@ -219,7 +220,7 @@ class CustomDeliveryNote(DeliveryNote):
                         end_date = posting_date_raw
 
                     serial_no_doc.end_date = end_date + timedelta(days=365)
-
+                    serial_no_doc.modified = now()
                     serial_no_doc.save(ignore_permissions=True)
 
         except Exception as e:
@@ -302,7 +303,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.sales_channel = ''
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
-        
+        serial_no_doc.modified = now()
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
 

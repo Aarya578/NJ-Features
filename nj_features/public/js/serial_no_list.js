@@ -35,7 +35,7 @@ frappe.listview_settings['Serial No'] = {
                                 fieldtype: 'Link',
                                 options: 'Warehouse',
                                 in_list_view: 1,
-                                columns: 2
+                                columns: 1
                             },
                             {
                                 label: __('Yes'),

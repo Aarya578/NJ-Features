@@ -17,7 +17,7 @@ def get_department_details():
     # doc = parse_document(doc)
     all_dept = frappe.db.get_all("Department", ["name"])
 
-    print("all_dept", all_dept)
+    # print("all_dept", all_dept)
 
     for dept in all_dept:
         dept_doc = get_department_document(dept.get("name"))
@@ -28,17 +28,20 @@ def get_department_details():
         fw_config = dept_doc.get("forwarded_config")
 
         if str(in_model) == '1' and str(fw_model) == '1':
-            data = process_merged_configuration(dept_doc)
-            new_doc = create_production_planning(data, dept.get("name"))
-            calculate_to_make(new_doc, DOI_threshold=10)
-        elif str(in_model) == '1' and str(fw_config) == '1':
             data = process_model_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+        elif str(in_model) == '1' and str(fw_config) == '1':
+            data = process_merged_configuration(dept_doc)
+            new_doc = create_production_planning(data, dept.get("name"))
+            calculate_to_make(new_doc, DOI_threshold=10)
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
         elif str(in_config) == '1' and str(fw_config) == '1':
             data = process_default_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc, DOI_threshold=10)
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
 
 @frappe.whitelist()
 def create_production_planning(data, department):
@@ -47,7 +50,7 @@ def create_production_planning(data, department):
     for item in data:
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
-        child.model = item.get("model", "").upper()
+        child.model = item.get("model", "").upper() if item.get("model", "") else ""
         child.processor = item.get("processor_type", "").upper() if item.get("processor_type", "") else ""
         child.ram = item.get("ram_capacity", "").upper() if item.get("ram_capacity", "") else ""
         child.ssd = item.get("storage_capacity", "").upper() if item.get("storage_capacity", "") else ""
@@ -281,10 +284,15 @@ def update_counts(count_dict, results):
 
 def calculate_doi(items):
     for item in items:
-        try:
-            item["DOI"] = item["forwarded_qty"] / item["sales_rate"] if item.get("sales_rate", 0) > 0 else 0
-        except KeyError:
-            item["DOI"] = 0
+        forwarded_qty = item.get("forwarded_qty", 0)
+        sales_rate = item.get("sales_rate", 0)
+        
+        if forwarded_qty < 0 or sales_rate < 0:
+            item["DOI"] = 0  
+        elif sales_rate == 0:
+            item["DOI"] = float('inf')
+        else:
+            item["DOI"] = forwarded_qty / sales_rate
     return items
 
 
@@ -292,8 +300,11 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     if not item_code_list:
         item_code_list = {}
 
-    weights = {i: (i + 1) * weight_factor for i in range(days)}
+    weights = {i: (days - i) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
+
+    print("weights", weights)
+    print("total_weight", total_weight)
 
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
@@ -349,6 +360,8 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             ORDER BY sale_date DESC
     """, as_dict=True)
 
+    print("sales_data ----------- ", sales_data)
+
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
@@ -376,6 +389,8 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             
             total_sales_qty = sum(sales_map[item_code].values())  # Sum of all sales
 
+            print("toal_sales_qty", total_sales_qty)
+
             # Compute weighted sales if data exists
             total_weighted_sales = sum(
                 sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
@@ -383,6 +398,8 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             ) if item_code in sales_map else 0
 
             sales_rate = total_weighted_sales / total_weight if total_weight else 0
+
+            print("sales_rate ------------- ", sales_rate)
 
             forwarded_qty = model_data['item_codes'][item_code]  # Get forwarded qty for this item
 
@@ -445,6 +462,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
         except Exception as e:
             print("Error fetching attributes:", str(e))
     
+    # print("\n\nupdated_item_code_list ----------- ", updated_item_code_list)
 
     return updated_item_code_list
 
@@ -550,7 +568,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
             item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
             updated_item_code_list.append(item)
 
-            print("sales_rate ----------- 242", item['sales_rate'])
+            # print("sales_rate ----------- 242", item['sales_rate'])
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
@@ -629,7 +647,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     """, explain=1, debug=1, as_dict=True)
 
-    print("sales_data ------------------- ", sales_data)    
+    # print("sales_data ------------------- ", sales_data)    
 
     sales_map = {}
     for sale in sales_data:
@@ -700,36 +718,42 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
     
-    print(updated_item_code_list)
+    # print(updated_item_code_list)
 
     return updated_item_code_list
 
-
-@frappe.whitelist()
-def calculate_to_make(doc, DOI_threshold=10):
-
-    if isinstance(doc, str):
-        doc = frappe.parse_json(doc)
-
+def calculate_to_make(doc, DOI_threshold=10, conversion_factor=1, minimum_stock=5):
     for item in doc.get("nj_production_planning_child", []):
+        print('\n\n\nitem ---------------- ', item.as_dict())
+        try:
+            if item.get("sales_rate", 0) == 0:
+                print("sales_rate is 0", item.get("sales_rate"))
+                item.to_make = 0
+                continue
 
-        sales_rate = flt(item.get("sales_rate", 0)) 
-        forwarded_qty = flt(item.get("forward_inventory", 0)) 
-        inwarded_qty = flt(item.get("inward_inventory", 0)) 
+            sales_rate = max(flt(item.get("sales_rate", 0)), 0)
+            forwarded_qty = max(flt(item.get("forward_inventory", 0)), 0)
+            inwarded_qty = max(flt(item.get("inward_inventory", 0)), 0)
+            
+            desired_from_doi = sales_rate * DOI_threshold
+            desired_inventory = max(desired_from_doi, minimum_stock)  # Ensure minimum stock
+            
+            inventory_shortfall = max(0, desired_inventory - forwarded_qty)
+            
+            material_constraint = inwarded_qty // conversion_factor
+            
+            item.to_make = round(min(inventory_shortfall, material_constraint), 2)
 
-        if forwarded_qty == 0:
-            item.update({"to_make": 0})
-            continue
-        else:
-            to_make = (forwarded_qty - inwarded_qty) + (sales_rate * DOI_threshold)
-            to_make = max(0, round(to_make))
-        
-            item.update({"to_make": to_make})
+            print("item.to_make ------------------------- ", item.to_make)
+            
+        except Exception as e:
+            print("\n\n\n\n Coming to exception")
+            item.to_make = 0
+            frappe.log_error(f"Error calculating to_make: {str(e)}")
 
     suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []),doc, doc.get("department"))
-
+    doc.save()
     return doc.get("nj_production_planning_child", [])
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
 
@@ -841,7 +865,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                         
                         added_serial_no.update(suggest_serial_no)
 
-                        print("suggested_serial_no ---------------------- ", suggest_serial_no)
+                        # print("suggested_serial_no ---------------------- ", suggest_serial_no)
                         
                         if suggest_serial_no:
                             suggested_serial_no_data.append({
@@ -853,19 +877,23 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
     else:
 
         for child in doc.get("nj_production_planning_child", []):
-            print("child -------------- ", child.as_dict())
+            # print("child -------------- ", child.as_dict())
             if child.get("to_make", 0) > 0:
                 matched_serials = []
-                remaining_needed = child.get("to_make")
+                remaining_needed = int(child.get("to_make"))
 
                 for item in get_serial_no_config:
-                    print("item ----------------- ",item)
+                    # print("item ----------------- ",item)
                     if (
                         (child.get("model") or "").strip().lower() == (item.get("model") or "").strip().lower() and
                         (child.get("processor") or "").strip().lower() == (item.get("processor_type") or "").strip().lower() and
                         (child.get("ram") or "").strip().lower() == (item.get("ram_capacity") or "").strip().lower() and
                         (child.get("ssd") or "").strip().lower() == (item.get("storage_capacity") or "").strip().lower()
                         ):
+
+                        print("warehouse ------------------ ", frw_inventory)
+                        print("item_code ------------------ ", item.get("item_code"))
+                        print("remaining_needed ------------------ ", remaining_needed)
 
                         exact_serials = frappe.db.sql("""
                             SELECT name FROM `tabSerial No`
@@ -916,7 +944,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
     allocated_lap = allocate_laptop_parts(doc)
-    print("\n\n\nallocated_lap", allocated_lap)
+    # print("\n\n\nallocated_lap", allocated_lap)
     doc.update({"laptop_allocation": allocated_lap})
     doc.save()
     frappe.db.commit()
@@ -942,7 +970,7 @@ def allocate_laptop_parts(doc):
         AND serial_no IN %(serial_list)s
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
 
-    print("mr_items ------------------ ", mr_items)
+    # print("mr_items ------------------ ", mr_items)
 
     if not mr_items:
         frappe.msgprint("No Material Requests found for the suggested serial numbers.")
@@ -1152,13 +1180,13 @@ def update_to_make_for_serial(doc):
                 frappe.db.commit()
 
 def allocate_serial_no_for_battery(final_result):
-    print("final_result ----------------- 1144 ", final_result)
+    # print("final_result ----------------- 1144 ", final_result)
 
     for row in final_result:
-        print(f"\nProcessing row ------------ {row}")
+        # print(f"\nProcessing row ------------ {row}")
         
         if not row:
-            print("Skipping None row")
+            # print("Skipping None row")
             continue
 
         if row.get("item_group", "").lower() == "battery":
@@ -1175,7 +1203,7 @@ def allocate_serial_no_for_battery(final_result):
             )
 
             if not nj_warehouses:
-                print("No NJ warehouses found.")
+                # print("No NJ warehouses found.")
                 continue
 
             serials = frappe.get_all(
@@ -1187,7 +1215,7 @@ def allocate_serial_no_for_battery(final_result):
                 fields=["name", "full_charge_capacity", "battery_average_discharge_rate"]
             )
 
-            print(f"Serials found for item {item_code}: {serials}")
+            # print(f"Serials found for item {item_code}: {serials}")
 
             for serial in serials:
                 try:
@@ -1204,7 +1232,7 @@ def allocate_serial_no_for_battery(final_result):
                 except Exception as e:
                     print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
 
-            print(f"Valid serials for allocation to {item_code}: {valid_serials}")
+            # print(f"Valid serials for allocation to {item_code}: {valid_serials}")
 
             if valid_serials:
                 try:
@@ -1218,6 +1246,6 @@ def allocate_serial_no_for_battery(final_result):
                         "allocated_serial_no",
                         ", ".join(valid_serials)
                     )
-                    print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
+                    # print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
                 except Exception as e:
                     print(f"Failed to set allocated_serial_no for {item_code}: {e}")

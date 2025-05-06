@@ -1,4 +1,5 @@
 import json
+import math
 import frappe
 import traceback
 from collections import defaultdict
@@ -723,47 +724,57 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     return updated_item_code_list
 
-import math
 
-def calculate_to_make(doc, conversion_factor=1, minimum_stock=5):
-    if conversion_factor == 0:
-        frappe.throw("Conversion Factor cannot be zero.")  # Handle division by zero
-    
+
+def calculate_to_make(doc):
+    group_allocations = {}  # Track allocations per group
+
     for item in doc.get("nj_production_planning_child", []):
-        print("\n\n\nitem ------------ ", item)
+
         try:
-            if item.get("sales_rate", 0) == 0:
+            # Define group (e.g., model or item_group)
+            group = item.get("model")  # Use "model" instead of "parent"
+            material_total = item.get("forward_inventory")
+            priority = item.get("sales_rate")
+
+            # Skip invalid items
+            if not group or not priority or not material_total:
                 item.to_make = 0
                 continue
 
-            # Ensure non-negative values
-            sales_rate = max(flt(item.get("sales_rate", 0)), 0)
-            forwarded_qty = max(flt(item.get("forward_inventory", 0)), 0)
-            inwarded_qty = max(flt(item.get("inward_inventory", 0)), 0)
-            days_of_inventory = max(flt(item.get("days_of_inventory", 0)), 0)
+            # Calculate total priority for the group
+            group_priority = sum(
+                child.get("sales_rate", 0)
+                for child in doc.get("nj_production_planning_child", [])
+                if child.get("model") == group  # Group by "model"
+            )
 
-            # Calculate desired inventory (ceil to handle fractional sales rates)
-            desired_from_doi = sales_rate * days_of_inventory
-            desired_inventory = max(math.ceil(desired_from_doi), minimum_stock)
-            
-            # Inventory shortfall (ensure integer)
-            inventory_shortfall = max(0, desired_inventory - forwarded_qty)
-            
-            # Material constraint (integer division)
-            material_constraint = inwarded_qty // conversion_factor
-            
-            # Determine to_make (integer)
-            item.to_make = int(min(inventory_shortfall, material_constraint))
-            
+            if group_priority == 0:
+                item.to_make = 0
+                continue
+
+            # Proportional allocation
+            proportional = (priority / group_priority) * material_total
+            proportional_rounded = round(proportional)
+
+            # Track allocations
+            prior_allocations = group_allocations.get(group, 0)
+            remaining_material = material_total - prior_allocations
+
+            # Apply MIN(3, ...)
+            to_make = min(3, proportional_rounded, remaining_material)
+            item.to_make = max(0, to_make)
+
+            print("to_make ----------- ", to_make)
+
+            group_allocations[group] = prior_allocations + item.to_make
+
         except Exception as e:
             item.to_make = 0
-            frappe.log_error(f"Error calculating to_make: {str(e)}")
+            frappe.log_error(f"Error: {str(e)}")
 
-    # Rest of your logic (suggest_serial_no, etc.)
     suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc, doc.get("department"))
-
     doc.save()
-    
     return doc.get("nj_production_planning_child", [])
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):

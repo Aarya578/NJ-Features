@@ -30,17 +30,17 @@ def get_department_details():
         if str(in_model) == '1' and str(fw_model) == '1':
             data = process_model_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
-            calculate_to_make(new_doc, DOI_threshold=10)
+            calculate_to_make(new_doc)
             suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
         elif str(in_model) == '1' and str(fw_config) == '1':
             data = process_merged_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
-            calculate_to_make(new_doc, DOI_threshold=10)
+            calculate_to_make(new_doc)
             suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
         elif str(in_config) == '1' and str(fw_config) == '1':
             data = process_default_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
-            calculate_to_make(new_doc, DOI_threshold=10)
+            calculate_to_make(new_doc)
             suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
 
 @frappe.whitelist()
@@ -48,6 +48,7 @@ def create_production_planning(data, department):
     new_doc = frappe.new_doc("NJ Production Planning")
 
     for item in data:
+        print("\n\n\n\nitem", item)
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
         child.model = item.get("model", "").upper() if item.get("model", "") else ""
@@ -393,9 +394,9 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
             # Compute weighted sales if data exists
             total_weighted_sales = sum(
-                sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
-                for day_offset in range(days)
-            ) if item_code in sales_map else 0
+                        sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
+                        for day_offset in range(days + 1)  # Loop from 0 to days (inclusive)
+                    ) if item_code in sales_map else 0
 
             sales_rate = total_weighted_sales / total_weight if total_weight else 0
 
@@ -462,7 +463,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
         except Exception as e:
             print("Error fetching attributes:", str(e))
     
-    # print("\n\nupdated_item_code_list ----------- ", updated_item_code_list)
+    updated_item_code_list = sorted(updated_item_code_list, key=lambda x: x['sales_rate'], reverse=True)
 
     return updated_item_code_list
 
@@ -722,37 +723,47 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     return updated_item_code_list
 
-def calculate_to_make(doc, DOI_threshold=10, conversion_factor=1, minimum_stock=5):
+import math
+
+def calculate_to_make(doc, conversion_factor=1, minimum_stock=5):
+    if conversion_factor == 0:
+        frappe.throw("Conversion Factor cannot be zero.")  # Handle division by zero
+    
     for item in doc.get("nj_production_planning_child", []):
-        print('\n\n\nitem ---------------- ', item.as_dict())
+        print("\n\n\nitem ------------ ", item)
         try:
             if item.get("sales_rate", 0) == 0:
-                print("sales_rate is 0", item.get("sales_rate"))
                 item.to_make = 0
                 continue
 
+            # Ensure non-negative values
             sales_rate = max(flt(item.get("sales_rate", 0)), 0)
             forwarded_qty = max(flt(item.get("forward_inventory", 0)), 0)
             inwarded_qty = max(flt(item.get("inward_inventory", 0)), 0)
+            days_of_inventory = max(flt(item.get("days_of_inventory", 0)), 0)
+
+            # Calculate desired inventory (ceil to handle fractional sales rates)
+            desired_from_doi = sales_rate * days_of_inventory
+            desired_inventory = max(math.ceil(desired_from_doi), minimum_stock)
             
-            desired_from_doi = sales_rate * DOI_threshold
-            desired_inventory = max(desired_from_doi, minimum_stock)  # Ensure minimum stock
-            
+            # Inventory shortfall (ensure integer)
             inventory_shortfall = max(0, desired_inventory - forwarded_qty)
             
+            # Material constraint (integer division)
             material_constraint = inwarded_qty // conversion_factor
             
-            item.to_make = round(min(inventory_shortfall, material_constraint), 2)
-
-            print("item.to_make ------------------------- ", item.to_make)
+            # Determine to_make (integer)
+            item.to_make = int(min(inventory_shortfall, material_constraint))
             
         except Exception as e:
-            print("\n\n\n\n Coming to exception")
             item.to_make = 0
             frappe.log_error(f"Error calculating to_make: {str(e)}")
 
-    suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []),doc, doc.get("department"))
+    # Rest of your logic (suggest_serial_no, etc.)
+    suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc, doc.get("department"))
+
     doc.save()
+    
     return doc.get("nj_production_planning_child", [])
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
@@ -1189,6 +1200,9 @@ def allocate_serial_no_for_battery(final_result):
             # print("Skipping None row")
             continue
 
+        if not row.get("item_group", "") == None:
+            continue
+        
         if row.get("item_group", "").lower() == "battery":
             item_code = row.get("item")
             mreq_no = row.get("mreq_no")

@@ -1191,23 +1191,19 @@ def update_to_make_for_serial(doc):
                 frappe.db.commit()
 
 def allocate_serial_no_for_battery(final_result):
-    # print("final_result ----------------- 1144 ", final_result)
-
     for row in final_result:
-        # print(f"\nProcessing row ------------ {row}")
-        
         if not row:
-            # print("Skipping None row")
-            continue
+            continue  # Skip None rows
 
-        if not row.get("item_group", "") == None:
-            continue
-        
-        if row.get("item_group", "").lower() == "battery":
+        item_group = row.get("item_group")
+
+        if not item_group:
+            continue  # Skip if item_group is None or empty
+
+        if item_group.lower() == "battery":
             item_code = row.get("item")
             mreq_no = row.get("mreq_no")
-            item_group = row.get("item_group")
-
+           
             valid_serials = []
 
             nj_warehouses = frappe.get_all(

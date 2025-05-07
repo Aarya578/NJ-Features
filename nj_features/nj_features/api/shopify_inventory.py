@@ -71,7 +71,8 @@ def fetch_and_stage_inventory_sync():
 
         for row in results:
 
-            if float(row.total_actual_qty) < 0:
+            row.total_actual_qty = safe_float(row.total_actual_qty)
+            if row.total_actual_qty is None or row.total_actual_qty < 0:
                 continue
 
             item_code_like_clauses = []
@@ -225,8 +226,8 @@ def fetch_and_stage_inventory_sync():
 
         for name in not_updated_doc_names:
             frappe.db.set_value("NJ Inventory Sync Main", name, {
-                "actual_qty": "",
-                "updated_qty": ""
+                "actual_qty": "0",
+                "updated_qty": "0"
             })
 
     except Exception as e:

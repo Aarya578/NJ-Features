@@ -472,6 +472,7 @@ class NJQCA(Document):
         update_storage_type(self)
 
     def on_submit(self):
+        self.check_for_repack_access()
         self.update_item_groups()
         self.validate_item_code_match()
         self.battery_readings()
@@ -497,7 +498,7 @@ class NJQCA(Document):
             
             try:
                 qi_data = None
-                self.check_for_repack_access()
+                
                 s1 = time.time()
                 logger.debug(f"Time for '{self.name}'")
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
@@ -536,10 +537,6 @@ class NJQCA(Document):
             except Exception as e:
                 frappe.db.rollback()
                 frappe.throw("Error during submission: " + str(e))
-            finally:
-                logger.debug(f"Total Time for '{self.name}': {time.time()-s1:.2f} seconds")
-                logger.debug("")
-    
 
     def check_for_repack_access(self):
         user = frappe.session.user

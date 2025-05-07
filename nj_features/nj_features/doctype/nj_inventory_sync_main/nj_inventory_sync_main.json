@@ -9,18 +9,14 @@
   "is_active",
   "item_group",
   "column_break_ouzyo",
+  "shopify_variant_id",
   "item_code",
-  "section_break_fuwsz",
-  "item_name",
   "section_break_wxyvn",
   "actual_qty",
   "so_qty",
   "column_break_jlzc3",
-  "parent_qty",
-  "updated_qty",
-  "column_break_fmwfa",
-  "shopify_variant_id",
   "sync_status",
+  "updated_qty",
   "section_break_m3tvl",
   "sync_error"
  ],
@@ -36,17 +32,15 @@
   },
   {
    "fieldname": "item_group",
-   "fieldtype": "Link",
-   "label": "Item Group",
-   "options": "Item Group"
+   "fieldtype": "Small Text",
+   "label": "Item Group"
   },
   {
    "columns": 1,
    "fieldname": "item_code",
-   "fieldtype": "Link",
+   "fieldtype": "Small Text",
    "in_list_view": 1,
-   "label": "Item Code",
-   "options": "Item"
+   "label": "Item Code"
   },
   {
    "columns": 1,
@@ -73,11 +67,6 @@
    "label": "Sync Error"
   },
   {
-   "fieldname": "item_name",
-   "fieldtype": "Text",
-   "label": "Item Name"
-  },
-  {
    "fieldname": "so_qty",
    "fieldtype": "Data",
    "label": "SO Qty"
@@ -94,24 +83,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "section_break_fuwsz",
-   "fieldtype": "Section Break"
-  },
-  {
    "fieldname": "section_break_wxyvn",
    "fieldtype": "Section Break"
   },
   {
    "fieldname": "column_break_jlzc3",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "parent_qty",
-   "fieldtype": "Data",
-   "label": "Parent Qty"
-  },
-  {
-   "fieldname": "column_break_fmwfa",
    "fieldtype": "Column Break"
   },
   {
@@ -122,7 +98,7 @@
  "hide_toolbar": 1,
  "in_create": 1,
  "links": [],
- "modified": "2025-04-30 17:10:04.841192",
+ "modified": "2025-05-06 16:30:35.097020",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

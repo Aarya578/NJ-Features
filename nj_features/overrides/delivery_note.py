@@ -7,6 +7,7 @@ import frappe
 import requests
 import traceback
 from frappe import _
+from frappe.utils import now
 from datetime import datetime, timedelta
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years
@@ -63,9 +64,11 @@ class CustomDeliveryNote(DeliveryNote):
             self._process_serial_numbers()
             
         except Exception as e:
-            error_message = f"An error occurred during on_submit:\n{traceback.format_exc()}"
+            err = e
+            if frappe.user.has_role("System Manager"):
+                err = traceback.format_exc()
             frappe.db.rollback()
-            frappe.throw(error_message)
+            frappe.throw(err)
 #     def on_submit(self):
 #         try:
 #             super().on_submit()
@@ -219,7 +222,7 @@ class CustomDeliveryNote(DeliveryNote):
                         end_date = posting_date_raw
 
                     serial_no_doc.end_date = end_date + timedelta(days=365)
-
+                    serial_no_doc.modified = now()
                     serial_no_doc.save(ignore_permissions=True)
 
         except Exception as e:
@@ -302,7 +305,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.sales_channel = ''
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
-        
+        serial_no_doc.modified = now()
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
 

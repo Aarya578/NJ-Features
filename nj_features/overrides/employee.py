@@ -47,9 +47,17 @@ def create_user_and_warehouse(self):
         return return_data
     
     except Exception as e:
-        frappe.msgprint("Error while creating user and warehouse: ", traceback.format_exc())
+        err = e
+        if frappe.user.has_role("System Manager"):
+            err = traceback.format_exc()
+        frappe.msgprint("Error while creating user and warehouse: ", err)
 
 def update_department_in_work_warehouse(self):
+
+    qty_check = frappe.db.get_value('NJ Settings', {'parameter': 'disable_qty_check'}, 'value')
+    if qty_check is None:
+        frappe.msgprint("Please set disable_qty_check in NJ Settings")
+    
     work_ware = frappe.db.get_all( "Warehouse",
         {
             'warehouse_owner': self.get("user_id"), 'disabled': 0,
@@ -70,7 +78,7 @@ def update_department_in_work_warehouse(self):
         ["name", "department"], as_dict=True
     )
 
-    if get_dept_from_warehouse and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse]:
+    if get_dept_from_warehouse and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse] and qty_check == '0':
         query = """
             SELECT SUM(Bin.actual_qty) AS total_qty
             FROM `tabBin` Bin

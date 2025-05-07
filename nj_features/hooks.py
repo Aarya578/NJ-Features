@@ -45,9 +45,11 @@ doctype_js = {
     "Material Request": "public/js/material_request.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
 }
+
 doctype_list_js = {
+    "Employee": "public/js/employee_list.js",
     "Sales Order": "public/js/sales_order.js",
-    "Serial No": "public/js/serial_no_list.js",
+    "Serial No": "public/js/serial_no_list.js"
 }
 
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -111,6 +113,7 @@ override_doctype_class = {
     "Sales Invoice": "nj_features.overrides.sales_invoice.CustomSalesInvoice",	
     "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
     "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Product Bundle": "nj_features.overrides.product_bundle.CustomProductBundle",
 }
 
 # Document Events
@@ -184,6 +187,9 @@ scheduler_events = {
         "45 7 * * *": [ 
             "nj_features.overrides.employee.update_employee_experience_table",
         ],		
+        "1 * * * *": [
+            "nj_features.overrides.product_bundle.update_product_bundle_quantities",
+        ],
         "50 8 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
@@ -201,7 +207,7 @@ scheduler_events = {
         ],
         "20 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify.start_shopify_inventory_sync"
-        ]
+        ],
 
     }
 }

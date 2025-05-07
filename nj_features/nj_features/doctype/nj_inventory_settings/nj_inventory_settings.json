@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "creation": "2025-05-05 17:14:15.114274",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enable",
+  "shop",
+  "column_break_adcfz",
+  "location_id",
+  "token",
+  "section_break_gbhlg",
+  "warehouses",
+  "departments",
+  "item_groups"
+ ],
+ "fields": [
+  {
+   "description": "Eg: https://newjaisa.myshopify.com",
+   "fieldname": "shop",
+   "fieldtype": "Data",
+   "label": "Shop",
+   "mandatory_depends_on": "eval: doc.enable == 1;"
+  },
+  {
+   "default": "65940800500",
+   "description": "Main Location ID: 65940881590",
+   "fieldname": "location_id",
+   "fieldtype": "Data",
+   "label": "Location ID",
+   "mandatory_depends_on": "eval: doc.enable == 1;"
+  },
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Token",
+   "mandatory_depends_on": "eval: doc.enable == 1;"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable",
+   "fieldtype": "Check",
+   "label": "Enable"
+  },
+  {
+   "fieldname": "column_break_adcfz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_gbhlg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "warehouses",
+   "fieldtype": "Small Text",
+   "label": "Warehouses"
+  },
+  {
+   "default": "Packing & Dispatch, BG - Adaptor QC",
+   "fieldname": "departments",
+   "fieldtype": "Small Text",
+   "label": "Departments",
+   "mandatory_depends_on": "eval: doc.enable == 1;"
+  },
+  {
+   "default": "Laptops, Desktops, MacBooks, Chromebooks",
+   "fieldname": "item_groups",
+   "fieldtype": "Small Text",
+   "label": "Item Groups",
+   "mandatory_depends_on": "eval: doc.enable == 1;"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-05-06 23:11:11.430465",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Inventory Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "select": 1,
+   "write": 1
+  },
+  {
+   "role": "All",
+   "select": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

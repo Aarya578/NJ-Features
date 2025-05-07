@@ -66,9 +66,6 @@ def fetch_and_stage_inventory_sync():
 
         results = frappe.db.sql(query, params, as_dict=True)
 
-        
-        nj_inventory_log.error += json.dumps(results)
-
         for row in results:
 
             row.total_actual_qty = safe_float(row.total_actual_qty)
@@ -94,7 +91,8 @@ def fetch_and_stage_inventory_sync():
             if existing:
                 existing_doc = existing[0]
                 updated_doc_names.add(existing_doc.name)
-                if float(row.total_actual_qty) != float(existing_doc.actual_qty):
+                existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
+                if float(row.total_actual_qty) != existing_doc_actual_qty:
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                         "so_qty": "",
                         "is_active": 1,
@@ -212,9 +210,7 @@ def fetch_and_stage_inventory_sync():
                         "updated_qty": updated_qty
                     })
                     updated_doc_names.add(doc.name)
-                    nj_inventory_log.error += f"\ndocname: {doc.name}, actual_qty: {updated_actual_qty}, so_qty: {total_so_qty}, updated_qty: {updated_qty}"
 
-            nj_inventory_log.save(ignore_permissions=True)
         except Exception as e:
             nj_inventory_log.error += f"\nError updating pending_qty and updated_qty: {str(e)}\n{frappe.get_traceback()}"
             nj_inventory_log.save(ignore_permissions=True)
@@ -224,6 +220,14 @@ def fetch_and_stage_inventory_sync():
 
         not_updated_doc_names = all_doc_names - updated_doc_names
 
+        nj_inventory_log.error += (
+            f"\nTotal Docs: {len(all_doc_names)}, "
+            f"Updated Docs: {len(updated_doc_names)}, "
+            f"Not Updated Docs: {len(not_updated_doc_names)}"
+        )
+
+        nj_inventory_log.save(ignore_permissions=True)
+
         for name in not_updated_doc_names:
             frappe.db.set_value("NJ Inventory Sync Main", name, {
                 "actual_qty": "0",
@@ -232,7 +236,6 @@ def fetch_and_stage_inventory_sync():
 
     except Exception as e:
         return str(traceback.format_exc())
-
 
 @frappe.whitelist()
 def sync_inventory_to_shopify():
@@ -395,7 +398,6 @@ def sync_inventory_to_shopify_2(batch_size=50, start=0):
             nj_inventory_log.error += f"\nFailed to enqueue next batch: {str(e)}"
 
         nj_inventory_log.error += f"\nProcessed {processed_count} records. Scheduled next batch."
-        nj_inventory_log.save(ignore_permissions=True)
         return f"Processed {processed_count} records. Scheduled next batch."
 
     nj_inventory_log.error += f"\nCompleted processing {processed_count} records."

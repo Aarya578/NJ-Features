@@ -65,8 +65,6 @@ class CustomDeliveryNote(DeliveryNote):
             
         except Exception as e:
             err = e
-            if frappe.user.has_role("System Manager"):
-                err = traceback.format_exc()
             frappe.db.rollback()
             frappe.throw(err)
 #     def on_submit(self):
@@ -829,45 +827,45 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 
                 if missing_checks:
                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
-@frappe.whitelist()
-def get_warranty_data(doc):
-    if isinstance(doc, str):
-        try:
-            doc = json.loads(doc)
-        except json.JSONDecodeError:
-            frappe.throw("Invalid JSON string provided for warranty data.")
+# @frappe.whitelist()
+# def get_warranty_data(doc):
+#     if isinstance(doc, str):
+#         try:
+#             doc = json.loads(doc)
+#         except json.JSONDecodeError:
+#             frappe.throw("Invalid JSON string provided for warranty data.")
 
-    warranty_info = []
+#     warranty_info = []
 
-    dn_items = frappe.db.sql("""
-        SELECT item_code 
-        FROM `tabDelivery Note Item` 
-        WHERE parent = %s
-    """, (doc.get('name'),), as_dict=True)
+#     dn_items = frappe.db.sql("""
+#         SELECT item_code 
+#         FROM `tabDelivery Note Item` 
+#         WHERE parent = %s
+#     """, (doc.get('name'),), as_dict=True)
 
-    for item in dn_items:
-        item_code = item.get("item_code")
-        item_group = frappe.db.get_value('Item', item_code, 'item_group')
+#     for item in dn_items:
+#         item_code = item.get("item_code")
+#         item_group = frappe.db.get_value('Item', item_code, 'item_group')
 
-        if item_group != "Warranty":
-            continue
+#         if item_group != "Warranty":
+#             continue
 
-        item_name = frappe.db.get_value('Item', item_code, 'item_name')
+#         item_name = frappe.db.get_value('Item', item_code, 'item_name')
 
-        match = re.search(r'(\d+)\s*YEAR', item_name.upper())
-        if not match:
-            continue
+#         match = re.search(r'(\d+)\s*YEAR', item_name.upper())
+#         if not match:
+#             continue
 
-        warranty_years = int(match.group(1))
-        dn_date = getdate(doc.get('creation')) if doc.get('creation') else getdate(nowdate())
-        warranty_start_date = add_days(dn_date, 5)
-        warranty_end_date = add_years(warranty_start_date, warranty_years)
+#         warranty_years = int(match.group(1))
+#         dn_date = getdate(doc.get('creation')) if doc.get('creation') else getdate(nowdate())
+#         warranty_start_date = add_days(dn_date, 5)
+#         warranty_end_date = add_years(warranty_start_date, warranty_years)
 
-        warranty_info.append({
-            "item_code": item_code,
-            "warranty_start_date": warranty_start_date,
-            "warranty_end_date": warranty_end_date,
-            "warranty_years": warranty_years
-        })
+#         warranty_info.append({
+#             "item_code": item_code,
+#             "warranty_start_date": warranty_start_date,
+#             "warranty_end_date": warranty_end_date,
+#             "warranty_years": warranty_years
+#         })
 
-    return warranty_info
+#     return warranty_info

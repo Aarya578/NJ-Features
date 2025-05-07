@@ -6,6 +6,7 @@ nj_inventry_settings = frappe.get_single("NJ Inventory Settings")
 
 shop = nj_inventry_settings.shop
 token = nj_inventry_settings.token
+warehouses = nj_inventry_settings.warehouses
 location_id = nj_inventry_settings.location_id
 item_groups = nj_inventry_settings.item_groups
 departments = nj_inventry_settings.departments
@@ -13,13 +14,20 @@ departments = nj_inventry_settings.departments
 @frappe.whitelist()
 def fetch_and_stage_inventory_sync():
     try:
+        updated_doc_names = set()
         nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
         nj_inventory_log.error = ""
+        warehouses_list = []
+        if warehouses is not None:
+            warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
         item_groups_list = [i.strip() for i in item_groups.split(',') if i.strip()]
         departments_list = [d.strip() for d in departments.split(',') if d.strip()]
 
+        warehouse_placeholders = ', '.join(['%s'] * len(warehouses_list))
         item_group_placeholders = ', '.join(['%s'] * len(item_groups_list))
         department_placeholders = ', '.join(['%s'] * len(departments_list))
+
+        warehouse_clause = f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
 
         query = f"""
             SELECT 
@@ -44,7 +52,8 @@ def fetch_and_stage_inventory_sync():
                 `tabDepartment` d ON w.department = d.name
             WHERE 
                 i.item_group IN ({item_group_placeholders})
-                AND i.has_variants = 0
+                AND i.has_variants = 0 
+                {warehouse_clause}
             GROUP BY 
                 pb.shopify_variant_id
             HAVING 
@@ -83,6 +92,7 @@ def fetch_and_stage_inventory_sync():
 
             if existing:
                 existing_doc = existing[0]
+                updated_doc_names.add(existing_doc.name)
                 if float(row.total_actual_qty) != float(existing_doc.actual_qty):
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                         "so_qty": "",
@@ -206,6 +216,18 @@ def fetch_and_stage_inventory_sync():
         except Exception as e:
             nj_inventory_log.error += f"\nError updating pending_qty and updated_qty: {str(e)}\n{frappe.get_traceback()}"
             nj_inventory_log.save(ignore_permissions=True)
+
+        all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
+        all_doc_names = set(doc["name"] for doc in all_docs)
+
+        not_updated_doc_names = all_doc_names - updated_doc_names
+
+        for name in not_updated_doc_names:
+            frappe.db.set_value("NJ Inventory Sync Main", name, {
+                "actual_qty": "",
+                "updated_qty": ""
+            })
+            
     except Exception as e:
         return str(traceback.format_exc())
 

@@ -269,6 +269,39 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     before_submit: function(frm) {
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
+            args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
+                "manufacturer_model":frm.doc.manufacturer_model
+             },
+            callback: function(r) {
+                if (r.message) { 
+                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                    frm.refresh_field('sudden_drop');
+                }
+            }
+        })
+        frappe.call({
+            method: 'nj_features.nj_features.api.api_files.get_bdt_status',
+            args: { 'doc': frm.doc },
+            callback: function(r) {
+                if(r.message){
+                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                    if(r.message == "Pass"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                    }else if(r.message == "Fail"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                    }
+                }
+                frm.refresh_field("njqca_result_parameters");
+            }
+        })
 
          return new Promise((resolve, reject) => {
             let tablesToCheck = [
@@ -537,21 +570,6 @@ frappe.ui.form.on('NJQCA', {
                 frm.refresh_field("njqca_result_parameters");
             }
         });
-    },
-    before_submit: function(frm) {
-
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
-            args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
-                "manufacturer_model":frm.doc.manufacturer_model
-             },
-            callback: function(r) {
-                if (r.message) { 
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
-                    frm.refresh_field('sudden_drop');
-                }
-            }
-        })
     },
 
     item_code: function(frm) {

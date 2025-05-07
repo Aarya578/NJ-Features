@@ -23,6 +23,7 @@ def scan_serial_no_data_for_sales(serial_no):
                 dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
                 dni.item_code, si.status as si_status, si.approved, si.sales_channel
             FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabPacked Item` pi ON dn.name = pi.parent
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             WHERE (
@@ -30,6 +31,10 @@ def scan_serial_no_data_for_sales(serial_no):
                 or dni.serial_no like {1}
                 or dni.serial_no like {2}
                 or dni.serial_no like {3}
+                or pi.serial_no = {0}
+                or pi.serial_no like {1}
+                or pi.serial_no like {2}
+                or pi.serial_no like {3}
             ) AND dn.docstatus = 1
             ORDER BY dn.creation DESC, dn.modified DESC
         """.format(

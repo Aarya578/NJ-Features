@@ -282,7 +282,7 @@ frappe.ui.form.on('NJQCA', {
             }
         })
         frappe.call({
-            method: 'nj_features.nj_features.api.api_files.get_bdt_status',
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_bdt_status',
             args: { 'doc': frm.doc },
             callback: function(r) {
                 if(r.message){

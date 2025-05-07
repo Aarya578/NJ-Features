@@ -23,9 +23,9 @@ def scan_serial_no_data_for_sales(serial_no):
                 dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
                 dni.item_code, si.status as si_status, si.approved, si.sales_channel
             FROM `tabDelivery Note Item` dni
-            INNER JOIN `tabPacked Item` pi ON dn.name = pi.parent
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+            LEFT JOIN `tabPacked Item` pi ON dn.name = pi.parent
             WHERE (
                 dni.serial_no = {0}
                 or dni.serial_no like {1}

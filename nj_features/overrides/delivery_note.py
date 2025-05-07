@@ -64,9 +64,11 @@ class CustomDeliveryNote(DeliveryNote):
             self._process_serial_numbers()
             
         except Exception as e:
-            error_message = f"An error occurred during on_submit:\n{traceback.format_exc()}"
+            err = e
+            if frappe.user.has_role("System Manager"):
+                err = traceback.format_exc()
             frappe.db.rollback()
-            frappe.throw(error_message)
+            frappe.throw(err)
 #     def on_submit(self):
 #         try:
 #             super().on_submit()

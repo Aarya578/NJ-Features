@@ -1200,6 +1200,9 @@ def allocate_serial_no_for_battery(final_result):
             # print("Skipping None row")
             continue
 
+        if row.get("item_group", "") == None:
+            continue
+
         if row.get("item_group", "").lower() == "battery":
             item_code = row.get("item")
             mreq_no = row.get("mreq_no")

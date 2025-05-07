@@ -759,14 +759,14 @@ def calculate_to_make(doc, conversion_factor=1, minimum_stock=5):
             frappe.log_error(f"Error calculating to_make: {str(e)}")
 
     # Rest of your logic (suggest_serial_no, etc.)
-    suggested_serial_no = suggest_to_make_serial_no(...)
+    suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc, doc.get("department"))
     
     doc.save()
     
     return doc.get("nj_production_planning_child", [])
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
-    suggested_serial_no = suggest_to_make_serial_no(doc.get("nj_production_planning_child", []), doc, doc.get("department"))
+    
 
     if not nj_pro_child:
         return []

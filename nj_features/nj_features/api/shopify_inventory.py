@@ -210,6 +210,7 @@ def fetch_and_stage_inventory_sync():
                         "so_qty": total_so_qty,
                         "updated_qty": updated_qty
                     })
+                    updated_doc_names.add(doc.name)
                     nj_inventory_log.error += f"\ndocname: {doc.name}, actual_qty: {updated_actual_qty}, so_qty: {total_so_qty}, updated_qty: {updated_qty}"
 
             nj_inventory_log.save(ignore_permissions=True)
@@ -227,7 +228,7 @@ def fetch_and_stage_inventory_sync():
                 "actual_qty": "",
                 "updated_qty": ""
             })
-            
+
     except Exception as e:
         return str(traceback.format_exc())
 

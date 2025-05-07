@@ -736,6 +736,11 @@ def calculate_to_make(doc):
 
     for item in doc.get("nj_production_planning_child", []):
         try:
+            print("\n\n")
+            if item.get("sales_rate", 0) == 0:
+                item.to_make = 0
+                continue
+
             group = item.get("model")
             if not group:
                 item.to_make = 0
@@ -769,7 +774,7 @@ def calculate_to_make(doc):
 
 
             if prior_allocations == 0:
-                to_make = min(2, remaining_material)
+                to_make = min(1, remaining_material)
             else:
                 proportional = (priority / group_priority) * material_total
                 proportional_rounded = round(proportional)

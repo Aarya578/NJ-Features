@@ -81,27 +81,6 @@ frappe.ui.form.on('Delivery Note', {
                 }
             });
         }
-        frappe.call({
-            method: "nj_features.overrides.delivery_note.get_warranty_data",
-            args: { doc: frm.doc },
-            callback: function(r) {
-                if (r.message && r.message.length > 0) {
-                    const warranty = r.message[0]; // use first item
-                    // This is where the fix is needed
-                    if (warranty.warranty_start_date) {
-                        frm.set_value("warranty_start_date", warranty.warranty_start_date);
-                    }
-                    if (warranty.warranty_end_date) {
-                        frm.set_value("warranty_end_date", warranty.warranty_end_date);
-                    }
-                    
-                    // Refresh the form to make sure changes are applied
-                    frm.refresh_field("warranty_start_date");
-                    frm.refresh_field("warranty_end_date");
-                }
-            }
-        });
-        
     },
 
     courier_service: function(frm) {

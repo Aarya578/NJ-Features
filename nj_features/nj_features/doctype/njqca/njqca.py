@@ -969,23 +969,43 @@ def get_info_from_serial_no(doc=None):
                 'model': sle_entry.get('model') or item_code_data.get('item_model'),
             })
 
-            item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
-            nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            # if (nj_settings_item_group and doc_json['item_group']) not in nj_settings_item_group:
+            # item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
+            # nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+            # doc_item_group = doc_json.get('item_group')  # safely get it
+            # if doc_item_group and doc_item_group not in nj_settings_item_group:
             #     result['item_group'] = item_group
             #     result['serial_no'] = sle_entry.get('name')
-            doc_item_group = doc_json.get('item_group')  # safely get it
+
+
+            # if 'serial_no' in doc_json:
+            #     result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
+            # elif (doc_json['item_group']) in nj_settings_item_group:
+            #     pass
+            # else:
+            #     result['item_code'] = sle_entry.get('item_code')
+            # Get item_group from sle_entry or fallback to item_code_data
+            item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
+
+            # Get allowed item groups from NJ Settings as a list
+            raw_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value') or ''
+            nj_settings_item_group = [g.strip() for g in raw_item_groups.split(',') if g.strip()]  # ['BATTERY', 'Laptop Adaptors']
+
+            # Get item group from the incoming document JSON
+            doc_item_group = doc_json.get('item_group')
+
+            # If doc_item_group is present and not in allowed NJ settings item groups
             if doc_item_group and doc_item_group not in nj_settings_item_group:
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
 
-
+            # Decide how to assign item_code based on conditions
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
-            elif (doc_json['item_group']) in nj_settings_item_group:
-                pass
+            elif doc_item_group and doc_item_group in nj_settings_item_group:
+                pass  # Allowed group, do nothing
             else:
                 result['item_code'] = sle_entry.get('item_code')
+    
                 
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
@@ -1505,7 +1525,7 @@ def get_model(manufacturer_model=None):
 @frappe.whitelist()
 def get_sudden_drop(parent_name, item_group, manufacturer_model):
     try:  
-        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
         sudden_drop_limit=""
         iw=""
         if (njqca_battery_item_group and  item_group in njqca_battery_item_group):
@@ -1566,7 +1586,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             return None
             
     except Exception as e:
-        print("\nAn error occurred at get_sudden_drop",traceback.format_exc())
+        frappe.msgprint("\nAn error occurred at get_sudden_drop",traceback.format_exc())
         return ''
         
 @frappe.whitelist()

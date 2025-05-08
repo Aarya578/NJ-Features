@@ -386,7 +386,7 @@ def get_backup_duration(doc, method=None):
     try:
         parent_name = doc.name
         
-        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+        njqca_battery_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
         if (njqca_battery_item_group and doc.item_group in njqca_battery_item_group):
             rapid_query = """
                         WITH parameter_data AS (     

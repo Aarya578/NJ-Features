@@ -77,17 +77,12 @@ def open_draft_qi(self, brand=None, model=None):
     try:
         serial_num = self.serial_no
 
-        print("serial_num --------------------- ", serial_num)
-        print("bios_serial_num ---------------- ", self.bios_serialno)
-
         if serial_num:
             status = frappe.db.get_value('Serial No', {'name': serial_num}, 'status')
             if status.lower() == 'delivered':
                 nj_serial_no = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
                 serial_num = nj_serial_no
         
-        print("serial_num --------------- 89 ", serial_num)
-
         inspection_type = self.inspection_type
         if not self.inspection_type:
             inspection_type = get_inspection_type()

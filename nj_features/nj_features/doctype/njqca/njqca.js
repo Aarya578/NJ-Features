@@ -182,7 +182,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && selectedItemGroup != "BATTERY") {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -470,12 +470,14 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
+
+        console.log("selectedItemGroup",selectedItemGroup);
         
         if (selectedModel && selectedBrand && cur_frm.doc.serial_no && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
-                if (!r.model) {
+                if (!r.model && selectedItemGroup.toLowerCase() != "battery") {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                 }
 

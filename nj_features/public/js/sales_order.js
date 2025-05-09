@@ -1,6 +1,6 @@
 frappe.ui.form.on('Sales Order', {
     refresh: function(frm) {
-        if (frm.doc.status !== 'Closed' && frm.doc.status !== 'On Hold') {
+        if (frm.doc.status !== 'Closed' && frm.doc.status !== 'On Hold' && frm.doc.docstatus === 1) {
             frm.add_custom_button('Initiate Refund', function() {
                 frappe.call({
                     method: 'nj_lib.nj_lib.doctype.nj_refund.nj_refund.create_refund_record_from_so',

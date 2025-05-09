@@ -2362,3 +2362,28 @@ def get_battery_serialno(bios_serial_no,inspection_type):
         
     except Exception as e:
         return ""
+
+@frappe.whitelist()
+def check_for_mis_config(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    serial_no_item_code = doc.get("item_code")
+    automated_item_code = doc.get("repack_item_code")
+
+    if serial_no_item_code == automated_item_code:
+        return {
+            "parameter": "mis_configuration_status",
+            "value": "PASS",
+            "score": 0,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        }
+    else:
+        return {
+            "parameter": "mis_configuration_status",
+            "value": "FAIL",
+            "score": 41,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        }

@@ -120,6 +120,39 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
+
+        if (selectedModel && selectedBrand) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.check_for_mis_config',
+                args: { 'doc': frm.doc },
+                callback: function(r) {
+                    if (r.message) {
+                        let updated = false;
+        
+                        // Loop through existing rows to check if parameter exists
+                        frm.doc.njqca_result_parameters.forEach(function(row) {
+                            if (row.parameter === r.message.parameter) {
+                                row.value = r.message.value;
+                                row.item_group = r.message.item_group;
+                                row.score = r.message.score;
+                                updated = true;
+                            }
+                        });
+        
+                        // If not found, add a new child row
+                        if (!updated) {
+                            var child = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                            frappe.model.set_value(child.doctype, child.name, 'parameter', r.message.parameter);
+                            frappe.model.set_value(child.doctype, child.name, 'value', r.message.value);
+                            frappe.model.set_value(child.doctype, child.name, 'item_group', r.message.item_group);
+                            frappe.model.set_value(child.doctype, child.name, 'score', r.message.score);
+                        }
+        
+                        frm.refresh_field("njqca_result_parameters");
+                    }
+                }
+            });
+        }
         
         if (selectedModel && selectedItemGroup != "BATTERY") {
             frappe.call({

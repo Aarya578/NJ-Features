@@ -182,7 +182,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && selectedItemGroup != "BATTERY") {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -269,6 +269,39 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     before_submit: function(frm) {
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
+            args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
+                "manufacturer_model":frm.doc.manufacturer_model
+             },
+            callback: function(r) {
+                if (r.message) { 
+                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                    frm.refresh_field('sudden_drop');
+                }
+            }
+        })
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.njqca.njqca.get_bdt_status',
+            args: { 'doc': frm.doc },
+            callback: function(r) {
+                if(r.message){
+                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                    if(r.message == "Pass"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                    }else if(r.message == "Fail"){
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                    }
+                }
+                frm.refresh_field("njqca_result_parameters");
+            }
+        })
 
          return new Promise((resolve, reject) => {
             let tablesToCheck = [
@@ -437,12 +470,14 @@ frappe.ui.form.on('NJQCA', {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
+
+        console.log("selectedItemGroup",selectedItemGroup);
         
         if (selectedModel && selectedBrand && cur_frm.doc.serial_no && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
-                if (!r.model) {
+                if (!r.model && selectedItemGroup.toLowerCase() != "battery") {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                 }
 
@@ -537,21 +572,6 @@ frappe.ui.form.on('NJQCA', {
                 frm.refresh_field("njqca_result_parameters");
             }
         });
-    },
-    before_submit: function(frm) {
-
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
-            args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
-                "manufacturer_model":frm.doc.manufacturer_model
-             },
-            callback: function(r) {
-                if (r.message) { 
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
-                    frm.refresh_field('sudden_drop');
-                }
-            }
-        })
     },
 
     item_code: function(frm) {

@@ -107,13 +107,13 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
-    "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
+    "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Sales Invoice": "nj_features.overrides.sales_invoice.CustomSalesInvoice",	
-    "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
-    "Issue": "nj_features.overrides.issue.CustomIssue",
     "Product Bundle": "nj_features.overrides.product_bundle.CustomProductBundle",
+    "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
+	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
 }
 
 # Document Events
@@ -196,19 +196,12 @@ scheduler_events = {
          "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
         ],
-        "5 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify"
-        ],
         "10 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ],
-        "15 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify.corrected_updated_qty"
-        ],
         "20 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.sync_inventory_to_shopify.start_shopify_inventory_sync"
-        ],
-
+            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ]
     }
 }
 

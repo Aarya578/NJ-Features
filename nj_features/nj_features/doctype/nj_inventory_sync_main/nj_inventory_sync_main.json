@@ -8,6 +8,7 @@
  "field_order": [
   "is_active",
   "item_group",
+  "inventory_item_id",
   "column_break_ouzyo",
   "shopify_variant_id",
   "item_code",
@@ -33,21 +34,24 @@
   {
    "fieldname": "item_group",
    "fieldtype": "Small Text",
-   "label": "Item Group"
+   "label": "Item Group",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "item_code",
    "fieldtype": "Small Text",
    "in_list_view": 1,
-   "label": "Item Code"
+   "label": "Item Code",
+   "read_only": 1
   },
   {
    "columns": 1,
    "fieldname": "shopify_variant_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Shopify Variant Id"
+   "label": "Shopify Variant Id",
+   "read_only": 1
   },
   {
    "fieldname": "actual_qty",
@@ -59,17 +63,20 @@
    "fieldname": "sync_status",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Sync status"
+   "label": "Sync status",
+   "read_only": 1
   },
   {
    "fieldname": "sync_error",
    "fieldtype": "Text",
-   "label": "Sync Error"
+   "label": "Sync Error",
+   "read_only": 1
   },
   {
    "fieldname": "so_qty",
    "fieldtype": "Data",
-   "label": "SO Qty"
+   "label": "SO Qty",
+   "read_only": 1
   },
   {
    "columns": 1,
@@ -93,12 +100,18 @@
   {
    "fieldname": "section_break_m3tvl",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "inventory_item_id",
+   "fieldtype": "Data",
+   "label": "Inventory Item ID",
+   "read_only": 1
   }
  ],
  "hide_toolbar": 1,
  "in_create": 1,
  "links": [],
- "modified": "2025-05-06 16:30:35.097020",
+ "modified": "2025-05-09 18:16:56.365100",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

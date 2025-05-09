@@ -500,9 +500,6 @@ class NJQCA(Document):
                     frappe.throw("Model: <b>" + itm_model + "</b> in Manual Repack Item Code is not matching with Selected Model: <b>" + self.model + "</b>")
                     return None
             
-            if (self.battery_type is None or not self.battery_type) and self.item_group=="BATTERY":
-                frappe.throw("Please fill the <b>Battery Type</b>")
-            
             try:
                 qi_data = None
                 

@@ -1,5 +1,13 @@
 frappe.ui.form.on('Delivery Note', {
 
+    onload: function(frm) {
+        const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
+        if (snapmintItem) {
+            frm.set_value("courier_service", "Shiprocket Manifest");
+            frm.set_df_property("courier_service", "read_only", 1);
+        }
+    },
+
     refresh: function(frm) {
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -33,20 +41,7 @@ frappe.ui.form.on('Delivery Note', {
             }).addClass('btn-primary');
         }
     },
-
-
-
-        onload: function(frm) {
-            // console.log("inside snapmint function ====================");
-            
-            const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
-            if (snapmintItem) {
-                frm.set_value("courier_service", "Shiprocket Manifest");
-                frm.set_df_property("courier_service", "read_only", 1);
-            }
-        }
-
-    ,
+    
     onload_post_render: function(frm) {
         frm.remove_custom_button('Credit Note', 'Create');
         frm.page.remove_inner_button('Credit Note', 'Create');
@@ -111,9 +106,6 @@ frappe.ui.form.on('Delivery Note', {
             });
         }
     }
-
-
-
 });
 
 
@@ -125,7 +117,7 @@ frappe.ui.form.on('Packed Item', {
                 message: __('Please save the document before entering the Serial Number.'),
                 indicator: 'red'
             });
-            frappe.model.set_value(cdt, cdn, 'serial_no', '');  // Clear the field
+            frappe.model.set_value(cdt, cdn, 'serial_no', ''); 
         }
     }
 });

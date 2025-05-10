@@ -327,7 +327,7 @@ def start_shopify_inventory_sync():
                     payload = {
                         "location_id": location_id,
                         "inventory_item_id": row.inventory_item_id,
-                        "available": available
+                        "available": available,
                     }
                     update_resp = requests.post(update_url, headers=headers, data=json.dumps(payload))
                     variant_data = update_resp.json()
@@ -343,14 +343,13 @@ def start_shopify_inventory_sync():
                             "sync_status": "Error",
                             "sync_error" : f"API response: {error_msg}"
                         })
-
+                    time.sleep(0.6)
                 except Exception as e:
                     nj_inventory_log.error += f"\nException in {row.name}: {str(e)}\n{frappe.get_traceback()}"
                     continue
                 
             frappe.db.commit()
             start += batch_size
-            time.sleep(0.5)
 
         nj_inventory_log.error += "\nSync complete for all records."
         nj_inventory_log.save(ignore_permissions=True)

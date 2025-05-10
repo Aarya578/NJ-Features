@@ -47,10 +47,7 @@ def create_user_and_warehouse(self):
         return return_data
     
     except Exception as e:
-        err = e
-        if frappe.user.has_role("System Manager"):
-            err = traceback.format_exc()
-        frappe.msgprint("Error while creating user and warehouse: ", err)
+        frappe.msgprint("Error while creating user and warehouse: ", e)
 
 def update_department_in_work_warehouse(self):
 

@@ -86,29 +86,32 @@ frappe.ui.form.on('Employee', {
     },
 
     role_profile(frm) {
-        frappe.call({
-            method: "nj_features.overrides.employee.get_previous_role_profile",
-            args: { docname: frm.doc.name },
-            callback(r) {
-                if (r.message) {
-                    frm.set_value('previous_role_profile', r.message);
+        if (frm.doc.role_profile) {
+
+            frappe.call({
+                method: "nj_features.overrides.employee.get_previous_role_profile",
+                args: { docname: frm.doc.name },
+                callback(r) {
+                    if (r.message) {
+                        frm.set_value('previous_role_profile', r.message);
+                    }
                 }
-            }
-        });
-        
-        frappe.call({
-            method: "nj_features.overrides.employee.get_ramp_level",
-            args: {
-                role_profile: frm.doc.role_profile,
-                // total_days: calculate_total_days(frm.doc.date_of_joining), 
-                total_days: frm.doc.calculated_days
-            },
-            callback: function (response) {
-                if (response.message) {
-                    frm.set_value('ramp_level', response.message); // Update the field in the form
+            });
+            
+            frappe.call({
+                method: "nj_features.overrides.employee.get_ramp_level",
+                args: {
+                    role_profile: frm.doc.role_profile,
+                    // total_days: calculate_total_days(frm.doc.date_of_joining), 
+                    total_days: frm.doc.calculated_days
+                },
+                callback: function (response) {
+                    if (response.message) {
+                        frm.set_value('ramp_level', response.message); // Update the field in the form
+                    }
                 }
-            }
-        });    
+            });    
+        }
     },
 
     department(frm) {
@@ -119,28 +122,29 @@ frappe.ui.form.on('Employee', {
             frm.set_value('role_profile', '');
             return;
         }
-
-        frappe.call({
-            method: "nj_features.overrides.employee.get_role_profiles",
-            args: { department: frm.doc.department },
-            callback(response) {
-                let role_profiles = response.message || [];
-
-                frm.set_query('role_profile', function() {
-                    return {
-                        filters: [['Role Profile', 'name', 'in', role_profiles]]
-                    };
-                });
-
-                if (role_profiles.length === 1) {
-                    frm.set_value('role_profile', role_profiles[0]);
-                } else {
-                    frm.set_value('role_profile', ''); 
+        if (frm.doc.department) {
+            frappe.call({
+                method: "nj_features.overrides.employee.get_role_profiles",
+                args: { department: frm.doc.department },
+                callback(response) {
+                    let role_profiles = response.message || [];
+    
+                    frm.set_query('role_profile', function() {
+                        return {
+                            filters: [['Role Profile', 'name', 'in', role_profiles]]
+                        };
+                    });
+    
+                    if (role_profiles.length === 1) {
+                        frm.set_value('role_profile', role_profiles[0]);
+                    } else {
+                        frm.set_value('role_profile', ''); 
+                    }
+    
+                    frm.refresh_field('role_profile');  // Ensure UI updates
                 }
-
-                frm.refresh_field('role_profile');  // Ensure UI updates
-            }
-        });
+            });
+        }
     },
 
     before_save(frm) {

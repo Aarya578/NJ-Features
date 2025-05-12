@@ -66,7 +66,7 @@ class CustomDeliveryNote(DeliveryNote):
         except Exception as e:
             err = e
             frappe.db.rollback()
-            frappe.throw(err)
+            frappe.throw(str(err))
 #     def on_submit(self):
 #         try:
 #             super().on_submit()

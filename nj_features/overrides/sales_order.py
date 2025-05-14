@@ -87,7 +87,9 @@ def trigger_fulfillment(order_id):
                 # print("fulfillment_data----75-", fulfillment_data)
                 if "fulfillment" in fulfillment_data:
                     fulfillment_id = fulfillment_data["fulfillment"]["id"]
-                    return {"status": "success", "fulfillment_id": fulfillment_id}
+                    return {
+                            "status": "success", "fulfillment_id": fulfillment_id
+                        }
                 else:
                     frappe.msgprint("Fulfillment creation failed.")
             else:
@@ -96,3 +98,112 @@ def trigger_fulfillment(order_id):
             frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+
+def calculate_dispatch_eta_for_sales_order():
+    departments = frappe.db.sql("""
+        SELECT 
+            name, min_aging_days
+        FROM
+            `tabDepartment`
+        WHERE
+            department_sequence >= 1
+        ORDER BY 
+            department_sequence DESC
+    """, as_dict=1)
+
+    open_sales_orders = frappe.db.sql("""
+        SELECT 
+            so.name AS sales_order,
+            soi.item_code
+        FROM 
+            `tabSales Order` so
+        INNER JOIN 
+            `tabSales Order Item` soi ON soi.parent = so.name
+        INNER JOIN
+            `tabItem` i ON soi.item_code = i.item_code
+        WHERE
+            (so.per_delivered < 100 OR so.per_billed < 100)
+            AND so.docstatus = 1
+            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
+            AND i.is_stock_item = 1
+            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+
+        UNION ALL
+
+        SELECT 
+            so.name AS sales_order,
+            pi.item_code
+        FROM 
+            `tabSales Order` so
+        INNER JOIN 
+            `tabSales Order Item` soi ON soi.parent = so.name
+        INNER JOIN 
+            `tabPacked Item` pi ON pi.parent = so.name AND pi.parent_detail_docname = soi.name
+        INNER JOIN 
+            `tabItem` i ON pi.item_code = i.item_code
+        WHERE
+            (so.per_delivered < 100 OR so.per_billed < 100)
+            AND so.docstatus = 1
+            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
+            AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+            AND i.is_stock_item = 1
+            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+
+        ORDER BY 
+            sales_order DESC
+    """, as_dict=1)
+
+    for so in open_sales_orders:
+        so_name = so["sales_order"]
+        item_code = so["item_code"]
+
+        accumulated_days = 0
+        serial_found = False
+
+        for dept in departments:
+            dept_name = dept["name"]
+            min_aging_days = dept.get("min_aging_days", 0)
+            accumulated_days += min_aging_days
+
+            warehouses = frappe.db.sql("""
+                SELECT 
+                    name
+                FROM
+                    `tabWarehouse`
+                WHERE
+                    department = %s
+            """, (dept_name,), as_dict=1)
+
+            for wh in warehouses:
+                warehouse_name = wh["name"]
+
+                serial_no = frappe.db.sql("""
+                    SELECT 
+                        name
+                    FROM
+                        `tabSerial No`
+                    WHERE
+                        item_code = %s AND warehouse = %s
+                        AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                    LIMIT 1
+                """, (item_code, warehouse_name), as_dict=1)
+
+                if serial_no:
+                    frappe.db.sql("""
+                        UPDATE `tabSerial No` 
+                        SET reserved_sales_order = %s
+                        WHERE name = %s
+                    """, (so_name, serial_no[0]["name"]))
+
+                    frappe.db.sql("""
+                        UPDATE `tabSales Order` 
+                        SET eta_for_dispatch = %s
+                        WHERE name = %s
+                    """, (accumulated_days, so_name))
+
+                    serial_found = True
+                    break
+
+            if serial_found:
+                print("serial found for item_code", item_code)
+                break

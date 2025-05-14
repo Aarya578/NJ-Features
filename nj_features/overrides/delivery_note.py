@@ -64,9 +64,8 @@ class CustomDeliveryNote(DeliveryNote):
             self._process_serial_numbers()
             
         except Exception as e:
-            err = e
             frappe.db.rollback()
-            frappe.throw(str(err))
+            frappe.throw(str(e))
 #     def on_submit(self):
 #         try:
 #             super().on_submit()
@@ -226,7 +225,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.save(ignore_permissions=True)
 
         except Exception as e:
-            frappe.throw("Error in _process_customer_details",str(e))
+            frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
     def _process_serial_numbers(self):
 
@@ -291,10 +290,10 @@ class CustomDeliveryNote(DeliveryNote):
                         updated = True
         
         serial_no_doc.address = ''
-        serial_no_doc.end_date = 0
+        serial_no_doc.end_date = ''
         serial_no_doc.email_id = ''
         serial_no_doc.order_id = ''
-        serial_no_doc.mobile_no = 0
+        serial_no_doc.mobile_no = ''
         serial_no_doc.last_name = ''
         serial_no_doc.first_name = ''
         serial_no_doc.order_date = ''

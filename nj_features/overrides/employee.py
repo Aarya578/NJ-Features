@@ -31,7 +31,7 @@ def create_user_and_warehouse(self):
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
             
-            if self.get("work_warehouse") is not None or self.get("work_warehouse") != '':
+            if self.get("work_warehouse") is None or self.get("work_warehouse") == '':
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware

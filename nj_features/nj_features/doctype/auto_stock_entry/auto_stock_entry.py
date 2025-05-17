@@ -68,7 +68,6 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
 
-        print("department_doc --------------------- ", department_doc)
         if department_doc.get('quality_inspection_status_for_stock_movement') and (department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None):
             check_qi_validation(serial_no, s_warehouse, s_department, department)
 
@@ -167,13 +166,6 @@ def get_item_code_and_warehouse(item_code):
 
 def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
     try:
-        print(
-            "serial_no", serial_no,
-            "s_warehouse", s_warehouse,
-            "s_department", s_department,
-            "t_department", t_department
-        )
-
         s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
         s_inspection_type = frappe.get_doc('Department', s_department)
         inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
@@ -195,9 +187,6 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
             creation_time = result[0]["creation"]
             formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            print("formatted_time", formatted_time)
-            print("current_time", current_time)
 
             qi_query = """
                 SELECT name

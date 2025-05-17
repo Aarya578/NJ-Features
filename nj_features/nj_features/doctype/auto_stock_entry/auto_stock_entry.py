@@ -72,8 +72,6 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         if department_doc.get('quality_inspection_status_for_stock_movement') and (department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None):
             check_qi_validation(serial_no, s_warehouse, s_department, department)
 
-        frappe.throw("Validation successful.")
-
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_validation_for_auto_stock_entry")

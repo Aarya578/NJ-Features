@@ -139,7 +139,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-        if (selectedModel && selectedBrand) {
+        if (selectedModel && selectedBrand && selectedItemGroup != "BATTERY") {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.check_for_mis_config',
                 args: { 'doc': frm.doc },

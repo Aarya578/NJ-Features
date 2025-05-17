@@ -224,7 +224,7 @@ def get_battery_status(doc, method=None):
         bios_serial_no=doc.bios_serialno
         model=doc.manufacturer_model
         item_wizard=get_item_wizard(model)
-        wiz_fbdt_health_range,wiz_rbdt_health_range,cycle_count ,backup_duration_mins,sudden_drop_limit= ["70","80"],["80","100"],"500","120","15"
+        backup_duration_mins=0
 
         wizard_criteria_query="""
             select fbdt_health_range, rbdt_health_range, cycle_count, backup_duration_mins,sudden_drop_limit from `tabItem Wizards` where name=%s ;
@@ -234,61 +234,12 @@ def get_battery_status(doc, method=None):
             wizard_criteria=frappe.db.sql(wizard_criteria_query, (item_wizard), as_dict=True)
 
             if wizard_criteria:
-                if wizard_criteria[0].fbdt_health_range: 
-                    wiz_battery_health=wizard_criteria[0].fbdt_health_range
-                    wiz_fbdt_health_range=wiz_battery_health.split("-")
-                    
-                if wizard_criteria[0].rbdt_health_range: 
-                    wiz_battery_health=wizard_criteria[0].rbdt_health_range
-                    wiz_rbdt_health_range=wiz_battery_health.split("-")
-
-
-                if wizard_criteria[0].cycle_count:
-                    cycle_count=wizard_criteria[0].cycle_count
-
-
-                if wizard_criteria[0].sudden_drop_limit:
-                    sudden_drop_limit=wizard_criteria[0].sudden_drop_limit
-
                 if wizard_criteria[0].backup_duration_mins:
-                    backup_duration_mins=wizard_criteria[0].backup_duration_mins
-        
-        battery_query = """
-            select replace(value, '%%', '') as value from `tabNJQCA Result Parameters` 
-            where parent=%s and item_group="Battery" and parameter="Health" limit 1
-        """
-        cc_query = """
-            select value from `tabNJQCA Result Parameters` where parent=%s and item_group="Battery" and parameter="Cycle_count" limit 1
-        """
-        battery_health = frappe.db.sql(battery_query,(njqca), as_dict=True)
-        cc=frappe.db.sql(cc_query,(njqca), as_dict=True)
-
-        if not battery_health and not cc:
-            return
-        
-        if cc:
-            try:
-                cc_value = cc[0].value
-                if cc_value and cycle_count:
-                    cc_value = int(cc_value)
-                    if cc_value > int(cycle_count):
-                        return "FAIL"
-            except Exception as e:
-                pass
-
-        if battery_health:
-            try:
-                battery_value = battery_health[0].value
-                # print("flot of battery_value:",float(battery_value),"folat of wiz_fbdt_health_range[0]:",float(wiz_rbdt_health_range[0]),"folat of wiz_fbdt_health_range[1]:",float(wiz_rbdt_health_range[1]))
-                if battery_value and wiz_rbdt_health_range:
-                    if ( not float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_rbdt_health_range[1])+1)):
-                        return "FAIL"
-            except Exception as e:
-                pass
-        else:
-            return
-        
-        
+                    try:
+                      backup_duration_mins=int(wizard_criteria[0].backup_duration_mins)
+                    except:
+                      backup_duration_mins=120
+               
         
         serial_no_battery_data_query="""
             SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and 
@@ -296,27 +247,6 @@ def get_battery_status(doc, method=None):
             """
         
         fbdt_status_query="""
-                    SELECT battery_status FROM (SELECT
-                        CASE
-                        WHEN sudden_drop LIKE '%%no%%' AND (
-                        COALESCE(backup_duration_cycle_3, backup_duration_cycle_2, backup_duration_cycle_1) >= %(backup_duration_mins)s) AND (                     
-                        CASE
-                            WHEN (SELECT value 
-                                FROM `tabNJQCA Result Parameters` where item_group = 'Battery' and parent = %(battery_data_parent_name)s
-                                ORDER BY idx DESC 
-                                LIMIT 1) REGEXP '^[0-9]+$' 
-                            THEN CAST((SELECT value 
-                                        FROM `tabNJQCA Result Parameters` where item_group = 'Battery' and parent = %(battery_data_parent_name)s
-                                        ORDER BY idx DESC 
-                                        LIMIT 1) AS SIGNED) <= %(sudden_drop_limit)s
-                            ELSE FALSE
-                        END
-                    ) THEN 'PASS'
-                    ELSE ''
-                    END AS battery_status
-                    FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
-            """
-        rbdt_status_query="""
                     SELECT battery_status FROM (SELECT
 					CASE
 					WHEN sudden_drop LIKE '%%no%%' AND (
@@ -340,12 +270,9 @@ def get_battery_status(doc, method=None):
                 bty_parent_njqca = get_bty_njqca[0][1]
         
 
-            if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins and sudden_drop_limit:
+            if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins:
 
-                if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
-                    query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':int(sudden_drop_limit),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
-                else:
-                    query_data=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
+                    query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
                     if query_data:
                         if query_data[0].battery_status=='PASS':
                             frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
@@ -360,25 +287,20 @@ def get_battery_status(doc, method=None):
         battery_Data_parent_name_result=frappe.db.sql(serial_no_battery_data_query,{'serial_no':parent_serial_no,'bios_serial_no':bios_serial_no}, as_dict=True)
         if battery_Data_parent_name_result:
             battery_Data_parent_name=battery_Data_parent_name_result[0].name
-            if battery_Data_parent_name and backup_duration_mins and sudden_drop_limit:
-                if float(battery_value) in range(int(wiz_fbdt_health_range[0]),int(wiz_fbdt_health_range[1])+1):
-                    battery_status=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'sudden_drop_limit':sudden_drop_limit,'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
-                else:
-                    battery_status=frappe.db.sql(rbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
+            if battery_Data_parent_name and backup_duration_mins :
+                battery_status=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':battery_Data_parent_name}, as_dict=True)
                 if battery_status:
                     if battery_status[0].battery_status=='PASS':
-                        frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
-                        where parent=%(parent_name)s and item_group="Battery" ;""",{'parent_name':njqca})
                         return "PASS"
                     else:
                         return "FAIL"
         else:
-            return "Unknown"
+            return "Report Not found"
 
 
     except Exception as e:
         frappe.msgprint(f"An error occurred at get_battery_status: {traceback.format_exc()}")
-        return      
+        return  "Report Not found"    
     
 @frappe.whitelist()
 def get_backup_duration(doc, method=None):

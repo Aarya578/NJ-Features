@@ -600,7 +600,7 @@ frappe.ui.form.on('NJQCA', {
                         frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
                         frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
                         frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
-                    }else if(r.message == "Unknown"){
+                    }else if(r.message == "Report Not found"){
                         frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
                         frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
                         frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");

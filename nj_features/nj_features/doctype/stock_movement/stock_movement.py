@@ -206,6 +206,7 @@ def get_child_warehouses(parent_warehouse):
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
+    
     try:
         if isinstance(doc, str):
             doc = json.loads(doc)
@@ -298,6 +299,9 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         creation_time = result[0]["creation"]
         formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        print("formatted_time", formatted_time)
+        print("current_time", current_time)
 
         qi_query = """
             SELECT name

@@ -11,7 +11,7 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
-from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard
+from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 frappe.utils.logger.set_log_level("DEBUG")
@@ -2384,3 +2384,58 @@ def check_for_mis_config(doc):
             "item_group": "Software Configuration",
             "part_config_id": 0
         }
+    
+@frappe.whitelist() 
+def get_bdt_status(doc,method=None):
+    try:
+        if isinstance(doc, str):
+            doc = frappe.parse_json(doc)
+        if doc.item_group != 'BATTERY' :
+            return 
+        
+        njqca_name=doc.name
+        manufacturer_model=doc.manufacturer_model
+        iw=get_item_wizard_data(manufacturer_model)
+        required_backup=0
+        backup=False
+        sudden_drop=False
+        sudden_drop_status=doc.sudden_drop
+
+        backup1=doc.backup_duration_cycle_1
+        backup2=doc.backup_duration_cycle_2
+        backup3=doc.backup_duration_cycle_3
+
+        if iw:
+            
+            try:
+                required_backup=int(iw.get("backup_duration_mins"))
+            except Exception as e:
+                pass
+        
+        if required_backup==0:
+            required_backup=120
+
+
+        if backup3 is not None and backup3:
+            if float(backup3)>=required_backup:
+                backup=True
+     
+        elif backup2 is not None and backup2:
+            if float(backup2)>=required_backup:
+                backup=True
+
+        elif backup1 is not None and backup1:
+            if float(backup1)>=required_backup:
+                backup=True
+            
+        if sudden_drop_status is not None and sudden_drop_status:
+            if "NO" in sudden_drop_status:
+                sudden_drop=True
+            
+        if sudden_drop and backup:
+            return "Pass"
+        else:
+            return "Fail"
+    except Exception as e:
+        frappe.msgprint("An error occurred at get_bdt_status: " +str(e))
+        return ""

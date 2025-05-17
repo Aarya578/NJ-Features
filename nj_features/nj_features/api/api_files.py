@@ -473,7 +473,7 @@ def get_backup_duration(doc, method=None):
                                     -- Find the next occurrence of Battery_Discharging_Start_Time and get its timestamp at idx - 2         
                                     COALESCE(             
                                         (SELECT parameter FROM parameter_data WHERE idx > cs.idx AND idx = (SELECT idx-2 FROM cycle_start WHERE idx > cs.idx order by idx LIMIT 1)),              
-                                        (SELECT parameter FROM parameter_data ORDER BY idx DESC LIMIT 1) -- if no next occurrence, get last timestamp         
+                                        (SELECT parameter FROM parameter_data where value REGEXP '^[0-9]+$' ORDER BY idx DESC LIMIT 1)         
                                     ) AS final_timestamp
                                 FROM cycle_start cs     
                                 -- Get the timestamp at (idx - 1)     

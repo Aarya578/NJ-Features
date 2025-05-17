@@ -32,7 +32,7 @@ def get_department_details():
             data = process_merged_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc)
-            # suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
         elif str(in_config) == '1' and str(fw_config) == '1':
             data = process_default_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
@@ -707,14 +707,10 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
-    
-    # #print(updated_item_code_list)
 
     return updated_item_code_list
 
 def calculate_to_make(doc):
-
-    print("doc ---------------- ", doc.as_dict())
 
     configs = []
     for item in doc.get("nj_production_planning_child", []):
@@ -737,17 +733,14 @@ def calculate_to_make(doc):
         }
         configs.append(config)
 
-    # Initialize to_make to 0 for all
     for cfg in configs:
         cfg['item'].to_make = 0
 
-    # Sort configs by DOI, sales_rate (desc), forward inventory (asc)
     configs.sort(key=lambda x: (x['doi'], -x['sales_rate'], x['forward']))
 
     while True:
         any_changes = False
 
-        # Filter configs with inward inventory > 0
         active_configs = [cfg for cfg in configs if cfg['inward'] > 0]
         if len(active_configs) < 2:
             break
@@ -764,13 +757,11 @@ def calculate_to_make(doc):
             if doi_diff < 1:
                 continue
 
-            # Calculate needed units to match the target DOI
             needed_units = (target_doi - current['doi']) * current['sales_rate']
-            needed_units = math.ceil(needed_units)  # Ensure integer units
+            needed_units = math.ceil(needed_units) 
             needed_units = max(needed_units, 1)
             to_make = min(needed_units, current['inward'])
 
-            # Update state
             current['forward'] += to_make
             current['inward'] -= to_make
             current['doi'] = current['forward'] / current['sales_rate']
@@ -780,7 +771,6 @@ def calculate_to_make(doc):
         if not any_changes:
             break
 
-        # Re-sort after changes
         configs.sort(key=lambda x: (x['doi'], -x['sales_rate'], x['forward']))
 
     doc.save()

@@ -14,8 +14,7 @@ class CustomStockLedgerEntry(StockLedgerEntry):
         warehouse_doc_data = frappe.get_doc('Warehouse', self.warehouse)
         if warehouse_doc_data:
             available_capacity = int(warehouse_doc_data.max_capacity or 0) - int(self.qty_after_transaction or 0)
-            warehouse_doc_data.db_set('available_capacity', available_capacity)
-            warehouse_doc_data.db_set('qty_after_transaction', self.qty_after_transaction)
+            frappe.db.sql(f"update `tabWarehouse` set available_capacity = {available_capacity}, qty_after_transaction = {self.qty_after_transaction} where name = '{self.warehouse}'")
 
     def notify_warehouse_owner_if_applicable(self):
         warehouse_doc = frappe.get_doc('Warehouse', self.warehouse)

@@ -8,7 +8,6 @@
  "engine": "InnoDB",
  "field_order": [
   "department",
-  "to_make",
   "nj_production_planning_child",
   "suggested_serial_no",
   "laptop_allocation",
@@ -19,7 +18,8 @@
    "fieldname": "department",
    "fieldtype": "Link",
    "label": "Department",
-   "options": "Department"
+   "options": "Department",
+   "read_only": 1
   },
   {
    "fieldname": "nj_production_planning_child",
@@ -37,12 +37,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval: doc.department != ''\n",
-   "fieldname": "to_make",
-   "fieldtype": "Button",
-   "label": "To Make"
-  },
-  {
    "fieldname": "suggested_serial_no",
    "fieldtype": "Table",
    "label": "Suggested Serial No",
@@ -58,7 +52,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-02 17:36:51.881941",
+ "modified": "2025-05-16 10:46:01.896216",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

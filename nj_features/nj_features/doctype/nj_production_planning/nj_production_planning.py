@@ -635,9 +635,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
 
-    """, explain=1, debug=1, as_dict=True)
-
-    # #print("sales_data ------------------- ", sales_data)    
+    """, explain=1, debug=1, as_dict=True) 
 
     sales_map = {}
     for sale in sales_data:
@@ -649,7 +647,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
 
         if item_code not in item_codes:
-            # Generate placeholders dynamically
 
             attribute_data = frappe.db.sql("""
                 SELECT 

@@ -288,12 +288,13 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         JOIN `tabStock Entry` se ON sed.parent = se.name
         WHERE se.stock_entry_type = "Material Transfer"
         AND sed.serial_no = %s
+        AND se.docstatus = 1
         AND sed.target_department = %s
         ORDER BY se.creation DESC
         LIMIT 1
     """
 
-    result = frappe.db.sql(query, (serial_no, s_department), as_dict=True)
+    result = frappe.db.sql(query, (serial_no, s_department),explain=1, debug=1, as_dict=True)
 
     if result:
         creation_time = result[0]["creation"]

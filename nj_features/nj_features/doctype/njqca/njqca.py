@@ -2437,3 +2437,10 @@ def get_bdt_status(doc,method=None):
     except Exception as e:
         frappe.msgprint("An error occurred at get_bdt_status: " +str(e))
         return ""
+
+# @frappe.whitelist()
+
+# def check_ram_speed(njqca_name):
+#     try:
+#         get_ram_query="""
+#         select `value` from """

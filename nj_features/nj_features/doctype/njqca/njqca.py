@@ -474,7 +474,18 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
-
+    # def on_load(self):
+    #     data = get_item_group_mapping(self.name)
+    #     for row in data:
+    #         self.append("njqca_result_parameters", {
+    #             "parameter": row.item_group,
+    #             "value": row.variant_6
+    #         })
+    #     if self.brand:
+    #         self.append("njqca_result_parameters", {
+    #             "parameter": "Brand",
+    #             "value": self.brand
+    #         })    
     def before_save(self):
         update_storage_type(self)
 
@@ -2357,6 +2368,20 @@ def get_battery_serialno(bios_serial_no,inspection_type):
         
     except Exception as e:
         return ""
+    
+
+# @frappe.whitelist()
+# def get_item_group_mapping(parent):
+#     print("inside get_item_group_mapping function======================")
+#     data = frappe.get_all(
+#         "NJQCA Child",
+#         filters={"item_group": "Laptop Processors", "parent": parent},
+        
+#         fields=["item_group", "variant_6"]
+#     )
+#     print("data======================", data)
+#     return data
+
 
 @frappe.whitelist()
 def check_for_mis_config(doc):

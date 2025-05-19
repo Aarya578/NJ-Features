@@ -258,7 +258,7 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
         if  get_bty_serial_no :
             
             bty_parent_njqca =  ""
-            get_bty_njqca_query = """ SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and bios_serialno=%(bios_serialno)s
+            get_bty_njqca_query = """ SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and bios_serialno=%(bios_serialno)s and 
                                 (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1"
                             """
 

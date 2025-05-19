@@ -20,6 +20,7 @@ FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 
 class CustomDeliveryNote(DeliveryNote):
+    
     def on_submit(self):
         try:
             super().on_submit()
@@ -27,6 +28,10 @@ class CustomDeliveryNote(DeliveryNote):
             
             # Early return for Snapmint orders (skipping trigger_fulfillment)
             if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+                self.rto_charges_update()
+                self.fetching_tracking_details()
+                self.set_cit_image_from_sales_order()
+                self.update_details_to_delivery_charege_doc()
                 qi_mandatory_checks_on_dn_submit(self, method=None)
                 if self.is_return == 0:
                     send_sales_invoice_email_on_delivery_note(self, method=None)
@@ -51,9 +56,13 @@ class CustomDeliveryNote(DeliveryNote):
             
             if order_id and self.is_return == 0:
                 trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
-            
+
+            self.rto_charges_update()
+            self.set_cit_image_from_sales_order()
+            self.fetching_tracking_details()
+
+            self.update_details_to_delivery_charege_doc()
             qi_mandatory_checks_on_dn_submit(self, method=None)
-            
             if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
             
@@ -155,6 +164,23 @@ class CustomDeliveryNote(DeliveryNote):
         #     frappe.db.rollback()
         #     frappe.throw(error_message)
     
+
+
+    def set_cit_image_from_sales_order(self):
+        if  self.is_return:
+            return
+        # Use SQL to get the sales order and cit_image in one query
+        result = frappe.db.sql("""
+            SELECT so.cit_image
+            FROM `tabSales Order` so
+            JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
+            WHERE dni.parent = %s
+            LIMIT 1
+        """, (self.name,), as_dict=True)
+        if result and result[0].cit_image:
+            # Set the cit_image field in the Delivery Note
+            self.db_set("cit_image", result[0].cit_image)
+
     def _process_customer_details(self):
         try:
             for item in self.get('items'):
@@ -306,6 +332,115 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.modified = now()
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
+        
+
+    def fetching_tracking_details(self):
+        if self.is_return:
+            return
+        against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+        # Check if we have a value to send
+        if not against_sales_order:
+            frappe.msgprint("No sales order found for this delivery note.")
+            return
+        # if against_sales_order:
+        #     cost_of_delivery = frappe.db.get_value("Sales Order", against_sales_order, "cost_of_delivery")     
+        if against_sales_order:
+            cost_of_delivery, awb_number = frappe.db.get_value("Sales Order", against_sales_order, ["cost_of_delivery", "awb_number"])
+        try:
+            payload = {
+                "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
+                "DocketNo": against_sales_order
+            }
+            url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
+            headers = {"Content-Type": "application/json"}
+            response = requests.post(url, headers=headers, json=payload)
+            print(f"Response status: ========{response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Check if there's an error message
+                if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
+                    frappe.msgprint(f"The sales order number '{against_sales_order}' is not recognized as a valid tracking number.")
+                    return
+                    
+                # If successful, extract the remark
+                remark = (
+                    data.get("data", {})
+                    .get("docketDetails", {})
+                    .get("Booking_Status", {})
+                    .get("Remark")
+                )
+                if remark:
+                    self.remark_status = remark
+                    self.cost_amount = cost_of_delivery
+                    self.awb_number = awb_number
+                    self.db_update()
+                    print(f"Updated remark_status to: {remark}")
+                else:
+                    print("No remark found in the response")
+            else:
+                frappe.msgprint(f"API returned status code: {response.status_code}")
+                
+        except Exception as e:
+            frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
+
+
+    def rto_charges_update(self):
+        if not self.is_return:
+            return
+
+        valid_causes = ["RTO Customer", "RTO Delivery Partner"]
+        if not self.cause_of_return or self.cause_of_return not in valid_causes:
+            return
+
+        # Fetch RTO Charges from NJ Settings
+        rto_cost = frappe.db.get_value("NJ Settings", {"parameter": "RTO Charges"}, "value")
+        # If value exists, sum with cost_amount
+        if rto_cost and self.cost_amount:
+            try:
+                updated_cost = float(self.cost_amount) + float(rto_cost)
+                self.cost_amount = updated_cost
+                self.db_update()
+            except Exception as e:
+                frappe.log_error(f"RTO Cost update failed: {e}", "RTO Charges Update")
+
+
+    def update_details_to_delivery_charege_doc(self):
+    # First, check if a Delivery Charges document with the same AWB number exists
+        existing_delivery_charge = frappe.get_all(
+            "Delivery Charges", 
+            filters={"awb_number": self.awb_number},
+            limit=1
+        )      
+        if existing_delivery_charge:
+            # If exists, get the document and update it
+            delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
+            print(f"Updating existing Delivery Charges document: {delivery_charge.name}")
+        else:
+            # If not exists, create a new one
+            delivery_charge = frappe.new_doc("Delivery Charges")
+            print("Creating new Delivery Charges document")
+        delivery_charge.awb_number = self.awb_number
+        delivery_charge.rto_charges = self.cost_amount
+        delivery_charge.cit_image = self.cit_image
+        if hasattr(self, 'is_return') and self.is_return:
+            delivery_charge.cause_of_return = self.cause_of_return
+        # Map from first item
+        for row in self.get("items"):
+            delivery_charge.serial_no = row.get("serial_no")
+            delivery_charge.sales_order = row.get("against_sales_order")
+            break  # Just get the first item's data
+        
+        try:
+            if delivery_charge.is_new():
+                delivery_charge.insert(ignore_permissions=True)
+            else:
+                delivery_charge.save(ignore_permissions=True)
+        except Exception as e:
+            frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
+            print(f"Error: {e}")
+
 
 @frappe.whitelist()
 def set_tracking_id_for_delivery_note(doc):
@@ -618,110 +753,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
     except Exception as e:
         frappe.throw(str(e))
         
-
-
-# @frappe.whitelist()  
-# def qi_mandatory_checks_on_dn_submit(doc, method=None):
-#     """
-#     Checks mandatory NJ Quality Inspections for serial numbers in a Delivery Note.
-#     Throws an error if any mandatory check has a score greater than 0 or if any mandatory check is missing.
-#     Skips validation if no mandatory checks exist for the serial number.
-#     """
-#     for item in doc.items:
-#         if item.serial_no:
-#             serial_nos = [s.strip() for s in item.serial_no.split('\n') if s.strip()]
-#             for serial_no in serial_nos:
-
-#                 # Get item_code and item_group fromfrom Serial No
-#                 item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
-#                 item_group = frappe.db.get_value("Item", item_code, "item_group")
-
-#                 # Skip validation if item group is not 'Laptops'
-#                 if item_group != "Laptops":
-#                     continue
-
-#                 # Fetch all mandatory checks for the serial number
-#                 mandatory_checks = frappe.db.sql(
-#                     """
-#                     SELECT name FROM `tabNJ QC Check List` 
-#                     WHERE name IN (
-#                         SELECT quality_check 
-#                         FROM `tabNJ Quality Checks` njqc 
-#                         JOIN `tabNj QC Options` njqco ON njqco.parent = njqc.name
-#                         JOIN `tabInspection Type` it ON it.name = njqc.inspection_type
-#                         WHERE 
-#                             it.active = 1 AND
-#                             njqc.item_group IN (
-#                                 SELECT component_type 
-#                                 FROM `tabComponent` 
-#                                 WHERE parent = (
-#                                     SELECT item_wizard 
-#                                     FROM `tabSerial No` 
-#                                     WHERE name = %s
-#                                 )
-#                             )
-#                     )
-#                     AND mandatory = 1
-#                     """,
-#                     (serial_no,),
-#                     as_dict=True
-#                 )
-
-#                 # ✅ Skip validation if no mandatory checks found
-#                 if not mandatory_checks:
-#                     continue
-
-#                 # Fetch submitted NJ Quality Inspections
-#                 qi_names = frappe.db.sql(
-#                     """
-#                     SELECT name FROM `tabNJ Quality Inspection`
-#                     WHERE barcode = %s AND docstatus = 1
-#                     ORDER BY creation DESC
-#                     """,
-#                     (serial_no,), as_list=True
-#                 )
-
-#                 if not qi_names:
-#                     frappe.throw(f"No submitted NJ Quality Inspection found for Serial No: {serial_no}")
-
-#                 # Prepare sets
-#                 mandatory_check_names = {check['name'] for check in mandatory_checks}
-#                 passed_checks = set()
-#                 failed_checks = {}
-#                 missing_checks = mandatory_check_names.copy()
-
-#                 for qi_name in qi_names:
-#                     # Fetch NJ Checks from QI
-#                     nj_checks = frappe.db.sql(
-#                         """
-#                         SELECT check_name, score FROM `tabNJ Checks` WHERE parent = %s
-#                         """,
-#                         (qi_name[0],), as_dict=True
-#                     )
-
-#                     nj_check_names = {check.check_name for check in nj_checks}
-#                     missing_checks -= nj_check_names
-
-#                     for check in nj_checks:
-#                         if check.check_name in mandatory_check_names:
-#                             if check.score == 0:
-#                                 passed_checks.add(check.check_name)
-#                             elif check.check_name not in passed_checks:
-#                                 failed_checks[check.check_name] = qi_name[0]
-
-#                     # If all mandatory checks are passed, stop checking further QIs
-#                     if passed_checks == mandatory_check_names:
-#                         frappe.msgprint(f"All mandatory checks passed for Serial No: {serial_no}")
-#                         break
-
-#                 # Throw error if any check failed
-#                 if failed_checks:
-#                     error_message = ", ".join([f"{check} (QI: {qi})" for check, qi in failed_checks.items()])
-#                     frappe.throw(f"Mandatory checks failed for Serial No: {serial_no}: {error_message}")
-
-#                 # Throw error if any check is missing
-#                 if missing_checks:
-#                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):
     """

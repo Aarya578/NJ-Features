@@ -16,6 +16,42 @@ frappe.ui.form.on('Sales Order', {
             });
         }  
     },
+validate: function(frm) {
+    console.log("Inside validate function =================");
+    
+    // Log data for debugging
+    console.log("Doc before update:", frm.doc);
+    
+    frappe.call({
+        method: 'nj_features.overrides.sales_order.update_item_details',
+        args: {
+            self: frm.doc
+        },
+        callback: function(r) {
+            console.log("Server response:", r);          
+            if (r.message) {
+                if (r.message.weight !== null && r.message.weight !== undefined) {
+                    frm.set_value('weight', r.message.weight);
+                    frm.refresh_field("weight");
+                }            
+                if (r.message.height) {
+                    frm.set_value('height', r.message.height);
+                    frm.refresh_field("height");
+                }             
+                if (r.message.length) {
+                    frm.set_value('length', r.message.length);
+                    frm.refresh_field("length");
+                }               
+                if (r.message.breadth) {
+                    frm.set_value('breadth', r.message.breadth);
+                    frm.refresh_field("breadth");
+                }           
+
+            }
+        }
+    });
+},
+
     onload_post_render: function(frm) {
         frm.remove_custom_button('Delivery Note', 'Create');
         $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();

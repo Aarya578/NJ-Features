@@ -1,0 +1,103 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "pincode_no",
+ "creation": "2025-05-14 17:13:39.129742",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pincode_no",
+  "state_code",
+  "region",
+  "service_type",
+  "controling_code",
+  "controling_city_name",
+  "amended_from",
+  "column_break_y4arg",
+  "rate",
+  "cod"
+ ],
+ "fields": [
+  {
+   "fieldname": "pincode_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pincode No"
+  },
+  {
+   "fieldname": "state_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "State Code"
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Region"
+  },
+  {
+   "fieldname": "service_type",
+   "fieldtype": "Data",
+   "label": "Service Type"
+  },
+  {
+   "fieldname": "controling_code",
+   "fieldtype": "Data",
+   "label": "Controling Code"
+  },
+  {
+   "fieldname": "controling_city_name",
+   "fieldtype": "Data",
+   "label": "Controling City Name"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Pincode",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_y4arg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cod",
+   "fieldtype": "Float",
+   "label": "COD"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Float",
+   "label": "Rate"
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-05-15 16:35:52.742167",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Pincode",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

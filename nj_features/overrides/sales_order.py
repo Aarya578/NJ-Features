@@ -1,4 +1,6 @@
 import frappe , requests
+import requests
+import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
@@ -10,6 +12,10 @@ class CustomSalesOrder(SalesOrder):
     def on_submit(self):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
+        # self.update_item_details()
+        self.send_consignement_data()
+        self.cod_calculation()
+        # self.fetching_tracking_details()
         raw_order_id = None
         if self.order_type!="Maintenance":
             if self.shopify_order_id:
@@ -28,6 +34,167 @@ class CustomSalesOrder(SalesOrder):
             if order_id:
                 trigger_fulfillment(order_id)
 
+
+    def send_consignement_data(self):
+        print("Triggered send_consignement_data...")
+        try:
+            # Fetch addresses
+            company_address = frappe.get_doc("Address", self.company_address) if self.company_address else None
+            shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
+
+            # grand_total = float(self.grand_total or 0)
+            # amount = grand_total
+            # print(f"DEBUG: grand_total = {grand_total}, amount = {amount}, payment_type = COD")
+
+            # if grand_total <= 0:
+            #     frappe.msgprint("Grand Total must be greater than zero for COD shipments.")
+            #     return
+
+            # Format date properly
+            formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
+
+            # Prepare header with consistent structure matching Postman example
+            header = {
+                "ClientCode": "207433",
+                "OrderNo/InvoiceNo": self.name,
+                # "Order/InvoiceDate": "2025-05-16",
+                "Order/InvoiceDate": self.transaction_date,
+                # Sender
+                "SenderName": self.company,
+                "SenderAdd1": company_address.address_line1 if company_address else "",
+                "SenderAdd2": company_address.address_line2 if company_address else "",
+                "SenderCity": company_address.city if company_address else "",
+                "SenderState": company_address.state if company_address else "",
+                "SenderCountry": company_address.country if company_address else "India",
+                # "SenderPin": company_address.pincode if company_address else "",
+                "SenderPin": "560100",
+                "SenderMobile": company_address.phone or "",
+                "SenderEmail": company_address.email_id or "",
+
+                # Receiver
+                "ReceiverName": self.customer_name or "",
+                "ReceiverAdd1": shipping_address.address_line1 if shipping_address else "",
+                "ReceiverAdd2": shipping_address.address_line2 if shipping_address else "",
+                "ReceiverCity": shipping_address.city if shipping_address else "",
+                "ReceiverState": shipping_address.state if shipping_address else "",
+                "ReceiverCountry": shipping_address.country if shipping_address else "India",
+                # "ReceiverPin": shipping_address.pincode if shipping_address else "",
+                "ReceiverPin": "110002",
+                "ReceiverMobile": shipping_address.phone or "",
+
+                "ConsignmentValue": str(self.grand_total),
+                "NoQuantity": 1,
+                "consignmentValue": str(self.grand_total),  # Added this field to match Postman
+                "Weight": str(self.weight),
+                "TransitMode": self.mode_of_transfer,
+                "ProductMode": "Normal",
+                "PaymentType": "COD",
+                "Amount": str(self.grand_total),
+                "Need_CitImage": "1"
+            }
+
+            # Prepare items with consistent formatting
+            items = []
+            for row in self.items:
+                items.append({
+                    "Length": f"{float(self.length):.2f}",
+                    "Breadth": f"{float(self.breadth):.2f}",
+                    "Height": f"{float(self.height):.2f}",
+                    "ProductCode": "AUTO",
+                    "ProductDescription": row.item_name,
+                    "SplitPcs": f"{float(row.qty):.4f}",
+                    "IsPackaging": "0"
+                })
+
+            data = {
+                "ResponseHeader": "yes",
+                "Header": [header],
+                "ItemsDetails": items
+            }
+
+            url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
+            headers = {"Content-Type": "application/json"}
+
+            print("Sending data:", json.dumps(data, indent=2))  # Print the actual payload
+            response = requests.post(url, headers=headers, json=data)
+            print(f"Response status: {response.status_code}")
+            print(f"Response content: {response.text}")
+
+            # Improved response handling
+            # try:
+            #     resp_json = response.json()
+            #     if resp_json.get('code') == 1 and resp_json.get('status') == 200:
+            #         awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
+            #         cit_data = resp_json.get('data', {}).get('Need_CitImage') or resp_json.get('data', {}).get('Need_CitImage')
+            #         print(f"AWB cit_data:==================================== {cit_data}")
+            #         frappe.msgprint(f"AWB Number generated: {awb_number}")
+            #         # Store the AWB number in your document if needed
+            #         self.awb_number = awb_number
+            #         self.cit_image = cit_data
+            #         self.db_update()
+            #     else:
+            #         frappe.msgprint(f"API returned error: {response.text}")
+            # except Exception as json_err:
+            #     frappe.msgprint(f"Could not parse API response: {response.text}")
+            try:
+                resp_json = response.json()
+                if resp_json.get('code') == 1 and resp_json.get('status') == 200:
+                    awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
+                    print(f"AWB Number generated: {awb_number}")
+                    # Look for cit_data in different possible locations in the response
+                    cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
+                    frappe.msgprint(f"AWB Number generated: {awb_number}")
+                    # Store the AWB number in your document if needed
+                    self.awb_number = awb_number
+                    self.cit_image = cit_data
+                    self.db_update()
+                else:
+                    frappe.msgprint(f"API returned error: {response.text}")
+            except Exception as json_err:
+                frappe.msgprint(f"Could not parse API response: {response.text}")
+        except Exception as e:
+            # Show the actual error for debugging
+            frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
+            frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
+
+    def cod_calculation(self):
+        if not self.is_cod:
+            return
+
+        if not self.shipping_address_name:
+            frappe.throw(("Shipping address is not set."))
+
+        # Get the pincode from the Address doctype
+        pincode = frappe.db.get_value("Address", self.shipping_address_name, "pincode")
+
+        if not pincode:
+            frappe.throw(("Pincode not found in the shipping address."))
+
+        # Check if Pincode exists in Pincode doctype
+        pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
+
+
+        if not pincode_doc:
+            frappe.throw(("Pincode {0} not found in Pincode master.").format(pincode))
+
+        # Ensure weight is provided
+        if not self.weight:
+            frappe.throw(("Weight is not set in Sales Order."))
+
+        # Calculate cost of delivery
+        rate = pincode_doc.rate
+        cod_charge = pincode_doc.cod
+        weight = self.weight
+
+        cost_of_delivery = (rate * weight) + cod_charge
+
+        # Set the calculated cost
+        self.cost_of_delivery = cost_of_delivery
+        self.db_update()
+
+        # frappe.db.save()
+        # frappe.db.commit()
+    
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -96,3 +263,68 @@ def trigger_fulfillment(order_id):
             frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+
+@frappe.whitelist()
+def update_item_details(self):
+    print('------------------- DEBUG START -------------------')
+    if isinstance(self, str):
+        self = json.loads(self)    
+    total_weight = 0
+    height = length = breadth = None
+    
+    for item in self.get("items", []):
+        
+        # Debug: Check if item_code exists
+        if not item.get("item_code"):
+            continue
+        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")
+        if not item_group:
+            continue
+        
+        try:    
+            group_doc = frappe.get_doc("Item Group", item_group)
+
+            if group_doc.get("weight"):
+               
+                try:
+                    weight_value = float(group_doc.weight)
+                    total_weight += weight_value
+                    
+                except ValueError:
+                   
+                    frappe.log_error(
+                        f"Invalid weight '{group_doc.weight}' in Item Group: {group_doc.name}",
+                        "Weight Parsing Error"
+                    )
+            else:
+                print(f"No weight field found in item group {group_doc.name}")          
+            # Get dimensions from child table
+            dimension_count = len(group_doc.get("dimensions", []))
+           
+            
+            for dim in group_doc.get("dimensions", []):
+                param = dim.parameter.strip().lower()
+                value = dim.value
+                print(f"Dimension: {param} = {value}")
+                
+                if "height" in param and not height:
+                    height = value
+                   
+                elif "length" in param and not length:
+                    length = value
+                    
+                elif "breadth" in param and not breadth:
+                    breadth = value
+                    
+        except Exception as e:
+            print(f"Error processing item group {item_group}: {str(e)}")
+    
+    # Return values to update in JavaScript
+    result = {
+        'weight': total_weight,
+        'height': height,
+        'length': length,
+        'breadth': breadth
+    }
+
+    return result

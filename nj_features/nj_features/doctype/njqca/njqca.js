@@ -19,7 +19,36 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
+        // if (frm.doc.docstatus === 0) {
+        //     frappe.call({
+        //         method: "nj_features.nj_features.doctype.njqca.njqca.get_item_group_mapping",
+        //         args: {
+        //             parent: frm.doc.name
+        //         },
+        //         callback: function(r) {
+        //             if (r.message && Array.isArray(r.message)) {
+        //                 r.message.forEach(row => {
+        //                     frm.add_child('njqca_result_parameters', {
+        //                         parameter: row.item_group,  // update fieldname if different
+        //                         value: row.variant_6        // update fieldname if different
+        //                     });
+        //                 });
+        //                 frm.refresh_field('njqca_result_parameters');
+        //             }
+        //             // Add brand mapping if available
+        //             if (frm.doc.brand) {
+        //                 frm.add_child('njqca_result_parameters', {
+        //                     parameter: "Brand",
+        //                     value: frm.doc.brand
+        //                 });
+        //                 frm.refresh_field('njqca_result_parameters');
+        //             }
+        //         }
+        //     });
+        // }
     },
+    
+    
     
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();

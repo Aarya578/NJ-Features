@@ -1,4 +1,5 @@
 import json
+import math
 import frappe
 import traceback
 from collections import defaultdict
@@ -11,13 +12,8 @@ class NJProductionPlanning(Document):
 
 @frappe.whitelist()
 def get_department_details():
-    print("triggerring from the scheduler event")
 
-    
-    # doc = parse_document(doc)
     all_dept = frappe.db.get_all("Department", ["name"])
-
-    # print("all_dept", all_dept)
 
     for dept in all_dept:
         dept_doc = get_department_document(dept.get("name"))
@@ -48,7 +44,7 @@ def create_production_planning(data, department):
     new_doc = frappe.new_doc("NJ Production Planning")
 
     for item in data:
-        print("\n\n\n\nitem", item)
+        #print("\n\n\n\nitem", item)
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
         child.model = item.get("model", "").upper() if item.get("model", "") else ""
@@ -87,7 +83,7 @@ def process_inventory_rows(dept_doc):
     merged_data = {}
     for row in dept_doc.get("inventory_details_child"):
         process_inwarded_inventory_merged(row, merged_data)
-        process_forwarded_inventory_merged(row, merged_data)
+        process_forwarded_inventory_merged(row, merged_data, dept_doc)
     return merged_data
 
 def process_inwarded_inventory_merged(row, merged_data):
@@ -100,12 +96,20 @@ def process_inwarded_inventory_merged(row, merged_data):
             counts = get_inwarded_counts_merged(warehouse)
             update_merged_counts(merged_data, counts, warehouse, "inwarded_count")
 
-def process_forwarded_inventory_merged(row, merged_data):
-    if row.get("forwarded_inventory"):
-        warehouses = get_warehouses(row.get("forwarded_inventory"))
-        for warehouse in warehouses:
-            counts = get_forwarded_counts_merged(warehouse)
-            update_merged_counts(merged_data, counts, warehouse, "forwarded_count")
+def process_forwarded_inventory_merged(row, merged_data, dept_doc):
+    query = """
+        SELECT name FROM `tabWarehouse`
+        WHERE department IN (
+                SELECT name FROM `tabDepartment`
+                WHERE department_sequence > %s
+            )
+    """
+    warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
+    all_warehouse = [row.get("name") for row in warehouses]
+
+    for warehouse in all_warehouse:
+        counts = get_forwarded_counts_merged(warehouse)
+        update_merged_counts(merged_data, counts, warehouse, "forwarded_count")
 
 def get_warehouses(department):
     return frappe.db.get_all(
@@ -125,6 +129,7 @@ def get_inwarded_counts_merged(warehouse):
     """, (warehouse,), as_dict=True)
 
 def get_forwarded_counts_merged(warehouse):
+    
     return frappe.db.sql("""
         SELECT sn.item_code, COUNT(sn.name) AS count, sn.model
         FROM `tabSerial No` sn
@@ -135,6 +140,7 @@ def get_forwarded_counts_merged(warehouse):
     """, (warehouse,), as_dict=True)
 
 def update_merged_counts(merged_data, counts, warehouse, count_type):
+
     for item in counts:
         model = item.get("model")
         if not model:
@@ -294,6 +300,9 @@ def calculate_doi(items):
             item["DOI"] = float('inf')
         else:
             item["DOI"] = forwarded_qty / sales_rate
+
+    items = sorted(items, key=lambda x: x['DOI'])
+
     return items
 
 
@@ -303,9 +312,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
     weights = {i: (days - i) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
-
-    print("weights", weights)
-    print("total_weight", total_weight)
 
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
@@ -327,6 +333,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND i.is_stock_item = 1  -- Only take stock items
+                    AND i.shopify_product_id IS NOT NULL
                 GROUP BY
                     soi.item_code, i.item_name, i.is_stock_item, sale_date
 
@@ -353,6 +360,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
                     AND i.is_stock_item = 1
+                    AND i.shopify_product_id IS NOT NULL
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -360,8 +368,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
     """, as_dict=True)
-
-    print("sales_data ----------- ", sales_data)
 
     sales_map = {}
     for sale in sales_data:
@@ -378,31 +384,18 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
         for item_code in model_data['item_codes']:
 
             if item_code not in sales_map:
-                updated_item_code_list.append({
-                    'model': model_name,
-                    'item_code': item_code,
-                    'inwarded_qty': inward_qty,
-                    'forwarded_qty': model_data['item_codes'][item_code],
-                    'total_sales_qty': 0,
-                    'sales_rate': 0
-                })
                 continue
             
-            total_sales_qty = sum(sales_map[item_code].values())  # Sum of all sales
+            total_sales_qty = sum(sales_map[item_code].values())
 
-            print("toal_sales_qty", total_sales_qty)
-
-            # Compute weighted sales if data exists
             total_weighted_sales = sum(
                         sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
-                        for day_offset in range(days + 1)  # Loop from 0 to days (inclusive)
+                        for day_offset in range(days + 1)
                     ) if item_code in sales_map else 0
 
             sales_rate = total_weighted_sales / total_weight if total_weight else 0
 
-            print("sales_rate ------------- ", sales_rate)
-
-            forwarded_qty = model_data['item_codes'][item_code]  # Get forwarded qty for this item
+            forwarded_qty = model_data['item_codes'][item_code] 
 
             updated_item_code_list.append({
                 'model': model_name,
@@ -413,12 +406,11 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 'sales_rate': sales_rate
             })
 
-    # Extract only relevant item_codes from updated_item_code_list
     item_codes = [item['item_code'] for item in updated_item_code_list]
 
     if item_codes:
         try:
-            # Construct query with placeholders
+
             placeholders = ', '.join(['%s'] * len(item_codes))
             query = f"""
                 SELECT 
@@ -434,14 +426,12 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 WHERE iva.parent IN ({placeholders})
             """
 
-            # Fetch data from Frappe database
             attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
 
-            # Create an attribute mapping dictionary
             attributes_map = {}
             for row in attribute_data:
                 item_code = row['item_code']
-                attribute = row['item_attribute'].replace(' ', '_')  # Normalize key format
+                attribute = row['item_attribute'].replace(' ', '_') 
                 attribute_value = row['attribute_value']
 
                 if item_code not in attributes_map:
@@ -454,7 +444,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
                 attributes_map[item_code][attribute] = attribute_value
 
-            # Update the existing updated_item_code_list with attribute details
             for item in updated_item_code_list:
                 item_code = item['item_code']
                 if item_code in attributes_map:
@@ -463,7 +452,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
         except Exception as e:
             print("Error fetching attributes:", str(e))
     
-    updated_item_code_list = sorted(updated_item_code_list, key=lambda x: x['sales_rate'], reverse=True)
+    print("updated_item_code_list ------------------ ", updated_item_code_list)
 
     return updated_item_code_list
 
@@ -569,7 +558,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
             item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
             updated_item_code_list.append(item)
 
-            # print("sales_rate ----------- 242", item['sales_rate'])
+            # #print("sales_rate ----------- 242", item['sales_rate'])
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
@@ -646,9 +635,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
 
-    """, explain=1, debug=1, as_dict=True)
-
-    # print("sales_data ------------------- ", sales_data)    
+    """, explain=1, debug=1, as_dict=True) 
 
     sales_map = {}
     for sale in sales_data:
@@ -660,7 +647,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
 
         if item_code not in item_codes:
-            # Generate placeholders dynamically
 
             attribute_data = frappe.db.sql("""
                 SELECT 
@@ -718,77 +704,71 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
-    
-    # print(updated_item_code_list)
 
     return updated_item_code_list
 
 def calculate_to_make(doc):
-    group_allocations = {}  
-    group_materials = {}    
 
+    configs = []
     for item in doc.get("nj_production_planning_child", []):
-
-        print("\n\n\n item =================== ", item.as_dict())
-        group = item.get("model")
-        if group:
-            group_materials[group] = group_materials.get(group, 0) + item.get("forward_inventory", 0)
-
-    for item in doc.get("nj_production_planning_child", []):
-        try:
-            print("\n\n")
-            if item.get("sales_rate", 0) == 0:
-                item.to_make = 0
-                continue
-
-            group = item.get("model")
-            if not group:
-                item.to_make = 0
-                continue
-
-            material_total = group_materials.get(group, 0) 
-            priority = item.get("sales_rate", 0)
-            prior_allocations = group_allocations.get(group, 0)
-            remaining_material = material_total - prior_allocations
-
-            print("material_total", material_total)
-            print("priority", priority)
-            print("prior_allocations", prior_allocations)
-            print("remaining_material", remaining_material)
-
-            if material_total <= 0 or priority <= 0:
-                item.to_make = 0
-                continue
-
-            group_priority = sum(
-                child.get("sales_rate", 0)
-                for child in doc.get("nj_production_planning_child", [])
-                if child.get("model") == group
-            )
-
-            if group_priority == 0:
-                item.to_make = 0
-                continue
-
-            print("group_priority", group_priority)
-
-
-            if prior_allocations == 0:
-                to_make = min(1, remaining_material)
-            else:
-                proportional = (priority / group_priority) * material_total
-                proportional_rounded = round(proportional)
-                to_make = min(2, priority, proportional_rounded, remaining_material)
-
-            item.to_make = max(0, to_make)
-            group_allocations[group] = prior_allocations + item.to_make
-
-            print("to_make", to_make)
-            print("group_allocations", group_allocations)
-
-        except Exception as e:
+        sales_rate = item.get("sales_rate", 0)
+        if sales_rate <= 0:
             item.to_make = 0
-            frappe.log_error(f"Error: {str(e)}")
+            continue
+
+        inward = item.get("inward_inventory", 0)
+        forward = item.get("forward_inventory", 0)
+
+        doi = forward / sales_rate if sales_rate else float('inf')
+
+        config = {
+            'item': item,
+            'inward': inward,
+            'forward': forward,
+            'sales_rate': sales_rate,
+            'doi': doi
+        }
+        configs.append(config)
+
+    for cfg in configs:
+        cfg['item'].to_make = 0
+
+    configs.sort(key=lambda x: (x['doi'], -x['sales_rate'], x['forward']))
+
+    while True:
+        any_changes = False
+
+        active_configs = [cfg for cfg in configs if cfg['inward'] > 0]
+        if len(active_configs) < 2:
+            break
+
+        for i in range(len(active_configs) - 1):
+            current = active_configs[i]
+            next_config = active_configs[i + 1]
+
+            if current['inward'] <= 0:
+                continue
+
+            target_doi = next_config['doi']
+            doi_diff = target_doi - current['doi']
+            if doi_diff < 1:
+                continue
+
+            needed_units = (target_doi - current['doi']) * current['sales_rate']
+            needed_units = math.ceil(needed_units) 
+            needed_units = max(needed_units, 1)
+            to_make = min(needed_units, current['inward'])
+
+            current['forward'] += to_make
+            current['inward'] -= to_make
+            current['doi'] = current['forward'] / current['sales_rate']
+            current['item'].to_make += to_make
+            any_changes = True
+
+        if not any_changes:
+            break
+
+        configs.sort(key=lambda x: (x['doi'], -x['sales_rate'], x['forward']))
 
     doc.save()
     return doc.get("nj_production_planning_child", [])
@@ -905,7 +885,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                         
                         added_serial_no.update(suggest_serial_no)
 
-                        # print("suggested_serial_no ---------------------- ", suggest_serial_no)
+                        # #print("suggested_serial_no ---------------------- ", suggest_serial_no)
                         
                         if suggest_serial_no:
                             suggested_serial_no_data.append({
@@ -917,13 +897,13 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
     else:
 
         for child in doc.get("nj_production_planning_child", []):
-            # print("child -------------- ", child.as_dict())
+            # #print("child -------------- ", child.as_dict())
             if child.get("to_make", 0) > 0:
                 matched_serials = []
                 remaining_needed = int(child.get("to_make"))
 
                 for item in get_serial_no_config:
-                    # print("item ----------------- ",item)
+                    # #print("item ----------------- ",item)
                     if (
                         (child.get("model") or "").strip().lower() == (item.get("model") or "").strip().lower() and
                         (child.get("processor") or "").strip().lower() == (item.get("processor_type") or "").strip().lower() and
@@ -931,9 +911,9 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                         (child.get("ssd") or "").strip().lower() == (item.get("storage_capacity") or "").strip().lower()
                         ):
 
-                        print("warehouse ------------------ ", frw_inventory)
-                        print("item_code ------------------ ", item.get("item_code"))
-                        print("remaining_needed ------------------ ", remaining_needed)
+                        #print("warehouse ------------------ ", frw_inventory)
+                        #print("item_code ------------------ ", item.get("item_code"))
+                        #print("remaining_needed ------------------ ", remaining_needed)
 
                         exact_serials = frappe.db.sql("""
                             SELECT name FROM `tabSerial No`
@@ -984,7 +964,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
     allocated_lap = allocate_laptop_parts(doc)
-    # print("\n\n\nallocated_lap", allocated_lap)
+    # #print("\n\n\nallocated_lap", allocated_lap)
     doc.update({"laptop_allocation": allocated_lap})
     doc.save()
     frappe.db.commit()
@@ -1010,7 +990,7 @@ def allocate_laptop_parts(doc):
         AND serial_no IN %(serial_list)s
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
 
-    # print("mr_items ------------------ ", mr_items)
+    # #print("mr_items ------------------ ", mr_items)
 
     if not mr_items:
         frappe.msgprint("No Material Requests found for the suggested serial numbers.")
@@ -1220,13 +1200,13 @@ def update_to_make_for_serial(doc):
                 frappe.db.commit()
 
 def allocate_serial_no_for_battery(final_result):
-    # print("final_result ----------------- 1144 ", final_result)
+    # #print("final_result ----------------- 1144 ", final_result)
 
     for row in final_result:
-        # print(f"\nProcessing row ------------ {row}")
+        # #print(f"\nProcessing row ------------ {row}")
         
         if not row:
-            # print("Skipping None row")
+            # #print("Skipping None row")
             continue
 
         if row.get("item_group", "") == None:
@@ -1246,7 +1226,7 @@ def allocate_serial_no_for_battery(final_result):
             )
 
             if not nj_warehouses:
-                # print("No NJ warehouses found.")
+                # #print("No NJ warehouses found.")
                 continue
 
             serials = frappe.get_all(
@@ -1258,7 +1238,7 @@ def allocate_serial_no_for_battery(final_result):
                 fields=["name", "full_charge_capacity", "battery_average_discharge_rate"]
             )
 
-            # print(f"Serials found for item {item_code}: {serials}")
+            # #print(f"Serials found for item {item_code}: {serials}")
 
             for serial in serials:
                 try:
@@ -1275,7 +1255,7 @@ def allocate_serial_no_for_battery(final_result):
                 except Exception as e:
                     print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
 
-            # print(f"Valid serials for allocation to {item_code}: {valid_serials}")
+            # #print(f"Valid serials for allocation to {item_code}: {valid_serials}")
 
             if valid_serials:
                 try:
@@ -1289,6 +1269,6 @@ def allocate_serial_no_for_battery(final_result):
                         "allocated_serial_no",
                         ", ".join(valid_serials)
                     )
-                    # print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
+                    # #print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
                 except Exception as e:
                     print(f"Failed to set allocated_serial_no for {item_code}: {e}")

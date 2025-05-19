@@ -73,9 +73,8 @@ class CustomDeliveryNote(DeliveryNote):
             self._process_serial_numbers()
             
         except Exception as e:
-            err = e
             frappe.db.rollback()
-            frappe.throw(err)
+            frappe.throw(str(e))
 #     def on_submit(self):
 #         try:
 #             super().on_submit()
@@ -195,16 +194,18 @@ class CustomDeliveryNote(DeliveryNote):
                     frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
 
                 sales_order_data = frappe.db.sql("""
-                    SELECT so.customer_name, so.name, 
+                    SELECT 
+                        so.customer_name, so.name, 
                         COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                        so.transaction_date, so.delivery_date, 
-                        si.sales_channel, addr.email_id, addr.phone,
+                        so.transaction_date, so.delivery_date, si.sales_channel, 
+                        COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
+                        COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
                         IFNULL(so.shipping_address, so.address_display) AS so_address
                     FROM `tabSales Order` so
                     INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
                     INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-                    INNER JOIN `tabDynamic Link` link ON link.link_name = so.customer
-                    INNER JOIN tabAddress addr ON addr.name = link.parent
+                    LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
+                    LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
                     WHERE so.name = %s
                     LIMIT 1
                 """, (item.against_sales_order,), as_dict=True)  # Fixed `item["against_sales_order"]`
@@ -250,7 +251,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.save(ignore_permissions=True)
 
         except Exception as e:
-            frappe.throw("Error in _process_customer_details",str(e))
+            frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
     def _process_serial_numbers(self):
 
@@ -315,10 +316,10 @@ class CustomDeliveryNote(DeliveryNote):
                         updated = True
         
         serial_no_doc.address = ''
-        serial_no_doc.end_date = 0
+        serial_no_doc.end_date = ''
         serial_no_doc.email_id = ''
         serial_no_doc.order_id = ''
-        serial_no_doc.mobile_no = 0
+        serial_no_doc.mobile_no = ''
         serial_no_doc.last_name = ''
         serial_no_doc.first_name = ''
         serial_no_doc.order_date = ''

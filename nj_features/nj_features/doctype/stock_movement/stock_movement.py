@@ -70,7 +70,6 @@ class StockMovement(Document):
                             
                             # Get Purchase Receipt from Serial No
                             purchase_receipt = serial_doc.purchase_document_no
-                            # print("purchase_receipt========70=============", purchase_receipt)
                             
                             if purchase_receipt:
                                 # Query the Purchase Receipt Item child table to get the item code
@@ -79,12 +78,10 @@ class StockMovement(Document):
                                     {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no}%"]},
                                     ["item_code"],
                                 )
-                                # print("purchase_item_code=========================", purchase_item_code)
                                 
                                 # Check if the item codes DON'T match
                                 if serial_item_code != purchase_item_code:
 
-                                    print('inside if condition')
                                     self.make_stock_entry_using_nj_lib()
 
     def make_stock_entry_using_nj_lib(self):
@@ -100,10 +97,8 @@ class StockMovement(Document):
         }
         
         repack_items_data = self.get_repack_items()
-        # print("repack_items_dataaaa=============100========", repack_items_data)
         if repack_items_data and (len(repack_items_data) > 1):
             stock_data["repack_items"] = repack_items_data
-            # print("stock_data=====================", stock_data)
             stock_entry_using_nj_lib(stock_data)
 
     def get_repack_items(self):
@@ -111,7 +106,6 @@ class StockMovement(Document):
         Prepare repack items data for stock entry
         """
         return_unpack_items_data = []
-        # print("self=====================", self.as_dict())
 
         main_item = self.items[0]
         # Add the main repack item (item being taken out)
@@ -126,11 +120,9 @@ class StockMovement(Document):
         # Fetch Serial No document
         serial_no_value = main_item.serial_no.strip()
         serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
-        # print("serial_no_doc=====================", serial_no_doc)
 
         # Fetch Purchase Receipt linked to Serial No
         purchase_receipt = serial_no_doc.purchase_document_no
-        # print("purchase_receipt=====================", purchase_receipt)
 
         if not purchase_receipt:
             frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
@@ -143,8 +135,6 @@ class StockMovement(Document):
             {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no_value}%"]},
             "item_code",
         )
-        # print("purchase_item_code=========================", purchase_item_code)
-
         if not purchase_item_code:
             frappe.throw(f"Could not find the purchase item for Serial No: {serial_no_value}")
 
@@ -216,6 +206,7 @@ def get_child_warehouses(parent_warehouse):
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
+    
     try:
         if isinstance(doc, str):
             doc = json.loads(doc)
@@ -265,66 +256,80 @@ def validate_serial_no_and_department(row, error_messages):
         if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
             validate_grade_restriction(serial_doc, department_doc, error_messages)
 
-        s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+        s_inspection_type = frappe.get_doc('Department', s_department)
 
-        if (s_department and 
-        s_department != department and 
-        s_inspection_type.get("inspection_type") and  s_inspection_type.get("inspection_type") is not None and 
-        s_inspection_type.get("quality_inspection_status_for_stock_movement") and s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None):
+        if (
+                s_department and 
+                s_department != department and 
+                s_inspection_type.get("inspection_types") and  
+                s_inspection_type.get("inspection_types") is not None and 
+                s_inspection_type.get("inspection_types") != [] and
+                s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
+                s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
+            ):
         
-            check_qi_validation(serial_no, error_messages, s_warehouse, s_department)
+            check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
         else:
             return True
 
     return True
 
-def check_qi_validation(serial_no, error_messages, s_warehouse, s_department):
+def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_department):
 
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
 
-    s_inspection_type = frappe.db.get_value('Department', {'name': s_department}, ['inspection_type', 'quality_inspection_status_for_stock_movement'], as_dict=True)
+    s_inspection_type = frappe.get_doc('Department', s_department)
+
+    inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
 
     query = """
-        SELECT se.creation
+        SELECT se.creation, se.name
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON sed.parent = se.name
         WHERE se.stock_entry_type = "Material Transfer"
         AND sed.serial_no = %s
+        AND se.docstatus = 1
         AND sed.target_department = %s
         ORDER BY se.creation DESC
         LIMIT 1
     """
 
-    result = frappe.db.sql(query, (serial_no, s_department), as_dict=True)
+    result = frappe.db.sql(query, (serial_no, s_department),explain=1, debug=1, as_dict=True)
 
     if result:
         creation_time = result[0]["creation"]
         formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        print("formatted_time", formatted_time)
+        print("current_time", current_time)
+
         qi_query = """
             SELECT name
             FROM `tabNJ Quality Inspection`
-            WHERE inspection_type = %s AND docstatus = 1
-            AND creation BETWEEN %s AND %s
+            WHERE inspection_type IN %s AND docstatus = 1
+            AND modified BETWEEN %s AND %s
+            AND barcode = %s
             order by creation desc
             LIMIT 1
         """
 
-        qi_result = frappe.db.sql(qi_query, (s_inspection_type.get("inspection_type"), formatted_time, current_time), as_dict=True)
+        qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, current_time, serial_no),explain=1, debug=1, as_dict=True)
+
+        t_inspection_type = frappe.get_doc('Department', t_department)
 
         if qi_result:
             qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
             if qi_doc:
-                quality_inspection_status_for_stock_movement = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                quality_inspection_status_for_stock_movement = t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
 
-                if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
+                if t_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
                     expected_status = ", ".join(quality_inspection_status_for_stock_movement)
                     actual_status = qi_doc.get("status")
                     
                     error_messages.append(
-                        f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b>."
+                        f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
                     )
 
         else:

@@ -31,7 +31,7 @@ def create_user_and_warehouse(self):
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
             
-            if self.get("work_warehouse") is not None or self.get("work_warehouse") != '':
+            if self.get("work_warehouse") is None or self.get("work_warehouse") == '':
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
@@ -47,10 +47,7 @@ def create_user_and_warehouse(self):
         return return_data
     
     except Exception as e:
-        err = e
-        if frappe.user.has_role("System Manager"):
-            err = traceback.format_exc()
-        frappe.msgprint("Error while creating user and warehouse: ", err)
+        frappe.msgprint("Error while creating user and warehouse: ", e)
 
 def update_department_in_work_warehouse(self):
 

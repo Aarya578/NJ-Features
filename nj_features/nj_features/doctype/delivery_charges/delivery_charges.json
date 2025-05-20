@@ -1,0 +1,82 @@
+{
+ "actions": [],
+ "autoname": "field:awb_number",
+ "creation": "2025-05-17 12:04:26.388440",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "awb_number",
+  "rto_charges",
+  "serial_no",
+  "sales_order",
+  "column_break_30oxe",
+  "cit_image",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "awb_number",
+   "fieldtype": "Data",
+   "label": "AWB Number",
+   "unique": 1
+  },
+  {
+   "fieldname": "rto_charges",
+   "fieldtype": "Float",
+   "label": "RTO Charges"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Data",
+   "label": "Serial No"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Data",
+   "label": "Sales Order"
+  },
+  {
+   "fieldname": "column_break_30oxe",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cit_image",
+   "fieldtype": "Long Text",
+   "label": "CIT image"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Delivery Charges",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-05-17 13:04:36.770492",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Delivery Charges",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

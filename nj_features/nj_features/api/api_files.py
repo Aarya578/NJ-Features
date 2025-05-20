@@ -212,17 +212,12 @@ def battery_data():
         battery_serial_no = ""
 
 @frappe.whitelist()
-def get_battery_status(doc, method=None):
+def get_battery_status(serial_no,bios_serialno,manufacturer_model):
     
     try:
-        if isinstance(doc, str):
-            doc = frappe.parse_json(doc)
-        if doc.item_group == 'BATTERY' or doc.serial_no == '':
-            return 
-        parent_serial_no = doc.serial_no
-        njqca = doc.name
-        bios_serial_no=doc.bios_serialno
-        model=doc.manufacturer_model
+        parent_serial_no = serial_no
+        bios_serial_no=bios_serialno
+        model=manufacturer_model
         item_wizard=get_item_wizard(model)
         backup_duration_mins=0
 
@@ -237,8 +232,10 @@ def get_battery_status(doc, method=None):
                 if wizard_criteria[0].backup_duration_mins:
                     try:
                       backup_duration_mins=int(wizard_criteria[0].backup_duration_mins)
-                    except:
-                      backup_duration_mins=120
+                    except Exception as e:
+                      pass
+        if backup_duration_mins==0:
+            backup_duration_mins=120
                
         
         serial_no_battery_data_query="""
@@ -249,25 +246,25 @@ def get_battery_status(doc, method=None):
         fbdt_status_query="""
                     SELECT battery_status FROM (SELECT
 					CASE
-					WHEN sudden_drop LIKE '%%no%%' AND (
-					COALESCE(backup_duration_cycle_3, backup_duration_cycle_2, backup_duration_cycle_1) >= %(backup_duration_mins)s )  THEN 'PASS'
-                    ELSE ''
+					WHEN sudden_drop LIKE '%%YES%%' OR (
+					COALESCE(backup_duration_cycle_3, backup_duration_cycle_2, backup_duration_cycle_1) < %(backup_duration_mins)s )  THEN ''
+                    ELSE 'PASS'
                     END AS battery_status
                     FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
             """ 
 
-        get_bty_serial_no= latest_repacked_battery_serialno(parent_serial_no)
+        get_bty_serial_no= latest_repacked_battery_serialno(bios_serial_no)
 
         if  get_bty_serial_no :
             
             bty_parent_njqca =  ""
-            get_bty_njqca_query = """ SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and bios_serialno=%(bios_serialno)s
-                                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1"
+            get_bty_njqca_query = """ SELECT name FROM `tabNJQCA` where serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and bios_serialno=%(bios_serialno)s and 
+                                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") order by modified DESC limit 1
                             """
 
-            get_bty_njqca = frappe.db.sql(get_bty_njqca_query, {'serial_no':get_bty_serial_no,'bios_serialno':bios_serial_no})
+            get_bty_njqca = frappe.db.sql(get_bty_njqca_query, {'serial_no':get_bty_serial_no,'bios_serialno':bios_serial_no},as_dict=True)
             if get_bty_njqca:
-                bty_parent_njqca = get_bty_njqca[0][1]
+                bty_parent_njqca = get_bty_njqca[0].name
         
 
             if bty_parent_njqca is not None and bty_parent_njqca and backup_duration_mins:
@@ -275,8 +272,6 @@ def get_battery_status(doc, method=None):
                     query_data=frappe.db.sql(fbdt_status_query,{'backup_duration_mins':int(backup_duration_mins),'battery_data_parent_name':bty_parent_njqca}, as_dict=True)
                     if query_data:
                         if query_data[0].battery_status=='PASS':
-                            frappe.db.sql("""update `tabNJQCA Result Parameters` set score=0 
-                            where parent=%(parent_name)s and item_group="Battery" ;""",{'parent_name':njqca})
 
                             return "PASS"
                         else:
@@ -294,13 +289,14 @@ def get_battery_status(doc, method=None):
                         return "PASS"
                     else:
                         return "FAIL"
+            else:
+                return "Report Not found in NJQCA"
         else:
             return "Report Not found"
 
 
     except Exception as e:
-        frappe.msgprint(f"An error occurred at get_battery_status: {traceback.format_exc()}")
-        return  "Report Not found"    
+        return (f"An error occurred at get_battery_status: {traceback.format_exc()}")
     
 @frappe.whitelist()
 def get_backup_duration(doc, method=None):

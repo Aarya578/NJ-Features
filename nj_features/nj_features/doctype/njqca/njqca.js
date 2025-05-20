@@ -19,7 +19,36 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
+        // if (frm.doc.docstatus === 0) {
+        //     frappe.call({
+        //         method: "nj_features.nj_features.doctype.njqca.njqca.get_item_group_mapping",
+        //         args: {
+        //             parent: frm.doc.name
+        //         },
+        //         callback: function(r) {
+        //             if (r.message && Array.isArray(r.message)) {
+        //                 r.message.forEach(row => {
+        //                     frm.add_child('njqca_result_parameters', {
+        //                         parameter: row.item_group,  // update fieldname if different
+        //                         value: row.variant_6        // update fieldname if different
+        //                     });
+        //                 });
+        //                 frm.refresh_field('njqca_result_parameters');
+        //             }
+        //             // Add brand mapping if available
+        //             if (frm.doc.brand) {
+        //                 frm.add_child('njqca_result_parameters', {
+        //                     parameter: "Brand",
+        //                     value: frm.doc.brand
+        //                 });
+        //                 frm.refresh_field('njqca_result_parameters');
+        //             }
+        //         }
+        //     });
+        // }
     },
+    
+    
     
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
@@ -584,9 +613,11 @@ frappe.ui.form.on('NJQCA', {
     },
     before_save: function(frm) {
 
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no !=""){
+
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { 'doc': frm.doc },
+            args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"manufacturer_model": frm.doc.manufacturer_model },
             callback: function(r) {
                 if(r.message){
                     let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
@@ -609,7 +640,8 @@ frappe.ui.form.on('NJQCA', {
                 }
                 frm.refresh_field("njqca_result_parameters");
             }
-        });
+        })
+        }
     },
 
     item_code: function(frm) {

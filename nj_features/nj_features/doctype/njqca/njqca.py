@@ -2463,9 +2463,50 @@ def get_bdt_status(doc,method=None):
         frappe.msgprint("An error occurred at get_bdt_status: " +str(e))
         return ""
 
-# @frappe.whitelist()
+@frappe.whitelist()
+def check_ram_speed(njqca_name,item_template):
+    try:
+        get_ram_query="""
+            SELECT 
+            CAST(REGEXP_SUBSTR(`value`, '[0-9]+') AS UNSIGNED) AS ram_speed
+            FROM `tabNJQCA Result Parameters`
+            WHERE item_group = "LAPTOP RAM"
+            AND parameter LIKE 'Ram_Speed%%' 
+            AND parent = %s;
+        """
 
-# def check_ram_speed(njqca_name):
-#     try:
-#         get_ram_query="""
-#         select `value` from """
+        iw_speed_query="""
+            select CAST(REGEXP_SUBSTR(attribute_value, '[0-9]+') AS UNSIGNED) AS ram_speed
+            from `tabItems Attribute` where item_group="LAPTOP RAM" and item_attribute="RAM Speed" and parent=%s; 
+            """
+
+        iw=get_latest_item_wizard(item_template=item_template)
+
+        if iw is None:
+            return ""
+        
+        iw_speeds=frappe.db.sql(iw_speed_query, (iw), as_dict=1)
+
+        required_speeds=[]
+
+        if iw_speeds is not None and iw_speeds:
+            for iw_speed in iw_speeds:
+                if iw_speed.get("ram_speed"):
+                    required_speeds.append(iw_speed.get("ram_speed"))
+        
+        if not required_speeds:
+            return "PASS"
+
+        njqca_ram_speeds=frappe.db.sql(get_ram_query, (njqca_name), as_dict=1)
+
+        if njqca_ram_speeds is not None and njqca_ram_speeds:
+            for njqca_ram_speed in njqca_ram_speeds:
+                if njqca_ram_speed.get("ram_speed"):
+                    if not (njqca_ram_speed.get("ram_speed") in required_speeds):
+                        return "FAIL"
+            return "PASS"
+                    
+        else:
+            return ""
+    except Exception as e:
+        return str(e)

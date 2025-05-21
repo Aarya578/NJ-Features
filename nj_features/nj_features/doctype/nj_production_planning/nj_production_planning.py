@@ -333,7 +333,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND so.docstatus = 1
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND i.is_stock_item = 1  -- Only take stock items
-                    AND i.shopify_product_id IS NOT NULL
                 GROUP BY
                     soi.item_code, i.item_name, i.is_stock_item, sale_date
 
@@ -360,7 +359,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                     AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                     AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
                     AND i.is_stock_item = 1
-                    AND i.shopify_product_id IS NOT NULL
                     -- Only take packed items from non-stock (bundle) items
                 GROUP BY
                     pi.item_code, i.item_name, i.is_stock_item, sale_date
@@ -368,6 +366,8 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
     """, as_dict=True)
+
+    print("Sales Data:", sales_data)
 
     sales_map = {}
     for sale in sales_data:
@@ -515,7 +515,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
             )
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
-    """, explain=1, debug=1, as_dict=True)
+    """, as_dict=True)
 
     updated_sales_data = []
 
@@ -523,7 +523,7 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
 
         get_model = frappe.db.sql(f"""
             SELECT item_model FROM `tabItem` WHERE name = '{item['item_code']}'
-        """, explain=1, debug=1, as_dict=True)
+        """, as_dict=True)
 
         if get_model:
             updated_sales_data.append({
@@ -635,7 +635,7 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
             SELECT * FROM SalesData
             ORDER BY sale_date DESC
 
-    """, explain=1, debug=1, as_dict=True) 
+    """, as_dict=True) 
 
     sales_map = {}
     for sale in sales_data:
@@ -739,6 +739,7 @@ def calculate_to_make(doc):
         any_changes = False
 
         active_configs = [cfg for cfg in configs if cfg['inward'] > 0]
+        print("active_config ------------------------- ", active_configs)
         if len(active_configs) < 2:
             break
 
@@ -876,7 +877,7 @@ def get_serial_no_data(nj_pro_child, get_serial_no_config, frw_inventory, doc):
                                 SELECT name FROM `tabSerial No`
                                 WHERE warehouse IN %s AND model = %s
                                 LIMIT %s
-                            """, (tuple(frw_inventory), item.get("model"), child.get("to_make")), explain=1, debug=1, as_dict=True)
+                            """, (tuple(frw_inventory), item.get("model"), child.get("to_make")), as_dict=True)
                         
                         
                         suggest_serial_no = [
@@ -1172,7 +1173,7 @@ def allocated_other_part(item):
                                 """, {
                                     "warehouses": tuple(warehouses),
                                     "item_code": items["item_code"]
-                                },explain=1, debug=1, as_dict=True)
+                                }, as_dict=True)
 
                             for stock in stock_results:
                                 stock_data[stock["item_code"]] = flt(stock["total_qty"])

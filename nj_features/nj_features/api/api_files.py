@@ -253,7 +253,7 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
                     FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
             """ 
 
-        get_bty_serial_no= latest_repacked_battery_serialno(parent_serial_no)
+        get_bty_serial_no= latest_repacked_battery_serialno(bios_serial_no)
 
         if  get_bty_serial_no :
             

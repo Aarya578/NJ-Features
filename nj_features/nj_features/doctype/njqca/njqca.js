@@ -612,6 +612,27 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     before_save: function(frm) {
+        if (frm.doc.name && frm.doc.item_template && frm.doc.item_group=="Laptops") {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.check_ram_speed',
+                args: { 'njqca_name': frm.doc.name, 'item_template': frm.doc.item_template },
+                callback: function(r) {
+                    if (r.message) { 
+                        if(r.message == "PASS"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "IW_Speed_Match");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "Laptop RAM");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                        }else if(r.message == "FAIL"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "IW_Speed_Match");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "Laptop RAM");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                        }
+                    }
+                }
+            })
+        }
 
         if(frm.doc.item_group == "Laptops" && frm.doc.serial_no !=""){
 

@@ -13,8 +13,8 @@ class CustomSalesOrder(SalesOrder):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
         # self.update_item_details()
-        self.send_consignement_data()
-        self.cod_calculation()
+        # self.send_consignement_data()
+        # self.cod_calculation()
         # self.fetching_tracking_details()
         raw_order_id = None
         if self.order_type!="Maintenance":

@@ -11,7 +11,8 @@
   "so_quantity",
   "remaining_qty",
   "update_qty",
-  "need_to_reduce"
+  "need_to_reduce",
+  "remove_parent_qty"
  ],
  "fields": [
   {
@@ -49,10 +50,15 @@
    "fieldname": "need_to_reduce",
    "fieldtype": "Data",
    "label": "Need To Reduce"
+  },
+  {
+   "fieldname": "remove_parent_qty",
+   "fieldtype": "Data",
+   "label": "Remove Parent Qty"
   }
  ],
  "links": [],
- "modified": "2025-05-21 10:43:26.968341",
+ "modified": "2025-05-21 16:41:08.361748",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "SO Quantity Check",

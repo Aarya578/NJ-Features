@@ -205,8 +205,14 @@ scheduler_events = {
         "*/5 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.sync_shopify_quantity"
         ],
-        "*/5 * * * *": [
+        "50 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
+        ],
+        "55  * * * *": [
+            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_parent_quantity"
+        ],
+         "58  * * * *": [
+            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
         ]
 
     }

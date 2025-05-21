@@ -494,7 +494,8 @@ frappe.ui.form.on('NJQCA', {
                         primary_action_label: "Yes, Transfer", 
                         primary_action: function() {
                             let scannedSerialNo = dialog.get_value("serial_num");
-                            if (scannedSerialNo.toLowerCase() !== frm.doc.serial_no.toLowerCase()) {
+                            if (scannedSerialNo.toLowerCase() != frm.doc.serial_no.toLowerCase()) {
+                                $('.primary-action').hide();
                                 frappe.msgprint({
                                     title: 'Serial Number Mismatch',
                                     message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,

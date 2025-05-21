@@ -43,7 +43,8 @@ def get_data(filters):
     if filters.get("department"):
         conditions.append(f"AND d.name = '{filters['department']}'")
     if filters.get("serial_no"):
-        conditions.append(f"AND (sle.serial_no LIKE '{filters['serial_no']}' OR sle.serial_no LIKE '{filters['serial_no']}\n' OR sle.serial_no LIKE '\n{filters['serial_no']}') OR sle.serial_no LIKE '\n{filters['serial_no']}\n'")
+        serial_no = filters["serial_no"].replace("'", "\\'")
+        conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n' OR sle.serial_no LIKE '\n{serial_no}') OR sle.serial_no LIKE '\n{serial_no}\n'")
 
     conditions_sql = " ".join(conditions)
 

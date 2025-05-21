@@ -1561,12 +1561,15 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                             AND parent = %(parent_name)s
                             AND value >=%(sudden_drop_limit)s
                             ORDER BY idx
-                        )
-                        SELECT MAX(delta) AS max_delta, AVG(delta) AS avg_delta
-                        FROM (
+                        ),
+                         DeltaValues AS (
                             SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
                             FROM FilteredResults
-                        ) AS DeltaValues
+                        )
+                        SELECT 
+                            MAX(delta) AS max_delta, 
+                            AVG(delta) AS avg_delta
+                        FROM DeltaValues where delta>0;
                     """
             
             percentage_query="""
@@ -1593,7 +1596,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
 
             if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
                 return "YES"
-            elif(float(delta.get('max_delta'))<3*float(delta.get('avg_delta'))):
+            elif(float(delta.get('max_delta'))<=2*float(delta.get('avg_delta'))):
                 return f"NO, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
             else:
                 return f"YES, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
@@ -2149,7 +2152,7 @@ def compare_parameter(param_name, actual_value, expected_range):
         param_type = get_parameter_type(param_name)
         
         if param_type == 'time':
-            actual_seconds = convert_to_seconds(actual_value)
+            actual_seconds = convert_to_seconds(actual_value,param_name)
             min_sec, max_sec = parse_time_range(expected_range)
             
             if min_sec <= actual_seconds <= max_sec:
@@ -2181,8 +2184,10 @@ def compare_parameter(param_name, actual_value, expected_range):
         frappe.log_error(f"Error comparing parameter {param_name}: {str(e)}")
         return False, f"Comparison error: {str(e)}"
 
-def convert_to_seconds(time_str):
+def convert_to_seconds(time_str,param_name=""):
     """Convert time string to seconds."""
+    if (not time_str or str(time_str).lower() == "none") and param_name.lower() == "excel_time":
+        return -1
     if not time_str or str(time_str).lower() == "none":
         return 0
         

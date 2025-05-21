@@ -29,7 +29,7 @@ def get_api_data():
     return response_data
 
 def get_data(filters):
-    serial_no = filters.get('serial_no')
+    serial_no = filters.get('serial_no').replace("'", "\\'")
 
     query = f"""
         SELECT DISTINCT

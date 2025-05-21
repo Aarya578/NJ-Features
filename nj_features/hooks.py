@@ -201,7 +201,14 @@ scheduler_events = {
         ],
         "20 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ],
+        "*/5 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.sync_shopify_quantity"
+        ],
+        "*/5 * * * *": [
+            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
         ]
+
     }
 }
 

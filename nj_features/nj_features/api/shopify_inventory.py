@@ -38,6 +38,118 @@ def nj_temp_shopify_session(func):
 
     return wrapper
 
+
+
+
+# @frappe.whitelist()
+# @nj_temp_shopify_session
+# def sync_shopify_quantity():
+#     try:
+#         nj_inventry_settings = frappe.get_single("NJ Inventory Settings")
+
+#         shop = nj_inventry_settings.shop  # Example: https://newjaisa.myshopify.com
+#         token = nj_inventry_settings.token
+
+#         # Prepare full URL
+#         url = f"{shop}/admin/api/2024-01/products.json?limit=250"
+#         print("url:=========================", url)
+
+#         # Define headers correctly before using
+#         headers = {
+#             "X-Shopify-Access-Token": token,
+#             "Content-Type": "application/json"
+#         }
+#         print("headers:", headers)
+
+#         # Make API call
+#         response = requests.get(url, headers=headers)
+#         print("response:========================", response.json())
+
+#         if response.status_code != 200:
+#             frappe.log_error(title="Shopify API Error", message=response.text)
+#             return
+
+#         products = response.json().get("products", [])
+#         variant_map = {}
+#         for product in products:
+#             for variant in product.get("variants", []):
+#                 variant_map[str(variant["id"])] = variant.get("inventory_quantity")
+
+#         if not variant_map:
+#             frappe.log_error("No variants found from Shopify", str(response.json()))
+#             return
+
+#         sync_records = frappe.get_all("NJ Inventory Sync Main", fields=["name", "shopify_variant_id"])
+#         for record in sync_records:
+#             variant_id = str(record.shopify_variant_id)
+#             if variant_id in variant_map:
+#                 frappe.db.set_value("NJ Inventory Sync Main", record.name, "shopify_quantity", variant_map[variant_id])
+
+#         frappe.db.commit()  # Commit only once at the end
+
+#     except Exception as e:
+#         frappe.log_error(title="Shopify Sync Error", message=frappe.get_traceback())
+
+@frappe.whitelist()
+@nj_temp_shopify_session
+def sync_shopify_quantity():
+    try:
+        nj_inventry_settings = frappe.get_single("NJ Inventory Settings")
+
+        token = nj_inventry_settings.token
+        print("token:", token)
+
+        # Prepare headers once
+        headers = {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json"
+        }
+
+        # Get all records with variant IDs
+        sync_records = frappe.get_all(
+            "NJ Inventory Sync Main",
+            fields=["name", "shopify_variant_id"]
+        )
+        print("sync_records:", sync_records)    
+
+        for record in sync_records:
+            variant_id = str(record.shopify_variant_id)
+            if not variant_id or variant_id == "0":
+                continue  # Skip if ID is missing or invalid
+
+            # Build variant API URL
+            url = f"https://newjaisa.myshopify.com/admin/api/2024-01/variants/{variant_id}.json"
+            print("url:", url)
+
+            try:
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    inventory_qty = data.get("variant", {}).get("inventory_quantity")
+                    print("inventory_qty:", inventory_qty)
+
+                    if inventory_qty is not None:
+                        frappe.db.set_value(
+                            "NJ Inventory Sync Main",
+                            record.name,
+                            "shopify_quantity",
+                            inventory_qty
+                        )
+                        frappe.db.commit()
+                else:
+                    frappe.log_error(f"Failed to fetch variant {variant_id}", response.text)
+
+                time.sleep(0.5)  # Prevent hitting rate limit
+            except Exception as inner_err:
+                frappe.log_error(
+                    title=f"Error syncing variant {variant_id}",
+                    message=frappe.get_traceback()
+                )
+
+    except Exception as e:
+        frappe.log_error(title="Shopify Quantity Sync Error", message=frappe.get_traceback())
+
+
 @frappe.whitelist()
 @nj_temp_shopify_session
 def fetch_and_stage_inventory_sync():

@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "creation": "2025-05-21 10:43:26.968341",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "parent1",
+  "actual_qty",
+  "so_quantity",
+  "remaining_qty",
+  "update_qty",
+  "need_to_reduce"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "parent1",
+   "fieldtype": "Data",
+   "label": "Parent"
+  },
+  {
+   "fieldname": "actual_qty",
+   "fieldtype": "Data",
+   "label": "Actual Qty"
+  },
+  {
+   "fieldname": "so_quantity",
+   "fieldtype": "Data",
+   "label": "SO Quantity"
+  },
+  {
+   "fieldname": "remaining_qty",
+   "fieldtype": "Data",
+   "label": "Remaining Qty"
+  },
+  {
+   "fieldname": "update_qty",
+   "fieldtype": "Data",
+   "label": "Update Qty"
+  },
+  {
+   "fieldname": "need_to_reduce",
+   "fieldtype": "Data",
+   "label": "Need To Reduce"
+  }
+ ],
+ "links": [],
+ "modified": "2025-05-21 10:43:26.968341",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "SO Quantity Check",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}

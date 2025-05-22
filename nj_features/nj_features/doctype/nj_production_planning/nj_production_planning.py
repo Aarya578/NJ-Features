@@ -367,8 +367,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             ORDER BY sale_date DESC
     """, as_dict=True)
 
-    print("Sales Data:", sales_data)
-
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
@@ -451,6 +449,8 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
         except Exception as e:
             print("Error fetching attributes:", str(e))
+
+    print("\n\nupdated_item_code_list ------------------- ", updated_item_code_list)
 
     return updated_item_code_list
 
@@ -705,20 +705,24 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     return updated_item_code_list
 
-
-def safe_float(val):
-    try:
-        return float(val) if val is not None else 0
-    except:
-        return 0
-
 import math
 
-def safe_float(val):
+def safe_float(value):
     try:
-        return float(val) if val is not None else 0
-    except:
-        return 0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+def sort_by_multiple_keys(configs, keys):
+    def sort_key(cfg):
+        key_values = []
+        for key in keys:
+            reverse = key.startswith("-")
+            actual_key = key.lstrip("-")
+            value = cfg.get(actual_key, 0)
+            key_values.append(-value if reverse else value)
+        return tuple(key_values)
+    return sorted(configs, key=sort_key)
 
 def calculate_to_make(doc):
     configs = []
@@ -726,62 +730,65 @@ def calculate_to_make(doc):
     # Step 1: Prepare initial data
     for item in doc.get("nj_production_planning_child", []):
         sales_rate = safe_float(item.get("sales_rate"))
-        inward = safe_float(item.get("inwarded_qty"))
         forward = safe_float(item.get("forwarded_qty"))
+        inward = safe_float(item.get("inwarded_qty"))
         doi = forward / sales_rate if sales_rate else 0
 
-        configs.append(type("Config", (), {
+        configs.append({
             "item": item,
             "sales_rate": sales_rate,
-            "inward_inventory": inward,
             "forward_inventory": forward,
+            "inward_inventory": inward,
+            "to_make": 0,
             "doi": doi
-        }))
+        })
 
-    # Step 2: Initialize to_make
-    for cfg in configs:
-        cfg.item.to_make = 0
-
-    # Step 6: Redistribute inward to equalize DoI
+    # Step 2: Start redistribution loop
     while True:
         any_changes = False
 
-        # Sort by DoI before every iteration
-        configs_sorted = sorted(configs, key=lambda x: x.doi)
+        # Step 3: Sort configs by DOI ASC, sales_rate DESC, forward_inventory ASC
+        configs_sorted = sort_by_multiple_keys(configs, keys=["doi", "-sales_rate", "forward_inventory"])
 
+        # Step 4: Redistribute inventory
         for i in range(len(configs_sorted) - 1):
             current = configs_sorted[i]
             next_cfg = configs_sorted[i + 1]
-            next_doi = next_cfg.doi
 
-            if current.inward_inventory <= 0:
+            if current["inward_inventory"] <= 0:
                 continue
 
-            doi_gap = next_doi - current.doi
+            doi_gap = next_cfg["doi"] - current["doi"]
 
-            if doi_gap < 1:
-                continue  # Skip if gap is too small
+            if doi_gap < 1 and not math.isclose(doi_gap, 0):
+                continue
 
-            # Units needed to match DOI with next_cfg
-            needed_units = (doi_gap) * current.sales_rate
-            transfer_units = min(current.inward_inventory, math.floor(needed_units))
+            if math.isclose(doi_gap, 0):
+                needed_units = math.ceil(current["sales_rate"])
+            else:
+                needed_units = math.floor(doi_gap * current["sales_rate"])
 
-            if transfer_units > 0:
-                current.inward_inventory -= transfer_units
-                current.forward_inventory += transfer_units
-                current.item.to_make += transfer_units
-                current.doi = current.forward_inventory / current.sales_rate if current.sales_rate else 0
+            make_units = min(needed_units, math.floor(current["inward_inventory"]))
+
+            if make_units > 0:
+                current["to_make"] += make_units
+                current["forward_inventory"] += make_units
+                current["inward_inventory"] -= make_units
+                current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
                 any_changes = True
 
-        # Filter out configs with no inward left
-        configs_sorted = [cfg for cfg in configs_sorted if cfg.inward_inventory > 0]
+        # Step 5: Remove configs with no more inward and no to_make
+        configs = [cfg for cfg in configs if cfg["inward_inventory"] > 0 or cfg["to_make"] > 0]
 
         if not any_changes:
             break
 
+    # Step 6: Assign to_make back to items
+    for cfg in configs:
+        cfg["item"]["to_make"] = cfg["to_make"]
+
     doc.save()
     return doc.get("nj_production_planning_child", [])
-
 
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):

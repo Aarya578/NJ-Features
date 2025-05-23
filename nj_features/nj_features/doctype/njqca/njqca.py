@@ -73,10 +73,9 @@ def get_inspection_type():
         frappe.msgprint("<b>Inspection Type</b> is not updated in either <b>Role Profile</b> or <b>Department: {0}</b>".format(department))
         return None
     
-def open_draft_qi(self, brand=None, model=None):
+def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None):
     try:
         serial_num = self.serial_no
-
         if serial_num:
             status = frappe.db.get_value('Serial No', {'name': serial_num}, 'status')
             if status.lower() == 'delivered':
@@ -129,7 +128,14 @@ def open_draft_qi(self, brand=None, model=None):
                 new_qi.item_code = self.manual_repack_item_code
             
             self.qi_name = get_itm_code_on_barcode(new_qi)
-            new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0")
+            if is_defective is not None and is_defective:
+              new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="1", re_check="0")
+            elif re_check is not None and re_check:
+              new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="1")
+            else:
+              new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="0")
+            
+              
 
         # item_wizard_name = new_qi.get('item_wizard')
         # item_group_data =''
@@ -532,7 +538,12 @@ class NJQCA(Document):
                 
                 if self.item_group == sn_item_group:
                     s4 = time.time()
-                    qi_data = open_draft_qi(self,self.brand,self.model)
+                    if self.qi_type is not None and self.qi_type=="is_defective":
+                        qi_data = open_draft_qi(self,self.brand,self.model,is_defective="1")
+                    elif self.qi_type is not None and self.qi_type=="re_check":
+                        qi_data = open_draft_qi(self,self.brand,self.model,re_check="1")
+                    else:
+                        qi_data = open_draft_qi(self,self.brand,self.model)
                     logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
                 if qi_data:
@@ -1037,11 +1048,17 @@ def get_info_from_serial_no(doc=None):
 
 
 @frappe.whitelist()
-def after_save_njqca(docname, brand=None, model=None):
+def after_save_njqca(docname, brand=None, model=None, qi_type=None):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
-        if doc.power_on == 'Yes':
+        if doc.power_on == 'Yes' and qi_type==None:
             qi_draft_data = open_draft_qi(doc,brand,model)
+            return qi_draft_data
+        elif doc.power_on == 'Yes' and qi_type=='is_defective':
+            qi_draft_data = open_draft_qi(doc,brand,model,is_defective="1")
+            return qi_draft_data
+        elif doc.power_on == 'Yes' and qi_type=='re_check':
+            qi_draft_data = open_draft_qi(doc,brand,model,re_check="1")
             return qi_draft_data
         elif doc.power_on == 'No':
             frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")

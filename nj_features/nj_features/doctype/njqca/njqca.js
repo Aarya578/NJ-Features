@@ -263,10 +263,12 @@ frappe.ui.form.on('NJQCA', {
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
         if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+
+            console.log("qi_type",frm.doc.qi_type);
             
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: { 'docname': frm.doc.name, 'brand': frm.doc.brand, 'model': frm.doc.model },
+                args: { 'docname': frm.doc.name, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
                 callback: function(r) {
                     if (r && r.message) {
                         let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
@@ -465,89 +467,104 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.manufacturer_model) { get_model(frm.doc.manufacturer_model); }
     },
 
-    warehouse: function(frm) {
-        if (frm.doc.warehouse && frm.doc.serial_no && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
-            let ware = cur_frm.doc.warehouse;
-            
-            frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, 'work_warehouse', function(r) {
-                const workWarehouse = r.work_warehouse;
-
-                if (!workWarehouse) {
-                    frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
-                } else if (workWarehouse != ware) {
-                    let dialog = new frappe.ui.Dialog({
-                        title: "Confirm Stock Transfer",
-                        fields: [
-                            {
-                                fieldtype: "HTML",
-                                fieldname: "message",
-                                options: `Do you want to transfer stock to your Work Warehouse: ${workWarehouse}?`
-                            },
-                            {
-                                fieldtype: "Data",
-                                fieldname: "serial_num",
-                                label: "Scan Serial No",
-                                options: "Barcode",
-                            }
-                        ],
-                        static: true,
-                        primary_action_label: "Yes, Transfer", 
-                        primary_action: function() {
-                            let scannedSerialNo = dialog.get_value("serial_num");
-                            if (scannedSerialNo.toLowerCase() !== frm.doc.serial_no.toLowerCase()) {
-                                frappe.msgprint({
-                                    title: 'Serial Number Mismatch',
-                                    message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
-                                });
-                                dialog.hide();
-                                return;
-                            }
-
-                            let material_transfer_items = [{
-                                'serial_no': frm.doc.serial_no,
-                                'item_code': frm.doc.item_code,
-                                't_warehouse': workWarehouse,
-                                's_warehouse': frm.doc.warehouse
-                            }];
-                            
-                            let data = {
-                                "doctype": frm.doc.doctype,
-                                "serial_no": frm.doc.serial_no,
-                                "t_warehouse": workWarehouse,
-                                "stock_entry_type": "Material Transfer",
-                                "reference_serial_no": frm.doc.serial_no,
-                                "material_transfer_items": material_transfer_items,
-                            };
-                    
-                            frappe.call({
-                                method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
-                                args: { 'data': JSON.stringify(data) },
-                                freeze: true,
-                                freeze_message: `<div style="text-align: center;">
-                                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
-                                    <br>Transferring Stock... Please Wait
-                                </div>`,
-                                callback: function(response) {
-                                    frm.set_value('warehouse', workWarehouse);
-                                    frm.refresh_field('warehouse');
-                                },
-                                error: function(err) { console.error(err); }
-                            });
-
-                            dialog.hide();
+    warehouse: async function(frm) {
+        if (
+            frm.doc.warehouse && frm.doc.serial_no &&(frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)
+        ) {
+            let ware = frm.doc.warehouse;    
+            let employeeData = await frappe.db.get_value('Employee', {
+                'user_id': frappe.session.user_email,
+                'status': 'Active'
+            }, 'work_warehouse');
+    
+            const workWarehouse = employeeData?.message?.work_warehouse;
+            console.log("work_warehouse", workWarehouse);
+    
+            let serialData = await frappe.db.get_value('Serial No', frm.doc.serial_no, 'status');
+            let serialStatus = serialData?.message?.status;
+            console.log("serial_no_status", serialStatus);
+    
+            if (serialStatus.toLowerCase() == "delivered" && frm.doc.item_group=="BATTERY") {
+                return;
+            }
+    
+            if (!workWarehouse) {
+                frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
+            } else if (workWarehouse !== ware) {
+                let dialog = new frappe.ui.Dialog({
+                    title: "Confirm Stock Transfer",
+                    fields: [
+                        {
+                            fieldtype: "HTML",
+                            fieldname: "message",
+                            options: `Do you want to transfer stock to your Work Warehouse: ${workWarehouse}?`
                         },
-                        secondary_action_label: "Cancel",
-                        secondary_action: function() {
-                            $('.primary-action').hide();
-                            dialog.hide();
+                        {
+                            fieldtype: "Data",
+                            fieldname: "serial_num",
+                            label: "Scan Serial No",
+                            options: "Barcode",
                         }
-                    });
-
-                    dialog.show();
-                }
-            });
+                    ],
+                    static: true,
+                    primary_action_label: "Yes, Transfer", 
+                    primary_action: function() {
+                        let scannedSerialNo = dialog.get_value("serial_num");
+                        if (scannedSerialNo.toLowerCase() != frm.doc.serial_no.toLowerCase()) {
+                            $('.primary-action').hide();
+                            frappe.msgprint({
+                                title: 'Serial Number Mismatch',
+                                message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
+                            });
+                            dialog.hide();
+                            return;
+                        }
+    
+                        let material_transfer_items = [{
+                            'serial_no': frm.doc.serial_no,
+                            'item_code': frm.doc.item_code,
+                            't_warehouse': workWarehouse,
+                            's_warehouse': frm.doc.warehouse
+                        }];
+                        
+                        let data = {
+                            "doctype": frm.doc.doctype,
+                            "serial_no": frm.doc.serial_no,
+                            "t_warehouse": workWarehouse,
+                            "stock_entry_type": "Material Transfer",
+                            "reference_serial_no": frm.doc.serial_no,
+                            "material_transfer_items": material_transfer_items,
+                        };
+                
+                        frappe.call({
+                            method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+                            args: { 'data': JSON.stringify(data) },
+                            freeze: true,
+                            freeze_message: `<div style="text-align: center;">
+                                <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+                                <br>Transferring Stock... Please Wait
+                            </div>`,
+                            callback: function(response) {
+                                frm.set_value('warehouse', workWarehouse);
+                                frm.refresh_field('warehouse');
+                            },
+                            error: function(err) { console.error(err); }
+                        });
+    
+                        dialog.hide();
+                    },
+                    secondary_action_label: "Cancel",
+                    secondary_action: function() {
+                        $('.primary-action').hide();
+                        dialog.hide();
+                    }
+                });
+    
+                dialog.show();
+            }
         }
     },
+    
     
     model: function(frm) {
         var selectedModel = frm.doc.model;

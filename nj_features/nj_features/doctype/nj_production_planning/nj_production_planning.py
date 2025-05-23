@@ -76,6 +76,7 @@ def process_merged_configuration(dept_doc):
     merged_data = process_inventory_rows(dept_doc)
     days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
     weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
+    # merged_data = get_shopify_items(merged_data)
     item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data, days=int(days), weight_factor=int(weight_factor))
     return calculate_doi(item_code_list)
 
@@ -307,6 +308,9 @@ def calculate_doi(items):
 
 
 def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
+
+    merged_data = item_code_list
+
     if not item_code_list:
         item_code_list = {}
 
@@ -450,9 +454,91 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
         except Exception as e:
             print("Error fetching attributes:", str(e))
 
-    print("\n\nupdated_item_code_list ------------------- ", updated_item_code_list)
+    updated_item_code_list = get_shopify_variant_item_code(merged_data, updated_item_code_list)
 
     return updated_item_code_list
+
+
+
+def get_shopify_variant_item_code(merged_data, updated_item_code_list):
+    model_list = list(merged_data.keys())
+    placeholders = ', '.join(['%s'] * len(model_list))
+
+    query = f"""
+        SELECT              
+            pbi.item_code AS item_code       
+        FROM
+            `tabItem` i                         
+        INNER JOIN
+            `tabProduct Bundle Item` pbi ON i.name = pbi.parent
+        INNER JOIN
+            `tabItem` ci ON pbi.item_code = ci.name  
+        WHERE
+            i.shopify_product_id IS NOT NULL
+            AND i.shopify_product_id != ''
+            AND i.item_model IN ({placeholders})
+            AND ci.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes');
+    """
+    bundle_items = frappe.db.sql(query, tuple(model_list), as_dict=True)
+
+    updated_item_code_map = {item['item_code']: item for item in updated_item_code_list}
+    new_item_codes = [item['item_code'] for item in bundle_items if item['item_code'] not in updated_item_code_map]
+
+    config_map = {}
+
+    if new_item_codes:
+        placeholders_new = ', '.join(['%s'] * len(new_item_codes))
+        config_query = f"""
+            SELECT 
+                LOWER(iva.attribute) AS item_attribute, 
+                LOWER(iva.attribute_value) AS attribute_value,
+                iva.parent AS item_code,
+                i.item_name,
+                i.item_model,
+                i.item_group,
+                i.variant_of as parent
+            FROM `tabItem Variant Attribute` iva
+            INNER JOIN `tabItem` i ON iva.parent = i.name
+            WHERE iva.parent IN ({placeholders_new})
+        """
+        item_configs = frappe.db.sql(config_query, tuple(new_item_codes), as_dict=True)
+
+        config_map = defaultdict(dict)
+        for item in item_configs:
+            item_code = item['item_code']
+            config_map[item_code]['item_model'] = item['item_model']
+            config_map[item_code]['item_name'] = item['item_name']
+            config_map[item_code]['item_group'] = item['item_group']
+            config_map[item_code]['parent'] = item['parent']
+            config_map[item_code][item['item_attribute']] = item['attribute_value']
+
+    for bundle in bundle_items:
+        code = bundle['item_code']
+
+        if code in updated_item_code_map:
+            if updated_item_code_map[code].get('sales_rate', 0) == 0:
+                updated_item_code_map[code]['sales_rate'] = 1
+                print(f"Updated sales_rate to 1 for existing item_code: {code}")
+        else:
+            config = config_map.get(code, {})
+            new_row = {
+                'model': config.get('item_model'),
+                'item_code': code,
+                'inwarded_qty': merged_data.get(config.get('item_model'), {}).get('inwarded_count', 0),
+                'forwarded_qty': 0,
+                'total_sales_qty': 0.0,
+                'sales_rate': 1,
+                'item_name': config.get('item_name', code),
+                'item_group': config.get('item_group'),
+                'parent': config.get('parent'),
+                'storage_capacity': config.get('storage capacity'),
+                'processor_type': config.get('processor type'),
+                'ram_capacity': config.get('ram capacity')
+            }
+            updated_item_code_list.append(new_row)
+
+    return updated_item_code_list
+
 
 def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
@@ -743,7 +829,6 @@ def calculate_to_make(doc):
             "doi": doi
         })
 
-    # Step 2: Start redistribution loop
     while True:
         any_changes = False
 

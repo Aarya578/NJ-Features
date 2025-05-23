@@ -65,11 +65,16 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
         department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
         department_doc = frappe.get_doc('Department', department)
+        s_department_doc = frappe.get_doc('Department', s_department)
 
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
+        
+        print("department_doc.get('quality_inspection_status_for_stock_movement')", department_doc.get('quality_inspection_status_for_stock_movement'))
+        print("s_department_doc.get('inspection_types')", s_department_doc.get('inspection_types'))
+        print("department_doc.get('inspection_types')", department_doc.get('inspection_types'))
 
-        if department_doc.get('quality_inspection_status_for_stock_movement') and (department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
+        if s_department_doc.get('quality_inspection_status_for_stock_movement') and (s_department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
             check_qi_validation(serial_no, s_warehouse, s_department, department)
 
     except Exception as e:
@@ -178,11 +183,16 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
             WHERE se.stock_entry_type = "Material Transfer"
             AND sed.serial_no = %s
             AND se.docstatus = 1
+            AND item_group = "Laptops"
             AND sed.target_department = %s
             ORDER BY se.creation DESC
             LIMIT 1
         """
         result = frappe.db.sql(query, (serial_no, s_department), explain=1, debug=1, as_dict=True)
+
+        print("insultion_types", inspection_types)
+        print("result", result)
+
 
         if result and inspection_types:
             creation_time = result[0]["creation"]
@@ -200,15 +210,13 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
             """
             qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, current_time, serial_no), explain=1, debug=1, as_dict=True)
 
-            t_inspection_type = frappe.get_doc('Department', t_department)
-
             if qi_result:
                 qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
                 if qi_doc:
-                    allowed_statuses = t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                    allowed_statuses = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
 
-                    if t_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in allowed_statuses:
+                    if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in allowed_statuses:
                         expected_status = ", ".join(allowed_statuses)
                         actual_status = qi_doc.get("status")
 

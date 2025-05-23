@@ -306,7 +306,6 @@ def calculate_doi(items):
 
     return items
 
-
 def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
 
     merged_data = item_code_list
@@ -458,8 +457,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
     return updated_item_code_list
 
-
-
 def get_shopify_variant_item_code(merged_data, updated_item_code_list):
     model_list = list(merged_data.keys())
     placeholders = ', '.join(['%s'] * len(model_list))
@@ -538,7 +535,6 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
             updated_item_code_list.append(new_row)
 
     return updated_item_code_list
-
 
 def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
@@ -648,7 +644,6 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
             item['sales_rate'] = 0
 
     return updated_item_code_list
-
 
 def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
@@ -791,8 +786,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     return updated_item_code_list
 
-import math
-
 def safe_float(value):
     try:
         return float(value)
@@ -816,8 +809,8 @@ def calculate_to_make(doc):
     # Step 1: Prepare initial data
     for item in doc.get("nj_production_planning_child", []):
         sales_rate = safe_float(item.get("sales_rate"))
-        forward = safe_float(item.get("forwarded_qty"))
-        inward = safe_float(item.get("inwarded_qty"))
+        forward = safe_float(item.get("forward_inventory"))
+        inward = safe_float(item.get("inward_inventory"))
         doi = forward / sales_rate if sales_rate else 0
 
         configs.append({
@@ -828,6 +821,8 @@ def calculate_to_make(doc):
             "to_make": 0,
             "doi": doi
         })
+    
+    print("Initial configs ------------ ", configs)
 
     while True:
         any_changes = False
@@ -835,7 +830,7 @@ def calculate_to_make(doc):
         # Step 3: Sort configs by DOI ASC, sales_rate DESC, forward_inventory ASC
         configs_sorted = sort_by_multiple_keys(configs, keys=["doi", "-sales_rate", "forward_inventory"])
 
-        # Step 4: Redistribute inventory
+        # Step 4: Redistribute inventory based on senior logic
         for i in range(len(configs_sorted) - 1):
             current = configs_sorted[i]
             next_cfg = configs_sorted[i + 1]
@@ -845,14 +840,11 @@ def calculate_to_make(doc):
 
             doi_gap = next_cfg["doi"] - current["doi"]
 
-            if doi_gap < 1 and not math.isclose(doi_gap, 0):
+            if doi_gap < 1:
                 continue
 
-            if math.isclose(doi_gap, 0):
-                needed_units = math.ceil(current["sales_rate"])
-            else:
-                needed_units = math.floor(doi_gap * current["sales_rate"])
-
+            # Calculate needed units to raise DOI to next DOI + 1, per senior logic
+            needed_units = int((doi_gap + 1) * current["sales_rate"])
             make_units = min(needed_units, math.floor(current["inward_inventory"]))
 
             if make_units > 0:
@@ -862,19 +854,18 @@ def calculate_to_make(doc):
                 current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
                 any_changes = True
 
-        # Step 5: Remove configs with no more inward and no to_make
+        # Step 5: Remove configs with no more inward inventory and no to_make left
         configs = [cfg for cfg in configs if cfg["inward_inventory"] > 0 or cfg["to_make"] > 0]
 
         if not any_changes:
             break
 
-    # Step 6: Assign to_make back to items
+    # Step 6: Assign to_make back to items using attribute assignment
     for cfg in configs:
-        cfg["item"]["to_make"] = cfg["to_make"]
+        cfg["item"].to_make = cfg["to_make"]
 
     doc.save()
     return doc.get("nj_production_planning_child", [])
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     

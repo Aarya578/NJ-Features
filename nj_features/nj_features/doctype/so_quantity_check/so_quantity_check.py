@@ -105,25 +105,30 @@ def update_so_quantity_check():
 
         # Step 2: Get sales order pending quantities from second query
         pending_so_data = frappe.db.sql("""
-            SELECT 
+           SELECT 
                 so_data.sales_order,
                 so_data.item_code,
-                IFNULL(so_data.pb_code, so_data.item_code) AS pb_code,
+                so_data.pb_code,
                 so_data.item_group,
                 so_data.qty AS so_qty,
                 IFNULL(dn_data.qty, 0) AS dn_qty,
                 LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS min_so_dn_qty,
                 so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty,
-                CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_with_processor,
-                
+                CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_processor,
+
+                -- Existing: total pending qty by variant_with_processor
                 SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
-                    OVER (PARTITION BY CONCAT(it2.variant_of, ' ', proc.attribute_value)) AS total_pending_by_variant
+                    OVER (PARTITION BY CONCAT(it2.variant_of, ' ', proc.attribute_value)) AS total_pending_by_variant,
+
+                -- ✅ New: total pending qty by pb_code
+                SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
+                    OVER (PARTITION BY so_data.pb_code) AS total_pending_by_pb_code
 
             FROM (
                 SELECT 
                     soi.parent AS sales_order,
                     soi.item_code,
-                    pb.item_code AS pb_code,
+                    IFNULL(pb.item_code, soi.item_code) AS pb_code,
                     soi.qty,
                     soi.item_group,
                     so.creation,
@@ -138,10 +143,11 @@ def update_so_quantity_check():
                     AND soi.item_group IN ('Laptops','Chromebooks')
                     AND so.sale_type != 'Amazon'
                     AND (
-                        pb.item_code IS NULL -- for non-bundled items
+                        pb.item_code IS NULL 
                         OR it.item_group IN ('Laptops', 'Chromebooks')
                     )
             ) AS so_data
+
             LEFT JOIN (
                 SELECT 
                     dni.against_sales_order,
@@ -156,16 +162,17 @@ def update_so_quantity_check():
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 
-               AND so_data.item_code = dn_data.item_code
+            AND so_data.item_code = dn_data.item_code
 
             LEFT JOIN `tabItem` it2 
-                ON it2.item_code = IFNULL(so_data.pb_code, so_data.item_code)
+                ON it2.item_code = so_data.pb_code
 
             LEFT JOIN `tabItem Variant Attribute` proc 
                 ON proc.parent = it2.name
                 AND proc.attribute LIKE '%Processor%'
 
-            ORDER BY so_data.sales_order, so_data.item_code
+            ORDER BY so_data.sales_order, so_data.item_code;
+
         """, as_dict=True)
 
         print(f"Retrieved {len(pending_so_data)} records from pending SO query")
@@ -173,10 +180,11 @@ def update_so_quantity_check():
         # Create a dictionary to store pending quantities by item_code
         pending_qty_by_item = {}
         for row in pending_so_data:
-            item_code = row.get('item_code')
+            item_code = row.get('pb_code')
             if item_code:
                 # If multiple SO entries exist for same item, sum them up
                 pending_qty = row.get('pending_qty', 0)
+                print(f"pb_code======================: {item_code}, pending_qty:=============================== {pending_qty}")
                 if item_code in pending_qty_by_item:
                     pending_qty_by_item[item_code] += pending_qty
                 else:

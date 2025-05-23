@@ -65,11 +65,12 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
         department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
         department_doc = frappe.get_doc('Department', department)
+        s_department_doc = frappe.get_doc('Department', s_department)
 
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
 
-        if department_doc.get('quality_inspection_status_for_stock_movement') and (department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
+        if department_doc.get('quality_inspection_status_for_stock_movement') and (s_department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
             check_qi_validation(serial_no, s_warehouse, s_department, department)
 
     except Exception as e:

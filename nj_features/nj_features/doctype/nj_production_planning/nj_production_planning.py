@@ -463,7 +463,7 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
 
     query = f"""
         SELECT              
-            pbi.item_code AS item_code       
+            DISTINCT pbi.item_code AS item_code       
         FROM
             `tabItem` i                         
         INNER JOIN
@@ -786,6 +786,8 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
 
     return updated_item_code_list
 
+import math
+
 def safe_float(value):
     try:
         return float(value)
@@ -827,10 +829,27 @@ def calculate_to_make(doc):
     while True:
         any_changes = False
 
-        # Step 3: Sort configs by DOI ASC, sales_rate DESC, forward_inventory ASC
+        # Step 2: Sort configs by DOI ASC
         configs_sorted = sort_by_multiple_keys(configs, keys=["doi", "-sales_rate", "forward_inventory"])
 
-        # Step 4: Redistribute inventory based on senior logic
+        # Step 3: Apply special logic if forward inventory and DOI are both zero
+        for i in range(len(configs_sorted) - 1):
+            current = configs_sorted[i]
+            next_cfg = configs_sorted[i + 1]
+
+            if current["forward_inventory"] == 0 and current["doi"] == 0:
+                future_doi = next_cfg["doi"] + 1
+                to_make = int(future_doi * current["sales_rate"])
+                actual_make = min(to_make, current["inward_inventory"])
+
+                if actual_make > 0:
+                    current["to_make"] += actual_make
+                    current["forward_inventory"] += actual_make
+                    current["inward_inventory"] -= actual_make
+                    current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
+                    any_changes = True
+
+        # Step 4: Redistribute inventory based on DOI gap
         for i in range(len(configs_sorted) - 1):
             current = configs_sorted[i]
             next_cfg = configs_sorted[i + 1]
@@ -839,11 +858,9 @@ def calculate_to_make(doc):
                 continue
 
             doi_gap = next_cfg["doi"] - current["doi"]
-
             if doi_gap < 1:
                 continue
 
-            # Calculate needed units to raise DOI to next DOI + 1, per senior logic
             needed_units = int((doi_gap + 1) * current["sales_rate"])
             make_units = min(needed_units, math.floor(current["inward_inventory"]))
 
@@ -854,18 +871,19 @@ def calculate_to_make(doc):
                 current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
                 any_changes = True
 
-        # Step 5: Remove configs with no more inward inventory and no to_make left
+        # Step 5: Clean up configs with no inventory or to_make left
         configs = [cfg for cfg in configs if cfg["inward_inventory"] > 0 or cfg["to_make"] > 0]
 
         if not any_changes:
             break
 
-    # Step 6: Assign to_make back to items using attribute assignment
+    # Step 6: Assign calculated to_make back to items
     for cfg in configs:
         cfg["item"].to_make = cfg["to_make"]
 
     doc.save()
     return doc.get("nj_production_planning_child", [])
+
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     

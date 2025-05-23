@@ -16,6 +16,7 @@
   "actual_qty",
   "so_qty",
   "column_break_jlzc3",
+  "shopify_quantity",
   "sync_status",
   "updated_qty",
   "section_break_m3tvl",
@@ -108,12 +109,17 @@
    "fieldtype": "Data",
    "label": "Inventory Item ID",
    "read_only": 1
+  },
+  {
+   "fieldname": "shopify_quantity",
+   "fieldtype": "Data",
+   "label": "Shopify Quantity"
   }
  ],
  "hide_toolbar": 1,
  "in_create": 1,
  "links": [],
- "modified": "2025-05-10 00:12:31.362486",
+ "modified": "2025-05-22 19:15:02.132215",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

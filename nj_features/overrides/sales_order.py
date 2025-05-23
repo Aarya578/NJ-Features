@@ -13,8 +13,8 @@ class CustomSalesOrder(SalesOrder):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
         # self.update_item_details()
-        # self.send_consignement_data()
-        # self.cod_calculation()
+        self.send_consignement_data()
+        self.cod_calculation()
         # self.fetching_tracking_details()
         raw_order_id = None
         if self.order_type!="Maintenance":
@@ -42,15 +42,6 @@ class CustomSalesOrder(SalesOrder):
             company_address = frappe.get_doc("Address", self.company_address) if self.company_address else None
             shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
 
-            # grand_total = float(self.grand_total or 0)
-            # amount = grand_total
-            # print(f"DEBUG: grand_total = {grand_total}, amount = {amount}, payment_type = COD")
-
-            # if grand_total <= 0:
-            #     frappe.msgprint("Grand Total must be greater than zero for COD shipments.")
-            #     return
-
-            # Format date properly
             formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
 
             # Prepare header with consistent structure matching Postman example
@@ -61,11 +52,11 @@ class CustomSalesOrder(SalesOrder):
                 "Order/InvoiceDate": self.transaction_date,
                 # Sender
                 "SenderName": self.company,
-                "SenderAdd1": company_address.address_line1 if company_address else "",
-                "SenderAdd2": company_address.address_line2 if company_address else "",
-                "SenderCity": company_address.city if company_address else "",
-                "SenderState": company_address.state if company_address else "",
-                "SenderCountry": company_address.country if company_address else "India",
+                "SenderAdd1": company_address.address_line1 if company_address.address_line1 else " ",
+                "SenderAdd2": company_address.address_line2 if company_address.address_line2 else "",
+                "SenderCity": company_address.city if company_address.city else "",
+                "SenderState": company_address.state if company_address.state else "",
+                "SenderCountry": company_address.country if company_address.country else "India",
                 # "SenderPin": company_address.pincode if company_address else "",
                 "SenderPin": "560100",
                 "SenderMobile": company_address.phone or "",
@@ -73,11 +64,11 @@ class CustomSalesOrder(SalesOrder):
 
                 # Receiver
                 "ReceiverName": self.customer_name or "",
-                "ReceiverAdd1": shipping_address.address_line1 if shipping_address else "",
-                "ReceiverAdd2": shipping_address.address_line2 if shipping_address else "",
-                "ReceiverCity": shipping_address.city if shipping_address else "",
-                "ReceiverState": shipping_address.state if shipping_address else "",
-                "ReceiverCountry": shipping_address.country if shipping_address else "India",
+                "ReceiverAdd1": shipping_address.address_line1 if shipping_address.address_line1 else "",
+                "ReceiverAdd2": shipping_address.address_line2 if shipping_address.address_line2 else " ",
+                "ReceiverCity": shipping_address.city if shipping_address.city else "",
+                "ReceiverState": shipping_address.state if shipping_address.state else "",
+                "ReceiverCountry": shipping_address.country if shipping_address.country else "India",
                 # "ReceiverPin": shipping_address.pincode if shipping_address else "",
                 "ReceiverPin": "110002",
                 "ReceiverMobile": shipping_address.phone or "",
@@ -120,22 +111,6 @@ class CustomSalesOrder(SalesOrder):
             print(f"Response status: {response.status_code}")
             print(f"Response content: {response.text}")
 
-            # Improved response handling
-            # try:
-            #     resp_json = response.json()
-            #     if resp_json.get('code') == 1 and resp_json.get('status') == 200:
-            #         awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
-            #         cit_data = resp_json.get('data', {}).get('Need_CitImage') or resp_json.get('data', {}).get('Need_CitImage')
-            #         print(f"AWB cit_data:==================================== {cit_data}")
-            #         frappe.msgprint(f"AWB Number generated: {awb_number}")
-            #         # Store the AWB number in your document if needed
-            #         self.awb_number = awb_number
-            #         self.cit_image = cit_data
-            #         self.db_update()
-            #     else:
-            #         frappe.msgprint(f"API returned error: {response.text}")
-            # except Exception as json_err:
-            #     frappe.msgprint(f"Could not parse API response: {response.text}")
             try:
                 resp_json = response.json()
                 if resp_json.get('code') == 1 and resp_json.get('status') == 200:
@@ -149,13 +124,13 @@ class CustomSalesOrder(SalesOrder):
                     self.cit_image = cit_data
                     self.db_update()
                 else:
-                    frappe.msgprint(f"API returned error: {response.text}")
+                    frappe.throw(f"API returned error: {response.text}")
             except Exception as json_err:
-                frappe.msgprint(f"Could not parse API response: {response.text}")
+                frappe.throw(f"Could not parse API response: {response.text}")
         except Exception as e:
             # Show the actual error for debugging
-            frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
-            frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
+            # frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
+            frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
 
     def cod_calculation(self):
         if not self.is_cod:

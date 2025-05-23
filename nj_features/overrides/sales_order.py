@@ -36,102 +36,101 @@ class CustomSalesOrder(SalesOrder):
 
 
     def send_consignement_data(self):
-        pass
-        # print("Triggered send_consignement_data...")
-        # try:
-        #     # Fetch addresses
-        #     company_address = frappe.get_doc("Address", self.company_address) if self.company_address else None
-        #     shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
+        print("Triggered send_consignement_data...")
+        try:
+            # Fetch addresses
+            company_address = frappe.get_doc("Address", self.company_address) if self.company_address else None
+            shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
 
-        #     formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
+            formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
 
-        #     # Prepare header with consistent structure matching Postman example
-        #     header = {
-        #         "ClientCode": "207433",
-        #         "OrderNo/InvoiceNo": self.name,
-        #         # "Order/InvoiceDate": "2025-05-16",
-        #         "Order/InvoiceDate": self.transaction_date,
-        #         # Sender
-        #         "SenderName": self.company,
-        #         "SenderAdd1": company_address.address_line1 if company_address.address_line1 else " ",
-        #         "SenderAdd2": company_address.address_line2 if company_address.address_line2 else "",
-        #         "SenderCity": company_address.city if company_address.city else "",
-        #         "SenderState": company_address.state if company_address.state else "",
-        #         "SenderCountry": company_address.country if company_address.country else "India",
-        #         # "SenderPin": company_address.pincode if company_address else "",
-        #         "SenderPin": "560100",
-        #         "SenderMobile": company_address.phone or "",
-        #         "SenderEmail": company_address.email_id or "",
+            # Prepare header with consistent structure matching Postman example
+            header = {
+                "ClientCode": "207433",
+                "OrderNo/InvoiceNo": self.name,
+                # "Order/InvoiceDate": "2025-05-16",
+                "Order/InvoiceDate": self.transaction_date,
+                # Sender
+                "SenderName": self.company,
+                "SenderAdd1": company_address.address_line1 if company_address.address_line1 else " ",
+                "SenderAdd2": company_address.address_line2 if company_address.address_line2 else "",
+                "SenderCity": company_address.city if company_address.city else "",
+                "SenderState": company_address.state if company_address.state else "",
+                "SenderCountry": company_address.country if company_address.country else "India",
+                # "SenderPin": company_address.pincode if company_address else "",
+                "SenderPin": "560100",
+                "SenderMobile": company_address.phone or "",
+                "SenderEmail": company_address.email_id or "",
 
-        #         # Receiver
-        #         "ReceiverName": self.customer_name or "",
-        #         "ReceiverAdd1": shipping_address.address_line1 if shipping_address.address_line1 else "",
-        #         "ReceiverAdd2": shipping_address.address_line2 if shipping_address.address_line2 else " ",
-        #         "ReceiverCity": shipping_address.city if shipping_address.city else "",
-        #         "ReceiverState": shipping_address.state if shipping_address.state else "",
-        #         "ReceiverCountry": shipping_address.country if shipping_address.country else "India",
-        #         # "ReceiverPin": shipping_address.pincode if shipping_address else "",
-        #         "ReceiverPin": "110002",
-        #         "ReceiverMobile": shipping_address.phone or "",
+                # Receiver
+                "ReceiverName": self.customer_name or "",
+                "ReceiverAdd1": shipping_address.address_line1 if shipping_address.address_line1 else "",
+                "ReceiverAdd2": shipping_address.address_line2 if shipping_address.address_line2 else " ",
+                "ReceiverCity": shipping_address.city if shipping_address.city else "",
+                "ReceiverState": shipping_address.state if shipping_address.state else "",
+                "ReceiverCountry": shipping_address.country if shipping_address.country else "India",
+                # "ReceiverPin": shipping_address.pincode if shipping_address else "",
+                "ReceiverPin": "110002",
+                "ReceiverMobile": shipping_address.phone or "",
 
-        #         "ConsignmentValue": str(self.grand_total),
-        #         "NoQuantity": 1,
-        #         "consignmentValue": str(self.grand_total),  # Added this field to match Postman
-        #         "Weight": str(self.weight),
-        #         "TransitMode": self.mode_of_transfer,
-        #         "ProductMode": "Normal",
-        #         "PaymentType": "COD",
-        #         "Amount": str(self.grand_total),
-        #         "Need_CitImage": "1"
-        #     }
+                "ConsignmentValue": str(self.grand_total),
+                "NoQuantity": 1,
+                "consignmentValue": str(self.grand_total),  # Added this field to match Postman
+                "Weight": str(self.weight),
+                "TransitMode": self.mode_of_transfer,
+                "ProductMode": "Normal",
+                "PaymentType": "COD",
+                "Amount": str(self.grand_total),
+                "Need_CitImage": "1"
+            }
 
-        #     # Prepare items with consistent formatting
-        #     items = []
-        #     for row in self.items:
-        #         items.append({
-        #             "Length": f"{float(self.length):.2f}",
-        #             "Breadth": f"{float(self.breadth):.2f}",
-        #             "Height": f"{float(self.height):.2f}",
-        #             "ProductCode": "AUTO",
-        #             "ProductDescription": row.item_name,
-        #             "SplitPcs": f"{float(row.qty):.4f}",
-        #             "IsPackaging": "0"
-        #         })
+            # Prepare items with consistent formatting
+            items = []
+            for row in self.items:
+                items.append({
+                    "Length": f"{float(self.length):.2f}",
+                    "Breadth": f"{float(self.breadth):.2f}",
+                    "Height": f"{float(self.height):.2f}",
+                    "ProductCode": "AUTO",
+                    "ProductDescription": row.item_name,
+                    "SplitPcs": f"{float(row.qty):.4f}",
+                    "IsPackaging": "0"
+                })
 
-        #     data = {
-        #         "ResponseHeader": "yes",
-        #         "Header": [header],
-        #         "ItemsDetails": items
-        #     }
+            data = {
+                "ResponseHeader": "yes",
+                "Header": [header],
+                "ItemsDetails": items
+            }
 
-        #     url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
-        #     headers = {"Content-Type": "application/json"}
+            url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
+            headers = {"Content-Type": "application/json"}
 
-        #     print("Sending data:", json.dumps(data, indent=2))  # Print the actual payload
-        #     response = requests.post(url, headers=headers, json=data)
-        #     print(f"Response status: {response.status_code}")
-        #     print(f"Response content: {response.text}")
+            print("Sending data:", json.dumps(data, indent=2))  # Print the actual payload
+            response = requests.post(url, headers=headers, json=data)
+            print(f"Response status: {response.status_code}")
+            print(f"Response content: {response.text}")
 
-        #     try:
-        #         resp_json = response.json()
-        #         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
-        #             awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
-        #             print(f"AWB Number generated: {awb_number}")
-        #             # Look for cit_data in different possible locations in the response
-        #             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
-        #             frappe.msgprint(f"AWB Number generated: {awb_number}")
-        #             # Store the AWB number in your document if needed
-        #             self.awb_number = awb_number
-        #             self.cit_image = cit_data
-        #             self.db_update()
-        #         else:
-        #             frappe.throw(f"API returned error: {response.text}")
-        #     except Exception as json_err:
-        #         frappe.throw(f"Could not parse API response: {response.text}")
-        # except Exception as e:
-        #     # Show the actual error for debugging
-        #     # frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
-        #     # frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
+            try:
+                resp_json = response.json()
+                if resp_json.get('code') == 1 and resp_json.get('status') == 200:
+                    awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
+                    print(f"AWB Number generated: {awb_number}")
+                    # Look for cit_data in different possible locations in the response
+                    cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
+                    frappe.msgprint(f"AWB Number generated: {awb_number}")
+                    # Store the AWB number in your document if needed
+                    self.awb_number = awb_number
+                    self.cit_image = cit_data
+                    self.db_update()
+                else:
+                    frappe.throw(f"API returned error: {response.text}")
+            except Exception as json_err:
+                frappe.throw(f"Could not parse API response: {response.text}")
+        except Exception as e:
+            # Show the actual error for debugging
+            # frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
+            frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
 
     def cod_calculation(self):
         if not self.is_cod:
@@ -173,7 +172,6 @@ class CustomSalesOrder(SalesOrder):
     
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
-    pass
     try:
         headers = {
             "Content-Type": "application/json",

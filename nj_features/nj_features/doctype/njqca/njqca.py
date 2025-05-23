@@ -1566,27 +1566,86 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                sudden_drop_limit = frappe.db.get_value('Item Wizards',{'name': iw},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
-            delta_query="""WITH FilteredResults AS (
-                            SELECT value, idx 
-                            FROM `tabNJQCA Result Parameters`
-                            WHERE idx >= (
-                                SELECT idx-1
-                                FROM `tabNJQCA Result Parameters`
-                                WHERE parent = %(parent_name)s and parameter = 'Battery_Discharging_Start_Time' ORDER BY idx DESC LIMIT 1
-                            )
-                            AND parameter <> 'Battery_Discharging_Start_Time'
-                            AND parent = %(parent_name)s
-                            AND value >=%(sudden_drop_limit)s
-                            ORDER BY idx
-                        ),
-                         DeltaValues AS (
-                            SELECT value - LEAD(value) OVER (ORDER BY idx) AS delta
-                            FROM FilteredResults
-                        )
-                        SELECT 
-                            MAX(delta) AS max_delta, 
-                            AVG(delta) AS avg_delta
-                        FROM DeltaValues where delta>0;
+            delta_query=""" WITH FilteredResults AS (
+                    SELECT value, idx, parameter
+                    FROM `tabNJQCA Result Parameters`
+                    WHERE idx >= (
+                        SELECT idx - 1
+                        FROM `tabNJQCA Result Parameters`
+                        WHERE parent = %(parent_name)s
+                        AND parameter = 'Battery_Discharging_Start_Time' 
+                        ORDER BY idx DESC LIMIT 1
+                    )
+                    AND parameter <> 'Battery_Discharging_Start_Time'
+                    AND parent = %(parent_name)s
+                    AND value >= %(sudden_drop_limit)s
+                    ORDER BY idx
+                ),
+                TimeParsed AS (
+                    SELECT 
+                        value,
+                        idx,
+                        parameter,
+                        STR_TO_DATE(parameter, '%%H:%%i:%%s') AS time_obj
+                    FROM FilteredResults
+                ),
+                DeltaValues AS (
+                    SELECT 
+                        curr.value,
+                        curr.idx,
+                        curr.parameter,
+                        curr.value - LEAD(curr.value) OVER (ORDER BY curr.idx) AS delta_drop,
+                        ROUND(
+                            ABS(
+                                IF(
+                                    LEAD(curr.time_obj) OVER (ORDER BY curr.idx) >= curr.time_obj,
+                                    TIME_TO_SEC(TIMEDIFF(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), curr.time_obj)),
+                                    TIME_TO_SEC(TIMEDIFF(ADDTIME(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), '24:00:00'), curr.time_obj))
+                                )
+                            ), 2
+                        ) AS delta_seconds
+                    FROM TimeParsed curr
+                ),
+                RateValues AS (
+                    SELECT 
+                        idx,
+                        parameter,
+                        value,
+                        delta_drop,
+                        delta_seconds,
+                        CASE 
+                            WHEN delta_drop IS NOT NULL AND delta_drop <> 0 AND delta_seconds <> 0 
+                            THEN delta_drop / delta_seconds 
+                            ELSE NULL 
+                        END AS rate
+                    FROM DeltaValues
+                ),
+                avg_rate AS (
+                    SELECT *,AVG(rate) AS avg_rate_value
+                    FROM RateValues
+                    WHERE rate IS NOT NULL
+                ),
+                stats AS (
+                    SELECT *,
+                        round(MAX(rate),4) AS max_rate,
+                    round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
+                        SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
+                    FROM RateValues
+                    WHERE rate IS NOT NULL
+                )
+
+                SELECT
+                    max_rate,
+                    avg_rate,
+                    count_gt_2x as count,
+                    CASE
+                        WHEN max_rate > 3 * avg_rate OR count_gt_2x >= 3 THEN "Yes"
+                        ELSE "NO"
+                    END AS condition_met
+                
+                    FROM stats;
+    
+
                     """
             
             percentage_query="""
@@ -1609,14 +1668,23 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     return "YES"
             
             delta = frappe.db.sql(delta_query, {'parent_name': parent_name, 'sudden_drop_limit': int(sudden_drop_limit)}, as_dict=True)
-            delta = delta[0]
+            sudden_drop=""
+            max_rate=""
+            avg_rate=""
+            count_avg=""
+            if delta is not None and delta:
+                sudden_drop = delta[0].get('condition_met')
+                max_rate = delta[0].get('max_rate')
+                avg_rate = delta[0].get('avg_rate')
+                count_avg = delta[0].get('count')
 
-            if not delta or delta.get('max_delta') is None or delta.get('avg_delta') is None:
-                return "YES"
-            elif(float(delta.get('max_delta'))<=2*float(delta.get('avg_delta'))):
-                return f"NO, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+                if sudden_drop and sudden_drop == "Yes":
+                    return f"YES max_rate: {max_rate} avg_rate: {avg_rate} count_avg: {count_avg}"
+                else:
+                    return "NO max_rate: {max_rate} avg_rate: {avg_rate} count_avg: {count_avg}"
             else:
-                return f"YES, max_delta: {delta.get('max_delta')}, avg_delta: {delta.get('avg_delta')}"
+                return "YES"
+          
         else:
             return None
             

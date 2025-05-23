@@ -494,8 +494,7 @@ frappe.ui.form.on('NJQCA', {
                         primary_action_label: "Yes, Transfer", 
                         primary_action: function() {
                             let scannedSerialNo = dialog.get_value("serial_num");
-                            if (scannedSerialNo.toLowerCase() != frm.doc.serial_no.toLowerCase()) {
-                                $('.primary-action').hide();
+                            if (scannedSerialNo.toLowerCase() !== frm.doc.serial_no.toLowerCase()) {
                                 frappe.msgprint({
                                     title: 'Serial Number Mismatch',
                                     message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
@@ -619,6 +618,7 @@ frappe.ui.form.on('NJQCA', {
                 args: { 'njqca_name': frm.doc.name, 'item_template': frm.doc.item_template },
                 callback: function(r) {
                     if (r.message) { 
+                        let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         if(r.message == "PASS"){
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "IW_Speed_Match");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);

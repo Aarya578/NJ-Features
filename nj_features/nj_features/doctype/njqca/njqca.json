@@ -31,6 +31,7 @@
   "backup_duration_cycle_3",
   "sudden_drop",
   "battery_type",
+  "qi_type",
   "grading_fetched",
   "no_of_bdt",
   "repack_itm_price",
@@ -406,11 +407,17 @@
    "fieldtype": "Data",
    "label": "No of BDT",
    "read_only": 1
+  },
+  {
+   "fieldname": "qi_type",
+   "fieldtype": "Select",
+   "label": "QI Type",
+   "options": "\nre_check\nis_defective"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-04-05 12:32:11.049552",
+ "modified": "2025-05-23 12:38:35.154721",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

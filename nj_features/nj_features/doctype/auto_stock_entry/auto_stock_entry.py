@@ -171,7 +171,6 @@ def get_item_code_and_warehouse(item_code):
         return
 
 def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
-    print('calling check_qi_validation')
     try:
         s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
         s_inspection_type = frappe.get_doc('Department', s_department)
@@ -184,6 +183,7 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
             WHERE se.stock_entry_type = "Material Transfer"
             AND sed.serial_no = %s
             AND se.docstatus = 1
+            AND item_group = "Laptops"
             AND sed.target_department = %s
             ORDER BY se.creation DESC
             LIMIT 1
@@ -229,7 +229,6 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                     f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in department <b>{s_department}</b>."
                 )
 
-        frappe.throw("aaaaaaaaaaa")
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")

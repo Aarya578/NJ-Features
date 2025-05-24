@@ -339,10 +339,6 @@ def update_proportional_qty_and_updt_qty():
             # Safely convert to float with default 0
             total_update_qty = float(row.total_update_qty or 0)
             
-            # if total_update_qty == 0:
-            #     print(f"Skipping parent {parent1} - total update qty is zero")
-            #     continue  # Avoid division by zero
-            
             # Step 2: Get individual records for this parent1
             items = frappe.get_all("SO Quantity Check",
                 filters={"parent1": parent1},

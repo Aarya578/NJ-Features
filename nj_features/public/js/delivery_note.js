@@ -7,7 +7,69 @@ frappe.ui.form.on('Delivery Note', {
             frm.set_df_property("courier_service", "read_only", 1);
         }
     },
+    validate: function(frm) {
+        console.log("Inside validate function =================");
+        
+        // Log data for debugging
+        console.log("Doc before update:", frm.doc);
+        
+        frappe.call({
+            method: 'nj_features.overrides.delivery_note.update_item_details',
+            args: {
+                self: frm.doc
+            },
+            callback: function(r) {
+                console.log("Server response:", r);          
+                if (r.message) {
+                    if (r.message.weight !== null && r.message.weight !== undefined) {
+                        frm.set_value('weight', r.message.weight);
+                        frm.refresh_field("weight");
+                    }            
+                    if (r.message.height) {
+                        frm.set_value('height', r.message.height);
+                        frm.refresh_field("height");
+                    }             
+                    if (r.message.length) {
+                        frm.set_value('length', r.message.length);
+                        frm.refresh_field("length");
+                    }               
+                    if (r.message.breadth) {
+                        frm.set_value('breadth', r.message.breadth);
+                        frm.refresh_field("breadth");
+                    }           
+    
+                }
+            }
+        });
 
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
+                    frappe.msgprint({
+                        title: __('Validation Error'),
+                        message: r.message.join('<br>'),
+                        indicator: 'red'
+                    });
+                    frappe.validated = false;
+                } else { frappe.validated = true; }
+            }
+        });
+        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
+        if (first_so) {
+            frappe.call({
+                method: "nj_features.overrides.delivery_note.get_cod_amount",
+                args: { so_name: first_so },
+                callback: function(res) {
+                    if (res.message) {
+                        frm.set_value("cod_amount", res.message.cod_amount); 
+                        frm.set_value("shopify_order_id", res.message.order_id); 
+                    }
+                }
+            });
+        }
+    },
     refresh: function(frm) {
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -47,37 +109,6 @@ frappe.ui.form.on('Delivery Note', {
         frm.page.remove_inner_button('Credit Note', 'Create');
         $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
-
-    validate: function(frm) {
-        frappe.call({
-            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
-            args: { doc: frm.doc },
-            callback: function(r) {
-                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
-                    frappe.msgprint({
-                        title: __('Validation Error'),
-                        message: r.message.join('<br>'),
-                        indicator: 'red'
-                    });
-                    frappe.validated = false;
-                } else { frappe.validated = true; }
-            }
-        });
-        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        if (first_so) {
-            frappe.call({
-                method: "nj_features.overrides.delivery_note.get_cod_amount",
-                args: { so_name: first_so },
-                callback: function(res) {
-                    if (res.message) {
-                        frm.set_value("cod_amount", res.message.cod_amount); 
-                        frm.set_value("shopify_order_id", res.message.order_id); 
-                    }
-                }
-            });
-        }
-    },
-
     courier_service: function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",

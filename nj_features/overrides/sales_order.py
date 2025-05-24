@@ -31,8 +31,8 @@ class CustomSalesOrder(SalesOrder):
 
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-            if order_id:
-                trigger_fulfillment(order_id)
+            # if order_id:
+            #     trigger_fulfillment(order_id)
 
 
     # def send_consignement_data(self):

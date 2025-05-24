@@ -206,7 +206,11 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
-                    if (r.message.error) {
+                    if (!r || !r.message) {
+                        return;
+                    }
+
+                    if (r && r.message.error) {
                         frappe.msgprint({
                             title: __("Error"),
                             message: r.message.error,

@@ -1681,7 +1681,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                 if sudden_drop and sudden_drop == "Yes":
                     return f"YES max_rate: {max_rate} avg_rate: {avg_rate} count_avg: {count_avg}"
                 else:
-                    return "NO max_rate: {max_rate} avg_rate: {avg_rate} count_avg: {count_avg}"
+                    return f"NO max_rate: {max_rate} avg_rate: {avg_rate} count_avg: {count_avg}"
             else:
                 return "YES"
           

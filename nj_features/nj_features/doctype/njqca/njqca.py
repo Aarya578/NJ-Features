@@ -1558,75 +1558,77 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                sudden_drop_limit = frappe.db.get_value('Item Wizards',{'name': iw},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
-            delta_query=""" WITH FilteredResults AS (
-                    SELECT value, idx, parameter
-                    FROM `tabNJQCA Result Parameters`
-                    WHERE idx >= (
-                        SELECT idx - 1
+            delta_query=""" 
+                      WITH FilteredResults AS (
+                        SELECT value, idx, parameter
                         FROM `tabNJQCA Result Parameters`
-                        WHERE parent = %(parent_name)s
-                        AND parameter = 'Battery_Discharging_Start_Time' 
-                        ORDER BY idx DESC LIMIT 1
-                    )
-                    AND parameter <> 'Battery_Discharging_Start_Time'
-                    AND parent = %(parent_name)s
-                    AND value >= %(sudden_drop_limit)s
-                    ORDER BY idx
-                ),
-                TimeParsed AS (
-                    SELECT 
-                        value,
-                        idx,
-                        parameter,
-                        STR_TO_DATE(parameter, '%%H:%%i:%%s') AS time_obj
-                    FROM FilteredResults
-                ),
-                DeltaValues AS (
-                    SELECT 
-                        curr.value,
-                        curr.idx,
-                        curr.parameter,
-                        curr.value - LEAD(curr.value) OVER (ORDER BY curr.idx) AS delta_drop,
-                        ROUND(
-                            ABS(
-                                IF(
-                                    LEAD(curr.time_obj) OVER (ORDER BY curr.idx) >= curr.time_obj,
-                                    TIME_TO_SEC(TIMEDIFF(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), curr.time_obj)),
-                                    TIME_TO_SEC(TIMEDIFF(ADDTIME(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), '24:00:00'), curr.time_obj))
-                                )
-                            ), 2
-                        ) AS delta_seconds
-                    FROM TimeParsed curr
-                ),
-                RateValues AS (
-                    SELECT 
-                        idx,
-                        parameter,
-                        value,
-                        delta_drop,
-                        delta_seconds,
-                        CASE 
-                            WHEN delta_drop IS NOT NULL AND delta_drop <> 0 AND delta_seconds <> 0 
-                            THEN delta_drop / delta_seconds 
-                            ELSE NULL 
-                        END AS rate
-                    FROM DeltaValues
-                ),
-                avg_rate AS (
-                    SELECT *,AVG(rate) AS avg_rate_value
-                    FROM RateValues
-                    WHERE rate IS NOT NULL
-                ),
-                stats AS (
-                    SELECT *,
-                        round(MAX(rate),4) AS max_rate,
-                    round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
-                        SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
-                    FROM RateValues
-                    WHERE rate IS NOT NULL
-                )
+                        WHERE idx >= (
+                            SELECT idx - 1
+                            FROM `tabNJQCA Result Parameters`
+                            WHERE parent = %(parent_name)s
+                            AND parameter = 'Battery_Discharging_Start_Time' 
+                            ORDER BY idx DESC LIMIT 1
+                        )
+                        AND parameter <> 'Battery_Discharging_Start_Time'
+                        AND parent = %(parent_name)s
+				        and value REGEXP '^[0-9]+$'
+                        ORDER BY idx
+                    ),
+                    TimeParsed AS (
+                        SELECT 
+                            value,
+                            idx,
+                            parameter,
+                            STR_TO_DATE(parameter, '%%H:%%i:%%s') AS time_obj
+                        FROM FilteredResults
+                    ),
+                    DeltaValues AS (
+                        SELECT 
+                            curr.value,
+                            curr.idx,
+                            curr.parameter,
+                            curr.value - LEAD(curr.value) OVER (ORDER BY curr.idx) AS delta_drop,
+                            ROUND(
+                                ABS(
+                                    IF(
+                                        LEAD(curr.time_obj) OVER (ORDER BY curr.idx) >= curr.time_obj,
+                                        TIME_TO_SEC(TIMEDIFF(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), curr.time_obj)),
+                                        TIME_TO_SEC(TIMEDIFF(ADDTIME(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), '24:00:00'), curr.time_obj))
+                                    )
+                                ), 2
+                            ) AS delta_seconds
+                        FROM TimeParsed curr
+                    ),
+                    RateValues AS (
+                        SELECT 
+                            idx,
+                            parameter,
+                            value,
+                            delta_drop,
+                            delta_seconds,
+                            CASE 
+                                WHEN delta_drop IS NOT NULL AND delta_drop <> 0 AND delta_seconds <> 0 
+                                THEN delta_drop / delta_seconds 
+                                ELSE NULL 
+                            END AS rate
+                        FROM DeltaValues
+                    ),
+                    avg_rate AS (
+                        SELECT *,AVG(rate) AS avg_rate_value
+                        FROM RateValues 
+                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                        
+                    ),
 
-                SELECT
+                    stats AS (
+                        SELECT *,
+                            round(MAX(rate),4) AS max_rate,
+                        round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
+                            SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
+                        FROM RateValues
+                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                    )
+                    SELECT
                     max_rate,
                     avg_rate,
                     count_gt_2x as count,
@@ -1636,9 +1638,8 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     END AS condition_met
                 
                     FROM stats;
-    
 
-                    """
+                """
             
             percentage_query="""
                     SELECT value

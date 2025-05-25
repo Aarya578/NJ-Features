@@ -28,10 +28,10 @@ class CustomDeliveryNote(DeliveryNote):
             
             # Early return for Snapmint orders (skipping trigger_fulfillment)
             if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
-                # self.rto_charges_update()
-                # self.fetching_tracking_details()
-                # self.set_cit_image_from_sales_order()
-                # self.update_details_to_delivery_charege_doc()
+                self.rto_charges_update()
+                self.fetching_tracking_details()
+                self.set_cit_image_from_sales_order()
+                self.update_details_to_delivery_charege_doc()
                 qi_mandatory_checks_on_dn_submit(self, method=None)
                 if self.is_return == 0:
                     send_sales_invoice_email_on_delivery_note(self, method=None)
@@ -57,11 +57,11 @@ class CustomDeliveryNote(DeliveryNote):
             if order_id and self.is_return == 0:
                 trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
 
-            # self.rto_charges_update()
-            # self.set_cit_image_from_sales_order()
-            # self.fetching_tracking_details()
+            self.rto_charges_update()
+            self.set_cit_image_from_sales_order()
+            self.fetching_tracking_details()
 
-            # self.update_details_to_delivery_charege_doc()
+            self.update_details_to_delivery_charege_doc()
             qi_mandatory_checks_on_dn_submit(self, method=None)
             if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)

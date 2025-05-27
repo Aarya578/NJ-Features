@@ -14,7 +14,8 @@
   "mr_qty",
   "status",
   "allocated_status",
-  "against_item_code"
+  "against_item_code",
+  "rank"
  ],
  "fields": [
   {
@@ -76,12 +77,19 @@
    "fieldtype": "Data",
    "label": "Against Item Code",
    "read_only": 1
+  },
+  {
+   "fieldname": "rank",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Rank",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-04-09 16:15:28.054430",
+ "modified": "2025-05-27 15:39:17.082456",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Allocation Child",

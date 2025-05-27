@@ -127,16 +127,14 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
             
-            self.qi_name = get_itm_code_on_barcode(new_qi)
+            new_qi = get_itm_code_on_barcode(new_qi)
             if is_defective is not None and is_defective:
               new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="1", re_check="0")
             elif re_check is not None and re_check:
               new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="1")
             else:
               new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="0")
-            
               
-
         # item_wizard_name = new_qi.get('item_wizard')
         # item_group_data =''
         # if item_wizard_name :
@@ -292,7 +290,7 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
             #     FROM `tabNj Quality Readings`
             #     WHERE item_group = %s AND parent = %s""", (data.get("item_group"), new_qi.name), as_dict=True)
             item_group_idx_value = 0
-            
+
             if item_group_idx:
                 item_group_idx_value = int(item_group_idx[0]['item_group_idx'])
             
@@ -304,6 +302,7 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
                         FROM `tabQC Options` 
                         WHERE parent = %s
                     """, name_of_check, as_dict=True)
+
                     # Fetch existing child table entries into a set for comparison
                     existing_entries = {
                         (child.item_group, child.check_name)
@@ -359,6 +358,7 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
 
 
     except Exception as e:
+        frappe.log_error("error in saving NJ QI", traceback.format_exc())
         frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
         return None
     
@@ -422,12 +422,11 @@ def get_itm_code_on_barcode(new_qi):
             if not work_warehouse:
                 frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
 
+            return new_qi
         else:
             frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
             return {"disable_save": True}
         
-        return new_qi
-
     except Exception as e:
         frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}\n{traceback.format_exc()}")
         return None
@@ -608,29 +607,22 @@ class NJQCA(Document):
 
         except Exception as e:
             frappe.db.rollback()
-            print("Error in create_serial_no_based_on_rfq", traceback.format_exc())
             return None
 
     def validate_item_code_match(self):
-        # print("validate_item_code_match==========================")
-        
         if self.item_group != "Laptops":
             return
             
         setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
-        # print("setting_value==========================", setting_value)
         
         if not setting_value:
             return
             
         allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
-        # print("allowed_inspection_types==========================", allowed_inspection_types)
         
         if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
-            # print("self.inspection_type==========================", self.inspection_type)
             if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
                 frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
-
 
     def update_serial_no_readings(self):
     # Fetch relevant parameters from NJQCA Result Parameters
@@ -1051,7 +1043,7 @@ def get_info_from_serial_no(doc=None):
 def after_save_njqca(docname, brand=None, model=None, qi_type=None):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
-        if doc.power_on == 'Yes' and qi_type==None:
+        if doc.power_on == 'Yes' and (qi_type==None or not qi_type):
             qi_draft_data = open_draft_qi(doc,brand,model)
             return qi_draft_data
         elif doc.power_on == 'Yes' and qi_type=='is_defective':
@@ -1566,75 +1558,77 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                sudden_drop_limit = frappe.db.get_value('Item Wizards',{'name': iw},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
                 sudden_drop_limit="15"
-            delta_query=""" WITH FilteredResults AS (
-                    SELECT value, idx, parameter
-                    FROM `tabNJQCA Result Parameters`
-                    WHERE idx >= (
-                        SELECT idx - 1
+            delta_query=""" 
+                      WITH FilteredResults AS (
+                        SELECT value, idx, parameter
                         FROM `tabNJQCA Result Parameters`
-                        WHERE parent = %(parent_name)s
-                        AND parameter = 'Battery_Discharging_Start_Time' 
-                        ORDER BY idx DESC LIMIT 1
-                    )
-                    AND parameter <> 'Battery_Discharging_Start_Time'
-                    AND parent = %(parent_name)s
-                    AND value >= %(sudden_drop_limit)s
-                    ORDER BY idx
-                ),
-                TimeParsed AS (
-                    SELECT 
-                        value,
-                        idx,
-                        parameter,
-                        STR_TO_DATE(parameter, '%%H:%%i:%%s') AS time_obj
-                    FROM FilteredResults
-                ),
-                DeltaValues AS (
-                    SELECT 
-                        curr.value,
-                        curr.idx,
-                        curr.parameter,
-                        curr.value - LEAD(curr.value) OVER (ORDER BY curr.idx) AS delta_drop,
-                        ROUND(
-                            ABS(
-                                IF(
-                                    LEAD(curr.time_obj) OVER (ORDER BY curr.idx) >= curr.time_obj,
-                                    TIME_TO_SEC(TIMEDIFF(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), curr.time_obj)),
-                                    TIME_TO_SEC(TIMEDIFF(ADDTIME(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), '24:00:00'), curr.time_obj))
-                                )
-                            ), 2
-                        ) AS delta_seconds
-                    FROM TimeParsed curr
-                ),
-                RateValues AS (
-                    SELECT 
-                        idx,
-                        parameter,
-                        value,
-                        delta_drop,
-                        delta_seconds,
-                        CASE 
-                            WHEN delta_drop IS NOT NULL AND delta_drop <> 0 AND delta_seconds <> 0 
-                            THEN delta_drop / delta_seconds 
-                            ELSE NULL 
-                        END AS rate
-                    FROM DeltaValues
-                ),
-                avg_rate AS (
-                    SELECT *,AVG(rate) AS avg_rate_value
-                    FROM RateValues
-                    WHERE rate IS NOT NULL
-                ),
-                stats AS (
-                    SELECT *,
-                        round(MAX(rate),4) AS max_rate,
-                    round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
-                        SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
-                    FROM RateValues
-                    WHERE rate IS NOT NULL
-                )
+                        WHERE idx >= (
+                            SELECT idx - 1
+                            FROM `tabNJQCA Result Parameters`
+                            WHERE parent = %(parent_name)s
+                            AND parameter = 'Battery_Discharging_Start_Time' 
+                            ORDER BY idx DESC LIMIT 1
+                        )
+                        AND parameter <> 'Battery_Discharging_Start_Time'
+                        AND parent = %(parent_name)s
+				        and value REGEXP '^[0-9]+$'
+                        ORDER BY idx
+                    ),
+                    TimeParsed AS (
+                        SELECT 
+                            value,
+                            idx,
+                            parameter,
+                            STR_TO_DATE(parameter, '%%H:%%i:%%s') AS time_obj
+                        FROM FilteredResults
+                    ),
+                    DeltaValues AS (
+                        SELECT 
+                            curr.value,
+                            curr.idx,
+                            curr.parameter,
+                            curr.value - LEAD(curr.value) OVER (ORDER BY curr.idx) AS delta_drop,
+                            ROUND(
+                                ABS(
+                                    IF(
+                                        LEAD(curr.time_obj) OVER (ORDER BY curr.idx) >= curr.time_obj,
+                                        TIME_TO_SEC(TIMEDIFF(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), curr.time_obj)),
+                                        TIME_TO_SEC(TIMEDIFF(ADDTIME(LEAD(curr.time_obj) OVER (ORDER BY curr.idx), '24:00:00'), curr.time_obj))
+                                    )
+                                ), 2
+                            ) AS delta_seconds
+                        FROM TimeParsed curr
+                    ),
+                    RateValues AS (
+                        SELECT 
+                            idx,
+                            parameter,
+                            value,
+                            delta_drop,
+                            delta_seconds,
+                            CASE 
+                                WHEN delta_drop IS NOT NULL AND delta_drop <> 0 AND delta_seconds <> 0 
+                                THEN delta_drop / delta_seconds 
+                                ELSE NULL 
+                            END AS rate
+                        FROM DeltaValues
+                    ),
+                    avg_rate AS (
+                        SELECT *,AVG(rate) AS avg_rate_value
+                        FROM RateValues 
+                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                        
+                    ),
 
-                SELECT
+                    stats AS (
+                        SELECT *,
+                            round(MAX(rate),4) AS max_rate,
+                        round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
+                            SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
+                        FROM RateValues
+                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                    )
+                    SELECT
                     max_rate,
                     avg_rate,
                     count_gt_2x as count,
@@ -1644,9 +1638,8 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     END AS condition_met
                 
                     FROM stats;
-    
 
-                    """
+                """
             
             percentage_query="""
                     SELECT value
@@ -2458,20 +2451,16 @@ def get_battery_serialno(bios_serial_no,inspection_type):
         
     except Exception as e:
         return ""
-    
 
 # @frappe.whitelist()
 # def get_item_group_mapping(parent):
-#     print("inside get_item_group_mapping function======================")
 #     data = frappe.get_all(
 #         "NJQCA Child",
 #         filters={"item_group": "Laptop Processors", "parent": parent},
         
 #         fields=["item_group", "variant_6"]
 #     )
-#     print("data======================", data)
 #     return data
-
 
 @frappe.whitelist()
 def check_for_mis_config(doc):
@@ -2595,7 +2584,6 @@ def check_ram_speed(njqca_name,item_template):
                     if not (njqca_ram_speed.get("ram_speed") in required_speeds):
                         return "FAIL"
             return "PASS"
-                    
         else:
             return ""
     except Exception as e:

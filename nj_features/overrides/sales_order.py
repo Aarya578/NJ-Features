@@ -23,16 +23,10 @@ class CustomSalesOrder(SalesOrder):
                 if len(stripped_id) < 7:
                     raw_order_id = self.shopify_order_id
 
-            # if not raw_order_id and self.order_id:
-            #     raw_order_id = self.order_id
-
             if not raw_order_id and self.shopify_order_number:
                 raw_order_id = self.shopify_order_number
 
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
-
-            # if order_id:
-            #     trigger_fulfillment(order_id)
 
 
     def send_consignement_data(self):

@@ -36,11 +36,8 @@ def create_user_and_warehouse(self):
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
 
-            if self.get("work_warehouse") != '' and work_ware is not None:
-                update_work_warehouse(self)
-
-            if db_department and db_department != self.get("department"):
-                update_department_in_work_warehouse(self)
+            # if db_department and db_department != self.get("department"):
+            #     update_department_in_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
@@ -112,14 +109,20 @@ def update_department_in_work_warehouse(self):
             except Exception as e:
                 frappe.throw(_("Error while updating work warehouse: {0}").format(str(e)))
 
-def update_work_warehouse(self):
+@frappe.whitelist()
+def update_work_warehouse(doc):
     try:
+        if isinstance(doc, str):
+            doc = json.loads(doc)
+
         query = """
                     UPDATE `tabWarehouse`
                     SET department = %s, previous_department = %s
                     WHERE name = %s
                 """
-        frappe.db.sql(query, (self.get("department"), self.get("previous_department"), self.get("work_warehouse")))
+        frappe.db.sql(query, (doc.get("department"), doc.get("previous_department"), doc.get("work_warehouse")))
+
+        return True
     except Exception as e:
         frappe.throw("Error while updating work warehouse: ",e)
 

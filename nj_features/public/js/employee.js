@@ -46,9 +46,19 @@ frappe.ui.form.on('Employee', {
                 }
             });
         }
+        frappe.call({
+            method: "nj_features.overrides.employee.update_work_warehouse",
+            args:{
+                doc: frm.doc
+            },
+            callback: function(r) {
+                console.log("update_work_warehouse", r);
+            }
+        })
     },
 
     validate(frm) {
+        console.log("Inside validate function =================");
         // Ensure validations run only when required
         frappe.validated = false;
 
@@ -148,6 +158,7 @@ frappe.ui.form.on('Employee', {
     },
 
     before_save(frm) {
+        console.log("Inside before_save function =================");
         frappe.call({
             method: "nj_features.overrides.employee.get_previous_department",
             args: { docname: frm.doc.name },

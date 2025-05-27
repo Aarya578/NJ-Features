@@ -1065,7 +1065,6 @@ def allocate_laptop_parts(doc):
 
     grouped_by_serial = {}
 
-    # Track planned allocations per item_code
     planned_allocation = {}
 
     for item in mr_items:
@@ -1073,7 +1072,6 @@ def allocate_laptop_parts(doc):
         item_code = item["item_code"]
         mr_qty = flt(item["mr_qty"])
 
-        # Calculate available stock minus what is already planned for allocation
         available_stock = virtual_stock_data.get(item_code, 0) - planned_allocation.get(item_code, 0)
 
         if available_stock >= mr_qty:
@@ -1094,7 +1092,6 @@ def allocate_laptop_parts(doc):
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
 
-            # Plan the allocation (do not deduct yet)
             planned_allocation[item_code] = planned_allocation.get(item_code, 0) + mr_qty
 
         else:
@@ -1134,8 +1131,12 @@ def allocate_laptop_parts(doc):
             }
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
+    
 
-    # Now deduct the planned allocations from virtual_stock_data
+    print("\n\nplanned_allocation ----------------------- ", planned_allocation)
+    print("\n\ngrouped_by_serial ----------------------- ", grouped_by_serial)
+
+    # Deduct planned allocations from virtual_stock_data
     for item_code, qty in planned_allocation.items():
         if item_code in virtual_stock_data:
             virtual_stock_data[item_code] -= qty
@@ -1149,12 +1150,27 @@ def allocate_laptop_parts(doc):
         if all(item["allocated_status"] == "Allocated" for item in items):
             final_result.extend(items)
 
+    # Sort by serial_no and material_request no
     from operator import itemgetter
     final_result.sort(key=itemgetter("serial_no", "mreq_no"))
 
-    final_results = allocate_serial_no_for_battery(final_result)
+    # Filter to only keep unique item_code per serial_no
+    unique_final_result = []
+    seen_serial_item_codes = {}
 
-    return final_result
+    for item in final_result:
+        sn = item["serial_no"]
+        ic = item["item"]
+        if sn not in seen_serial_item_codes:
+            seen_serial_item_codes[sn] = set()
+        if ic not in seen_serial_item_codes[sn]:
+            unique_final_result.append(item)
+            seen_serial_item_codes[sn].add(ic)
+
+    # Call allocate_serial_no_for_battery on filtered unique list
+    final_results = allocate_serial_no_for_battery(unique_final_result)
+
+    return unique_final_result
 
 def allocated_other_part(item):
 

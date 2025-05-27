@@ -148,6 +148,7 @@ frappe.ui.form.on('NJQCA', {
                     args: { 
                         "bios_serial_no": frm.doc.bios_serialno, 
                         "inspection_type":frm.doc.inspection_type,
+                        "creation_date":frm.doc.creation
                     },
                     callback: function(r) {
                         if (r.message) { 

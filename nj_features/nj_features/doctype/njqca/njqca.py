@@ -1616,7 +1616,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     avg_rate AS (
                         SELECT *,AVG(rate) AS avg_rate_value
                         FROM RateValues 
-                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                        WHERE rate IS NOT NULL and value>%(sudden_drop_limit)s
                         
                     ),
 
@@ -1626,7 +1626,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                         round( (SELECT avg_rate_value FROM avg_rate),4) AS avg_rate,
                             SUM(CASE WHEN rate > 2 * (SELECT avg_rate_value FROM avg_rate) THEN 1 ELSE 0 END) AS count_gt_2x
                         FROM RateValues
-                        WHERE rate IS NOT NULL and value>=%(sudden_drop_limit)s
+                        WHERE rate IS NOT NULL and value>%(sudden_drop_limit)s
                     )
                     SELECT
                     max_rate,
@@ -1652,6 +1652,8 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             """
 
             percentage = frappe.db.sql(percentage_query, {'parent_name': parent_name}, as_dict=True)
+            if percentage is None or not percentage:
+                return "No Valid Data"
             last_percentage = percentage[0].get('value')
 
             rbdt_status = frappe.db.get_value('NJQCA', {'name': parent_name}, 'rapid_bdt')
@@ -2401,7 +2403,7 @@ def update_njqca_doc(njqca_name, evaluation_results):
         frappe.log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")
         
 @frappe.whitelist()
-def get_battery_serialno(bios_serial_no,inspection_type):
+def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
     try:
         inspection_types = frappe.db.get_value("NJ Settings",{"doc_type": "NJQCA","parameter":"get_battery_serial_no"},"value")
 
@@ -2436,11 +2438,12 @@ def get_battery_serialno(bios_serial_no,inspection_type):
                         stock_entry.purpose = 'Repack' AND 
                         stock_entry.docstatus = 1 AND
                         tot_sed.s_warehouse IS NOT NULL AND 
-                        tot_sed.item_group = 'Battery'
+                        tot_sed.item_group = 'Battery' AND
+                        tot_sed.creation < %(njqca_creation)s
                     ORDER BY stock_entry.creation DESC
                     LIMIT 1
                 """
-            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
+            data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
 
             if data is not None and data:  
                 return data[0].get("battery_serial_no")

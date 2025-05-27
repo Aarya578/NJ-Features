@@ -1024,6 +1024,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 def allocate_laptop_parts(doc):
 
     serial_list = []
+    serial_no_rank = {row.get("suggested_serial_no"): row.get("rank") for row in doc.get("suggested_serial_no", [])}
     for row in doc.get("suggested_serial_no"):
         if row.suggested_serial_no:
             serial_list.extend([s.strip() for s in row.suggested_serial_no.split(",") if s.strip()])
@@ -1087,7 +1088,8 @@ def allocate_laptop_parts(doc):
                 "sb_qty": available_stock,
                 "status": status,
                 "allocated_qty": mr_qty,
-                "allocated_status": allocated_status
+                "allocated_status": allocated_status,
+                "rank": serial_no_rank.get(serial_no, 0)
             }
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
@@ -1127,14 +1129,21 @@ def allocate_laptop_parts(doc):
                 "status": status,
                 "allocated_qty": mr_qty,
                 "allocated_status": allocated_status,
-                "against_item_code": against_item_code
+                "against_item_code": against_item_code,
+                "rank": serial_no_rank.get(serial_no, 0)
             }
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
-    
 
-    print("\n\nplanned_allocation ----------------------- ", planned_allocation)
-    print("\n\ngrouped_by_serial ----------------------- ", grouped_by_serial)
+    for serial, items in grouped_by_serial.items():
+        grouped_by_serial[serial] = sorted(items, key=lambda x: x['rank'])
+
+    sorted_serials = sorted(
+        grouped_by_serial.items(),
+        key=lambda x: x[1][0]['rank'] if x[1] else float('inf')
+    )
+
+    grouped_by_serial = dict(sorted_serials)
 
     # Deduct planned allocations from virtual_stock_data
     for item_code, qty in planned_allocation.items():

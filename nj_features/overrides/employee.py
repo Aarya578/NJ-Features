@@ -114,7 +114,6 @@ def update_work_warehouse(doc):
     try:
         if isinstance(doc, str):
             doc = json.loads(doc)
-
         query = """
                     UPDATE `tabWarehouse`
                     SET department = %s, previous_department = %s

@@ -1,8 +1,13 @@
 import frappe , requests
 import requests
 import json
+import base64
+import frappe
+
+import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -13,9 +18,10 @@ class CustomSalesOrder(SalesOrder):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
         # self.update_item_details()
-        # self.send_consignement_data()
-        self.cod_calculation()
+        self.ship_consignement_data()
+        # self.cod_calculation()
         # self.fetching_tracking_details()
+        # self.getting_shiprocket_order_details()
         raw_order_id = None
         if self.order_type!="Maintenance":
             if self.shopify_order_id:
@@ -34,103 +40,332 @@ class CustomSalesOrder(SalesOrder):
             # if order_id:
             #     trigger_fulfillment(order_id)
 
+    # def getting_shiprocket_order_details(self):
+    #     auth_token = get_auth_token().get("token")
+    #     print("auth_token:----55", auth_token)
+    #     if not auth_token:
+    #         frappe.throw("Shiprocket Auth Token not found.")
+    #     if not self.shopify_order_id:
+    #         frappe.throw("Shopify Order ID is missing.")
+        
+    #     url = f"https://apiv2.shiprocket.in/v1/external/orders?filter_by=channel_order_id&filter={self.shopify_order_id}"
+    #     print("url===============================", url)
+        
+    #     headers = {
+    #         "Content-Type": "application/json",
+    #         "Authorization": f"Bearer {auth_token}"
+    #     }
+        
+    #     try:
+    #         response = requests.get(url, headers=headers)
+    #         print("response:=====================", response.json())
+    #         response.raise_for_status()
+    #     except requests.exceptions.RequestException as e:
+    #         frappe.throw(f"Shiprocket API request failed: {str(e)}")
+        
+    #     data = response.json().get("data")
+        
+    #     # Map the fields if data exists
+    #     if data and len(data) > 0:
+    #         order_data = data[0]  # Get the first order from the array
+            
+    #         # Map shiprocket_order_id from the main order 'id' field
+    #         self.shiprocket_order_id = order_data.get('id')
+            
+    #         # Map shiprocket_shipment_id from the first shipment's 'id' field
+    #         shipments = order_data.get('shipments', [])
+    #         if shipments and len(shipments) > 0:
+    #             self.shiprocket_shipment_id = shipments[0].get('id')
+            
+    #         self.save(ignore_permissions=True)
+    #         frappe.db.commit()
+    #         # Optional: You might also want to map other useful fields
+    #         # self.customer_name = order_data.get('customer_name')
+    #         # self.customer_email = order_data.get('customer_email')
+    #         # self.order_status = order_data.get('status')
+    #         # self.payment_status = order_data.get('payment_status')
+            
+    #         print(f"Mapped shiprocket_order_id: {self.shiprocket_order_id}")
+    #         print(f"Mapped shiprocket_shipment_id: {self.shiprocket_shipment_id}")
+    #     else:
+    #         frappe.throw("No order data found in Shiprocket response.")
+        
+    #     return data        
 
-    # def send_consignement_data(self):
+   
+    #     data = response.json().get("data")
+    def ship_consignement_data(self):
+        # if not self.is_cod:
+        #     return
+            
+        auth_token = get_auth_token().get("token")
+        print("auth_token:----55", auth_token)
+        print("Triggered send_consignement_data...")
+        
+        try:
+            # Fetch addresses
+            shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
+            
+            if not shipping_address:
+                frappe.throw("Shipping address is required")
+
+            formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
+
+            # Prepare order_items from child table - ShipRocket format
+            # order_items = []
+            # for row in self.items:
+            #     order_items.append({
+            #         "name": (row.item_code[:50] if row.item_code else "")[:50],  # Ensure max 50 chars
+            #         "sku": (row.item_code[:50] if row.item_code else "")[:50],   # Ensure max 50 chars
+            #         "units": int(row.qty),                      # Should be integer, not string
+            #         "selling_price": str(row.amount),     # String format for price
+            #         "discount": "",
+            #         "tax": "",
+            #         "hsn": ""
+            #     })
+
+            order_items = []
+            for row in self.items:
+                item_code = row.item_code
+                item_doc = frappe.get_doc("Item", item_code) if item_code else None
+                item_group = item_doc.item_group if item_doc else ""
+
+                item_data = {
+                    "name": (item_code[:50] if item_code else "")[:50],
+                    "sku": (item_code[:50] if item_code else "")[:50],
+                    "selling_price": str(row.amount),
+                    "discount": "",
+                    "tax": "",
+                    "hsn": ""
+                }
+
+                # Only include 'units' if item group is 'Laptops'
+                if item_group == "Laptops":
+                    item_data["units"] = int(row.qty)
+
+                order_items.append(item_data)
+            # Determine payment method and subtotal based on is_cod condition
+            if self.is_cod == 1:
+                payment_method = "COD"
+                sub_total = float(self.total_outstanding) if self.total_outstanding else 0
+            else:
+                payment_method = "Prepaid"
+                sub_total = float(self.grand_total) if self.grand_total else 0
+
+            # ShipRocket API payload structure
+            data = {
+                "order_id": self.name,
+                "order_date": formatted_date,
+                "pickup_location": "Primary",
+                "comment": f"Order from {self.customer_name}",
+                "billing_customer_name": self.customer_name or "",
+                "billing_last_name": "",
+                "billing_address": shipping_address.address_line1 if shipping_address.address_line1 else "",
+                "billing_address_2": shipping_address.address_line2 if shipping_address.address_line2 else "",
+                "billing_city": shipping_address.city if shipping_address.city else "",
+                "billing_pincode": shipping_address.pincode if shipping_address.pincode else "",
+                "billing_state": shipping_address.state if shipping_address.state else "",
+                "billing_country": shipping_address.country if shipping_address.country else "India",
+                "billing_email": shipping_address.email_id if shipping_address.email_id else "",
+                "billing_phone": shipping_address.phone if shipping_address.phone else "",
+                "shipping_is_billing": True,
+                "shipping_customer_name": "",
+                "shipping_last_name": "", 
+                # "shipping_address": "",
+                # "shipping_address_2": "",
+                # "shipping_city": "",
+                # "shipping_pincode": "",
+                # "shipping_country": "",
+                # "shipping_state": "",
+                # "shipping_email": "",
+                # "shipping_phone": "",
+                "order_items": order_items,
+                "payment_method": payment_method,
+                # "shipping_charges": 0,
+                # "giftwrap_charges": 0,
+                # "transaction_charges": 0,
+                # "total_discount": 0,
+                "sub_total": sub_total,
+                "length": str(self.length),
+                "breadth": str(self.breadth), 
+                "height": str(self.height),
+                "weight": str(self.weight)
+            }
+
+            url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
+            
+            # Debug: Print token details
+            print(f"Token length: {len(auth_token) if auth_token else 'None'}")
+            print(f"Token starts with: {auth_token[:20] if auth_token and len(auth_token) > 20 else auth_token}")
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {auth_token.strip()}"
+            }
+
+            print("Sending data:", json.dumps(data, indent=2))
+            response = requests.post(url, headers=headers, json=data)
+            print(f"Response status: {response.status_code}")
+            print(f"Response content: {response.text}")
+
+            if response.status_code == 200:
+                try:
+                    resp_json = response.json()
+                    if resp_json.get('order_id'):
+                        print("==========================================Order created successfully")
+                        print(f"ShipRocket Order ID: {resp_json.get('order_id')}")
+                        print(f"Shipment ID: {resp_json.get('shipment_id')}")
+
+                        # ✅ Correct mapping
+                        self.shiprocket_order_id = resp_json.get('order_id')
+                        print("self.shipRocket_order_id==================", self.shiprocket_order_id)
+
+                        self.shiprocket_shipment_id = resp_json.get('shipment_id')
+                        print("self.shipRocket_shipment_id==================", self.shiprocket_order_id)
+                        # self.save(ignore_permissions=True)
+                        self.save(ignore_permissions=True)
+                        frappe.db.commit()
+                        return resp_json
+                    else:
+                        frappe.throw(f"Order creation failed: {response.text}")
+                except ValueError as json_err:
+                    frappe.throw(f"Could not parse API response: {response.text}")
+
+            else:
+                # Handle different error codes
+                if response.status_code == 401:
+                    frappe.throw("Authentication failed. Please check your ShipRocket credentials.")
+                elif response.status_code == 422:
+                    frappe.throw(f"Validation error: {response.text}")
+                else:
+                    frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
+        except Exception as e:
+            frappe.log_error(f"Consignment API Failed for {self.name}: {str(e)}", frappe.get_traceback())
+            frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
+
+    # def ship_consignement_data(self):
+    #     if not self.is_cod:
+    #         return
+            
+    #     auth_token = get_auth_token().get("token")
+    #     print("auth_token:----55", auth_token)
     #     print("Triggered send_consignement_data...")
+        
     #     try:
     #         # Fetch addresses
-    #         company_address = frappe.get_doc("Address", self.company_address) if self.company_address else None
     #         shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
+            
+    #         if not shipping_address:
+    #             frappe.throw("Shipping address is required")
 
     #         formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
 
-    #         # Prepare header with consistent structure matching Postman example
-    #         header = {
-    #             "ClientCode": "207433",
-    #             "OrderNo/InvoiceNo": self.name,
-    #             # "Order/InvoiceDate": "2025-05-16",
-    #             "Order/InvoiceDate": self.transaction_date,
-    #             # Sender
-    #             "SenderName": self.company,
-    #             "SenderAdd1": company_address.address_line1 if company_address.address_line1 else " ",
-    #             "SenderAdd2": company_address.address_line2 if company_address.address_line2 else "",
-    #             "SenderCity": company_address.city if company_address.city else "",
-    #             "SenderState": company_address.state if company_address.state else "",
-    #             "SenderCountry": company_address.country if company_address.country else "India",
-    #             # "SenderPin": company_address.pincode if company_address else "",
-    #             "SenderPin": "560100",
-    #             "SenderMobile": company_address.phone or "",
-    #             "SenderEmail": company_address.email_id or "",
-
-    #             # Receiver
-    #             "ReceiverName": self.customer_name or "",
-    #             "ReceiverAdd1": shipping_address.address_line1 if shipping_address.address_line1 else "",
-    #             "ReceiverAdd2": shipping_address.address_line2 if shipping_address.address_line2 else " ",
-    #             "ReceiverCity": shipping_address.city if shipping_address.city else "",
-    #             "ReceiverState": shipping_address.state if shipping_address.state else "",
-    #             "ReceiverCountry": shipping_address.country if shipping_address.country else "India",
-    #             # "ReceiverPin": shipping_address.pincode if shipping_address else "",
-    #             "ReceiverPin": "110002",
-    #             "ReceiverMobile": shipping_address.phone or "",
-
-    #             "ConsignmentValue": str(self.grand_total),
-    #             "NoQuantity": 1,
-    #             "consignmentValue": str(self.grand_total),  # Added this field to match Postman
-    #             "Weight": str(self.weight),
-    #             "TransitMode": self.mode_of_transfer,
-    #             "ProductMode": "Normal",
-    #             "PaymentType": "COD",
-    #             "Amount": str(self.grand_total),
-    #             "Need_CitImage": "1"
-    #         }
-
-    #         # Prepare items with consistent formatting
-    #         items = []
+    #         # Prepare order_items from child table - ShipRocket format
+    #         order_items = []
     #         for row in self.items:
-    #             items.append({
-    #                 "Length": f"{float(self.length):.2f}",
-    #                 "Breadth": f"{float(self.breadth):.2f}",
-    #                 "Height": f"{float(self.height):.2f}",
-    #                 "ProductCode": "AUTO",
-    #                 "ProductDescription": row.item_name,
-    #                 "SplitPcs": f"{float(row.qty):.4f}",
-    #                 "IsPackaging": "0"
+    #             order_items.append({
+    #                 "name": (row.item_code[:50] if row.item_code else "")[:50],  # Ensure max 50 chars
+    #                 "sku": (row.item_code[:50] if row.item_code else "")[:50],   # Ensure max 50 chars
+    #                 "units": int(row.qty),                      # Should be integer, not string
+    #                 "selling_price": str(row.amount),     # String format for price
+    #                 "discount": "",
+    #                 "tax": "",
+    #                 "hsn": ""
     #             })
 
+           
+
+    #         # ShipRocket API payload structure
     #         data = {
-    #             "ResponseHeader": "yes",
-    #             "Header": [header],
-    #             "ItemsDetails": items
+    #             "order_id": self.name,
+    #             "order_date": formatted_date,
+    #             "pickup_location": "Primary",
+    #             "comment": f"Order from {self.customer_name}",
+    #             "billing_customer_name": self.customer_name or "",
+    #             "billing_last_name": "",
+    #             "billing_address": shipping_address.address_line1 if shipping_address.address_line1 else "",
+    #             "billing_address_2": shipping_address.address_line2 if shipping_address.address_line2 else "",
+    #             "billing_city": shipping_address.city if shipping_address.city else "",
+    #             "billing_pincode": shipping_address.pincode if shipping_address.pincode else "",
+    #             "billing_state": shipping_address.state if shipping_address.state else "",
+    #             "billing_country": shipping_address.country if shipping_address.country else "India",
+    #             "billing_email": shipping_address.email_id if shipping_address.email_id else "",
+    #             "billing_phone": shipping_address.phone if shipping_address.phone else "",
+    #             "shipping_is_billing": True,
+    #             "shipping_customer_name": "",
+    #             "shipping_last_name": "", 
+    #             # "shipping_address": "",
+    #             # "shipping_address_2": "",
+    #             # "shipping_city": "",
+    #             # "shipping_pincode": "",
+    #             # "shipping_country": "",
+    #             # "shipping_state": "",
+    #             # "shipping_email": "",
+    #             # "shipping_phone": "",
+    #             "order_items": order_items,
+    #             "payment_method": "COD",
+    #             # "shipping_charges": 0,
+    #             # "giftwrap_charges": 0,
+    #             # "transaction_charges": 0,
+    #             # "total_discount": 0,
+    #             "sub_total": float(self.total_outstanding) if self.total_outstanding else 0,
+    #             "length": str(self.length),
+    #             "breadth": str(self.breadth), 
+    #             "height": str(self.height),
+    #             "weight": str(self.weight)
     #         }
 
-    #         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
-    #         headers = {"Content-Type": "application/json"}
+    #         url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
+            
+    #         # Debug: Print token details
+    #         print(f"Token length: {len(auth_token) if auth_token else 'None'}")
+    #         print(f"Token starts with: {auth_token[:20] if auth_token and len(auth_token) > 20 else auth_token}")
+            
+    #         headers = {
+    #             "Content-Type": "application/json",
+    #             "Authorization": f"Bearer {auth_token.strip()}"
+    #         }
 
-    #         print("Sending data:", json.dumps(data, indent=2))  # Print the actual payload
+    #         print("Sending data:", json.dumps(data, indent=2))
     #         response = requests.post(url, headers=headers, json=data)
     #         print(f"Response status: {response.status_code}")
     #         print(f"Response content: {response.text}")
 
-    #         try:
-    #             resp_json = response.json()
-    #             if resp_json.get('code') == 1 and resp_json.get('status') == 200:
-    #                 awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
-    #                 print(f"AWB Number generated: {awb_number}")
-    #                 # Look for cit_data in different possible locations in the response
-    #                 cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
-    #                 frappe.msgprint(f"AWB Number generated: {awb_number}")
-    #                 # Store the AWB number in your document if needed
-    #                 self.awb_number = awb_number
-    #                 self.cit_image = cit_data
-    #                 self.db_update()
+    #         if response.status_code == 200:
+    #             try:
+    #                 resp_json = response.json()
+    #                 if resp_json.get('order_id'):
+    #                     print("==========================================Order created successfully")
+    #                     print(f"ShipRocket Order ID: {resp_json.get('order_id')}")
+    #                     print(f"Shipment ID: {resp_json.get('shipment_id')}")
+
+    #                     # ✅ Correct mapping
+    #                     self.shiprocket_order_id = resp_json.get('order_id')
+    #                     print("self.shipRocket_order_id==================", self.shiprocket_order_id)
+
+    #                     self.shiprocket_shipment_id = resp_json.get('shipment_id')
+    #                     print("self.shipRocket_shipment_id==================", self.shiprocket_order_id)
+    #                     # self.save(ignore_permissions=True)
+    #                     self.save(ignore_permissions=True)
+    #                     frappe.db.commit()
+    #                     return resp_json
+    #                 else:
+    #                     frappe.throw(f"Order creation failed: {response.text}")
+    #             except ValueError as json_err:
+    #                 frappe.throw(f"Could not parse API response: {response.text}")
+
+    #         else:
+    #             # Handle different error codes
+    #             if response.status_code == 401:
+    #                 frappe.throw("Authentication failed. Please check your ShipRocket credentials.")
+    #             elif response.status_code == 422:
+    #                 frappe.throw(f"Validation error: {response.text}")
     #             else:
-    #                 frappe.throw(f"API returned error: {response.text}")
-    #         except Exception as json_err:
-    #             frappe.throw(f"Could not parse API response: {response.text}")
+    #                 frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
     #     except Exception as e:
-    #         # Show the actual error for debugging
-    #         # frappe.log_error(f"Consignment API Failed for {self.name}", frappe.get_traceback())
-    #         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
+    #         frappe.log_error(f"Consignment API Failed for {self.name}: {str(e)}", frappe.get_traceback())
+    #         frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
+
 
 
 
@@ -420,7 +655,7 @@ def send_consignement_data(doc):
         # Fetch addresses
         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
-        formatted_date = doc.transaction_date.strftime("%Y-%m-%d") if hasattr(doc.transaction_date, 'strftime') else str(doc.transaction_date)
+        formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
         
         # Prepare header
         header = {
@@ -504,3 +739,168 @@ def send_consignement_data(doc):
             
     except Exception as e:
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
+
+
+@frappe.whitelist()
+def shiprocket_awb_number(doc):
+    # print("======================== Inside shiprocket_awb_number")
+    doc = frappe._dict(json.loads(doc))
+    auth_token = get_auth_token().get("token")
+
+    if not auth_token:
+        frappe.throw("Authentication token could not be retrieved from Shiprocket.")
+
+    if not doc.shiprocket_shipment_id:
+        frappe.throw("Shipment ID not found on the document.")
+    
+    shipment_id = doc.shiprocket_shipment_id
+    invoice_order_id = doc.shiprocket_order_id
+    shipment_list = [int(shipment_id)]
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {auth_token.strip()}"
+    }
+
+    # 1. Service Availability
+
+    service_url = "https://apiv2.shiprocket.in/v1/external/courier/serviceability"
+    service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
+    service_json = service_response.json()
+    # print("service_json===========================", service_json)
+
+    courier_data = service_json.get("data", {}).get("available_courier_companies", [])
+
+    if not courier_data:
+        frappe.throw("No courier companies found in serviceability response.")
+
+    # Calculate total charges for each courier
+    best_courier = None
+    lowest_total = float('inf')
+
+    for courier in courier_data:
+        freight_charge = courier.get("freight_charge", 0) or 0
+        cod_charges = courier.get("cod_charges", 0) or 0
+        total = freight_charge + cod_charges
+
+        # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
+
+        if total < lowest_total:
+            lowest_total = total
+            best_courier = {
+                "courier_name": courier.get("courier_name"),
+                "courier_company_id": courier.get("courier_company_id"),
+                "total_cost": total
+            }
+
+    if best_courier:
+        print("Best Courier:====================12345", best_courier)
+    else:
+        print("No suitable courier found.")
+
+    # # 2. AWB Assignment
+    # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
+    # awb_response = requests.post(awb_url, headers=headers, json={
+    #     "shipment_id": shipment_id,
+    #     "courier_id": best_courier.get("courier_company_id")
+    # })
+    # print("awb_response===========================", awb_response)  
+    # print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
+    # awb_json = awb_response.json()
+    # awb_code = awb_json.get("response", {}).get("data", {}).get("awb_code")
+    # if not awb_code:
+    #     frappe.throw("AWB code not found in response.")
+    # frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
+    # 2. AWB Assignment
+    awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
+    awb_response = requests.post(awb_url, headers=headers, json={
+        "shipment_id": shipment_id,
+        "courier_id": best_courier.get("courier_company_id")
+    })
+    print("awb_response===========================", awb_response)  
+    print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
+
+    awb_json = awb_response.json()
+    response_data = awb_json.get("response", {})
+    data = response_data.get("data", {})
+
+    awb_code = None
+    if isinstance(data, dict):
+        awb_code = data.get("awb_code")
+    else:
+        # Show and stop if there's an error message instead of AWB data
+        frappe.msgprint(f"AWB Assignment Failed: {data}")
+        frappe.throw(f"ShipRocket response: {data}")
+
+    if not awb_code:
+        frappe.throw("AWB code not found in response.")
+
+    frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
+
+
+    # 3. Pickup Generation
+    pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
+    pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
+    print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
+    pickup_json = pickup_response.json()
+    pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
+    if pickup_scheduled_date:
+        frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
+    else:
+        frappe.throw("Pickup scheduled date not found in response.")
+
+    # 4. Manifest Generation
+    manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+    manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
+    print(f"Manifest Response: {manifest_response.status_code} - {manifest_response.text}")
+    manifest_json = manifest_response.json()
+    manifest_pdf_url = manifest_json.get("manifest_url")
+    if not manifest_pdf_url:
+        frappe.throw("Manifest URL not found in response.")
+    manifest_file_response = requests.get(manifest_pdf_url)
+    if manifest_file_response.status_code != 200:
+        frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
+    manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
+    frappe.db.set_value("Sales Order", doc.name, "shiprocket_manifests", manifest_pdf_b64)
+
+     # 5. Invoice Generation
+    invoice_order_id = doc.shiprocket_order_id
+    print("invoice_order_id====================",invoice_order_id)
+    invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
+    print("invoice_url",invoice_url)
+    invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
+    print("invoice_response",invoice_response)
+    print(f"Invoice Response: {invoice_response.status_code} - {invoice_response.text}")
+    invoice_json = invoice_response.json()
+    invoice_pdf_url = invoice_json.get("invoice_url")
+    if not invoice_pdf_url:
+        frappe.throw("Invoice URL not found in response.")
+    invoice_file_response = requests.get(invoice_pdf_url)
+    if invoice_file_response.status_code != 200:
+        frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
+    invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
+    frappe.db.set_value("Sales Order", doc.name, "shiprocket_invoice", invoice_pdf_b64)
+
+
+    # 6. Label Generation
+    label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
+    label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
+    print(f"Label Response: {label_response.status_code} - {label_response.text}")
+    label_json = label_response.json()
+    label_link = label_json.get("label_url")
+    if not label_link:
+        frappe.throw("Label URL not found in response.")
+    label_file_response = requests.get(label_link)
+    if label_file_response.status_code != 200:
+        frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
+    label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
+    frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
+
+
+    frappe.db.commit()
+    return {
+        "awb_code": awb_code,
+        "pickup_scheduled_date": pickup_scheduled_date,
+        "label_url": label_link,
+        "manifest_url": manifest_pdf_url,
+        "invoice_url": invoice_pdf_url
+    }

@@ -3,33 +3,66 @@ import frappe
 import json
 from frappe.utils.password import get_decrypted_password
 
-AUTH_URL = "https://apiv2.shiprocket.in/v1/external/auth/login"
 ORDER_URL = "https://apiv2.shiprocket.in/v1/external/orders?filter_by=channel_order_id&filter="
 COURIER_AVAILABILITY = "https://apiv2.shiprocket.in/v1/external/courier/serviceability/"
 GENERATE_AWB_TOKEN = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb/"
 ORDER_PICKUP = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
 GENERATE_LABEL = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
+AUTH_URL = "https://apiv2.shiprocket.in/v1/external/auth/login"
+CACHE_KEY = "shiprocket_auth_token"
+TOKEN_TTL_SECONDS = 10 * 24 * 60 * 60  # 10 days in seconds
 @frappe.whitelist(allow_guest=True)
 def get_auth_token():
     try:
+        # Try to get token from cache
+        cached_token = frappe.cache().get_value(CACHE_KEY)
+        if cached_token:
+            print(f"Using cached token: {cached_token[:20]}..." if len(cached_token) > 20 else cached_token)
+            return {"token": cached_token, "source": "cache"}
+            
+        # Get settings and login
         settings = frappe.get_single("Ship Rocket Settings")
-        email = settings.user 
-        
+        email = settings.email
         password = get_decrypted_password("Ship Rocket Settings", "Ship Rocket Settings", "password")
-
-        print(f"Email: {email}, Password: {password}")  
+        
+        print(f"Attempting login with email: {email}")
+        
         loginheaders = {
-                "App-Version": "3.4.2",
-                "Content-Type": "application/json"
-            }
-        response = rs.post(AUTH_URL, headers=loginheaders, json={"email": email, "password": password})
-
-        print("Response:", response.json())  
-        return response.json()
-
+            "Content-Type": "application/json"
+        }
+        
+        login_data = {"email": email, "password": password}
+        print(f"Login payload: {login_data}")
+        
+        response = rs.post(AUTH_URL, headers=loginheaders, json=login_data)
+        
+        print(f"Auth response status: {response.status_code}")
+        print(f"Auth response content: {response.text}")
+        
+        if response.status_code != 200:
+            frappe.throw(f"Failed to authenticate with ShipRocket: {response.text}")
+            
+        response_data = response.json()
+        token = response_data.get("token")
+        
+        if not token:
+            frappe.throw(f"Token not found in response: {response.text}")
+            
+        print(f"Received fresh token: {token[:20]}..." if len(token) > 20 else token)
+        print(f"Token segments count: {len(token.split('.'))}")
+        
+        # Validate JWT format (should have 3 segments separated by dots)
+        if len(token.split('.')) != 3:
+            frappe.throw(f"Invalid JWT token format. Expected 3 segments, got {len(token.split('.'))}. Token: {token}")
+            
+        # Cache the token for 10 days
+        frappe.cache().set_value(CACHE_KEY, token, expires_in_sec=TOKEN_TTL_SECONDS)
+        return {"token": token, "source": "fresh"}
+        
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Error in get_auth_token")
-        return {"error": str(e)}
+        frappe.log_error(f"Auth token error: {str(e)}", "ShipRocket Auth")
+        frappe.throw(f"Error getting auth token: {str(e)}")
+
 
 @frappe.whitelist(allow_guest=True)
 def get_order_data(order_id):
@@ -100,9 +133,9 @@ def check_courie_service(order_id):
         frappe.log_error(frappe.get_traceback(), "Error in check_courie_service")
         return {"error": str(e)}
 @frappe.whitelist(allow_guest=True)
-def generate_awb(shipment_id, courier_id):
+def generate_awb(shipment_id):
     try:
-        print("shipment_id:---------102", shipment_id,"courier_company_id:---102",courier_id)
+        print("shipment_id:---------102", shipment_id,"courier_company_id:---102")
         auth_token = get_auth_token().get("token")
         print("auth_token:----55", auth_token)
         headers = {
@@ -112,7 +145,7 @@ def generate_awb(shipment_id, courier_id):
         }
         body = {
             "shipment_id": shipment_id,
-            "courier_id": courier_id
+            
         }
         response = rs.post(GENERATE_AWB_TOKEN, headers=headers, json=body)
         response_data = response.json()
@@ -163,3 +196,24 @@ def generate_label(shipment_id):
         frappe.log_error(frappe.get_traceback(), "Error in generate_awb")
         print("error in generating awb in dn ------118",e)
         return {"error": str(e)}
+# @frappe.whitelist(allow_guest=True)
+# def get_auth_token():
+#     try:
+#         settings = frappe.get_single("Ship Rocket Settings")
+#         email = settings.user 
+        
+#         password = get_decrypted_password("Ship Rocket Settings", "Ship Rocket Settings", "password")
+
+#         print(f"Email: {email}, Password: {password}")  
+#         loginheaders = {
+#                 "App-Version": "3.4.2",
+#                 "Content-Type": "application/json"
+#             }
+#         response = rs.post(AUTH_URL, headers=loginheaders, json={"email": email, "password": password})
+
+#         print("Response:", response.json())  
+#         return response.json()
+
+#     except Exception as e:
+#         frappe.log_error(frappe.get_traceback(), "Error in get_auth_token")
+#         return {"error": str(e)}

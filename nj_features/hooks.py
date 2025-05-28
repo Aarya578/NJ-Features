@@ -202,9 +202,6 @@ scheduler_events = {
         "20 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ],
-        "*/5 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.sync_shopify_quantity"
-        ],
         "50 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
         ],
@@ -214,35 +211,8 @@ scheduler_events = {
          "58  * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
         ]
-
     }
 }
-
-
-# scheduler_events = {
-# 	"cron": {
-# 		# "0 22 * * *": [
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.all_no_selected_serial_no_data",
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
-# 		# 	"nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_to_send_personal_mail",
-# 		# ],
-# 		# "0 23 * * *": [
-# 		# 	"nj_features.nj_features.api.items_revaluation.process_incorrect_balance_qty"
-# 		# ],
-# 		"15 13 * * *": [ 
-#         	"nj_features.overrides.employee.update_employee_experience_table",
-#    		 ],
-# 		# "20 2 * * *": [
-#         #     # "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
-#         #     # "nj_features.nj_features.doctype.productivity_kpi_report.productivity_kpi_report.fetch_and_save_productivity_data"
-# 		# 	# "nj_features.nj_features.doctype.productivity_kpi_table.productivity_kpi_table.fetch_and_save_productivity_data",     
-#         # ],
-#         "*16 13 * * *": [
-# 			"nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"     
-#         ]
-# 	}
-# }
-
 
 # scheduler_events = {
 #     "cron": {
@@ -323,7 +293,3 @@ user_data_fields = [
 # auth_hooks = [
 #	"nj_features.auth.validate"
 # ]
-
-override_whitelisted_methods = {
-    "nj_features.nj_features.api.date_time_api.current_date_time": "nj_features.nj_features.api.date_time_api.current_date_time"
-}

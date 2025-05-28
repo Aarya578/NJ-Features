@@ -29,16 +29,13 @@ class CustomSalesOrder(SalesOrder):
                 if len(stripped_id) < 7:
                     raw_order_id = self.shopify_order_id
 
-            # if not raw_order_id and self.order_id:
-            #     raw_order_id = self.order_id
-
             if not raw_order_id and self.shopify_order_number:
                 raw_order_id = self.shopify_order_number
 
             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-            # if order_id:
-            #     trigger_fulfillment(order_id)
+            if order_id:
+                trigger_fulfillment(order_id)
 
     # def getting_shiprocket_order_details(self):
     #     auth_token = get_auth_token().get("token")
@@ -91,6 +88,7 @@ class CustomSalesOrder(SalesOrder):
     #         frappe.throw("No order data found in Shiprocket response.")
         
     #     return data        
+
 
    
     #     data = response.json().get("data")

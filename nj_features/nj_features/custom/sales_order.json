@@ -2622,7 +2622,7 @@
       "property": "hidden",
       "property_type": "Check",
       "row_name": null,
-      "value": "1"
+      "value": "0"
     },
     {
       "_assign": null,
@@ -2682,7 +2682,7 @@
       "doc_type": "Sales Order",
       "docstatus": 0,
       "doctype_or_field": "DocField",
-      "field_name": "column_break_50",
+      "field_name": "column_break_3",
       "idx": 0,
       "modified": "2023-09-20 15:58:17.294673",
       "modified_by": "Administrator",
@@ -2694,7 +2694,7 @@
       "property": "hidden",
       "property_type": "Check",
       "row_name": null,
-      "value": "1"
+      "value": "0"
     },
     {
       "_assign": null,

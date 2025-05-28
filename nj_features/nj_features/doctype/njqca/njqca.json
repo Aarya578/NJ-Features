@@ -32,7 +32,7 @@
   "sudden_drop",
   "battery_type",
   "qi_type",
-  "grading_fetched",
+  "njqca_version",
   "no_of_bdt",
   "repack_itm_price",
   "app_statuts",
@@ -199,7 +199,8 @@
   {
    "fieldname": "manufacturer_model",
    "fieldtype": "Data",
-   "label": "Manufacturer Model"
+   "label": "Manufacturer Model",
+   "read_only": 1
   },
   {
    "fieldname": "bios_serialno",
@@ -371,12 +372,6 @@
    "label": "pwd"
   },
   {
-   "allow_on_submit": 1,
-   "fieldname": "grading_fetched",
-   "fieldtype": "Data",
-   "label": "Grading Fetched"
-  },
-  {
    "collapsible": 1,
    "fieldname": "section_break_yblqh",
    "fieldtype": "Section Break",
@@ -413,11 +408,17 @@
    "fieldtype": "Select",
    "label": "QI Type",
    "options": "\nre_check\nis_defective"
+  },
+  {
+   "fieldname": "njqca_version",
+   "fieldtype": "Data",
+   "label": "NJQCA Version",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-23 12:38:35.154721",
+ "modified": "2025-05-26 15:37:02.550807",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

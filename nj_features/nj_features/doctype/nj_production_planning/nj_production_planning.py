@@ -44,7 +44,6 @@ def create_production_planning(data, department):
     new_doc = frappe.new_doc("NJ Production Planning")
 
     for item in data:
-        #print("\n\n\n\nitem", item)
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
         child.model = item.get("model", "").upper() if item.get("model", "") else ""
@@ -71,7 +70,6 @@ def parse_document(doc):
 def get_department_document(department_name):
     return frappe.get_doc("Department", {"name": department_name})
 
-# Merged Configuration Processing (model=1 and fr_config=1)
 def process_merged_configuration(dept_doc):
     merged_data = process_inventory_rows(dept_doc)
     days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
@@ -162,7 +160,6 @@ def update_merged_counts(merged_data, counts, warehouse, count_type):
             if item_code:
                 merged_data[model]["item_codes"][item_code] = merged_data[model]["item_codes"].get(item_code, 0) + item.get("count", 0)
 
-# Model Configuration Processing (model=1)
 def process_model_configuration(dept_doc):
     inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
     forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
@@ -201,7 +198,6 @@ def merge_model_counts(inwarded, forwarded):
         "forwarded_qty": forwarded.get(model, 0)
     } for model in set(inwarded) | set(forwarded)]
 
-# Default Configuration Processing
 def process_default_configuration(dept_doc):
     inwarded_counts = get_item_counts(dept_doc, "inwarded_inventory")
     forwarded_counts = get_item_counts(dept_doc, "forwarded_inventory")
@@ -283,7 +279,6 @@ def fetch_item_attributes(item_list):
         
     return item_list
 
-# Common Utilities
 def update_counts(count_dict, results):
     for item in results:
         key = item.get("model") or item.get("item_code")
@@ -515,7 +510,6 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
         if code in updated_item_code_map:
             if updated_item_code_map[code].get('sales_rate', 0) == 0:
                 updated_item_code_map[code]['sales_rate'] = 1
-                print(f"Updated sales_rate to 1 for existing item_code: {code}")
         else:
             config = config_map.get(code, {})
             new_row = {
@@ -638,7 +632,6 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
             item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
             updated_item_code_list.append(item)
 
-            # #print("sales_rate ----------- 242", item['sales_rate'])
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
@@ -936,13 +929,12 @@ def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
 
     get_serial_no_config = list(grouped_data.values())
 
-    print('get_serial_no_config --------------------- ', get_serial_no_config)
-
     return get_serial_no_data(nj_pro_child, get_serial_no_config, inw_inventory, doc)
 
 def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     suggested_serial_no_data = []
     added_serial_no = set()
+    rank = 0 
 
     # Normalize keys in serial_no_list for easier matching (case-insensitive keys)
     normalized_serials = []
@@ -982,17 +974,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
                     serial["processor_type"] == processor and
                     serial["ram_capacity"] == ram and
                     serial["storage_capacity"] == ssd):
-                    print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nMatching Serial Found:")
-                    print("{:<20} {:<20} {:<20} {:<20} {:<60} {:>20}".format("Model (Serial)", "Model (Child)", "Processor (Serial)", "Processor (Child)", "Item Code (Serial)", "Serial No"))
-                    print("-" * 160)
-                    print("{:<20} {:<20} {:<20} {:<20} {:<60} {:>20}".format(
-                        serial.get("model") or "N/A",
-                        model or "N/A",
-                        serial.get("processor_type") or "N/A",
-                        processor or "N/A",
-                        serial.get("item_code") or "N/A",
-                        serial.get("name") or "N/A"
-                    ))
+
                     matched_serials.append(serial["name"])
                     added_serial_no.add(serial["name"])
                     needed -= 1
@@ -1014,23 +996,10 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
                         serial["processor_type"] == processor and
                         serial["item_code"] != child.get("item_code")):
 
-                        print("\n\n\n\n\n\n\n\n\n\n\n\n\nMatching Serial Not Found:")
-                        print("{:<20} {:<20} {:<20} {:<20} {:<60} {:>20}".format("Model (Serial)", "Model (Child)", "Processor (Serial)", "Processor (Child)", "Item Code (Serial)", "Serial No"))
-                        print("-" * 160)
-                        print("{:<20} {:<20} {:<20} {:<20} {:<60} {:>20}".format(
-                            serial.get("model") or "N/A",
-                            model or "N/A",
-                            serial.get("processor_type") or "N/A",
-                            processor or "N/A",
-                            serial.get("item_code") or "N/A",
-                            serial.get("name") or "N/A"
-                        ))
-
                         matched_serials.append(serial["name"])
                         added_serial_no.add(serial["name"])
                         needed -= 1
 
-            rank = 0
             for serial_no in matched_serials:
                 rank += 1
                 suggested_serial_no_data.append({
@@ -1042,7 +1011,6 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
                     "item_code": child.get("item_code"),
                     "rank": rank
                 })
-            rank = 0
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
@@ -1051,12 +1019,12 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     doc.save()
     frappe.db.commit()
-    update_to_make_for_serial(doc)
-
+    # update_to_make_for_serial(doc)
 
 def allocate_laptop_parts(doc):
 
     serial_list = []
+    serial_no_rank = {row.get("suggested_serial_no"): row.get("rank") for row in doc.get("suggested_serial_no", [])}
     for row in doc.get("suggested_serial_no"):
         if row.suggested_serial_no:
             serial_list.extend([s.strip() for s in row.suggested_serial_no.split(",") if s.strip()])
@@ -1073,18 +1041,16 @@ def allocate_laptop_parts(doc):
         AND serial_no IN %(serial_list)s
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
 
-    # #print("mr_items ------------------ ", mr_items)
-
     if not mr_items:
         frappe.msgprint("No Material Requests found for the suggested serial numbers.")
         return []
 
     warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
+    
     if not warehouses:
         frappe.msgprint("No warehouses found under 'Stores - NJ' department.")
         return []
 
-    # Fetch actual stock per item
     stock_data = {}
     stock_results = frappe.db.sql("""
         SELECT item_code, SUM(actual_qty) AS total_qty 
@@ -1100,11 +1066,14 @@ def allocate_laptop_parts(doc):
 
     grouped_by_serial = {}
 
+    planned_allocation = {}
+
     for item in mr_items:
         serial_no = item["against_serial_no"]
         item_code = item["item_code"]
         mr_qty = flt(item["mr_qty"])
-        available_stock = virtual_stock_data.get(item_code, 0)
+
+        available_stock = virtual_stock_data.get(item_code, 0) - planned_allocation.get(item_code, 0)
 
         if available_stock >= mr_qty:
             allocated_status = "Allocated"
@@ -1119,12 +1088,13 @@ def allocate_laptop_parts(doc):
                 "sb_qty": available_stock,
                 "status": status,
                 "allocated_qty": mr_qty,
-                "allocated_status": allocated_status
+                "allocated_status": allocated_status,
+                "rank": serial_no_rank.get(serial_no, 0)
             }
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
 
-            virtual_stock_data[item_code] -= mr_qty
+            planned_allocation[item_code] = planned_allocation.get(item_code, 0) + mr_qty
 
         else:
             res_item = allocated_other_part(item)
@@ -1132,19 +1102,22 @@ def allocate_laptop_parts(doc):
             if res_item:
                 item_code_res = res_item.get("item_code")
                 against_item_code = res_item.get("against_item_code")
-                available_stock = flt(res_item.get("stock_qty", 0))
+                stock_qty_res = flt(res_item.get("stock_qty", 0))
 
-                if available_stock >= mr_qty:
+                available_stock_res = stock_qty_res - planned_allocation.get(item_code_res, 0)
+
+                if available_stock_res >= mr_qty:
                     allocated_status = "Allocated"
+                    planned_allocation[item_code_res] = planned_allocation.get(item_code_res, 0) + mr_qty
                 else:
                     allocated_status = "Not Allocated"
             else:
                 allocated_status = "Not Allocated"
                 item_code_res = item_code
                 against_item_code = ""
-                available_stock = 0
+                available_stock_res = 0
 
-            status = "Available" if available_stock > 0 else "Not Available"
+            status = "Available" if available_stock_res > 0 else "Not Available"
 
             row = {
                 "mreq_no": item["material_request"],
@@ -1152,18 +1125,30 @@ def allocate_laptop_parts(doc):
                 "item_group": item["item_group"],
                 "serial_no": serial_no,
                 "mr_qty": mr_qty,
-                "sb_qty": available_stock,
+                "sb_qty": available_stock_res,
                 "status": status,
                 "allocated_qty": mr_qty,
                 "allocated_status": allocated_status,
-                "against_item_code": against_item_code
+                "against_item_code": against_item_code,
+                "rank": serial_no_rank.get(serial_no, 0)
             }
 
             grouped_by_serial.setdefault(serial_no, []).append(row)
 
-            if res_item:
-                if item_code_res in virtual_stock_data:
-                    virtual_stock_data[item_code_res] -= mr_qty
+    for serial, items in grouped_by_serial.items():
+        grouped_by_serial[serial] = sorted(items, key=lambda x: x['rank'])
+
+    sorted_serials = sorted(
+        grouped_by_serial.items(),
+        key=lambda x: x[1][0]['rank'] if x[1] else float('inf')
+    )
+
+    grouped_by_serial = dict(sorted_serials)
+
+    # Deduct planned allocations from virtual_stock_data
+    for item_code, qty in planned_allocation.items():
+        if item_code in virtual_stock_data:
+            virtual_stock_data[item_code] -= qty
 
     final_result = []
 
@@ -1174,12 +1159,27 @@ def allocate_laptop_parts(doc):
         if all(item["allocated_status"] == "Allocated" for item in items):
             final_result.extend(items)
 
+    # Sort by serial_no and material_request no
     from operator import itemgetter
     final_result.sort(key=itemgetter("serial_no", "mreq_no"))
 
-    final_results = allocate_serial_no_for_battery(final_result)
+    # Filter to only keep unique item_code per serial_no
+    unique_final_result = []
+    seen_serial_item_codes = {}
 
-    return final_result
+    for item in final_result:
+        sn = item["serial_no"]
+        ic = item["item"]
+        if sn not in seen_serial_item_codes:
+            seen_serial_item_codes[sn] = set()
+        if ic not in seen_serial_item_codes[sn]:
+            unique_final_result.append(item)
+            seen_serial_item_codes[sn].add(ic)
+
+    # Call allocate_serial_no_for_battery on filtered unique list
+    final_results = allocate_serial_no_for_battery(unique_final_result)
+
+    return unique_final_result
 
 def allocated_other_part(item):
 
@@ -1208,7 +1208,6 @@ def allocated_other_part(item):
     item_wizard_name = frappe.db.get_value("Serial No", {'name': item.get("against_serial_no")}, 'item_wizard')
     if not item_wizard_name:
         return []
-        # frappe.throw(f"Item Wizard not found for serial no: {item.get('against_serial_no')}")
 
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_name)
 
@@ -1269,6 +1268,7 @@ def allocated_other_part(item):
                                         "against_item_code": item.get("item_code"),
                                         "stock_qty": available_stock
                                     })
+                                    
                                 return item
 
 def update_to_make_for_serial(doc):
@@ -1283,13 +1283,10 @@ def update_to_make_for_serial(doc):
                 frappe.db.commit()
 
 def allocate_serial_no_for_battery(final_result):
-    # #print("final_result ----------------- 1144 ", final_result)
 
     for row in final_result:
-        # #print(f"\nProcessing row ------------ {row}")
         
         if not row:
-            # #print("Skipping None row")
             continue
 
         if row.get("item_group", "") == None:
@@ -1309,7 +1306,6 @@ def allocate_serial_no_for_battery(final_result):
             )
 
             if not nj_warehouses:
-                # #print("No NJ warehouses found.")
                 continue
 
             serials = frappe.get_all(
@@ -1320,8 +1316,6 @@ def allocate_serial_no_for_battery(final_result):
                 },
                 fields=["name", "full_charge_capacity", "battery_average_discharge_rate"]
             )
-
-            # #print(f"Serials found for item {item_code}: {serials}")
 
             for serial in serials:
                 try:
@@ -1338,8 +1332,6 @@ def allocate_serial_no_for_battery(final_result):
                 except Exception as e:
                     print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
 
-            # #print(f"Valid serials for allocation to {item_code}: {valid_serials}")
-
             if valid_serials:
                 try:
                     frappe.db.set_value(
@@ -1352,6 +1344,5 @@ def allocate_serial_no_for_battery(final_result):
                         "allocated_serial_no",
                         ", ".join(valid_serials)
                     )
-                    # #print(f"\n\n\nAllocated serials to Material Request Item: {mreq_no} - {item_code}")
                 except Exception as e:
                     print(f"Failed to set allocated_serial_no for {item_code}: {e}")

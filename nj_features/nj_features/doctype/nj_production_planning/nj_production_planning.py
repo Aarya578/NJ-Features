@@ -799,8 +799,6 @@ def sort_by_multiple_keys(configs, keys):
 def calculate_to_make(doc):
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
-    
-    print("doc --------------- ", doc.as_dict())
 
     # Reset all to_make values to 0 before calculation
     for child in doc.get("nj_production_planning_child", []):

@@ -1,7 +1,7 @@
-import shopify
 import traceback
 import json, time
 import frappe, requests
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 
 nj_inventry_settings = frappe.get_single("NJ Inventory Settings")
 
@@ -37,15 +37,13 @@ def nj_temp_shopify_session(func):
         return func(*args, **kwargs)
 
     return wrapper
+
 @frappe.whitelist()
 @nj_temp_shopify_session
 def fetch_and_stage_inventory_sync():
     try:
         updated_doc_names = set()
-        nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
-        nj_inventory_log.error = ""
         
-        # Simple query without parameters since it doesn't use WHERE conditions with the filter lists
         query = """
             SELECT 
                 pb.shopify_variant_id,
@@ -66,12 +64,10 @@ def fetch_and_stage_inventory_sync():
                 total_actual_qty DESC
         """
         
-        # No parameters needed for this query
         results = frappe.db.sql(query, as_dict=True)
         
         for row in results:
             row.total_actual_qty = safe_float(row.total_actual_qty)
-            frappe.log_error(f"row.total_actual_qty:======================== {row.total_actual_qty}")
             if row.total_actual_qty is None or row.total_actual_qty < 0:    
                 continue
             
@@ -82,7 +78,7 @@ def fetch_and_stage_inventory_sync():
                 params.append(f"%{code.strip()}%")
             
             query = f"""
-                SELECT name, actual_qty, sync_status, is_active, inventory_item_id
+                SELECT name, actual_qty, status, is_active, inventory_item_id
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s AND ({' OR '.join(item_code_like_clauses)})
                 ORDER BY modified DESC
@@ -93,43 +89,42 @@ def fetch_and_stage_inventory_sync():
             if existing:
                 existing_doc = existing[0]
                 updated_doc_names.add(existing_doc.name)
-                print(f"existing_doc.name: {existing_doc.name}")    
                 existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
-                print(f"existing_doc_actual_qty: {existing_doc_actual_qty}")
                 
-                if float(row.total_actual_qty) != existing_doc_actual_qty:
-                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                        # "so_qty": "",
-                        "is_active": 1,
-                        "sync_error": "",
-                        "sync_status": "Queued",
-                        "actual_qty": row.total_actual_qty,
-                        "updated_qty": row.total_actual_qty,
-                        "modified": frappe.utils.now(),
-                        
-                    })
+                # if float(row.total_actual_qty) != existing_doc_actual_qty:
+                frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
+                    "is_active": 1,
+                    "sync_error": "",
+                    "status": "Queued",
+                    "actual_qty": row.total_actual_qty,
+                    "updated_qty": row.total_actual_qty,
+                    "modified": frappe.utils.now()
+                })
                 
                 if existing_doc.inventory_item_id is None or existing_doc.inventory_item_id == "":
                     variant_url = f"{shop}/admin/api/2023-01/variants/{row.shopify_variant_id}.json"
                     variant_resp = requests.get(variant_url, headers=headers)
                     variant_data = variant_resp.json()
                     
-                    if variant_resp.status_code == 200:
-                        inventory_item_id = variant_data["variant"]["inventory_item_id"]
-                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, "inventory_item_id", inventory_item_id)
+                    if variant_resp.status_code == 200 and "variant" in variant_data and "inventory_item_id" in variant_data["variant"]:
+                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
+                            "inventory_item_id": variant_data["variant"]["inventory_item_id"],
+                            "shopify_quantity": variant_data["variant"]["inventory_quantity"],
+                            "modified": frappe.utils.now()
+                        })
                     else:
                         error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
-                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, "sync_error", f"API response: {error_msg}")
+                        log_error(f"API response: {error_msg} - variant_url: {variant_url}, name: {existing_doc.name}", "fetch_and_stage_inventory_sync")
             else:
-                frappe.log_error(f"else")
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 qty = safe_float(row.total_actual_qty) or 0
+
                 doc.is_active = 1
-                doc.item_code = row.item_codes
-                doc.sync_status = "Queued"
-                doc.item_group = row.item_groups
                 doc.actual_qty = qty
+                doc.status = "Queued"
                 doc.updated_qty = qty
+                doc.item_code = row.item_codes
+                doc.item_group = row.item_groups
                 
                 # variant_url = f"{shop}/admin/api/2023-01/variants/{row.shopify_variant_id}.json"
                 # variant_resp = requests.get(variant_url, headers=headers)
@@ -146,24 +141,17 @@ def fetch_and_stage_inventory_sync():
                 # try:
                 #     doc.insert()
                 #     updated_doc_names.add(doc.name)
-                # except frappe.UniqueValidationError as e:
-                #     error_msg = f"Duplicate item_codes: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                #     nj_inventory_log.error += f"\n168 - error_msg: {error_msg}"
-                #     nj_inventory_log.save(ignore_permissions=True)
-                #     continue
+                
                 # except Exception as e:
                 #     error_msg = f"Error inserting document: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                #     nj_inventory_log.error += f"\n184 - Error in sync_inventory_to_shopify: {frappe.get_traceback()}\nitem_codes: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                #     nj_inventory_log.save(ignore_permissions=True)
                 #     continue
+
                 variant_url = f"{shop}/admin/api/2023-01/variants/{row.shopify_variant_id}.json"
                 variant_resp = requests.get(variant_url, headers=headers)
                 variant_data = variant_resp.json()
-                if variant_resp.status_code == 200:
+                if variant_resp.status_code == 200 and "variant" in variant_data and "inventory_item_id" in variant_data["variant"] and "inventory_quantity" in variant_data["variant"]:
                     doc.inventory_item_id = variant_data["variant"]["inventory_item_id"]
                     doc.shopify_quantity = variant_data["variant"]["inventory_quantity"]
-                    # frappe.log_error("doc.shopify_quantity", doc.shopify_quantity)
-                    # frappe.log_error("doc.inventory_item_id", doc.inventory_item_id)
                 else:
                     error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     doc.sync_error = f"API response: {error_msg}"
@@ -173,35 +161,19 @@ def fetch_and_stage_inventory_sync():
                 try:
                     doc.insert()
                     updated_doc_names.add(doc.name)
-                    
-                except frappe.UniqueValidationError as e:
-                    error_msg = f"Duplicate item_codes: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                    nj_inventory_log.error += f"\n168 - error_msg: {error_msg}"
-                    nj_inventory_log.save(ignore_permissions=True)
 
+                except Exception:
+                    log_error(f"Error inserting document: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id} - Error: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
                     continue
 
-                except Exception as e:
-                    error_msg = f"Duplicate item_codes: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                    nj_inventory_log.error += f"\n184 - Error in sync_inventory_to_shopify: {frappe.get_traceback()}\nitem_code: {item_codes}, shopify_variant_id: {row.shopify_variant_id}"
-                    nj_inventory_log.save(ignore_permissions=True)
-
-                    continue
-
-        # print(f"updated_doc_names=========================={updated_doc_names}")
         all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
         all_doc_names = set(doc["name"] for doc in all_docs)
 
         not_updated_doc_names = all_doc_names - updated_doc_names
-        # print(f"not_updated_doc_names=========================={not_updated_doc_names}")
 
-        nj_inventory_log.error += (
-            f"\nTotal Docs: {len(all_doc_names)}, "
-            f"Updated Docs: {len(updated_doc_names)}, "
-            f"Not Updated Docs: {len(not_updated_doc_names)}"
+        log_error(
+            f"Total Docs: {len(all_doc_names)}, Updated Docs: {len(updated_doc_names)}, Not Updated Docs: {len(not_updated_doc_names)}", "Total Updates", "Info"
         )
-
-        nj_inventory_log.save(ignore_permissions=True)
 
         for name in not_updated_doc_names:
             frappe.db.set_value("NJ Inventory Sync Main", name, {
@@ -209,24 +181,23 @@ def fetch_and_stage_inventory_sync():
                 "updated_qty": "0"
             })
 
-        # Check if actual_qty and shopify_quantity are different and set is_active accordingly
         all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
-                                       fields=["name", "actual_qty", "shopify_quantity"],
-                                       filters={"is_active": 1})
+                            fields=["name", "actual_qty", "shopify_quantity"],
+                            filters={"is_active": 1})
         
         for doc in all_active_docs:
             actual_qty = safe_float(doc.actual_qty) or 0
             shopify_quantity = safe_float(doc.shopify_quantity) or 0
             
             if actual_qty == shopify_quantity:
-                # Both values are same, set is_active to 0 (unchecked)
                 frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
             else:
-                # Values are different, keep is_active as 1 (checked)
                 frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
 
-    except Exception as e:
+    except Exception:
+        log_error(f"Error in fetching & staging inventory sync: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
         return str(traceback.format_exc())
+    
 @frappe.whitelist()
 @nj_temp_shopify_session
 def start_shopify_inventory_sync():
@@ -234,29 +205,23 @@ def start_shopify_inventory_sync():
         batch_size = 50
         start = 0
         total_records_query = """SELECT COUNT(*) AS count FROM `tabNJ Inventory Sync Main` 
-                WHERE sync_status = 'Queued' AND is_active = 1 
+                WHERE status = 'Queued' AND is_active = 1 
                 AND (inventory_item_id IS NOT NULL OR inventory_item_id != '')"""
         total_records = frappe.db.sql(total_records_query, as_dict=True)[0].count
 
-        nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
-        nj_inventory_log.error = f"Total Records: {total_records}\n"
-
         while start < total_records:
-            nj_inventory_log.error += f"\nProcessing batch from {start} to {start + batch_size}"
 
             queued = frappe.db.sql("""
                 SELECT name, item_code, actual_qty, shopify_variant_id, updated_qty, inventory_item_id
                 FROM `tabNJ Inventory Sync Main`
-                WHERE sync_status = 'Queued' AND is_active = 1 AND 
+                WHERE status = 'Queued' AND is_active = 1 AND 
                 (inventory_item_id IS NOT NULL OR inventory_item_id != '') LIMIT %s OFFSET %s
             """, (batch_size, start), as_dict=True)
-
 
             for row in queued:
                 try:
                     updated_qty = safe_float(row.updated_qty)
                     if updated_qty is None or updated_qty < 0:
-                        nj_inventory_log.error += f"\nSkipping {row.name} — invalid data"
                         continue
 
                     available = int(updated_qty)
@@ -271,28 +236,38 @@ def start_shopify_inventory_sync():
                     error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     
                     if update_resp.status_code == 200:
-                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "sync_status": "Completed",
-                            "is_active": 1
-                        })
+                        updated_available = None
+                        if "inventory_level" in variant_data and "available" in variant_data["inventory_level"]:
+                            updated_available = variant_data["inventory_level"]["available"]
+
+                        if updated_available == available:
+                            frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                                "status": "Completed",
+                                "is_active": 1
+                            })
+                        else:
+                            frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                                "status": "Error",
+                                "sync_error": f"Available qty mismatch. Expected {available}, got {updated_available}"
+                            })
                     else:
                         frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "sync_status": "Error",
-                            "sync_error" : f"API response: {error_msg}"
+                            "status": "Error",
+                            "sync_error": f"API response: {error_msg}"
                         })
                     time.sleep(0.6)
                 except Exception as e:
-                    nj_inventory_log.error += f"\nException in {row.name}: {str(e)}\n{frappe.get_traceback()}"
+                    log_error(f"Exception in {row.name}: {str(e)}\n{frappe.get_traceback()}", "Shopify Inventory Sync")
                     continue
                 
             frappe.db.commit()
             start += batch_size
 
-        nj_inventory_log.error += "\nSync complete for all records."
-        nj_inventory_log.save(ignore_permissions=True)
+        log_error(f"Sync complete for all records - {total_records}.", "Shopify Inventory Sync", "Info")
         return "All inventory sync batches processed."
 
     except Exception as e:
+        log_error(f"Error in start_shopify_inventory_sync: {str(e)}\n{frappe.get_traceback()}", "Shopify Inventory Sync", "Error")
         return str(traceback.format_exc())
 
 def safe_float(value):

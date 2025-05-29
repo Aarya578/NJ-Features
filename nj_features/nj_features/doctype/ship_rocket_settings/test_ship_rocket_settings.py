@@ -4,5 +4,5 @@
 # import frappe
 import unittest
 
-class TestNJInventorySyncLog(unittest.TestCase):
+class TestShipRocketSettings(unittest.TestCase):
 	pass

@@ -15,48 +15,77 @@ frappe.ui.form.on('Sales Order', {
                 });
             });
         } 
-        frm.add_custom_button(__('Critical Log'), function() {
-            // Show loading indicator
-            frappe.show_alert({
-                message: __('Generating AWB Number...'),
-                indicator: 'blue'
-            });
-            frappe.call({
-                method: 'nj_features.overrides.sales_order.send_consignement_data',
-                args: {
-                    doc: JSON.stringify(frm.doc)
-                },
-                callback: function(response) {
-                    frm.reload_doc();
-                    frappe.show_alert({
-                        message: __('AWB Number generated successfully!'),
-                        indicator: 'green'
-                    });
-                }
-            });
+        // frm.add_custom_button(__('Critical Log'), function() {
+        //     // Show loading indicator
+        //     frappe.show_alert({
+        //         message: __('Generating AWB Number...'),
+        //         indicator: 'blue'
+        //     });
+        //     frappe.call({
+        //         method: 'nj_features.overrides.sales_order.send_consignement_data',
+        //         args: {
+        //             doc: JSON.stringify(frm.doc)
+        //         },
+        //         callback: function(response) {
+        //             frm.reload_doc();
+        //             frappe.show_alert({
+        //                 message: __('AWB Number generated successfully!'),
+        //                 indicator: 'green'
+        //             });
+        //         }
+        //     });
             
             
-            // Call the server method
-            // frappe.call({
-            //     method: 'nj_features.overrides.sales_order.update_item_details',
-            //     args:{self: frm.doc},
-            //     callback: function(response) {
-            //         // Refresh the form to show updated awb_number field
-            //         frm.reload_doc();
-                    
-            //         // Show success message
-            //         frappe.show_alert({
-            //             message: __('AWB Number generated successfully!'),
-            //             indicator: 'green'
-            //         });
-            //     },
-            //     error: function(err) {
-            //         // Error handling is already done in the server method
-            //         // This will show the frappe.throw message from your method
-            //         console.error('Error generating AWB:', err);
-            //     }
-            // });
-        }).addClass('btn-primary');
+          
+        // }).addClass('btn-primary');
+        if (frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('Critical Log'), function() {
+                // Show loading indicator
+                frappe.show_alert({
+                    message: __('Generating AWB Number...'),
+                    indicator: 'blue'
+                });
+
+                frappe.call({
+                    method: 'nj_features.overrides.sales_order.send_consignement_data',
+                    args: {
+                        doc: JSON.stringify(frm.doc)
+                    },
+                    callback: function(response) {
+                        frm.reload_doc();
+                        frappe.show_alert({
+                            message: __('AWB Number generated successfully!'),
+                            indicator: 'green'
+                        });
+                    }
+                });
+            }).addClass('btn-primary');
+        }
+        if (frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('Shiprocket'), function() {
+                // Show loading indicator
+                frappe.show_alert({
+                    message: __('Generating AWB Number...'),
+                    indicator: 'blue'
+                });
+                frappe.call({
+                    method: 'nj_features.overrides.sales_order.shiprocket_awb_number',
+                    args: {
+                        doc: JSON.stringify(frm.doc)
+                    },
+                    callback: function(response) {
+                        frm.reload_doc();
+                        frappe.show_alert({
+                            message: __('AWB Number generated successfully!'),
+                            indicator: 'green'
+                        });
+                    }
+                });
+                
+                
+            
+            }).addClass('btn-primary');
+        }
     },
     validate: function(frm) {
         console.log("Inside validate function =================");

@@ -165,20 +165,39 @@ class CustomDeliveryNote(DeliveryNote):
     
 
 
+    # def set_cit_image_from_sales_order(self):
+    #     if  self.is_return:
+    #         return
+    #     # Use SQL to get the sales order and cit_image in one query
+    #     result = frappe.db.sql("""
+    #         SELECT so.cit_image
+    #         FROM `tabSales Order` so
+    #         JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
+    #         WHERE dni.parent = %s
+    #         LIMIT 1
+    #     """, (self.name,), as_dict=True)
+    #     if result and result[0].cit_image:
+    #         # Set the cit_image field in the Delivery Note
+    #         self.db_set("cit_image", result[0].cit_image)
     def set_cit_image_from_sales_order(self):
-        if  self.is_return:
+        if self.is_return:
             return
-        # Use SQL to get the sales order and cit_image in one query
+
         result = frappe.db.sql("""
-            SELECT so.cit_image
+            SELECT so.cit_image, so.shiprocket_image, so.shiprocket_manifests, so.shiprocket_invoice
             FROM `tabSales Order` so
             JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
             WHERE dni.parent = %s
             LIMIT 1
         """, (self.name,), as_dict=True)
-        if result and result[0].cit_image:
-            # Set the cit_image field in the Delivery Note
-            self.db_set("cit_image", result[0].cit_image)
+
+        if result:
+            row = result[0]
+            self.db_set("cit_image", row.cit_image)
+            self.db_set("shiprocket_image", row.shiprocket_image)
+            self.db_set("shiprocket_manifests", row.shiprocket_manifests)
+            self.db_set("shiprocket_invoice", row.shiprocket_invoice)
+
 
     def _process_customer_details(self):
         try:

@@ -9,6 +9,7 @@
  "field_order": [
   "department",
   "nj_production_planning_child",
+  "final_config",
   "suggested_serial_no",
   "laptop_allocation",
   "amended_from"
@@ -47,12 +48,18 @@
    "fieldtype": "Table",
    "label": "Laptop Allocation",
    "options": "Laptop Allocation Child"
+  },
+  {
+   "fieldname": "final_config",
+   "fieldtype": "Table",
+   "label": "Final Config",
+   "options": "Final Config"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-16 10:46:01.896216",
+ "modified": "2025-05-29 12:36:46.856638",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

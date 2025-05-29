@@ -797,81 +797,102 @@ def sort_by_multiple_keys(configs, keys):
     return sorted(configs, key=sort_key)
 
 def calculate_to_make(doc):
-    configs = []
+    if isinstance(doc, dict):
+        doc = frappe.get_doc(doc)
+    
+    print("doc --------------- ", doc.as_dict())
 
-    # Step 1: Prepare initial data
-    for item in doc.get("nj_production_planning_child", []):
-        sales_rate = safe_float(item.get("sales_rate"))
-        forward = safe_float(item.get("forward_inventory"))
-        inward = safe_float(item.get("inward_inventory"))
-        doi = forward / sales_rate if sales_rate else 0
+    # Reset all to_make values to 0 before calculation
+    for child in doc.get("nj_production_planning_child", []):
+        child.to_make = 0
 
-        configs.append({
-            "item": item,
-            "sales_rate": sales_rate,
-            "forward_inventory": forward,
-            "inward_inventory": inward,
-            "to_make": 0,
-            "doi": doi
+    # Create working copies with only needed fields
+    temp_config = []
+    for child in doc.get("nj_production_planning_child", []):
+        temp_config.append({
+            "item_code": child.get("item_code"),
+            "sales_rate": child.get("sales_rate", 0),
+            "inward_inventory": child.get("inward_inventory", 0),
+            "forward_inventory": child.get("forward_inventory", 0),
+            "days_of_inventory": child.get("days_of_inventory", 0),
+            "to_make": 0,  # Start fresh calculation
+            "model": child.get("model", ""),
+            "processor": child.get("processor", ""),
+            "ram": child.get("ram", ""),
+            "ssd": child.get("ssd", "")
         })
+    
+    # Create mapping to original child items
+    child_map = {child.get("item_code"): child for child in doc.get("nj_production_planning_child", [])}
+    
+    # Sort by DOI ascending
+    temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
+    
+    rank = 0
+    allocated_in_pass = True
 
-    while True:
-        any_changes = False
+    # Allocation algorithm
+    while allocated_in_pass and any(c.get("inward_inventory", 0) > 0 for c in temp_config):
+        allocated_in_pass = False
+        temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
+        
+        for i in range(len(temp_config) - 1):
+            current = temp_config[i]
+            next_cfg = temp_config[i + 1]
 
-        # Step 2: Sort configs by DOI ASC
-        configs_sorted = sort_by_multiple_keys(configs, keys=["doi", "-sales_rate", "forward_inventory"])
-
-        # Step 3: Apply special logic if forward inventory and DOI are both zero
-        for i in range(len(configs_sorted) - 1):
-            current = configs_sorted[i]
-            next_cfg = configs_sorted[i + 1]
-
-            if current["forward_inventory"] == 0 and current["doi"] == 0:
-                future_doi = next_cfg["doi"] + 1
-                to_make = int(future_doi * current["sales_rate"])
-                actual_make = min(to_make, current["inward_inventory"])
-
-                if actual_make > 0:
-                    current["to_make"] += actual_make
-                    current["forward_inventory"] += actual_make
-                    current["inward_inventory"] -= actual_make
-                    current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
-                    any_changes = True
-
-        # Step 4: Redistribute inventory based on DOI gap
-        for i in range(len(configs_sorted) - 1):
-            current = configs_sorted[i]
-            next_cfg = configs_sorted[i + 1]
-
-            if current["inward_inventory"] <= 0:
+            if current.get("inward_inventory", 0) <= 0:
                 continue
 
-            doi_gap = next_cfg["doi"] - current["doi"]
-            if doi_gap < 1:
-                continue
+            # Calculate gap between current and next DOI
+            current_doi = current.get("days_of_inventory", 0)
+            next_doi = next_cfg.get("days_of_inventory", 0)
+            doi_gap = max(0, next_doi - current_doi)
 
-            needed_units = int((doi_gap + 1) * current["sales_rate"])
-            make_units = min(needed_units, math.floor(current["inward_inventory"]))
+            # Calculate needed units
+            sales_rate = current.get("sales_rate", 0)
+            needed_units = math.ceil((doi_gap + 1) * sales_rate)
+            make_units = min(needed_units, current.get("inward_inventory", 0))
 
             if make_units > 0:
+                # Update temporary config
                 current["to_make"] += make_units
-                current["forward_inventory"] += make_units
                 current["inward_inventory"] -= make_units
-                current["doi"] = current["forward_inventory"] / current["sales_rate"] if current["sales_rate"] else 0
-                any_changes = True
+                current["forward_inventory"] += make_units
+                
+                # Update DOI (only in temp for calculation)
+                if sales_rate > 0:
+                    current["days_of_inventory"] = current["forward_inventory"] / sales_rate
+                else:
+                    current["days_of_inventory"] = 0
 
-        # Step 5: Clean up configs with no inventory or to_make left
-        configs = [cfg for cfg in configs if cfg["inward_inventory"] > 0 or cfg["to_make"] > 0]
+                # Update ONLY to_make in main child table
+                original_child = child_map.get(current["item_code"])
 
-        if not any_changes:
-            break
+                if original_child:
+                    original_child.to_make = current["to_make"]
 
-    # Step 6: Assign calculated to_make back to items
-    for cfg in configs:
-        cfg["item"].to_make = cfg["to_make"]
+                # Add to final_config table with full details
+                child_row = doc.append("final_config", {})
+                child_row.sales_rate = sales_rate
+                child_row.date = datetime.now()
+                child_row.inward_inventory = current["inward_inventory"]
+                child_row.forward_inventory = current["forward_inventory"]
+                child_row.days_of_inventory = current["days_of_inventory"]
+                child_row.to_make = current["to_make"]
+                child_row.item_code = current["item_code"]
+                child_row.model = current.get("model")
+                child_row.processor = current.get("processor")
+                child_row.ram = current.get("ram")
+                child_row.ssd = current.get("ssd")
+                
+                rank += 1
+                child_row.rank = rank
+                allocated_in_pass = True
 
+    # Save document to persist changes
     doc.save()
     return doc.get("nj_production_planning_child", [])
+
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     if not nj_pro_child or not department:
@@ -1145,7 +1166,6 @@ def allocate_laptop_parts(doc):
 
     grouped_by_serial = dict(sorted_serials)
 
-    # Deduct planned allocations from virtual_stock_data
     for item_code, qty in planned_allocation.items():
         if item_code in virtual_stock_data:
             virtual_stock_data[item_code] -= qty
@@ -1159,11 +1179,9 @@ def allocate_laptop_parts(doc):
         if all(item["allocated_status"] == "Allocated" for item in items):
             final_result.extend(items)
 
-    # Sort by serial_no and material_request no
     from operator import itemgetter
-    final_result.sort(key=itemgetter("serial_no", "mreq_no"))
+    final_result.sort(key=itemgetter("rank"))
 
-    # Filter to only keep unique item_code per serial_no
     unique_final_result = []
     seen_serial_item_codes = {}
 
@@ -1176,7 +1194,6 @@ def allocate_laptop_parts(doc):
             unique_final_result.append(item)
             seen_serial_item_codes[sn].add(ic)
 
-    # Call allocate_serial_no_for_battery on filtered unique list
     final_results = allocate_serial_no_for_battery(unique_final_result)
 
     return unique_final_result

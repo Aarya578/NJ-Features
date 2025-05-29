@@ -16,13 +16,11 @@ departments = nj_inventry_settings.departments
 class SOQuantityCheck(Document):
 	pass
 
+@frappe.whitelist()
 def update_so_quantity_check():
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
     try:
-        print("Starting SO Quantity Check update")
         updated_doc_names = set()
-        nj_inventory_log = frappe.new_doc("NJ Inventory Sync Log")
-        nj_inventory_log.error = ""
 
         warehouses_list = []
         if warehouses is not None:
@@ -113,14 +111,12 @@ def update_so_quantity_check():
         """
 
         params = (
-            item_groups_list + departments_list +  # For Parent_Stock
-            item_groups_list + departments_list +  # For Item_Stock
-            item_groups_list                        # For Main_Data
+            item_groups_list + departments_list + 
+            item_groups_list + departments_list +
+            item_groups_list
         )
 
         inventory_data = frappe.db.sql(query, tuple(params), as_dict=True)
-
-        print(f"Retrieved {len(inventory_data)} records from inventory query")
 
         # Create a dictionary to store inventory data by item_code
         stock_map = {}
@@ -133,7 +129,6 @@ def update_so_quantity_check():
                     'parent1': row.get('parent', ''),
                     'actual_qty': actual_qty
                 }
-
 
         # # Create a dictionary to store inventory data by item_code
         # stock_map = {}
@@ -219,38 +214,29 @@ def update_so_quantity_check():
 
         """, as_dict=True)
 
-        print(f"Retrieved {len(pending_so_data)} records from pending SO query")
-
-        # Create a dictionary to store pending quantities by item_code
         pending_qty_by_item = {}
         for row in pending_so_data:
             item_code = row.get('pb_code')
             if item_code:
-                # If multiple SO entries exist for same item, sum them up
                 pending_qty = row.get('pending_qty', 0)
-                print(f"pb_code======================: {item_code}, pending_qty:=============================== {pending_qty}")
                 if item_code in pending_qty_by_item:
                     pending_qty_by_item[item_code] += pending_qty
                 else:
                     pending_qty_by_item[item_code] = pending_qty
 
-        # Step 3: Delete existing records to start fresh
         frappe.db.sql("DELETE FROM `tabSO Quantity Check`")
         frappe.db.commit()
-        print("Cleared existing SO Quantity Check records")
+        frappe.log_error(pending_qty_by_item)
 
         # Step 4: Insert ONLY items from inventory data 
         # If they have pending SO, include that quantity
         count = 0
         for item_code, data in stock_map.items():
             parent1 = data.get('parent1', '')
-            actual_qty = data.get('actual_qty', 0)
-            # Check if this item has any pending SO quantities
-            so_quantity = pending_qty_by_item.get(item_code, 0)
             
             # Ensure we have numeric values for calculation
-            actual_qty = data.get('actual_qty', 0) or 0  # Convert None to 0
-            so_quantity = pending_qty_by_item.get(item_code, 0) or 0  # Convert None to 0
+            actual_qty = data.get('actual_qty', 0) or 0
+            so_quantity = pending_qty_by_item.get(item_code, 0) or 0
             
             # Calculate remaining quantity after pending sales orders
             remaining_qty = actual_qty - so_quantity
@@ -260,7 +246,6 @@ def update_so_quantity_check():
             
             # Calculate need_to_reduce as IF(remaining_qty<0, ABS(remaining_qty), 0)
             need_to_reduce = abs(remaining_qty) if remaining_qty < 0 else 0
-            print(f"item_code: {item_code}, actual_qty: {actual_qty}, so_quantity: {so_quantity}, remaining_qty: {remaining_qty}, update_qty: {update_qty}, need_to_reduce: {need_to_reduce}")
             
             # Since fields are of type "Data", convert values to string
             remaining_qty_str = str(remaining_qty)
@@ -286,11 +271,9 @@ def update_so_quantity_check():
         return True
     
     except Exception as e:
-        print(f"Error updating SO Quantity Check: {e}")
         frappe.log_error(frappe.get_traceback(), "SO Quantity Check Update Error")
         return False
     
-
 def update_parent_quantity():
     # Fetch parent-wise sum of need_to_reduce
     result = frappe.db.sql("""
@@ -310,29 +293,23 @@ def update_parent_quantity():
             filters={"parent1": parent1},
             fields=["name"]
         )
-        print("child_rows================",child_rows)
 
         for child in child_rows:
             frappe.db.set_value("SO Quantity Check", child.name, "remove_parent_qty", total)
 
     frappe.db.commit()
 
-
 def update_proportional_qty_and_updt_qty():
     try:
-        print("Starting update_proportional_qty_and_updt_qty")
-        
         # Step 1: Fetch grouped total_update_qty for parent1 having more than one row
         # Handle NULL values in SQL query itself
         parent_totals = frappe.db.sql("""
             SELECT parent1, 
-                   SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
+                SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
             FROM `tabSO Quantity Check`
             WHERE COALESCE(NULLIF(update_qty, ''), '0') != '0'
             GROUP BY parent1
         """, as_dict=True)
-        
-        print(f"Found {len(parent_totals)} parent groups with multiple items")
         
         for row in parent_totals:
             parent1 = row.parent1
@@ -346,10 +323,7 @@ def update_proportional_qty_and_updt_qty():
                        "proportional_remove_qty", "update_qty2"]
             )
             
-            print(f"Processing {len(items)} items for parent {parent1}")
-            
             for item in items:
-                # Helper function to safely convert field values to float
                 def safe_float(value, default=0.0):
                     """Convert value to float, handling None, empty string, and invalid values"""
                     if value is None or value == '' or value == 'None':
@@ -360,38 +334,23 @@ def update_proportional_qty_and_updt_qty():
                         return default
                 
                 try:
-                    # Convert all fields to float with default 0
                     update_qty = safe_float(item.update_qty, 0.0)
                     remove_parent_qty = safe_float(item.remove_parent_qty, 0.0)
                     # remaining_qty = safe_float(item.remaining_qty, 0.0)
                     
-                    print(f"Item {item.name}: update_qty={update_qty}, remove_parent_qty={remove_parent_qty}")
-                    
-                    # Always calculate values, even for zero update_qty
-                    # Calculate proportional values - get raw value first
                     if total_update_qty > 0:
                         proportional_remove_qty_raw = (update_qty / total_update_qty) * remove_parent_qty
                     else:
                         proportional_remove_qty_raw = 0.0
                     
-                    # Convert to integer by rounding and ensure it's never None/NULL
                     proportional_remove_qty_int = 0
                     if proportional_remove_qty_raw is not None and proportional_remove_qty_raw != 0:
                         proportional_remove_qty_int = round(proportional_remove_qty_raw)
-                    proportional_remove_qty_int = int(proportional_remove_qty_int or 0)  # Ensure integer
+                    proportional_remove_qty_int = int(proportional_remove_qty_int or 0)
                     
-                    # Calculate update_qty2 - convert update_qty to int first
-                    update_qty_int = int(float(update_qty or 0))  # Convert float to int properly
+                    update_qty_int = int(float(update_qty or 0))
                     update_qty2 = max(update_qty_int - proportional_remove_qty_int, 0)
                     
-                    print(f"Item: {item.name}")
-                    print(f"  - update_qty: {update_qty} -> update_qty_int: {update_qty_int}")
-                    print(f"  - proportional_remove_qty_raw: {proportional_remove_qty_raw:.4f}")
-                    print(f"  - proportional_remove_qty_int: {proportional_remove_qty_int}")
-                    print(f"  - Calculation: {update_qty_int} - {proportional_remove_qty_int} = {update_qty2}")
-                    print(f"  - Final update_qty2: {update_qty2}")
-                    
-                    # Skip items with zero or negative update_qty for processing but still update fields
                     if update_qty <= 0:
                         print(f"Note: Item {item.name} has zero/negative update qty, setting update_qty2 to 0")
                         update_qty2 = 0
@@ -402,16 +361,9 @@ def update_proportional_qty_and_updt_qty():
                         "update_qty2": str(int(update_qty2))
                     }
                     
-                    print(f"Updating database with values: {update_values}")
                     frappe.db.set_value("SO Quantity Check", item.name, update_values)
-                    
-                    # Verify the update worked
-                    updated_record = frappe.get_doc("SO Quantity Check", item.name)
-                    print(f"Verification - proportional_remove_qty: '{updated_record.proportional_remove_qty}', update_qty2: '{updated_record.update_qty2}'")
-                    
+
                 except (ValueError, TypeError, ZeroDivisionError) as e:
-                    print(f"Error processing item {item.name}: {e}")
-                    # Set default values even on error
                     frappe.db.set_value("SO Quantity Check", item.name, {
                         "proportional_remove_qty": "0",
                         "update_qty2": "0"
@@ -419,13 +371,9 @@ def update_proportional_qty_and_updt_qty():
                     continue
             
             frappe.db.commit()
-            print(f"Completed processing for parent {parent1}")
         
-        print("Completed update_proportional_qty_and_updt_qty")
         return True
         
     except Exception as e:
-        print(f"Error in update_proportional_qty_and_updt_qty: {e}")
         frappe.log_error(frappe.get_traceback(), "Proportional Qty Update Error")
-        return False    
-
+        return False

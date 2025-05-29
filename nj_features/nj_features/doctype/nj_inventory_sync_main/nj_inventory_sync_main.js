@@ -2,7 +2,8 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('NJ Inventory Sync Main', {
-	// refresh: function(frm) {
-
-	// }
+	refresh: function() {
+		$('.col-lg-2.layout-side-section').hide();
+		$('.primary-action').hide();
+	}
 });

@@ -410,113 +410,117 @@ def update_item_details(self):
     return result
 
 def calculate_dispatch_eta_for_sales_order():
-    departments = frappe.db.sql("""
+    # Get net pending quantity per SO-Item combination
+    open_orders = frappe.db.sql("""
         SELECT 
-            name, min_aging_days
-        FROM
-            `tabDepartment`
-        WHERE
-            department_sequence >= 1
-        ORDER BY 
-            department_sequence DESC
-    """, as_dict=1)
+            so.name AS so_name,
+            soi.item_code,
+            SUM(soi.qty) AS total_qty,
+            SUM(IFNULL(dni.delivered_qty, 0)) AS delivered_qty,
+            so.transaction_date
+        FROM `tabSales Order` so
+        INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+        LEFT JOIN (
+            SELECT 
+                dni.against_sales_order,
+                dni.item_code,
+                SUM(dni.qty) AS delivered_qty
+            FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabDelivery Note` dn ON dni.parent = dn.name
+            WHERE dn.docstatus = 1
+            GROUP BY dni.against_sales_order, dni.item_code
+        ) dni ON so.name = dni.against_sales_order AND soi.item_code = dni.item_code
+        WHERE 
+            so.docstatus = 1 
+            AND so.per_delivered < 100
+            AND so.status NOT IN ('Stopped', 'Closed', 'Completed', 'Cancelled')
+        GROUP BY so.name, soi.item_code
+        HAVING total_qty > delivered_qty
+        ORDER BY so.transaction_date ASC
+    """, as_dict=True)
 
-    open_sales_orders = frappe.db.sql("""
-        SELECT 
-            so.name AS sales_order,
-            soi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN
-            `tabItem` i ON soi.item_code = i.item_code
-        WHERE
-            (so.per_delivered < 100 OR so.per_billed < 100)
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+    # Process each SO-Item combination
+    for order in open_orders:
+        so_name = order.so_name
+        item_code = order.item_code
+        net_pending = order.total_qty - order.delivered_qty
+        
+        # Get already allocated count
+        allocated_count = frappe.db.sql("""
+            SELECT COUNT(*) AS allocated
+            FROM `tabSerial No` sr
+            WHERE 
+                sr.sales_order = %s 
+                AND sr.item_code = %s
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM `tabDelivery Note Item` dni 
+                    WHERE 
+                        dni.serial_no = sr.name 
+                        AND dni.docstatus = 1
+                )
+        """, (so_name, item_code))[0][0] or 0
 
-        UNION ALL
+        # Calculate net to allocate
+        to_allocate = net_pending - allocated_count
 
-        SELECT 
-            so.name AS sales_order,
-            pi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN 
-            `tabPacked Item` pi ON pi.parent = so.name AND pi.parent_detail_docname = soi.name
-        INNER JOIN 
-            `tabItem` i ON pi.item_code = i.item_code
-        WHERE
-            (so.per_delivered < 100 OR so.per_billed < 100)
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+        # Unassign excess serial numbers
+        if to_allocate < 0:
+            excess = abs(to_allocate)
+            excess_serials = frappe.db.sql_list("""
+                SELECT sr.name 
+                FROM `tabSerial No` sr
+                WHERE 
+                    sr.reserved_sales_order = %s 
+                    AND sr.item_code = %s
+                    AND NOT EXISTS (
+                        SELECT 1 
+                        FROM `tabDelivery Note Item` dni 
+                        WHERE 
+                            dni.serial_no = sr.name 
+                            AND dni.docstatus = 1
+                    )
+                ORDER BY sr.creation ASC 
+                LIMIT %s
+            """, (so_name, item_code, int(excess)))
+            
+            if excess_serials:
+                frappe.db.sql("""
+                    UPDATE `tabSerial No`
+                    SET sales_order = NULL
+                    WHERE name IN %(serials)s
+                """, {"serials": excess_serials})
+                frappe.db.commit()
 
-        ORDER BY 
-            sales_order DESC
-    """, as_dict=1)
+        # Allocate new serial numbers
+        elif to_allocate > 0:
+            print("to_allocate -------------- ", to_allocate)
+            # Get available serials (not allocated/delivered)
+            available_serials = frappe.db.sql_list("""
+                SELECT name 
+                FROM `tabSerial No` 
+                WHERE 
+                    item_code = %s 
+                    AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                    AND NOT EXISTS (
+                        SELECT 1 
+                        FROM `tabDelivery Note Item` dni 
+                        WHERE 
+                            dni.serial_no = `tabSerial No`.name 
+                            AND dni.docstatus = 1
+                    )
+                ORDER BY creation ASC 
+                LIMIT %s
+            """, (item_code, int(to_allocate)))
+            
+            # Assign to sales order
+            for serial in available_serials:
+                print("serial_no -------------- ", serial)
+                frappe.db.set_value("Serial No", serial, "reserved_sales_order", so_name)
+            
+            if available_serials:
+                frappe.db.commit()
 
-    for so in open_sales_orders:
-        so_name = so["sales_order"]
-        item_code = so["item_code"]
-
-        accumulated_days = 0
-        serial_found = False
-
-        for dept in departments:
-            dept_name = dept["name"]
-            min_aging_days = dept.get("min_aging_days", 0)
-            accumulated_days += min_aging_days
-
-            warehouses = frappe.db.sql("""
-                SELECT 
-                    name
-                FROM
-                    `tabWarehouse`
-                WHERE
-                    department = %s
-            """, (dept_name,), as_dict=1)
-
-            for wh in warehouses:
-                warehouse_name = wh["name"]
-
-                serial_no = frappe.db.sql("""
-                    SELECT 
-                        name
-                    FROM
-                        `tabSerial No`
-                    WHERE
-                        item_code = %s AND warehouse = %s
-                        AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                    LIMIT 1
-                """, (item_code, warehouse_name), as_dict=1)
-
-                if serial_no:
-                    frappe.db.sql("""
-                        UPDATE `tabSerial No` 
-                        SET reserved_sales_order = %s
-                        WHERE name = %s
-                    """, (so_name, serial_no[0]["name"]))
-
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order` 
-                        SET eta_for_dispatch = %s
-                        WHERE name = %s
-                    """, (accumulated_days, so_name))
-
-                    serial_found = True
-                    break
-
-            if serial_found:
-                print("serial found for item_code", item_code)
-                break
 # @frappe.whitelist()
 # def send_consignement_data(doc):
 #     if not doc.shipping_address_name:

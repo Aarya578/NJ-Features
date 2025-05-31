@@ -472,6 +472,23 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.manufacturer_model) { get_model(frm.doc.manufacturer_model); }
     },
 
+    inspection_type: function(frm) {
+        if (frm.doc.inspection_type ) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.set_is_defective',
+                args: {
+                    'inspection_type': frm.doc.inspection_type
+                },
+                callback: function(r) {
+                    if (r && r.message  && r.message=="1") {
+                        frm.set_value('qi_type', 'is_defective');
+                    }
+                }
+            })
+
+        }
+    },
+
     warehouse: async function(frm) {
         if (
             frm.doc.warehouse && frm.doc.serial_no &&(frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)

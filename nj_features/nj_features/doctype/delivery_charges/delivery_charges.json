@@ -10,8 +10,12 @@
   "rto_charges",
   "serial_no",
   "sales_order",
+  "pickup_scheduled_date",
   "column_break_30oxe",
   "cit_image",
+  "shiprocket_manifests",
+  "shiprocket_invoice",
+  "shiprocket_image",
   "amended_from"
  ],
  "fields": [
@@ -53,11 +57,31 @@
    "options": "Delivery Charges",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "pickup_scheduled_date",
+   "fieldtype": "Datetime",
+   "label": "Pickup Scheduled Date"
+  },
+  {
+   "fieldname": "shiprocket_manifests",
+   "fieldtype": "Long Text",
+   "label": "Shiprocket Manifests"
+  },
+  {
+   "fieldname": "shiprocket_invoice",
+   "fieldtype": "Long Text",
+   "label": "Shiprocket Invoice"
+  },
+  {
+   "fieldname": "shiprocket_image",
+   "fieldtype": "Long Text",
+   "label": "Shiprocket Image"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-17 13:04:36.770492",
+ "modified": "2025-05-31 12:52:26.406338",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

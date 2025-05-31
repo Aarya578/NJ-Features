@@ -844,7 +844,11 @@ def calculate_item_eta(item_code, required_qty, departments):
     return accumulated_days
 
 def update_sales_order_etas(so_eta_map):
-    """Update ETA for dispatch on sales orders"""
+    """Update ETA for dispatch on sales orders using direct SQL UPDATE"""
     for so_name, eta in so_eta_map.items():
-        frappe.db.set_value("Sales Order", so_name, "eta_for_dispatch", eta)
+        frappe.db.sql("""
+            UPDATE `tabSales Order`
+            SET eta_for_dispatch = %s
+            WHERE name = %s
+        """, (eta, so_name))
     frappe.db.commit()

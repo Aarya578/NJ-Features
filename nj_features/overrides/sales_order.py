@@ -36,242 +36,6 @@ class CustomSalesOrder(SalesOrder):
 
             if order_id:
                 trigger_fulfillment(order_id)
-
-    # def getting_shiprocket_order_details(self):
-    #     auth_token = get_auth_token().get("token")
-    #     print("auth_token:----55", auth_token)
-    #     if not auth_token:
-    #         frappe.throw("Shiprocket Auth Token not found.")
-    #     if not self.shopify_order_id:
-    #         frappe.throw("Shopify Order ID is missing.")
-        
-    #     url = f"https://apiv2.shiprocket.in/v1/external/orders?filter_by=channel_order_id&filter={self.shopify_order_id}"
-    #     print("url===============================", url)
-        
-    #     headers = {
-    #         "Content-Type": "application/json",
-    #         "Authorization": f"Bearer {auth_token}"
-    #     }
-        
-    #     try:
-    #         response = requests.get(url, headers=headers)
-    #         print("response:=====================", response.json())
-    #         response.raise_for_status()
-    #     except requests.exceptions.RequestException as e:
-    #         frappe.throw(f"Shiprocket API request failed: {str(e)}")
-        
-    #     data = response.json().get("data")
-        
-    #     # Map the fields if data exists
-    #     if data and len(data) > 0:
-    #         order_data = data[0]  # Get the first order from the array
-            
-    #         # Map shiprocket_order_id from the main order 'id' field
-    #         self.shiprocket_order_id = order_data.get('id')
-            
-    #         # Map shiprocket_shipment_id from the first shipment's 'id' field
-    #         shipments = order_data.get('shipments', [])
-    #         if shipments and len(shipments) > 0:
-    #             self.shiprocket_shipment_id = shipments[0].get('id')
-            
-    #         self.save(ignore_permissions=True)
-    #         frappe.db.commit()
-    #         # Optional: You might also want to map other useful fields
-    #         # self.customer_name = order_data.get('customer_name')
-    #         # self.customer_email = order_data.get('customer_email')
-    #         # self.order_status = order_data.get('status')
-    #         # self.payment_status = order_data.get('payment_status')
-            
-    #         print(f"Mapped shiprocket_order_id: {self.shiprocket_order_id}")
-    #         print(f"Mapped shiprocket_shipment_id: {self.shiprocket_shipment_id}")
-    #     else:
-    #         frappe.throw("No order data found in Shiprocket response.")
-        
-    #     return data        
-
-
-   
-    #     data = response.json().get("data")
-    # def ship_consignement_data(self):
-            
-    #     auth_token = get_auth_token().get("token")
-    #     print("auth_token:----55", auth_token)
-    #     print("Triggered send_consignement_data...")
-        
-    #     try:
-    #         # Fetch addresses
-    #         shipping_address = frappe.get_doc("Address", self.shipping_address_name) if self.shipping_address_name else None
-            
-    #         if not shipping_address:
-    #             frappe.throw("Shipping address is required")
-
-    #         formatted_date = self.transaction_date.strftime("%Y-%m-%d") if hasattr(self.transaction_date, 'strftime') else str(self.transaction_date)
-
-    #         # Prepare order_items from child table - ShipRocket format
-    #         # order_items = []
-    #         # for row in self.items:
-    #         #     order_items.append({
-    #         #         "name": (row.item_code[:50] if row.item_code else "")[:50],  # Ensure max 50 chars
-    #         #         "sku": (row.item_code[:50] if row.item_code else "")[:50],   # Ensure max 50 chars
-    #         #         "units": int(row.qty),                      # Should be integer, not string
-    #         #         "selling_price": str(row.amount),     # String format for price
-    #         #         "discount": "",
-    #         #         "tax": "",
-    #         #         "hsn": ""
-    #         #     })
-
-    #         order_items = []
-    #         for row in self.items:
-    #             item_code = row.item_code
-    #             item_doc = frappe.get_doc("Item", item_code) if item_code else None
-    #             item_group = item_doc.item_group if item_doc else ""
-
-    #             item_data = {
-    #                 "name": (item_code[:50] if item_code else "")[:50],
-    #                 "sku": (item_code[:50] if item_code else "")[:50],
-    #                 "selling_price": str(row.amount),
-    #                 "discount": "",
-    #                 "tax": "",
-    #                 "hsn": ""
-    #             }
-
-    #             # Only include 'units' if item group is 'Laptops'
-    #             if item_group == "Laptops":
-    #                 item_data["units"] = int(row.qty)
-
-    #             order_items.append(item_data)
-    #         # Determine payment method and subtotal based on is_cod condition
-    #         if self.is_cod == 1:
-    #             payment_method = "COD"
-    #             sub_total = float(self.total_outstanding) if self.total_outstanding else 0
-    #         else:
-    #             payment_method = "Prepaid"
-    #             sub_total = float(self.grand_total) if self.grand_total else 0
-
-    #         # ShipRocket API payload structure
-    #         data = {
-    #             "order_id": self.name,
-    #             "order_date": formatted_date,
-    #             "pickup_location": "Primary",
-    #             "comment": f"Order from {self.customer_name}",
-    #             "billing_customer_name": self.customer_name or "",
-    #             "billing_last_name": "",
-    #             "billing_address": shipping_address.address_line1 if shipping_address.address_line1 else "",
-    #             "billing_address_2": shipping_address.address_line2 if shipping_address.address_line2 else "",
-    #             "billing_city": shipping_address.city if shipping_address.city else "",
-    #             "billing_pincode": shipping_address.pincode if shipping_address.pincode else "",
-    #             "billing_state": shipping_address.state if shipping_address.state else "",
-    #             "billing_country": shipping_address.country if shipping_address.country else "India",
-    #             "billing_email": shipping_address.email_id if shipping_address.email_id else "",
-    #             "billing_phone": shipping_address.phone if shipping_address.phone else "",
-    #             "shipping_is_billing": True,
-    #             "shipping_customer_name": "",
-    #             "shipping_last_name": "", 
-    #             # "shipping_address": "",
-    #             # "shipping_address_2": "",
-    #             # "shipping_city": "",
-    #             # "shipping_pincode": "",
-    #             # "shipping_country": "",
-    #             # "shipping_state": "",
-    #             # "shipping_email": "",
-    #             # "shipping_phone": "",
-    #             "order_items": order_items,
-    #             "payment_method": payment_method,
-    #             # "shipping_charges": 0,
-    #             # "giftwrap_charges": 0,
-    #             # "transaction_charges": 0,
-    #             # "total_discount": 0,
-    #             "sub_total": sub_total,
-    #             "length": str(self.length),
-    #             "breadth": str(self.breadth), 
-    #             "height": str(self.height),
-    #             "weight": str(self.weight)
-    #         }
-
-    #         url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
-            
-    #         # Debug: Print token details
-    #         print(f"Token length: {len(auth_token) if auth_token else 'None'}")
-    #         print(f"Token starts with: {auth_token[:20] if auth_token and len(auth_token) > 20 else auth_token}")
-            
-    #         headers = {
-    #             "Content-Type": "application/json",
-    #             "Authorization": f"Bearer {auth_token.strip()}"
-    #         }
-
-    #         print("Sending data:", json.dumps(data, indent=2))
-    #         response = requests.post(url, headers=headers, json=data)
-    #         print(f"Response status: {response.status_code}")
-    #         print(f"Response content: {response.text}")
-
-    #         if response.status_code == 200:
-    #             try:
-    #                 resp_json = response.json()
-    #                 if resp_json.get('order_id'):
-    #                     print("==========================================Order created successfully")
-    #                     print(f"ShipRocket Order ID: {resp_json.get('order_id')}")
-    #                     print(f"Shipment ID: {resp_json.get('shipment_id')}")
-
-    #                     # ✅ Correct mapping
-    #                     self.shiprocket_order_id = resp_json.get('order_id')
-    #                     print("self.shipRocket_order_id==================", self.shiprocket_order_id)
-
-    #                     self.shiprocket_shipment_id = resp_json.get('shipment_id')
-    #                     print("self.shipRocket_shipment_id==================", self.shiprocket_order_id)
-    #                     # self.save(ignore_permissions=True)
-    #                     self.save(ignore_permissions=True)
-    #                     frappe.db.commit()
-    #                     return resp_json
-    #                 else:
-    #                     frappe.throw(f"Order creation failed: {response.text}")
-    #             except ValueError as json_err:
-    #                 frappe.throw(f"Could not parse API response: {response.text}")
-
-    #         else:
-    #             # Handle different error codes
-    #             if response.status_code == 401:
-    #                 frappe.throw("Authentication failed. Please check your ShipRocket credentials.")
-    #             elif response.status_code == 422:
-    #                 frappe.throw(f"Validation error: {response.text}")
-    #             else:
-    #                 frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
-    #     except Exception as e:
-    #         frappe.log_error(f"Consignment API Failed for {self.name}: {str(e)}", frappe.get_traceback())
-    #         frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
-
-
-
-
-    # def cod_calculation(self):
-    #     if not self.shipping_address_name:
-    #         frappe.throw("Shipping address is not set.")
-
-    #     # Get the pincode from the Address doctype
-    #     pincode = frappe.db.get_value("Address", self.shipping_address_name, "pincode")
-    #     if not pincode:
-    #         frappe.throw("Pincode not found in the shipping address.")
-
-    #     # Check if Pincode exists in Pincode doctype
-    #     pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
-    #     if not pincode_doc:
-    #         frappe.throw(f"Pincode {pincode} not found in Pincode master.")
-
-    #     if not self.weight:
-    #         frappe.throw("Weight is not set in Sales Order.")
-
-    #     rate = pincode_doc.rate or 0
-    #     cod_charge = pincode_doc.cod or 0
-    #     weight = self.weight
-
-    #     if self.is_cod:
-    #         cost_of_delivery = (rate * weight) + cod_charge
-    #     else:
-    #         cost_of_delivery = rate * weight
-
-    #     self.cost_of_delivery = cost_of_delivery
-    #     self.db_update()
-
-
     
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
@@ -408,236 +172,6 @@ def update_item_details(self):
     }
 
     return result
-
-def calculate_dispatch_eta_for_sales_order():
-    departments = frappe.db.sql("""
-        SELECT 
-            name, min_aging_days
-        FROM
-            `tabDepartment`
-        WHERE
-            department_sequence >= 1
-        ORDER BY 
-            department_sequence DESC
-    """, as_dict=1)
-
-    open_sales_orders = frappe.db.sql("""
-        SELECT 
-            so.name AS sales_order,
-            soi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN
-            `tabItem` i ON soi.item_code = i.item_code
-        WHERE
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
-        UNION ALL
-
-        SELECT 
-            so.name AS sales_order,
-            pi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN 
-            `tabPacked Item` pi ON pi.parent = so.name AND pi.parent_detail_docname = soi.name
-        INNER JOIN 
-            `tabItem` i ON pi.item_code = i.item_code
-        WHERE
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
-        ORDER BY 
-            sales_order DESC
-    """, as_dict=1)
-
-    for so in open_sales_orders:
-        so_name = so["sales_order"]
-        item_code = so["item_code"]
-
-        accumulated_days = 0
-        serial_found = False
-
-        for dept in departments:
-            dept_name = dept["name"]
-            min_aging_days = dept.get("min_aging_days", 0)
-            accumulated_days += min_aging_days
-
-            warehouses = frappe.db.sql("""
-                SELECT 
-                    name
-                FROM
-                    `tabWarehouse`
-                WHERE
-                    department = %s
-            """, (dept_name,), as_dict=1)
-
-            for wh in warehouses:
-                warehouse_name = wh["name"]
-
-                serial_no = frappe.db.sql("""
-                    SELECT 
-                        name
-                    FROM
-                        `tabSerial No`
-                    WHERE
-                        item_code = %s AND warehouse = %s
-                        AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                    LIMIT 1
-                """, (item_code, warehouse_name), as_dict=1)
-
-                if serial_no:
-                    frappe.db.sql("""
-                        UPDATE `tabSerial No` 
-                        SET reserved_sales_order = %s
-                        WHERE name = %s
-                    """, (so_name, serial_no[0]["name"]))
-
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order` 
-                        SET eta_for_dispatch = %s
-                        WHERE name = %s
-                    """, (accumulated_days, so_name))
-
-                    serial_found = True
-                    break
-
-            if serial_found:
-                print("serial found for item_code", item_code)
-                break
-
-# @frappe.whitelist()
-# def send_consignement_data(doc):
-#     if not doc.shipping_address_name:
-#         frappe.throw("Shipping address is not set.")
-
-#     # Get the pincode from the Address doctype
-#     pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
-#     if not pincode:
-#         frappe.throw("Pincode not found in the shipping address.")
-
-#     # Check if Pincode exists in Pincode doctype
-#     pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
-#     if not pincode_doc:
-#         frappe.throw(f"Pincode {pincode} not found in Pincode master.")
-
-#     if not doc.weight:
-#         frappe.throw("Weight is not set in Sales Order.")
-
-#     rate = pincode_doc.rate or 0
-#     cod_charge = pincode_doc.cod or 0
-#     weight = doc.weight
-
-#     if doc.is_cod:
-#         cost_of_delivery = (rate * weight) + cod_charge
-#     else:
-#         cost_of_delivery = rate * weight
-
-#     doc.cost_of_delivery = cost_of_delivery
-#     doc.db_update()
-#     print("Triggered send_consignement_data...")
-#     try:
-#         # Convert string to Frappe dict
-#         doc = frappe._dict(json.loads(doc))
-#         print("doc:----------------------------", doc)
-        
-#         # Fetch addresses
-#         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
-#         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
-#         formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
-        
-#         # Prepare header
-#         header = {
-#             "ClientCode": "207433",
-#             "OrderNo/InvoiceNo": doc.name,
-#             "Order/InvoiceDate": formatted_date,
-#             "SenderName": doc.company,
-#             "SenderAdd1": company_address.address_line1 or " ",
-#             "SenderAdd2": company_address.address_line2 or "",
-#             "SenderCity": company_address.city or "",
-#             "SenderState": company_address.state or "",
-#             "SenderCountry": company_address.country or "India",
-#             "SenderPin": company_address.pincode or "",
-#             # "SenderPin": "560100",
-#             "SenderMobile": company_address.phone or "",
-#             "SenderEmail": company_address.email_id or "",
-#             "ReceiverName": doc.customer_name or "",
-#             "ReceiverAdd1": shipping_address.address_line1 or "",
-#             "ReceiverAdd2": shipping_address.address_line2 or " ",
-#             "ReceiverCity": shipping_address.city or "",
-#             "ReceiverState": shipping_address.state or "",
-#             "ReceiverCountry": shipping_address.country or "India",
-#             # "ReceiverPin": "110002",
-#             "ReceiverPin": shipping_address.pincode or "",
-#             "ReceiverMobile": shipping_address.phone or "",
-#             "ConsignmentValue": str(doc.grand_total),
-#             "NoQuantity": 1,
-#             "consignmentValue": str(doc.grand_total),
-#             "Weight": str(doc.weight),
-#             "TransitMode": doc.mode_of_transfer,
-#             "ProductMode": "Normal",
-#             "PaymentType": "COD",
-#             "Amount": str(doc.grand_total),
-#             "Need_CitImage": "1"
-#         }
-        
-#         # Prepare items - FIX: Access items as a list, not a method
-#         items = []
-#         for row in doc.get('items', []):  # Use doc.get('items', []) instead of doc.items
-#             items.append({
-#                 "Length": f"{float(doc.length):.2f}",
-#                 "Breadth": f"{float(doc.breadth):.2f}",
-#                 "Height": f"{float(doc.height):.2f}",
-#                 "ProductCode": "AUTO",
-#                 "ProductDescription": row.get("item_name"),
-#                 "SplitPcs": f"{float(row.get('qty', 1)):.4f}",
-#                 "IsPackaging": "0"
-#             })
-        
-#         data = {
-#             "ResponseHeader": "yes",
-#             "Header": [header],
-#             "ItemsDetails": items
-#         }
-        
-#         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
-#         headers = {"Content-Type": "application/json"}
-        
-#         print("Sending data:", json.dumps(data, indent=2))
-        
-#         response = requests.post(url, headers=headers, json=data)
-#         print(f"Response status: {response.status_code}")
-#         print(f"Response content: {response.text}")
-        
-#         resp_json = response.json()
-        
-#         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
-#             awb_number = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
-#             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
-            
-#             # Update the Sales Order document with AWB number and CIT image
-#             sales_order = frappe.get_doc("Sales Order", doc.name)
-#             sales_order.awb_number = awb_number
-#             sales_order.cit_image = cit_data
-#             sales_order.save(ignore_permissions=True)
-            
-#             frappe.msgprint(f"AWB Number generated successfully: {awb_number}")
-#             return {"awb_number": awb_number, "cit_image": cit_data}
-#         else:
-#             frappe.throw(f"API returned error: {response.text}")
-            
-#     except Exception as e:
-#         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
 
 @frappe.whitelist()
 def send_consignement_data(doc):
@@ -785,7 +319,6 @@ def send_consignement_data(doc):
             
     except Exception as e:
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
-
 
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
@@ -1058,166 +591,190 @@ def shiprocket_awb_number(doc):
         "manifest_url": manifest_pdf_url,
         "invoice_url": invoice_pdf_url
     }
-# @frappe.whitelist()
-# def shiprocket_awb_number(doc):
-#     # print("======================== Inside shiprocket_awb_number")
-#     doc = frappe._dict(json.loads(doc))
-#     auth_token = get_auth_token().get("token")
 
-#     if not auth_token:
-#         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
+def calculate_dispatch_eta_for_sales_order():
+    # Step 1: Get department-wise min aging days (in descending order of department_sequence)
+    departments = frappe.db.sql("""
+        SELECT 
+            name, min_aging_days
+        FROM
+            `tabDepartment`
+        WHERE
+            department_sequence >= 1
+        ORDER BY 
+            department_sequence DESC
+    """, as_dict=True)
 
-#     if not doc.shiprocket_shipment_id:
-#         frappe.throw("Shipment ID not found on the document.")
+    # Step 2: Get net pending quantity per SO-Item combination
+    open_orders = frappe.db.sql("""
+        SELECT 
+            so.name AS so_name,
+            soi.item_code,
+            SUM(soi.qty) AS total_qty,
+            SUM(IFNULL(dni.delivered_qty, 0)) AS delivered_qty,
+            so.transaction_date
+        FROM `tabSales Order` so
+        INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+        LEFT JOIN (
+            SELECT 
+                dni.against_sales_order,
+                dni.item_code,
+                SUM(dni.qty) AS delivered_qty
+            FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabDelivery Note` dn ON dni.parent = dn.name
+            WHERE dn.docstatus = 1
+            GROUP BY dni.against_sales_order, dni.item_code
+        ) dni ON so.name = dni.against_sales_order AND soi.item_code = dni.item_code
+        WHERE 
+            so.docstatus = 1 
+            AND so.per_delivered < 100
+            AND so.status NOT IN ('Stopped', 'Closed', 'Completed', 'Cancelled')
+        GROUP BY so.name, soi.item_code
+        HAVING total_qty > delivered_qty
+        ORDER BY so.transaction_date ASC
+    """, as_dict=True)
+
+    # Dictionary to track max ETA per sales order
+    so_eta_map = {}
+
+    # Step 3: Process each SO-Item combination
+    for order in open_orders:
+        so_name = order.so_name
+        item_code = order.item_code
+        net_pending = order.total_qty - order.delivered_qty
+
+        # Get already allocated count
+        allocated_count = frappe.db.sql("""
+            SELECT COUNT(*) AS allocated
+            FROM `tabSerial No` sr
+            WHERE 
+                sr.reserved_sales_order = %s 
+                AND sr.item_code = %s
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM `tabDelivery Note Item` dni 
+                    WHERE 
+                        dni.serial_no = sr.name 
+                        AND dni.docstatus = 1
+                )
+        """, (so_name, item_code))[0][0] or 0
+
+        # Calculate net to allocate
+        to_allocate = net_pending - allocated_count
+
+        # Unassign excess serial numbers
+        if to_allocate < 0:
+            excess = abs(to_allocate)
+            excess_serials = frappe.db.sql_list("""
+                SELECT sr.name 
+                FROM `tabSerial No` sr
+                WHERE 
+                    sr.reserved_sales_order = %s 
+                    AND sr.item_code = %s
+                    AND NOT EXISTS (
+                        SELECT 1 
+                        FROM `tabDelivery Note Item` dni 
+                        WHERE 
+                            dni.serial_no = sr.name 
+                            AND dni.docstatus = 1
+                    )
+                ORDER BY sr.creation ASC 
+                LIMIT %s
+            """, (so_name, item_code, int(excess)))
+            
+            if excess_serials:
+                frappe.db.sql("""
+                    UPDATE `tabSerial No`
+                    SET sales_order = NULL, reserved_sales_order = NULL
+                    WHERE name IN %(serials)s
+                """, {"serials": excess_serials})
+                frappe.db.commit()
+
+        # Allocate new serial numbers
+        elif to_allocate > 0:
+            available_serials = frappe.db.sql_list("""
+                SELECT name 
+                FROM `tabSerial No` 
+                WHERE 
+                    item_code = %s 
+                    AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                    AND NOT EXISTS (
+                        SELECT 1 
+                        FROM `tabDelivery Note Item` dni 
+                        WHERE 
+                            dni.serial_no = `tabSerial No`.name 
+                            AND dni.docstatus = 1
+                    )
+                ORDER BY creation ASC 
+                LIMIT %s
+            """, (item_code, int(to_allocate)))
+
+            print("available_serials:", available_serials)
+            
+            for serial in available_serials:
+                frappe.db.set_value("Serial No", serial, "reserved_sales_order", so_name)
+
+            if available_serials:
+                frappe.db.commit()
+
+        # Step 4: Calculate ETA for this item
+        item_eta = calculate_item_eta(item_code, net_pending, departments)
+        
+        # Track max ETA per sales order
+        if so_name not in so_eta_map or item_eta > so_eta_map[so_name]:
+            so_eta_map[so_name] = item_eta
     
-#     shipment_id = doc.shiprocket_shipment_id
-#     invoice_order_id = doc.shiprocket_order_id
-#     shipment_list = [int(shipment_id)]
-#     headers = {
-#         "Content-Type": "application/json",
-#         "Authorization": f"Bearer {auth_token.strip()}"
-#     }
+    print("so_eta_map:", so_eta_map)
+    # Step 5: Update ETA for each sales order
+    for so_name, eta in so_eta_map.items():
+        frappe.db.set_value("Sales Order", so_name, "eta_for_dispatch", eta)
+    frappe.db.commit()
 
-#     # 1. Service Availability
+def calculate_item_eta(item_code, required_qty, departments):
+    """Calculate ETA for a specific item quantity"""
+    accumulated_days = 0
+    remaining_qty = required_qty
 
-#     service_url = "https://apiv2.shiprocket.in/v1/external/courier/serviceability"
-#     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
-#     service_json = service_response.json()
-#     # print("service_json===========================", service_json)
+    for dept in departments:
+        dept_name = dept["name"]
+        min_aging_days = dept.get("min_aging_days", 0)
+        print("min_aging_days:", min_aging_days)
+        accumulated_days += min_aging_days
 
-#     courier_data = service_json.get("data", {}).get("available_courier_companies", [])
+        # Get all warehouses in this department
+        warehouses = frappe.db.sql_list("""
+            SELECT name FROM `tabWarehouse` WHERE department = %s
+        """, dept_name)
 
-#     if not courier_data:
-#         frappe.throw("No courier companies found in serviceability response.")
+        if not warehouses:
+            continue
 
-#     # Calculate total charges for each courier
-#     best_courier = None
-#     lowest_total = float('inf')
+        # Create placeholders for the IN clause
+        placeholders = ', '.join(['%s'] * len(warehouses))
 
-#     for courier in courier_data:
-#         freight_charge = courier.get("freight_charge", 0) or 0
-#         cod_charges = courier.get("cod_charges", 0) or 0
-#         total = freight_charge + cod_charges
+        # Correct query with dynamic IN clause
+        query = f"""
+            SELECT COUNT(*)
+            FROM `tabSerial No`
+            WHERE 
+                item_code = %s
+                AND warehouse IN ({placeholders})
+                AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM `tabDelivery Note Item` dni 
+                    WHERE dni.serial_no = `tabSerial No`.name 
+                        AND dni.docstatus = 1
+                )
+        """
 
-#         # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
+        # Combine parameters (item_code + warehouses)
+        params = [item_code] + warehouses
+        available_count = frappe.db.sql(query, params)[0][0] or 0
 
-#         if total < lowest_total:
-#             lowest_total = total
-#             best_courier = {
-#                 "courier_name": courier.get("courier_name"),
-#                 "courier_company_id": courier.get("courier_company_id"),
-#                 "total_cost": total
-#             }
+        if available_count >= remaining_qty:
+            return accumulated_days
+        else:
+            remaining_qty -= available_count
 
-#     if best_courier:
-#         print("Best Courier:====================12345", best_courier)
-#     else:
-#         print("No suitable courier found.")
-
-#     # # 2. AWB Assignment
-#     # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
-#     # awb_response = requests.post(awb_url, headers=headers, json={
-#     #     "shipment_id": shipment_id,
-#     #     "courier_id": best_courier.get("courier_company_id")
-#     # })
-#     # print("awb_response===========================", awb_response)  
-#     # print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
-#     # awb_json = awb_response.json()
-#     # awb_code = awb_json.get("response", {}).get("data", {}).get("awb_code")
-#     # if not awb_code:
-#     #     frappe.throw("AWB code not found in response.")
-#     # frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
-#     # 2. AWB Assignment
-#     awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
-#     awb_response = requests.post(awb_url, headers=headers, json={
-#         "shipment_id": shipment_id,
-#         "courier_id": best_courier.get("courier_company_id")
-#     })
-#     print("awb_response===========================", awb_response)  
-#     print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
-
-#     awb_json = awb_response.json()
-#     response_data = awb_json.get("response", {})
-#     data = response_data.get("data", {})
-
-#     awb_code = None
-#     if isinstance(data, dict):
-#         awb_code = data.get("awb_code")
-#     else:
-#         # Show and stop if there's an error message instead of AWB data
-#         frappe.msgprint(f"AWB Assignment Failed: {data}")
-#         frappe.throw(f"ShipRocket response: {data}")
-
-#     if not awb_code:
-#         frappe.throw("AWB code not found in response.")
-
-#     frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
-
-
-#     # 3. Pickup Generation
-#     pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
-#     pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
-#     pickup_json = pickup_response.json()
-#     pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
-#     if pickup_scheduled_date:
-#         frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
-#     else:
-#         frappe.throw("Pickup scheduled date not found in response.")
-
-#     # 4. Manifest Generation
-#     manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
-#     manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Manifest Response: {manifest_response.status_code} - {manifest_response.text}")
-#     manifest_json = manifest_response.json()
-#     manifest_pdf_url = manifest_json.get("manifest_url")
-#     if not manifest_pdf_url:
-#         frappe.throw("Manifest URL not found in response.")
-#     manifest_file_response = requests.get(manifest_pdf_url)
-#     if manifest_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
-#     manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_manifests", manifest_pdf_b64)
-
-#      # 5. Invoice Generation
-#     invoice_order_id = doc.shiprocket_order_id
-#     print("invoice_order_id====================",invoice_order_id)
-#     invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
-#     print("invoice_url",invoice_url)
-#     invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
-#     print("invoice_response",invoice_response)
-#     print(f"Invoice Response: {invoice_response.status_code} - {invoice_response.text}")
-#     invoice_json = invoice_response.json()
-#     invoice_pdf_url = invoice_json.get("invoice_url")
-#     if not invoice_pdf_url:
-#         frappe.throw("Invoice URL not found in response.")
-#     invoice_file_response = requests.get(invoice_pdf_url)
-#     if invoice_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
-#     invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_invoice", invoice_pdf_b64)
-
-
-#     # 6. Label Generation
-#     label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
-#     label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Label Response: {label_response.status_code} - {label_response.text}")
-#     label_json = label_response.json()
-#     label_link = label_json.get("label_url")
-#     if not label_link:
-#         frappe.throw("Label URL not found in response.")
-#     label_file_response = requests.get(label_link)
-#     if label_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
-#     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
-
-
-#     frappe.db.commit()
-#     return {
-#         "awb_code": awb_code,
-#         "pickup_scheduled_date": pickup_scheduled_date,
-#         "label_url": label_link,
-#         "manifest_url": manifest_pdf_url,
-#         "invoice_url": invoice_pdf_url
-#     }
+    return accumulated_days

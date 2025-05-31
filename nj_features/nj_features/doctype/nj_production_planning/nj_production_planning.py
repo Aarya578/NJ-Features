@@ -313,56 +313,59 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
-                -- Fetch data for stock items directly from Sales Order Item
-                SELECT
-                    soi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(soi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabSales Order Item` soi ON so.name = soi.parent
-                INNER JOIN
-                    `tabItem` i ON soi.item_code = i.item_code
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND i.is_stock_item = 1  -- Only take stock items
-                GROUP BY
-                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+            -- 1. Direct stock items sold
+            SELECT
+                soi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(soi.qty) AS daily_sales
+            FROM
+                `tabSales Order` so
+            INNER JOIN
+                `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN
+                `tabItem` i ON soi.item_code = i.item_code
+            WHERE
+                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                AND so.docstatus = 1
+                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND i.is_stock_item = 1
+            GROUP BY
+                soi.item_code, i.item_name, i.is_stock_item, sale_date
 
-                UNION ALL
+            UNION ALL
 
-                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
-                SELECT
-                    pi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(pi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabPacked Item` pi ON so.name = pi.parent
-                INNER JOIN
-                    `tabItem` i ON pi.item_code = i.item_code
-                INNER JOIN
-                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
-                    AND i.is_stock_item = 1
-                    -- Only take packed items from non-stock (bundle) items
-                GROUP BY
-                    pi.item_code, i.item_name, i.is_stock_item, sale_date
-            )
-            SELECT * FROM SalesData
-            ORDER BY sale_date DESC
+            -- 2. Stock components of non-stock Product Bundles
+            SELECT
+                pbi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(pbi.qty * soi.qty) AS daily_sales
+            FROM
+                `tabSales Order` so
+            INNER JOIN
+                `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN
+                `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            INNER JOIN
+                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            INNER JOIN
+                `tabItem` i ON pbi.item_code = i.item_code
+            WHERE
+                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                AND so.docstatus = 1
+                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  -- Bundle parent
+                AND i.is_stock_item = 1  -- Component item
+            GROUP BY
+                pbi.item_code, i.item_name, i.is_stock_item, sale_date
+        )
+
+        SELECT * FROM SalesData
+        ORDER BY sale_date DESC
+
     """, as_dict=True)
 
     sales_map = {}
@@ -890,7 +893,6 @@ def calculate_to_make(doc):
     # Save document to persist changes
     doc.save()
     return doc.get("nj_production_planning_child", [])
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     if not nj_pro_child or not department:

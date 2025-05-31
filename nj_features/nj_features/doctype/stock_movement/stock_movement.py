@@ -226,7 +226,6 @@ def validate_stock_movement_for_grade(doc):
         frappe.log_error(frappe.get_traceback(), "Error in validate_stock_movement_for_grade")
         return {"error": str(e)}
 
-
 def validate_serial_no_and_department(row, error_messages):
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
@@ -322,15 +321,16 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
             if qi_doc:
-                quality_inspection_status_for_stock_movement = t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                if t_inspection_type.get("quality_inspection_status_for_stock_movement"):
+                    quality_inspection_status_for_stock_movement = t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
 
-                if t_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
-                    expected_status = ", ".join(quality_inspection_status_for_stock_movement)
-                    actual_status = qi_doc.get("status")
-                    
-                    error_messages.append(
-                        f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
-                    )
+                    if t_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
+                        expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                        actual_status = qi_doc.get("status")
+                        
+                        error_messages.append(
+                            f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
+                        )
 
         else:
             error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")

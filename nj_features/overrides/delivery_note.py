@@ -184,7 +184,7 @@ class CustomDeliveryNote(DeliveryNote):
             return
 
         result = frappe.db.sql("""
-            SELECT so.cit_image, so.shiprocket_image, so.shiprocket_manifests, so.shiprocket_invoice
+            SELECT so.cit_image, so.shiprocket_image, so.shiprocket_manifests, so.shiprocket_invoice ,so.awb_number
             FROM `tabSales Order` so
             JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
             WHERE dni.parent = %s
@@ -194,6 +194,7 @@ class CustomDeliveryNote(DeliveryNote):
         if result:
             row = result[0]
             self.db_set("cit_image", row.cit_image)
+            self.db_set("awb_number", row.awb_number)
             self.db_set("shiprocket_image", row.shiprocket_image)
             self.db_set("shiprocket_manifests", row.shiprocket_manifests)
             self.db_set("shiprocket_invoice", row.shiprocket_invoice)
@@ -426,32 +427,101 @@ class CustomDeliveryNote(DeliveryNote):
                 frappe.log_error(f"RTO Cost update failed: {e}", "RTO Charges Update")
 
 
+    # def update_details_to_delivery_charege_doc(self):
+    # # First, check if a Delivery Charges document with the same AWB number exists
+    #     existing_delivery_charge = frappe.get_all(
+    #         "Delivery Charges", 
+    #         filters={"awb_number": self.awb_number},
+    #         limit=1
+    #     )      
+    #     if existing_delivery_charge:
+    #         # If exists, get the document and update it
+    #         delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
+    #         print(f"Updating existing Delivery Charges document: {delivery_charge.name}")
+    #     else:
+    #         # If not exists, create a new one
+    #         delivery_charge = frappe.new_doc("Delivery Charges")
+    #         print("Creating new Delivery Charges document")
+    #     delivery_charge.awb_number = self.awb_number
+    #     delivery_charge.rto_charges = self.cost_amount
+    #     delivery_charge.cit_image = self.cit_image
+    #     if hasattr(self, 'is_return') and self.is_return:
+    #         delivery_charge.cause_of_return = self.cause_of_return
+    #     # Map from first item
+    #     for row in self.get("items"):
+    #         delivery_charge.serial_no = row.get("serial_no")
+    #         delivery_charge.sales_order = row.get("against_sales_order")
+    #         break  # Just get the first item's data
+        
+    #     try:
+    #         if delivery_charge.is_new():
+    #             delivery_charge.insert(ignore_permissions=True)
+    #         else:
+    #             delivery_charge.save(ignore_permissions=True)
+    #     except Exception as e:
+    #         frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
+    #         print(f"Error: {e}")
     def update_details_to_delivery_charege_doc(self):
-    # First, check if a Delivery Charges document with the same AWB number exists
+        print("===============================update_details_to_delivery_charege_doc")
+    # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
-            "Delivery Charges", 
+            "Delivery Charges",
             filters={"awb_number": self.awb_number},
             limit=1
-        )      
+        )
+
+        serial_nos = []
+        sales_orders = []
+
+        # Collect all serial numbers and sales orders from items
+        for row in self.get("items"):
+            if row.get("serial_no"):
+                serial_nos.append(row.get("serial_no"))
+            if row.get("against_sales_order"):
+                sales_orders.append(row.get("against_sales_order"))
+
+        # Convert lists to comma-separated unique values
+        serial_nos_str = ",".join(sorted(set(serial_nos)))
+        sales_orders_str = ",".join(sorted(set(sales_orders)))
+
         if existing_delivery_charge:
-            # If exists, get the document and update it
+            # If exists, get the document
             delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
+            print("existing_delivery_charge=========================",existing_delivery_charge)
             print(f"Updating existing Delivery Charges document: {delivery_charge.name}")
+
+            # Update serial_no if missing or append new ones
+            if delivery_charge.serial_no:
+                existing_serials = set(delivery_charge.serial_no.split(","))
+                new_serials = set(serial_nos)
+                all_serials = existing_serials.union(new_serials)
+                delivery_charge.serial_no = ",".join(sorted(all_serials))
+            else:
+                delivery_charge.serial_no = serial_nos_str
+
+            # Update sales_order similarly
+            if delivery_charge.sales_order:
+                existing_orders = set(delivery_charge.sales_order.split(","))
+                new_orders = set(sales_orders)
+                all_orders = existing_orders.union(new_orders)
+                delivery_charge.sales_order = ",".join(sorted(all_orders))
+            else:
+                delivery_charge.sales_order = sales_orders_str
         else:
-            # If not exists, create a new one
+            # Create a new document
             delivery_charge = frappe.new_doc("Delivery Charges")
             print("Creating new Delivery Charges document")
-        delivery_charge.awb_number = self.awb_number
+            delivery_charge.awb_number = self.awb_number
+            delivery_charge.serial_no = serial_nos_str
+            delivery_charge.sales_order = sales_orders_str
+
+        # Set common fields
         delivery_charge.rto_charges = self.cost_amount
         delivery_charge.cit_image = self.cit_image
+
         if hasattr(self, 'is_return') and self.is_return:
             delivery_charge.cause_of_return = self.cause_of_return
-        # Map from first item
-        for row in self.get("items"):
-            delivery_charge.serial_no = row.get("serial_no")
-            delivery_charge.sales_order = row.get("against_sales_order")
-            break  # Just get the first item's data
-        
+
         try:
             if delivery_charge.is_new():
                 delivery_charge.insert(ignore_permissions=True)
@@ -460,6 +530,7 @@ class CustomDeliveryNote(DeliveryNote):
         except Exception as e:
             frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
             print(f"Error: {e}")
+
 
 
 @frappe.whitelist()

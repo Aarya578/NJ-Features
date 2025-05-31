@@ -10,9 +10,9 @@ class StockMovement(Document):
     def on_submit(self):
         # self.validate_supplier_return()
         try:
-            # if self.get("make_supplier_return"):
-            #     self.validate_supplier_return()
-            #     return 
+            if self.get("make_supplier_return"):
+                self.validate_supplier_return()
+                return 
             nj_series = "STMR-.YYYY.-.MM.-"
             if self.transfer_status == "Stock Accept":
                 nj_series = "STMA-.YYYY.-.MM.-"

@@ -8,6 +8,7 @@ import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
+# logger = frappe.logger('SOLogger', allow_site=True, file_count=100)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -501,7 +502,7 @@ def calculate_dispatch_eta_for_sales_order():
                 if serial_no:
                     frappe.db.sql("""
                         UPDATE `tabSerial No` 
-                        SET reserved_sales_order = %s
+                        SET reserved_sales_order = %s_process_customer_details
                         WHERE name = %s
                     """, (so_name, serial_no[0]["name"]))
 
@@ -788,6 +789,314 @@ def send_consignement_data(doc):
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
 
 
+# @frappe.whitelist()
+# def shiprocket_awb_number(doc):
+#     # print("======================== Inside shiprocket_awb_number")
+#     doc = frappe._dict(json.loads(doc))
+#     auth_token = get_auth_token().get("token")
+
+#     if not auth_token:
+#         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
+
+#     # Consignment Data Creation (from first code)
+#     print("auth_token:----55", auth_token)
+#     print("Triggered send_consignement_data...")
+    
+#     try:
+#         # Get the actual Sales Order document to access child table properly
+#         sales_order_doc = frappe.get_doc("Sales Order", doc.name)
+        
+#         # Fetch addresses
+#         shipping_address = frappe.get_doc("Address", sales_order_doc.shipping_address_name) if sales_order_doc.shipping_address_name else None
+        
+#         if not shipping_address:
+#             frappe.throw("Shipping address is required")
+
+#         formatted_date = sales_order_doc.transaction_date.strftime("%Y-%m-%d") if hasattr(sales_order_doc.transaction_date, 'strftime') else str(sales_order_doc.transaction_date)
+
+#         # Prepare order_items from child table - ShipRocket format
+#         order_items = []
+#         for row in sales_order_doc.items:
+#             order_items.append({
+#                 "name": (row.item_code[:50] if row.item_code else "")[:50], 
+#                 "sku": (row.item_code[:50] if row.item_code else "")[:50],   
+#                 "units": int(row.qty),                      
+#                 "selling_price": str(row.rate * 1.18),    
+#                 "discount": "",
+#                 "tax": 18.0,
+#                 "hsn": ""
+#             })
+#             print("order_items====================",order_items)
+#         # order_items = []
+#         # for row in sales_order_doc.items:
+#         #     item_code = row.item_code
+#         #     item_doc = frappe.get_doc("Item", item_code) if item_code else None
+#         #     item_group = item_doc.item_group if item_doc else ""
+
+#         #     item_data = {
+#         #         "name": (item_code[:50] if item_code else "")[:50],
+#         #         "sku": (item_code[:50] if item_code else "")[:50],
+#         #         "selling_price": str(row.rate),
+#         #         "discount": "",
+#         #         "tax": "",
+#         #         "hsn": ""
+#         #     }
+
+#         #     # Only include 'units' if item group is 'Laptops'
+#         #     if item_group == "Laptops":
+#         #         item_data["units"] = int(row.qty)
+
+#         #     order_items.append(item_data)
+
+#         # Determine payment method and subtotal based on is_cod condition
+#         if sales_order_doc.is_cod == 1:
+#             payment_method = "COD"
+#             sub_total = float(sales_order_doc.total_outstanding) if sales_order_doc.total_outstanding else 0
+#         else:
+#             payment_method = "Prepaid"
+#             sub_total = float(sales_order_doc.grand_total) if sales_order_doc.grand_total else 0
+
+#         # ShipRocket API payload structure
+#         data = {
+#             "order_id": sales_order_doc.name,
+#             "order_date": formatted_date,
+#             "pickup_location": "Office",
+#             "comment": f"Order from {sales_order_doc.customer_name}",
+#             "billing_customer_name": sales_order_doc.customer_name or "",
+#             "billing_last_name": "",
+#             "billing_address": shipping_address.address_line1 if shipping_address.address_line1 else "",
+#             "billing_address_2": shipping_address.address_line2 if shipping_address.address_line2 else "",
+#             "billing_city": shipping_address.city if shipping_address.city else "",
+#             "billing_pincode": shipping_address.pincode if shipping_address.pincode else "",
+#             "billing_state": shipping_address.state if shipping_address.state else "",
+#             "billing_country": shipping_address.country if shipping_address.country else "India",
+#             "billing_email": shipping_address.email_id if shipping_address.email_id else "",
+#             "billing_phone": shipping_address.phone if shipping_address.phone else "",
+#             "shipping_is_billing": True,
+#             "shipping_customer_name": "",
+#             "shipping_last_name": "", 
+#             "order_items": order_items,
+#             "payment_method": payment_method,
+#             "sub_total": sub_total,
+#             "length": str(sales_order_doc.length),
+#             "breadth": str(sales_order_doc.breadth), 
+#             "height": str(sales_order_doc.height),
+#             "weight": str(sales_order_doc.weight)
+#         }
+
+#         url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
+        
+#         # Debug: Print token details
+#         print(f"Token length: {len(auth_token) if auth_token else 'None'}")
+#         print(f"Token starts with: {auth_token[:20] if auth_token and len(auth_token) > 20 else auth_token}")
+        
+#         headers = {
+#             "Content-Type": "application/json",
+#             "Authorization": f"Bearer {auth_token.strip()}"
+#         }
+
+#         print("Sending data:", json.dumps(data, indent=2))
+#         response = requests.post(url, headers=headers, json=data)
+#         print(f"Response status: {response.status_code}")
+#         print(f"Response content: {response.text}")
+
+#         if response.status_code == 200:
+#             try:
+#                 resp_json = response.json()
+#                 if resp_json.get('order_id'):
+#                     print("==========================================Order created successfully")
+#                     print(f"ShipRocket Order ID: {resp_json.get('order_id')}")
+#                     print(f"Shipment ID: {resp_json.get('shipment_id')}")
+
+#                     # Update document with ShipRocket IDs
+#                     frappe.db.set_value("Sales Order", doc.name, "shiprocket_order_id", resp_json.get('order_id'))
+#                     frappe.db.set_value("Sales Order", doc.name, "shiprocket_shipment_id", resp_json.get('shipment_id'))
+                    
+#                     # Update local doc object for further processing
+#                     doc.shiprocket_order_id = resp_json.get('order_id')
+#                     doc.shiprocket_shipment_id = resp_json.get('shipment_id')
+                    
+#                     print("self.shipRocket_order_id==================", doc.shiprocket_order_id)
+#                     print("self.shipRocket_shipment_id==================", doc.shiprocket_shipment_id)
+                    
+#                     frappe.db.commit()
+#                 else:
+#                     frappe.throw(f"Order creation failed: {response.text}")
+#             except ValueError as json_err:
+#                 frappe.throw(f"Could not parse API response: {response.text}")
+
+#         else:
+#             # Handle different error codes
+#             if response.status_code == 401:
+#                 frappe.throw("Authentication failed. Please check your ShipRocket credentials.")
+#             elif response.status_code == 422:
+#                 frappe.throw(f"Validation error: {response.text}")
+#             else:
+#                 frappe.throw(f"API request failed with status {response.status_code}: {response.text}")
+                
+#     except Exception as e:
+#         frappe.log_error(f"Consignment API Failed for {doc.name}: {str(e)}", frappe.get_traceback())
+#         frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
+
+#     # Now check if we have the required IDs after consignment creation
+#     if not doc.shiprocket_shipment_id:
+#         frappe.throw("Shipment ID not found on the document after consignment creation.")
+    
+#     shipment_id = doc.shiprocket_shipment_id
+#     invoice_order_id = doc.shiprocket_order_id
+#     shipment_list = [int(shipment_id)]
+
+#     # 1. Service Availability
+#     service_url = "https://apiv2.shiprocket.in/v1/external/courier/serviceability"
+#     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
+#     service_json = service_response.json()
+#     # print("service_json===========================", service_json)
+
+#     courier_data = service_json.get("data", {}).get("available_courier_companies", [])
+
+#     if not courier_data:
+#         frappe.throw("No courier companies found in serviceability response.")
+
+#     # Calculate total charges for each courier
+#     best_courier = None
+#     lowest_total = float('inf')
+
+#     for courier in courier_data:
+#         freight_charge = courier.get("freight_charge", 0) or 0
+#         cod_charges = courier.get("cod_charges", 0) or 0
+#         total = freight_charge + cod_charges
+
+#         # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
+
+#         if total < lowest_total:
+#             lowest_total = total
+#             best_courier = {
+#                 "courier_name": courier.get("courier_name"),
+#                 "courier_company_id": courier.get("courier_company_id"),
+#                 "total_cost": total
+#             }
+
+#     if best_courier:
+#         print("Best Courier:====================12345", best_courier)
+#     else:
+#         print("No suitable courier found.")
+
+#     # 2. AWB Assignment
+#     awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
+#     awb_response = requests.post(awb_url, headers=headers, json={
+#         "shipment_id": shipment_id,
+#         "courier_id": best_courier.get("courier_company_id")
+#     })
+#     print("awb_response===========================", awb_response)  
+#     print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
+
+#     awb_json = awb_response.json()
+#     logger.info(f"order awb_json ========313========================{awb_json}")
+
+#     # ✅ If there's an error message, show and stop
+#     if "message" in awb_json:
+#         # frappe.msgprint(f"AWB Assignment Failed: {awb_json.get('message')}")
+#         frappe.throw(f"ShipRocket response: {awb_json.get('message')}")
+
+#     response_data = awb_json.get("response", {})
+#     data = response_data.get("data", {})
+
+#     awb_code = None
+#     pickup_scheduled_date = None
+
+#     if isinstance(data, dict):
+#         awb_code = data.get("awb_code")
+#         logger.info(f"order awb_code ========313========================{awb_code}")
+#         pickup_scheduled_date = data.get("pickup_scheduled_date")
+#         logger.info(f"order pickup_scheduled_date ========313========================{pickup_scheduled_date}")
+#     else:
+#         frappe.msgprint("AWB Assignment Failed: Invalid response format.")
+#         frappe.throw(f"ShipRocket response: {data}")
+
+#     # ✅ Validate AWB code
+#     if not awb_code:
+#         frappe.throw("AWB code not found in response.")
+
+#     # ✅ Save AWB Code
+#     frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
+
+#     # ✅ Save pickup date if available
+#     skip_pickup_generation = False
+#     if pickup_scheduled_date:
+#         frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
+#         skip_pickup_generation = True
+
+#     # 3. Pickup Generation (only if pickup date was not found in AWB response)
+#     if not skip_pickup_generation:
+#         pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
+#         pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
+#         print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
+#         pickup_json = pickup_response.json()
+#         pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
+        
+#         if pickup_scheduled_date:
+#             frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
+#         else:
+#             frappe.throw("Pickup scheduled date not found in response.")
+
+
+#     # 4. Manifest Generation
+#     manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+#     manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
+#     print(f"Manifest Response: {manifest_response.status_code} - {manifest_response.text}")
+#     manifest_json = manifest_response.json()
+#     manifest_pdf_url = manifest_json.get("manifest_url")
+#     if not manifest_pdf_url:
+#         frappe.throw("Manifest URL not found in response.")
+#     manifest_file_response = requests.get(manifest_pdf_url)
+#     if manifest_file_response.status_code != 200:
+#         frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
+#     manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
+#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_manifests", manifest_pdf_b64)
+
+
+#     # 5. Invoice Generation
+#     invoice_order_id = doc.shiprocket_order_id
+#     print("invoice_order_id====================",invoice_order_id)
+#     invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
+#     print("invoice_url",invoice_url)
+#     invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
+#     print("invoice_response",invoice_response)
+#     print(f"Invoice Response: {invoice_response.status_code} - {invoice_response.text}")
+#     invoice_json = invoice_response.json()
+#     invoice_pdf_url = invoice_json.get("invoice_url")
+#     if not invoice_pdf_url:
+#         frappe.throw("Invoice URL not found in response.")
+#     invoice_file_response = requests.get(invoice_pdf_url)
+#     if invoice_file_response.status_code != 200:
+#         frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
+#     invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
+#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_invoice", invoice_pdf_b64)
+
+#     # 6. Label Generation
+#     label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
+#     label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
+#     print(f"Label Response: {label_response.status_code} - {label_response.text}")
+#     label_json = label_response.json()
+#     label_link = label_json.get("label_url")
+#     if not label_link:
+#         frappe.throw("Label URL not found in response.")
+#     label_file_response = requests.get(label_link)
+#     if label_file_response.status_code != 200:
+#         frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
+#     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
+#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
+
+
+#     frappe.db.commit()
+#     return {
+#         "awb_code": awb_code,
+#         "pickup_scheduled_date": pickup_scheduled_date,
+#         "label_url": label_link,
+#         "manifest_url": manifest_pdf_url,
+#         "invoice_url": invoice_pdf_url
+#     }
+
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
     # print("======================== Inside shiprocket_awb_number")
@@ -816,24 +1125,16 @@ def shiprocket_awb_number(doc):
         # Prepare order_items from child table - ShipRocket format
         order_items = []
         for row in sales_order_doc.items:
-            item_code = row.item_code
-            item_doc = frappe.get_doc("Item", item_code) if item_code else None
-            item_group = item_doc.item_group if item_doc else ""
-
-            item_data = {
-                "name": (item_code[:50] if item_code else "")[:50],
-                "sku": (item_code[:50] if item_code else "")[:50],
-                "selling_price": str(row.amount),
+            order_items.append({
+                "name": (row.item_code[:50] if row.item_code else "")[:50], 
+                "sku": (row.item_code[:50] if row.item_code else "")[:50],   
+                "units": int(row.qty),                      
+                "selling_price": str(row.rate * 1.18),    
                 "discount": "",
-                "tax": "",
+                "tax": 18.0,
                 "hsn": ""
-            }
-
-            # Only include 'units' if item group is 'Laptops'
-            if item_group == "Laptops":
-                item_data["units"] = int(row.qty)
-
-            order_items.append(item_data)
+            })
+            print("order_items====================",order_items)
 
         # Determine payment method and subtotal based on is_cod condition
         if sales_order_doc.is_cod == 1:
@@ -847,7 +1148,7 @@ def shiprocket_awb_number(doc):
         data = {
             "order_id": sales_order_doc.name,
             "order_date": formatted_date,
-            "pickup_location": "Primary",
+            "pickup_location": "Office",
             "comment": f"Order from {sales_order_doc.customer_name}",
             "billing_customer_name": sales_order_doc.customer_name or "",
             "billing_last_name": "",
@@ -978,32 +1279,53 @@ def shiprocket_awb_number(doc):
     print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
 
     awb_json = awb_response.json()
+    # logger.info(f"order awb_json ========313========================{awb_json}")
+
+    # ✅ If there's an error message, show and stop
+    if "message" in awb_json:
+        # frappe.msgprint(f"AWB Assignment Failed: {awb_json.get('message')}")
+        frappe.throw(f"ShipRocket response: {awb_json.get('message')}")
+
     response_data = awb_json.get("response", {})
     data = response_data.get("data", {})
 
     awb_code = None
+    pickup_scheduled_date = None
+
     if isinstance(data, dict):
         awb_code = data.get("awb_code")
+        # logger.info(f"order awb_code ========313========================{awb_code}")
+        pickup_scheduled_date = data.get("pickup_scheduled_date")
+        # logger.info(f"order pickup_scheduled_date ========313========================{pickup_scheduled_date}")
     else:
-        # Show and stop if there's an error message instead of AWB data
-        frappe.msgprint(f"AWB Assignment Failed: {data}")
+        frappe.msgprint("AWB Assignment Failed: Invalid response format.")
         frappe.throw(f"ShipRocket response: {data}")
 
+    # ✅ Validate AWB code
     if not awb_code:
         frappe.throw("AWB code not found in response.")
 
+    # ✅ Save AWB Code to Sales Order
     frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
 
-    # 3. Pickup Generation
-    pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
-    pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
-    print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
-    pickup_json = pickup_response.json()
-    pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
+    # ✅ Save pickup date if available
+    skip_pickup_generation = False
     if pickup_scheduled_date:
         frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
-    else:
-        frappe.throw("Pickup scheduled date not found in response.")
+        skip_pickup_generation = True
+
+    # 3. Pickup Generation (only if pickup date was not found in AWB response)
+    if not skip_pickup_generation:
+        pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
+        pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
+        print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
+        pickup_json = pickup_response.json()
+        pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
+        
+        if pickup_scheduled_date:
+            frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
+        else:
+            frappe.throw("Pickup scheduled date not found in response.")
 
     # 4. Manifest Generation
     manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
@@ -1051,7 +1373,46 @@ def shiprocket_awb_number(doc):
     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
 
+    # Commit all Sales Order updates before handling Delivery Charges
     frappe.db.commit()
+
+    # Get the updated Sales Order document to ensure we have all the latest data
+    updated_sales_order = frappe.get_doc("Sales Order", doc.name)
+
+    # ✅ Handle Delivery Charges DocType
+    delivery_charges = frappe.get_all(
+        "Delivery Charges", filters={"sales_order": doc.name}, limit=1
+    )
+    
+    if delivery_charges:
+        # Update existing Delivery Charges record
+        frappe.db.set_value(
+            "Delivery Charges",
+            delivery_charges[0]["name"],
+            {
+                "sales_order": doc.name,
+                "awb_number": awb_code,  # Use the variable directly
+                "pickup_scheduled_date": pickup_scheduled_date,  # Use the variable directly
+                "shiprocket_manifests": updated_sales_order.shiprocket_manifests,
+                "shiprocket_invoice": updated_sales_order.shiprocket_invoice,
+                "shiprocket_image": updated_sales_order.shiprocket_image
+            }
+        )
+    else:
+        # Create a new Delivery Charges record if not found
+        dc = frappe.new_doc("Delivery Charges")
+        dc.sales_order = doc.name
+        dc.awb_number = awb_code  # Use the variable directly instead of doc.awb_number
+        dc.pickup_scheduled_date = pickup_scheduled_date  # Use the variable directly
+        dc.shiprocket_manifests = updated_sales_order.shiprocket_manifests
+        dc.shiprocket_invoice = updated_sales_order.shiprocket_invoice  
+        dc.shiprocket_image = updated_sales_order.shiprocket_image
+        dc.insert(ignore_permissions=True)
+        print("Created new delivery_charges================", dc.name)
+
+    # Final commit
+    frappe.db.commit()
+
     return {
         "awb_code": awb_code,
         "pickup_scheduled_date": pickup_scheduled_date,
@@ -1059,166 +1420,3 @@ def shiprocket_awb_number(doc):
         "manifest_url": manifest_pdf_url,
         "invoice_url": invoice_pdf_url
     }
-# @frappe.whitelist()
-# def shiprocket_awb_number(doc):
-#     # print("======================== Inside shiprocket_awb_number")
-#     doc = frappe._dict(json.loads(doc))
-#     auth_token = get_auth_token().get("token")
-
-#     if not auth_token:
-#         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
-
-#     if not doc.shiprocket_shipment_id:
-#         frappe.throw("Shipment ID not found on the document.")
-    
-#     shipment_id = doc.shiprocket_shipment_id
-#     invoice_order_id = doc.shiprocket_order_id
-#     shipment_list = [int(shipment_id)]
-#     headers = {
-#         "Content-Type": "application/json",
-#         "Authorization": f"Bearer {auth_token.strip()}"
-#     }
-
-#     # 1. Service Availability
-
-#     service_url = "https://apiv2.shiprocket.in/v1/external/courier/serviceability"
-#     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
-#     service_json = service_response.json()
-#     # print("service_json===========================", service_json)
-
-#     courier_data = service_json.get("data", {}).get("available_courier_companies", [])
-
-#     if not courier_data:
-#         frappe.throw("No courier companies found in serviceability response.")
-
-#     # Calculate total charges for each courier
-#     best_courier = None
-#     lowest_total = float('inf')
-
-#     for courier in courier_data:
-#         freight_charge = courier.get("freight_charge", 0) or 0
-#         cod_charges = courier.get("cod_charges", 0) or 0
-#         total = freight_charge + cod_charges
-
-#         # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
-
-#         if total < lowest_total:
-#             lowest_total = total
-#             best_courier = {
-#                 "courier_name": courier.get("courier_name"),
-#                 "courier_company_id": courier.get("courier_company_id"),
-#                 "total_cost": total
-#             }
-
-#     if best_courier:
-#         print("Best Courier:====================12345", best_courier)
-#     else:
-#         print("No suitable courier found.")
-
-#     # # 2. AWB Assignment
-#     # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
-#     # awb_response = requests.post(awb_url, headers=headers, json={
-#     #     "shipment_id": shipment_id,
-#     #     "courier_id": best_courier.get("courier_company_id")
-#     # })
-#     # print("awb_response===========================", awb_response)  
-#     # print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
-#     # awb_json = awb_response.json()
-#     # awb_code = awb_json.get("response", {}).get("data", {}).get("awb_code")
-#     # if not awb_code:
-#     #     frappe.throw("AWB code not found in response.")
-#     # frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
-#     # 2. AWB Assignment
-#     awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
-#     awb_response = requests.post(awb_url, headers=headers, json={
-#         "shipment_id": shipment_id,
-#         "courier_id": best_courier.get("courier_company_id")
-#     })
-#     print("awb_response===========================", awb_response)  
-#     print(f"AWB Response: {awb_response.status_code} - {awb_response.text}")
-
-#     awb_json = awb_response.json()
-#     response_data = awb_json.get("response", {})
-#     data = response_data.get("data", {})
-
-#     awb_code = None
-#     if isinstance(data, dict):
-#         awb_code = data.get("awb_code")
-#     else:
-#         # Show and stop if there's an error message instead of AWB data
-#         frappe.msgprint(f"AWB Assignment Failed: {data}")
-#         frappe.throw(f"ShipRocket response: {data}")
-
-#     if not awb_code:
-#         frappe.throw("AWB code not found in response.")
-
-#     frappe.db.set_value("Sales Order", doc.name, "awb_number", awb_code)
-
-
-#     # 3. Pickup Generation
-#     pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
-#     pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
-#     pickup_json = pickup_response.json()
-#     pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
-#     if pickup_scheduled_date:
-#         frappe.db.set_value("Sales Order", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
-#     else:
-#         frappe.throw("Pickup scheduled date not found in response.")
-
-#     # 4. Manifest Generation
-#     manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
-#     manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Manifest Response: {manifest_response.status_code} - {manifest_response.text}")
-#     manifest_json = manifest_response.json()
-#     manifest_pdf_url = manifest_json.get("manifest_url")
-#     if not manifest_pdf_url:
-#         frappe.throw("Manifest URL not found in response.")
-#     manifest_file_response = requests.get(manifest_pdf_url)
-#     if manifest_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
-#     manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_manifests", manifest_pdf_b64)
-
-#      # 5. Invoice Generation
-#     invoice_order_id = doc.shiprocket_order_id
-#     print("invoice_order_id====================",invoice_order_id)
-#     invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
-#     print("invoice_url",invoice_url)
-#     invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
-#     print("invoice_response",invoice_response)
-#     print(f"Invoice Response: {invoice_response.status_code} - {invoice_response.text}")
-#     invoice_json = invoice_response.json()
-#     invoice_pdf_url = invoice_json.get("invoice_url")
-#     if not invoice_pdf_url:
-#         frappe.throw("Invoice URL not found in response.")
-#     invoice_file_response = requests.get(invoice_pdf_url)
-#     if invoice_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
-#     invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_invoice", invoice_pdf_b64)
-
-
-#     # 6. Label Generation
-#     label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
-#     label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
-#     print(f"Label Response: {label_response.status_code} - {label_response.text}")
-#     label_json = label_response.json()
-#     label_link = label_json.get("label_url")
-#     if not label_link:
-#         frappe.throw("Label URL not found in response.")
-#     label_file_response = requests.get(label_link)
-#     if label_file_response.status_code != 200:
-#         frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
-#     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
-#     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
-
-
-#     frappe.db.commit()
-#     return {
-#         "awb_code": awb_code,
-#         "pickup_scheduled_date": pickup_scheduled_date,
-#         "label_url": label_link,
-#         "manifest_url": manifest_pdf_url,
-#         "invoice_url": invoice_pdf_url
-#     }

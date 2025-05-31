@@ -1557,7 +1557,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             if iw:
                sudden_drop_limit = frappe.db.get_value('Item Wizards',{'name': iw},'sudden_drop_limit')
             if (sudden_drop_limit is  None) or (not sudden_drop_limit) :
-                sudden_drop_limit="15"
+                sudden_drop_limit="17"
             delta_query=""" 
                       WITH FilteredResults AS (
                         SELECT value, idx, parameter

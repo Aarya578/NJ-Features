@@ -10,6 +10,7 @@
   "actual_qty",
   "so_quantity",
   "remaining_qty",
+  "column_break_kqvru",
   "update_qty",
   "need_to_reduce",
   "remove_parent_qty",
@@ -19,52 +20,70 @@
   {
    "fieldname": "item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Item Code",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1
   },
   {
    "fieldname": "parent1",
    "fieldtype": "Data",
-   "label": "Parent"
+   "in_list_view": 1,
+   "label": "Parent",
+   "read_only": 1
   },
   {
    "fieldname": "actual_qty",
    "fieldtype": "Data",
-   "label": "Actual Qty"
+   "label": "Actual Qty",
+   "read_only": 1
   },
   {
    "fieldname": "so_quantity",
    "fieldtype": "Data",
-   "label": "SO Quantity"
+   "label": "SO Quantity",
+   "read_only": 1
   },
   {
    "fieldname": "remaining_qty",
    "fieldtype": "Data",
-   "label": "Remaining Qty"
+   "label": "Remaining Qty",
+   "read_only": 1
   },
   {
    "fieldname": "update_qty",
    "fieldtype": "Data",
-   "label": "Update Qty"
+   "label": "Update Qty",
+   "read_only": 1
   },
   {
    "fieldname": "need_to_reduce",
    "fieldtype": "Data",
-   "label": "Need To Reduce"
+   "label": "Need To Reduce",
+   "read_only": 1
   },
   {
+   "default": "0",
    "fieldname": "remove_parent_qty",
    "fieldtype": "Data",
-   "label": "Remove Parent Qty"
+   "label": "Remove Parent Qty",
+   "read_only": 1
   },
   {
+   "default": "0",
    "fieldname": "update_qty2",
    "fieldtype": "Data",
-   "label": "Update Qty2"
+   "label": "Update Qty2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_kqvru",
+   "fieldtype": "Column Break"
   }
  ],
+ "in_create": 1,
  "links": [],
- "modified": "2025-05-22 13:47:20.258056",
+ "modified": "2025-05-29 22:58:02.982762",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "SO Quantity Check",
@@ -73,12 +92,10 @@
   {
    "create": 1,
    "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   }

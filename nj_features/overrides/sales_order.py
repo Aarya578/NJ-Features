@@ -652,7 +652,7 @@ def get_open_sales_orders():
                 so.name AS sales_order,
                 soi.item_code,
                 SUM(soi.qty) AS ordered_qty,
-                so.transaction_date
+                so.creation AS order_date
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -665,8 +665,9 @@ def get_open_sales_orders():
                 AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             GROUP BY 
-                so.name, soi.item_code
+                so.name, soi.item_code, so.creation
 
             UNION ALL
 
@@ -675,7 +676,7 @@ def get_open_sales_orders():
                 so.name AS sales_order,
                 pbi.item_code,
                 SUM(pbi.qty * soi.qty) AS ordered_qty,
-                so.transaction_date
+                so.creation AS order_date
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -695,8 +696,9 @@ def get_open_sales_orders():
                 )
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             GROUP BY 
-                so.name, pbi.item_code;
+                so.name, pbi.item_code, so.creation
     """, as_dict=True)
 
 def get_delivered_quantity(so_name, item_code):

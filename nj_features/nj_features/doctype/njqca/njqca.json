@@ -413,12 +413,13 @@
    "fieldname": "njqca_version",
    "fieldtype": "Data",
    "label": "NJQCA Version",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-26 15:37:02.550807",
+ "modified": "2025-05-31 15:21:10.044467",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

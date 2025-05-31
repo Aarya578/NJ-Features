@@ -2591,3 +2591,23 @@ def check_ram_speed(njqca_name,item_template):
             return ""
     except Exception as e:
         return str(e)
+    
+
+@frappe.whitelist()
+
+def set_is_defective(inspection_type):
+    try:
+        
+        allowed_inspection_types = frappe.db.get_value("NJ Settings",{"parameter":"set_is_defective_inspection_types"},"value")
+
+        if allowed_inspection_types is not None and allowed_inspection_types:
+            if inspection_type in allowed_inspection_types.split(","):
+                return "1"
+            else:
+                return "0"
+        else:
+            return "0"
+    except Exception as e:
+        return str(e)    
+    
+

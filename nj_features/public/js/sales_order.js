@@ -4,13 +4,9 @@ frappe.ui.form.on('Sales Order', {
             frm.add_custom_button('Initiate Refund', function() {
                 frappe.call({
                     method: 'nj_lib.nj_lib.doctype.nj_refund.nj_refund.create_refund_record_from_so',
-                    args: {
-                        sales_order: frm.doc.name
-                    },
+                    args: { sales_order: frm.doc.name },
                     callback: function(r) {
-                        if (r.message) {
-                            frappe.msgprint(r.message);
-                        }
+                        if (r.message) { frappe.msgprint(r.message); }
                     }
                 });
             });
@@ -23,9 +19,7 @@ frappe.ui.form.on('Sales Order', {
         //     });
         //     frappe.call({
         //         method: 'nj_features.overrides.sales_order.send_consignement_data',
-        //         args: {
-        //             doc: JSON.stringify(frm.doc)
-        //         },
+        //         args: { doc: JSON.stringify(frm.doc) },
         //         callback: function(response) {
         //             frm.reload_doc();
         //             frappe.show_alert({
@@ -34,13 +28,10 @@ frappe.ui.form.on('Sales Order', {
         //             });
         //         }
         //     });
-            
-            
-          
         // }).addClass('btn-primary');
+
         if (frm.doc.docstatus === 1) {
             frm.add_custom_button(__('Critical Log'), function() {
-                // Show loading indicator
                 frappe.show_alert({
                     message: __('Generating AWB Number...'),
                     indicator: 'blue'
@@ -48,9 +39,7 @@ frappe.ui.form.on('Sales Order', {
 
                 frappe.call({
                     method: 'nj_features.overrides.sales_order.send_consignement_data',
-                    args: {
-                        doc: JSON.stringify(frm.doc)
-                    },
+                    args: { doc: JSON.stringify(frm.doc) },
                     callback: function(response) {
                         frm.reload_doc();
                         frappe.show_alert({
@@ -60,19 +49,15 @@ frappe.ui.form.on('Sales Order', {
                     }
                 });
             }).addClass('btn-primary');
-        }
-        if (frm.doc.docstatus === 1) {
+
             frm.add_custom_button(__('Shiprocket'), function() {
-                // Show loading indicator
                 frappe.show_alert({
                     message: __('Generating AWB Number...'),
                     indicator: 'blue'
                 });
                 frappe.call({
                     method: 'nj_features.overrides.sales_order.shiprocket_awb_number',
-                    args: {
-                        doc: JSON.stringify(frm.doc)
-                    },
+                    args: { doc: JSON.stringify(frm.doc) },
                     callback: function(response) {
                         frm.reload_doc();
                         frappe.show_alert({
@@ -81,25 +66,15 @@ frappe.ui.form.on('Sales Order', {
                         });
                     }
                 });
-                
-                
-            
             }).addClass('btn-primary');
         }
     },
     validate: function(frm) {
-        console.log("Inside validate function =================");
-        
-        // Log data for debugging
-        console.log("Doc before update:", frm.doc);
         
         frappe.call({
             method: 'nj_features.overrides.sales_order.update_item_details',
-            args: {
-                self: frm.doc
-            },
+            args: { self: frm.doc },
             callback: function(r) {
-                console.log("Server response:", r);          
                 if (r.message) {
                     if (r.message.weight !== null && r.message.weight !== undefined) {
                         frm.set_value('weight', r.message.weight);
@@ -117,7 +92,6 @@ frappe.ui.form.on('Sales Order', {
                         frm.set_value('breadth', r.message.breadth);
                         frm.refresh_field("breadth");
                     }           
-
                 }
             }
         });
@@ -149,11 +123,10 @@ function validateAmazonOrderID(frm) {
     }
 }
 
-
 frappe.listview_settings['Sales Order'] = {
     refresh: function(listview) {
         viewButton(listview);
-    },
+    }
 };
 
 function viewButton(listview) {

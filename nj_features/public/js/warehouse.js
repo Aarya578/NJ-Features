@@ -41,9 +41,6 @@ frappe.ui.form.on('Warehouse', {
                 'docname': frm.doc.name,
                 'cur_department': cur_department,
                 'previous_department': previous_department
-            },
-            callback(r){
-                console.log('department_change_log', r.message);
             }
         })
     },
@@ -74,14 +71,12 @@ frappe.ui.form.on('Warehouse', {
             return;
         }
 
-        // If item_group is set but brand is not set, display max_capacity
         if (hasItemGroup && !hasBrand) {
             frm.set_df_property('max_capacity', 'hidden', 0);
             frm.set_df_property('available_capacity', 'hidden', 0);
         }
         
         else {
-            // If both item_group and brand are set, display max_capacity
             frm.set_df_property('max_capacity', 'hidden', 0);
             frm.set_df_property('available_capacity', 'hidden', 0);
         }

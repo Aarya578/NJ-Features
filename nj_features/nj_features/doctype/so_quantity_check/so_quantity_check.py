@@ -20,8 +20,6 @@ class SOQuantityCheck(Document):
 def update_so_quantity_check():
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
     try:
-        updated_doc_names = set()
-
         warehouses_list = []
         if warehouses is not None:
             warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
@@ -51,6 +49,7 @@ def update_so_quantity_check():
                 WHERE 
                     i.item_group IN ({item_group_placeholders})
                     AND w.department IN ({department_placeholders})
+                    {warehouse_clause}
                 GROUP BY 
                     parent
             ),
@@ -68,6 +67,7 @@ def update_so_quantity_check():
                 WHERE 
                     i.item_group IN ({item_group_placeholders})
                     AND w.department IN ({department_placeholders})
+                    {warehouse_clause}
                 GROUP BY 
                     i.item_code
             ),
@@ -111,19 +111,17 @@ def update_so_quantity_check():
         """
 
         params = (
-            item_groups_list + departments_list + 
-            item_groups_list + departments_list +
+            item_groups_list + departments_list + warehouses_list +
+            item_groups_list + departments_list + warehouses_list +
             item_groups_list
         )
 
         inventory_data = frappe.db.sql(query, tuple(params), as_dict=True)
 
-        # Create a dictionary to store inventory data by item_code
         stock_map = {}
         for row in inventory_data:
             item_code = row.get('item_code')
             if item_code:
-                # Ensure actual_qty is always a number, defaulting to 0 if None
                 actual_qty = row.get('actual_qty', 0) or 0
                 stock_map[item_code] = {
                     'parent1': row.get('parent', ''),
@@ -266,16 +264,14 @@ def update_so_quantity_check():
             count += 1
         
         frappe.db.commit()
-        print(f"Successfully updated SO Quantity Check with {count} records")
         
         return True
     
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "SO Quantity Check Update Error")
         return False
     
 def update_parent_quantity():
-    # Fetch parent-wise sum of need_to_reduce
     result = frappe.db.sql("""
         SELECT parent1, SUM(need_to_reduce)
         FROM `tabSO Quantity Check`
@@ -352,7 +348,6 @@ def update_proportional_qty_and_updt_qty():
                     update_qty2 = max(update_qty_int - proportional_remove_qty_int, 0)
                     
                     if update_qty <= 0:
-                        print(f"Note: Item {item.name} has zero/negative update qty, setting update_qty2 to 0")
                         update_qty2 = 0
                     
                     # Step 3: Update the record - ensure values are stored as strings and not empty
@@ -374,6 +369,6 @@ def update_proportional_qty_and_updt_qty():
         
         return True
         
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Proportional Qty Update Error")
         return False

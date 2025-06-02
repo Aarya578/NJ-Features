@@ -273,7 +273,8 @@ def start_shopify_inventory_sync():
                         if updated_available == available:
                             frappe.db.set_value("NJ Inventory Sync Main", row.name, {
                                 "status": "Completed",
-                                "is_active": 1
+                                "is_active": 1,
+                                "sync_error": str(variant_data["inventory_level"])
                             })
                             completed_docs.append(row.name)
                         else:

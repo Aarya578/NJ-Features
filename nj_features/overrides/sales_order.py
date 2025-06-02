@@ -865,6 +865,7 @@ def send_consignement_data(doc):
 
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
+    """Create a ShipRocket consignment, assign an AWB, and generate a manifest and invoice."""
     # print("======================== Inside shiprocket_awb_number")
     doc = frappe._dict(json.loads(doc))
     auth_token = get_auth_token().get("token")
@@ -878,6 +879,7 @@ def shiprocket_awb_number(doc):
     
     try:
         # Get the actual Sales Order document to access child table properly
+        sales_order = frappe.get_doc("Sales Order", doc.name)
         sales_order_doc = frappe.get_doc("Sales Order", doc.name)
         
         # Fetch addresses
@@ -887,6 +889,7 @@ def shiprocket_awb_number(doc):
             frappe.throw("Shipping address is required")
 
         formatted_date = sales_order_doc.transaction_date.strftime("%Y-%m-%d") if hasattr(sales_order_doc.transaction_date, 'strftime') else str(sales_order_doc.transaction_date)
+        # Fetch addresses
 
         # Prepare order_items from child table - ShipRocket format
         order_items = []
@@ -1017,8 +1020,11 @@ def shiprocket_awb_number(doc):
 
     for courier in courier_data:
         freight_charge = courier.get("freight_charge", 0) or 0
+        print("freight_charge===========================", freight_charge)
         cod_charges = courier.get("cod_charges", 0) or 0
+        print("cod_charges===========================", cod_charges)
         total = freight_charge + cod_charges
+        print("total===========================", total)
 
         # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
 
@@ -1029,13 +1035,48 @@ def shiprocket_awb_number(doc):
                 "courier_company_id": courier.get("courier_company_id"),
                 "total_cost": total
             }
-
+    
     if best_courier:
         print("Best Courier:====================12345", best_courier)
     else:
         print("No suitable courier found.")
 
-    # 2. AWB Assignment
+   # Calculate total item charges
+    total_item_charges = 0
+    for item in doc.get("items", []):
+        # Check if item_code exists
+        if not item.get("item_code"):
+            continue
+
+        # Get item group
+        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")
+        print("item_group===========================", item_group)
+
+        # Get the item group document
+        group_doc = frappe.get_doc("Item Group", item_group)
+        print("group_doc===========================", group_doc)
+
+        # Get item_charges (float)
+        item_charges = group_doc.get("item_charges")
+
+        if item_charges and item.get("qty"):
+            item_total_charge = float(item_charges) * float(item.get("qty"))
+            total_item_charges += item_total_charge
+            print(f"item_charges: {item_charges}, qty: {item.get('qty')}, item total: {item_total_charge}")
+        else:
+            print("Missing item_charges or quantity for item:", item.get("item_code"))
+
+    print(f"Total item charges: {total_item_charges}")
+    print(f"Best courier total cost: {best_courier.get('total_cost') if best_courier else 'N/A'}")
+
+    # Check if courier total cost exceeds item charges total
+    if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
+        frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
+
+
+
+
+    #2. AWB Assignment
     awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
     awb_response = requests.post(awb_url, headers=headers, json={
         "shipment_id": shipment_id,
@@ -1139,10 +1180,10 @@ def shiprocket_awb_number(doc):
     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
 
-    # Commit all Sales Order updates before handling Delivery Charges
+   # Commit all Sales Order updates before handling Delivery Charges
     frappe.db.commit()
 
-    # Get the updated Sales Order document to ensure we have all the latest data
+    #Get the updated Sales Order document to ensure we have all the latest data
     updated_sales_order = frappe.get_doc("Sales Order", doc.name)
 
     # ✅ Handle Delivery Charges DocType
@@ -1188,6 +1229,7 @@ def shiprocket_awb_number(doc):
     }
 
     
+
 
 def calculate_dispatch_eta_for_sales_order():
     """Main function to calculate dispatch ETA for all open sales orders"""

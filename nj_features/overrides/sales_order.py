@@ -995,7 +995,6 @@ def shiprocket_awb_number(doc):
         frappe.log_error(f"Consignment API Failed for {doc.name}: {str(e)}", frappe.get_traceback())
         frappe.throw(f"Failed to send data to ShipRocket API. Error: {str(e)}")
 
-    # Now check if we have the required IDs after consignment creation
     if not doc.shiprocket_shipment_id:
         frappe.throw("Shipment ID not found on the document after consignment creation.")
     

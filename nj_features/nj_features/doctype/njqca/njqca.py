@@ -1108,6 +1108,7 @@ def get_item_code_for_each_part(doc):
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
                             normalize_cpu = normalize_gen(cpu_value)
+                            print("normalize_cpu", normalize_cpu)
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
 
@@ -1416,22 +1417,22 @@ def normalize_gen(cpu_value):
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
         
         if match:
-            core = 'CORE ' + match.group(1).upper()
+            core = 'Core ' + match.group(1).upper()
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
             gen_number = str(int(numeric_part) // 1000)  # Extract the generation number
             
             if gen_number == '1':
-                gen_number += 'ST'
+                gen_number += 'st'
             elif gen_number == '2':
-                gen_number += 'ND'
+                gen_number += 'nd'
             elif gen_number == '3':
-                gen_number += 'RD'
+                gen_number += 'rd'
             else:
-                gen_number += 'TH'
+                gen_number += 'th'
             
-            return [f"{core} - {gen_number} GEN"]
+            return [f"{core} - {gen_number} Gen"]
 
     if 'ryzen' in cpu_value.lower():
         match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
@@ -1448,7 +1449,7 @@ def normalize_gen(cpu_value):
     if not match:
         for cpu_type in ['XEON', 'PENTIUM', 'ATOM']:
             if cpu_type in cpu_value_upper:
-                return [f"INTEL {cpu_type}"]
+                return [f"Intel {cpu_type.capitalize()}"]
 
     return []
     
@@ -1513,7 +1514,7 @@ def construct_item_code(item_template, args_list):
 
         query = """
             SELECT item_code FROM `tabItem`
-            WHERE item_code = %s and has_serial_no = 1 and disabled = 0
+            WHERE item_code = %s and disabled = 0
         """
 
         item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
@@ -1717,6 +1718,8 @@ def get_serial_no_attribute_data(serial_no, item_group):
         )
 
         for item in adap_dis_item_code:
+            if item['item'] is None or item['item'] == "":
+                frappe.throw(_("Item Code not found in Part List for Serial No: {0} and Item Group: {1}").format(serial_no, item_group))
             item['item_template'] = frappe.db.get_value('Item', item['item'], 'variant_of')
 
         if adap_dis_item_code:
@@ -1907,7 +1910,6 @@ def get_fetched_item_code(serial_no, partData):
                 "part_item_code": "",
                 "item_group": item_group  
             })
-
 
     return updated_part_data
 

@@ -833,7 +833,8 @@ def calculate_to_make(doc):
     allocated_in_pass = True
 
     # Allocation algorithm
-    while allocated_in_pass and any(c.get("inward_inventory", 0) > 0 for c in temp_config):
+    while allocated_in_pass:
+        print("inside while")
         allocated_in_pass = False
         temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
         
@@ -849,8 +850,14 @@ def calculate_to_make(doc):
             next_doi = next_cfg.get("days_of_inventory", 0)
             doi_gap = max(0, next_doi - current_doi)
 
-            # Calculate needed units
             sales_rate = current.get("sales_rate", 0)
+            # Make sure doi_gap is defined and finite
+            if not math.isfinite(doi_gap):
+                doi_gap = 0  # or some sensible default value
+
+            if not math.isfinite(sales_rate):
+                sales_rate = 0
+
             needed_units = math.ceil((doi_gap + 1) * sales_rate)
             make_units = min(needed_units, current.get("inward_inventory", 0))
 
@@ -1040,7 +1047,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     doc.save()
     frappe.db.commit()
-    # update_to_make_for_serial(doc)
+    update_to_make_for_serial(doc)
 
 def allocate_laptop_parts(doc):
 

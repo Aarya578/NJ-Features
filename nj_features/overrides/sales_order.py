@@ -3,7 +3,8 @@ import requests
 import json
 import base64
 import frappe
-
+import datetime
+from frappe.utils import getdate
 import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
@@ -174,114 +175,6 @@ def update_item_details(self):
 
     return result
 
-def calculate_dispatch_eta_for_sales_order():
-    departments = frappe.db.sql("""
-        SELECT 
-            name, min_aging_days
-        FROM
-            `tabDepartment`
-        WHERE
-            department_sequence >= 1
-        ORDER BY 
-            department_sequence DESC
-    """, as_dict=1)
-
-    open_sales_orders = frappe.db.sql("""
-        SELECT 
-            so.name AS sales_order,
-            soi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN
-            `tabItem` i ON soi.item_code = i.item_code
-        WHERE
-            (so.per_delivered < 100 OR so.per_billed < 100)
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
-        UNION ALL
-
-        SELECT 
-            so.name AS sales_order,
-            pi.item_code
-        FROM 
-            `tabSales Order` so
-        INNER JOIN 
-            `tabSales Order Item` soi ON soi.parent = so.name
-        INNER JOIN 
-            `tabPacked Item` pi ON pi.parent = so.name AND pi.parent_detail_docname = soi.name
-        INNER JOIN 
-            `tabItem` i ON pi.item_code = i.item_code
-        WHERE
-            (so.per_delivered < 100 OR so.per_billed < 100)
-            AND so.docstatus = 1
-            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-            AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-            AND i.is_stock_item = 1
-            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
-        ORDER BY 
-            sales_order DESC
-    """, as_dict=1)
-
-    for so in open_sales_orders:
-        so_name = so["sales_order"]
-        item_code = so["item_code"]
-
-        accumulated_days = 0
-        serial_found = False
-
-        for dept in departments:
-            dept_name = dept["name"]
-            min_aging_days = dept.get("min_aging_days", 0)
-            accumulated_days += min_aging_days
-
-            warehouses = frappe.db.sql("""
-                SELECT 
-                    name
-                FROM
-                    `tabWarehouse`
-                WHERE
-                    department = %s
-            """, (dept_name,), as_dict=1)
-
-            for wh in warehouses:
-                warehouse_name = wh["name"]
-
-                serial_no = frappe.db.sql("""
-                    SELECT 
-                        name
-                    FROM
-                        `tabSerial No`
-                    WHERE
-                        item_code = %s AND warehouse = %s
-                        AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                    LIMIT 1
-                """, (item_code, warehouse_name), as_dict=1)
-
-                if serial_no:
-                    frappe.db.sql("""
-                        UPDATE `tabSerial No` 
-                        SET reserved_sales_order = %s_process_customer_details
-                        WHERE name = %s
-                    """, (so_name, serial_no[0]["name"]))
-
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order` 
-                        SET eta_for_dispatch = %s
-                        WHERE name = %s
-                    """, (accumulated_days, so_name))
-
-                    serial_found = True
-                    break
-
-            if serial_found:
-                print("serial found for item_code", item_code)
-                break
 # @frappe.whitelist()
 # def send_consignement_data(doc):
 #     if not doc.shipping_address_name:
@@ -1250,6 +1143,9 @@ def calculate_dispatch_eta_for_sales_order():
         
         # Get all open sales orders with their items (including product bundles)
         open_orders = get_open_sales_orders()
+
+        print("open Order", open_orders)
+        
         # Dictionary to track max ETA per sales order
         so_eta_map = {}
         
@@ -1268,7 +1164,7 @@ def calculate_dispatch_eta_for_sales_order():
                 continue
                 
             # Adjust serial allocations and get unallocated quantity
-            unallocated_qty = adjust_serial_allocations(so_name, item_code, net_pending)
+            unallocated_qty = adjust_serial_allocations(so_name, item_code, net_pending, departments)
             
             # Calculate ETA for this item (only if unallocated quantity exists)
             if unallocated_qty > 0:
@@ -1312,7 +1208,7 @@ def get_open_sales_orders():
                 `tabItem` i ON soi.item_code = i.item_code
             WHERE
                 so.docstatus = 1
-                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
+                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
@@ -1339,11 +1235,11 @@ def get_open_sales_orders():
                 `tabItem` soi_item ON soi.item_code = soi_item.item_code
             WHERE
                 so.docstatus = 1
-                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
+                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
                 AND soi_item.is_stock_item = 0
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             ORDER BY 
                 sales_order DESC
     """, as_dict=True)
@@ -1358,9 +1254,10 @@ def get_delivered_quantity(so_name, item_code):
             AND dni.item_code = %s
             AND dn.docstatus = 1
     """, (so_name, item_code))
+
     return result[0][0] if result and result[0][0] else 0
 
-def adjust_serial_allocations(so_name, item_code, net_pending):
+def adjust_serial_allocations(so_name, item_code, net_pending, departments):
     """Adjust serial allocations and return unallocated quantity"""
     # Get already allocated count
     allocated_count = frappe.db.sql("""
@@ -1387,40 +1284,75 @@ def adjust_serial_allocations(so_name, item_code, net_pending):
     
     # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
-        allocated_in_this_call = assign_serials(so_name, item_code, to_allocate)
+        allocated_in_this_call = assign_serials(so_name, item_code, to_allocate, departments)
         unallocated_qty = to_allocate - allocated_in_this_call
         if unallocated_qty > 0:
             create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
     
     return unallocated_qty
 
-def assign_serials(so_name, item_code, to_allocate):
-    """Assign new serial numbers to sales order and return allocated count"""
-    available_serials = frappe.db.sql_list("""
-        SELECT name 
-        FROM `tabSerial No` 
-        WHERE 
-            item_code = %s 
-            AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-            AND warehouse != 'WIP Warehouse'
-            AND NOT EXISTS (
-                SELECT 1 
-                FROM `tabDelivery Note Item` 
-                WHERE serial_no = `tabSerial No`.name 
-                    AND docstatus = 1
-            )
-        ORDER BY creation ASC 
-        LIMIT %s
-    """, (item_code, int(to_allocate)))
+def assign_serials(so_name, item_code, to_allocate, departments):
+    allocated_count = 0
 
-    allocated_count = len(available_serials)
-    
-    if allocated_count > 0:
+    for dept in departments:
+        if allocated_count >= to_allocate:
+            break
+
+        # Get warehouses in this department
+        warehouses = frappe.db.sql_list("""
+            SELECT name FROM `tabWarehouse` WHERE department = %s
+        """, dept.name)
+
+        if not warehouses:
+            continue
+
+        remaining = int(to_allocate - allocated_count)
+
+        # Build SQL-safe string: 'Warehouse A','Warehouse B',...
+        warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
+
+        query = f"""
+            SELECT name 
+            FROM `tabSerial No` 
+            WHERE 
+                item_code = '{item_code}'
+                AND warehouse IN ({warehouses_str})
+                AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM `tabDelivery Note Item` 
+                    WHERE serial_no = `tabSerial No`.name 
+                        AND docstatus = 1
+                )
+            ORDER BY creation ASC 
+            LIMIT {remaining}
+        """
+
+        available_serials = frappe.db.sql(query, as_dict=1)
+        print("available_serials:----55", available_serials)
+        count_in_dept = len(available_serials)
+
         for serial in available_serials:
-            frappe.db.set_value("Serial No", serial, "reserved_sales_order", so_name)
-        frappe.db.commit()
-    
+            print("serial:----55", serial)
+            serial_name = serial.get("name")
+            frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", so_name)
+
+            # Calculate aging days
+            so_creation = frappe.get_value("Sales Order", so_name, "creation")
+            aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
+
+            # Append aging detail
+            serial_doc = frappe.get_doc("Serial No", serial_name)
+            serial_doc.append("sales_order_details", {
+                "sales_order": so_name,
+                "aging_days": aging_days
+            })
+            serial_doc.save()
+
+        allocated_count += count_in_dept
+
     return allocated_count
+
 
 def unassign_serials(so_name, item_code, excess_qty):
     """Unassign excess serial numbers"""
@@ -1512,6 +1444,7 @@ def calculate_item_eta(item_code, required_qty, departments):
             remaining_qty -= available_count
 
     # Return total accumulated days if not enough stock
+
     return accumulated_days
 
 def update_sales_order_etas(so_eta_map):

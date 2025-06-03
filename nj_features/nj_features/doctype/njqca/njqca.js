@@ -90,8 +90,6 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     
-    
-    
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
@@ -111,13 +109,14 @@ frappe.ui.form.on('NJQCA', {
 
             frm.set_query("rfq_id", () => { return { filters: { "docstatus": 1 } }; });
             
-            frm.set_query("manual_repack_item_code", function(r) {
+            frm.set_query("manual_repack_item_code", function() {
                 var filters = {
                     disabled: 0, has_variants: 0,
+                    end_of_life : ['>', frappe.datetime.get_today()],
                     brand: frm.doc.brand, item_group: frm.doc.item_group
                 };
                 
-                // if (frm.doc.model) { filters.item_model = frm.doc.model; }
+                if (frm.doc.model) { filters.item_model = frm.doc.model; }
                 if (frm.doc.item_template) { filters.variant_of = frm.doc.item_template; }
                 
                 return { filters: filters };
@@ -162,6 +161,43 @@ frappe.ui.form.on('NJQCA', {
                     }
                 }
             })
+
+            if (!frappe.user.has_role('Ops Manager')) {
+				let $fieldWrapper = frm.fields_dict['manual_repack_item_code'].$wrapper;
+
+				$fieldWrapper.find('input').attr('disabled', true);
+
+				let $inputArea = $fieldWrapper.find('.control-input');
+				$inputArea.css('position', 'relative');
+
+				let fogOverlay = $(`
+					<div class="fog-overlay" style="
+						position: absolute;
+						top: 0;
+						left: 0;
+						width: 100%;
+						height: 100%;
+						background: rgba(255, 255, 255, 0.3);
+						z-index: 5;
+						border-radius: 4px;
+						pointer-events: none;">
+					</div>
+				`);
+				$inputArea.append(fogOverlay);
+
+				let lockIcon = $(`
+					<i class="fa fa-lock" style="
+						position: absolute;
+						right: 10px;
+						top: 50%;
+						transform: translateY(-50%);
+						font-size: 16px;
+						color: #fff;
+						z-index: 6;">
+					</i>
+				`);
+				$inputArea.append(lockIcon);
+			}
         }
     },
 
@@ -182,7 +218,6 @@ frappe.ui.form.on('NJQCA', {
                     }
                 })
             }
-            console.log("insepection type",frm.doc.inspection_type);
 
             if (frm.doc.inspection_type && frm.doc.item_group == 'BATTERY') {
                 frappe.call({
@@ -641,7 +676,7 @@ frappe.ui.form.on('NJQCA', {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
-                if (!r.model && selectedItemGroup.toLowerCase() != "battery") {
+                if (!r.model && selectedItemGroup.toLowerCase() != "battery" && selectedItemGroup.toLowerCase() != "laptop ram") {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                 }
 
@@ -669,7 +704,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if (selectedItemGroup != "BATTERY") {
+        if (selectedItemGroup != "BATTERY" && selectedItemGroup != "Laptop RAM") {
             get_item_template(selectedModel, selectedBrand, selectedItemGroup)
         }
 

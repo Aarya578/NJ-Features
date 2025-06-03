@@ -12,16 +12,12 @@ class StockMovement(Document):
         try:
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
-                return 
-            nj_series = "STMR-.YYYY.-.MM.-"
-            if self.transfer_status == "Stock Accept":
-                nj_series = "STMA-.YYYY.-.MM.-"
+                return
 
             material_transfer_items = []
             
             stock_entry_data = {
                 "name": self.name,
-                "series": nj_series,
                 "doctype": self.doctype,
                 "transfer_status": self.transfer_status,
                 "stock_entry_type": "Material Transfer",
@@ -47,8 +43,6 @@ class StockMovement(Document):
             frappe.db.rollback()
             frappe.throw("Error while submitting Stock Entry: ", e)
 
-    
-
     def validate_supplier_return(self):
         """
         Validate item codes when making supplier return
@@ -57,31 +51,24 @@ class StockMovement(Document):
         - If they don't match, create a stock entry using make_stock_entry_using_nj_lib
         """
         # Check the value of make_supplier_return field (0 or 1)
-        if self.make_supplier_return == 1:  # Check if the checkbox is checked (1)
-            # Loop through items in the document
+        if self.make_supplier_return == 1: 
             for item in self.items:
                 if item.serial_no:
-                    # For each serial number in the item
                     for serial_no in item.serial_no.split('\n'):
                         if serial_no:
-                            # Fetch details from Serial No document
                             serial_doc = frappe.get_doc("Serial No", serial_no.strip())
                             serial_item_code = serial_doc.item_code
                             
-                            # Get Purchase Receipt from Serial No
                             purchase_receipt = serial_doc.purchase_document_no
                             
                             if purchase_receipt:
-                                # Query the Purchase Receipt Item child table to get the item code
                                 purchase_item_code = frappe.db.get_value(
                                     "Purchase Receipt Item",
                                     {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no}%"]},
                                     ["item_code"],
                                 )
                                 
-                                # Check if the item codes DON'T match
                                 if serial_item_code != purchase_item_code:
-
                                     self.make_stock_entry_using_nj_lib()
 
     def make_stock_entry_using_nj_lib(self):
@@ -299,9 +286,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         creation_time = result[0]["creation"]
         formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        print("formatted_time", formatted_time)
-        print("current_time", current_time)
 
         qi_query = """
             SELECT name

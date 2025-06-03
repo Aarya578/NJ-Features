@@ -28,7 +28,7 @@ frappe.ui.form.on('Serial No', {
             get_report_data(frm);
         }).addClass('btn-primary');
 
-        if (frappe.user.has_role(["Item Wizard Manager"])) {
+        if (frappe.user.has_role(["Item Wizard Manager"]) || frappe.user.has_role(["Item Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
             frm.set_df_property('model','read_only',0);
             frm.refresh_field('model');

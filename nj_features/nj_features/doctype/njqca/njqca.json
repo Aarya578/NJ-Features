@@ -113,7 +113,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "read_only": 1
   },
   {
    "fieldname": "raw_data",
@@ -419,7 +420,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-31 15:21:10.044467",
+ "modified": "2025-06-03 11:39:37.569250",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

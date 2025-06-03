@@ -358,8 +358,8 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
 
 
     except Exception as e:
-        frappe.log_error("error in saving NJ QI", traceback.format_exc())
-        frappe.throw(f"error in saving NJ QI {str(e)}\n{traceback.format_exc()}")
+        frappe.log_error(traceback.format_exc(), "error in open_draft_qi NJQCA")
+        frappe.throw(f"error in saving NJ QI {str(e)}")
         return None
     
 @frappe.whitelist()
@@ -428,7 +428,8 @@ def get_itm_code_on_barcode(new_qi):
             return {"disable_save": True}
         
     except Exception as e:
-        frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}\n{traceback.format_exc()}")
+        frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}")
+        frappe.log_error(traceback.format_exc(), "Error in get_itm_code_on_barcode in NJQCA")
         return None
 
 @frappe.whitelist()
@@ -475,7 +476,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return new_qi
 
     except Exception as e:
-        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}\n{traceback.format_exc()}")
+        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}")
+        frappe.log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
         return None
 
 class NJQCA(Document):
@@ -1036,8 +1038,8 @@ def get_info_from_serial_no(doc=None):
         return result
     
     except Exception as e:
-        return f"Error on submit: {str(e)}\n{traceback.format_exc()}"
-
+        frappe.log_error(traceback.format_exc(), "Error on get_info_from_serial_no in NJQCA")
+        return f"Error on submit: {str(e)}"
 
 @frappe.whitelist()
 def after_save_njqca(docname, brand=None, model=None, qi_type=None):
@@ -1297,7 +1299,8 @@ def get_part_mapping(doc):
             return json.dumps(get_item_code_for_each_part(doc))
             
         except Exception as e:
-            frappe.throw(f"An error occurred: {str(e)}{str(traceback.format_exc())}")
+            frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
+            frappe.log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
 
 
 def consolidate_ram_capacities(data):
@@ -1684,8 +1687,8 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             return None
             
     except Exception as e:
-        frappe.msgprint("\nAn error occurred at get_sudden_drop",traceback.format_exc())
-        print("An error occurred at get_sudden_drop",traceback.format_exc())
+        frappe.msgprint("An error occurred at get_sudden_drop",str(e))
+        print(traceback.format_exc(), "An error occurred at get_sudden_drop in NJQCA")
         return ''
         
 @frappe.whitelist()
@@ -1996,7 +1999,8 @@ def validate_battery_storage_score(doc):
                     frappe.db.sql("""update `tabNJQCA Result Parameters` set score=41 where parent=%(parent_name)s and item_group="Laptop storage" and parameter="Health";""",{'parent_name':parent_name})
 
     except Exception as e:
-        frappe.msgprint("Error in NJQCA Storage Score",traceback.format_exc())
+        frappe.msgprint("Error in NJQCA Storage Score", str(e))
+        frappe.log_error(traceback.format_exc(), "Error in validate_battery_storage_score in NJQCA")
         return
     
 @frappe.whitelist()

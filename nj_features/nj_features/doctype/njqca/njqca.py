@@ -481,18 +481,62 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
-    # def on_load(self):
-    #     data = get_item_group_mapping(self.name)
-    #     for row in data:
-    #         self.append("njqca_result_parameters", {
-    #             "parameter": row.item_group,
-    #             "value": row.variant_6
-    #         })
-    #     if self.brand:
-    #         self.append("njqca_result_parameters", {
-    #             "parameter": "Brand",
-    #             "value": self.brand
-    #         })    
+    def on_load(self):
+        data = get_item_group_mapping(self.name)
+        gen_score_map = {
+        "CORE I3": 0.1,
+        "CORE I4": 0.2,
+        "CORE I5": 0.3,
+        "CORE I7": 0.4,
+        "CORE I8": 0.5,
+        "CORE I9": 0.6,
+        "CORE I10": 0.7,
+        "CORE I11": 0.8,
+        "CELERON(R) CPU": 0.9,
+        "DUAL-CORE CPU": 0.10,
+        "ATOM X5 CPU": 0.11,
+        "XEON(R) E": 0.12,
+        "PRO A10": 0.13,
+        "GEN INTEL(R)": 0.14,
+        "RYZEN 5": 0.15,
+        "A8 PRO": 0.16,
+        "A10 PRO": 0.17,
+        "A6-6310 APU": 0.18,
+        "RYZEN 7": 0.19,
+        "A6-9225 RADEON": 0.20,
+        "PENTIUM(R) CPU": 0.21,
+        "PRO A6": 0.22,
+        "A10-5750M APU": 0.23,
+        "A6-7310 APU": 0.24,
+        }
+
+        for row in data:
+            score = gen_score_map.get(row.variant_6.strip().upper(), 0)  # default score = 0 if not matched
+
+            self.append("njqca_result_parameters", {
+                "parameter": "laptop_gen",
+                "value": row.variant_6,
+                "item_group": "BODY C",
+                "score": score
+            })
+
+        # Map brand to score
+        brand_score_map = {
+            "Lenovo": 1,
+            "HP": 2,
+            "Dell": 3
+        }
+
+        score = brand_score_map.get(self.brand)
+        if score:
+            self.append("njqca_result_parameters", {
+                "parameter": "Brand",
+                "value": self.brand,
+                "item_group": "BODY C",
+                "score": score
+            })
+ 
+
     def before_save(self):
         update_storage_type(self)
 
@@ -2470,6 +2514,14 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
 #         fields=["item_group", "variant_6"]
 #     )
 #     return data
+@frappe.whitelist()
+def get_item_group_mapping(parent):
+    data = frappe.get_all(
+        "NJQCA Child",
+        filters={"item_group": "Laptop Processors", "parent": parent},
+        fields=["item_group", "variant_6"]
+    )
+    return data
 
 @frappe.whitelist()
 def check_for_mis_config(doc):

@@ -911,27 +911,38 @@ def shiprocket_awb_number(doc):
     lowest_total = float('inf')
 
     for courier in courier_data:
-        freight_charge = courier.get("freight_charge", 0) or 0
-        print("freight_charge===========================", freight_charge)
-        cod_charges = courier.get("cod_charges", 0) or 0
-        print("cod_charges===========================", cod_charges)
-        total = freight_charge + cod_charges
-        print("total===========================", total)
+        try:
+            rating = float(courier.get("rating", 0) or 0)
+            print("rating===========================", rating)
+            
+            if rating <= 4:
+                continue  # skip couriers with rating 4 or below
+                
+            freight_charge = float(courier.get("freight_charge", 0) or 0)
+            cod_charges = float(courier.get("cod_charges", 0) or 0)
+            total = freight_charge + cod_charges
+            
+            print("freight_charge===========================", freight_charge)
+            print("cod_charges===========================", cod_charges)
+            print("total===========================", total)
+            
+            if total < lowest_total:
+                lowest_total = total
+                best_courier = {
+                    "courier_name": courier.get("courier_name"),
+                    "courier_company_id": courier.get("courier_company_id"),
+                    "total_cost": total,
+                    "rating": rating
+                }
+                
+        except (ValueError, TypeError) as e:
+            print(f"Skipping courier due to invalid data: {e}")
+            continue
 
-        # print(f"{courier['courier_name']} | Freight: {freight_charge}, COD: {cod_charges}, Total: {total}")
-
-        if total < lowest_total:
-            lowest_total = total
-            best_courier = {
-                "courier_name": courier.get("courier_name"),
-                "courier_company_id": courier.get("courier_company_id"),
-                "total_cost": total
-            }
-    
     if best_courier:
-        print("Best Courier:====================12345", best_courier)
+        print("Best Courier (Rating > 4):======================", best_courier)
     else:
-        print("No suitable courier found.")
+        print("No suitable courier found with rating above 4.")
 
    # Calculate total item charges
     total_item_charges = 0

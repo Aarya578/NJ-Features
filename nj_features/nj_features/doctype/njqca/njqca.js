@@ -634,7 +634,7 @@ frappe.ui.form.on('NJQCA', {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
-                if (!r.model && selectedItemGroup.toLowerCase() != "battery") {
+                if (!r.model && selectedItemGroup.toLowerCase() != "battery" && selectedItemGroup.toLowerCase() != "laptop ram") {
                     frappe.throw(`Model is not filled in Serial no: <b>${cur_frm.doc.serial_no}</b>. Please contact the NPD Team.`);
                 }
 
@@ -662,7 +662,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if (selectedItemGroup != "BATTERY") {
+        if (selectedItemGroup != "BATTERY" && selectedItemGroup != "Laptop RAM") {
             get_item_template(selectedModel, selectedBrand, selectedItemGroup)
         }
 

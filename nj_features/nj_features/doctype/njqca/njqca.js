@@ -1,6 +1,38 @@
 // Copyright (c) 2023, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
 
+const genScoreMap = {
+    "CORE I3": 0.1,
+    "CORE I4": 0.2,
+    "CORE I5": 0.3,
+    "CORE I7": 0.4,
+    "CORE I8": 0.5,
+    "CORE I9": 0.6,
+    "CORE I10": 0.7,
+    "CORE I11": 0.8,
+    "CELERON(R) CPU": 0.9,
+    "DUAL-CORE CPU": 0.10,
+    "ATOM X5 CPU": 0.11,
+    "XEON(R) E": 0.12,
+    "PRO A10": 0.13,
+    "GEN INTEL(R)": 0.14,
+    "RYZEN 5": 0.15,
+    "A8 PRO": 0.16,
+    "A10 PRO": 0.17,
+    "A6-6310 APU": 0.18,
+    "RYZEN 7": 0.19,
+    "A6-9225 RADEON": 0.20,
+    "PENTIUM(R) CPU": 0.21,
+    "PRO A6": 0.22,
+    "A10-5750M APU": 0.23,
+    "A6-7310 APU": 0.24,
+};
+
+const brandScoreMap = {
+    "Lenovo": 1,
+    "HP": 2,
+    "Dell": 3
+};
 frappe.ui.form.on('NJQCA', {
     onload: function(frm) { 
         
@@ -19,33 +51,43 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        // if (frm.doc.docstatus === 0) {
-        //     frappe.call({
-        //         method: "nj_features.nj_features.doctype.njqca.njqca.get_item_group_mapping",
-        //         args: {
-        //             parent: frm.doc.name
-        //         },
-        //         callback: function(r) {
-        //             if (r.message && Array.isArray(r.message)) {
-        //                 r.message.forEach(row => {
-        //                     frm.add_child('njqca_result_parameters', {
-        //                         parameter: row.item_group,  // update fieldname if different
-        //                         value: row.variant_6        // update fieldname if different
-        //                     });
-        //                 });
-        //                 frm.refresh_field('njqca_result_parameters');
-        //             }
-        //             // Add brand mapping if available
-        //             if (frm.doc.brand) {
-        //                 frm.add_child('njqca_result_parameters', {
-        //                     parameter: "Brand",
-        //                     value: frm.doc.brand
-        //                 });
-        //                 frm.refresh_field('njqca_result_parameters');
-        //             }
-        //         }
-        //     });
-        // }
+
+         if (frm.doc.docstatus === 0) {
+            frappe.call({
+                method: "nj_features.nj_features.doctype.njqca.njqca.get_item_group_mapping",
+                args: {
+                    parent: frm.doc.name
+                },
+                callback: function (r) {
+                    if (r.message && Array.isArray(r.message)) {
+                        r.message.forEach(row => {
+                            const score = genScoreMap[row.variant_6?.trim()?.toUpperCase()] || 0;
+
+                            frm.add_child('njqca_result_parameters', {
+                                parameter: "laptop_gen",
+                                value: row.variant_6,
+                                item_group: "BODY C",
+                                score: score
+                            });
+                        });
+                        frm.refresh_field('njqca_result_parameters');
+                    }
+
+                    const brand = frm.doc.brand;
+                    const brandScore = brandScoreMap[brand];
+
+                    if (brandScore) {
+                        frm.add_child('njqca_result_parameters', {
+                            parameter: "Brand",
+                            value: brand,
+                            item_group: "BODY C",
+                            score: brandScore
+                        });
+                        frm.refresh_field('njqca_result_parameters');
+                    }
+                }
+            });
+        }
     },
     
     

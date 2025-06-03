@@ -1228,7 +1228,7 @@ def get_open_sales_orders():
                 AND soi_item.is_stock_item = 0
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             ORDER BY 
                 sales_order DESC
     """, as_dict=True)

@@ -193,34 +193,29 @@ scheduler_events = {
         "50 8 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
-         "0 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
-        ],
         "10 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ],
-        "20 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
-        ],
-        "50 * * * *": [
+        "0 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
         ],
-        "55  * * * *": [
+        "15 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_parent_quantity"
         ],
-         "58  * * * *": [
+        "25 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
+        ],
+        "35 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
+        ],
+        "45 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ],
+        "55 * * * *": [
+            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ]
     }
 }
-
-# scheduler_events = {
-#     "cron": {
-#         "08 16 * * *": [
-#             "nj_features.overrides.employee.update_continuous_experience"
-#         ]
-#     }
-# }
 
 # Testing
 # -------

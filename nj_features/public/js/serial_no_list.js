@@ -80,14 +80,12 @@ frappe.listview_settings['Serial No'] = {
                         let showPopup = false;
                         let missingReasonRows = [];
                 
-                        // Uncheck 'Yes' if 'No' is checked
                         values.work_warehouse_inventory.forEach((row) => {
                             if (row.no) { row.yes = false; }
                         });
                 
                         dialog.get_field('work_warehouse_inventory').grid.refresh();
                 
-                        // Check for missing reasons in rows where 'No' is checked
                         values.work_warehouse_inventory.forEach((row, index) => {
                             if (row.no && !row.reason) {
                                 showPopup = true;
@@ -95,7 +93,6 @@ frappe.listview_settings['Serial No'] = {
                             }
                         });
                 
-                        // Display a popup if reasons are missing
                         if (showPopup) {
                             frappe.msgprint({
                                 title: __('Missing Fields'),
@@ -103,13 +100,10 @@ frappe.listview_settings['Serial No'] = {
                                 message: __('Reason is mandatory when No is checked in row(s): {0}', [missingReasonRows.join(', ')])
                             });
                         } else {
-
                             frappe.call({
                                 method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
                                 callback: function (r) {
-                                    // Fetch the warehouse from the logged-in user's Employee record
                                     if (r.message) {
-                                        console.log("r,message", r.message);
                                         frappe.call({
                                             method: 'frappe.client.save',
                                             args: {
@@ -140,22 +134,18 @@ frappe.listview_settings['Serial No'] = {
                                     }
                                 }
                             })
-                            
                         }
                     }
                 }
             });
 
-            // Fetch serial number data and populate the dialog's table
             frappe.call({
                 method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
                 callback: function (r) {
                     if (!r.exc) {
-                        // Clear existing table data
                         dialog.fields_dict.work_warehouse_inventory.df.data = [];
                         dialog.fields_dict.work_warehouse_inventory.refresh();
 
-                        // Add fetched rows to the dialog's table
                         r.message.forEach(function (row) {
                             dialog.fields_dict.work_warehouse_inventory.df.data.push({
                                 item_code: row.item_code,

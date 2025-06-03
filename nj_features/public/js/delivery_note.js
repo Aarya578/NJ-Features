@@ -78,6 +78,13 @@ frappe.ui.form.on('Delivery Note', {
         }
     },
 
+    after_save: function(frm) {
+        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+            frm.set_value('shipping_address_name', frm.doc.customer_address);
+            frm.refresh_field('shipping_address_name');
+        }
+    },
+    
     courier_service: function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",

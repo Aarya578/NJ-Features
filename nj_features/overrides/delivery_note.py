@@ -9,6 +9,7 @@ import traceback
 from frappe import _
 from frappe.utils import now
 from datetime import datetime, timedelta
+from frappe.utils import now_datetime, get_datetime
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
@@ -33,6 +34,7 @@ class CustomDeliveryNote(DeliveryNote):
                 self.set_cit_image_from_sales_order()
                 self.update_details_to_delivery_charege_doc()
                 qi_mandatory_checks_on_dn_submit(self, method=None)
+                # self.qc_nj_of_days_checking()
                 if self.is_return == 0:
                     send_sales_invoice_email_on_delivery_note(self, method=None)
                 
@@ -63,6 +65,7 @@ class CustomDeliveryNote(DeliveryNote):
 
             self.update_details_to_delivery_charege_doc()
             qi_mandatory_checks_on_dn_submit(self, method=None)
+            # self.qc_nj_of_days_checking()
             if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
             
@@ -532,6 +535,93 @@ class CustomDeliveryNote(DeliveryNote):
             print(f"Error: {e}")
 
 
+    def qc_nj_of_days_checking(self):
+    # 1. Check if DN QC is active
+        is_active = frappe.db.get_value('NJ Settings', {'parameter': 'dn_qc_active_status'}, 'value')
+        print ("is_active===========================", is_active)
+        if is_active != "Active":
+            return 
+        
+        # 2. Get allowed inspection types and number of days
+        allowed_inspection_types = frappe.db.get_value('NJ Settings', {'parameter': 'inspection_type'}, 'value')
+        print ("allowed_inspection_types===========================", allowed_inspection_types)
+        inspection_days = frappe.db.get_value('NJ Settings', {'parameter': 'no_of_days'}, 'value')
+        print ("inspection_days===========================", inspection_days)
+        
+        # Convert comma-separated inspection types into a list
+        allowed_inspection_types_list = [t.strip() for t in allowed_inspection_types.split(",")]
+        print ("allowed_inspection_types_list===========================", allowed_inspection_types_list)
+        
+        # 3. Get all serial numbers in the Delivery Note
+        serial_nos_raw = frappe.get_all(
+            'Delivery Note Item',
+            filters={'parent': self.name},
+            fields=['serial_no', 'name', 'item_code']  # Added more fields for debugging
+        )
+        
+        # Extract unique serial numbers
+        serial_nos = set()
+        print ("serial_nos_raw==========================", serial_nos_raw)
+        
+        for row in serial_nos_raw:
+            print(f"Processing row: {row.name}, Item: {row.item_code}, Serial: {row.serial_no}")
+            if row.serial_no:
+                # Handle multiple serials in one field (e.g., "SN-001\nSN-002")
+                for s in row.serial_no.split('\n'):
+                    if s.strip():  # Only add non-empty serial numbers
+                        serial_nos.add(s.strip())
+        
+        print ("Unique serial_nos===========================", serial_nos)
+        print ("Total unique serial numbers found:", len(serial_nos))
+        
+        # 4. Process each unique serial number and collect error messages
+        error_messages = []
+        
+        for serial_no in serial_nos: 
+            print ("Processing serial_no===========================", serial_no)
+            
+            # 5. Fetch all QI for this serial no (barcode)
+            qi_records = frappe.db.sql("""
+                SELECT name, creation, inspection_type
+                FROM `tabNJ Quality Inspection`
+                WHERE barcode = %s AND docstatus = 1
+                ORDER BY creation DESC
+            """, serial_no, as_dict=True)
+            
+            print ("qi_records===========================", qi_records)
+            
+            if not qi_records:
+                print(f"No QI records found for {serial_no}, skipping...")
+                continue # No QI records found, skip
+            
+            latest_qi = qi_records[0]
+            print ("latest_qi===========================", latest_qi)
+            qi_type = latest_qi.inspection_type.strip()
+            print ("qi_type===========================", qi_type)
+            
+            # 6. Check if QI type is allowed
+            if qi_type not in allowed_inspection_types_list:
+                print(f"QI type {qi_type} not in allowed types for {serial_no}, skipping...")
+                continue # Not an allowed inspection type, skip
+            
+            # 7. Check if QI creation is within the allowed number of days
+            creation_date = get_datetime(latest_qi.creation)
+            print ("creation_date===========================", creation_date)
+            current_date = now_datetime()
+            print ("current_date===========================", current_date)
+            days_difference = (current_date - creation_date).days
+            print ("days_difference===========================", days_difference)
+            
+            if int(days_difference) > int(inspection_days):
+                error_msg = f"More than {inspection_days} days have passed for Serial No {serial_no}. Please perform re-QC."
+                error_messages.append(error_msg)
+                print(f"Adding error message: {error_msg}")
+        
+        # 8. Throw all error messages at once
+        if error_messages:
+            # Remove duplicates and join messages
+            unique_errors = list(set(error_messages))
+            frappe.throw("<br>".join(unique_errors))
 
 @frappe.whitelist()
 def set_tracking_id_for_delivery_note(doc):

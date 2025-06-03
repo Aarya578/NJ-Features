@@ -1230,6 +1230,7 @@ def shiprocket_awb_number(doc):
     
 
 
+
 def calculate_dispatch_eta_for_sales_order():
     """Main function to calculate dispatch ETA for all open sales orders"""
     try:
@@ -1238,7 +1239,6 @@ def calculate_dispatch_eta_for_sales_order():
         
         # Get all open sales orders with their items (including product bundles)
         open_orders = get_open_sales_orders()
-        
         # Dictionary to track max ETA per sales order
         so_eta_map = {}
         
@@ -1256,11 +1256,14 @@ def calculate_dispatch_eta_for_sales_order():
             if net_pending <= 0:
                 continue
                 
-            # Adjust serial allocations
-            adjust_serial_allocations(so_name, item_code, net_pending)
+            # Adjust serial allocations and get unallocated quantity
+            unallocated_qty = adjust_serial_allocations(so_name, item_code, net_pending)
             
-            # Calculate ETA for this item
-            item_eta = calculate_item_eta(item_code, net_pending, departments)
+            # Calculate ETA for this item (only if unallocated quantity exists)
+            if unallocated_qty > 0:
+                item_eta = calculate_item_eta(item_code, unallocated_qty, departments)
+            else:
+                item_eta = 0  # Fully allocated, no waiting time
             
             # Track max ETA per sales order
             if so_name not in so_eta_map or item_eta > so_eta_map[so_name]:
@@ -1283,14 +1286,13 @@ def get_departments():
     """, as_dict=True)
 
 def get_open_sales_orders():
-    """Get all open sales orders with pending items"""
+    """Get all open sales orders with pending items (serialized items only)"""
     return frappe.db.sql("""
         -- 1. Direct stock items
             SELECT 
                 so.name AS sales_order,
                 soi.item_code,
-                SUM(soi.qty) AS ordered_qty,
-                so.creation AS order_date
+                SUM(soi.qty) AS ordered_qty
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -1299,22 +1301,19 @@ def get_open_sales_orders():
                 `tabItem` i ON soi.item_code = i.item_code
             WHERE
                 so.docstatus = 1
-                AND so.per_delivered < 100
                 AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             GROUP BY 
-                so.name, soi.item_code, so.creation
+                so.name, soi.item_code
 
             UNION ALL
 
-            -- 2. Stock items from Product Bundles (component items)
             SELECT 
                 so.name AS sales_order,
                 pbi.item_code,
-                SUM(pbi.qty * soi.qty) AS ordered_qty,
-                so.creation AS order_date
+                pbi.qty * soi.qty AS ordered_qty
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -1325,18 +1324,17 @@ def get_open_sales_orders():
                 `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
             INNER JOIN 
                 `tabItem` i ON pbi.item_code = i.item_code
+            INNER JOIN 
+                `tabItem` soi_item ON soi.item_code = soi_item.item_code
             WHERE
                 so.docstatus = 1
-                AND so.per_delivered < 100
                 AND so.status NOT IN ('Completed', 'Closed', 'Cancelled')
-                AND soi.item_code IN (
-                    SELECT item_code FROM `tabItem` WHERE is_stock_item = 0
-                )
+                AND soi_item.is_stock_item = 0
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
-            GROUP BY 
-                so.name, pbi.item_code, so.creation
+
+            ORDER BY 
+                sales_order DESC
     """, as_dict=True)
 
 def get_delivered_quantity(so_name, item_code):
@@ -1352,7 +1350,7 @@ def get_delivered_quantity(so_name, item_code):
     return result[0][0] if result and result[0][0] else 0
 
 def adjust_serial_allocations(so_name, item_code, net_pending):
-    """Adjust serial allocations based on pending quantity"""
+    """Adjust serial allocations and return unallocated quantity"""
     # Get already allocated count
     allocated_count = frappe.db.sql("""
         SELECT COUNT(*) 
@@ -1370,17 +1368,23 @@ def adjust_serial_allocations(so_name, item_code, net_pending):
 
     # Calculate net to allocate
     to_allocate = net_pending - allocated_count
+    unallocated_qty = 0
 
     # Unassign excess serial numbers
     if to_allocate < 0:
         unassign_serials(so_name, item_code, abs(to_allocate))
     
-    # Allocate new serial numbers
+    # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
-        assign_serials(so_name, item_code, to_allocate)
+        allocated_in_this_call = assign_serials(so_name, item_code, to_allocate)
+        unallocated_qty = to_allocate - allocated_in_this_call
+        if unallocated_qty > 0:
+            create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
+    
+    return unallocated_qty
 
 def assign_serials(so_name, item_code, to_allocate):
-    """Assign new serial numbers to sales order"""
+    """Assign new serial numbers to sales order and return allocated count"""
     available_serials = frappe.db.sql_list("""
         SELECT name 
         FROM `tabSerial No` 
@@ -1398,13 +1402,14 @@ def assign_serials(so_name, item_code, to_allocate):
         LIMIT %s
     """, (item_code, int(to_allocate)))
 
-    print("item code: ", item_code)
-    print("available serials: ", available_serials)
+    allocated_count = len(available_serials)
     
-    if available_serials:
+    if allocated_count > 0:
         for serial in available_serials:
             frappe.db.set_value("Serial No", serial, "reserved_sales_order", so_name)
         frappe.db.commit()
+    
+    return allocated_count
 
 def unassign_serials(so_name, item_code, excess_qty):
     """Unassign excess serial numbers"""
@@ -1432,6 +1437,21 @@ def unassign_serials(so_name, item_code, excess_qty):
         """, {"serials": excess_serials})
         frappe.db.commit()
 
+def create_unallocated_log(sales_order, item_code, pending_qty, reason):
+    print("======================== Inside create_unallocated_log")
+    print("sales_order:----55", sales_order)
+    print("item_code:----55", item_code)
+    print("pending_qty:----55", pending_qty)
+    print("reason:----55", reason)
+    """Create a log entry in Unallocated Sales Order Item"""
+    doc = frappe.new_doc("Unallocated Sales Order Item")
+    doc.sales_order = sales_order
+    doc.item_code = item_code
+    doc.pending_qty = pending_qty
+    doc.reason = reason
+    doc.posting_date = frappe.utils.nowdate()
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
 
 def calculate_item_eta(item_code, required_qty, departments):
     """Calculate ETA for a specific item quantity"""

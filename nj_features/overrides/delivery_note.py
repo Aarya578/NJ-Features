@@ -187,20 +187,21 @@ class CustomDeliveryNote(DeliveryNote):
             return
 
         result = frappe.db.sql("""
-            SELECT so.cit_image, so.shiprocket_image, so.shiprocket_manifests, so.shiprocket_invoice ,so.awb_number
+            SELECT so.cit_image, so.shiprocket_image, so.shiprocket_manifests, so.shiprocket_invoice 
             FROM `tabSales Order` so
             JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
             WHERE dni.parent = %s
             LIMIT 1
         """, (self.name,), as_dict=True)
+        print("result==================================", result)
 
         if result:
             row = result[0]
             self.db_set("cit_image", row.cit_image)
-            self.db_set("awb_number", row.awb_number)
             self.db_set("shiprocket_image", row.shiprocket_image)
             self.db_set("shiprocket_manifests", row.shiprocket_manifests)
             self.db_set("shiprocket_invoice", row.shiprocket_invoice)
+            print("result==================================", row.shiprocket_manifests)
 
 
     def _process_customer_details(self):
@@ -366,10 +367,9 @@ class CustomDeliveryNote(DeliveryNote):
         if not against_sales_order:
             frappe.msgprint("No sales order found for this delivery note.")
             return
-        # if against_sales_order:
-        #     cost_of_delivery = frappe.db.get_value("Sales Order", against_sales_order, "cost_of_delivery")     
         if against_sales_order:
-            cost_of_delivery, awb_number = frappe.db.get_value("Sales Order", against_sales_order, ["cost_of_delivery", "awb_number"])
+            cost_of_delivery = frappe.db.get_value("Sales Order", against_sales_order, "cost_of_delivery")     
+
         try:
             payload = {
                 "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
@@ -398,7 +398,7 @@ class CustomDeliveryNote(DeliveryNote):
                 if remark:
                     self.remark_status = remark
                     self.cost_amount = cost_of_delivery
-                    self.awb_number = awb_number
+                    # self.awb_number = awb_number
                     self.db_update()
                     print(f"Updated remark_status to: {remark}")
                 else:
@@ -623,20 +623,20 @@ class CustomDeliveryNote(DeliveryNote):
             unique_errors = list(set(error_messages))
             frappe.throw("<br>".join(unique_errors))
 
-@frappe.whitelist()
-def set_tracking_id_for_delivery_note(doc):
+# @frappe.whitelist()
+# def set_tracking_id_for_delivery_note(doc):
 
-    if isinstance(doc, str):
-        doc = json.loads(doc)
+#     if isinstance(doc, str):
+#         doc = json.loads(doc)
 
-    dn_item = doc.get('items')[0].get('against_sales_order')
+#     dn_item = doc.get('items')[0].get('against_sales_order')
 
-    sales_order_type = frappe.db.get_value('Sales Order', dn_item, 'sale_type')
+#     sales_order_type = frappe.db.get_value('Sales Order', dn_item, 'sale_type')
 
-    if sales_order_type == 'Amazon':
-        return True
+#     if sales_order_type == 'Amazon':
+#         return True
     
-    return False
+#     return False
 
 
 @frappe.whitelist()
@@ -933,6 +933,38 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         #     frappe.throw("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+
+@frappe.whitelist()
+def awb_number_update(doc):
+   
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    doc_name = doc.get("name")
+    if not doc_name:
+        return
+  
+    dn_doc = frappe.get_doc("Delivery Note", doc_name)
+    print("doc=================================",dn_doc)
+  
+    if dn_doc.awb_number or dn_doc.is_return:
+        return
+
+    # Fetch AWB number from linked Sales Order
+    result = frappe.db.sql("""
+        SELECT so.awb_number,so.courier_service
+        FROM `tabSales Order` so
+        JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name
+        WHERE dni.parent = %s
+        LIMIT 1
+    """, (dn_doc.name,), as_dict=True)
+    print("result==================================", result)
+
+    if result and result[0].awb_number:
+        dn_doc.db_set("awb_number", result[0].awb_number)
+        dn_doc.db_set("courier_service", result[0].courier_service)
+
+
         
 @frappe.whitelist()  
 def qi_mandatory_checks_on_dn_submit(doc, method=None):

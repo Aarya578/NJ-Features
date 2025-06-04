@@ -1145,6 +1145,7 @@ def calculate_dispatch_eta_for_sales_order():
         open_orders = get_open_sales_orders()
 
         print("open Order", open_orders)
+        print("len", len(open_orders))
         
         # Dictionary to track max ETA per sales order
         so_eta_map = {}
@@ -1285,8 +1286,14 @@ def adjust_serial_allocations(so_name, item_code, net_pending, departments):
     # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
         allocated_in_this_call = assign_serials(so_name, item_code, to_allocate, departments)
+        print("\n\n\nallocated_in_this_call", allocated_in_this_call)
+        print("so_name ------------- 1293", so_name)
+        print("item_code ------------- 1293", item_code)
         unallocated_qty = to_allocate - allocated_in_this_call
+        print("unallocated_qty", unallocated_qty)
+
         if unallocated_qty > 0:
+            print("unallocated_qty ------------- 1293", unallocated_qty)
             create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
     
     return unallocated_qty
@@ -1295,6 +1302,8 @@ def assign_serials(so_name, item_code, to_allocate, departments):
     allocated_count = 0
 
     for dept in departments:
+        print("\n\n======================== Inside assign_serials ==============================")
+        print("dept ------------- 1293", dept)
         if allocated_count >= to_allocate:
             break
 
@@ -1381,7 +1390,7 @@ def unassign_serials(so_name, item_code, excess_qty):
         frappe.db.commit()
 
 def create_unallocated_log(sales_order, item_code, pending_qty, reason):
-    print("======================== Inside create_unallocated_log")
+    print("======================== Inside create_unallocated_log ==============================")
     print("sales_order:----55", sales_order)
     print("item_code:----55", item_code)
     print("pending_qty:----55", pending_qty)

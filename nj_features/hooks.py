@@ -208,10 +208,7 @@ scheduler_events = {
         "35 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
         ],
-        "45 * * * *": [
-            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
-        ],
-        "55 * * * *": [
+        "45,55 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ]
     }

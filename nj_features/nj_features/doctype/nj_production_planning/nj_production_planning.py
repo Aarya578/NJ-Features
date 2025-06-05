@@ -1159,14 +1159,19 @@ def allocate_laptop_parts(doc):
         frappe.msgprint("No suggested serial numbers found in the latest production planning.")
         return []
 
+    s1 = time.time()
+
     mr_items = frappe.db.sql("""
         SELECT parent AS material_request, item_code, serial_no AS against_serial_no, 
-               stock_qty, qty AS mr_qty, item_group
+            stock_qty, qty AS mr_qty, item_group
         FROM `tabMaterial Request Item` 
         WHERE post_order_status IN ("Not Completed", " ") 
         AND serial_no IN %(serial_list)s
         ORDER BY serial_no
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
+
+    s2 = time.time()
+    print(f"Query executed in {s2 - s1:.4f} seconds")
 
     if not mr_items:
         frappe.msgprint("No Material Requests found for the suggested serial numbers.")
@@ -1190,6 +1195,8 @@ def allocate_laptop_parts(doc):
     grouped_by_serial = defaultdict(list)
 
     for item in mr_items:
+        loop_start = time.time()  # ⏱ Start time for this item
+
         serial_no = item["against_serial_no"]
         item_code = item["item_code"]
         mr_qty = flt(item["mr_qty"])
@@ -1228,6 +1235,10 @@ def allocate_laptop_parts(doc):
             "rank": serial_no_rank.get(serial_no, 0)
         })
 
+        loop_end = time.time()  # ⏱ End time for this item
+        print(f"Processed serial {serial_no} in {loop_end - loop_start:.4f} seconds")
+
+
     final_result = []
     for serial, items in grouped_by_serial.items():
         if all(item["allocated_status"] == "Allocated" for item in items):
@@ -1241,7 +1252,7 @@ def allocate_laptop_parts(doc):
             seen.add(key)
             unique_result.append(item)
 
-    final_results = allocate_serial_no_for_battery(unique_result)
+    # final_results = allocate_serial_no_for_battery(unique_result)
 
     print(f"Laptop parts allocation took {time.time() - start_time:.4f} seconds")
     return unique_result

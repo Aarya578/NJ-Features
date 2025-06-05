@@ -2,6 +2,7 @@ import json
 import math
 import frappe
 import traceback
+from datetime import datetime
 from collections import defaultdict
 from frappe.utils import getdate, flt
 from frappe.model.document import Document
@@ -32,7 +33,7 @@ def get_department_details():
             data = process_merged_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
             calculate_to_make(new_doc)
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+            suggest_to_make_serial_no(new_doc.get("final_config"), new_doc, department=dept.get("name"))
         elif str(in_config) == '1' and str(fw_config) == '1':
             data = process_default_configuration(dept_doc)
             new_doc = create_production_planning(data, dept.get("name"))
@@ -799,109 +800,116 @@ def sort_by_multiple_keys(configs, keys):
         return tuple(key_values)
     return sorted(configs, key=sort_key)
 
+import math
+from datetime import datetime
+from collections import defaultdict
+
 def calculate_to_make(doc):
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
 
-    # Reset all to_make values to 0 before calculation
+    # Reset all to_make values
     for child in doc.get("nj_production_planning_child", []):
         child.to_make = 0
 
-    # Create working copies with only needed fields
+    # Clear final_config table
+    doc.set("final_config", [])
+
+    # Build temporary config and mapping
     temp_config = []
+    child_map = {}
     for child in doc.get("nj_production_planning_child", []):
-        temp_config.append({
+        cfg = {
             "item_code": child.get("item_code"),
             "sales_rate": child.get("sales_rate", 0),
             "inward_inventory": child.get("inward_inventory", 0),
             "forward_inventory": child.get("forward_inventory", 0),
             "days_of_inventory": child.get("days_of_inventory", 0),
-            "to_make": 0,  # Start fresh calculation
+            "to_make": 0,
             "model": child.get("model", ""),
             "processor": child.get("processor", ""),
             "ram": child.get("ram", ""),
             "ssd": child.get("ssd", "")
-        })
-    
-    # Create mapping to original child items
-    child_map = {child.get("item_code"): child for child in doc.get("nj_production_planning_child", [])}
-    
-    # Sort by DOI ascending
-    temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
-    
+        }
+        temp_config.append(cfg)
+        child_map[child.get("item_code")] = child
+
     rank = 0
     allocated_in_pass = True
 
-    # Allocation algorithm
     while allocated_in_pass:
-        print("inside while")
         allocated_in_pass = False
-        temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
-        
+        temp_config.sort(key=lambda x: x["days_of_inventory"])  # Initial sort
+
         for i in range(len(temp_config) - 1):
             current = temp_config[i]
             next_cfg = temp_config[i + 1]
 
-            if current.get("inward_inventory", 0) <= 0:
+            if current["inward_inventory"] <= 0:
                 continue
 
-            # Calculate gap between current and next DOI
             current_doi = current.get("days_of_inventory", 0)
             next_doi = next_cfg.get("days_of_inventory", 0)
             doi_gap = max(0, next_doi - current_doi)
 
-            sales_rate = current.get("sales_rate", 0)
-            # Make sure doi_gap is defined and finite
             if not math.isfinite(doi_gap):
-                doi_gap = 0  # or some sensible default value
+                doi_gap = 0
 
+            sales_rate = current.get("sales_rate", 0)
             if not math.isfinite(sales_rate):
                 sales_rate = 0
 
             needed_units = math.ceil((doi_gap + 1) * sales_rate)
-            make_units = min(needed_units, current.get("inward_inventory", 0))
+            make_units = min(needed_units, current["inward_inventory"])
 
-            if make_units > 0:
-                # Update temporary config
-                current["to_make"] += make_units
-                current["inward_inventory"] -= make_units
-                current["forward_inventory"] += make_units
-                
-                # Update DOI (only in temp for calculation)
-                if sales_rate > 0:
-                    current["days_of_inventory"] = current["forward_inventory"] / sales_rate
-                else:
-                    current["days_of_inventory"] = 0
+            if make_units <= 0:
+                continue
 
-                # Update ONLY to_make in main child table
-                original_child = child_map.get(current["item_code"])
+            # Apply allocation
+            current["to_make"] = make_units
+            current["inward_inventory"] -= make_units
+            current["forward_inventory"] += make_units
+            current["days_of_inventory"] = (
+                current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
+            )
 
-                if original_child:
-                    original_child.to_make = current["to_make"]
+            # Append to final_config
+            child_row = doc.append("final_config", {})
+            child_row.sales_rate = sales_rate
+            child_row.date = datetime.now()
+            child_row.inward_inventory = current["inward_inventory"]
+            child_row.forward_inventory = current["forward_inventory"]
+            child_row.days_of_inventory = current["days_of_inventory"]
+            child_row.to_make = current["to_make"]
+            child_row.item_code = current["item_code"]
+            child_row.model = current["model"]
+            child_row.processor = current["processor"]
+            child_row.ram = current["ram"]
+            child_row.ssd = current["ssd"]
+            rank += 1
+            child_row.rank = rank
 
-                # Add to final_config table with full details
-                child_row = doc.append("final_config", {})
-                child_row.sales_rate = sales_rate
-                child_row.date = datetime.now()
-                child_row.inward_inventory = current["inward_inventory"]
-                child_row.forward_inventory = current["forward_inventory"]
-                child_row.days_of_inventory = current["days_of_inventory"]
-                child_row.to_make = current["to_make"]
-                child_row.item_code = current["item_code"]
-                child_row.model = current.get("model")
-                child_row.processor = current.get("processor")
-                child_row.ram = current.get("ram")
-                child_row.ssd = current.get("ssd")
-                
-                rank += 1
-                child_row.rank = rank
-                allocated_in_pass = True
+            allocated_in_pass = True
 
-    # Save document to persist changes
+            # Re-sort and break to restart the loop
+            temp_config.sort(key=lambda x: x["days_of_inventory"])
+            break
+
+    # 🔁 After loop ends: Group by item_code and update `to_make` in child table
+    to_make_summary = defaultdict(int)
+    for row in doc.get("final_config", []):
+        to_make_summary[row.item_code] += row.to_make
+
+    for child in doc.get("nj_production_planning_child", []):
+        child.to_make = to_make_summary.get(child.item_code, 0)
+
     doc.save()
     return doc.get("nj_production_planning_child", [])
 
+
+
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
+    print("inside suggest_to_make_serial_no")
     if not nj_pro_child or not department:
         return []
 
@@ -960,6 +968,7 @@ def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     return get_serial_no_data(nj_pro_child, get_serial_no_config, inw_inventory, doc)
 
 def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
+    print("inside get_serial_no_data")
     suggested_serial_no_data = []
     added_serial_no = set()
     rank = 0 
@@ -1042,6 +1051,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
+    print("calling allocate_laptop_parts")
     allocated_lap = allocate_laptop_parts(doc)
     doc.update({"laptop_allocation": allocated_lap})
 
@@ -1050,6 +1060,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     update_to_make_for_serial(doc)
 
 def allocate_laptop_parts(doc):
+    print("inside allocate_laptop_parts")
 
     serial_list = []
     serial_no_rank = {row.get("suggested_serial_no"): row.get("rank") for row in doc.get("suggested_serial_no", [])}

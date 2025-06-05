@@ -1,7 +1,10 @@
 import json
 import math
+import time
 import frappe
 import traceback
+from datetime import datetime
+from operator import itemgetter
 from collections import defaultdict
 from frappe.utils import getdate, flt
 from frappe.model.document import Document
@@ -12,11 +15,16 @@ class NJProductionPlanning(Document):
 
 @frappe.whitelist()
 def get_department_details():
-
     all_dept = frappe.db.get_all("Department", ["name"])
 
     for dept in all_dept:
-        dept_doc = get_department_document(dept.get("name"))
+        dept_name = dept.get("name")
+        print(f"\nProcessing Department: {dept_name}")
+
+        t0 = time.time()
+        dept_doc = get_department_document(dept_name)
+        t1 = time.time()
+        print(f"get_department_document: {t1 - t0:.2f} seconds")
 
         in_model = dept_doc.get("inwarded_model") 
         in_config = dept_doc.get("inwarded_config")
@@ -24,20 +32,61 @@ def get_department_details():
         fw_config = dept_doc.get("forwarded_config")
 
         if str(in_model) == '1' and str(fw_model) == '1':
+            t2 = time.time()
             data = process_model_configuration(dept_doc)
-            new_doc = create_production_planning(data, dept.get("name"))
+            t3 = time.time()
+            print(f"process_model_configuration: {t3 - t2:.2f} seconds")
+
+            new_doc = create_production_planning(data, dept_name)
+            t4 = time.time()
+            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+
             calculate_to_make(new_doc)
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+            t5 = time.time()
+            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept_name)
+            t6 = time.time()
+            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+
         elif str(in_model) == '1' and str(fw_config) == '1':
+            t2 = time.time()
             data = process_merged_configuration(dept_doc)
-            new_doc = create_production_planning(data, dept.get("name"))
+            t3 = time.time()
+            print(f"process_merged_configuration: {t3 - t2:.2f} seconds")
+
+            new_doc = create_production_planning(data, dept_name)
+            t4 = time.time()
+            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+
             calculate_to_make(new_doc)
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+            t5 = time.time()
+            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+
+            suggest_to_make_serial_no(new_doc.get("final_config"), new_doc, department=dept_name)
+            t6 = time.time()
+            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+
         elif str(in_config) == '1' and str(fw_config) == '1':
+            t2 = time.time()
             data = process_default_configuration(dept_doc)
-            new_doc = create_production_planning(data, dept.get("name"))
+            t3 = time.time()
+            print(f"process_default_configuration: {t3 - t2:.2f} seconds")
+
+            new_doc = create_production_planning(data, dept_name)
+            t4 = time.time()
+            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+
             calculate_to_make(new_doc)
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept.get("name"))
+            t5 = time.time()
+            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+
+            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept_name)
+            t6 = time.time()
+            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+
+        t_end = time.time()
+        print(f"Total time for {dept_name}: {t_end - t0:.2f} seconds")
 
 @frappe.whitelist()
 def create_production_planning(data, department):
@@ -800,108 +849,128 @@ def sort_by_multiple_keys(configs, keys):
     return sorted(configs, key=sort_key)
 
 def calculate_to_make(doc):
+
+    print("Started Executing Calculate To Make")
+
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
 
-    # Reset all to_make values to 0 before calculation
+    # Reset all to_make values
     for child in doc.get("nj_production_planning_child", []):
         child.to_make = 0
 
-    # Create working copies with only needed fields
+    # Clear final_config table
+    doc.set("final_config", [])
+
+    # Build temporary config and mapping
     temp_config = []
+    child_map = {}
     for child in doc.get("nj_production_planning_child", []):
-        temp_config.append({
+        cfg = {
             "item_code": child.get("item_code"),
             "sales_rate": child.get("sales_rate", 0),
             "inward_inventory": child.get("inward_inventory", 0),
             "forward_inventory": child.get("forward_inventory", 0),
             "days_of_inventory": child.get("days_of_inventory", 0),
-            "to_make": 0,  # Start fresh calculation
+            "to_make": 0,
             "model": child.get("model", ""),
             "processor": child.get("processor", ""),
             "ram": child.get("ram", ""),
             "ssd": child.get("ssd", "")
-        })
-    
-    # Create mapping to original child items
-    child_map = {child.get("item_code"): child for child in doc.get("nj_production_planning_child", [])}
-    
-    # Sort by DOI ascending
-    temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
-    
+        }
+        temp_config.append(cfg)
+        child_map[child.get("item_code")] = child
+
     rank = 0
     allocated_in_pass = True
 
-    # Allocation algorithm
+    # ⏱ Start timing the while loop
+    loop_start_time = time.time()
+    print("Started while loop")
     while allocated_in_pass:
-        print("inside while")
         allocated_in_pass = False
-        temp_config = sorted(temp_config, key=lambda x: x.get("days_of_inventory", 0))
-        
+        temp_config.sort(key=lambda x: x["days_of_inventory"])  # Initial sort
+
         for i in range(len(temp_config) - 1):
             current = temp_config[i]
             next_cfg = temp_config[i + 1]
 
-            if current.get("inward_inventory", 0) <= 0:
+            if current["inward_inventory"] <= 0:
+                # temp_config.remove(current)
                 continue
 
-            # Calculate gap between current and next DOI
             current_doi = current.get("days_of_inventory", 0)
             next_doi = next_cfg.get("days_of_inventory", 0)
             doi_gap = max(0, next_doi - current_doi)
 
-            sales_rate = current.get("sales_rate", 0)
-            # Make sure doi_gap is defined and finite
             if not math.isfinite(doi_gap):
-                doi_gap = 0  # or some sensible default value
+                doi_gap = 0
 
+            sales_rate = current.get("sales_rate", 0)
             if not math.isfinite(sales_rate):
                 sales_rate = 0
 
             needed_units = math.ceil((doi_gap + 1) * sales_rate)
-            make_units = min(needed_units, current.get("inward_inventory", 0))
+            make_units = min(needed_units, current["inward_inventory"])
 
-            if make_units > 0:
-                # Update temporary config
-                current["to_make"] += make_units
-                current["inward_inventory"] -= make_units
-                current["forward_inventory"] += make_units
-                
-                # Update DOI (only in temp for calculation)
-                if sales_rate > 0:
-                    current["days_of_inventory"] = current["forward_inventory"] / sales_rate
-                else:
-                    current["days_of_inventory"] = 0
+            if make_units <= 0:
+                continue
 
-                # Update ONLY to_make in main child table
-                original_child = child_map.get(current["item_code"])
+            # Apply allocation
+            current["to_make"] = make_units
+            current["inward_inventory"] -= make_units
+            current["forward_inventory"] += make_units
+            current["days_of_inventory"] = (
+                current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
+            )
 
-                if original_child:
-                    original_child.to_make = current["to_make"]
+            # Append to final_config
+            child_row = doc.append("final_config", {})
+            child_row.sales_rate = sales_rate
+            child_row.date = datetime.now()
+            child_row.inward_inventory = current["inward_inventory"]
+            child_row.forward_inventory = current["forward_inventory"]
+            child_row.days_of_inventory = current["days_of_inventory"]
+            child_row.to_make = current["to_make"]
+            child_row.item_code = current["item_code"]
+            child_row.model = current["model"]
+            child_row.processor = current["processor"]
+            child_row.ram = current["ram"]
+            child_row.ssd = current["ssd"]
+            rank += 1
+            child_row.rank = rank
 
-                # Add to final_config table with full details
-                child_row = doc.append("final_config", {})
-                child_row.sales_rate = sales_rate
-                child_row.date = datetime.now()
-                child_row.inward_inventory = current["inward_inventory"]
-                child_row.forward_inventory = current["forward_inventory"]
-                child_row.days_of_inventory = current["days_of_inventory"]
-                child_row.to_make = current["to_make"]
-                child_row.item_code = current["item_code"]
-                child_row.model = current.get("model")
-                child_row.processor = current.get("processor")
-                child_row.ram = current.get("ram")
-                child_row.ssd = current.get("ssd")
-                
-                rank += 1
-                child_row.rank = rank
-                allocated_in_pass = True
+            allocated_in_pass = True
 
-    # Save document to persist changes
+            # if current["inward_inventory"] <= 0:
+            #     temp_config.remove(current)
+
+            # Re-sort and break to restart the loop
+            temp_config.sort(key=lambda x: x["days_of_inventory"])
+            break
+
+    # ⏱ End timing the while loop
+    loop_end_time = time.time()
+    execution_time = loop_end_time - loop_start_time
+    print("Ended while loop")
+    print(f"Loop execution time: {execution_time:.4f} seconds")
+
+    # Group by item_code and update `to_make` in child table
+    to_make_summary = defaultdict(int)
+    for row in doc.get("final_config", []):
+        to_make_summary[row.item_code] += row.to_make
+
+    for child in doc.get("nj_production_planning_child", []):
+        child.to_make = to_make_summary.get(child.item_code, 0)
+
     doc.save()
     return doc.get("nj_production_planning_child", [])
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
+    print("Started suggest_to_make_serial_no")
+    
+    start_time = time.time()  # ⏱ Start timing
+
     if not nj_pro_child or not department:
         return []
 
@@ -921,6 +990,7 @@ def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
 
     if not inw_inventory:
         return []
+    
 
     raw_data = frappe.db.sql("""
         SELECT 
@@ -929,7 +999,8 @@ def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
             Sr.warehouse,
             Sr.Model,
             IVA.Attribute,
-            IVA.attribute_value
+            IVA.attribute_value,
+            Sr.creation
         FROM
             `tabSerial No` Sr
                 INNER JOIN
@@ -952,14 +1023,26 @@ def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
                 "item_code": row["item_code"],
                 "warehouse": row["warehouse"],
                 "Model": row["Model"],
+                "creation": row["creation"]
             }
         grouped_data[key][row["Attribute"]] = row["attribute_value"]
 
     get_serial_no_config = list(grouped_data.values())
 
-    return get_serial_no_data(nj_pro_child, get_serial_no_config, inw_inventory, doc)
+    result = get_serial_no_data(nj_pro_child, get_serial_no_config, inw_inventory, doc)
+
+    end_time = time.time()  # ⏱ End timing
+    execution_time = end_time - start_time
+
+    print(f"suggest_to_make_serial_no completed in {execution_time:.4f} seconds")
+
+    return result
 
 def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
+    print("Started Get Serial No Data")
+
+    start_time = time.time()  # ⏱ Start timing
+
     suggested_serial_no_data = []
     added_serial_no = set()
     rank = 0 
@@ -975,7 +1058,22 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
             "processor_type": (s.get("Processor Type") or "").strip().lower(),
             "ram_capacity": (s.get("RAM Capacity") or "").strip().lower(),
             "storage_capacity": (s.get("Storage Capacity") or "").strip().lower(),
+            "creation": s.get("creation")
         })
+    
+    # print("Normalized serial_no_list:", normalized_serials)
+    # Sort by multiple fields
+    normalized_serials.sort(
+        key=lambda x: (
+            x.get("model", "").lower(),
+            x.get("processor_type", "").lower(),
+            x.get("ram_capacity", "").lower(),
+            x.get("storage_capacity", "").lower(),
+            -x.get("creation").timestamp()  # Sort by creation DESC
+        )
+    )
+
+    # print("Sorted normalized serial_no_list:", normalized_serials)
 
     for child in doc.get("nj_production_planning_child", []):
         if child.get("to_make", 0) > 0:
@@ -987,43 +1085,34 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
             matched_serials = []
 
-            # First pass: exact matches by all specs and available in inw_inventory warehouses
+            # First pass: exact matches
             for serial in normalized_serials:
                 if needed <= 0:
                     break
-
                 if serial["name"] in added_serial_no:
                     continue
-
                 if serial["warehouse"] not in inw_inventory:
                     continue
-
                 if (serial["model"] == model and
                     serial["processor_type"] == processor and
                     serial["ram_capacity"] == ram and
                     serial["storage_capacity"] == ssd):
-
                     matched_serials.append(serial["name"])
                     added_serial_no.add(serial["name"])
                     needed -= 1
 
-            # Second pass: if still needed, try matching just model + processor and exclude item_code already matched (relax criteria)
+            # Second pass: relaxed match
             if needed > 0:
                 for serial in normalized_serials:
                     if needed <= 0:
                         break
-
                     if serial["name"] in added_serial_no:
                         continue
-
                     if serial["warehouse"] not in inw_inventory:
                         continue
-
-                    # relaxed matching (same model + processor, but different item_code)
                     if (serial["model"] == model and
                         serial["processor_type"] == processor and
                         serial["item_code"] != child.get("item_code")):
-
                         matched_serials.append(serial["name"])
                         added_serial_no.add(serial["name"])
                         needed -= 1
@@ -1042,6 +1131,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
+    print("calling allocate_laptop_parts")
     allocated_lap = allocate_laptop_parts(doc)
     doc.update({"laptop_allocation": allocated_lap})
 
@@ -1049,13 +1139,21 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     frappe.db.commit()
     update_to_make_for_serial(doc)
 
-def allocate_laptop_parts(doc):
+    # ⏱ End timing
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"get_serial_no_data completed in {execution_time:.4f} seconds")
 
-    serial_list = []
+def allocate_laptop_parts(doc):
+    print("Started Part Allocation")
+    start_time = time.time()
+
     serial_no_rank = {row.get("suggested_serial_no"): row.get("rank") for row in doc.get("suggested_serial_no", [])}
-    for row in doc.get("suggested_serial_no"):
-        if row.suggested_serial_no:
-            serial_list.extend([s.strip() for s in row.suggested_serial_no.split(",") if s.strip()])
+    serial_list = [
+        s.strip() for row in doc.get("suggested_serial_no", [])
+        if row.suggested_serial_no
+        for s in row.suggested_serial_no.split(",") if s.strip()
+    ]
 
     if not serial_list:
         frappe.msgprint("No suggested serial numbers found in the latest production planning.")
@@ -1067,6 +1165,7 @@ def allocate_laptop_parts(doc):
         FROM `tabMaterial Request Item` 
         WHERE post_order_status IN ("Not Completed", " ") 
         AND serial_no IN %(serial_list)s
+        ORDER BY serial_no
     """, {"serial_list": tuple(serial_list)}, as_dict=True)
 
     if not mr_items:
@@ -1074,12 +1173,10 @@ def allocate_laptop_parts(doc):
         return []
 
     warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
-    
     if not warehouses:
         frappe.msgprint("No warehouses found under 'Stores - NJ' department.")
         return []
 
-    stock_data = {}
     stock_results = frappe.db.sql("""
         SELECT item_code, SUM(actual_qty) AS total_qty 
         FROM `tabBin` 
@@ -1087,213 +1184,144 @@ def allocate_laptop_parts(doc):
         GROUP BY item_code
     """, (tuple(warehouses),), as_dict=True)
 
-    for stock in stock_results:
-        stock_data[stock["item_code"]] = flt(stock["total_qty"])
-
-    virtual_stock_data = stock_data.copy()
-
-    grouped_by_serial = {}
-
-    planned_allocation = {}
+    stock_data = {s["item_code"]: flt(s["total_qty"]) for s in stock_results}
+    virtual_stock = stock_data.copy()
+    planned_allocation = defaultdict(float)
+    grouped_by_serial = defaultdict(list)
 
     for item in mr_items:
         serial_no = item["against_serial_no"]
         item_code = item["item_code"]
         mr_qty = flt(item["mr_qty"])
+        available = virtual_stock.get(item_code, 0) - planned_allocation[item_code]
 
-        available_stock = virtual_stock_data.get(item_code, 0) - planned_allocation.get(item_code, 0)
-
-        if available_stock >= mr_qty:
+        if available >= mr_qty:
             allocated_status = "Allocated"
-            status = "Available" if available_stock > 0 else "Not Available"
-
-            row = {
-                "mreq_no": item["material_request"],
-                "item": item_code,
-                "item_group": item["item_group"],
-                "serial_no": serial_no,
-                "mr_qty": mr_qty,
-                "sb_qty": available_stock,
-                "status": status,
-                "allocated_qty": mr_qty,
-                "allocated_status": allocated_status,
-                "rank": serial_no_rank.get(serial_no, 0)
+            planned_allocation[item_code] += mr_qty
+            resolved_item = {
+                "item_code": item_code,
+                "against_item_code": "",
+                "stock_qty": available
             }
-
-            grouped_by_serial.setdefault(serial_no, []).append(row)
-
-            planned_allocation[item_code] = planned_allocation.get(item_code, 0) + mr_qty
-
         else:
-            res_item = allocated_other_part(item)
-
-            if res_item:
-                item_code_res = res_item.get("item_code")
-                against_item_code = res_item.get("against_item_code")
-                stock_qty_res = flt(res_item.get("stock_qty", 0))
-
-                available_stock_res = stock_qty_res - planned_allocation.get(item_code_res, 0)
-
-                if available_stock_res >= mr_qty:
-                    allocated_status = "Allocated"
-                    planned_allocation[item_code_res] = planned_allocation.get(item_code_res, 0) + mr_qty
-                else:
-                    allocated_status = "Not Allocated"
-            else:
-                allocated_status = "Not Allocated"
-                item_code_res = item_code
-                against_item_code = ""
-                available_stock_res = 0
-
-            status = "Available" if available_stock_res > 0 else "Not Available"
-
-            row = {
-                "mreq_no": item["material_request"],
-                "item": item_code_res,
-                "item_group": item["item_group"],
-                "serial_no": serial_no,
-                "mr_qty": mr_qty,
-                "sb_qty": available_stock_res,
-                "status": status,
-                "allocated_qty": mr_qty,
-                "allocated_status": allocated_status,
-                "against_item_code": against_item_code,
-                "rank": serial_no_rank.get(serial_no, 0)
+            resolved_item = allocated_other_part(item) or {
+                "item_code": item_code,
+                "against_item_code": "",
+                "stock_qty": 0
             }
+            available = resolved_item["stock_qty"] - planned_allocation[resolved_item["item_code"]]
+            allocated_status = "Allocated" if available >= mr_qty else "Not Allocated"
+            if allocated_status == "Allocated":
+                planned_allocation[resolved_item["item_code"]] += mr_qty
 
-            grouped_by_serial.setdefault(serial_no, []).append(row)
-
-    for serial, items in grouped_by_serial.items():
-        grouped_by_serial[serial] = sorted(items, key=lambda x: x['rank'])
-
-    sorted_serials = sorted(
-        grouped_by_serial.items(),
-        key=lambda x: x[1][0]['rank'] if x[1] else float('inf')
-    )
-
-    grouped_by_serial = dict(sorted_serials)
-
-    for item_code, qty in planned_allocation.items():
-        if item_code in virtual_stock_data:
-            virtual_stock_data[item_code] -= qty
+        grouped_by_serial[serial_no].append({
+            "mreq_no": item["material_request"],
+            "item": resolved_item["item_code"],
+            "item_group": item["item_group"],
+            "serial_no": serial_no,
+            "mr_qty": mr_qty,
+            "sb_qty": available,
+            "status": "Available" if available > 0 else "Not Available",
+            "allocated_qty": mr_qty,
+            "allocated_status": allocated_status,
+            "against_item_code": resolved_item["against_item_code"],
+            "rank": serial_no_rank.get(serial_no, 0)
+        })
 
     final_result = []
-
-    if not grouped_by_serial:
-        return final_result
-
-    for serial_no, items in grouped_by_serial.items():
+    for serial, items in grouped_by_serial.items():
         if all(item["allocated_status"] == "Allocated" for item in items):
-            final_result.extend(items)
+            final_result.extend(sorted(items, key=itemgetter("rank")))
 
-    from operator import itemgetter
-    final_result.sort(key=itemgetter("rank"))
+    seen = set()
+    unique_result = []
+    for item in sorted(final_result, key=itemgetter("rank")):
+        key = (item["serial_no"], item["item"])
+        if key not in seen:
+            seen.add(key)
+            unique_result.append(item)
 
-    unique_final_result = []
-    seen_serial_item_codes = {}
+    final_results = allocate_serial_no_for_battery(unique_result)
 
-    for item in final_result:
-        sn = item["serial_no"]
-        ic = item["item"]
-        if sn not in seen_serial_item_codes:
-            seen_serial_item_codes[sn] = set()
-        if ic not in seen_serial_item_codes[sn]:
-            unique_final_result.append(item)
-            seen_serial_item_codes[sn].add(ic)
-
-    final_results = allocate_serial_no_for_battery(unique_final_result)
-
-    return unique_final_result
+    print(f"Laptop parts allocation took {time.time() - start_time:.4f} seconds")
+    return unique_result
 
 def allocated_other_part(item):
+    start_time = time.time()
 
     item_code = item.get("item_code")
-    if not item_code:
-        frappe.throw("Item Code is missing.")
 
-    item_codes = [item_code]
-    placeholders = ', '.join(['%s'] * len(item_codes))
+    # Fetch original attributes
+    attr_rows = frappe.db.sql("""
+        SELECT 
+            LOWER(iva.attribute) AS attr, 
+            LOWER(iva.attribute_value) AS val,
+            iva.parent AS item_code,
+            i.item_group
+        FROM `tabItem Variant Attribute` iva
+        INNER JOIN `tabItem` i ON iva.parent = i.name
+        WHERE iva.parent = %s
+    """, item_code, as_dict=True)
 
-    query = f"""SELECT 
-                    LOWER(iva.attribute) AS item_attribute, 
-                    LOWER(iva.attribute_value) AS attribute_value,
-                    iva.parent AS item_code,
-                    i.item_name,
-                    i.item_model,
-                    i.item_group,
-                    i.variant_of AS parent
-                FROM `tabItem Variant Attribute` iva
-                INNER JOIN `tabItem` i ON iva.parent = i.name
-                WHERE iva.parent IN ({placeholders})"""
+    attr_map = {row["attr"]: row["val"] for row in attr_rows}
+    item_group = attr_rows[0]["item_group"] if attr_rows else ""
 
-    attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
-    attribute_data_info = {item['item_attribute']: item['attribute_value'] for item in attribute_data}
-
-    item_wizard_name = frappe.db.get_value("Serial No", {'name': item.get("against_serial_no")}, 'item_wizard')
-    if not item_wizard_name:
+    # Get item wizard
+    iw_name = frappe.db.get_value("Serial No", item.get("against_serial_no"), "item_wizard")
+    if not iw_name:
+        frappe.msgprint(f"allocated_other_part completed in {time.time() - start_time:.4f} seconds")
         return []
 
-    item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_name)
+    iw_doc = frappe.get_doc("Item Wizards", iw_name)
 
-    for row in item_wizard_doc.get("items_attribute"):
-            for attr in attribute_data:
-                if row.get("item_group", "").lower() in [attr.get("item_group", "").lower()] and row.get("item_attribute", "").lower() != "grade":
-                    if attr.get("item_attribute", "").lower() == row.get("item_attribute", "").lower() and \
-                            attr.get("attribute_value", "").lower() != row.get("attribute_value", "").lower():
+    # Prepare attributes to change
+    for row in iw_doc.get("items_attribute"):
+        attr = row.get("item_attribute", "").lower()
+        val = row.get("attribute_value", "").lower()
+        group = row.get("item_group", "").lower()
 
-                        attribute_data_info.update({
-                            row.get("item_attribute", "").lower(): row.get("attribute_value", "").lower()
-                        })
+        if attr != "grade" and group == item_group.lower() and attr in attr_map and attr_map[attr] != val:
+            test_attrs = attr_map.copy()
+            test_attrs[attr] = val
 
-                        conditions = " OR ".join([
-                        f"(LOWER(iva.attribute) = '{key.lower()}' AND LOWER(iva.attribute_value) = '{value.lower()}')"
-                                    for key, value in attribute_data_info.items()
-                                ])
+            # Find exact item variant match
+            conditions = " OR ".join(
+                f"(LOWER(iva.attribute) = '{k}' AND LOWER(iva.attribute_value) = '{v}')"
+                for k, v in test_attrs.items()
+            )
 
-                        query = f"""
-                                    SELECT
-                                        iva.parent AS item_code
-                                    FROM
-                                        `tabItem Variant Attribute` iva
-                                    WHERE
-                                        {conditions}
-                                    GROUP BY
-                                        iva.parent
-                                    HAVING
-                                        COUNT(*) = {len(attribute_data_info)}
-                                """
-                            
-                        item_codes = frappe.db.sql(query, as_dict=True)
+            match_items = frappe.db.sql(f"""
+                SELECT iva.parent AS item_code
+                FROM `tabItem Variant Attribute` iva
+                WHERE {conditions}
+                GROUP BY iva.parent
+                HAVING COUNT(*) = {len(test_attrs)}
+            """, as_dict=True)
 
-                        stock_data = {}
+            if not match_items:
+                continue
 
-                        for items in item_codes:
+            # Warehouse stock check once
+            warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
+            for mi in match_items:
+                item_code_candidate = mi["item_code"]
 
-                            warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
-                            stock_results = frappe.db.sql("""
-                                SELECT item_code, SUM(actual_qty) AS total_qty 
-                                FROM `tabBin` 
-                                WHERE warehouse IN %(warehouses)s
-                                AND item_code = %(item_code)s
-                                """, {
-                                    "warehouses": tuple(warehouses),
-                                    "item_code": items["item_code"]
-                                }, as_dict=True)
+                stock = frappe.db.sql("""
+                    SELECT SUM(actual_qty) AS qty
+                    FROM `tabBin`
+                    WHERE item_code = %s AND warehouse IN %s
+                """, (item_code_candidate, tuple(warehouses)), as_dict=True)[0]["qty"] or 0
 
-                            for stock in stock_results:
-                                stock_data[stock["item_code"]] = flt(stock["total_qty"])
-                            
-                            available_stock = stock_data.get(items.get("item_code"), 0)
+                if stock > 0:
+                    item.update({
+                        "item_code": item_code_candidate,
+                        "against_item_code": item_code,
+                        "stock_qty": flt(stock)
+                    })
+                    frappe.msgprint(f"allocated_other_part completed in {time.time() - start_time:.4f} seconds")
+                    return item
 
-                            if available_stock > 0:
-                                item.update(
-                                    {
-                                        "item_code": items["item_code"],
-                                        "against_item_code": item.get("item_code"),
-                                        "stock_qty": available_stock
-                                    })
-                                    
-                                return item
+    return []
 
 def update_to_make_for_serial(doc):
 

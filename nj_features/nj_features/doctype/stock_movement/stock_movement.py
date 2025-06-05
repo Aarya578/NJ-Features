@@ -1,6 +1,7 @@
 import json
 import frappe
 from frappe import _
+from collections import defaultdict
 from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
@@ -240,9 +241,14 @@ def validate_serial_no_and_department(row, error_messages):
     if not serial_doc.get("bypass"):
 
         if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
-            validate_grade_restriction(serial_doc, department_doc, error_messages)
-
+            pass
+        
         s_inspection_type = frappe.get_doc('Department', s_department)
+        is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
+
+        if not is_component and s_department != department:
+            validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
+            validate_grade_restriction(serial_doc, department_doc, error_messages)
 
         if (
                 s_department and 
@@ -315,7 +321,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                         error_messages.append(
                             f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
                         )
-
         else:
             error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")
 
@@ -405,9 +410,7 @@ def check_component_expiry(serial_doc, purchase_order, error_messages):
                     f"The general warranty is still valid. <b>{remaining_days} day(s)</b> remaining."
                 )
                 return False
-
     return True
-
 
 def validate_grade_restriction(serial_doc, department_doc, error_messages):
     try:
@@ -421,6 +424,62 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error in validate_grade_restriction")
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
+
+def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
+    serial_components = serial_doc.get("serial_no_component", [])
+    allowed_table = department_doc.get("allowed_item_group_grades", [])
+    all_must_match = department_doc.get("all", False)
+
+    print("all_must_match", all_must_match)
+
+    # Step 1: Map allowed grades by item group
+    allowed_map = defaultdict(set)
+    for allowed in allowed_table:
+        item_group = allowed.get("item_group")
+        grades = allowed.get("restricted_grade", "").split(", ")
+        allowed_map[item_group].update(grades)
+
+    print("allowed map", allowed_map)
+
+    # Step 2: Group serial components by item group
+    components_by_group = defaultdict(list)
+    for comp in serial_components:
+        components_by_group[comp.get("item_group")].append(comp)
+
+    print("components_by_group", components_by_group.items())
+
+    # Step 3: Validate each item group against allowed grades
+    for item_group, components in components_by_group.items():
+        allowed_grades = allowed_map.get(item_group)
+
+        print("allowed_grades", allowed_grades)
+
+        if not allowed_grades:
+            # Skip validation if item group is not in allowed table
+            continue
+
+        if all_must_match:
+            # All components must match allowed grades
+            for comp in components:
+                comp_grade = comp.get("grade")
+                if comp_grade not in allowed_grades:
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b>: Grade <b>{comp_grade}</b> for item group <b>{item_group}</b> is not allowed in department "
+                        f"<b>{department_doc.name}</b>. Allowed grades are: <b>{', '.join(sorted(allowed_grades))}</b>."
+                    )
+                    break
+
+        else:
+            # At least one component must match
+            if not any(c.get("grade") in allowed_grades for c in components):
+                actual_grades = {c.get("grade") for c in components if c.get("grade")}
+                error_messages.append(
+                    f"Serial No <b>{serial_doc.name}</b>: The allowed grades for item group <b>{item_group}</b> in department <b>{department_doc.name}</b> are "
+                    f"<b>{', '.join(sorted(allowed_grades))}</b>, but the component(s) have grade(s): <b>{', '.join(sorted(actual_grades))}</b>."
+                )
+
+    print("error_messages", error_messages)
+    return error_messages
 
 
 def validate_non_component_grade(serial_doc, department_doc, error_messages):

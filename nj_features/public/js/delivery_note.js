@@ -78,26 +78,48 @@ frappe.ui.form.on('Delivery Note', {
         }
     },
 
+    // after_save: function(frm) {
+    //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+    //         frm.set_value('shipping_address_name', frm.doc.customer_address);
+    //         frm.refresh_field('shipping_address_name');
+    //     }
+    // },
     after_save: function(frm) {
-        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
-            frm.set_value('shipping_address_name', frm.doc.customer_address);
-            frm.refresh_field('shipping_address_name');
-        }
-    },
-    
-    courier_service: function(frm) {
-        frappe.call({
-            method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
-            args: { doc: frm.doc },
-            callback: function(r) {
-                if (r.message === true) {
-                    frm.set_df_property('tracking_id', 'reqd', 0);
-                } else {
-                    frm.set_df_property('tracking_id', 'reqd', 1);
-                }
+        console.log("inside after save =================Delivery Note saved");
+        
+            // Set shipping address if supplier address is not present
+            if (!frm.doc.supplier_address_name) {
+                frm.set_value('shipping_address_name', frm.doc.customer_address);
+                frm.refresh_field('shipping_address_name');
             }
-        });
-    },
+
+            // Call backend if AWB is empty
+            if (!frm.doc.awb_number && frm.doc.docstatus === 0) {
+                frappe.call({
+                    method: "nj_features.overrides.delivery_note.awb_number_update",  // update to your path
+                    args: {
+                        doc: JSON.stringify(frm.doc)
+                    },
+                    callback: function() {
+                        frm.reload_doc();
+                    }
+                });
+            }
+},
+    
+    // courier_service: function(frm) {
+    //     frappe.call({
+    //         method: "nj_features.overrides.delivery_note.set_tracking_id_for_delivery_note",
+    //         args: { doc: frm.doc },
+    //         callback: function(r) {
+    //             if (r.message === true) {
+    //                 frm.set_df_property('tracking_id', 'reqd', 0);
+    //             } else {
+    //                 frm.set_df_property('tracking_id', 'reqd', 1);
+    //             }
+    //         }
+    //     });
+    // },
     fetch_cod: function(frm) {
         let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
         if (first_so) {

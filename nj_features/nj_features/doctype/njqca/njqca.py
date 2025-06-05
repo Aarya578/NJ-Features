@@ -1461,7 +1461,7 @@ def normalize_gen(cpu_value):
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
         
         if match:
-            core = 'Core ' + match.group(1).upper()
+            core = 'Core ' + match.group(1).lower()
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))

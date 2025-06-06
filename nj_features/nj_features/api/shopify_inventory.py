@@ -113,6 +113,7 @@ def fetch_and_stage_inventory_sync():
                     if existing_doc.inventory_item_id is None or existing_doc.inventory_item_id != variant_data["variant"]["inventory_item_id"]:
                         update_obj["inventory_item_id"] = variant_data["variant"]["inventory_item_id"]
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, update_obj)
+                    time.sleep(0.6)
                 else:
                     error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     log_error(f"API response: {error_msg} - variant_url: {variant_url}, name: {existing_doc.name}", "fetch_and_stage_inventory_sync")
@@ -156,6 +157,7 @@ def fetch_and_stage_inventory_sync():
                 else:
                     error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     doc.sync_error = f"API response: {error_msg}"
+                time.sleep(0.6)
                 
                 doc.shopify_variant_id = row.shopify_variant_id
 

@@ -1161,14 +1161,39 @@ def allocate_laptop_parts(doc):
 
     s1 = time.time()
 
+    # mr_items = frappe.db.sql("""
+    #     SELECT parent AS material_request, item_code, serial_no AS against_serial_no, 
+    #         stock_qty, qty AS mr_qty, item_group
+    #     FROM `tabMaterial Request Item` 
+    #     WHERE post_order_status IN ("Not Completed", " ") 
+    #     AND serial_no IN %(serial_list)s
+    #     ORDER BY serial_no
+    # """, {"serial_list": tuple(serial_list)}, as_dict=True)
+
     mr_items = frappe.db.sql("""
-        SELECT parent AS material_request, item_code, serial_no AS against_serial_no, 
-            stock_qty, qty AS mr_qty, item_group
-        FROM `tabMaterial Request Item` 
-        WHERE post_order_status IN ("Not Completed", " ") 
-        AND serial_no IN %(serial_list)s
-        ORDER BY serial_no
-    """, {"serial_list": tuple(serial_list)}, as_dict=True)
+            SELECT 
+                MRI.parent AS material_request,
+                MRI.item_code,
+                Sr.serial_no AS against_serial_no,
+                MRI.stock_qty,
+                MRI.qty AS mr_qty,
+                Sr.item_group
+            FROM `tabMaterial Request Item` MRI
+            INNER JOIN `tabMaterial Request` MR 
+                ON MRI.parent = MR.name 
+                AND MR.docstatus = 1 
+                AND IFNULL(MR.post_order_status, '') != 'Completed'
+            INNER JOIN `tabSerial No` Sr 
+                ON Sr.serial_no = MRI.serial_no 
+                AND Sr.item_group = 'Laptops' 
+                AND Sr.status = 'Active'
+            INNER JOIN `tabWarehouse` WH 
+                ON Sr.warehouse = WH.name 
+                AND WH.department LIKE '%%Part%%'
+            WHERE Sr.serial_no IN %(serial_list)s
+            ORDER BY Sr.serial_no
+        """, {"serial_list": tuple(serial_list)}, as_dict=True)
+
 
     s2 = time.time()
     print(f"Query executed in {s2 - s1:.4f} seconds")

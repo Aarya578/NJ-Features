@@ -91,7 +91,7 @@ def fetch_and_stage_inventory_sync():
                 updated_doc_names.add(existing_doc.name)
                 existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
                 
-                if float(row.total_actual_qty) != existing_doc_actual_qty:
+                if float(row.total_actual_qty) != existing_doc_actual_qty or float(row.actual_qty) != float(row.shopify_quantity):
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                         "is_active": 1,
                         "sync_error": "",

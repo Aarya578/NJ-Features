@@ -344,7 +344,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && frm.doc.item_group != "Laptop RAM") {
 
             console.log("qi_type",frm.doc.qi_type);
             
@@ -789,6 +789,20 @@ frappe.ui.form.on('NJQCA', {
                 args: { 'item_code': frm.doc.item_code, "rfq": true },
                 callback: function(r) {
                     if (r.message) { frm.set_value('serial_no', r.message); }
+                }
+            })
+        }
+        if( frm.doc.item_group === "Laptop RAM" && frm.doc.item_code && frm.doc.item_code !== ""){
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_item_code_for_ram',
+                args: { 'item_code': frm.doc.item_code,'njqca_name':frm.doc.name },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value('repack_item_code', r.message);
+                        frm.set_value('manual_repack_item_code', r.message);
+                        frm.refresh_field('repack_item_code');
+                        frm.refresh_field('manual_repack_item_code');
+                    }
                 }
             })
         }

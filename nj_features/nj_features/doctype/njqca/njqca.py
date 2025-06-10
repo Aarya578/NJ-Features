@@ -611,7 +611,7 @@ class NJQCA(Document):
 
     def check_for_repack_access(self):
         user = frappe.session.user
-        role_profile = frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')
+        role_profile = frappe.db.get_value('Employee', {'user_id': user, 'status': 'Active'}, 'role_profile')
         
         if not frappe.db.get_value('Role Profile', {'name': role_profile}, 'restrict_repack'):
             item_code = self.item_code if self.item_code else ""

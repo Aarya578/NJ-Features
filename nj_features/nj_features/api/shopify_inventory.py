@@ -91,7 +91,7 @@ def fetch_and_stage_inventory_sync():
                 updated_doc_names.add(existing_doc.name)
                 existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
                 
-                if float(row.total_actual_qty) != existing_doc_actual_qty:
+                if float(row.total_actual_qty) != existing_doc_actual_qty or row.actual_qty != row.shopify_quantity:
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                         "is_active": 1,
                         "sync_error": "",
@@ -101,20 +101,22 @@ def fetch_and_stage_inventory_sync():
                         "modified": frappe.utils.now()
                     })
                 
-                if existing_doc.inventory_item_id is None or existing_doc.inventory_item_id == "":
-                    variant_url = f"{shop}/admin/api/2023-01/variants/{row.shopify_variant_id}.json"
-                    variant_resp = requests.get(variant_url, headers=headers)
-                    variant_data = variant_resp.json()
-                    
-                    if variant_resp.status_code == 200 and "variant" in variant_data and "inventory_item_id" in variant_data["variant"]:
-                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                            "inventory_item_id": variant_data["variant"]["inventory_item_id"],
-                            "shopify_quantity": variant_data["variant"]["inventory_quantity"],
-                            "modified": frappe.utils.now()
-                        })
-                    else:
-                        error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
-                        log_error(f"API response: {error_msg} - variant_url: {variant_url}, name: {existing_doc.name}", "fetch_and_stage_inventory_sync")
+                variant_url = f"{shop}/admin/api/2023-01/variants/{row.shopify_variant_id}.json"
+                variant_resp = requests.get(variant_url, headers=headers)
+                variant_data = variant_resp.json()
+                
+                if variant_resp.status_code == 200 and "variant" in variant_data and "inventory_item_id" in variant_data["variant"]:
+                    update_obj = { 
+                        "shopify_quantity": variant_data["variant"]["inventory_quantity"],
+                        "modified": frappe.utils.now()
+                    }
+                    if existing_doc.inventory_item_id is None or existing_doc.inventory_item_id != variant_data["variant"]["inventory_item_id"]:
+                        update_obj["inventory_item_id"] = variant_data["variant"]["inventory_item_id"]
+                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, update_obj)
+                    time.sleep(0.9)
+                else:
+                    error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
+                    log_error(f"API response: {error_msg} - variant_url: {variant_url}, name: {existing_doc.name}", "fetch_and_stage_inventory_sync")
             else:
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 qty = safe_float(row.total_actual_qty) or 0
@@ -155,6 +157,7 @@ def fetch_and_stage_inventory_sync():
                 else:
                     error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     doc.sync_error = f"API response: {error_msg}"
+                time.sleep(0.6)
                 
                 doc.shopify_variant_id = row.shopify_variant_id
 
@@ -290,7 +293,7 @@ def start_shopify_inventory_sync():
                         })
                         errored_docs.append(row.name)
 
-                    time.sleep(0.6)
+                    time.sleep(0.9)
 
                 except Exception as e:
                     log_error(f"Exception in {row.name}: {str(e)}\n{frappe.get_traceback()}", "Shopify Inventory Sync")

@@ -380,3 +380,179 @@ frappe.ui.Scanner = class Scanner {
 		});
 	}
 };
+
+document.addEventListener("DOMContentLoaded", function () {
+    if (document.getElementById("network-indicator")) return;
+
+    const html = `
+        <div id="network-indicator" style="
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: sans-serif;
+            font-size: 13px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        ">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="network-icon">📶</span>
+                <span id="network-text">Checking network...</span>
+            </div>
+            <div id="network-extra" style="font-size: 12px; color: #ccc;"></div>
+            <button id="run-speed-test" style="
+                margin-top: 4px;
+                padding: 4px 8px;
+                background: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+                cursor: pointer;
+            ">Run Speed Test</button>
+        </div>
+    `;
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    const css = `
+        .status-good {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .status-warning {
+            color: #FF9800;
+            font-weight: bold;
+        }
+        .status-bad {
+            color: #F44336;
+            font-weight: bold;
+        }
+        .status-unknown {
+            color: #9E9E9E;
+            font-style: italic;
+        }
+    `;
+    const style = document.createElement("style");
+    style.innerText = css;
+    document.head.appendChild(style);
+
+    function updateNetworkIndicator() {
+        const icon = document.getElementById("network-icon");
+        const text = document.getElementById("network-text");
+
+        if (!navigator.onLine) {
+            icon.textContent = "❌";
+            icon.className = "status-bad";
+            text.textContent = "Offline";
+            return;
+        }
+
+        if (!("connection" in navigator)) {
+            icon.textContent = "❓";
+            icon.className = "status-unknown";
+            text.textContent = "Network info not supported";
+            return;
+        }
+
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const type = conn.effectiveType || "unknown";
+        const downlink = conn.downlink || 0;
+
+        let statusClass = "status-unknown";
+        let statusIcon = "❓";
+        let qualityLabel = "Unknown";
+
+        if (type === "slow-2g" || type === "2g") {
+            statusClass = "status-bad";
+            statusIcon = "🛑";
+            qualityLabel = "Very Poor";
+        } else if (type === "3g") {
+            if (downlink < 0.5) {
+                statusClass = "status-bad";
+                statusIcon = "🛑";
+                qualityLabel = "Poor 3G";
+            } else if (downlink < 1.5) {
+                statusClass = "status-warning";
+                statusIcon = "⚠️";
+                qualityLabel = "Slow 3G";
+            } else {
+                statusClass = "status-good";
+                statusIcon = "📶";
+                qualityLabel = "Good 3G";
+            }
+        } else if (type === "4g") {
+            if (downlink < 1) {
+                statusClass = "status-bad";
+                statusIcon = "⚠️";
+                qualityLabel = "Poor (Slow 4G)";
+            } else if (downlink < 5) {
+                statusClass = "status-warning";
+                statusIcon = "⚠️";
+                qualityLabel = "Moderate (Slow 4G)";
+            } else {
+                statusClass = "status-good";
+                statusIcon = "📶";
+                qualityLabel = "Good 4G";
+            }
+        } else if (type === "5g") {
+            if (downlink < 10) {
+                statusClass = "status-warning";
+                statusIcon = "⚠️";
+                qualityLabel = "Low-Speed 5G";
+            } else {
+                statusClass = "status-good";
+                statusIcon = "🚀";
+                qualityLabel = "Excellent 5G";
+            }
+        }
+
+        icon.textContent = statusIcon;
+        icon.className = statusClass;
+        text.textContent = `${type.toUpperCase()} - ${downlink.toFixed(1)} Mbps (${qualityLabel})`;
+    }
+
+    async function runSpeedTest() {
+        const output = document.getElementById("network-extra");
+        const testUrl = "https://localnjpulse.newjaisa.com/files/test_file";
+        const start = performance.now();
+
+        output.textContent = "Running speed test...";
+
+        try {
+            const response = await fetch(testUrl, { cache: "no-cache" });
+            const reader = response.body.getReader();
+            let bytesReceived = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                bytesReceived += value.length;
+            }
+
+            const end = performance.now();
+            const duration = (end - start) / 1000; // seconds
+            const bits = bytesReceived * 8;
+            const mbps = (bits / duration / 1024 / 1024).toFixed(2);
+
+            output.textContent = `Speed Test: ${mbps} Mbps`;
+        } catch (e) {
+            output.textContent = "Speed test failed.";
+        }
+    }
+
+    document.getElementById("run-speed-test").addEventListener("click", runSpeedTest);
+
+    updateNetworkIndicator();
+    setInterval(updateNetworkIndicator, 10000);
+    window.addEventListener("online", updateNetworkIndicator);
+    window.addEventListener("offline", updateNetworkIndicator);
+});

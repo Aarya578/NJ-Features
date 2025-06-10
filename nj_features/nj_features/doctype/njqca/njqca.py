@@ -4,6 +4,7 @@ import time
 import frappe
 import datetime
 import traceback
+import re
 from frappe import _
 from frappe.utils import get_url
 from frappe.model.document import Document
@@ -611,7 +612,7 @@ class NJQCA(Document):
 
     def check_for_repack_access(self):
         user = frappe.session.user
-        role_profile = frappe.db.get_value('Employee', {'user_id': user}, 'role_profile')
+        role_profile = frappe.db.get_value('Employee', {'user_id': user, 'status': 'Active'}, 'role_profile')
         
         if not frappe.db.get_value('Role Profile', {'name': role_profile}, 'restrict_repack'):
             item_code = self.item_code if self.item_code else ""
@@ -1461,7 +1462,7 @@ def normalize_gen(cpu_value):
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
         
         if match:
-            core = 'Core ' + match.group(1).upper()
+            core = 'Core ' + match.group(1).lower()
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
@@ -2668,3 +2669,68 @@ def set_is_defective(inspection_type):
         return str(e)   
     
 
+@frappe.whitelist()
+def get_item_code_for_ram(item_code, njqca_name):
+    try:
+        ram_data_query="""
+            select variant_6 as size, variant_7 as type, variant_8 as speed from `tabNJQCA Child` where parent=%s and item_group="Laptop RAM" LIMIT 1;
+        """
+
+        ram_size=""
+        ram_type=""
+        ram_speed=""
+
+        ram_data=frappe.db.sql(ram_data_query, (njqca_name), as_dict=1)
+        print("ram_data: ", ram_data)
+
+        if ram_data is not None and ram_data:
+            ram_size=ram_data[0].get("size").strip()
+            ram_type=ram_data[0].get("type").strip()
+            ram_speed_with_unit=ram_data[0].get("speed").strip()
+
+            numbers = re.findall(r'\d+', ram_speed_with_unit)
+            ram_speed= ''.join(numbers)           
+        else:
+            return ""
+        
+
+        sub_config=[]
+        new_config=""
+        item_code_query="""
+                select '1' from `tabItem` where item_group="Laptop RAM" and disabled=0 and name=%s;
+            """
+        if item_code is not None and item_code:
+            sub_config=item_code.split("-")
+        if sub_config and len(sub_config)==6:
+            new_config=sub_config[0]+"-"+sub_config[1]
+
+            if sub_config[2]!=ram_type:
+                new_config=new_config+"-"+ram_type
+            else:
+                new_config=new_config+"-"+sub_config[2]
+
+            if sub_config[4]!=ram_size:
+                new_config=new_config+"-"+ram_size
+            else:
+                new_config=new_config+"-"+sub_config[4]
+
+            if sub_config[3]!=ram_speed:
+                new_config=new_config+"-"+ram_speed + " GHZ"
+            else:
+                new_config=new_config+"-"+sub_config[3]
+
+
+            new_config=new_config+"-"+sub_config[5]
+
+
+            item_code_data=frappe.db.sql(item_code_query, (new_config), as_dict=1)
+
+            if item_code_data is not None and item_code_data and item_code_data[0].get("1")=="1":
+                return new_config
+            else:
+                return ""        
+
+        else:
+            return ""
+    except Exception as e:
+        return str(e)

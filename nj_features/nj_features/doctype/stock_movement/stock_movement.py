@@ -352,13 +352,13 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             SELECT name
             FROM `tabNJ Quality Inspection`
             WHERE inspection_type IN %s AND docstatus = 1
-            AND modified BETWEEN %s AND %s
+            AND creation > %s
             AND barcode = %s
             order by creation desc
             LIMIT 1
         """
 
-        qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, current_time, serial_no),explain=1, debug=1, as_dict=True)
+        qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, serial_no),explain=1, debug=1, as_dict=True)
 
         t_inspection_type = frappe.get_doc('Department', t_department)
 

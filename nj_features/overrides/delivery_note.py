@@ -4,6 +4,7 @@
 import re
 import json
 import frappe
+import time
 import requests
 import traceback
 from frappe import _
@@ -13,7 +14,7 @@ from frappe.utils import now_datetime, get_datetime
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
-
+logger = frappe.logger('DNLogger', allow_site=True, file_count=100)
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
@@ -360,6 +361,8 @@ class CustomDeliveryNote(DeliveryNote):
         
 
     def fetching_tracking_details(self):
+        start_time = time.time()
+
         if self.is_return:
             return
         against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
@@ -378,7 +381,7 @@ class CustomDeliveryNote(DeliveryNote):
             url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
             headers = {"Content-Type": "application/json"}
             response = requests.post(url, headers=headers, json=payload)
-            print(f"Response status: ========{response.status_code}")
+            
             
             if response.status_code == 200:
                 data = response.json()
@@ -408,7 +411,11 @@ class CustomDeliveryNote(DeliveryNote):
                 
         except Exception as e:
             frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
-
+        finally:
+            end_time = time.time()
+            execution_time = round(end_time - start_time, 4)
+            print(f"Execution Time =========================: {execution_time} seconds")  
+            logger.info(f"Execution Time =========================: {execution_time} seconds")
 
     def rto_charges_update(self):
         if not self.is_return:

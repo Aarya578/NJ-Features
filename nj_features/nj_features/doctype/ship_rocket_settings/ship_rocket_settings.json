@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "email",
-  "password"
+  "password",
+  "cod_charges"
  ],
  "fields": [
   {
@@ -19,12 +20,18 @@
    "fieldname": "password",
    "fieldtype": "Password",
    "label": "Password"
+  },
+  {
+   "fieldname": "cod_charges",
+   "fieldtype": "Table",
+   "label": "COD Charges",
+   "options": "COD Charges"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-05-26 15:09:43.360352",
+ "modified": "2025-06-10 12:01:34.309873",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Ship Rocket Settings",

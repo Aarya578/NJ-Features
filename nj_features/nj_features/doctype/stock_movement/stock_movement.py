@@ -540,6 +540,7 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
         # At least one valid pair must match (among only present item groups)
         match_found = False
         for item_group, allowed_grades in allowed_map.items():
+            print("allowed_grades", allowed_grades)
             if item_group not in serial_item_groups_present:
                 continue
             if any((item_group, grade) in serial_set for grade in allowed_grades):

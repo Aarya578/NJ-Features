@@ -483,7 +483,7 @@ document.addEventListener("DOMContentLoaded", function () {
             } else if (downlink < 1.5) {
                 statusClass = "status-warning";
                 statusIcon = "⚠️";
-                qualityLabel = "Slow 3G";
+                qualityLabel = "Moderate 3G";
             } else {
                 statusClass = "status-good";
                 statusIcon = "📶";
@@ -497,7 +497,7 @@ document.addEventListener("DOMContentLoaded", function () {
             } else if (downlink < 5) {
                 statusClass = "status-warning";
                 statusIcon = "⚠️";
-                qualityLabel = "Moderate (Slow 4G)";
+                qualityLabel = "Moderate 4G";
             } else {
                 statusClass = "status-good";
                 statusIcon = "📶";
@@ -507,7 +507,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (downlink < 10) {
                 statusClass = "status-warning";
                 statusIcon = "⚠️";
-                qualityLabel = "Low-Speed 5G";
+                qualityLabel = "Moderate 5G";
             } else {
                 statusClass = "status-good";
                 statusIcon = "🚀";

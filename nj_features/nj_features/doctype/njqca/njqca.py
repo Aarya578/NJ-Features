@@ -1015,7 +1015,7 @@ def get_info_from_serial_no(doc=None):
                     else:
                         if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
                             frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
-                        elif bio_serialno_in_ui:
+                        elif bio_serialno_in_ui and not frappe.db.get_value('Item Group', sle_entry.get('item_group'), 'is_component'):
                             frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
                                             (bio_serialno_in_ui, serial_no))
                 else:

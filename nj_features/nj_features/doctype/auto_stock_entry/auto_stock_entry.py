@@ -171,65 +171,67 @@ def get_item_code_and_warehouse(item_code):
         return
 
 def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
-    try:
-        s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
-        s_inspection_type = frappe.get_doc('Department', s_department)
-        inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
 
-        query = """
-            SELECT se.creation, se.name
-            FROM `tabStock Entry Detail` sed
-            JOIN `tabStock Entry` se ON sed.parent = se.name
-            WHERE se.stock_entry_type = "Material Transfer"
-            AND sed.serial_no = %s
-            AND se.docstatus = 1
-            AND item_group = "Laptops"
-            AND sed.target_department = %s
-            ORDER BY se.creation DESC
-            LIMIT 1
-        """
-        result = frappe.db.sql(query, (serial_no, s_department), explain=1, debug=1, as_dict=True)
+    serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
-        print("insultion_types", inspection_types)
-        print("result", result)
+    if serial_no_doc.get("item_group") in ['Laptops']:
+        try:
+            s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+            s_inspection_type = frappe.get_doc('Department', s_department)
+            inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
 
-
-        if result and inspection_types:
-            creation_time = result[0]["creation"]
-            formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            qi_query = """
-                SELECT name
-                FROM `tabNJ Quality Inspection`
-                WHERE inspection_type IN %s AND docstatus = 1
-                AND modified BETWEEN %s AND %s
-                AND barcode = %s
-                ORDER BY creation DESC
+            query = """
+                SELECT se.creation, se.name
+                FROM `tabStock Entry Detail` sed
+                JOIN `tabStock Entry` se ON sed.parent = se.name
+                WHERE se.stock_entry_type = "Material Transfer"
+                AND sed.serial_no = %s
+                AND se.docstatus = 1
+                AND item_group = "Laptops"
+                ORDER BY se.creation DESC
                 LIMIT 1
             """
-            qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, current_time, serial_no), explain=1, debug=1, as_dict=True)
+            result = frappe.db.sql(query, (serial_no), explain=1, debug=1, as_dict=True)
 
-            if qi_result:
-                qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+            print("insultion_types", inspection_types)
+            print("result", result)
 
-                if qi_doc:
-                    allowed_statuses = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
 
-                    if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in allowed_statuses:
-                        expected_status = ", ".join(allowed_statuses)
-                        actual_status = qi_doc.get("status")
+            if result and inspection_types:
+                creation_time = result[0]["creation"]
+                formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        frappe.throw(
-                            f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in department <b>{s_department}</b> "
-                            f"has status <b>{actual_status}</b>, but target department <b>{t_department}</b> only allows quality inspection status: <b>{expected_status}</b>."
-                        )
-            else:
-                frappe.throw(
-                    f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in department <b>{s_department}</b>."
-                )
+                qi_query = """
+                    SELECT name
+                    FROM `tabNJ Quality Inspection`
+                    WHERE inspection_type IN %s AND docstatus = 1
+                    AND barcode = %s
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """
+                qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), serial_no), explain=1, debug=1, as_dict=True)
 
-    except Exception as e:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
-        frappe.throw("An error occurred during Quality Inspection validation. Please check logs.")
+                if qi_result:
+                    qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+
+                    if qi_doc:
+                        allowed_statuses = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+
+                        if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in allowed_statuses:
+                            expected_status = ", ".join(allowed_statuses)
+                            actual_status = qi_doc.get("status")
+
+                            frappe.throw(
+                                f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in department <b>{s_department}</b> "
+                                f"has status <b>{actual_status}</b>, but target department <b>{t_department}</b> only allows quality inspection status: <b>{expected_status}</b>."
+                            )
+                else:
+                    frappe.throw(
+                        f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in department <b>{s_department}</b>."
+                    )
+
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
+            frappe.throw("An error occurred during Quality Inspection validation. Please check logs.")

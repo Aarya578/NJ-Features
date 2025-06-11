@@ -129,5 +129,39 @@ frappe.ui.form.on('Laptop Box', {
                 dialog.show();
 			} else { $("button[data-original-title=Print]").show(); }
 		})
-	}
+	},
+
+    before_save: async function(frm) {
+        if (frm.doc.barcode) {
+            frappe.validated=true
+            let serial_item_group = await frappe.db.get_value('Serial No', {'name': frm.doc.barcode}, 'item_group');
+            
+            if(serial_item_group.message && serial_item_group.message.item_group && serial_item_group.message.item_group=='Laptops' || serial_item_group.message.item_group=='Chromebooks') {
+                console.log("adapter serial no",frm.doc.adapter_serial_no)
+                if(!frm.doc.adapter_serial_no) {
+                    frappe.validated=false
+                    frappe.throw("Please enter Adapter Serial No");
+                }
+            }else{
+                return ;
+            }
+            
+            await frappe.call({
+                method:'nj_features.nj_features.api.qr_code.adapter_repacked_serial_no',
+                args: {
+                    "nj_serial_no": frm.doc.barcode
+                },
+                callback: function(r) {
+                    if (r.message) {
+                        if(r.message!=frm.doc.adapter_serial_no) {
+                            frappe.validated=false
+                            frappe.throw("Repacked Adapter Serial No:" + r.message + " does not match with the scanned Serial No");
+
+                        }
+                    }
+                }
+            })
+        }
+        
+    }
 });

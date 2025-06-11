@@ -849,8 +849,7 @@ def sort_by_multiple_keys(configs, keys):
     return sorted(configs, key=sort_key)
 
 def calculate_to_make(doc):
-
-    print("Started Executing Calculate To Make")
+    print("🔄 Started Executing Calculate To Make")
 
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
@@ -862,109 +861,97 @@ def calculate_to_make(doc):
     # Clear final_config table
     doc.set("final_config", [])
 
-    # Build temporary config and mapping
+    # Prepare temporary config
     temp_config = []
-    child_map = {}
     for child in doc.get("nj_production_planning_child", []):
-        cfg = {
+        temp_config.append({
             "item_code": child.get("item_code"),
             "sales_rate": child.get("sales_rate", 0),
             "inward_inventory": child.get("inward_inventory", 0),
             "forward_inventory": child.get("forward_inventory", 0),
-            "days_of_inventory": child.get("days_of_inventory", 0),
+            "days_of_inventory": 0,  # force all to zero initially
             "to_make": 0,
             "model": child.get("model", ""),
             "processor": child.get("processor", ""),
             "ram": child.get("ram", ""),
             "ssd": child.get("ssd", "")
-        }
-        temp_config.append(cfg)
-        child_map[child.get("item_code")] = child
+        })
 
     rank = 0
-    allocated_in_pass = True
-
-    # ⏱ Start timing the while loop
     loop_start_time = time.time()
-    print("Started while loop")
-    while allocated_in_pass:
-        allocated_in_pass = False
-        temp_config.sort(key=lambda x: x["days_of_inventory"])  # Initial sort
+    print("🚀 Started allocation loop")
+    iteration = 1
 
-        for i in range(len(temp_config) - 1):
-            current = temp_config[i]
-            next_cfg = temp_config[i + 1]
+    while True:
+        print(f"\n🔁 Iteration {iteration}")
 
-            if current["inward_inventory"] <= 0:
-                # temp_config.remove(current)
-                continue
+        # Remove items with zero inward inventory
+        temp_config = [item for item in temp_config if item["inward_inventory"] > 0]
 
-            current_doi = current.get("days_of_inventory", 0)
-            next_doi = next_cfg.get("days_of_inventory", 0)
-            doi_gap = max(0, next_doi - current_doi)
+        if len(temp_config) < 2:
+            break  # Need at least 2 items to balance DoI
 
-            if not math.isfinite(doi_gap):
-                doi_gap = 0
+        # Sort by days of inventory
+        temp_config.sort(key=lambda x: x["days_of_inventory"])
+        current = temp_config[0]
+        next_cfg = temp_config[1]
 
-            sales_rate = current.get("sales_rate", 0)
-            if not math.isfinite(sales_rate):
-                sales_rate = 0
+        doi_gap = max(0, next_cfg["days_of_inventory"] - current["days_of_inventory"])
+        sales_rate = current.get("sales_rate", 0)
 
-            needed_units = math.ceil((doi_gap + 1) * sales_rate)
-            make_units = min(needed_units, current["inward_inventory"])
+        if not math.isfinite(doi_gap):
+            doi_gap = 0
+        if not math.isfinite(sales_rate):
+            sales_rate = 0
 
-            if make_units <= 0:
-                continue
+        needed_units = math.ceil((doi_gap + 1) * sales_rate)
+        make_units = min(needed_units, current["inward_inventory"])
 
-            # Apply allocation
-            current["to_make"] = make_units
-            current["inward_inventory"] -= make_units
-            current["forward_inventory"] += make_units
-            current["days_of_inventory"] = (
-                current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
-            )
+        if make_units <= 0:
+            iteration += 1
+            continue
 
-            # Append to final_config
-            child_row = doc.append("final_config", {})
-            child_row.sales_rate = sales_rate
-            child_row.date = datetime.now()
-            child_row.inward_inventory = current["inward_inventory"]
-            child_row.forward_inventory = current["forward_inventory"]
-            child_row.days_of_inventory = current["days_of_inventory"]
-            child_row.to_make = current["to_make"]
-            child_row.item_code = current["item_code"]
-            child_row.model = current["model"]
-            child_row.processor = current["processor"]
-            child_row.ram = current["ram"]
-            child_row.ssd = current["ssd"]
-            rank += 1
-            child_row.rank = rank
+        # Apply allocation
+        current["to_make"] += make_units
+        current["inward_inventory"] -= make_units
+        current["forward_inventory"] += make_units
+        current["days_of_inventory"] = (
+            current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
+        )
 
-            allocated_in_pass = True
+        # Append to final_config (optional for reporting)
+        row = doc.append("final_config", {})
+        row.item_code = current["item_code"]
+        row.sales_rate = sales_rate
+        row.date = datetime.now()
+        row.inward_inventory = current["inward_inventory"]
+        row.forward_inventory = current["forward_inventory"]
+        row.days_of_inventory = current["days_of_inventory"]
+        row.to_make = make_units
+        row.model = current["model"]
+        row.processor = current["processor"]
+        row.ram = current["ram"]
+        row.ssd = current["ssd"]
+        rank += 1
+        row.rank = rank
 
-            # if current["inward_inventory"] <= 0:
-            #     temp_config.remove(current)
+        print(f"✅ {current['item_code']} → Made: {make_units}, Remaining: {current['inward_inventory']}, New DoI: {current['days_of_inventory']:.2f}")
 
-            # Re-sort and break to restart the loop
-            temp_config.sort(key=lambda x: x["days_of_inventory"])
-            break
+        iteration += 1
 
-    # ⏱ End timing the while loop
     loop_end_time = time.time()
-    execution_time = loop_end_time - loop_start_time
-    print("Ended while loop")
-    print(f"Loop execution time: {execution_time:.4f} seconds")
+    print(f"\n⏱ Loop finished in {loop_end_time - loop_start_time:.4f} seconds")
 
-    # Group by item_code and update `to_make` in child table
-    to_make_summary = defaultdict(int)
-    for row in doc.get("final_config", []):
-        to_make_summary[row.item_code] += row.to_make
-
+    # ✅ Update only final to_make in child table (no summing)
     for child in doc.get("nj_production_planning_child", []):
-        child.to_make = to_make_summary.get(child.item_code, 0)
+        for config in temp_config:
+            if child.item_code == config["item_code"]:
+                child.to_make = config["to_make"]
 
     doc.save()
+    print("✅ Document saved successfully.")
     return doc.get("nj_production_planning_child", [])
+
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     print("Started suggest_to_make_serial_no")
@@ -1132,8 +1119,9 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
     print("calling allocate_laptop_parts")
-    allocated_lap = allocate_laptop_parts(doc)
-    doc.update({"laptop_allocation": allocated_lap})
+    if doc.get("allocate_parts"):
+        allocated_lap = allocate_laptop_parts(doc)
+        doc.update({"laptop_allocation": allocated_lap})
 
     doc.save()
     frappe.db.commit()

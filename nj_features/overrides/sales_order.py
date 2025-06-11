@@ -5,6 +5,7 @@ import base64
 import frappe
 import time
 import datetime
+from datetime import datetime
 from frappe.utils import getdate
 import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
@@ -140,74 +141,104 @@ def trigger_fulfillment(order_id):
     except Exception as e:
         frappe.throw(str(e))
 
+
 @frappe.whitelist()
 def update_item_details(self):
+    from datetime import datetime
+    import json
     print('------------------- DEBUG START -------------------')
+
     if isinstance(self, str):
-        self = json.loads(self)    
+        self = json.loads(self)
+
     total_weight = 0
     height = length = breadth = None
-    
-    for item in self.get("items", []):
-        
-        # Debug: Check if item_code exists
-        if not item.get("item_code"):
-            continue
-        if item.get("qty") != 1:
-            
-            continue  
-        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")
-        if not item_group:
-            continue
-        
-        try:    
-            group_doc = frappe.get_doc("Item Group", item_group)
 
-            if group_doc.get("weight"):
-               
-                try:
-                    weight_value = float(group_doc.weight)
-                    total_weight += weight_value
-                    
-                except ValueError:
-                   
-                    frappe.log_error(
-                        f"Invalid weight '{group_doc.weight}' in Item Group: {group_doc.name}",
-                        "Weight Parsing Error"
-                    )
-            else:
-                print(f"No weight field found in item group {group_doc.name}")          
-            # Get dimensions from child table
-            dimension_count = len(group_doc.get("dimensions", []))
-           
-            
-            for dim in group_doc.get("dimensions", []):
-                param = dim.parameter.strip().lower()
-                value = dim.value
-                print(f"Dimension: {param} = {value}")
-                
-                if "height" in param and not height:
-                    height = value
-                   
-                elif "length" in param and not length:
-                    length = value
-                    
-                elif "breadth" in param and not breadth:
-                    breadth = value
-                    
-        except Exception as e:
-            print(f"Error processing item group {item_group}: {str(e)}")
-    
-    # Return values to update in JavaScript
-    result = {
+    # Step 1: Get allowed item groups from NJ Settings
+    item_group_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "Item Group Validation"},
+        "value"
+    )
+
+    allowed_item_groups = []
+    if item_group_value:
+        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+
+    print(f"Allowed item groups: {allowed_item_groups}")
+
+    # Step 2: Count how many matching item group rows exist
+    matching_rows = []
+    for row in self.get("items", []):
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        item_group = frappe.db.get_value("Item", item_code, "item_group")
+        if item_group in allowed_item_groups:
+            matching_rows.append(row)
+
+    print(f"Matching rows count: {len(matching_rows)}")
+
+    # Step 3: If more than one matching row, skip fetching weight/dimensions
+    if len(matching_rows) != 1:
+        print("Skipping weight and dimension fetch due to multiple matching item group rows.")
+        return {
+            'weight': 0,
+            'height': None,
+            'length': None,
+            'breadth': None
+        }
+
+    # Step 4: Only one row matched — process it
+    item = matching_rows[0]
+    if item.get("qty") != 1:
+        print("Skipping because qty is not 1.")
+        return {
+            'weight': 0,
+            'height': None,
+            'length': None,
+            'breadth': None
+        }
+
+    item_code = item.get("item_code")
+    item_group = frappe.db.get_value("Item", item_code, "item_group")
+    try:
+        group_doc = frappe.get_doc("Item Group", item_group)
+
+        if group_doc.get("weight"):
+            try:
+                weight_value = float(group_doc.weight)
+                total_weight += weight_value
+            except ValueError:
+                frappe.log_error(
+                    f"Invalid weight '{group_doc.weight}' in Item Group: {group_doc.name}",
+                    "Weight Parsing Error"
+                )
+        else:
+            print(f"No weight found in item group {group_doc.name}")
+
+        for dim in group_doc.get("dimensions", []):
+            param = dim.parameter.strip().lower()
+            value = dim.value
+            print(f"Dimension: {param} = {value}")
+
+            if "height" in param and not height:
+                height = value
+            elif "length" in param and not length:
+                length = value
+            elif "breadth" in param and not breadth:
+                breadth = value
+
+    except Exception as e:
+        print(f"Error processing item group {item_group}: {str(e)}")
+
+    return {
         'weight': total_weight,
         'height': height,
         'length': length,
         'breadth': breadth
     }
-
-    return result
-
 
 # @frappe.whitelist()
 # def send_consignement_data(doc):
@@ -432,7 +463,9 @@ def send_consignement_data(doc):
         # Fetch addresses
         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
-        formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
+        # formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
+        formatted_date = datetime.today().strftime("%Y-%m-%d")
+        print("formatted_date======================", formatted_date)
         
         if sales_order_doc.is_cod == 1:
             PaymentType = "COD"
@@ -941,7 +974,9 @@ def shiprocket_awb_number(doc):
         if not shipping_address:
             frappe.throw("Shipping address is required")
 
-        formatted_date = sales_order_doc.transaction_date.strftime("%Y-%m-%d") if hasattr(sales_order_doc.transaction_date, 'strftime') else str(sales_order_doc.transaction_date)
+        formatted_date = datetime.today().strftime("%Y-%m-%d")
+
+        # formatted_date = sales_order_doc.transaction_date.strftime("%Y-%m-%d") if hasattr(sales_order_doc.transaction_date, 'strftime') else str(sales_order_doc.transaction_date)
         # Fetch addresses
 
         # Prepare order_items from child table - ShipRocket format
@@ -1100,7 +1135,8 @@ def shiprocket_awb_number(doc):
 
     print(f"Total item charges: {total_item_charges}")
     print(f"Best courier total cost: {best_courier.get('total_cost') if best_courier else 'N/A'}")
-
+    # frappe.db.set_value("Sales Order",doc.name,"courier_service", best_courier.get("courier_name"))
+ 
     # COD Validation - Check if is_cod is enabled
     if doc.get("is_cod") == 1:  # Check if COD is enabled
         print("COD is enabled, performing COD validation...")
@@ -1154,174 +1190,8 @@ def shiprocket_awb_number(doc):
     # Check if courier total cost exceeds item charges total
     if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
         frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
-
-
-    # # Calculate total charges for each courier
-    # best_courier = None
-    # lowest_total = float('inf')
-    # for courier in courier_data:
-    #     try:
-    #         rating = float(courier.get("rating", 0) or 0)
-            
-    #         if rating <= 4:
-    #             continue  # skip couriers with rating 4 or below
-                
-    #         freight_charge = float(courier.get("freight_charge", 0) or 0)
-    #         cod_charges = float(courier.get("cod_charges", 0) or 0)
-    #         total = freight_charge + cod_charges
-            
-    #         if total < lowest_total:
-    #             lowest_total = total
-    #             best_courier = {
-    #                 "courier_name": courier.get("courier_name"),
-    #                 "courier_company_id": courier.get("courier_company_id"),
-    #                 "total_cost": total,
-    #                 "rating": rating,
-    #                 "freight_charge": freight_charge,
-    #                 "cod_charges": cod_charges
-    #             }
-    #             print("best_courier=============================", best_courier)
-                
-    #     except (ValueError, TypeError) as e:
-    #         print(f"Skipping courier due to invalid data: {e}")
-    #         continue
-
-    # # Calculate total item charges
-    # total_item_charges = 0
-    # for item in doc.get("items", []):
-    #     # Check if item_code exists
-    #     if not item.get("item_code"):
-    #         continue
-    #     # Get item group
-    #     item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")       
-    #     # Get the item group document
-    #     group_doc = frappe.get_doc("Item Group", item_group)
-    #     # Get item_charges (float)
-    #     item_charges = group_doc.get("item_charges")
-    #     if item_charges and item.get("qty"):
-    #         item_total_charge = float(item_charges) * float(item.get("qty"))
-    #         total_item_charges += item_total_charge
-    #         print(f"item_charges: {item_charges}, qty: {item.get('qty')}, item total: {item_total_charge}")
-    #     else:
-    #         print("Missing item_charges or quantity for item:", item.get("item_code"))
-
-    # print(f"Total item charges: {total_item_charges}")
-    # print(f"Best courier total cost: {best_courier.get('total_cost') if best_courier else 'N/A'}")
-
-    # # COD Validation - Check if is_cod is enabled
-    # if doc.get("is_cod") == 1:  # Check if COD is enabled
-    #     print("COD is enabled, performing COD validation...")
-        
-    #     if best_courier:
-    #         # Calculate total cost with weight
-    #         freight_charge = best_courier.get('freight_charge', 0)
-    #         cod_charges = best_courier.get('cod_charges', 0)
-    #         doc_weight = doc.get('weight', 0) or 0
-            
-    #         total_cost = (freight_charge * float(doc_weight)) + cod_charges
-    #         print(f"Calculated total cost with weight:========================== {total_cost}")
-            
-    #         # Fetch COD charges from Ship Rocket Settings
-    #         ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
-    #         cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-    #         print("cod_charges_table===========================", cod_charges_table)
-            
-    #         # Find the charges_value from COD Charges child table
-    #         charges_value = None
-    #         for cod_charge_row in cod_charges_table:
-    #             charges_value = cod_charge_row.charges_value  # Access as field attribute
-    #             print("charges_value===========================", charges_value)
-    #             if charges_value:
-    #                 break
-            
-    #         if charges_value:
-    #             print(f"COD charges value found:===================================== {charges_value}%")
-                
-    #             # Calculate percentage of grand_total
-    #             grand_total = doc.get("grand_total", 0) or 0
-    #             print(f"Grand total=================================: {grand_total}")
-    #             cod_percentage_amount = (float(charges_value) / 100) * float(grand_total)
-    #             print(f"COD percentage amount========================: {cod_percentage_amount}")
-    #             print(f"Grand total: ============================={grand_total}, COD percentage amount ({charges_value}%): {cod_percentage_amount}")
-                
-    #             # Compare COD percentage amount with total_cost
-    #             if cod_percentage_amount > total_cost:
-    #                 frappe.throw(f"COD validation failed: COD charges ({charges_value}% of grand total = {cod_percentage_amount}) is greater than courier total cost ({total_cost})")
-    #             else:
-    #                 print("COD validation passed: COD charges are within acceptable limits")
-    #         else:
-    #             print("No COD charges value found in Ship Rocket Settings")
-    # else:
-    #     print("COD is not enabled, skipping COD validation...")
-
-    # # Check if courier total cost exceeds item charges total
-    # if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
-    #     frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
-    # Calculate total charges for each courier
-#     best_courier = None
-#     lowest_total = float('inf')
-
-#     for courier in courier_data:
-#         try:
-#             rating = float(courier.get("rating", 0) or 0)
-            
-#             if rating <= 4:
-#                 continue  # skip couriers with rating 4 or below
-                
-#             freight_charge = float(courier.get("freight_charge", 0) or 0)
-#             cod_charges = float(courier.get("cod_charges", 0) or 0)
-#             total = freight_charge + cod_charges
-            
-#             if total < lowest_total:
-#                 lowest_total = total
-#                 best_courier = {
-#                     "courier_name": courier.get("courier_name"),
-#                     "courier_company_id": courier.get("courier_company_id"),
-#                     "total_cost": total,
-#                     "rating": rating
-#                 }
-#                 print("best_courier=============================", best_courier)
-                
-#         except (ValueError, TypeError) as e:
-#             print(f"Skipping courier due to invalid data: {e}")
-#             continue
-
-#     # if best_courier:
-#     #     print("Best Courier (Rating > 4):", best_courier)
-#     # else:
-#     #     print("No suitable courier found with rating above 4.")
-
-#    # Calculate total item charges
-#     total_item_charges = 0
-#     for item in doc.get("items", []):
-#         # Check if item_code exists
-#         if not item.get("item_code"):
-#             continue
-
-#         # Get item group
-#         item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")       
-#         # Get the item group document
-#         group_doc = frappe.get_doc("Item Group", item_group)
-#         # Get item_charges (float)
-#         item_charges = group_doc.get("item_charges")
-
-#         if item_charges and item.get("qty"):
-#             item_total_charge = float(item_charges) * float(item.get("qty"))
-#             total_item_charges += item_total_charge
-#             print(f"item_charges: {item_charges}, qty: {item.get('qty')}, item total: {item_total_charge}")
-#         else:
-#             print("Missing item_charges or quantity for item:", item.get("item_code"))
-
-#     print(f"Total item charges: {total_item_charges}")
-#     print(f"Best courier total cost: {best_courier.get('total_cost') if best_courier else 'N/A'}")
-
-#     # Check if courier total cost exceeds item charges total
-#     if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
-#         frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
-
-
-
-
+    frappe.db.set_value("Sales Order", doc.name, "shiprocket_courier_name", best_courier.get("courier_name"))
+    # frappe.db.commit()
     #2. AWB Assignment
     awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
     awb_response = requests.post(awb_url, headers=headers, json={
@@ -1419,7 +1289,7 @@ def shiprocket_awb_number(doc):
     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
     frappe.db.set_value("Sales Order", doc.name, "shiprocket_image", label_pdf_b64)
 
-    frappe.db.set_value("Sales Order", doc.name, "courier_service", "Shiprocket Manifest")
+    # frappe.db.set_value("Sales Order", doc.name, "courier_service", "Shiprocket Manifest")
    # Commit all Sales Order updates before handling Delivery Charges
     frappe.db.commit()
 
@@ -1469,7 +1339,8 @@ def shiprocket_awb_number(doc):
         "pickup_scheduled_date": pickup_scheduled_date,
         "label_url": label_link,
         "manifest_url": manifest_pdf_url,
-        "invoice_url": invoice_pdf_url
+        "invoice_url": invoice_pdf_url,
+        "shiprocket_courier_name": best_courier
     }
 
 

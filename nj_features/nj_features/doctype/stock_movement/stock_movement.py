@@ -281,12 +281,11 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         WHERE se.stock_entry_type = "Material Transfer"
         AND sed.serial_no = %s
         AND se.docstatus = 1
-        AND sed.target_department = %s
         ORDER BY se.creation DESC
         LIMIT 1
     """
 
-    result = frappe.db.sql(query, (serial_no, s_department),explain=1, debug=1, as_dict=True)
+    result = frappe.db.sql(query, (serial_no),explain=1, debug=1, as_dict=True)
 
     if result:
         creation_time = result[0]["creation"]
@@ -297,13 +296,12 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             SELECT name
             FROM `tabNJ Quality Inspection`
             WHERE inspection_type IN %s AND docstatus = 1
-            AND creation > %s
             AND barcode = %s
             order by creation desc
             LIMIT 1
         """
 
-        qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), formatted_time, serial_no),explain=1, debug=1, as_dict=True)
+        qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), serial_no),explain=1, debug=1, as_dict=True)
 
         t_inspection_type = frappe.get_doc('Department', t_department)
 

@@ -1132,8 +1132,9 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
     print("calling allocate_laptop_parts")
-    allocated_lap = allocate_laptop_parts(doc)
-    doc.update({"laptop_allocation": allocated_lap})
+    if doc.get("allocate_parts"):
+        allocated_lap = allocate_laptop_parts(doc)
+        doc.update({"laptop_allocation": allocated_lap})
 
     doc.save()
     frappe.db.commit()

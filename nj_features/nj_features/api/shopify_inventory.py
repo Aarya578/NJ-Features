@@ -188,18 +188,18 @@ def create_rq_doc(results):
     #         "updated_qty": "0"
     #     })
 
-    all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
-                        fields=["name", "actual_qty", "shopify_quantity", "status"],
-                        filters={"is_active": 1})
+    # all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
+    #                     fields=["name", "actual_qty", "shopify_quantity", "status"],
+    #                     filters={"is_active": 1})
     
-    for doc in all_active_docs:
-        actual_qty = safe_float(doc.actual_qty) or 0
-        shopify_quantity = safe_float(doc.shopify_quantity) or 0
+    # for doc in all_active_docs:
+    #     actual_qty = safe_float(doc.actual_qty) or 0
+    #     shopify_quantity = safe_float(doc.shopify_quantity) or 0
         
-        if actual_qty == shopify_quantity and doc.status != "Queued":
-            frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
-        else:
-            frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
+    #     if actual_qty == shopify_quantity and doc.status != "Queued":
+    #         frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
+    #     else:
+    #         frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
 
 @frappe.whitelist()
 @nj_temp_shopify_session

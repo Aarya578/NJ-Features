@@ -75,10 +75,11 @@ def fetch_and_stage_inventory_sync():
             log_error(f"Processing batch {i + 1} of {num_batches} for inventory sync.", "fetch_and_stage_inventory_sync", "Info")
             enqueue(
                 method=create_rq_doc,
-                queue='long',
+                queue="long",
+                track_job=True,
                 timeout=1200,
+                at_first=True,
                 job_name=f"inventory_sync_batch_{i + 1}",
-                is_async=True,
                 results=batch
             )
         
@@ -172,20 +173,20 @@ def create_rq_doc(results):
                 log_error(f"Error inserting document: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id} - Error: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
                 continue
 
-    all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
-    all_doc_names = set(doc["name"] for doc in all_docs)
+    # all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
+    # all_doc_names = set(doc["name"] for doc in all_docs)
 
-    not_updated_doc_names = all_doc_names - updated_doc_names
+    # not_updated_doc_names = all_doc_names - updated_doc_names
 
-    log_error(
-        f"Total Docs: {len(all_doc_names)}, Updated Docs: {len(updated_doc_names)}, Not Updated Docs: {len(not_updated_doc_names)}", "Total Updates", "Info"
-    )
+    # log_error(
+    #     f"Total Docs: {len(all_doc_names)}, Updated Docs: {len(updated_doc_names)}, Not Updated Docs: {len(not_updated_doc_names)}", "Total Updates", "Info"
+    # )
 
-    for name in not_updated_doc_names:
-        frappe.db.set_value("NJ Inventory Sync Main", name, {
-            "actual_qty": "0",
-            "updated_qty": "0"
-        })
+    # for name in not_updated_doc_names:
+    #     frappe.db.set_value("NJ Inventory Sync Main", name, {
+    #         "actual_qty": "0",
+    #         "updated_qty": "0"
+    #     })
 
     all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
                         fields=["name", "actual_qty", "shopify_quantity", "status"],

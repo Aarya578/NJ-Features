@@ -1,7 +1,6 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 1,
  "autoname": "field:name1",
  "creation": "2023-11-28 15:30:23.580678",
  "doctype": "DocType",
@@ -26,8 +25,7 @@
   "attach2",
   "attach4",
   "section_break_rl8nf",
-  "description",
-  "amended_from"
+  "description"
  ],
  "fields": [
   {
@@ -93,6 +91,7 @@
   {
    "fieldname": "priority",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Priority"
   },
   {
@@ -126,20 +125,10 @@
    "fieldname": "attach3",
    "fieldtype": "Small Text",
    "label": "Attach3"
-  },
-  {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Knowledge Base",
-   "print_hide": 1,
-   "read_only": 1
   }
  ],
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-14 11:00:51.000014",
+ "modified": "2025-06-10 16:25:47.424667",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

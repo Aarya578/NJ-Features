@@ -44,66 +44,101 @@ frappe.ui.form.on('Sales Order', {
                 });
             });
             critical_btn.addClass('btn-primary');
-            
             var shiprocket_btn = frm.add_custom_button(__('Shiprocket'), function() {
                 frappe.show_alert({
                     message: __('Generating AWB Number...'),
                     indicator: 'blue'
                 });
+                
                 frappe.call({
                     method: 'nj_features.overrides.sales_order.shiprocket_awb_number',
                     args: { doc: JSON.stringify(frm.doc) },
                     callback: function(response) {
                         if (response.message) {
-                            frappe.call({
-                                method: 'frappe.client.set_value',
-                                args: {
-                                    doctype: 'Sales Order',
-                                    name: frm.doc.name,
-                                    fieldname: 'courier_service',
-                                    value: 'Shiprocket Manifest'
-                                },
-                                callback: function(set_value_response) {
-                                    frm.reload_doc();
-                                    frappe.show_alert({
-                                        message: __('AWB Number generated successfully!'),
-                                        indicator: 'green'
-                                    });
-                                }
+                            // Removed the automatic setting of 'Shiprocket Manifest'
+                            // The courier_service will now be set by the Python method
+                            frm.reload_doc();
+                            frappe.show_alert({
+                                message: __('AWB Number generated successfully!'),
+                                indicator: 'green'
                             });
                         }
                     }
                 });
             });
-            shiprocket_btn.addClass('btn-primary'); // Different color to distinguish
+
+            shiprocket_btn.addClass('btn-primary');
+            // var shiprocket_btn = frm.add_custom_button(__('Shiprocket'), function() {
+            //     frappe.show_alert({
+            //         message: __('Generating AWB Number...'),
+            //         indicator: 'blue'
+            //     });
+            //     frappe.call({
+            //         method: 'nj_features.overrides.sales_order.shiprocket_awb_number',
+            //         args: { doc: JSON.stringify(frm.doc) },
+            //         callback: function(response) {
+            //             if (response.message) {
+            //                 frappe.call({
+            //                     method: 'frappe.client.set_value',
+            //                     args: {
+            //                         doctype: 'Sales Order',
+            //                         name: frm.doc.name,
+            //                         fieldname: 'courier_service',
+            //                         value: 'Shiprocket Manifest'
+            //                     },
+            //                     callback: function(set_value_response) {
+            //                         frm.reload_doc();
+            //                         frappe.show_alert({
+            //                             message: __('AWB Number generated successfully!'),
+            //                             indicator: 'green'
+            //                         });
+            //                     }
+            //                 });
+            //             }
+            //         }
+            //     });
+            // });
+            // shiprocket_btn.addClass('btn-primary'); // Different color to distinguish
         }
     },
     validate: function(frm) {
-        
-        frappe.call({
-            method: 'nj_features.overrides.sales_order.update_item_details',
-            args: { self: frm.doc },
-            callback: function(r) {
-                if (r.message) {
-                    if (r.message.weight !== null && r.message.weight !== undefined) {
-                        frm.set_value('weight', r.message.weight);
-                        frm.refresh_field("weight");
-                    }            
-                    if (r.message.height) {
-                        frm.set_value('height', r.message.height);
-                        frm.refresh_field("height");
-                    }             
-                    if (r.message.length) {
-                        frm.set_value('length', r.message.length);
-                        frm.refresh_field("length");
-                    }               
-                    if (r.message.breadth) {
-                        frm.set_value('breadth', r.message.breadth);
-                        frm.refresh_field("breadth");
-                    }           
+    frappe.call({
+        method: 'nj_features.overrides.sales_order.update_item_details',
+        args: { self: frm.doc },
+        callback: function(r) {
+            if (r.message) {
+                // Weight
+                if (r.message.weight !== null && r.message.weight !== undefined) {
+                    frm.set_value('weight', r.message.weight);
                 }
+
+                // Height
+                if (r.message.height) {
+                    frm.set_value('height', r.message.height);
+                } else {
+                    frm.set_value('height', null);  // Reset if not returned
+                }
+
+                // Length
+                if (r.message.length) {
+                    frm.set_value('length', r.message.length);
+                } else {
+                    frm.set_value('length', null);
+                }
+
+                // Breadth
+                if (r.message.breadth) {
+                    frm.set_value('breadth', r.message.breadth);
+                } else {
+                    frm.set_value('breadth', null);
+                }
+
+                frm.refresh_fields(['weight', 'height', 'length', 'breadth']);
             }
-        });
+        }
+    });
+
+
     },
 
     onload_post_render: function(frm) {

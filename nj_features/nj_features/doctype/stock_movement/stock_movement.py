@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-
+logger = frappe.logger('Shopifys', allow_site=True, file_count=100)
 class StockMovement(Document):
     def on_submit(self):
         # self.validate_supplier_return()
@@ -44,6 +44,8 @@ class StockMovement(Document):
             frappe.db.rollback()
             frappe.throw("Error while submitting Stock Entry: ", e)
 
+
+
     def validate_supplier_return(self):
         """
         Validate item codes when making supplier return
@@ -60,17 +62,69 @@ class StockMovement(Document):
                             serial_doc = frappe.get_doc("Serial No", serial_no.strip())
                             serial_item_code = serial_doc.item_code
                             
-                            purchase_receipt = serial_doc.purchase_document_no
+                            purchase_receipt = serial_doc.purchase_document_no 
                             
                             if purchase_receipt:
-                                purchase_item_code = frappe.db.get_value(
-                                    "Purchase Receipt Item",
-                                    {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no}%"]},
-                                    ["item_code"],
-                                )
+                                # Get the matching purchase item code using the new method
+                                purchase_item_code = self.get_matching_purchase_item(purchase_receipt, serial_no.strip(), serial_item_code)
                                 
                                 if serial_item_code != purchase_item_code:
                                     self.make_stock_entry_using_nj_lib()
+
+    def get_matching_purchase_item(self, purchase_receipt, serial_no, serial_item_code):
+        """
+        Find matching purchase item code from Purchase Receipt Items
+        First tries exact serial number match, then tries partial item code match
+        """
+        # First try to find exact serial number match
+        purchase_item_code = frappe.db.get_value(
+            "Purchase Receipt Item",
+            {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no}%"]},
+            ["item_code"],
+        )
+        
+        if purchase_item_code:
+            return purchase_item_code
+        
+        # If no exact serial match found, try partial item code matching
+        # Get all items from the purchase receipt
+        purchase_items = frappe.get_all(
+            "Purchase Receipt Item",
+            filters={"parent": purchase_receipt},
+            fields=["item_code", "serial_no"]
+        )
+        
+        
+        # Extract the base pattern from serial item code (up to the last hyphen before "GRADE")
+        if "GRADE" in serial_item_code:
+            # Split by "GRADE" and take the first part, then remove the last hyphen if exists
+            base_pattern = serial_item_code.split("GRADE")[0].rstrip("-")
+            
+            # Check each purchase item for partial match
+            for purchase_item in purchase_items:
+                purchase_item_code = purchase_item.get("item_code", "")
+                
+                # Check if the purchase item code starts with the same base pattern
+                if purchase_item_code and base_pattern and purchase_item_code.startswith(base_pattern):
+                    return purchase_item_code
+        
+        # Additional fallback: Try to match by removing the grade part from both codes
+        if "GRADE" in serial_item_code:
+            serial_base = serial_item_code.split("GRADE")[0].strip().rstrip("-")
+            
+            for purchase_item in purchase_items:
+                purchase_item_code = purchase_item.get("item_code", "")
+                if "GRADE" in purchase_item_code:
+                    purchase_base = purchase_item_code.split("GRADE")[0].strip().rstrip("-")
+                    
+                    # Compare the base parts
+                    if serial_base == purchase_base:
+                        # logger.info(f"Fallback Match Found: {purchase_item_code}", "Debug Fallback Match")
+                        return purchase_item_code
+        
+        frappe.log_error(f"No match found for serial: {serial_no} with item code: {serial_item_code}", "Debug No Match")
+        # If still no match found, return None to trigger the original error
+        return None
 
     def make_stock_entry_using_nj_lib(self):
         """
@@ -115,15 +169,16 @@ class StockMovement(Document):
         if not purchase_receipt:
             frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
 
-        # Fetch Purchase Item Code
+        # Fetch Purchase Item Code using the improved matching method
         if not main_item.serial_no:
             frappe.throw("Serial No is missing in the Stock Movement Item.")
-        purchase_item_code = frappe.db.get_value(
-            "Purchase Receipt Item",
-            {"parent": purchase_receipt, "serial_no": ['like', f"%{serial_no_value}%"]},
-            "item_code",
-        )
+        
+        # Use the new method to get matching purchase item code
+        purchase_item_code = self.get_matching_purchase_item(purchase_receipt, serial_no_value, main_item.item_code)
+
+        
         if not purchase_item_code:
+
             frappe.throw(f"Could not find the purchase item for Serial No: {serial_no_value}")
 
         # Add the unpack item (item being put in)

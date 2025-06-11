@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 logger = frappe.logger('Shopifys', allow_site=True, file_count=100)
+
 class StockMovement(Document):
     def on_submit(self):
         # self.validate_supplier_return()
@@ -483,22 +484,13 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
-    print("Function called with:")
-    print("serial_doc:", serial_doc)
-    print("department_doc:", department_doc)
-    print("initial error_messages:", error_messages)
 
     if serial_doc.get("item_group") != "Laptops":
-        print("Item group is not Laptops. Skipping validation.")
-        return error_messages
+        return
 
     serial_components = serial_doc.get("serial_no_component", [])
     allowed_table = department_doc.get("allowed_item_group_grades", [])
     all_must_match = department_doc.get("all", False)
-
-    print("serial_components:", serial_components)
-    print("allowed_table:", allowed_table)
-    print("all_must_match:", all_must_match)
 
     # Build set of (item_group, grade) from serial components
     serial_set = {
@@ -506,51 +498,71 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
         for comp in serial_components
         if comp.get("item_group") and comp.get("grade")
     }
-    print("serial_set:", serial_set)
 
-    # Build set of allowed (item_group, grade) from allowed_table
-    allowed_set = set()
+    # Track what item_groups are actually present in the serial
+    serial_item_groups_present = {
+        comp.get("item_group") for comp in serial_components if comp.get("item_group")
+    }
+
+    # Build allowed map for comparison
+    allowed_map = defaultdict(set)
     for entry in allowed_table:
         item_group = entry.get("item_group")
         grades = entry.get("restricted_grade", "").split(",")
         for grade in grades:
             grade = grade.strip()
             if item_group and grade:
-                allowed_set.add((item_group, grade))
-
-    print("allowed_set:", allowed_set)
+                allowed_map[item_group].add(grade)
 
     if all_must_match:
-        # All allowed (item_group, grade) must be present in serial_set
-        for item_group, grade in allowed_set:
-            if (item_group, grade) not in serial_set:
+        for item_group, allowed_grades in allowed_map.items():
+            # 🔸 Skip item groups not present in serial components
+            if item_group not in serial_item_groups_present:
+                continue
+
+            matched = any(
+                (item_group, grade) in serial_set for grade in allowed_grades
+            )
+            if not matched:
+                actual_grades = {
+                    grade for ig, grade in serial_set if ig == item_group
+                }
+                actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                allowed_display = ', '.join(sorted(allowed_grades))
                 error_message = (
-                    f"Serial No <b>{serial_doc.name}</b>: Required <b>{item_group}</b> with grade <b>{grade}</b> is missing in component list. "
-                    "All specified component-grade pairs must be matched."
+                    f"Serial No <b>{serial_doc.name}</b>: In department <b>{department_doc.name}</b>, "
+                    f"only grade(s) <b>{allowed_display}</b> are allowed for item group <b>{item_group}</b>, "
+                    f"but found: <b>{actual_display}</b>."
                 )
                 error_messages.append(error_message)
-                print("Error added:", error_message)
-                break  # No need to check further
+                break  # Stop at first mismatch
     else:
-        # At least one allowed (item_group, grade) must be present
-        match_found = any(pair in serial_set for pair in allowed_set)
-        print("At least one match found?", match_found)
+        # At least one valid pair must match (among only present item groups)
+        match_found = False
+        for item_group, allowed_grades in allowed_map.items():
+            print("allowed_grades", allowed_grades)
+            if item_group not in serial_item_groups_present:
+                continue
+            if any((item_group, grade) in serial_set for grade in allowed_grades):
+                match_found = True
+                break
 
         if not match_found:
-            allowed_pairs_str = ', '.join(
-                f"{ig}-{gr}" for ig, gr in sorted(allowed_set)
-            )
-            actual_pairs_str = ', '.join(
-                f"{ig}-{gr}" for ig, gr in sorted(serial_set)
-            )
-            error_message = (
-                f"Serial No <b>{serial_doc.name}</b>: None of the allowed component-grade pairs were found. "
-                f"Allowed: <b>{allowed_pairs_str}</b>. Found: <b>{actual_pairs_str}</b>."
-            )
-            error_messages.append(error_message)
-            print("Error added:", error_message)
+            for item_group, allowed_grades in allowed_map.items():
+                if item_group not in serial_item_groups_present:
+                    continue
+                actual_grades = {
+                    grade for ig, grade in serial_set if ig == item_group
+                }
+                actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                allowed_display = ', '.join(sorted(allowed_grades))
+                error_message = (
+                    f"Serial No <b>{serial_doc.name}</b>: In department <b>{department_doc.name}</b>, "
+                    f"for item group <b>{item_group}</b>, only grade(s) <b>{allowed_display}</b> are allowed, "
+                    f"but found: <b>{actual_display}</b>."
+                )
+                error_messages.append(error_message)
 
-    print("Final error_messages:", error_messages)
     return error_messages
 
 

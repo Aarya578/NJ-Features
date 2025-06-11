@@ -339,13 +339,12 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             JOIN `tabStock Entry` se ON sed.parent = se.name
             WHERE se.stock_entry_type = "Material Transfer"
             AND sed.serial_no = %s
-            AND se.s_department = %s
             AND se.docstatus = 1
             ORDER BY se.creation DESC
             LIMIT 1
         """
 
-        result = frappe.db.sql(query, (serial_no, s_department),explain=1, debug=1, as_dict=True)
+        result = frappe.db.sql(query, (serial_no),explain=1, debug=1, as_dict=True)
 
         if result:
             creation_time = result[0]["creation"]
@@ -357,13 +356,11 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                 FROM `tabNJ Quality Inspection`
                 WHERE inspection_type IN %s AND docstatus = 1
                 AND barcode = %s
-                AND modified > %s
-                AND modified < %s
                 order by creation desc
                 LIMIT 1
             """
 
-            qi_result = frappe.db.sql(qi_query, (tuple(inspection_types, serial_no, formatted_time, current_time), serial_no),explain=1, debug=1, as_dict=True)
+            qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), serial_no),explain=1, debug=1, as_dict=True)
 
             t_inspection_type = frappe.get_doc('Department', t_department)
 
@@ -486,59 +483,74 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
+    print("Function called with:")
+    print("serial_doc:", serial_doc)
+    print("department_doc:", department_doc)
+    print("initial error_messages:", error_messages)
+
+    if serial_doc.get("item_group") != "Laptops":
+        print("Item group is not Laptops. Skipping validation.")
+        return error_messages
+
     serial_components = serial_doc.get("serial_no_component", [])
     allowed_table = department_doc.get("allowed_item_group_grades", [])
     all_must_match = department_doc.get("all", False)
 
-    print("all_must_match", all_must_match)
+    print("serial_components:", serial_components)
+    print("allowed_table:", allowed_table)
+    print("all_must_match:", all_must_match)
 
-    # Step 1: Map allowed grades by item group
-    allowed_map = defaultdict(set)
-    for allowed in allowed_table:
-        item_group = allowed.get("item_group")
-        grades = allowed.get("restricted_grade", "").split(", ")
-        allowed_map[item_group].update(grades)
+    # Build set of (item_group, grade) from serial components
+    serial_set = {
+        (comp.get("item_group"), comp.get("grade"))
+        for comp in serial_components
+        if comp.get("item_group") and comp.get("grade")
+    }
+    print("serial_set:", serial_set)
 
-    print("allowed map", allowed_map)
+    # Build set of allowed (item_group, grade) from allowed_table
+    allowed_set = set()
+    for entry in allowed_table:
+        item_group = entry.get("item_group")
+        grades = entry.get("restricted_grade", "").split(",")
+        for grade in grades:
+            grade = grade.strip()
+            if item_group and grade:
+                allowed_set.add((item_group, grade))
 
-    # Step 2: Group serial components by item group
-    components_by_group = defaultdict(list)
-    for comp in serial_components:
-        components_by_group[comp.get("item_group")].append(comp)
+    print("allowed_set:", allowed_set)
 
-    print("components_by_group", components_by_group.items())
-
-    # Step 3: Validate each item group against allowed grades
-    for item_group, components in components_by_group.items():
-        allowed_grades = allowed_map.get(item_group)
-
-        print("allowed_grades", allowed_grades)
-
-        if not allowed_grades:
-            # Skip validation if item group is not in allowed table
-            continue
-
-        if all_must_match:
-            # All components must match allowed grades
-            for comp in components:
-                comp_grade = comp.get("grade")
-                if comp_grade not in allowed_grades:
-                    error_messages.append(
-                        f"Serial No <b>{serial_doc.name}</b>: Grade <b>{comp_grade}</b> for item group <b>{item_group}</b> is not allowed in department "
-                        f"<b>{department_doc.name}</b>. Allowed grades are: <b>{', '.join(sorted(allowed_grades))}</b>."
-                    )
-                    break
-
-        else:
-            # At least one component must match
-            if not any(c.get("grade") in allowed_grades for c in components):
-                actual_grades = {c.get("grade") for c in components if c.get("grade")}
-                error_messages.append(
-                    f"Serial No <b>{serial_doc.name}</b>: The allowed grades for item group <b>{item_group}</b> in department <b>{department_doc.name}</b> are "
-                    f"<b>{', '.join(sorted(allowed_grades))}</b>, but the component(s) have grade(s): <b>{', '.join(sorted(actual_grades))}</b>."
+    if all_must_match:
+        # All allowed (item_group, grade) must be present in serial_set
+        for item_group, grade in allowed_set:
+            if (item_group, grade) not in serial_set:
+                error_message = (
+                    f"Serial No <b>{serial_doc.name}</b>: Required <b>{item_group}</b> with grade <b>{grade}</b> is missing in component list. "
+                    "All specified component-grade pairs must be matched."
                 )
+                error_messages.append(error_message)
+                print("Error added:", error_message)
+                break  # No need to check further
+    else:
+        # At least one allowed (item_group, grade) must be present
+        match_found = any(pair in serial_set for pair in allowed_set)
+        print("At least one match found?", match_found)
 
-    print("error_messages", error_messages)
+        if not match_found:
+            allowed_pairs_str = ', '.join(
+                f"{ig}-{gr}" for ig, gr in sorted(allowed_set)
+            )
+            actual_pairs_str = ', '.join(
+                f"{ig}-{gr}" for ig, gr in sorted(serial_set)
+            )
+            error_message = (
+                f"Serial No <b>{serial_doc.name}</b>: None of the allowed component-grade pairs were found. "
+                f"Allowed: <b>{allowed_pairs_str}</b>. Found: <b>{actual_pairs_str}</b>."
+            )
+            error_messages.append(error_message)
+            print("Error added:", error_message)
+
+    print("Final error_messages:", error_messages)
     return error_messages
 
 

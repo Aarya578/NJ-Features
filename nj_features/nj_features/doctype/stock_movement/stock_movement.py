@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 logger = frappe.logger('Shopifys', allow_site=True, file_count=100)
+
 class StockMovement(Document):
     def on_submit(self):
         # self.validate_supplier_return()
@@ -483,8 +484,9 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
+
     if serial_doc.get("item_group") != "Laptops":
-        return error_messages
+        return
 
     serial_components = serial_doc.get("serial_no_component", [])
     allowed_table = department_doc.get("allowed_item_group_grades", [])
@@ -503,7 +505,6 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     }
 
     # Build allowed map for comparison
-    from collections import defaultdict
     allowed_map = defaultdict(set)
     for entry in allowed_table:
         item_group = entry.get("item_group")

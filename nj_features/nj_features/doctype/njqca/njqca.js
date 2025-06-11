@@ -279,7 +279,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
         
-        if (selectedModel && selectedItemGroup != "BATTERY") {
+        if (selectedModel && selectedItemGroup == "Laptops") {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },

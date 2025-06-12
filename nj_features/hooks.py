@@ -205,10 +205,18 @@ scheduler_events = {
         "25 * * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
         ],
-        "35 * * * *": [
+        # fetch_and_stage_inventory_sync every 2 hours: 12:00 AM, 2:00 AM, ..., 10:00 PM
+        "0 0-22/2 * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
         ],
-        "45,55 * * * *": [
+
+        # start_shopify_inventory_sync at 1:00 AM, 3:00 AM, ..., 11:00 PM
+        "0 1-23/2 * * *": [
+            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ],
+
+        # start_shopify_inventory_sync at 1:30 AM, 3:30 AM, ..., 11:30 PM
+        "30 1-23/2 * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ]
     }

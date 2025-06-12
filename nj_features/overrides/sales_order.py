@@ -26,7 +26,7 @@ class CustomSalesOrder(SalesOrder):
         # self.cod_calculation()
         # self.fetching_tracking_details()
         # self.getting_shiprocket_order_details()
-        self.total_item_group_sum()
+        # self.total_item_group_sum()
         raw_order_id = None
         if self.order_type!="Maintenance":
             if self.shopify_order_id:
@@ -70,6 +70,7 @@ class CustomSalesOrder(SalesOrder):
         self.item_group_qty = total_qty
         print("self.item_group_qty=================", self.item_group_qty)
         self.save(ignore_permissions=True)    
+
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:

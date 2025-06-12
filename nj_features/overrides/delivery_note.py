@@ -1487,3 +1487,100 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #         })
 
 #     return warranty_info
+
+
+def adapter_repacked_serial_no(nj_serial_no):
+    try:
+        if nj_serial_no is not None and nj_serial_no:
+            query="""
+                        SELECT tot_sed.serial_no as adapter_serial_no
+                        FROM `tabStock Entry Detail` AS sed
+                        INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+                        INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+                        WHERE
+                            (sed.serial_no = %(serial_no)s OR 
+                                sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+                                sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+                                sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+                            stock_entry.purpose = 'Repack' AND 
+                            stock_entry.docstatus = 1 AND
+                            tot_sed.s_warehouse IS NOT NULL AND 
+                            tot_sed.item_group = 'Laptop Adaptors'
+                        ORDER BY stock_entry.creation DESC
+                        LIMIT 1
+                    """
+            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
+        
+        if data is not None and data:  
+            return data[0].get("adapter_serial_no","")
+        else:
+            return "No repacked serial no found"
+    except Exception as e:
+        return str(e)
+    
+
+@frappe.whitelist()
+def allow_to_save(doc):
+    try:
+        if isinstance(doc,str):
+            doc=json.loads(doc)
+        child_data=doc["items"]
+        
+
+        if not child_data:
+          return "pass"
+        
+        for data in child_data:
+            child_nj_serial_data=data.get("serial_no","")
+            child_adapter_serial_no=data.get("adapter_serial_no","")
+            nj_serial_nos=[]
+            adapter_serial_nos=[]
+
+            if  child_nj_serial_data:
+                if '\n' in child_nj_serial_data:
+                    nj_serial_nos=child_nj_serial_data.split('\n')
+                else:
+                    nj_serial_nos.append(child_nj_serial_data)
+            else:
+                continue
+            print('nj_serial_nos',nj_serial_nos)
+
+            if child_adapter_serial_no:
+                if '\n' in child_adapter_serial_no:
+                    adapter_serial_nos=child_adapter_serial_no.split('\n')
+                else:
+                    adapter_serial_nos.append(child_adapter_serial_no)
+
+            print('adapter_serial_nos',adapter_serial_nos)
+            serial_no_order=0
+
+            for nj_serial_no in nj_serial_nos:
+                print("\n checking serial no:",nj_serial_no)
+                item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
+                print('item_group',item_group)
+                if item_group and item_group=="Laptops" or item_group=="Chromebooks":
+                    serial_no_order+=1
+                    if not adapter_serial_nos:
+                        return "Please enter Adapter Serial No"
+                    else:
+                        repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
+                        print('repacked_serial_no',repacked_serial_no)
+                        try:
+                          if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
+                            return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
+                        except IndexError:
+                          return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
+                else:
+                    continue
+        return "pass"
+    
+    except Exception as e:
+        return str(e)
+                
+                
+
+        
+
+
+    
+

@@ -1524,11 +1524,11 @@ def allow_to_save(doc):
     try:
         if isinstance(doc,str):
             doc=json.loads(doc)
-        child_data=doc["items"]
+        child_data=doc["packed_items"]
         
 
         if not child_data:
-          return "pass"
+            child_data=doc["items"]
         
         for data in child_data:
             child_nj_serial_data=data.get("serial_no","")

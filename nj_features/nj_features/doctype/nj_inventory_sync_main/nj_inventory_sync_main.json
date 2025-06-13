@@ -98,6 +98,7 @@
   },
   {
    "columns": 1,
+   "default": "0",
    "fieldname": "shopify_quantity",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -116,7 +117,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2025-05-30 12:51:38.097762",
+ "modified": "2025-06-13 12:12:54.996226",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

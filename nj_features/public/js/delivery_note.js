@@ -48,7 +48,7 @@ frappe.ui.form.on('Delivery Note', {
         $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
 
-    validate: function(frm) {
+    validate:  function(frm) {
         frappe.call({
             method: "nj_features.overrides.delivery_note.validate_delivery_bios",
             args: { doc: frm.doc },
@@ -76,8 +76,29 @@ frappe.ui.form.on('Delivery Note', {
                 }
             });
         }
+
     },
 
+    before_submit: async function(frm) {
+        await frappe.call({
+            method:'nj_features.overrides.delivery_note.allow_to_save',
+            args: {
+                "doc": frm.doc
+            },
+            callback: function(r) {
+                if (r.message) {
+                    if(r.message!="pass") {
+                        frappe.validated=false
+                        frappe.throw(r.message);
+
+                    }else{
+                        frappe.validated=true
+                    }
+                }
+            }
+        })
+    },
+  
     // after_save: function(frm) {
     //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
     //         frm.set_value('shipping_address_name', frm.doc.customer_address);

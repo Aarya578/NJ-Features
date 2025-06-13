@@ -360,18 +360,17 @@ def get_shopify_variants(product_ids, shop, token):
                 for node in data.get("data", {}).get("nodes", []):
                     if node:
                         inventory_quantity = node.get("inventoryQuantity", 0)
-                        if inventory_quantity > 0:
-                            variant_gid = node.get("id", "")
-                            variant_id = variant_gid.split("/")[-1]
+                        variant_gid = node.get("id", "")
+                        variant_id = variant_gid.split("/")[-1]
 
-                            inventory_item_gid = node.get("inventoryItem", {}).get("id", "")
-                            inventory_item_id = inventory_item_gid.split("/")[-1] if inventory_item_gid else None
+                        inventory_item_gid = node.get("inventoryItem", {}).get("id", "")
+                        inventory_item_id = inventory_item_gid.split("/")[-1] if inventory_item_gid else None
 
-                            result.append({
-                                "variant_id": variant_id,
-                                "inventory_item_id": inventory_item_id,
-                                "inventory_quantity": inventory_quantity
-                            })
+                        result.append({
+                            "variant_id": variant_id,
+                            "inventory_item_id": inventory_item_id,
+                            "inventory_quantity": inventory_quantity
+                        })
             else:
                 log_error(f"Shopify API error: {response.text}", "Error in get_shopify_variants_method")
                 return None

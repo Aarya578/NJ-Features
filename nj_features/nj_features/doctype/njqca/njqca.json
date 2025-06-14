@@ -10,6 +10,7 @@
   "njqca_information_section",
   "power_on",
   "serial_no",
+  "battery_serial_no",
   "bios_serialno",
   "inspection_type",
   "department",
@@ -23,12 +24,13 @@
   "rfq_id",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
+  "backup_duration_cycle_3",
+  "bdt_status",
   "rapid_bdt",
   "column_break_1tl9d",
   "repack_item_code",
   "manual_repack_item_code",
   "qi_name",
-  "backup_duration_cycle_3",
   "sudden_drop",
   "battery_type",
   "qi_type",
@@ -103,6 +105,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "serial_no",
    "fieldtype": "Data",
    "label": "Serial No"
@@ -416,11 +419,23 @@
    "label": "NJQCA Version",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.item_group == \"BATTERY\";",
+   "fieldname": "battery_serial_no",
+   "fieldtype": "Data",
+   "label": "Battery Serial No"
+  },
+  {
+   "fieldname": "bdt_status",
+   "fieldtype": "Data",
+   "label": "BDT Status",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-03 11:39:37.569250",
+ "modified": "2025-06-14 10:38:09.376668",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

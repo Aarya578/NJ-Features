@@ -76,7 +76,10 @@ def get_inspection_type():
     
 def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None):
     try:
-        serial_num = self.serial_no
+        if self.item_group=="BATTERY":
+            serial_num=self.battery_serial_no
+        else:
+            serial_num = self.serial_no
         if serial_num:
             status = frappe.db.get_value('Serial No', {'name': serial_num}, 'status')
             if status.lower() == 'delivered':

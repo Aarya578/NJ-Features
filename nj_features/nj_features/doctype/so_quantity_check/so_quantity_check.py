@@ -2,25 +2,22 @@
 # For license information, please see license.txt
 
 import frappe
+import pymysql
 from frappe.model.document import Document
-
-nj_inventry_settings = frappe.get_single("NJ Inventory Settings")
-
-shop = nj_inventry_settings.shop
-token = nj_inventry_settings.token
-warehouses = nj_inventry_settings.warehouses
-location_id = nj_inventry_settings.location_id
-item_groups = nj_inventry_settings.item_groups
-departments = nj_inventry_settings.departments
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 
 class SOQuantityCheck(Document):
 	pass
 
 @frappe.whitelist()
-def update_so_quantity_check():
+def update_so_quantity_check(settings):
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
     try:
         warehouses_list = []
+        warehouses = settings['warehouses']
+        departments = settings['departments']
+        item_groups = settings['item_groups']
+
         if warehouses is not None:
             warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
         item_groups_list = [i.strip() for i in item_groups.split(',') if i.strip()]
@@ -153,11 +150,9 @@ def update_so_quantity_check():
                 so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty,
                 CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_processor,
 
-                -- Existing: total pending qty by variant_with_processor
                 SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
                     OVER (PARTITION BY CONCAT(it2.variant_of, ' ', proc.attribute_value)) AS total_pending_by_variant,
 
-                -- ✅ New: total pending qty by pb_code
                 SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
                     OVER (PARTITION BY so_data.pb_code) AS total_pending_by_pb_code
 
@@ -224,7 +219,6 @@ def update_so_quantity_check():
 
         frappe.db.sql("DELETE FROM `tabSO Quantity Check`")
         frappe.db.commit()
-        frappe.log_error(pending_qty_by_item)
 
         # Step 4: Insert ONLY items from inventory data 
         # If they have pending SO, include that quantity
@@ -264,36 +258,57 @@ def update_so_quantity_check():
             count += 1
         
         frappe.db.commit()
+        log_error(f"SO Quantity Check updated for {count} items", "update_so_quantity_check", "Info")
         
         return True
     
+    except pymysql.err.OperationalError as e:
+        if e.args[0] == 2013:
+            return False
+        else:
+            return False
+    
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "SO Quantity Check Update Error")
+        log_error(frappe.get_traceback(), "update_so_quantity_check")
         return False
     
 def update_parent_quantity():
-    result = frappe.db.sql("""
-        SELECT parent1, SUM(need_to_reduce)
-        FROM `tabSO Quantity Check`
-        WHERE need_to_reduce > 0
-        GROUP BY parent1
-    """, as_dict=True)
+    try:
+        result = frappe.db.sql("""
+            SELECT parent1, SUM(need_to_reduce)
+            FROM `tabSO Quantity Check`
+            WHERE need_to_reduce > 0
+            GROUP BY parent1
+        """, as_dict=True)
 
-    for row in result:
-        parent1 = row.parent1
-        total = row["SUM(need_to_reduce)"]
+        for row in result:
+            parent1 = row.parent1
+            total = row["SUM(need_to_reduce)"]
 
-        # Find all matching child rows to update
-        child_rows = frappe.get_all(
-            "SO Quantity Check",
-            filters={"parent1": parent1},
-            fields=["name"]
-        )
+            # Find all matching child rows to update
+            child_rows = frappe.get_all(
+                "SO Quantity Check",
+                filters={"parent1": parent1},
+                fields=["name"]
+            )
 
-        for child in child_rows:
-            frappe.db.set_value("SO Quantity Check", child.name, "remove_parent_qty", total)
+            for child in child_rows:
+                frappe.db.set_value("SO Quantity Check", child.name, "remove_parent_qty", total)
 
-    frappe.db.commit()
+        frappe.db.commit()
+        log_error("SO Quantity Check parent quantity updated", "update_parent_quantity", "Info")
+
+        return True
+    
+    except pymysql.err.OperationalError as e:
+        if e.args[0] == 2013:
+            return False
+        else:
+            return False
+
+    except Exception:
+        log_error(frappe.get_traceback(), "update_parent_quantity")
+        return False
 
 def update_proportional_qty_and_updt_qty():
     try:
@@ -367,8 +382,15 @@ def update_proportional_qty_and_updt_qty():
             
             frappe.db.commit()
         
+        log_error("SO Quantity Check proportional quantity and update quantity updated", "update_proportional_qty_and_updt_qty", "Info")
         return True
+    
+    except pymysql.err.OperationalError as e:
+        if e.args[0] == 2013:
+            return False
+        else:
+            return False
         
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "Proportional Qty Update Error")
+        log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
         return False

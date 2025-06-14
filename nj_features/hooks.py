@@ -197,26 +197,9 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ],
         "0 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
-        ],
-        "15 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_parent_quantity"
-        ],
-        "25 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
-        ],
-        # fetch_and_stage_inventory_sync every 2 hours: 12:00 AM, 2:00 AM, ..., 10:00 PM
-        "0 0-22/2 * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
         ],
-
-        # start_shopify_inventory_sync at 1:00 AM, 3:00 AM, ..., 11:00 PM
-        "0 1-23/2 * * *": [
-            "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
-        ],
-
-        # start_shopify_inventory_sync at 1:30 AM, 3:30 AM, ..., 11:30 PM
-        "30 1-23/2 * * *": [
+        "30,45 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ]
     }

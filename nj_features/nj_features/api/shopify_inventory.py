@@ -4,24 +4,27 @@ import frappe
 import pymysql
 import requests
 import traceback
+from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
-    return {
-        "shop": settings.shop,
-        "token": settings.token,
-        "headers": {
-            "X-Shopify-Access-Token": settings.token,
-            "Content-Type": "application/json"
-        },
-        "warehouses": settings.warehouses,
-        "location_id": settings.location_id,
-        "item_groups": settings.item_groups,
-        "departments": settings.departments,
-    }
+    if settings.enable == 1 and verify_domain_matches_server_ip("erp.newjaisa.com"):
+        return {
+            "shop": settings.shop,
+            "token": settings.token,
+            "headers": {
+                "X-Shopify-Access-Token": settings.token,
+                "Content-Type": "application/json"
+            },
+            "warehouses": settings.warehouses,
+            "location_id": settings.location_id,
+            "item_groups": settings.item_groups,
+            "departments": settings.departments,
+        }
+    return None
 
 def safe_float(value):
     try:
@@ -35,6 +38,9 @@ def nj_temp_shopify_session(func):
             return func(*args, **kwargs)
         from shopify import Session
         settings = get_shopify_settings()
+        if not settings:
+            log_error("Shopify settings not found", "nj_temp_shopify_session")
+            return
         with Session.temp(settings["shop"], "2025-04", settings["token"]):
             return func(*args, **kwargs)
     return wrapper
@@ -196,6 +202,11 @@ def create_shopify_inventory_sync():
         start = 0
         batch_size = 50
         settings = get_shopify_settings()
+        
+        if not settings:
+            log_error("Shopify settings not found", "create_shopify_inventory_sync")
+            return
+        
         headers = {
             "X-Shopify-Access-Token": settings["token"],
             "Content-Type": "application/json"

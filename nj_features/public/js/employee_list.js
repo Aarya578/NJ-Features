@@ -1,4 +1,15 @@
 frappe.listview_settings['Employee'] = {
+    get_indicator: function(doc) {
+		if(doc.status == "Active") {
+			return [__("Active"), "green", "status,=,Active"];
+		} else if(doc.status == "Inactive") {
+			return [__("Inactive"), "red", "status,=,Inactive"];
+		} else if(doc.status == "Suspended") {
+			return [__("Suspended"), "orange", "status,=,Suspended"];
+		} else if(doc.status == "Left") {
+			return [__("Left"), "orange", "status,=,Left"];
+		}
+	},
     onload: function(listview) {
         if (frappe.user.has_role('Developer')) {
             listview.page.add_inner_button(__('Disable Qty Check'), function() {
@@ -27,5 +38,9 @@ frappe.listview_settings['Employee'] = {
                 }
             })
         }
+    },
+    refresh: function() {
+        $('span.sidebar-toggle-btn').hide();
+        $('.col-lg-2.layout-side-section').hide();
     }
 }

@@ -572,7 +572,8 @@ class NJQCA(Document):
                 s1 = time.time()
                 logger.debug(f"Time for '{self.name}'")
                 sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
-                check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
+                if self.item_group!="BATTERY":
+                   check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
                 
                 if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group and self.item_group!='BATTERY':
@@ -585,7 +586,7 @@ class NJQCA(Document):
                     self.create_serial_no_based_on_rfq()
                     logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
-                if self.item_group == sn_item_group:
+                if self.item_group == sn_item_group or self.item_group=='BATTERY':
                     s4 = time.time()
                     if self.qi_type is not None and self.qi_type=="is_defective":
                         qi_data = open_draft_qi(self,self.brand,self.model,is_defective="1")

@@ -446,13 +446,14 @@ frappe.ui.form.on('NJQCA', {
         
         if(frm.doc.item_group=="BATTERY"){
             frappe.validated=true;
-            frappe.call({
+            await frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_bdt_status',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
                     if(r.message){
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         if(r.message == "Pass"){
+                            frm.set_value('bdt_status', "Pass");
                             frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
@@ -460,6 +461,7 @@ frappe.ui.form.on('NJQCA', {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
                         }else if(r.message == "Fail"){
+                            frm.set_value('bdt_status', "Fail");
                             frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");

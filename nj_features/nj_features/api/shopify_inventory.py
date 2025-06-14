@@ -45,8 +45,8 @@ def fetch_and_stage_inventory_sync():
     enqueue(
         method=create_rq_doc,
         queue="long",
-        timeout=3600,
-        job_name=f"inventory_sync_batch"
+        timeout=1200,
+        job_name=f"shopify_inventory_sync_batch_erp"
     )
 
 def create_rq_doc():
@@ -163,7 +163,7 @@ def create_rq_doc():
                         actual_qty = safe_float(doc.actual_qty) or 0
                         shopify_quantity = safe_float(doc.shopify_quantity) or 0
                         
-                        if actual_qty == shopify_quantity and doc.status != "Queued":
+                        if actual_qty == shopify_quantity:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
                         else:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
@@ -181,6 +181,17 @@ def create_rq_doc():
 @frappe.whitelist()
 @nj_temp_shopify_session
 def start_shopify_inventory_sync():
+
+    enqueue(
+        method=create_shopify_inventory_sync,
+        queue="long",
+        timeout=1200,
+        job_name=f"sync_to_shopify_inventory"
+    )
+
+@frappe.whitelist()
+@nj_temp_shopify_session
+def create_shopify_inventory_sync():
     try:
         start = 0
         batch_size = 50

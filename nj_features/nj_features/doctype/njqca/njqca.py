@@ -77,7 +77,7 @@ def get_inspection_type():
 def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None):
     try:
         if self.item_group=="BATTERY":
-            serial_num=self.battery_serial_no
+            serial_num=self.component_serial_no
         else:
             serial_num = self.serial_no
         if serial_num:
@@ -724,7 +724,7 @@ class NJQCA(Document):
             frappe.msgprint("Item group is not 'BATTERY'. Skipping update.")
             return
        
-        if not self.battery_serial_no:
+        if not self.component_serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
         
         # Check if backup_duration_cycle_1 is more than 60
@@ -734,7 +734,7 @@ class NJQCA(Document):
         
         try:
             # Fetch Serial No doc
-            serial_no_doc = frappe.get_doc("Serial No", self.battery_serial_no)
+            serial_no_doc = frappe.get_doc("Serial No", self.component_serial_no)
             # Check if Serial No's item group is Battery
             if serial_no_doc.item_group != 'BATTERY':
                 frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
@@ -1099,10 +1099,10 @@ def get_info_from_battery_serial_no(doc=None):
         sle = []
         result = {}
         doc_json = json.loads(doc)
-        serial_no = doc_json.get('battery_serial_no')
+        serial_no = doc_json.get('component_serial_no')
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'battery_serial_no' in doc_json:
+        if 'component_serial_no' in doc_json:
 
             sql_query = """
                 SELECT name,item_code, warehouse, purchase_rate,

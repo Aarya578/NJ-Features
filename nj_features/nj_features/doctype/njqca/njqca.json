@@ -10,7 +10,7 @@
   "njqca_information_section",
   "power_on",
   "serial_no",
-  "battery_serial_no",
+  "component_serial_no",
   "bios_serialno",
   "inspection_type",
   "department",
@@ -421,21 +421,21 @@
    "reqd": 1
   },
   {
-   "depends_on": "eval:doc.item_group == \"BATTERY\";",
-   "fieldname": "battery_serial_no",
-   "fieldtype": "Data",
-   "label": "Battery Serial No"
-  },
-  {
    "fieldname": "bdt_status",
    "fieldtype": "Data",
    "label": "BDT Status",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.item_group == \"BATTERY\";",
+   "fieldname": "component_serial_no",
+   "fieldtype": "Data",
+   "label": "Component Serial No"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-14 10:38:09.376668",
+ "modified": "2025-06-14 17:46:15.305014",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

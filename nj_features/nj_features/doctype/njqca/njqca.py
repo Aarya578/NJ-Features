@@ -550,12 +550,12 @@ class NJQCA(Document):
         self.validate_item_code_match()
         self.battery_readings()
         self.update_serial_no_readings()
-        if self.power_on == 'Yes' and self.repack_item_code != '':
+        if self.power_on == 'Yes':
             if self.manual_repack_item_code is None or self.manual_repack_item_code == '':
                 frappe.throw("Please fill <b>Manual Repack Item Code</b>.")
                 return None
             
-            if self.item_template:
+            if self.item_template and self.item_group!='BATTERY':
                 tmp_model = frappe.db.get_value('Item', self.item_template, 'item_model')
                 itm_model = frappe.db.get_value('Item', self.manual_repack_item_code, 'item_model')
                 if tmp_model and tmp_model != self.model:
@@ -575,7 +575,7 @@ class NJQCA(Document):
                 check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
                 
-                if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group:
+                if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group and self.item_group!='BATTERY':
                     s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
@@ -599,7 +599,7 @@ class NJQCA(Document):
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
                 
-                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
+                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
                 if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
                     s5 = time.time()
                     update_serial_no_componont_for_grade(self)
@@ -675,6 +675,8 @@ class NJQCA(Document):
                 frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
 
     def update_serial_no_readings(self):
+        if self.item_group=="BATTERY":
+            return
     # Fetch relevant parameters from NJQCA Result Parameters
         results = frappe.db.sql("""
             SELECT parameter, value 
@@ -721,7 +723,7 @@ class NJQCA(Document):
             frappe.msgprint("Item group is not 'BATTERY'. Skipping update.")
             return
        
-        if not self.serial_no:
+        if not self.battery_serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
         
         # Check if backup_duration_cycle_1 is more than 60
@@ -731,7 +733,7 @@ class NJQCA(Document):
         
         try:
             # Fetch Serial No doc
-            serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+            serial_no_doc = frappe.get_doc("Serial No", self.battery_serial_no)
             # Check if Serial No's item group is Battery
             if serial_no_doc.item_group != 'BATTERY':
                 frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
@@ -785,7 +787,7 @@ class NJQCA(Document):
             frappe.msgprint(f"Error saving battery data: {str(e)}")
 
     def update_item_groups(self):
-        if self.inspection_type != "Final QC":
+        if self.inspection_type != "Final QC" or self.item_group=="BATTERY":
             return
 
         serial_no = self.serial_no

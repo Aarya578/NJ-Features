@@ -10,7 +10,12 @@
   "rto_charges",
   "serial_no",
   "sales_order",
+  "delivery_note",
   "pickup_scheduled_date",
+  "remark_status",
+  "courier_service",
+  "shiprocket_order_id",
+  "shiprocket_shipment_id",
   "column_break_30oxe",
   "cit_image",
   "shiprocket_manifests",
@@ -77,11 +82,36 @@
    "fieldname": "shiprocket_image",
    "fieldtype": "Long Text",
    "label": "Shiprocket Image"
+  },
+  {
+   "fieldname": "remark_status",
+   "fieldtype": "Data",
+   "label": "Remark Status"
+  },
+  {
+   "fieldname": "courier_service",
+   "fieldtype": "Data",
+   "label": "Courier Service"
+  },
+  {
+   "fieldname": "shiprocket_order_id",
+   "fieldtype": "Data",
+   "label": "ShipRocket Order ID"
+  },
+  {
+   "fieldname": "shiprocket_shipment_id",
+   "fieldtype": "Data",
+   "label": "ShipRocket Shipment ID"
+  },
+  {
+   "fieldname": "delivery_note",
+   "fieldtype": "Data",
+   "label": "Delivery Note"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-31 12:52:26.406338",
+ "modified": "2025-06-14 12:12:32.621907",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

@@ -23,6 +23,8 @@ class CustomSalesOrder(SalesOrder):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
 
+ 
+        # self.total_item_group_sum()
         raw_order_id = None
         if self.order_type!="Maintenance":
             if self.shopify_order_id:
@@ -37,6 +39,36 @@ class CustomSalesOrder(SalesOrder):
 
             if order_id:
                 trigger_fulfillment(order_id)
+
+
+    def total_item_group_sum(self):
+    # Step 1: Get item groups from NJ Settings
+        item_group_value = frappe.db.get_value(
+            "NJ Settings", 
+            {"parameter": "Item Group Validation"}, 
+            "value"
+        )
+        print("item_group_value===================", item_group_value)
+        
+        if not item_group_value:
+            return
+
+        # Convert comma-separated value to list
+        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+        print("allowed_item_groups==================", allowed_item_groups)
+
+        # Step 2: Loop through items in Sales Order and calculate total qty
+        total_qty = 0
+        for item in self.items:
+            item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+            if item_group in allowed_item_groups:
+                total_qty += item.qty
+
+        # Step 3: Update a custom field `item_group_qty` (you need to add this field in Sales Order)
+        self.item_group_qty = total_qty
+        print("self.item_group_qty=================", self.item_group_qty)
+        self.save(ignore_permissions=True)    
+
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):

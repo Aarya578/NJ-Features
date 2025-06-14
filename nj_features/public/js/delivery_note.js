@@ -109,47 +109,42 @@ frappe.ui.form.on('Delivery Note', {
         $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
 
+
     // validate: function(frm) {
-    //     console.log("indide validate ===========333333333333333333333333333333333======Delivery Note saved");
+    //     console.log("inside validate ===========333333333333333333333333333333333======Delivery Note saved");
+
         
-    //         frappe.call({
-    //         method: 'nj_features.overrides.delivery_note.update_item_details',
-    //         args: { self: frm.doc },
-    //         callback: function(r) {
-    //             if (r.message) {
-    //                 // Weight
-    //                 if (r.message.weight !== null && r.message.weight !== undefined) {
-    //                     frm.set_value('weight', r.message.weight);
-    //                 }
 
-    //                 // Height
-    //                 if (r.message.height) {
-    //                     frm.set_value('height', r.message.height);
-    //                 } else {
-    //                     frm.set_value('height', null);  // Reset if not returned
-    //                 }
 
-    //                 // Length
-    //                 if (r.message.length) {
-    //                     frm.set_value('length', r.message.length);
-    //                 } else {
-    //                     frm.set_value('length', null);
-    //                 }
 
-    //                 // Breadth
-    //                 if (r.message.breadth) {
-    //                     frm.set_value('breadth', r.message.breadth);
-    //                 } else {
-    //                     frm.set_value('breadth', null);
-    //                 }
-
-    //                 frm.refresh_fields(['weight', 'height', 'length', 'breadth']);
-    //             }
-    //         }
-    //     });
-    validate: function(frm) {
-        console.log("inside validate ===========333333333333333333333333333333333======Delivery Note saved");
-
+    validate:  function(frm) {
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
+                    frappe.msgprint({
+                        title: __('Validation Error'),
+                        message: r.message.join('<br>'),
+                        indicator: 'red'
+                    });
+                    frappe.validated = false;
+                } else { frappe.validated = true; }
+            }
+        });
+        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
+        if (first_so) {
+            frappe.call({
+                method: "nj_features.overrides.delivery_note.get_cod_amount",
+                args: { so_name: first_so },
+                callback: function(res) {
+                    if (res.message) {
+                        frm.set_value("cod_amount", res.message.cod_amount); 
+                        frm.set_value("shopify_order_id", res.message.order_id); 
+                    }
+                }
+            });
+        }
         frappe.call({
             method: 'nj_features.overrides.delivery_note.update_item_details',
             args: { self: frm.doc },
@@ -179,36 +174,35 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
 
-
-        frappe.call({
-            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
-            args: { doc: frm.doc },
-            callback: function(r) {
-                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
-                    frappe.msgprint({
-                        title: __('Validation Error'),
-                        message: r.message.join('<br>'),
-                        indicator: 'red'
-                    });
-                    frappe.validated = false;
-                } else { frappe.validated = true; }
-            }
-        });
-        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        if (first_so) {
-            frappe.call({
-                method: "nj_features.overrides.delivery_note.get_cod_amount",
-                args: { so_name: first_so },
-                callback: function(res) {
-                    if (res.message) {
-                        frm.set_value("cod_amount", res.message.cod_amount); 
-                        frm.set_value("shopify_order_id", res.message.order_id); 
-                    }
-                }
-            });
-        }
     },
 
+
+    before_submit: async function(frm) {
+        await frappe.call({
+            method:'nj_features.overrides.delivery_note.allow_to_save',
+            args: {
+                "doc": frm.doc
+            },
+            callback: function(r) {
+                if (r.message) {
+                    if(r.message!="pass") {
+                        frappe.validated=false
+                        frappe.throw(r.message);
+
+                    }else{
+                        frappe.validated=true
+                    }
+                }
+            }
+        })
+    },
+  
+    // after_save: function(frm) {
+    //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+    //         frm.set_value('shipping_address_name', frm.doc.customer_address);
+    //         frm.refresh_field('shipping_address_name');
+    //     }
+    // },
     after_save: function(frm) {
         console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
          
@@ -242,19 +236,7 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
             
-        // frappe.call({
-        //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',
-        //     args: {
-        //         doc: JSON.stringify(frm.doc)
-        //     },
-        //     callback: function(r) {
-        //         if (r.message && r.message.item_group_qty !== undefined) {
-        //             console.log("item_group_qty", r.message.item_group_qty);
-        //             frm.set_value('item_group_qty', r.message.item_group_qty);
-        //             frm.refresh_field('item_group_qty');
-        //         }
-        //     }
-        // });
+       
         if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');

@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-13 11:18:10.123369",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "shiprocket_settings_section",
+  "email",
+  "password",
+  "cod_charges",
+  "shiprocketcourier_name_block_list",
+  "shiprocket_courier_names",
+  "critical_log_settings_section",
+  "clientcode",
+  "url"
+ ],
+ "fields": [
+  {
+   "fieldname": "shiprocket_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Shiprocket Settings"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email"
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "Password"
+  },
+  {
+   "fieldname": "cod_charges",
+   "fieldtype": "Table",
+   "label": "COD Charges",
+   "options": "COD Charges"
+  },
+  {
+   "fieldname": "shiprocket_courier_names",
+   "fieldtype": "Table",
+   "label": "Shiprocket Courier Names",
+   "options": "Shiprocket Courier Names"
+  },
+  {
+   "fieldname": "critical_log_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Critical Log Settings"
+  },
+  {
+   "fieldname": "clientcode",
+   "fieldtype": "Int",
+   "label": "ClientCode"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "URL"
+  },
+  {
+   "fieldname": "shiprocketcourier_name_block_list",
+   "fieldtype": "Table",
+   "label": "ShiprocketCourier Name Block List",
+   "options": "Shiprocket Courier Name Block List"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-06-13 12:41:55.667455",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Logistics Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

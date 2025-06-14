@@ -16,6 +16,11 @@
   "courier_service",
   "shiprocket_order_id",
   "shiprocket_shipment_id",
+  "weight",
+  "height",
+  "length",
+  "breadth",
+  "item_group_qty",
   "column_break_30oxe",
   "cit_image",
   "shiprocket_manifests",
@@ -107,11 +112,36 @@
    "fieldname": "delivery_note",
    "fieldtype": "Data",
    "label": "Delivery Note"
+  },
+  {
+   "fieldname": "weight",
+   "fieldtype": "Data",
+   "label": "Weight"
+  },
+  {
+   "fieldname": "height",
+   "fieldtype": "Data",
+   "label": "Height"
+  },
+  {
+   "fieldname": "length",
+   "fieldtype": "Data",
+   "label": "Length"
+  },
+  {
+   "fieldname": "breadth",
+   "fieldtype": "Data",
+   "label": "Breadth"
+  },
+  {
+   "fieldname": "item_group_qty",
+   "fieldtype": "Float",
+   "label": "Item Group Qty"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-14 12:12:32.621907",
+ "modified": "2025-06-14 14:50:16.408887",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

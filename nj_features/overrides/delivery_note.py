@@ -1278,44 +1278,44 @@ def update_item_details(self):
         'breadth': breadth
     }
 
-@frappe.whitelist()
-def total_item_group_sum(doc):
-    doc = frappe._dict(json.loads(doc))
-    # Fetch full document to access child table objects
-    delivery_note = frappe.get_doc("Delivery Note", doc.name)
-    print("delivery_note================================", delivery_note)
+# @frappe.whitelist()
+# def total_item_group_sum(doc):
+#     doc = frappe._dict(json.loads(doc))
+#     # Fetch full document to access child table objects
+#     delivery_note = frappe.get_doc("Delivery Note", doc.name)
+#     print("delivery_note================================", delivery_note)
     
-    # Step 1: Get item groups from NJ Settings
-    item_group_value = frappe.db.get_value(
-        "NJ Settings",
-        {"parameter": "Item Group Validation"},
-        "value"
-    )
+#     # Step 1: Get item groups from NJ Settings
+#     item_group_value = frappe.db.get_value(
+#         "NJ Settings",
+#         {"parameter": "Item Group Validation"},
+#         "value"
+#     )
     
-    if not item_group_value:
-        print("No item group validation found")
-        return {"item_group_qty": 0}
+#     if not item_group_value:
+#         print("No item group validation found")
+#         return {"item_group_qty": 0}
     
-    # Step 2: Convert to list
-    allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-    print("allowed_item_groups================================", allowed_item_groups)
+#     # Step 2: Convert to list
+#     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+#     print("allowed_item_groups================================", allowed_item_groups)
     
-    # Step 3: Calculate total qty for allowed groups
-    total_qty = 0
-    for item in delivery_note.items:
-        item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-        if item_group in allowed_item_groups:
-            total_qty += item.qty
-            print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
+#     # Step 3: Calculate total qty for allowed groups
+#     total_qty = 0
+#     for item in delivery_note.items:
+#         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+#         if item_group in allowed_item_groups:
+#             total_qty += item.qty
+#             print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
     
-    print("total_qty================================", total_qty)
+#     print("total_qty================================", total_qty)
     
-    # delivery_note.save(ignore_permissions=True)
+#     # delivery_note.save(ignore_permissions=True)
     
-    return {"item_group_qty": total_qty}
-    # Update the delivery note document with the calculated value
-    # frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)
-    # frappe.db.commit()
+#     return {"item_group_qty": total_qty}
+#     # Update the delivery note document with the calculated value
+#     # frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)
+#     # frappe.db.commit()
 
 
 
@@ -1332,6 +1332,30 @@ def send_consignement_data(doc):
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
         print("against_sales_order===========================", against_sales_order)
+        item_group_value = frappe.db.get_value(
+            "NJ Settings",
+            {"parameter": "Item Group Validation"},
+            "value"
+        )
+    
+        if not item_group_value:
+            print("No item group validation found")
+            return {"item_group_qty": 0}
+        
+        # Step 2: Convert to list
+        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+        print("allowed_item_groups================================", allowed_item_groups)
+        
+        # Step 3: Calculate total qty for allowed groups
+        total_qty = 0
+        for item in delivery_note.items:
+            item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+            if item_group in allowed_item_groups:
+                total_qty += item.qty
+                print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
+        frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
+        
+        print("total_qty================================", total_qty)
         # Validate shipping address and calculate cost of delivery
         if not doc.shipping_address_name:
             frappe.throw("Shipping address is not set.")
@@ -1490,7 +1514,7 @@ def send_consignement_data(doc):
             "SenderState": company_address.state or "",
             "SenderCountry": company_address.country or "India",
             "SenderPin": company_address.pincode or "",
-            "SenderMobile": company_address.phone or "",
+            "SenderMobile": sanitize_phone(shipping_address.phone),
             "SenderEmail": company_address.email_id or "",
             "ReceiverName": doc.customer_name or "",
             "ReceiverAdd1": shipping_address.address_line1 or "",
@@ -1499,7 +1523,7 @@ def send_consignement_data(doc):
             "ReceiverState": shipping_address.state or "",
             "ReceiverCountry": shipping_address.country or "India",
             "ReceiverPin": shipping_address.pincode or "",
-            "ReceiverMobile": shipping_address.phone or "",
+            "ReceiverMobile": sanitize_phone(shipping_address.phone),
             "ConsignmentValue": consignmentValue,
             "NoQuantity": int(total_quantity),  # Fixed: Use total quantity of all items
             "consignmentValue": consignmentValue,
@@ -1544,12 +1568,15 @@ def send_consignement_data(doc):
             delivery_note.cit_image = cit_data
             delivery_note.cost_of_delivery = cost_of_delivery
             delivery_note.courier_service = "CriticaLog"  # Set courier service
+            delivery_note.item_group_qty = total_quantity
+            delivery_note.save()
             
             # Use db_set to update without triggering validations or changing docstatus
             delivery_note.db_set('tracking_id', tracking_id)
             delivery_note.db_set('cit_image', cit_data)
             delivery_note.db_set('cost_of_delivery', cost_of_delivery)
             delivery_note.db_set('courier_service', 'CriticaLog')
+            delivery_note.db_set('item_group_qty', total_quantity)
             
             frappe.msgprint(f"AWB Number generated successfully: {tracking_id}")
             
@@ -1580,6 +1607,28 @@ def shiprocket_awb_number(doc):
         # Get the actual Sales Order document to access child table properly
         delivery_note_doc = frappe.get_doc("Delivery Note", doc.name)
         print("delivery_note_doc===========================", delivery_note_doc)
+        item_group_value = frappe.db.get_value(
+            "NJ Settings",
+            {"parameter": "Item Group Validation"},
+            "value"
+        )
+    
+        if not item_group_value:
+            print("No item group validation found")
+            return {"item_group_qty": 0}
+        
+        # Step 2: Convert to list
+        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+        print("allowed_item_groups================================", allowed_item_groups)
+        
+        # Step 3: Calculate total qty for allowed groups
+        total_qty = 0
+        for item in delivery_note_doc.items:
+            item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+            if item_group in allowed_item_groups:
+                total_qty += item.qty
+                print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
+        frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty) 
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
         )
@@ -1647,7 +1696,7 @@ def shiprocket_awb_number(doc):
             "billing_state": shipping_address.state if shipping_address.state else "",
             "billing_country": shipping_address.country if shipping_address.country else "India",
             "billing_email": shipping_address.email_id if shipping_address.email_id else "",
-            "billing_phone": shipping_address.phone if shipping_address.phone else "",
+            "billing_phone":sanitize_phone(shipping_address.phone),
             "shipping_is_billing": True,
             "shipping_customer_name": "",
             "shipping_last_name": "", 
@@ -2036,8 +2085,15 @@ def adapter_repacked_serial_no(nj_serial_no):
             return "No repacked serial no found"
     except Exception as e:
         return str(e)
-    
-
+@frappe.whitelist()
+def sanitize_phone(phone):
+    # Remove all non-digit characters
+    digits = ''.join(filter(str.isdigit, phone or ""))
+    # If phone has more than 10 digits, take the last 10
+    if len(digits) > 10:
+        digits = digits[-10:]
+    # Return only if it's exactly 10 digits
+    return digits if len(digits) == 10 else ""
 @frappe.whitelist()
 def allow_to_save(doc):
     try:
@@ -2102,4 +2158,3 @@ def allow_to_save(doc):
 
 
     
-

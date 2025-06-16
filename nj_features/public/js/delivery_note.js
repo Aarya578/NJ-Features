@@ -206,35 +206,35 @@ frappe.ui.form.on('Delivery Note', {
     after_save: function(frm) {
         console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
          
-        frappe.call({
-            method: 'nj_features.overrides.delivery_note.total_item_group_sum',
-            args: {
-                doc: JSON.stringify(frm.doc)
-            },
-            callback: function(r) {
-                console.log("Full response:", r);
-                if (r.message) {
-                    console.log("Response message:", r.message);
-                    if (r.message.item_group_qty !== undefined) {
-                        console.log("item_group_qty received:", r.message.item_group_qty);
+        // frappe.call({
+        //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',
+        //     args: {
+        //         doc: JSON.stringify(frm.doc)
+        //     },
+        //     callback: function(r) {
+        //         console.log("Full response:", r);
+        //         if (r.message) {
+        //             console.log("Response message:", r.message);
+        //             if (r.message.item_group_qty !== undefined) {
+        //                 console.log("item_group_qty received:", r.message.item_group_qty);
                         
-                        // Set the value and save the document
-                        frm.set_value('item_group_qty', r.message.item_group_qty);
-                        frm.refresh_field('item_group_qty');
+        //                 // Set the value and save the document
+        //                 frm.set_value('item_group_qty', r.message.item_group_qty);
+        //                 frm.refresh_field('item_group_qty');
                         
-                        // Save the document to persist the changes
-                        // frm.save();
-                    } else {
-                        console.log("item_group_qty not found in response");
-                    }
-                } else {
-                    console.log("No message in response");
-                }
-            },
-            error: function(r) {
-                console.log("Error in frappe call:", r);
-            }
-        });
+        //                 // Save the document to persist the changes
+        //                 // frm.save();
+        //             } else {
+        //                 console.log("item_group_qty not found in response");
+        //             }
+        //         } else {
+        //             console.log("No message in response");
+        //         }
+        //     },
+        //     error: function(r) {
+        //         console.log("Error in frappe call:", r);
+        //     }
+        // });
             
        
         if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {

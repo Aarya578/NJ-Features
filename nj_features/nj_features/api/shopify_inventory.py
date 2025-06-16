@@ -196,7 +196,6 @@ def start_shopify_inventory_sync():
     )
 
 @frappe.whitelist()
-@nj_temp_shopify_session
 def create_shopify_inventory_sync():
     try:
         start = 0

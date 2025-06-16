@@ -16,7 +16,7 @@ from nj_lib.utils.common_utils import get_latest_item_wizard
 from frappe.utils import add_days, nowdate, getdate, add_years
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
-logger = frappe.logger('DNLogger', allow_site=True, file_count=100)
+logger = frappe.logger('DNLogger', allow_site=True, file_count=1)
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
@@ -70,13 +70,10 @@ class CustomDeliveryNote(DeliveryNote):
                     WHERE dni.parent = %s
                     LIMIT 1
                 """, (self.name,), as_dict=True)
-                print("order_details==================================", order_details)
                 
                 if order_details:
                     order_type = order_details[0].get('order_type')
-                    print("order_type==================================", order_type)
                     sale_type = order_details[0].get('sale_type')
-                    print("sale_type==================================", sale_type)
                     
                     # Only trigger fulfillment if conditions are met
                     if order_type == 'Sales' and sale_type == 'NJ-Website-B2C':
@@ -262,7 +259,6 @@ class CustomDeliveryNote(DeliveryNote):
         
 
     def fetching_tracking_details(self):
-        print("inside the function=============================================================")
         start_time = time.time()
 
         if self.is_return:
@@ -280,12 +276,10 @@ class CustomDeliveryNote(DeliveryNote):
                 "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
                 "DocketNo": self.name
             }
-            print("payload=================================", payload)
             url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
             headers = {"Content-Type": "application/json"}
             response = requests.post(url, headers=headers, json=payload)
             
-            print("response===========================",response)
             if response.status_code == 200:
                 data = response.json()
                 
@@ -306,7 +300,6 @@ class CustomDeliveryNote(DeliveryNote):
                     # self.cost_amount = cost_of_delivery
                     # self.awb_number = awb_number
                     self.db_update()
-                    print(f"Updated remark_status to: {remark}")
                 else:
                     print("No remark found in the response")
             else:
@@ -317,27 +310,22 @@ class CustomDeliveryNote(DeliveryNote):
         finally:
             end_time = time.time()
             execution_time = round(end_time - start_time, 4)
-            print(f"Execution Time =========================: {execution_time} seconds")  
             logger.info(f"Execution Time =========================: {execution_time} seconds")
 
     def rto_charges_update(self):
-        print("inside the function=============================================================")
         if not self.is_return:
             return
 
         valid_causes = ["RTO Customer", "RTO Delivery Partner"]
-        print("self.cause_of_return===========================", self.cause_of_return)
         if not self.cause_of_return or self.cause_of_return not in valid_causes:
             return
 
         # Fetch RTO Charges from NJ Settings
         rto_cost = frappe.db.get_value("NJ Settings", {"parameter": "RTO Charges"}, "value")
-        print("rto_cost===========================", rto_cost)
         # If value exists, sum with cost_amount
         if rto_cost and self.cost_of_delivery:
             try:
                 updated_cost = float(self.cost_of_delivery) + float(rto_cost)
-                print("updated_cost===========================", updated_cost)
                 self.cost_of_delivery = updated_cost
                 self.db_update()
             except Exception as e:
@@ -346,7 +334,6 @@ class CustomDeliveryNote(DeliveryNote):
 
 
     # def update_details_to_delivery_charege_doc(self):
-    #     print("===============================update_details_to_delivery_charege_doc")
     # # Check if a Delivery Charges document with the same AWB number exists
     #     existing_delivery_charge = frappe.get_all(
     #         "Delivery Charges",
@@ -371,8 +358,6 @@ class CustomDeliveryNote(DeliveryNote):
     #     if existing_delivery_charge:
     #         # If exists, get the document
     #         delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
-    #         print("existing_delivery_charge=========================",existing_delivery_charge)
-    #         print(f"Updating existing Delivery Charges document: {delivery_charge.name}")
 
     #         # Update serial_no if missing or append new ones
     #         if delivery_charge.serial_no:
@@ -394,7 +379,6 @@ class CustomDeliveryNote(DeliveryNote):
     #     else:
     #         # Create a new document
     #         delivery_charge = frappe.new_doc("Delivery Charges")
-    #         print("Creating new Delivery Charges document")
     #         delivery_charge.awb_number = self.tracking_id
     #         delivery_charge.serial_no = serial_nos_str
     #         delivery_charge.sales_order = sales_orders_str
@@ -424,10 +408,8 @@ class CustomDeliveryNote(DeliveryNote):
     #             delivery_charge.save(ignore_permissions=True)
     #     except Exception as e:
     #         frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
-    #         print(f"Error: {e}")
 
     def update_details_to_delivery_charege_doc(self):
-        print("===============================update_details_to_delivery_charege_doc")
 
         # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
@@ -453,8 +435,6 @@ class CustomDeliveryNote(DeliveryNote):
         if existing_delivery_charge:
             # If exists, get the document
             delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
-            print("existing_delivery_charge=========================", existing_delivery_charge)
-            print(f"Updating existing Delivery Charges document: {delivery_charge.name}")
 
             # Update serial_no
             existing_serials = set(delivery_charge.serial_no.split(",")) if delivery_charge.serial_no else set()
@@ -467,7 +447,6 @@ class CustomDeliveryNote(DeliveryNote):
             delivery_charge.sales_order = ",".join(sorted(all_orders))
         else:
             # Create a new document
-            print("Creating new Delivery Charges document")
             delivery_charge = frappe.new_doc("Delivery Charges")
             delivery_charge.awb_number = self.tracking_id
             delivery_charge.serial_no = serial_nos_str
@@ -503,7 +482,6 @@ class CustomDeliveryNote(DeliveryNote):
                 delivery_charge.save(ignore_permissions=True)
         except Exception as e:
             frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
-            print(f"Error: {e}")
 
     def qc_nj_of_days_checking(self):
     # 1. Check if DN QC is active
@@ -529,7 +507,6 @@ class CustomDeliveryNote(DeliveryNote):
         serial_nos = set()
         
         for row in serial_nos_raw:
-            print(f"Processing row: {row.name}, Item: {row.item_code}, Serial: {row.serial_no}")
             if row.serial_no:
                 # Handle multiple serials in one field (e.g., "SN-001\nSN-002")
                 for s in row.serial_no.split('\n'):
@@ -552,7 +529,6 @@ class CustomDeliveryNote(DeliveryNote):
             
             
             if not qi_records:
-                print(f"No QI records found for {serial_no}, skipping...")
                 continue # No QI records found, skip
             
             latest_qi = qi_records[0]
@@ -560,7 +536,6 @@ class CustomDeliveryNote(DeliveryNote):
             
             # 6. Check if QI type is allowed
             if qi_type not in allowed_inspection_types_list:
-                print(f"QI type {qi_type} not in allowed types for {serial_no}, skipping...")
                 continue # Not an allowed inspection type, skip
             
             # 7. Check if QI creation is within the allowed number of days
@@ -571,15 +546,12 @@ class CustomDeliveryNote(DeliveryNote):
             if int(days_difference) > int(inspection_days):
                 error_msg = f"More than {inspection_days} days have passed for Serial No {serial_no}. Please perform re-QC."
                 error_messages.append(error_msg)
-                print(f"Adding error message: {error_msg}")
         
         # 8. Throw all error messages at once
         if error_messages:
             # Remove duplicates and join messages
             unique_errors = list(set(error_messages))
             frappe.throw("<br>".join(unique_errors))
-
-
 
 
 @frappe.whitelist()
@@ -806,7 +778,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
                             tracking_link = f"{base_url.rstrip('/')}/{tracking_number}"
                         else:
                             tracking_link = base_url
-                        print(f"Found tracking URL from Courier Service doc: {tracking_link}")
                     
                     # Get proper company name if available
                     if hasattr(courier_doc, 'courier_name') and courier_doc.courier_name:
@@ -815,7 +786,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
                         courier_company = courier_doc.company_name
                         
                 except frappe.DoesNotExistError:
-                    print(f"Courier Service document '{courier_service}' not found")
                     # Fallback: try to extract company name from service name
                     if "delhivery" in courier_service.lower():
                         courier_company = "Delhivery"
@@ -869,8 +839,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
                     update_response = requests.post(update_url, headers=headers, json=update_payload)
                     update_data = update_response.json()
                     
-                    print("Update response:", update_data)
-
                     if "fulfillment" in update_data:
                         return {
                             "status": "updated",
@@ -917,8 +885,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
                     fulfillment_response = requests.post(MAKE_FULLFILMENT, headers=headers, json=fulfillment_payload)
                     fulfillment_data = fulfillment_response.json()
                     
-                    print("Create fulfillment response:", fulfillment_data)
-
                     if "fulfillment" in fulfillment_data and fulfillment_data["fulfillment"]:
                         fulfillment_id = fulfillment_data["fulfillment"]["id"]
                         return {
@@ -939,7 +905,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         frappe.throw(str(e))
 # @frappe.whitelist()
 # def awb_number_update(doc):
-#     # print("doc=====================inside the functon============")
 #     if isinstance(doc, str):
 #         doc = json.loads(doc)
 
@@ -961,15 +926,12 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
 #         WHERE dni.parent = %s
 #         LIMIT 1
 #     """, (dn_doc.name,), as_dict=True)
-#     print("result==================================", result)
 
 #     if not result or not result[0].awb_number:
 #         return
-#     print("result==================================", result)
 #     awb_number = result[0].awb_number
 #     shiprocket_courier_name = result[0].shiprocket_courier_name or ""
 #     courier_service_name = shiprocket_courier_name.strip()
-#     print("result==================================", courier_service_name)
 
     # Check if courier service exists
     # if courier_service_name:
@@ -1098,7 +1060,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 # def update_item_details(self):
 #     from datetime import datetime
 #     import json
-#     print('------------------- DEBUG START -------------------')
 
 #     if isinstance(self, str):
 #         self = json.loads(self)
@@ -1117,7 +1078,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #     if item_group_value:
 #         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
 
-#     print(f"Allowed item groups:======================= {allowed_item_groups}")
 
 #     # Step 2: Count how many matching item group rows exist
 #     matching_rows = []
@@ -1130,11 +1090,9 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #         if item_group in allowed_item_groups:
 #             matching_rows.append(row)
 
-#     print(f"Matching rows count:========================== {len(matching_rows)}")
 
 #     # Step 3: If more than one matching row, skip fetching weight/dimensions
 #     if len(matching_rows) != 1:
-#         print("=====================Skipping weight and dimension fetch due to multiple matching item group rows.")
 #         return {
 #             'weight': 0,
 #             'height': None,
@@ -1145,7 +1103,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #     # Step 4: Only one row matched — process it
 #     item = matching_rows[0]
 #     if item.get("qty") != 1:
-#         print("Skipping because qty is not 1.")
 #         return {
 #             'weight': 0,
 #             'height': None,
@@ -1174,7 +1131,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #         for dim in group_doc.get("dimensions", []):
 #             param = dim.parameter.strip().lower()
 #             value = dim.value
-#             print(f"Dimension: {param} = {value}")
 
 #             if "height" in param and not height:
 #                 height = value
@@ -1197,7 +1153,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 def update_item_details(self):
     from datetime import datetime
     import json
-    print('------------------- DEBUG START -------------------')
 
     if isinstance(self, str):
         self = json.loads(self)
@@ -1215,7 +1170,6 @@ def update_item_details(self):
     allowed_item_groups = []
     if item_group_value:
         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-    print(f"Allowed item groups:======================= {allowed_item_groups}")
 
     # Step 2: Count how many matching item group rows exist
     matching_rows = []
@@ -1226,8 +1180,6 @@ def update_item_details(self):
         item_group = frappe.db.get_value("Item", item_code, "item_group")
         if item_group in allowed_item_groups:
             matching_rows.append(row)
-
-    print(f"Matching rows count:========================== {len(matching_rows)}")
 
     # Step 3: If more than one matching row, skip fetching weight/dimensions
     if len(matching_rows) != 1:
@@ -1260,7 +1212,6 @@ def update_item_details(self):
         for dim in group_doc.get("dimensions", []):
             param = dim.parameter.strip().lower()
             value = dim.value
-            print(f"Dimension: {param} = {value}")
             if "height" in param and not height:
                 height = value
             elif "length" in param and not length:
@@ -1284,21 +1235,42 @@ def update_item_details(self):
 #     # Fetch full document to access child table objects
 #     delivery_note = frappe.get_doc("Delivery Note", doc.name)
 #     print("delivery_note================================", delivery_note)
+# @frappe.whitelist()
+# def total_item_group_sum(doc):
+#     doc = frappe._dict(json.loads(doc))
+#     # Fetch full document to access child table objects
+#     delivery_note = frappe.get_doc("Delivery Note", doc.name)
     
-#     # Step 1: Get item groups from NJ Settings
-#     item_group_value = frappe.db.get_value(
-#         "NJ Settings",
-#         {"parameter": "Item Group Validation"},
-#         "value"
-#     )
+# #     # Step 1: Get item groups from NJ Settings
+# #     item_group_value = frappe.db.get_value(
+# #         "NJ Settings",
+# #         {"parameter": "Item Group Validation"},
+# #         "value"
+# #     )
     
+# #     if not item_group_value:
+# #         print("No item group validation found")
+# #         return {"item_group_qty": 0}
+    
+# #     # Step 2: Convert to list
+# #     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+# #     print("allowed_item_groups================================", allowed_item_groups)
+    
+# #     # Step 3: Calculate total qty for allowed groups
+# #     total_qty = 0
+# #     for item in delivery_note.items:
+# #         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+# #         if item_group in allowed_item_groups:
+# #             total_qty += item.qty
+# #             print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
+    
+# #     print("total_qty================================", total_qty)
+
 #     if not item_group_value:
-#         print("No item group validation found")
 #         return {"item_group_qty": 0}
     
 #     # Step 2: Convert to list
 #     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-#     print("allowed_item_groups================================", allowed_item_groups)
     
 #     # Step 3: Calculate total qty for allowed groups
 #     total_qty = 0
@@ -1306,9 +1278,6 @@ def update_item_details(self):
 #         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
 #         if item_group in allowed_item_groups:
 #             total_qty += item.qty
-#             print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
-    
-#     print("total_qty================================", total_qty)
     
 #     # delivery_note.save(ignore_permissions=True)
     
@@ -1322,7 +1291,6 @@ def update_item_details(self):
 @frappe.whitelist()
 def send_consignement_data(doc):
     # start_time = time.time()
-    print("Triggered send_consignement_data...")
     try:
         # Convert string to Frappe dict
         doc = frappe._dict(json.loads(doc))
@@ -1368,7 +1336,6 @@ def send_consignement_data(doc):
         
         # Check if Pincode exists in Pincode doctype
         pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
-        # print("pincode_doc===========================", pincode_doc)
         if not pincode_doc:
             frappe.throw(f"Pincode {pincode} not found in Pincode master.")
         
@@ -1377,33 +1344,23 @@ def send_consignement_data(doc):
         
         # Convert string to float for arithmetic
         rate = float(pincode_doc.rate or 0)
-        print("rate======================",rate)
         cod_charge = float(pincode_doc.cod or 0)
-        print("cod_charge=====================",cod_charge)
         weight = float(doc.weight or 0)
-        print("weight===============================",weight)
         is_cod = False
         if against_sales_order:
             # Method 1: Fetch only is_cod field
             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
-            print("is_cod from Sales Order======================", is_cod)
         if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
             cost_of_delivery = (rate * weight) + cod_charge
-            print("COD Order - cost_of_delivery:==============", cost_of_delivery)
         else:
             cost_of_delivery = rate * weight
-            print("Prepaid Order - cost_of_delivery:==============", cost_of_delivery)
         # if doc.get('is_cod'):
         #     cost_of_delivery = (rate * weight) + cod_charge
-        #     print(cost_of_delivery)
         # else:
         #     cost_of_delivery = rate * weight
-        #     print("cost_of_delivery",cost_of_delivery)
 
         ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
-        print("ship_rocket_settings===============================",ship_rocket_settings)
         cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-        print("cod_charges_table===============================",cod_charges_table)
             
             # Find the charges_value from COD Charges child table
         charges_value = None
@@ -1416,12 +1373,9 @@ def send_consignement_data(doc):
             
             # Extract numeric value from percentage string (e.g., "8%" -> 8)
             numeric_charges_value = float(charges_value.replace('%', '').strip())
-            print("numeric_charges_value===============================",numeric_charges_value)
             # Calculate percentage of grand_total
             grand_total = float(doc.get("grand_total", 0) or 0)
-            print("grand_total===============================",grand_total)
             cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-            print("cod_percentage_amount===============================",cod_percentage_amount)
             
             # Compare COD percentage amount with total_cost
             if cod_percentage_amount < cost_of_delivery:
@@ -1435,16 +1389,13 @@ def send_consignement_data(doc):
         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
         # formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
         formatted_date = datetime.today().strftime("%Y-%m-%d")
-        print("formatted_date======================", formatted_date)
         
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
-        print("against_sales_order======================", against_sales_order)
 
         if against_sales_order:
             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-            print("sales_order_doc======================", sales_order_doc)
 
             if sales_order_doc.is_cod == 1:
                 PaymentType = "COD"
@@ -1471,7 +1422,6 @@ def send_consignement_data(doc):
         if item_group_value:
             allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
         
-        print(f"Allowed item groups: {allowed_item_groups}")
         
         # Calculate total quantity for allowed items only
         total_quantity = 0
@@ -1479,7 +1429,6 @@ def send_consignement_data(doc):
         for row in doc.get('items', []):
             # Get item group for current item
             item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group")
-            print(f"Item: {row.get('item_name')}, Item Group: {item_group}")
             
             # Only include items whose item group is in the allowed list
             if not allowed_item_groups or item_group in allowed_item_groups:
@@ -1501,7 +1450,6 @@ def send_consignement_data(doc):
         if not items:
             frappe.throw("No items found with allowed item groups for shipping.")
         
-      
         # Prepare header with correct total quantity
         header = {
             "ClientCode": "207433",
@@ -1534,7 +1482,6 @@ def send_consignement_data(doc):
             "Amount": str(doc.grand_total),
             "Need_CitImage": "1"
         }
-        print("Header:", header)
         # Add validation to ensure quantities match
         calculated_total = sum(float(item["SplitPcs"]) for item in items)
         if abs(calculated_total - total_quantity) > 0.001:  # Allow for small floating point differences
@@ -1545,14 +1492,10 @@ def send_consignement_data(doc):
             "Header": [header],
             "ItemsDetails": items
         }
-        print("Data:", data)
         
         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
-        
-        print("Sending data:", json.dumps(data, indent=2))
-        print(f"Total quantity: {total_quantity}, Sum of split quantities: {calculated_total}")
         
         response = requests.post(url, headers=headers, json=data)
        
@@ -1595,7 +1538,6 @@ def shiprocket_awb_number(doc):
 
     # start_time = time.time()
     """Create a ShipRocket consignment, assign an AWB, and generate a manifest and invoice."""
-    # print("======================== Inside shiprocket_awb_number")
     doc = frappe._dict(json.loads(doc))
     auth_token = get_auth_token().get("token")
 
@@ -1629,10 +1571,10 @@ def shiprocket_awb_number(doc):
                 total_qty += item.qty
                 print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty) 
+
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
         )
-        print("against_sales_order===========================", against_sales_order)
         
         # Fetch addresses
         shipping_address = frappe.get_doc("Address", delivery_note_doc.shipping_address_name) if delivery_note_doc.shipping_address_name else None
@@ -1641,7 +1583,6 @@ def shiprocket_awb_number(doc):
             frappe.throw("Shipping address is required")
 
         formatted_date = datetime.today().strftime("%Y-%m-%d")
-        print("formatted_date===========================", formatted_date)
 
         # Prepare order_items from child table - ShipRocket format
         order_items = []
@@ -1655,16 +1596,13 @@ def shiprocket_awb_number(doc):
                 "tax": 18.0,
                 "hsn": ""
             })
-        print("order_items===========================", order_items)
         # Determine payment method and subtotal based on is_cod condition
         # against_sales_order = frappe.get_value(
         #     "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
         # )
-        # print("against_sales_order======================", against_sales_order)
 
         if against_sales_order:
             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-            print("sales_order_doc=================================", sales_order_doc)
 
             if sales_order_doc.is_cod == 1:
                 payment_method = "COD"
@@ -1708,7 +1646,6 @@ def shiprocket_awb_number(doc):
             "height": str(delivery_note_doc.height),
             "weight": str(delivery_note_doc.weight)
         }
-        print("data===========================", data)
 
         url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
         headers = {
@@ -1727,9 +1664,7 @@ def shiprocket_awb_number(doc):
                     
                     # Update local doc object for further processing
                     doc.shiprocket_order_id = resp_json.get('order_id')
-                    print("doc.shiprocket_order_id===========================", doc.shiprocket_order_id)
                     doc.shiprocket_shipment_id = resp_json.get('shipment_id')
-                    print("doc.shiprocket_shipment_id===========================", doc.shiprocket_shipment_id)
                     
                     frappe.db.commit()
                 else:
@@ -1754,17 +1689,13 @@ def shiprocket_awb_number(doc):
         frappe.throw("Shipment ID not found on the document after consignment creation.")
     
     shipment_id = doc.shiprocket_shipment_id
-    print("shipment_id===========================", shipment_id)
     invoice_order_id = doc.shiprocket_order_id
-    print("invoice_order_id===========================", invoice_order_id)
     shipment_list = [int(shipment_id)]
-    print("shipment_list===========================", shipment_list)
 
     # 1. Service Availability
     service_url = "https://apiv2.shiprocket.in/v1/external/courier/serviceability"
     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
     service_json = service_response.json()
-    # print("service_json===========================", service_json)
     courier_data = service_json.get("data", {}).get("available_courier_companies", [])
     if not courier_data:
         frappe.throw("No courier companies found in serviceability response.")
@@ -1775,7 +1706,6 @@ def shiprocket_awb_number(doc):
 
     if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
         skipping_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
-        print("skipping_courier_names===========================", skipping_courier_names)
 
     # Calculate total charges for each courier
     best_courier = None
@@ -1788,24 +1718,17 @@ def shiprocket_awb_number(doc):
             # Skip if courier name matches any in the skipping list
             if courier_name and skipping_courier_names:
                 if courier_name in skipping_courier_names:
-                    print(f"Skipping courier =============={courier_name} - found in skipping list")
                     continue
             
             # Check rating - skip if 4 or below
             rating = float(courier.get("rating", 0) or 0)
             if rating <= 4:
-                print(f"Skipping courier ====================={courier_name} - rating {rating} is <= 4")
                 continue
             
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
-            print("freight_charge===========================", freight_charge)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
-            print("cod_charges===========================", cod_charges)
             total = freight_charge + cod_charges
-            print("total===========================", total)
-            
-            # print(f"Courier: {courier_name}, Rating: {rating}, Total: {total}")
             
             # Select courier with lowest total cost
             if total < lowest_total:
@@ -1818,32 +1741,26 @@ def shiprocket_awb_number(doc):
                     "freight_charge": freight_charge,
                     "cod_charges": cod_charges
                 }
-                print("best_courier=============================", best_courier)
         except (ValueError, TypeError) as e:
             print(f"Skipping courier due to invalid data: {e}")
             continue
-
 
     if not best_courier:
         frappe.throw("No suitable courier found after applying filters.")
 
     if best_courier:
         courier_service_name = best_courier.get("courier_name")
-        print(f"Selected courier service name: ==================={courier_service_name}")
         
         # Check if courier service exists, if not create it
         if courier_service_name:
             if not frappe.db.exists("Courier Service", courier_service_name):
-                print(f"Creating new Courier Service: ========================={courier_service_name}")
                 # Create new Courier Service with tracking URL
                 courier_service_doc = frappe.get_doc({
                     "doctype": "Courier Service",
                     "courier_name": courier_service_name,
                     "tracking_url": "https://shiprocket.co/tracking/"
                 })
-                print("courier_service_doc===========================", courier_service_doc)
                 courier_service_doc.insert(ignore_permissions=True)
-                print(f"Courier Service '{courier_service_name}' created successfully")
             else:
                 print(f"Courier Service '{courier_service_name}' already exists")
             
@@ -1852,7 +1769,6 @@ def shiprocket_awb_number(doc):
             delivery_note_doc.db_set("courier_service", courier_service_name)
             # dn_doc.db_set("shiprocket_courier_name", courier_service_name)
             
-            print(f"Delivery Note updated with courier service: ==========================={courier_service_name}")
         else:
             frappe.throw("Courier name not found in best courier selection")    
     # Calculate total item charges
@@ -1870,14 +1786,10 @@ def shiprocket_awb_number(doc):
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
             total_item_charges += item_total_charge
-            print(f"item_charges: {item_charges}, qty: {item.get('qty')}, item total: {item_total_charge}")
         else:
             print("Missing item_charges or quantity for item:", item.get("item_code"))
 
-    print(f"Total item charges: ============={total_item_charges}")
-    print(f"Best courier total cost: ======================{best_courier.get('total_cost') if best_courier else 'N/A'}")
     # frappe.db.set_value("Sales Order",doc.name,"courier_service", best_courier.get("courier_name"))
- 
 
     # against_sales_order = frappe.get_value(
     #     "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
@@ -1885,54 +1797,39 @@ def shiprocket_awb_number(doc):
     is_cod = False
     if against_sales_order:
         is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
-        print
-        print("is_cod from Sales Order======================", is_cod)  
     # COD Validation - Check if is_cod is enabled
     if is_cod == 1:  # Check if COD is enabled
-        print("COD is enabled, performing COD validation...")
         
         if best_courier:
             # Calculate total cost with weight
             freight_charge = best_courier.get('freight_charge', 0)
-            print("freight_charge===========================", freight_charge)
             cod_charges = best_courier.get('cod_charges', 0)
-            print("cod_charges===========================", cod_charges)
             doc_weight = doc.get('weight', 0) or 0
-            print("doc_weight===========================", doc_weight)
             
             total_cost = (freight_charge * float(doc_weight)) + cod_charges
-            print(f"Calculated total cost with weight:============================= {total_cost}")
             
             # Fetch COD charges from Ship Rocket Settings
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            print("cod_charges_table===========================", cod_charges_table)
             
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                print("charges_value===========================", charges_value)
                 if charges_value:
                     break
             
             if charges_value:
-                print(f"COD charges value found:============= {charges_value}")
                 
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
-                print(f"Numeric charges value:============== {numeric_charges_value}")
                 
                 # Calculate percentage of grand_total
                 # grand_total = doc.get("grand_total", 0) or 0
                 # cod_percentage_amount = (numeric_charges_value / 100) * float(grand_total)
                 grand_total = float(doc.get("grand_total", 0) or 0)
-                print("grand_total===========================", grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-                print("cod_percentage_amount===========================", cod_percentage_amount)
 
-                print(f"Grand total: {grand_total}, COD percentage amount ({numeric_charges_value}%): {cod_percentage_amount}")
-                
                 # Compare COD percentage amount with total_cost
                 if cod_percentage_amount < total_cost:
 
@@ -1991,7 +1888,6 @@ def shiprocket_awb_number(doc):
     if not skip_pickup_generation:
         pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
         pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
-        # print(f"Pickup Response: {pickup_response.status_code} - {pickup_response.text}")
         pickup_json = pickup_response.json()
         pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
         
@@ -2003,7 +1899,6 @@ def shiprocket_awb_number(doc):
     # 4. Manifest Generation
     manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
     manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
-    # print(f"Manifest Response: {manifest_response.status_code} - {manifest_response.text}")
     manifest_json = manifest_response.json()
     manifest_pdf_url = manifest_json.get("manifest_url")
     if not manifest_pdf_url:
@@ -2031,7 +1926,6 @@ def shiprocket_awb_number(doc):
     # 6. Label Generation
     label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
     label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
-    # print(f"Label Response: {label_response.status_code} - {label_response.text}")
     label_json = label_response.json()
     label_link = label_json.get("label_url")
     if not label_link:
@@ -2043,7 +1937,6 @@ def shiprocket_awb_number(doc):
     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_image", label_pdf_b64)
 
     frappe.db.commit()
-
 
     return {
         "awb_code": awb_code,
@@ -2118,7 +2011,6 @@ def allow_to_save(doc):
                     nj_serial_nos.append(child_nj_serial_data)
             else:
                 continue
-            print('nj_serial_nos',nj_serial_nos)
 
             if child_adapter_serial_no:
                 if '\n' in child_adapter_serial_no:
@@ -2126,20 +2018,16 @@ def allow_to_save(doc):
                 else:
                     adapter_serial_nos.append(child_adapter_serial_no)
 
-            print('adapter_serial_nos',adapter_serial_nos)
             serial_no_order=0
 
             for nj_serial_no in nj_serial_nos:
-                print("\n checking serial no:",nj_serial_no)
                 item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
-                print('item_group',item_group)
                 if item_group and item_group=="Laptops" or item_group=="Chromebooks":
                     serial_no_order+=1
                     if not adapter_serial_nos:
                         return "Please enter Adapter Serial No"
                     else:
                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
-                        print('repacked_serial_no',repacked_serial_no)
                         try:
                           if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
                             return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
@@ -2151,10 +2039,4 @@ def allow_to_save(doc):
     
     except Exception as e:
         return str(e)
-                
-                
 
-        
-
-
-    

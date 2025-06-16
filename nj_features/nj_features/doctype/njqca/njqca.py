@@ -539,7 +539,6 @@ class NJQCA(Document):
                 "item_group": "BODY C",
                 "score": score
             })
- 
 
     def before_save(self):
         update_storage_type(self)
@@ -612,7 +611,8 @@ class NJQCA(Document):
 
             except Exception as e:
                 frappe.db.rollback()
-                frappe.throw("Error during submission: " + str(e))
+                frappe.msgprint("Error during submission: " + str(e))
+                raise
 
     def check_for_repack_access(self):
         user = frappe.session.user

@@ -721,15 +721,23 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
-                                    else if(r.message.status === 'failed'){ $('.primary-action').hide() }
+                                    else if(r.message.status === 'failed'){
+                                        $('.primary-action').hide();
+                                        frm.set_value('model', '');
+                                    }
                                 }
                             });
                         }, () => {
                             if (selectedModel == r.model) {
                                 $('.primary-action').show() 
-                            } else { $('.primary-action').hide() }
+                            } else {
+                                frm.set_value('model', '');
+                                $('.primary-action').hide() 
+                            }
                          })
                 }
+
+                if (selectedModel == r.model) { $('.primary-action').show() }
             })
         }
 
@@ -738,6 +746,11 @@ frappe.ui.form.on('NJQCA', {
         }
 
         frm.refresh_field('item_template');
+
+        if (!frm.doc.model) {
+            frm.set_value("manual_repack_item_code", "")
+            frm.refresh_field("manual_repack_item_code")
+        }
     },
 
     item_template: function(frm) {

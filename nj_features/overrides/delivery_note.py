@@ -105,38 +105,51 @@ class CustomDeliveryNote(DeliveryNote):
 
     def _process_customer_details(self):
         try:
-            for item in self.get('items'):
-                serial_no = item.serial_no.strip() if item.serial_no else ""
+            sales_order_info_map = {}
 
-                if not serial_no:
-                    continue
-
-                serial_list = serial_no.split('\n')
-
+            for item in self.get('items', []):
                 if not item.against_sales_order:
                     frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
 
-                sales_order_data = frappe.db.sql("""
-                    SELECT 
-                        so.customer_name, so.name, 
-                        COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                        so.transaction_date, so.delivery_date, si.sales_channel, 
-                        COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
-                        COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
-                        IFNULL(so.shipping_address, so.address_display) AS so_address
-                    FROM `tabSales Order` so
-                    INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
-                    INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-                    LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
-                    LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                    WHERE so.name = %s
-                    LIMIT 1
-                """, (item.against_sales_order,), as_dict=True)  # Fixed `item["against_sales_order"]`
+                if item.against_sales_order not in sales_order_info_map:
+                    sales_order_data = frappe.db.sql("""
+                        SELECT 
+                            so.customer_name, so.name, 
+                            COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
+                            so.transaction_date, so.delivery_date, si.sales_channel, 
+                            COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
+                            COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
+                            IFNULL(so.shipping_address, so.address_display) AS so_address
+                        FROM `tabSales Order` so
+                        INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
+                        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+                        LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
+                        LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
+                        WHERE so.name = %s
+                        LIMIT 1
+                    """, (item.against_sales_order,), as_dict=True)
 
-                if not sales_order_data:
-                    frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
+                    if not sales_order_data:
+                        frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
 
-                sales_order_info = sales_order_data[0]
+                    sales_order_info_map[item.item_code] = {
+                        "sales_order": item.against_sales_order,
+                        "info": sales_order_data[0]
+                    }
+
+            # Function to process serial numbers
+            def process_serials(item):
+                serial_no = item.serial_no.strip() if item.serial_no else ""
+                if not serial_no:
+                    return
+
+                serial_list = serial_no.split('\n')
+
+                order_entry = sales_order_info_map.get(item.item_code)
+                if not order_entry:
+                    frappe.throw(f"Cannot find Sales Order info for item: {item.item_code}")
+
+                sales_order_info = order_entry["info"]
 
                 for serial in serial_list:
                     serial = serial.strip()
@@ -145,7 +158,6 @@ class CustomDeliveryNote(DeliveryNote):
 
                     try:
                         serial_no_doc = frappe.get_doc('Serial No', serial, for_update=True)
-                    
                     except frappe.DoesNotExistError:
                         frappe.throw(f"Serial No {serial} not found in the system")
 
@@ -172,6 +184,12 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.end_date = end_date + timedelta(days=365)
                     serial_no_doc.modified = now()
                     serial_no_doc.save(ignore_permissions=True)
+
+            for item in self.get('items', []):
+                process_serials(item)
+
+            for item in self.get('packed_items', []):
+                process_serials(item)
 
         except Exception as e:
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
@@ -231,12 +249,12 @@ class CustomDeliveryNote(DeliveryNote):
         
         for item_component in item_wizard_doc.component:
             for serial_no_component in serial_no_doc.serial_no_component:
-                    if serial_no_component.item_group == item_component.get("component_type"):
-                        serial_no_component.quantity = '1'
-                        serial_no_component.grade = 'UNKNOWN'
-                        serial_no_component.reference_doctype = reference_doctype
-                        serial_no_component.reference_doctype_no = reference_name
-                        updated = True
+                if serial_no_component.item_group == item_component.get("component_type"):
+                    serial_no_component.quantity = '1'
+                    serial_no_component.grade = 'UNKNOWN'
+                    serial_no_component.reference_doctype = reference_doctype
+                    serial_no_component.reference_doctype_no = reference_name
+                    updated = True
         
         serial_no_doc.address = ''
         serial_no_doc.end_date = ''
@@ -254,10 +272,10 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
         serial_no_doc.modified = now()
+
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
         
-
     def fetching_tracking_details(self):
         start_time = time.time()
 
@@ -310,7 +328,7 @@ class CustomDeliveryNote(DeliveryNote):
         finally:
             end_time = time.time()
             execution_time = round(end_time - start_time, 4)
-            logger.info(f"Execution Time =========================: {execution_time} seconds")
+            logger.info(f"Execution Time: {execution_time} seconds")
 
     def rto_charges_update(self):
         if not self.is_return:
@@ -1548,7 +1566,6 @@ def shiprocket_awb_number(doc):
     try:
         # Get the actual Sales Order document to access child table properly
         delivery_note_doc = frappe.get_doc("Delivery Note", doc.name)
-        print("delivery_note_doc===========================", delivery_note_doc)
         item_group_value = frappe.db.get_value(
             "NJ Settings",
             {"parameter": "Item Group Validation"},
@@ -1556,12 +1573,10 @@ def shiprocket_awb_number(doc):
         )
     
         if not item_group_value:
-            print("No item group validation found")
             return {"item_group_qty": 0}
         
         # Step 2: Convert to list
         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-        print("allowed_item_groups================================", allowed_item_groups)
         
         # Step 3: Calculate total qty for allowed groups
         total_qty = 0
@@ -1569,7 +1584,6 @@ def shiprocket_awb_number(doc):
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
             if item_group in allowed_item_groups:
                 total_qty += item.qty
-                print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty) 
 
         against_sales_order = frappe.get_value(
@@ -1742,7 +1756,6 @@ def shiprocket_awb_number(doc):
                     "cod_charges": cod_charges
                 }
         except (ValueError, TypeError) as e:
-            print(f"Skipping courier due to invalid data: {e}")
             continue
 
     if not best_courier:

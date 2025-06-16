@@ -4,10 +4,10 @@ import time
 import frappe
 import datetime
 import traceback
-import re
 from frappe import _
 from frappe.utils import get_url
 from frappe.model.document import Document
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
@@ -362,7 +362,7 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
 
 
     except Exception as e:
-        frappe.log_error(traceback.format_exc(), "error in open_draft_qi NJQCA")
+        log_error(traceback.format_exc(), "error in open_draft_qi NJQCA")
         frappe.throw(f"error in saving NJ QI {str(e)}")
         return None
     
@@ -433,7 +433,7 @@ def get_itm_code_on_barcode(new_qi):
         
     except Exception as e:
         frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}")
-        frappe.log_error(traceback.format_exc(), "Error in get_itm_code_on_barcode in NJQCA")
+        log_error(traceback.format_exc(), "Error in get_itm_code_on_barcode in NJQCA")
         return None
 
 @frappe.whitelist()
@@ -481,7 +481,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
     except Exception as e:
         frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}")
-        frappe.log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
+        log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
         return None
 
 class NJQCA(Document):
@@ -784,7 +784,7 @@ class NJQCA(Document):
                 
         except Exception as e:
             logger.error(f"Error updating battery readings: {str(e)}")
-            frappe.log_error(f"Failed to save Serial No: {str(e)}")
+            log_error(f"Failed to save Serial No: {str(e)}")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
 
     def update_item_groups(self):
@@ -860,7 +860,7 @@ class NJQCA(Document):
             frappe.db.commit()
 
         except Exception as e:
-            frappe.log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
+            log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
 
 
 
@@ -1022,7 +1022,7 @@ def get_info_from_serial_no(doc=None):
                         if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
                             frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
                         elif bio_serialno_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
-                            frappe.log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bio_serialno_in_ui}</b>",doc.name)
+                            log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bio_serialno_in_ui}</b>", doc_json.get('name'))
                             frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
                                             (bio_serialno_in_ui, serial_no))
                 else:
@@ -1090,7 +1090,7 @@ def get_info_from_serial_no(doc=None):
         return result
     
     except Exception as e:
-        frappe.log_error(traceback.format_exc(), "Error on get_info_from_serial_no in NJQCA")
+        log_error(traceback.format_exc(), "Error on get_info_from_serial_no in NJQCA")
         return f"Error on submit: {str(e)}"
     
 @frappe.whitelist()
@@ -1136,7 +1136,7 @@ def get_info_from_battery_serial_no(doc=None):
         return result
     
     except Exception as e:
-        frappe.log_error(traceback.format_exc(), "Error on get_info_battery_serial_no in NJQCA")
+        log_error(traceback.format_exc(), "Error on get_info_battery_serial_no in NJQCA")
         print("Error on get_info_battery_serial_no in NJQCA",traceback.format_exc())
         return f"Error while getting battery serial info: {str(e)}"
 
@@ -1400,7 +1400,7 @@ def get_part_mapping(doc):
             
         except Exception as e:
             frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
-            frappe.log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
+            log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
 
 
 def consolidate_ram_capacities(data):
@@ -2101,7 +2101,7 @@ def validate_battery_storage_score(doc):
 
     except Exception as e:
         frappe.msgprint("Error in NJQCA Storage Score", str(e))
-        frappe.log_error(traceback.format_exc(), "Error in validate_battery_storage_score in NJQCA")
+        log_error(traceback.format_exc(), "Error in validate_battery_storage_score in NJQCA")
         return
     
 @frappe.whitelist()
@@ -2366,7 +2366,7 @@ def compare_parameter(param_name, actual_value, expected_range):
             return False, f"{actual_value} doesn't match expected {expected_range}"
                 
     except Exception as e:
-        frappe.log_error(f"Error comparing parameter {param_name}: {str(e)}")
+        log_error(f"Error comparing parameter {param_name}: {str(e)}")
         return False, f"Comparison error: {str(e)}"
 
 def convert_to_seconds(time_str,param_name=""):
@@ -2505,7 +2505,7 @@ def update_njqca_doc(njqca_name, evaluation_results):
         njqca_doc.save()
         frappe.db.commit()
     except Exception as e:
-        frappe.log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")
+        log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")
         
 @frappe.whitelist()
 def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
@@ -2655,7 +2655,7 @@ def get_bdt_status(doc,method=None):
         else:
             return "Fail"
     except Exception as e:
-        frappe.log_error(traceback.format_exc(), "An error occurred at get_bdt_status in NJQCA "+njqca_name)
+        log_error(traceback.format_exc(), "An error occurred at get_bdt_status in NJQCA "+njqca_name)
         return f"ERROR While BDT status: {traceback.format_exc()}"
 
 @frappe.whitelist()

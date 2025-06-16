@@ -439,7 +439,7 @@ def get_itm_code_on_barcode(new_qi):
 @frappe.whitelist()
 def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, is_defective="0", re_check="0"):
     try:
-        barcode = new_qi.barcode
+        barcode = new_qi.get("barcode")
         if not barcode:
             frappe.throw("Error: Barcode is not found.")
 

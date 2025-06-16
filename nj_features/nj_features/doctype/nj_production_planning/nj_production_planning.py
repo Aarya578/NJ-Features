@@ -854,56 +854,62 @@ def calculate_to_make(doc):
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
 
-    # Reset all to_make values
+    # Reset all to_make values in child table
     for child in doc.get("nj_production_planning_child", []):
         child.to_make = 0
 
-    # Clear final_config table
+    # Clear the final_config table
     doc.set("final_config", [])
 
-    # Prepare temporary config
+    # Initialize temporary config list
     temp_config = []
     for child in doc.get("nj_production_planning_child", []):
         temp_config.append({
-            "item_code": child.get("item_code"),
-            "sales_rate": child.get("sales_rate", 0),
-            "inward_inventory": child.get("inward_inventory", 0),
-            "forward_inventory": child.get("forward_inventory", 0),
-            "days_of_inventory": 0,  # force all to zero initially
+            "item_code": child.item_code,
+            "sales_rate": child.sales_rate or 0,
+            "inward_inventory": child.inward_inventory or 0,
+            "forward_inventory": child.forward_inventory or 0,
+            "days_of_inventory": 0,  # start all with zero DoI
             "to_make": 0,
-            "model": child.get("model", ""),
-            "processor": child.get("processor", ""),
-            "ram": child.get("ram", ""),
-            "ssd": child.get("ssd", "")
+            "model": child.model or "",
+            "processor": child.processor or "",
+            "ram": child.ram or "",
+            "ssd": child.ssd or ""
         })
 
     rank = 0
     loop_start_time = time.time()
     print("🚀 Started allocation loop")
-    iteration = 1
 
+    iteration = 1
     while True:
         print(f"\n🔁 Iteration {iteration}")
 
-        # Remove items with zero inward inventory
+        # Filter out configs with zero inward inventory
         temp_config = [item for item in temp_config if item["inward_inventory"] > 0]
 
         if len(temp_config) < 2:
-            break  # Need at least 2 items to balance DoI
+            break  # not enough items to compare DoI
 
-        # Sort by days of inventory
+        # Sort by current days_of_inventory
         temp_config.sort(key=lambda x: x["days_of_inventory"])
+
+        print("📊 Sorted Configs:")
+        for item in temp_config:
+            print(f"- {item['item_code']} | DoI: {item['days_of_inventory']:.2f} | Inward: {item['inward_inventory']}")
+
         current = temp_config[0]
         next_cfg = temp_config[1]
 
         doi_gap = max(0, next_cfg["days_of_inventory"] - current["days_of_inventory"])
-        sales_rate = current.get("sales_rate", 0)
+        sales_rate = current["sales_rate"]
 
         if not math.isfinite(doi_gap):
             doi_gap = 0
         if not math.isfinite(sales_rate):
             sales_rate = 0
 
+        # 🔢 Calculate how much we need to make to match next item's DoI
         needed_units = math.ceil((doi_gap + 1) * sales_rate)
         make_units = min(needed_units, current["inward_inventory"])
 
@@ -911,7 +917,7 @@ def calculate_to_make(doc):
             iteration += 1
             continue
 
-        # Apply allocation
+        # ✅ Apply allocation
         current["to_make"] += make_units
         current["inward_inventory"] -= make_units
         current["forward_inventory"] += make_units
@@ -919,7 +925,20 @@ def calculate_to_make(doc):
             current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
         )
 
-        # Append to final_config (optional for reporting)
+        # 🔄 Reduce inward_inventory from other rows with same model
+        model_to_reduce = current["model"]
+        units_to_reduce = make_units
+        for item in temp_config:
+            if item == current:
+                continue
+            if item["model"] == model_to_reduce and item["inward_inventory"] > 0:
+                reduce_qty = min(units_to_reduce, item["inward_inventory"])
+                item["inward_inventory"] -= reduce_qty
+                units_to_reduce -= reduce_qty
+                if units_to_reduce == 0:
+                    break
+
+        # ➕ Add to final_config table (for tracking/reporting)
         row = doc.append("final_config", {})
         row.item_code = current["item_code"]
         row.sales_rate = sales_rate
@@ -935,22 +954,26 @@ def calculate_to_make(doc):
         rank += 1
         row.rank = rank
 
-        print(f"✅ {current['item_code']} → Made: {make_units}, Remaining: {current['inward_inventory']}, New DoI: {current['days_of_inventory']:.2f}")
-
+        print(f"✅ Allocated: {current['item_code']} | To Make: {make_units} | Remaining: {current['inward_inventory']} | New DoI: {current['days_of_inventory']:.2f}")
         iteration += 1
 
     loop_end_time = time.time()
-    print(f"\n⏱ Loop finished in {loop_end_time - loop_start_time:.4f} seconds")
+    print(f"\n⏱ Allocation loop completed in {loop_end_time - loop_start_time:.4f} seconds")
 
-    # ✅ Update only final to_make in child table (no summing)
+    print("final_config ------- ", doc.get("final_config"))
+
+    # ✅ Update child table with final to_make from temp_config (SAFER)
     for child in doc.get("nj_production_planning_child", []):
-        for config in temp_config:
-            if child.item_code == config["item_code"]:
-                child.to_make = config["to_make"]
+        for cfg in doc.get("final_config", []):
+            print("cfg ------- ", cfg.as_dict())
+            if child.item_code == cfg.get("item_code"):
+                child.to_make += cfg.get("to_make")
+                # break
 
     doc.save()
-    print("✅ Document saved successfully.")
+    print("💾 Document saved successfully")
     return doc.get("nj_production_planning_child", [])
+
 
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
@@ -1062,7 +1085,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     # print("Sorted normalized serial_no_list:", normalized_serials)
 
-    for child in doc.get("nj_production_planning_child", []):
+    for child in doc.get("final_config", []):
         if child.get("to_make", 0) > 0:
             needed = int(child.get("to_make"))
             model = (child.get("model") or "").strip().lower()

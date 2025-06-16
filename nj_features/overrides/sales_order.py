@@ -11,7 +11,7 @@ import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
-logger = frappe.logger('SOLogger', allow_site=True, file_count=100)
+logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -48,14 +48,12 @@ class CustomSalesOrder(SalesOrder):
             {"parameter": "Item Group Validation"}, 
             "value"
         )
-        print("item_group_value===================", item_group_value)
         
         if not item_group_value:
             return
 
         # Convert comma-separated value to list
         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-        print("allowed_item_groups==================", allowed_item_groups)
 
         # Step 2: Loop through items in Sales Order and calculate total qty
         total_qty = 0
@@ -66,9 +64,7 @@ class CustomSalesOrder(SalesOrder):
 
         # Step 3: Update a custom field `item_group_qty` (you need to add this field in Sales Order)
         self.item_group_qty = total_qty
-        print("self.item_group_qty=================", self.item_group_qty)
         self.save(ignore_permissions=True)    
-
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
@@ -77,7 +73,6 @@ def trigger_fulfillment(order_id):
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": TOKEN
         }
-        print("order_id-----26---in so-", order_id)
         # Step 1: Fetch Order Details
         url = f"{SHOPIFY_URL}{order_id}"
         response = requests.get(url, headers=headers)  
@@ -126,7 +121,6 @@ def trigger_fulfillment(order_id):
 
                 fulfillment_response = requests.post(MAKE_FULLFILMENT, headers=headers, json=fulfillment_payload)
                 fulfillment_data = fulfillment_response.json()
-                # print("fulfillment_data----75-", fulfillment_data)
                 if "fulfillment" in fulfillment_data:
                     fulfillment_id = fulfillment_data["fulfillment"]["id"]
                     return {
@@ -146,7 +140,6 @@ def trigger_fulfillment(order_id):
 
 #     # Fetch full document to access child table objects
 #     sales_order = frappe.get_doc("Sales Order", doc.name)
-#     print("sales_order================================", sales_order)
 
 #     # Step 1: Get item groups from NJ Settings
 #     item_group_value = frappe.db.get_value(
@@ -159,7 +152,6 @@ def trigger_fulfillment(order_id):
 
 #     # Step 2: Convert to list
 #     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-#     print("allowed_item_groups================================", allowed_item_groups)
 
 #     # Step 3: Calculate total qty for allowed groups
 #     total_qty = 0
@@ -167,7 +159,6 @@ def trigger_fulfillment(order_id):
 #         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
 #         if item_group in allowed_item_groups:
 #             total_qty += item.qty
-#     print("total_qty================================", total_qty)
 #     return {"item_group_qty": total_qty}
  
 def calculate_dispatch_eta_for_sales_order():
@@ -179,9 +170,6 @@ def calculate_dispatch_eta_for_sales_order():
         # Get all open sales orders with their items (including product bundles)
         open_orders = get_open_sales_orders()
 
-        print("open Order", open_orders)
-        print("len", len(open_orders))
-        
         # Dictionary to track max ETA per sales order
         so_eta_map = {}
         
@@ -321,14 +309,9 @@ def adjust_serial_allocations(so_name, item_code, net_pending, departments):
     # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
         allocated_in_this_call = assign_serials(so_name, item_code, to_allocate, departments)
-        print("\n\n\nallocated_in_this_call", allocated_in_this_call)
-        print("so_name ------------- 1293", so_name)
-        print("item_code ------------- 1293", item_code)
         unallocated_qty = to_allocate - allocated_in_this_call
-        print("unallocated_qty", unallocated_qty)
 
         if unallocated_qty > 0:
-            print("unallocated_qty ------------- 1293", unallocated_qty)
             create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
     
     return unallocated_qty
@@ -337,8 +320,6 @@ def assign_serials(so_name, item_code, to_allocate, departments):
     allocated_count = 0
 
     for dept in departments:
-        print("\n\n======================== Inside assign_serials ==============================")
-        print("dept ------------- 1293", dept)
         if allocated_count >= to_allocate:
             break
 
@@ -373,11 +354,9 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         """
 
         available_serials = frappe.db.sql(query, as_dict=1)
-        print("available_serials:----55", available_serials)
         count_in_dept = len(available_serials)
 
         for serial in available_serials:
-            print("serial:----55", serial)
             serial_name = serial.get("name")
             frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", so_name)
 
@@ -425,11 +404,6 @@ def unassign_serials(so_name, item_code, excess_qty):
         frappe.db.commit()
 
 def create_unallocated_log(sales_order, item_code, pending_qty, reason):
-    print("======================== Inside create_unallocated_log ==============================")
-    print("sales_order:----55", sales_order)
-    print("item_code:----55", item_code)
-    print("pending_qty:----55", pending_qty)
-    print("reason:----55", reason)
     """Create a log entry in Unallocated Sales Order Item"""
     doc = frappe.new_doc("Unallocated Sales Order Item")
     doc.sales_order = sales_order

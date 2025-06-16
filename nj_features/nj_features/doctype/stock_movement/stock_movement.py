@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-logger = frappe.logger('Shopifys', allow_site=True, file_count=100)
+logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
 class StockMovement(Document):
     def on_submit(self):

@@ -481,7 +481,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
 
     except Exception as e:
         log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
-        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}")
+        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(traceback.format_exc())}")
         return None
 
 class NJQCA(Document):

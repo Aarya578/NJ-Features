@@ -925,7 +925,7 @@ def calculate_to_make(doc):
             current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
         )
 
-        # 🔄 Reduce inward_inventory from other rows with same model
+        # 🔄 Reduce inward_inventory from other rows with same model if model specific
         model_to_reduce = current["model"]
         units_to_reduce = make_units
         for item in temp_config:
@@ -962,19 +962,22 @@ def calculate_to_make(doc):
 
     print("final_config ------- ", doc.get("final_config"))
 
-    # ✅ Update child table with final to_make from temp_config (SAFER)
+    # Build a map for faster lookup: item_code -> to_make
+    final_config_map = {}
+    for cfg in doc.get("final_config", []):
+        print("cfg ------- ", cfg.as_dict())
+        item_code = cfg.get("item_code")
+        if item_code:
+            final_config_map[item_code] = final_config_map.get(item_code, 0) + cfg.get("to_make", 0)
+
+    # Now, update the child table using the map
     for child in doc.get("nj_production_planning_child", []):
-        for cfg in doc.get("final_config", []):
-            print("cfg ------- ", cfg.as_dict())
-            if child.item_code == cfg.get("item_code"):
-                child.to_make += cfg.get("to_make")
-                # break
+        if child.item_code in final_config_map:
+            child.to_make += final_config_map[child.item_code]
 
     doc.save()
     print("💾 Document saved successfully")
     return doc.get("nj_production_planning_child", [])
-
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     print("Started suggest_to_make_serial_no")

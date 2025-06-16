@@ -9,6 +9,8 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     refresh: function(frm) {
+        console.log("inside refresh=================================================");
+        
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
                 fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
@@ -40,6 +42,65 @@ frappe.ui.form.on('Delivery Note', {
                     "&_lang=" + (frappe.boot.lang || "en")));
             }).addClass('btn-primary');
         }
+
+        if (frm.doc.docstatus === 0) {
+            var critical_btn = frm.add_custom_button(__('Critical Log'), function() {
+                frappe.show_alert({
+                    message: __('Generating AWB Number...'),
+                    indicator: 'blue'
+                });
+                frappe.call({
+                    method: 'nj_features.overrides.delivery_note.send_consignement_data',
+                    args: { doc: JSON.stringify(frm.doc) },
+                    callback: function(response) {
+                        if (response.message) {
+                            frappe.call({
+                                method: 'frappe.client.set_value',
+                                args: {
+                                    doctype: 'Delivery Note',
+                                    name: frm.doc.name,
+                                    fieldname: 'courier_service',
+                                    value: 'CriticaLog'
+                                },
+                                callback: function(set_value_response) {
+                                    frm.reload_doc();
+                                    frappe.show_alert({
+                                        message: __('AWB Number generated successfully!'),
+                                        indicator: 'green'
+                                    });
+                                }
+                            });
+                        }
+                    }
+                });
+            });
+            critical_btn.addClass('btn-primary');
+            var shiprocket_btn = frm.add_custom_button(__('Shiprocket'), function() {
+                frappe.show_alert({
+                    message: __('Generating AWB Number...'),
+                    indicator: 'blue'
+                });
+                
+                frappe.call({
+                    method: 'nj_features.overrides.delivery_note.shiprocket_awb_number',
+                    args: { doc: JSON.stringify(frm.doc) },
+                    callback: function(response) {
+                        if (response.message) {
+                            // Removed the automatic setting of 'Shiprocket Manifest'
+                            // The courier_service will now be set by the Python method
+                            frm.reload_doc();
+                            frappe.show_alert({
+                                message: __('AWB Number generated successfully!'),
+                                indicator: 'green'
+                            });
+                        }
+                    }
+                });
+            });
+
+            shiprocket_btn.addClass('btn-primary');
+           
+        }
     },
     
     onload_post_render: function(frm) {
@@ -47,6 +108,14 @@ frappe.ui.form.on('Delivery Note', {
         frm.page.remove_inner_button('Credit Note', 'Create');
         $('.btn-group.dropdown-menu a:contains("Credit Note")').parent().remove();
     },
+
+
+    // validate: function(frm) {
+    //     console.log("inside validate ===========333333333333333333333333333333333======Delivery Note saved");
+
+        
+
+
 
     validate:  function(frm) {
         frappe.call({
@@ -76,8 +145,37 @@ frappe.ui.form.on('Delivery Note', {
                 }
             });
         }
+        frappe.call({
+            method: 'nj_features.overrides.delivery_note.update_item_details',
+            args: { self: frm.doc },
+            callback: function(r) {
+                if (r.message) {
+                    const { weight, height, length, breadth } = r.message;
+
+                    // Only set values if they are not null or undefined
+                    if (weight !== null && weight !== undefined) {
+                        frm.set_value('weight', weight);
+                    }
+
+                    if (height !== undefined && height !== null) {
+                        frm.set_value('height', height);
+                    }
+
+                    if (length !== undefined && length !== null) {
+                        frm.set_value('length', length);
+                    }
+
+                    if (breadth !== undefined && breadth !== null) {
+                        frm.set_value('breadth', breadth);
+                    }
+
+                    frm.refresh_fields(['weight', 'height', 'length', 'breadth']);
+                }
+            }
+        });
 
     },
+
 
     before_submit: async function(frm) {
         await frappe.call({
@@ -106,27 +204,45 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     after_save: function(frm) {
-        console.log("inside after save =================Delivery Note saved");
-        
-            // Set shipping address if supplier address is not present
-            if (!frm.doc.supplier_address_name) {
-                frm.set_value('shipping_address_name', frm.doc.customer_address);
-                frm.refresh_field('shipping_address_name');
-            }
-
-            // Call backend if AWB is empty
-            if (!frm.doc.awb_number && frm.doc.docstatus === 0) {
-                frappe.call({
-                    method: "nj_features.overrides.delivery_note.awb_number_update",  // update to your path
-                    args: {
-                        doc: JSON.stringify(frm.doc)
-                    },
-                    callback: function() {
-                        frm.reload_doc();
+        console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
+         
+        frappe.call({
+            method: 'nj_features.overrides.delivery_note.total_item_group_sum',
+            args: {
+                doc: JSON.stringify(frm.doc)
+            },
+            callback: function(r) {
+                console.log("Full response:", r);
+                if (r.message) {
+                    console.log("Response message:", r.message);
+                    if (r.message.item_group_qty !== undefined) {
+                        console.log("item_group_qty received:", r.message.item_group_qty);
+                        
+                        // Set the value and save the document
+                        frm.set_value('item_group_qty', r.message.item_group_qty);
+                        frm.refresh_field('item_group_qty');
+                        
+                        // Save the document to persist the changes
+                        // frm.save();
+                    } else {
+                        console.log("item_group_qty not found in response");
                     }
-                });
+                } else {
+                    console.log("No message in response");
+                }
+            },
+            error: function(r) {
+                console.log("Error in frappe call:", r);
             }
-},
+        });
+            
+       
+        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+            frm.set_value('shipping_address_name', frm.doc.customer_address);
+            frm.refresh_field('shipping_address_name');
+        }
+    },
+
     
     // courier_service: function(frm) {
     //     frappe.call({

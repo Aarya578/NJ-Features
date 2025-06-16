@@ -794,11 +794,11 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no !=""){
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model){
 
         frappe.call({
             method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"manufacturer_model": frm.doc.manufacturer_model},
+            args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"njqca_name": frm.doc.name, "manufacturer_model": frm.doc.manufacturer_model},
             callback: function(r) {
                 if(r.message){
                     let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");

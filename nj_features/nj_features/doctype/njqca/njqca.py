@@ -90,7 +90,7 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
         if not self.inspection_type:
             inspection_type = get_inspection_type()
             
-        if self.bios_serialno and not self.serial_no:
+        if self.bios_serialno and not self.serial_no and self.item_group!="BATTERY":
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
 
         existing_qis = frappe.get_list('NJ Quality Inspection',
@@ -480,8 +480,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return new_qi
 
     except Exception as e:
-        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}")
         log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
+        frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(e)}")
         return None
 
 class NJQCA(Document):

@@ -1,0 +1,37 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-13 12:40:36.188490",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "courier_name",
+  "courier_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "courier_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Courier Name "
+  },
+  {
+   "fieldname": "courier_id",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Courier ID"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-13 12:42:28.910262",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Shiprocket Courier Name Block List",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

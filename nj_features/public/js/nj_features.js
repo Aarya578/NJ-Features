@@ -388,7 +388,7 @@ document.addEventListener("DOMContentLoaded", function () {
         <div id="network-indicator" style="
             position: fixed;
             bottom: 20px;
-            right: 20px;
+            left: 20px;
             background: rgba(0, 0, 0, 0.85);
             color: white;
             padding: 12px 16px;
@@ -400,6 +400,7 @@ document.addEventListener("DOMContentLoaded", function () {
             flex-direction: column;
             gap: 6px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            cursor: grab;
         ">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <span id="network-icon">📶</span>
@@ -522,7 +523,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function runSpeedTest() {
         const output = document.getElementById("network-extra");
-        const testUrl = "https://localnjpulse.newjaisa.com/files/test_file";
+        const testUrl = "https://localnjpulse.newjaisa.com/files/test_file"; // Change this to your actual test file URL
         const start = performance.now();
 
         output.textContent = "Running speed test...";
@@ -539,7 +540,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             const end = performance.now();
-            const duration = (end - start) / 1000; // seconds
+            const duration = (end - start) / 1000;
             const bits = bytesReceived * 8;
             const mbps = (bits / duration / 1024 / 1024).toFixed(2);
 
@@ -555,4 +556,31 @@ document.addEventListener("DOMContentLoaded", function () {
     setInterval(updateNetworkIndicator, 10000);
     window.addEventListener("online", updateNetworkIndicator);
     window.addEventListener("offline", updateNetworkIndicator);
+
+    // === Draggable logic ===
+    const dragElement = document.getElementById("network-indicator");
+    let isDragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    dragElement.addEventListener("mousedown", function (e) {
+        isDragging = true;
+        offsetX = e.clientX - dragElement.getBoundingClientRect().left;
+        offsetY = e.clientY - dragElement.getBoundingClientRect().top;
+        dragElement.style.cursor = "move";
+    });
+
+    document.addEventListener("mousemove", function (e) {
+        if (isDragging) {
+            dragElement.style.left = `${e.clientX - offsetX}px`;
+            dragElement.style.top = `${e.clientY - offsetY}px`;
+            dragElement.style.bottom = "auto";
+            dragElement.style.right = "auto";
+        }
+    });
+
+    document.addEventListener("mouseup", function () {
+        isDragging = false;
+        dragElement.style.cursor = "grab";
+    });
 });

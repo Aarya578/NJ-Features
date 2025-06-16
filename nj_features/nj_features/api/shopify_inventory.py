@@ -4,24 +4,27 @@ import frappe
 import pymysql
 import requests
 import traceback
+from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
-    return {
-        "shop": settings.shop,
-        "token": settings.token,
-        "headers": {
-            "X-Shopify-Access-Token": settings.token,
-            "Content-Type": "application/json"
-        },
-        "warehouses": settings.warehouses,
-        "location_id": settings.location_id,
-        "item_groups": settings.item_groups,
-        "departments": settings.departments,
-    }
+    if settings.enable == 1 and verify_domain_matches_server_ip("erp.newjaisa.com"):
+        return {
+            "shop": settings.shop,
+            "token": settings.token,
+            "headers": {
+                "X-Shopify-Access-Token": settings.token,
+                "Content-Type": "application/json"
+            },
+            "warehouses": settings.warehouses,
+            "location_id": settings.location_id,
+            "item_groups": settings.item_groups,
+            "departments": settings.departments,
+        }
+    return None
 
 def safe_float(value):
     try:
@@ -35,6 +38,9 @@ def nj_temp_shopify_session(func):
             return func(*args, **kwargs)
         from shopify import Session
         settings = get_shopify_settings()
+        if not settings:
+            log_error("Shopify settings not found", "nj_temp_shopify_session")
+            return
         with Session.temp(settings["shop"], "2025-04", settings["token"]):
             return func(*args, **kwargs)
     return wrapper
@@ -45,8 +51,8 @@ def fetch_and_stage_inventory_sync():
     enqueue(
         method=create_rq_doc,
         queue="long",
-        timeout=3600,
-        job_name=f"inventory_sync_batch"
+        timeout=1200,
+        job_name=f"shopify_inventory_sync_batch_erp"
     )
 
 def create_rq_doc():
@@ -163,7 +169,7 @@ def create_rq_doc():
                         actual_qty = safe_float(doc.actual_qty) or 0
                         shopify_quantity = safe_float(doc.shopify_quantity) or 0
                         
-                        if actual_qty == shopify_quantity and doc.status != "Queued":
+                        if actual_qty == shopify_quantity:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
                         else:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
@@ -181,10 +187,25 @@ def create_rq_doc():
 @frappe.whitelist()
 @nj_temp_shopify_session
 def start_shopify_inventory_sync():
+
+    enqueue(
+        method=create_shopify_inventory_sync,
+        queue="long",
+        timeout=1200,
+        job_name=f"sync_to_shopify_inventory"
+    )
+
+@frappe.whitelist()
+def create_shopify_inventory_sync():
     try:
         start = 0
         batch_size = 50
         settings = get_shopify_settings()
+        
+        if not settings:
+            log_error("Shopify settings not found", "create_shopify_inventory_sync")
+            return
+        
         headers = {
             "X-Shopify-Access-Token": settings["token"],
             "Content-Type": "application/json"

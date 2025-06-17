@@ -163,7 +163,7 @@ def create_rq_doc():
 
                     all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
                                         fields=["name", "actual_qty", "shopify_quantity", "status"],
-                                        filters={"is_active": 1})
+                                        filters={"inventory_item_id": ["!=", None]})
                     
                     for doc in all_active_docs:
                         actual_qty = safe_float(doc.actual_qty) or 0
@@ -172,7 +172,10 @@ def create_rq_doc():
                         if actual_qty == shopify_quantity:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
                         else:
-                            frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 1)
+                            frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
+                                "is_active": 1,
+                                "status": "Queued"
+                            })
 
                 except pymysql.err.OperationalError as e:
                     if e.args[0] == 2013:

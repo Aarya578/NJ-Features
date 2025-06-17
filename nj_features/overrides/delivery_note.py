@@ -1306,6 +1306,300 @@ def update_item_details(self):
 
 
 
+# @frappe.whitelist()
+# def send_consignement_data(doc):
+#     # start_time = time.time()
+#     try:
+#         # Convert string to Frappe dict
+#         doc = frappe._dict(json.loads(doc))
+#         # sales_order_doc = frappe.get_doc("Sales Order", doc.name)
+#         delivery_note = frappe.get_doc("Delivery Note", doc.name)
+#         against_sales_order = frappe.get_value(
+#             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
+#         )
+#         print("against_sales_order===========================", against_sales_order)
+#         item_group_value = frappe.db.get_value(
+#             "NJ Settings",
+#             {"parameter": "Item Group Validation"},
+#             "value"
+#         )
+    
+#         if not item_group_value:
+#             print("No item group validation found")
+#             return {"item_group_qty": 0}
+        
+#         # Step 2: Convert to list
+#         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+#         print("allowed_item_groups================================", allowed_item_groups)
+        
+#         # Step 3: Calculate total qty for allowed groups
+#         total_qty = 0
+#         for item in delivery_note.items:
+#             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
+#             if item_group in allowed_item_groups:
+#                 total_qty += item.qty
+#                 print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
+#         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
+        
+#         print("total_qty================================", total_qty)
+        
+#         # Validate shipping address and calculate cost of delivery
+#         if not doc.shipping_address_name:
+#             frappe.throw("Shipping address is not set.")
+        
+#         # Get the pincode from the Address doctype
+#         pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
+#         # pincode("pincode===========================", pincode)
+#         if not pincode:
+#             frappe.throw("Pincode not found in the shipping address.")
+        
+#         # Check if Pincode exists in Pincode doctype
+#         pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
+#         if not pincode_doc:
+#             frappe.throw(f"Pincode {pincode} not found in Pincode master.")
+        
+#         if not doc.weight:
+#             frappe.throw("Weight is not set in Delivery Note.")
+        
+#         # Convert string to float for arithmetic
+#         rate = float(pincode_doc.rate or 0)
+#         cod_charge = float(pincode_doc.cod or 0)
+#         weight = float(doc.weight or 0)
+#         is_cod = False
+#         if against_sales_order:
+#             # Method 1: Fetch only is_cod field
+#             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
+#             print("is_cod===========================", is_cod)
+#         if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
+#             cost_of_delivery = (rate * weight) + cod_charge
+#         else:
+#             cost_of_delivery = rate * weight
+#         # if doc.get('is_cod'):
+#         #     cost_of_delivery = (rate * weight) + cod_charge
+#         # else:
+#         #     cost_of_delivery = rate * weight
+
+#         ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
+#         cod_charges_table = ship_rocket_settings.get("cod_charges", [])
+            
+#             # Find the charges_value from COD Charges child table
+#         charges_value = None
+#         for cod_charge_row in cod_charges_table:
+#             charges_value = cod_charge_row.charges_value  # Access as field attribute
+#             if charges_value:
+#                 break
+        
+#         if charges_value:
+            
+#             # Extract numeric value from percentage string (e.g., "8%" -> 8)
+#             numeric_charges_value = float(charges_value.replace('%', '').strip())
+#             # Calculate percentage of grand_total
+#             grand_total = float(doc.get("grand_total", 0) or 0)
+#             cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
+            
+#             # Compare COD percentage amount with total_cost
+#             if cod_percentage_amount < cost_of_delivery:
+#                 frappe.throw(f"COD validation failed: COD charges courier total cost ({cost_of_delivery:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")    
+
+#         # Update the document with calculated cost
+#         doc.cost_of_delivery = cost_of_delivery
+        
+#         # Fetch addresses
+#         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
+#         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
+#         # formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
+#         formatted_date = datetime.today().strftime("%Y-%m-%d")
+        
+#         against_sales_order = frappe.get_value(
+#             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
+#         )
+#         if against_sales_order:
+#             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+#             print
+#             if sales_order_doc.is_cod == 1:
+#                 PaymentType = "COD"
+#                 consignmentValue = float(sales_order_doc.total_outstanding or 0)
+#             else:
+#                 PaymentType = "Prepaid"
+#                 # Check if grand_total exists and has value
+#                 if sales_order_doc.grand_total:
+#                     consignmentValue = float(sales_order_doc.grand_total)
+#                     print("consignmentValue==================", consignmentValue)
+#                 else:
+#                     # If grand_total not found, fetch from item groups
+#                     total_default_charge = 0
+#                     print("sales_order_doc.items==================", sales_order_doc.items)
+#                     found_charges = False
+                    
+#                     # Loop through items in Sales Order
+#                     for item in sales_order_doc.items:
+#                         if item.item_code:
+#                             # Get item document to fetch item_group
+#                             item_doc = frappe.get_doc("Item", item.item_code)
+#                             print("item_doc==================", item_doc)
+#                             if item_doc.item_group:
+#                                 try:
+#                                     # Get item group document and fetch default_charge
+#                                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+#                                     print("item_group_doc==================", item_group_doc)
+#                                     if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
+#                                         total_default_charge += float(item_group_doc.default_charge)
+#                                         print("total_default_charge==================", total_default_charge)
+#                                         found_charges = True
+#                                         print("found_charges==================", found_charges)
+#                                 except:
+#                                     # Continue if item group not found or error occurs
+#                                     continue
+                    
+#                     # Set consignment value based on what was found
+#                     if found_charges and total_default_charge > 0:
+#                         consignmentValue = total_default_charge
+#                         print("consignmentValue==================", consignmentValue)
+#                     else:
+#                         # Fallback to Rs 1000 if no default charges found
+#                         consignmentValue = 300.0
+#                         print("consignmentValue==================", consignmentValue)
+#         else:
+#             frappe.throw("Sales Order not linked to this Delivery Note.")
+
+#         # if against_sales_order:
+#         #     sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+
+#         #     if sales_order_doc.is_cod == 1:
+#         #         PaymentType = "COD"
+#         #         consignmentValue = float(sales_order_doc.total_outstanding or 0)
+#         #     else:
+#         #         PaymentType = "Prepaid"
+#         #         consignmentValue = float(sales_order_doc.grand_total or 0)
+#         # else:
+#         #     frappe.throw("Sales Order not linked to this Delivery Note.")
+#         # if delivery_note.is_cod == 1:
+#         #     PaymentType = "COD"
+#         #     consignmentValue = float(delivery_note.total_outstanding) if delivery_note.total_outstanding else 0
+#         # else:
+#         #     PaymentType = "Prepaid"
+#         #     consignmentValue = float(delivery_note.grand_total) if delivery_note.grand_total else 0
+        
+#         # Get allowed item groups from NJ Settings
+#         item_group_value = frappe.db.get_value(
+#             "NJ Settings",
+#             {"parameter": "Item Group Validation"},
+#             "value"
+#         )
+#         allowed_item_groups = []
+#         if item_group_value:
+#             allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+        
+        
+#         # Calculate total quantity for allowed items only
+#         total_quantity = 0
+#         items = []
+#         for row in doc.get('items', []):
+#             # Get item group for current item
+#             item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group")
+            
+#             # Only include items whose item group is in the allowed list
+#             if not allowed_item_groups or item_group in allowed_item_groups:
+#                 qty = float(row.get('qty', 1))
+#                 total_quantity += qty  # Sum up quantities for allowed items only
+#                 items.append({
+#                     "Length": f"{float(doc.length):.2f}",
+#                     "Breadth": f"{float(doc.breadth):.2f}",
+#                     "Height": f"{float(doc.height):.2f}",
+#                     "ProductCode": "AUTO",
+#                     "ProductDescription": row.get("item_name"),
+#                     "SplitPcs": f"{qty:.4f}",  # Individual item quantity
+#                     "IsPackaging": "0"
+#                 })
+#             else:
+#                 print(f"Skipping item {row.get('item_name')} - item group {item_group} not in allowed list")
+        
+#         # Check if any items are left after filtering
+#         if not items:
+#             frappe.throw("No items found with allowed item groups for shipping.")
+        
+#         # Prepare header with correct total quantity
+#         header = {
+#             "ClientCode": "207433",
+#             "OrderNo/InvoiceNo": doc.name,
+#             "Order/InvoiceDate": formatted_date,
+#             "SenderName": doc.company,
+#             "SenderAdd1": company_address.address_line1 or " ",
+#             "SenderAdd2": company_address.address_line2 or "",
+#             "SenderCity": company_address.city or "",
+#             "SenderState": company_address.state or "",
+#             "SenderCountry": company_address.country or "India",
+#             "SenderPin": company_address.pincode or "",
+#             "SenderMobile": sanitize_phone(shipping_address.phone),
+#             "SenderEmail": company_address.email_id or "",
+#             "ReceiverName": doc.customer_name or "",
+#             "ReceiverAdd1": shipping_address.address_line1 or "",
+#             "ReceiverAdd2": shipping_address.address_line2 or " ",
+#             "ReceiverCity": shipping_address.city or "",
+#             "ReceiverState": shipping_address.state or "",
+#             "ReceiverCountry": shipping_address.country or "India",
+#             "ReceiverPin": shipping_address.pincode or "",
+#             "ReceiverMobile": sanitize_phone(shipping_address.phone),
+#             "ConsignmentValue": consignmentValue,
+#             "NoQuantity": int(total_quantity),  # Fixed: Use total quantity of all items
+#             "consignmentValue": consignmentValue,
+#             "Weight": f"{weight:.2f}",  # Fixed: Use doc.weight instead of doc.length
+#             "TransitMode": doc.mode_of_transfer,
+#             "ProductMode": "Normal",
+#             "PaymentType": PaymentType,
+#             "Amount": str(doc.grand_total),
+#             "Need_CitImage": "1"
+#         }
+#         # Add validation to ensure quantities match
+#         calculated_total = sum(float(item["SplitPcs"]) for item in items)
+#         if abs(calculated_total - total_quantity) > 0.001:  # Allow for small floating point differences
+#             frappe.throw(f"Quantity mismatch: Total quantity ({total_quantity}) doesn't match sum of split quantities ({calculated_total})")
+        
+#         data = {
+#             "ResponseHeader": "yes",
+#             "Header": [header],
+#             "ItemsDetails": items
+#         }
+        
+#         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
+#         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
+#         headers = {"Content-Type": "application/json"}
+        
+#         response = requests.post(url, headers=headers, json=data)
+       
+#         resp_json = response.json()
+        
+#         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
+#             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
+#             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
+            
+#             # Update the Sales Order document with AWB number, CIT image, cost of delivery, and courier service
+#             delivery_note = frappe.get_doc("Delivery Note", doc.name)
+#             delivery_note.tracking_id = tracking_id
+#             delivery_note.cit_image = cit_data
+#             delivery_note.cost_of_delivery = cost_of_delivery
+#             delivery_note.courier_service = "CriticaLog"  # Set courier service
+#             delivery_note.item_group_qty = total_quantity
+#             delivery_note.save()
+            
+#             # Use db_set to update without triggering validations or changing docstatus
+#             delivery_note.db_set('tracking_id', tracking_id)
+#             delivery_note.db_set('cit_image', cit_data)
+#             delivery_note.db_set('cost_of_delivery', cost_of_delivery)
+#             delivery_note.db_set('courier_service', 'CriticaLog')
+#             delivery_note.db_set('item_group_qty', total_quantity)
+            
+#             frappe.msgprint(f"AWB Number generated successfully: {tracking_id}")
+            
+#             return {"awb_number": tracking_id, "cit_image": cit_data, "cost_of_delivery": cost_of_delivery}
+            
+#         else:
+#             frappe.throw(f"API returned error: {response.text}")
+         
+#     except Exception as e:
+#         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
+
+
 @frappe.whitelist()
 def send_consignement_data(doc):
     # start_time = time.time()
@@ -1342,10 +1636,32 @@ def send_consignement_data(doc):
         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
         
         print("total_qty================================", total_qty)
+        
         # Validate shipping address and calculate cost of delivery
         if not doc.shipping_address_name:
             frappe.throw("Shipping address is not set.")
         
+
+        total_item_charges = 0
+        for item in doc.get("items", []):
+            # Check if item_code exists
+            if not item.get("item_code"):
+                continue
+            # Get item group
+            item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
+            print("Item Group:==================", item_group)      
+            # Get the item group document
+            group_doc = frappe.get_doc("Item Group", item_group)
+            print("Group Doc:==================", group_doc)
+            # Get item_charges (float)
+            item_charges = group_doc.get("item_charges")
+            if item_charges and item.get("qty"):
+                item_total_charge = float(item_charges) * float(item.get("qty"))
+                print("Item Total Charge:==================", item_total_charge)
+                total_item_charges += item_total_charge
+                print("Total Item Charges:==================", total_item_charges)
+            else:
+                print("Missing item_charges or quantity for item:", item.get("item_code"))
         # Get the pincode from the Address doctype
         pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
         # pincode("pincode===========================", pincode)
@@ -1368,40 +1684,50 @@ def send_consignement_data(doc):
         if against_sales_order:
             # Method 1: Fetch only is_cod field
             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
+            print("is_cod===========================", is_cod)
+        
+        # Calculate cost of delivery and run COD validation only for COD orders
         if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
             cost_of_delivery = (rate * weight) + cod_charge
-        else:
-            cost_of_delivery = rate * weight
-        # if doc.get('is_cod'):
-        #     cost_of_delivery = (rate * weight) + cod_charge
-        # else:
-        #     cost_of_delivery = rate * weight
-
-        ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
-        cod_charges_table = ship_rocket_settings.get("cod_charges", [])
+            print("cost_of_delivery===========================", cost_of_delivery)
             
+            # COD validation - only run for COD orders
+            ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
+            cod_charges_table = ship_rocket_settings.get("cod_charges", [])
+            print("cod_charges_table===========================", cod_charges_table)
+                
             # Find the charges_value from COD Charges child table
-        charges_value = None
-        for cod_charge_row in cod_charges_table:
-            charges_value = cod_charge_row.charges_value  # Access as field attribute
+            charges_value = None
+            for cod_charge_row in cod_charges_table:
+                charges_value = cod_charge_row.charges_value  # Access as field attribute
+                print("charges_value===============",charges_value)
+                if charges_value:
+                    break
+            
             if charges_value:
-                break
-        
-        if charges_value:
-            
-            # Extract numeric value from percentage string (e.g., "8%" -> 8)
-            numeric_charges_value = float(charges_value.replace('%', '').strip())
-            # Calculate percentage of grand_total
-            grand_total = float(doc.get("grand_total", 0) or 0)
-            cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-            
-            # Compare COD percentage amount with total_cost
-            if cod_percentage_amount < cost_of_delivery:
-                frappe.throw(f"COD validation failed: COD charges courier total cost ({cost_of_delivery:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")    
+                # Extract numeric value from percentage string (e.g., "8%" -> 8)
+                numeric_charges_value = float(charges_value.replace('%', '').strip())
+                print("numeric_charges_value==========================",numeric_charges_value)
+                # Calculate percentage of grand_total
+                grand_total = float(doc.get("grand_total", 0) or 0)
+                print("grand_total==========================",grand_total)
+                cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
+                print("cod_percentage_amount==========================",cod_percentage_amount)
+                cod_and_item_charges_total = cost_of_delivery + cod_percentage_amount
+                print("cod_and_item_charges_total==========================",cod_and_item_charges_total)
+
+                
+                # Compare COD percentage amount with total_cost
+                if cod_and_item_charges_total < cost_of_delivery:
+                    frappe.throw(f"COD validation failed: COD charges courier total cost ({cost_of_delivery:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")    
+        else:
+            # For prepaid orders, no COD charges
+            cost_of_delivery = rate * weight
 
         # Update the document with calculated cost
         doc.cost_of_delivery = cost_of_delivery
-        
+        if cost_of_delivery > total_item_charges:
+            frappe.throw(f"Cannot generate AWB number because courier '{cost_of_delivery}' total cost ({cost_of_delivery}) is more than item charges total ({total_item_charges})")
         # Fetch addresses
         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
@@ -1411,18 +1737,66 @@ def send_consignement_data(doc):
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
-
         if against_sales_order:
             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-
+            print
             if sales_order_doc.is_cod == 1:
                 PaymentType = "COD"
                 consignmentValue = float(sales_order_doc.total_outstanding or 0)
             else:
                 PaymentType = "Prepaid"
-                consignmentValue = float(sales_order_doc.grand_total or 0)
+                # Check if grand_total exists and has value
+                if sales_order_doc.grand_total:
+                    consignmentValue = float(sales_order_doc.grand_total)
+                    print("consignmentValue==================", consignmentValue)
+                else:
+                    # If grand_total not found, fetch from item groups
+                    total_default_charge = 0
+                    print("sales_order_doc.items==================", sales_order_doc.items)
+                    found_charges = False
+                    
+                    # Loop through items in Sales Order
+                    for item in sales_order_doc.items:
+                        if item.item_code:
+                            # Get item document to fetch item_group
+                            item_doc = frappe.get_doc("Item", item.item_code)
+                            print("item_doc==================", item_doc)
+                            if item_doc.item_group:
+                                try:
+                                    # Get item group document and fetch default_charge
+                                    item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+                                    print("item_group_doc==================", item_group_doc)
+                                    if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
+                                        total_default_charge += float(item_group_doc.default_charge)
+                                        print("total_default_charge==================", total_default_charge)
+                                        found_charges = True
+                                        print("found_charges==================", found_charges)
+                                except:
+                                    # Continue if item group not found or error occurs
+                                    continue
+                    
+                    # Set consignment value based on what was found
+                    if found_charges and total_default_charge > 0:
+                        consignmentValue = total_default_charge
+                        print("consignmentValue==================", consignmentValue)
+                    else:
+                        # Fallback to Rs 1000 if no default charges found
+                        consignmentValue = 300.0
+                        print("consignmentValue==================", consignmentValue)
         else:
             frappe.throw("Sales Order not linked to this Delivery Note.")
+
+        # if against_sales_order:
+        #     sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+
+        #     if sales_order_doc.is_cod == 1:
+        #         PaymentType = "COD"
+        #         consignmentValue = float(sales_order_doc.total_outstanding or 0)
+        #     else:
+        #         PaymentType = "Prepaid"
+        #         consignmentValue = float(sales_order_doc.grand_total or 0)
+        # else:
+        #     frappe.throw("Sales Order not linked to this Delivery Note.")
         # if delivery_note.is_cod == 1:
         #     PaymentType = "COD"
         #     consignmentValue = float(delivery_note.total_outstanding) if delivery_note.total_outstanding else 0
@@ -1547,10 +1921,7 @@ def send_consignement_data(doc):
             frappe.throw(f"API returned error: {response.text}")
          
     except Exception as e:
-        frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
-
-
-   
+        frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")   
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
 
@@ -1623,7 +1994,44 @@ def shiprocket_awb_number(doc):
                 sub_total = float(sales_order_doc.total_outstanding or 0)
             else:
                 payment_method = "Prepaid"
-                sub_total = float(sales_order_doc.grand_total or 0)
+                # sub_total = float(sales_order_doc.grand_total or 0)
+                if sales_order_doc.grand_total:
+                    sub_total = float(sales_order_doc.grand_total)
+                    print("sub_total==================", sub_total)
+                else:
+                    # If grand_total not found, fetch from item groups
+                    total_default_charge = 0
+                    print("sales_order_doc.items==================", sales_order_doc.items)
+                    found_charges = False
+                    
+                    # Loop through items in Sales Order
+                    for item in sales_order_doc.items:
+                        if item.item_code:
+                            # Get item document to fetch item_group
+                            item_doc = frappe.get_doc("Item", item.item_code)
+                            print("item_doc==================", item_doc)
+                            if item_doc.item_group:
+                                try:
+                                    # Get item group document and fetch default_charge
+                                    item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+                                    print("item_group_doc==================", item_group_doc)
+                                    if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
+                                        total_default_charge += float(item_group_doc.default_charge)
+                                        print("total_default_charge==================", total_default_charge)
+                                        found_charges = True
+                                        print("found_charges==================", found_charges)
+                                except:
+                                    # Continue if item group not found or error occurs
+                                    continue
+                    
+                    # Set consignment value based on what was found
+                    if found_charges and total_default_charge > 0:
+                        sub_total = total_default_charge
+                        print("sub_total==================", sub_total)
+                    else:
+                        # Fallback to Rs 1000 if no default charges found
+                        sub_total = 300.0
+                        print("sub_total==================", sub_total)
         else:
             frappe.throw("Sales Order not linked to this Delivery Note.")
         # if sales_order_doc.is_cod == 1:
@@ -1791,14 +2199,18 @@ def shiprocket_awb_number(doc):
         if not item.get("item_code"):
             continue
         # Get item group
-        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")       
+        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
+        print("Item Group:==================", item_group)      
         # Get the item group document
         group_doc = frappe.get_doc("Item Group", item_group)
+        print("Group Doc:==================", group_doc)
         # Get item_charges (float)
         item_charges = group_doc.get("item_charges")
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
+            print("Item Total Charge:==================", item_total_charge)
             total_item_charges += item_total_charge
+            print("Total Item Charges:==================", total_item_charges)
         else:
             print("Missing item_charges or quantity for item:", item.get("item_code"))
 
@@ -1816,19 +2228,25 @@ def shiprocket_awb_number(doc):
         if best_courier:
             # Calculate total cost with weight
             freight_charge = best_courier.get('freight_charge', 0)
+            print("Freight Charge:==================", freight_charge)
             cod_charges = best_courier.get('cod_charges', 0)
+            print("COD Charges:==================", cod_charges)
             doc_weight = doc.get('weight', 0) or 0
+            print("Doc Weight:==================", doc_weight)
             
             total_cost = (freight_charge * float(doc_weight)) + cod_charges
+            print("Total Cost:==================", total_cost)
             
             # Fetch COD charges from Ship Rocket Settings
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
+            print("COD Charges Table:==================", cod_charges_table)
             
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
+                print("Charges Value:==================", charges_value)
                 if charges_value:
                     break
             
@@ -1836,15 +2254,20 @@ def shiprocket_awb_number(doc):
                 
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
+                print("Numeric Charges Value:==================", numeric_charges_value)
                 
                 # Calculate percentage of grand_total
                 # grand_total = doc.get("grand_total", 0) or 0
                 # cod_percentage_amount = (numeric_charges_value / 100) * float(grand_total)
                 grand_total = float(doc.get("grand_total", 0) or 0)
+                print("grand_total=============", grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
+                print("cod_percentage_amount=============", cod_percentage_amount)
+                cod_and_item_charges_total = cod_percentage_amount+total_item_charges
+                print("cod_and_item_charges_total=============", cod_and_item_charges_total)
 
                 # Compare COD percentage amount with total_cost
-                if cod_percentage_amount < total_cost:
+                if cod_and_item_charges_total< total_cost:
 
                     frappe.throw(f"COD validation failed: COD charges courier total cost ({total_cost:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")
                 

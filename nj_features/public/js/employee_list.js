@@ -1,4 +1,5 @@
 frappe.listview_settings['Employee'] = {
+    filters: [["status", "=", "Active"]],
     get_indicator: function(doc) {
 		if(doc.status == "Active") {
 			return [__("Active"), "green", "status,=,Active"];

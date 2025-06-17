@@ -721,15 +721,23 @@ frappe.ui.form.on('NJQCA', {
                                         var serial_no_link = `${base_url}/app/serial-no/${cur_frm.doc.serial_no}`;
                                         frappe.msgprint(`Part List and Model is updated for Serial No : <strong><a href='${serial_no_link}'>${cur_frm.doc.serial_no}</a></strong> has been submitted successfully.`);
                                     }
-                                    else if(r.message.status === 'failed'){ $('.primary-action').hide() }
+                                    else if(r.message.status === 'failed'){
+                                        $('.primary-action').hide();
+                                        frm.set_value('model', '');
+                                    }
                                 }
                             });
                         }, () => {
                             if (selectedModel == r.model) {
                                 $('.primary-action').show() 
-                            } else { $('.primary-action').hide() }
+                            } else {
+                                frm.set_value('model', '');
+                                $('.primary-action').hide() 
+                            }
                          })
                 }
+
+                if (selectedModel == r.model) { $('.primary-action').show() }
             })
         }
 
@@ -738,6 +746,11 @@ frappe.ui.form.on('NJQCA', {
         }
 
         frm.refresh_field('item_template');
+
+        if (!frm.doc.model) {
+            frm.set_value("manual_repack_item_code", "")
+            frm.refresh_field("manual_repack_item_code")
+        }
     },
 
     item_template: function(frm) {
@@ -781,34 +794,34 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no !=""){
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name){
 
-        frappe.call({
-            method: 'nj_features.nj_features.api.api_files.get_battery_status',
-            args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"manufacturer_model": frm.doc.manufacturer_model},
-            callback: function(r) {
-                if(r.message){
-                    let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-                    if(r.message == "PASS"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
-                    }else if(r.message == "FAIL"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
-                    }else if(r.message == "Report Not found"){
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+            frappe.call({
+                method: 'nj_features.nj_features.api.api_files.get_battery_status',
+                args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"njqca_name": frm.doc.name, "manufacturer_model": frm.doc.manufacturer_model},
+                callback: function(r) {
+                    if(r.message){
+                        let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                        if(r.message == "PASS"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                        }else if(r.message == "FAIL"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
+                        }else if(r.message == "Report Not found"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                        }
                     }
+                    frm.refresh_field("njqca_result_parameters");
                 }
-                frm.refresh_field("njqca_result_parameters");
-            }
-        })
+            })
         }
     },
 

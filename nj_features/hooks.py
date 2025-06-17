@@ -201,6 +201,9 @@ scheduler_events = {
         ],
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ],
+         "0 */2 * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
         ]
     }
 }

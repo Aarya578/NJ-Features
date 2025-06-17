@@ -21,6 +21,9 @@
   "length",
   "breadth",
   "item_group_qty",
+  "current_status",
+  "activity",
+  "location",
   "column_break_30oxe",
   "cit_image",
   "shiprocket_manifests",
@@ -137,11 +140,26 @@
    "fieldname": "item_group_qty",
    "fieldtype": "Float",
    "label": "Item Group Qty"
+  },
+  {
+   "fieldname": "current_status",
+   "fieldtype": "Data",
+   "label": "Current Status"
+  },
+  {
+   "fieldname": "activity",
+   "fieldtype": "Data",
+   "label": "Activity"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-14 14:50:16.408887",
+ "modified": "2025-06-16 12:37:35.225731",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

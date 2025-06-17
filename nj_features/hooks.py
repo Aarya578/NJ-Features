@@ -197,19 +197,13 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
         ],
         "0 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_so_quantity_check"
-        ],
-        "15 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_parent_quantity"
-        ],
-        "25 * * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.update_proportional_qty_and_updt_qty"
-        ],
-        "35 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"
         ],
-        "45,55 * * * *": [
+        "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
+        ],
+         "0 */2 * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
         ]
     }
 }

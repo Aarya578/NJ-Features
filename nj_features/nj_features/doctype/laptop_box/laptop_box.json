@@ -9,12 +9,15 @@
   "model",
   "os",
   "processor_type",
+  "column_break_sdlhf",
   "ram_capacity",
   "storage_capacity",
   "qty",
   "bios_serial_no",
   "section_break_tvmby",
   "barcode",
+  "column_break_j2lg9",
+  "adapter_serial_no",
   "warehouse",
   "item_code",
   "section_break_ey6d4",
@@ -154,11 +157,24 @@
    "fieldtype": "Data",
    "label": "WhatsApp ",
    "read_only": 1
+  },
+  {
+   "fieldname": "adapter_serial_no",
+   "fieldtype": "Data",
+   "label": "Adapter Serial No"
+  },
+  {
+   "fieldname": "column_break_j2lg9",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_sdlhf",
+   "fieldtype": "Column Break"
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-05-24 12:11:26.704879",
+ "modified": "2025-06-11 15:28:56.921457",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

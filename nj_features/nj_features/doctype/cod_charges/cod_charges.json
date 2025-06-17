@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-06-10 12:00:50.808385",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -12,13 +11,14 @@
   {
    "fieldname": "charges_value",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Charges Value"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-06-10 12:00:50.808385",
+ "modified": "2025-06-13 11:25:20.509049",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "COD Charges",

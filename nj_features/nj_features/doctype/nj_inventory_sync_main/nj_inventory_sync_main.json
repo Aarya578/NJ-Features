@@ -51,7 +51,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Shopify Variant Id",
-   "read_only": 1
+   "read_only": 1,
+   "unique": 1
   },
   {
    "fieldname": "actual_qty",
@@ -98,6 +99,7 @@
   },
   {
    "columns": 1,
+   "default": "0",
    "fieldname": "shopify_quantity",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -116,7 +118,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2025-05-30 12:51:38.097762",
+ "modified": "2025-06-14 13:12:08.964182",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

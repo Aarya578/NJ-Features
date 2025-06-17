@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-logger = frappe.logger("productivity", allow_site=True, file_count=5)
+logger = frappe.logger("productivity", allow_site=True, file_count=1)
 
 class Productivity(Document):
     pass

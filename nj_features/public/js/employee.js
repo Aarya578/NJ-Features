@@ -75,17 +75,20 @@ frappe.ui.form.on('Employee', {
                 }
             }
         });
+        
         // Log role profile changes
-        frappe.call({
-            method: "nj_features.overrides.employee.role_profile_change_log",
-            args: {
-                user_id: frm.doc.prefered_email,
-                cur_role_profile: frm.doc.role_profile,
-                previous_role_profile: frm.doc.previous_role_profile || null,
-                ramp_level: frm.doc.ramp_level || null,
-                previous_ramp: frm.doc.previous_ramp || null
-            }
-        });     
+        if (frm.doc.prefered_email) {
+            frappe.call({
+                method: "nj_features.overrides.employee.role_profile_change_log",
+                args: {
+                    user_id: frm.doc.prefered_email,
+                    cur_role_profile: frm.doc.role_profile,
+                    previous_role_profile: frm.doc.previous_role_profile || null,
+                    ramp_level: frm.doc.ramp_level || null,
+                    previous_ramp: frm.doc.previous_ramp || null
+                }
+            });
+        }
     },
 
     role_profile(frm) {

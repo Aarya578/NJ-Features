@@ -5,6 +5,7 @@ import random
 import traceback
 from nj_lib.utils.common_utils import get_item_wizard
 from nj_lib.utils.common_utils import latest_repacked_battery_serialno
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
                                       
 
 @frappe.whitelist()
@@ -212,9 +213,17 @@ def battery_data():
         battery_serial_no = ""
 
 @frappe.whitelist()
-def get_battery_status(serial_no,bios_serialno,manufacturer_model):
+def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model=""):
     
     try:
+        frappe.get_doc({
+            "doctype": "Comment",
+            "comment_type": "Comment",
+            "reference_doctype": "NJQCA",
+            "reference_name": njqca_name, 
+            "content": f"serial no: {serial_no}, bios serial no: {bios_serialno}, manufacturer model: {manufacturer_model}"
+        }).insert(ignore_permissions=True)
+
         parent_serial_no = serial_no
         bios_serial_no=bios_serialno
         model=manufacturer_model
@@ -255,6 +264,8 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
 
         get_bty_serial_no= latest_repacked_battery_serialno(bios_serial_no)
 
+        log_error(get_bty_serial_no,"get_bty_serial_no for serial no "+bios_serial_no+" in NJQCA "+njqca_name)
+
         if  get_bty_serial_no :
             
             bty_parent_njqca =  ""
@@ -263,6 +274,7 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
                             """
 
             get_bty_njqca = frappe.db.sql(get_bty_njqca_query, {'serial_no':get_bty_serial_no,'bios_serialno':bios_serial_no},as_dict=True)
+            log_error(str(get_bty_njqca) + ""+str(backup_duration_mins),"get_bty_njqca for serial no "+get_bty_serial_no+" in NJQCA "+njqca_name)
             if get_bty_njqca:
                 bty_parent_njqca = get_bty_njqca[0].name
         
@@ -280,6 +292,7 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
 
         battery_Data_parent_name=""
         battery_Data_parent_name_result=frappe.db.sql(serial_no_battery_data_query,{'serial_no':parent_serial_no,'bios_serial_no':bios_serial_no}, as_dict=True)
+        log_error(str(battery_Data_parent_name_result),"battery_Data_parent_name_result for serial no "+parent_serial_no+" in NJQCA "+njqca_name)
         if battery_Data_parent_name_result:
             battery_Data_parent_name=battery_Data_parent_name_result[0].name
             if battery_Data_parent_name and backup_duration_mins :
@@ -296,6 +309,7 @@ def get_battery_status(serial_no,bios_serialno,manufacturer_model):
 
 
     except Exception as e:
+        log_error(traceback.format_exc(), "An error occurred in get_battery_status in NJQCA "+njqca_name)   
         return (f"An error occurred at get_battery_status: {traceback.format_exc()}")
     
 @frappe.whitelist()

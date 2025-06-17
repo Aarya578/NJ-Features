@@ -9,6 +9,7 @@ from collections import defaultdict
 from frappe.utils import getdate, flt
 from frappe.model.document import Document
 from datetime import datetime, timedelta, date
+logger = frappe.logger("production_planning", allow_site=True, file_count=1)
 
 class NJProductionPlanning(Document):
     pass
@@ -848,55 +849,91 @@ def sort_by_multiple_keys(configs, keys):
         return tuple(key_values)
     return sorted(configs, key=sort_key)
 
+from tabulate import tabulate
+import frappe
+import time
+import math
+from datetime import datetime
+
+
 def calculate_to_make(doc):
     print("🔄 Started Executing Calculate To Make")
 
     if isinstance(doc, dict):
         doc = frappe.get_doc(doc)
 
-    # Reset all to_make values in child table
+    # Prepare and print initial data
+    table_data = []
+    headers = ["Item Code", "Sales Rate", "Inward Inventory", "Forward Inventory", "Model", "Processor", "RAM", "SSD"]
+
     for child in doc.get("nj_production_planning_child", []):
+        table_data.append([
+            child.item_code,
+            child.sales_rate or 0,
+            child.inward_inventory or 0,
+            child.forward_inventory or 0,
+            child.model or "",
+            child.processor or "",
+            child.ram or "",
+            child.ssd or ""
+        ])
         child.to_make = 0
 
-    # Clear the final_config table
-    doc.set("final_config", [])
+    print("\n📋 Initial Input Data:")
+    # print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
 
-    # Initialize temporary config list
+    doc.set("final_config", [])
     temp_config = []
+
     for child in doc.get("nj_production_planning_child", []):
         temp_config.append({
             "item_code": child.item_code,
             "sales_rate": child.sales_rate or 0,
             "inward_inventory": child.inward_inventory or 0,
             "forward_inventory": child.forward_inventory or 0,
-            "days_of_inventory": 0,  # start all with zero DoI
+            "days_of_inventory": 0,
             "to_make": 0,
             "model": child.model or "",
             "processor": child.processor or "",
             "ram": child.ram or "",
-            "ssd": child.ssd or ""
+            "ssd": child.ssd or "",
+            "name": child.name
         })
 
     rank = 0
-    loop_start_time = time.time()
-    print("🚀 Started allocation loop")
-
     iteration = 1
+    loop_start_time = time.time()
+    print("\n🚀 Started Allocation Loop")
+
     while True:
+        print("\n\n")
         print(f"\n🔁 Iteration {iteration}")
 
-        # Filter out configs with zero inward inventory
         temp_config = [item for item in temp_config if item["inward_inventory"] > 0]
-
         if len(temp_config) < 2:
-            break  # not enough items to compare DoI
+            break
 
-        # Sort by current days_of_inventory
         temp_config.sort(key=lambda x: x["days_of_inventory"])
 
-        print("📊 Sorted Configs:")
+        iteration_data = []
         for item in temp_config:
-            print(f"- {item['item_code']} | DoI: {item['days_of_inventory']:.2f} | Inward: {item['inward_inventory']}")
+            iteration_data.append([
+                item["item_code"],
+                item["sales_rate"],
+                item["inward_inventory"],
+                item["forward_inventory"],
+                round(item["days_of_inventory"], 2),
+                item["to_make"],
+                item["model"],
+                item["processor"],
+                item["ram"],
+                item["ssd"]
+            ])
+        print(tabulate(
+            iteration_data,
+            headers=["Item Code", "Sales Rate", "Inward", "Forward", "DoI", "To Make", "Model", "Processor", "RAM", "SSD"],
+            tablefmt="fancy_grid"
+        ))
 
         current = temp_config[0]
         next_cfg = temp_config[1]
@@ -909,7 +946,6 @@ def calculate_to_make(doc):
         if not math.isfinite(sales_rate):
             sales_rate = 0
 
-        # 🔢 Calculate how much we need to make to match next item's DoI
         needed_units = math.ceil((doi_gap + 1) * sales_rate)
         make_units = min(needed_units, current["inward_inventory"])
 
@@ -917,7 +953,6 @@ def calculate_to_make(doc):
             iteration += 1
             continue
 
-        # ✅ Apply allocation
         current["to_make"] += make_units
         current["inward_inventory"] -= make_units
         current["forward_inventory"] += make_units
@@ -925,20 +960,16 @@ def calculate_to_make(doc):
             current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
         )
 
-        # 🔄 Reduce inward_inventory from other rows with same model if model specific
         model_to_reduce = current["model"]
         units_to_reduce = make_units
         for item in temp_config:
-            if item == current:
+            if item.get("name") == current.get("name"):
                 continue
             if item["model"] == model_to_reduce and item["inward_inventory"] > 0:
                 reduce_qty = min(units_to_reduce, item["inward_inventory"])
                 item["inward_inventory"] -= reduce_qty
-                units_to_reduce -= reduce_qty
-                if units_to_reduce == 0:
-                    break
 
-        # ➕ Add to final_config table (for tracking/reporting)
+        # Append to final_config
         row = doc.append("final_config", {})
         row.item_code = current["item_code"]
         row.sales_rate = sales_rate
@@ -954,23 +985,42 @@ def calculate_to_make(doc):
         rank += 1
         row.rank = rank
 
-        print(f"✅ Allocated: {current['item_code']} | To Make: {make_units} | Remaining: {current['inward_inventory']} | New DoI: {current['days_of_inventory']:.2f}")
+        # ✅ Tabulate entire final_config after each append
+        full_final_table = []
+        for r in doc.get("final_config", []):
+            full_final_table.append([
+                r.item_code,
+                r.to_make,
+                r.sales_rate,
+                r.inward_inventory,
+                r.forward_inventory,
+                round(r.days_of_inventory, 2),
+                r.model,
+                r.processor,
+                r.ram,
+                r.ssd,
+                r.rank
+            ])
+
+        print(f"\n📦 Updated final_config Table (Iteration {iteration}):")
+        print(tabulate(
+            full_final_table,
+            headers=["Item Code", "To Make", "Sales Rate", "Inward", "Forward", "DoI", "Model", "Processor", "RAM", "SSD", "Rank"],
+            tablefmt="fancy_grid"
+        ))
+
         iteration += 1
 
     loop_end_time = time.time()
     print(f"\n⏱ Allocation loop completed in {loop_end_time - loop_start_time:.4f} seconds")
 
-    print("final_config ------- ", doc.get("final_config"))
-
-    # Build a map for faster lookup: item_code -> to_make
+    # Update child table
     final_config_map = {}
     for cfg in doc.get("final_config", []):
-        print("cfg ------- ", cfg.as_dict())
         item_code = cfg.get("item_code")
         if item_code:
             final_config_map[item_code] = final_config_map.get(item_code, 0) + cfg.get("to_make", 0)
 
-    # Now, update the child table using the map
     for child in doc.get("nj_production_planning_child", []):
         if child.item_code in final_config_map:
             child.to_make += final_config_map[child.item_code]
@@ -978,6 +1028,7 @@ def calculate_to_make(doc):
     doc.save()
     print("💾 Document saved successfully")
     return doc.get("nj_production_planning_child", [])
+
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     print("Started suggest_to_make_serial_no")

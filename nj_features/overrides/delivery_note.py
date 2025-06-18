@@ -10,6 +10,7 @@ import requests
 import traceback
 from frappe import _
 from frappe.utils import now
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from datetime import datetime, timedelta
 from frappe.utils import now_datetime, get_datetime
 from nj_lib.utils.common_utils import get_latest_item_wizard
@@ -2453,15 +2454,16 @@ def adapter_repacked_serial_no(nj_serial_no):
 
             data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
         
-        if data is not None and data:  
-            return data[0].get("adapter_serial_no","")
-        else:
-            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
-            if data is not None and data:
+            if data is not None and data:  
                 return data[0].get("adapter_serial_no","")
             else:
-              return "No repacked serial no found"
+                data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
+                if data is not None and data:
+                    return data[0].get("adapter_serial_no","")
+                else:
+                   return "Empty"
     except Exception as e:
+        log_error(traceback.format_exc(),"Error while getting adapter repacked serial no in for serial no "+nj_serial_no)
         return str(e)
 @frappe.whitelist()
 def sanitize_phone(phone):
@@ -2478,11 +2480,12 @@ def allow_to_save(doc):
         if isinstance(doc,str):
             doc=json.loads(doc)
         child_data=doc["packed_items"]
+        dn_name=doc.get("name","")
         
 
         if not child_data:
             child_data=doc["items"]
-        
+        log_error(str(child_data),"child_data for dn name "+dn_name)
         for data in child_data:
             child_nj_serial_data=data.get("serial_no","")
             child_adapter_serial_no=data.get("adapter_serial_no","")
@@ -2504,7 +2507,9 @@ def allow_to_save(doc):
                     adapter_serial_nos.append(child_adapter_serial_no)
 
             serial_no_order=0
-
+            log_error(str(adapter_serial_nos),"adapter_serial_nos for dn name "+dn_name)
+            log_error(str(nj_serial_nos),"nj_serial_nos for dn name "+dn_name)
+            
             for nj_serial_no in nj_serial_nos:
                 item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
                 if item_group and item_group=="Laptops" or item_group=="Chromebooks":
@@ -2515,7 +2520,7 @@ def allow_to_save(doc):
                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
                         try:
                           if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
-                            return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
+                            return "Repacked Adapter Serial No:" + repacked_serial_no +" "+nj_serial_no+ " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
                         except IndexError:
                           return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
                 else:
@@ -2523,5 +2528,6 @@ def allow_to_save(doc):
         return "pass"
     
     except Exception as e:
+        log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
 

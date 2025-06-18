@@ -484,7 +484,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
-    def on_load(self):
+    def onload(self):
         data = get_item_group_mapping(self.name)
         gen_score_map = {
         "CORE I3": 0.1,

@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 
@@ -123,3 +124,34 @@ def send_email_to_user_for_payment_terms(recipient_email, subject, message, cc_e
     except Exception as e:
         frappe.log_error(message=str(e), title="Email Sending Failed")
         frappe.throw(f"Failed to send email: {str(e)}")
+
+@frappe.whitelist()
+def custom_bulk_update_approved(names, approved_value):
+    try:
+        if isinstance(names, str):
+            names = frappe.parse_json(names)
+
+        if "Accounts Manager" not in frappe.get_roles():
+            frappe.throw(_("You are not authorized to perform this action."))
+
+        updated = 0
+
+        for name in names:
+            doc = frappe.get_doc("Sales Invoice", name)
+
+            if not frappe.has_permission(doctype="Sales Invoice", ptype="write", doc=doc):
+                frappe.msgprint(_("No write access for {0}").format(name))
+                continue
+
+            doc.approved = int(approved_value)
+            doc.save(ignore_permissions=True)
+            updated += 1
+
+        return {
+            "updated": updated,
+            "status": "success"
+        }
+
+    except Exception as e:
+        frappe.log_error(message=str(e), title="Bulk Update Failed")
+        frappe.throw(f"Failed to bulk update: {str(e)}")

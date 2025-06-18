@@ -1727,6 +1727,7 @@ def send_consignement_data(doc):
             if sales_order_doc.is_cod == 1:
                 PaymentType = "COD"
                 consignmentValue = float(sales_order_doc.total_outstanding or 0)
+                print("consignmentValue==================", consignmentValue)   
             else:
                 PaymentType = "Prepaid"
                 # Check if grand_total exists and has value
@@ -1848,14 +1849,14 @@ def send_consignement_data(doc):
             "ReceiverCountry": shipping_address.country or "India",
             "ReceiverPin": shipping_address.pincode or "",
             "ReceiverMobile": sanitize_phone(shipping_address.phone),
-            "ConsignmentValue": consignmentValue,
+            "ConsignmentValue": str(doc.grand_total),
             "NoQuantity": int(total_quantity),  # Fixed: Use total quantity of all items
-            "consignmentValue": consignmentValue,
+            "consignmentValue": str(doc.grand_total),
             "Weight": f"{weight:.2f}",  # Fixed: Use doc.weight instead of doc.length
             "TransitMode": doc.mode_of_transfer,
             "ProductMode": "Normal",
             "PaymentType": PaymentType,
-            "Amount": str(doc.grand_total),
+            "Amount": consignmentValue,
             "Need_CitImage": "1"
         }
         # Add validation to ensure quantities match
@@ -1868,14 +1869,17 @@ def send_consignement_data(doc):
             "Header": [header],
             "ItemsDetails": items
         }
+        print("data", data)
         
         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
         
         response = requests.post(url, headers=headers, json=data)
+        print("response:", response.json())
        
         resp_json = response.json()
+        print("resp_json:", resp_json)
         
         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')

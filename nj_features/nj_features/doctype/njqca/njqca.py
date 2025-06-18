@@ -9,7 +9,6 @@ from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_features.nj_features.api.bb_api import get_grading_Authentication
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
@@ -485,7 +484,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         return None
 
 class NJQCA(Document):
-    def on_load(self):
+    def onload(self):
         data = get_item_group_mapping(self.name)
         gen_score_map = {
         "CORE I3": 0.1,
@@ -766,14 +765,12 @@ class NJQCA(Document):
                 FROM `tabNJQCA Result Parameters`
                 WHERE parent = %s
             """, (self.name,), as_dict=True)
-            # logger.info(f"==========readings=========={readings}")
             
             if readings:
                 total_cpu = sum(float(row.cpu_load) for row in readings if row.cpu_load is not None)
                 total_discharge = sum(float(row.discharge_rate) for row in readings if row.discharge_rate is not None)
                 count = len(readings)
                 average_cpu_load = round(total_cpu / count, 3) if count else 0
-                # logger.info(f"==========average_cpu_load=========={average_cpu_load}")             
                 average_discharge_rate = round(total_discharge / count, 3) if count else 0                
                 # Update average fields in Serial No
                 serial_no_doc.battery_average_cpu_load = average_cpu_load
@@ -784,7 +781,7 @@ class NJQCA(Document):
                 
         except Exception as e:
             logger.error(f"Error updating battery readings: {str(e)}")
-            log_error(f"Failed to save Serial No: {str(e)}")
+            log_error(f"Failed to save Serial No: {str(e)}", "Error in battery_readings in NJQCA")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
 
     def update_item_groups(self):
@@ -861,9 +858,6 @@ class NJQCA(Document):
 
         except Exception as e:
             log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
-
-
-
 
         
 def get_repack_items(self):
@@ -980,25 +974,12 @@ def get_info_from_serial_no(doc=None):
         sle = []
         result = {}
         doc_json = json.loads(doc)
-        bio_serial_no_in_ui = None
         serial_no = doc_json.get('serial_no')
-        bio_serialno_in_ui = doc_json.get('bios_serialno')
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'serial_no' in doc_json:
-            serial_no = doc_json['serial_no']
+        if 'bios_serialno' in doc_json:
 
-            sql_query = """
-                SELECT name,item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
-                FROM `tabSerial No`
-                WHERE name = %s and status = 'Active' """
-
-            sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-
-        if 'bios_serialno' in doc_json and not sle:
-
-            bio_serial_no_in_ui = doc_json['bios_serialno']
+            bios_serial_no_in_ui = doc_json['bios_serialno']
 
             sql_query = """
                 SELECT name,item_code, warehouse, purchase_rate,
@@ -1006,11 +987,23 @@ def get_info_from_serial_no(doc=None):
                 FROM `tabSerial No`
                 WHERE bios_serial_no = %s and status = 'Active' """
 
-            sle = frappe.db.sql(sql_query, (bio_serial_no_in_ui), as_dict=1)
+            sle = frappe.db.sql(sql_query, (bios_serial_no_in_ui), as_dict=1)
+
+            if 'serial_no' in doc_json and not sle:
+                serial_no = doc_json['serial_no']
+
+                sql_query = """
+                    SELECT name,item_code, warehouse, purchase_rate,
+                        bios_serial_no, model, item_group, brand
+                    FROM `tabSerial No`
+                    WHERE name = %s and status = 'Active' """
+
+                sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
 
             if sle and len(sle) > 0:
                 sle_entry = sle[0]
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
+                serial_no = sle_entry.get('name')
 
                 if non_njqca_item_groups and non_njqca_item_groups is not None:
                     sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
@@ -1019,12 +1012,12 @@ def get_info_from_serial_no(doc=None):
                     if sle_entry.get('item_group') in non_njqca_item_groups and manufacturer_model and manufacturer_model is not None:
                         result.update({'manufacturer_model': manufacturer_model[0].get("manufacturer_model"),})
                     else:
-                        if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bio_serialno_in_ui:
+                        if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bios_serial_no_in_ui:
                             frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
-                        elif bio_serialno_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
-                            log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bio_serialno_in_ui}</b>", doc_json.get('name'))
+                        elif bios_serial_no_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
+                            log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bios_serial_no_in_ui}</b>", doc_json.get('name'))
                             frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
-                                            (bio_serialno_in_ui, serial_no))
+                                            (bios_serial_no_in_ui, serial_no))
                 else:
                     frappe.throw(f"NJ Settings for non_njqca_item_groups is not defined.")
         
@@ -1077,7 +1070,6 @@ def get_info_from_serial_no(doc=None):
                 pass  # Allowed group, do nothing
             else:
                 result['item_code'] = sle_entry.get('item_code')
-    
                 
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
         
@@ -1112,7 +1104,6 @@ def get_info_from_battery_serial_no(doc=None):
 
             sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
         
-        print("sle",sle)
         if sle and len(sle) > 0:
             sle_entry = sle[0]
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
@@ -1131,13 +1122,10 @@ def get_info_from_battery_serial_no(doc=None):
                 
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
 
-        print("result",result)
-
         return result
     
     except Exception as e:
         log_error(traceback.format_exc(), "Error on get_info_battery_serial_no in NJQCA")
-        print("Error on get_info_battery_serial_no in NJQCA",traceback.format_exc())
         return f"Error while getting battery serial info: {str(e)}"
 
 @frappe.whitelist()
@@ -1207,7 +1195,6 @@ def get_item_code_for_each_part(doc):
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
                             normalize_cpu = normalize_gen(cpu_value)
-                            print("normalize_cpu", normalize_cpu)
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
 
@@ -1402,7 +1389,6 @@ def get_part_mapping(doc):
             frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
             log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
 
-
 def consolidate_ram_capacities(data):
     consolidated_data,ram_consolidation = [], {}
 
@@ -1596,9 +1582,7 @@ def get_variant_from_value(item_template=None, args=None):
         return None
 
     except Exception as e:
-        print(f"An error occurred at get_variant_from_value: {str(e)}")
         return None
-
 
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
@@ -1623,8 +1607,8 @@ def construct_item_code(item_template, args_list):
         else:
             return {'error': concatenated_string}
 
-    except Exception as e:
-        print(f"An error occurred at construct_item_code: {str(e)}")
+    except Exception:
+        log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
 def get_model(manufacturer_model=None):
@@ -1787,8 +1771,8 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
             return None
             
     except Exception as e:
-        frappe.msgprint("An error occurred at get_sudden_drop",str(e))
-        print(traceback.format_exc(), "An error occurred at get_sudden_drop in NJQCA")
+        frappe.msgprint("An error occurred at get_sudden_drop", str(e))
+        log_error(traceback.format_exc(), "An error occurred at get_sudden_drop in NJQCA")
         return ''
         
 @frappe.whitelist()
@@ -1933,7 +1917,7 @@ def get_item_attributes(selected_fields):
         return result
     
     except Exception as e:
-        print(f"An error occurred at get_item_attributes: {str(e)}")
+        log_error(f"An error occurred at get_item_attributes: {str(e)}", "Error in get_item_attributes NJQCA")
         return str(e)
     
 @frappe.whitelist()
@@ -2366,7 +2350,7 @@ def compare_parameter(param_name, actual_value, expected_range):
             return False, f"{actual_value} doesn't match expected {expected_range}"
                 
     except Exception as e:
-        log_error(f"Error comparing parameter {param_name}: {str(e)}")
+        log_error(f"Error comparing parameter {param_name}: {str(e)}", "An error occurred in compare_parameter in NJQCA")
         return False, f"Comparison error: {str(e)}"
 
 def convert_to_seconds(time_str,param_name=""):
@@ -2528,36 +2512,43 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
         nj_serial_no=""
         if serial_no:
             nj_serial_no=serial_no[0].name
-
+        query="""
+            SELECT tot_sed.serial_no as battery_serial_no
+            FROM `tabStock Entry Detail` AS sed
+            INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+            INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+            WHERE
+                (sed.serial_no = %(serial_no)s OR 
+                    sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+                stock_entry.purpose = 'Repack' AND 
+                stock_entry.docstatus = 1 AND
+                tot_sed.s_warehouse IS NOT NULL AND 
+                tot_sed.item_group = 'Battery' AND
+                tot_sed.creation < %(njqca_creation)s
+            ORDER BY stock_entry.creation DESC
+            LIMIT 1
+        """
+        partlist_query="""
+          Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" limit 1;
+        """
         if nj_serial_no is not None and nj_serial_no:
-            query="""
-                    SELECT tot_sed.serial_no as battery_serial_no
-                    FROM `tabStock Entry Detail` AS sed
-                    INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-                    INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-                    WHERE
-                        (sed.serial_no = %(serial_no)s OR 
-                            sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
-                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
-                            sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
-                        stock_entry.purpose = 'Repack' AND 
-                        stock_entry.docstatus = 1 AND
-                        tot_sed.s_warehouse IS NOT NULL AND 
-                        tot_sed.item_group = 'Battery' AND
-                        tot_sed.creation < %(njqca_creation)s
-                    ORDER BY stock_entry.creation DESC
-                    LIMIT 1
-                """
-            data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
-
+            
+            data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
             else:
-                return nj_serial_no
+                data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
+                if data is not None and data:
+                    return data[0].get("battery_serial_no")
+                else:
+                   return nj_serial_no
         else:
             return ""
         
     except Exception as e:
+        log_error(traceback.format_exc(), "An error occurred in get_battery_serialno in battery NJQCA "+bios_serial_no)
         return ""
 
 # @frappe.whitelist()
@@ -2569,6 +2560,7 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
 #         fields=["item_group", "variant_6"]
 #     )
 #     return data
+
 @frappe.whitelist()
 def get_item_group_mapping(parent):
     data = frappe.get_all(
@@ -2604,7 +2596,7 @@ def check_for_mis_config(doc):
         }
     
 @frappe.whitelist() 
-def get_bdt_status(doc,method=None):
+def get_bdt_status(doc, method=None):
     try:
         if isinstance(doc, str):
             doc = frappe.parse_json(doc)
@@ -2624,7 +2616,6 @@ def get_bdt_status(doc,method=None):
         backup3=doc.backup_duration_cycle_3
 
         if iw:
-            
             try:
                 required_backup=int(iw.get("backup_duration_mins"))
             except Exception as e:
@@ -2632,7 +2623,6 @@ def get_bdt_status(doc,method=None):
         
         if required_backup==0:
             required_backup=120
-
 
         if backup3 is not None and backup3:
             if float(backup3)>=required_backup:
@@ -2654,7 +2644,8 @@ def get_bdt_status(doc,method=None):
             return "Pass"
         else:
             return "Fail"
-    except Exception as e:
+        
+    except Exception:
         log_error(traceback.format_exc(), "An error occurred at get_bdt_status in NJQCA "+njqca_name)
         return f"ERROR While BDT status: {traceback.format_exc()}"
 
@@ -2721,13 +2712,13 @@ def set_is_defective(inspection_type):
             return "0"
     except Exception as e:
         return str(e)   
-    
 
 @frappe.whitelist()
 def get_item_code_for_ram(item_code, njqca_name):
     try:
         ram_data_query="""
-            select variant_6 as size, variant_7 as type, variant_8 as speed from `tabNJQCA Child` where parent=%s and item_group="Laptop RAM" LIMIT 1;
+            select variant_6 as size, variant_7 as type, variant_8 as speed 
+            from `tabNJQCA Child` where parent=%s and item_group="Laptop RAM" LIMIT 1;
         """
 
         ram_size=""
@@ -2735,7 +2726,6 @@ def get_item_code_for_ram(item_code, njqca_name):
         ram_speed=""
 
         ram_data=frappe.db.sql(ram_data_query, (njqca_name), as_dict=1)
-        print("ram_data: ", ram_data)
 
         if ram_data is not None and ram_data:
             ram_size=ram_data[0].get("size").strip()
@@ -2747,7 +2737,6 @@ def get_item_code_for_ram(item_code, njqca_name):
         else:
             return ""
         
-
         sub_config=[]
         new_config=""
         item_code_query="""
@@ -2773,9 +2762,7 @@ def get_item_code_for_ram(item_code, njqca_name):
             else:
                 new_config=new_config+"-"+sub_config[3]
 
-
             new_config=new_config+"-"+sub_config[5]
-
 
             item_code_data=frappe.db.sql(item_code_query, (new_config), as_dict=1)
 
@@ -2788,3 +2775,28 @@ def get_item_code_for_ram(item_code, njqca_name):
             return ""
     except Exception as e:
         return str(e)
+    
+@frappe.whitelist()
+def get_product_key(doc,method=None):
+    try:
+      item_group=doc.get("item_group")
+      if item_group!="Laptops":
+          return
+      njqca_name=doc.get("name")
+      serial_no=doc.get("serial_no")
+
+      if njqca_name:
+        product_key=""
+        product_key_query="""Select value from `tabNJQCA Result Parameters` where parent=%s and parameter='Product_key';
+        """
+        update_query="""
+            update `tabSerial No` set product_key=%(product_key)s where parent=%(serial_no)s;
+        """
+        product_key_data=frappe.db.sql(product_key_query, (njqca_name), as_dict=1)
+        if product_key_data is not None and product_key_data:
+            product_key= product_key_data[0].get("value")
+        if product_key and serial_no:
+            frappe.db.sql(update_query, {"product_key":product_key,"serial_no":serial_no})
+                   
+    except Exception:
+        log_error(traceback.format_exc(), "An error occurred in get_product_key in NJQCA "+njqca_name)

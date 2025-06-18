@@ -169,46 +169,73 @@ def get_warehouses(department):
 
 def get_inwarded_counts_merged(warehouse):
     return frappe.db.sql("""
-        SELECT COUNT(sn.name) AS count, sn.model
+        SELECT 
+            COUNT(sn.name) AS count,
+            sn.model,
+            COALESCE(LOWER(iva.attribute_value), 'unknown') AS processor
         FROM `tabSerial No` sn
         JOIN `tabItem Group` i ON sn.item_group = i.name
+        LEFT JOIN (
+            SELECT 
+                parent AS item_code,
+                LOWER(attribute_value) AS attribute_value
+            FROM `tabItem Variant Attribute`
+            WHERE LOWER(attribute) = 'processor type'
+        ) AS iva ON iva.item_code = sn.item_code
         WHERE sn.warehouse = %s
-        AND i.parent_item_group = "Products"
-        GROUP BY sn.model
-    """, (warehouse,), as_dict=True)
+        AND i.parent_item_group = 'Products'
+        GROUP BY sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
+    """, (warehouse,), explain=1, debug=1, as_dict=True)
 
 def get_forwarded_counts_merged(warehouse):
-    
     return frappe.db.sql("""
-        SELECT sn.item_code, COUNT(sn.name) AS count, sn.model
+        SELECT 
+            sn.item_code, 
+            sn.model,
+            COALESCE(LOWER(iva.attribute_value), 'unknown') AS processor,
+            COUNT(sn.name) AS count
         FROM `tabSerial No` sn
         JOIN `tabItem Group` i ON sn.item_group = i.name
+        LEFT JOIN (
+            SELECT 
+                parent AS item_code,
+                LOWER(attribute_value) AS attribute_value
+            FROM `tabItem Variant Attribute`
+            WHERE LOWER(attribute) = 'processor type'
+        ) AS iva ON iva.item_code = sn.item_code
         WHERE sn.warehouse = %s
-        AND i.parent_item_group = "Products"
-        GROUP BY sn.item_code, sn.model
+        AND i.parent_item_group = 'Products'
+        GROUP BY sn.item_code, sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
     """, (warehouse,), as_dict=True)
 
 def update_merged_counts(merged_data, counts, warehouse, count_type):
-
     for item in counts:
         model = item.get("model")
+        processor = item.get("processor") or "unknown"  # fallback if processor is None
+
         if not model:
             continue
-            
-        if model not in merged_data:
-            merged_data[model] = {
+
+        # Key by both model and processor
+        key = (model, processor)
+
+        if key not in merged_data:
+            merged_data[key] = {
+                "model": model,
+                "processor": processor,
                 "inwarded_count": 0,
                 "forwarded_count": 0,
-                "warehouse": warehouse,
                 "item_codes": {}
             }
-        
-        merged_data[model][count_type] += item.get("count", 0)
-        
+
+        merged_data[key][count_type] += item.get("count", 0)
+
         if count_type == "forwarded_count":
             item_code = item.get("item_code")
             if item_code:
-                merged_data[model]["item_codes"][item_code] = merged_data[model]["item_codes"].get(item_code, 0) + item.get("count", 0)
+                merged_data[key]["item_codes"][item_code] = (
+                    merged_data[key]["item_codes"].get(item_code, 0) + item.get("count", 0)
+                )
 
 def process_model_configuration(dept_doc):
     inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
@@ -428,6 +455,7 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     
     updated_item_code_list = []
     for model_name, model_data in item_code_list.items():
+
         inward_qty = model_data['inwarded_count']
         
         for item_code in model_data['item_codes']:
@@ -506,7 +534,14 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     return updated_item_code_list
 
 def get_shopify_variant_item_code(merged_data, updated_item_code_list):
-    model_list = list(merged_data.keys())
+    # print("merged_data", merged_data)
+
+    # Extract unique model names from merged_data keys (model, processor)
+    model_list = list({key[0] for key in merged_data.keys()})
+    
+    if not model_list:
+        return updated_item_code_list
+
     placeholders = ', '.join(['%s'] * len(model_list))
 
     query = f"""
@@ -526,8 +561,14 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
     """
     bundle_items = frappe.db.sql(query, tuple(model_list), as_dict=True)
 
+    # Build a quick lookup for already updated items
     updated_item_code_map = {item['item_code']: item for item in updated_item_code_list}
-    new_item_codes = [item['item_code'] for item in bundle_items if item['item_code'] not in updated_item_code_map]
+
+    # Get new item codes that are not in the updated list
+    new_item_codes = [
+        item['item_code'] for item in bundle_items
+        if item['item_code'] not in updated_item_code_map
+    ]
 
     config_map = {}
 
@@ -565,10 +606,22 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
                 updated_item_code_map[code]['sales_rate'] = 1
         else:
             config = config_map.get(code, {})
+            model = config.get('item_model')
+            processor = config.get('processor type')
+
+            # Find inwarded_qty from merged_data (match by model only)
+            inwarded_qty = 0
+            for key in merged_data:
+                print("key", key)
+                print("key --- ", key[0])
+                if key[0] == model and key[1] == processor:
+                    inwarded_qty = merged_data[key].get('inwarded_count', 0)
+                    break
+
             new_row = {
-                'model': config.get('item_model'),
+                'model': model,
                 'item_code': code,
-                'inwarded_qty': merged_data.get(config.get('item_model'), {}).get('inwarded_count', 0),
+                'inwarded_qty': inwarded_qty,
                 'forwarded_qty': 0,
                 'total_sales_qty': 0.0,
                 'sales_rate': 1,
@@ -849,13 +902,6 @@ def sort_by_multiple_keys(configs, keys):
         return tuple(key_values)
     return sorted(configs, key=sort_key)
 
-from tabulate import tabulate
-import frappe
-import time
-import math
-from datetime import datetime
-
-
 def calculate_to_make(doc):
     print("🔄 Started Executing Calculate To Make")
 
@@ -1028,7 +1074,6 @@ def calculate_to_make(doc):
     doc.save()
     print("💾 Document saved successfully")
     return doc.get("nj_production_planning_child", [])
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     print("Started suggest_to_make_serial_no")

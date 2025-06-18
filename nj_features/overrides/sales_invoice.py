@@ -127,31 +127,36 @@ def send_email_to_user_for_payment_terms(recipient_email, subject, message, cc_e
 
 @frappe.whitelist()
 def custom_bulk_update_approved(names, approved_value):
-    try:
-        if isinstance(names, str):
-            names = frappe.parse_json(names)
+    if isinstance(names, str):
+        names = frappe.parse_json(names)
 
-        if "Accounts Manager" not in frappe.get_roles():
-            frappe.throw(_("You are not authorized to perform this action."))
-
-        updated = 0
-
-        for name in names:
-            doc = frappe.get_doc("Sales Invoice", name)
-
-            if not frappe.has_permission(doctype="Sales Invoice", ptype="write", doc=doc):
-                frappe.msgprint(_("No write access for {0}").format(name))
-                continue
-
-            doc.approved = int(approved_value)
-            doc.save(ignore_permissions=True)
-            updated += 1
-
-        return {
-            "updated": updated,
-            "status": "success"
+    has_permission = frappe.db.exists(
+        "Custom DocPerm",
+        {
+            "parent": "Sales Invoice",
+            "permlevel": 1,
+            "write": 1,
+            "role": "Accounts Manager"
         }
+    )
 
-    except Exception as e:
-        frappe.log_error(message=str(e), title="Bulk Update Failed")
-        frappe.throw(f"Failed to bulk update: {str(e)}")
+    if not has_permission:
+        frappe.throw(_("You are not authorized to perform this action."))
+
+    updated = 0
+
+    for name in names:
+        doc = frappe.get_doc("Sales Invoice", name)
+
+        if not frappe.has_permission(doctype="Sales Invoice", ptype="write", doc=doc):
+            frappe.msgprint(_("No write access for {0}").format(name))
+            continue
+
+        doc.approved = int(approved_value)
+        doc.save(ignore_permissions=True)
+        updated += 1
+
+    return {
+        "updated": updated,
+        "status": "success"
+    }

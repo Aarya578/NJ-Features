@@ -1031,7 +1031,7 @@ def get_info_from_serial_no(doc=None):
                 'repack_itm_price': item_code_data.get('valuation_rate'),
                 'department': emp_dept.get('department') if emp_dept else None,
                 'brand': sle_entry.get('brand') or item_code_data.get('brand'),
-                'model': sle_entry.get('model') or item_code_data.get('item_model'),
+                # 'model': sle_entry.get('model') or item_code_data.get('item_model'),
             })
 
             # item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')

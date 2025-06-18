@@ -162,14 +162,14 @@ def create_rq_doc():
                         })
 
                     all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
-                                        fields=["name", "actual_qty", "shopify_quantity", "status"],
+                                        fields=["name", "actual_qty", "shopify_quantity", "status", "item_group", "is_active"],
                                         filters={"inventory_item_id": ["!=", None]})
                     
                     for doc in all_active_docs:
                         actual_qty = safe_float(doc.actual_qty) or 0
                         shopify_quantity = safe_float(doc.shopify_quantity) or 0
                         
-                        if actual_qty == shopify_quantity:
+                        if actual_qty == shopify_quantity or doc.item_group not in settings["item_groups"]:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
                         else:
                             frappe.db.set_value("NJ Inventory Sync Main", doc.name, {

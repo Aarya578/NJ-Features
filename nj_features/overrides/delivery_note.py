@@ -1072,6 +1072,83 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                 if missing_checks:
                     frappe.throw(f"Mandatory checks missing for Serial No: {serial_no}: {', '.join(missing_checks)}")
 
+@frappe.whitelist()
+def update_item_details(self):
+    import json
+
+    if isinstance(self, str):
+        self = json.loads(self)
+
+    # If weight/dimensions are already filled, assume user has set them — do not override
+    if self.get("weight") or self.get("height") or self.get("length") or self.get("breadth"):
+        print("Skipping auto-fetch: weight/dimensions already set.")
+        return None
+
+    total_weight = 0
+    height = length = breadth = None
+
+    # Step 1: Get allowed item groups from NJ Settings
+    item_group_value = frappe.db.get_value(
+        "NJ Settings", {"parameter": "Item Group Validation"}, "value"
+    )
+
+    allowed_item_groups = []
+    if item_group_value:
+        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
+
+    # Step 2: Filter matching items
+    matching_rows = []
+    for row in self.get("items", []):
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+        item_group = frappe.db.get_value("Item", item_code, "item_group")
+        if item_group in allowed_item_groups:
+            matching_rows.append(row)
+
+    # Step 3: If not exactly 1 matching item, skip
+    if len(matching_rows) != 1:
+        print("Skipping: multiple matching items.")
+        return None
+
+    item = matching_rows[0]
+    if item.get("qty") != 1:
+        print("Skipping: qty is not 1.")
+        return None
+
+    # Step 4: Fetch from Item Group
+    item_code = item.get("item_code")
+    item_group = frappe.db.get_value("Item", item_code, "item_group")
+
+    try:
+        group_doc = frappe.get_doc("Item Group", item_group)
+
+        if group_doc.get("weight"):
+            try:
+                total_weight += float(group_doc.weight)
+            except ValueError:
+                frappe.log_error(f"Invalid weight in Item Group: {group_doc.name}", "Weight Error")
+
+        for dim in group_doc.get("dimensions", []):
+            param = dim.parameter.strip().lower()
+            value = dim.value
+            if "height" in param and not height:
+                height = value
+            elif "length" in param and not length:
+                length = value
+            elif "breadth" in param and not breadth:
+                breadth = value
+
+    except Exception as e:
+        print(f"Error reading item group {item_group}: {str(e)}")
+
+    return {
+        'weight': total_weight,
+        'height': height,
+        'length': length,
+        'breadth': breadth
+    }
+
 
 
 # @frappe.whitelist()
@@ -1096,44 +1173,32 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #     if item_group_value:
 #         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
 
-
 #     # Step 2: Count how many matching item group rows exist
 #     matching_rows = []
 #     for row in self.get("items", []):
 #         item_code = row.get("item_code")
 #         if not item_code:
 #             continue
-
 #         item_group = frappe.db.get_value("Item", item_code, "item_group")
 #         if item_group in allowed_item_groups:
 #             matching_rows.append(row)
 
-
 #     # Step 3: If more than one matching row, skip fetching weight/dimensions
 #     if len(matching_rows) != 1:
-#         return {
-#             'weight': 0,
-#             'height': None,
-#             'length': None,
-#             'breadth': None
-#         }
+#         print("Skipping weight and dimension fetch due to multiple matching item group rows.")
+#         return None  # <- Change here (Don't override)
 
 #     # Step 4: Only one row matched — process it
 #     item = matching_rows[0]
 #     if item.get("qty") != 1:
-#         return {
-#             'weight': 0,
-#             'height': None,
-#             'length': None,
-#             'breadth': None
-#         }
-
+#         print("Skipping because qty is not 1.")
+#         return None  # <- Change here (Don't override)
 
 #     item_code = item.get("item_code")
 #     item_group = frappe.db.get_value("Item", item_code, "item_group")
+
 #     try:
 #         group_doc = frappe.get_doc("Item Group", item_group)
-
 #         if group_doc.get("weight"):
 #             try:
 #                 weight_value = float(group_doc.weight)
@@ -1149,7 +1214,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #         for dim in group_doc.get("dimensions", []):
 #             param = dim.parameter.strip().lower()
 #             value = dim.value
-
 #             if "height" in param and not height:
 #                 height = value
 #             elif "length" in param and not length:
@@ -1166,86 +1230,6 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 #         'length': length,
 #         'breadth': breadth
 #     }
-
-@frappe.whitelist()
-def update_item_details(self):
-    from datetime import datetime
-    import json
-
-    if isinstance(self, str):
-        self = json.loads(self)
-
-    total_weight = 0
-    height = length = breadth = None
-
-    # Step 1: Get allowed item groups from NJ Settings
-    item_group_value = frappe.db.get_value(
-        "NJ Settings",
-        {"parameter": "Item Group Validation"},
-        "value"
-    )
-
-    allowed_item_groups = []
-    if item_group_value:
-        allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-
-    # Step 2: Count how many matching item group rows exist
-    matching_rows = []
-    for row in self.get("items", []):
-        item_code = row.get("item_code")
-        if not item_code:
-            continue
-        item_group = frappe.db.get_value("Item", item_code, "item_group")
-        if item_group in allowed_item_groups:
-            matching_rows.append(row)
-
-    # Step 3: If more than one matching row, skip fetching weight/dimensions
-    if len(matching_rows) != 1:
-        print("Skipping weight and dimension fetch due to multiple matching item group rows.")
-        return None  # <- Change here (Don't override)
-
-    # Step 4: Only one row matched — process it
-    item = matching_rows[0]
-    if item.get("qty") != 1:
-        print("Skipping because qty is not 1.")
-        return None  # <- Change here (Don't override)
-
-    item_code = item.get("item_code")
-    item_group = frappe.db.get_value("Item", item_code, "item_group")
-
-    try:
-        group_doc = frappe.get_doc("Item Group", item_group)
-        if group_doc.get("weight"):
-            try:
-                weight_value = float(group_doc.weight)
-                total_weight += weight_value
-            except ValueError:
-                frappe.log_error(
-                    f"Invalid weight '{group_doc.weight}' in Item Group: {group_doc.name}",
-                    "Weight Parsing Error"
-                )
-        else:
-            print(f"No weight found in item group {group_doc.name}")
-
-        for dim in group_doc.get("dimensions", []):
-            param = dim.parameter.strip().lower()
-            value = dim.value
-            if "height" in param and not height:
-                height = value
-            elif "length" in param and not length:
-                length = value
-            elif "breadth" in param and not breadth:
-                breadth = value
-
-    except Exception as e:
-        print(f"Error processing item group {item_group}: {str(e)}")
-
-    return {
-        'weight': total_weight,
-        'height': height,
-        'length': length,
-        'breadth': breadth
-    }
 
 # @frappe.whitelist()
 # def total_item_group_sum(doc):
@@ -2126,8 +2110,54 @@ def shiprocket_awb_number(doc):
     logistics_settings = frappe.get_doc("Logistics Settings")
     skipping_courier_names = []
 
+    # if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
+    #     skipping_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
+
+    # # Calculate total charges for each courier
+    # best_courier = None
+    # lowest_total = float('inf')
+
+    # for courier in courier_data:
+    #     try:
+    #         courier_name = courier.get("courier_name", "")
+            
+    #         # Skip if courier name matches any in the skipping list
+    #         if courier_name and skipping_courier_names:
+    #             if courier_name in skipping_courier_names:
+    #                 continue
+            
+    #         # Check rating - skip if 4 or below
+    #         rating = float(courier.get("rating", 0) or 0)
+    #         if rating <= 4:
+    #             continue
+            
+    #         # Calculate total cost
+    #         freight_charge = float(courier.get("freight_charge", 0) or 0)
+    #         cod_charges = float(courier.get("cod_charges", 0) or 0)
+    #         total = freight_charge + cod_charges
+            
+    #         # Select courier with lowest total cost
+    #         if total < lowest_total:
+    #             lowest_total = total
+    #             best_courier = {
+    #                 "courier_name": courier.get("courier_name"),
+    #                 "courier_company_id": courier.get("courier_company_id"),
+    #                 "total_cost": total,
+    #                 "rating": rating,
+    #                 "freight_charge": freight_charge,
+    #                 "cod_charges": cod_charges
+    #             }
+    #     except (ValueError, TypeError) as e:
+    #         continue
+
+    # if not best_courier:
+    #     frappe.throw("No suitable courier found after applying filters.")
+    logistics_settings = frappe.get_doc("Logistics Settings")
+    allowed_courier_names = []
     if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
-        skipping_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
+
+        allowed_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
+        print("allowed_courier_names================================", allowed_courier_names)
 
     # Calculate total charges for each courier
     best_courier = None
@@ -2136,11 +2166,15 @@ def shiprocket_awb_number(doc):
     for courier in courier_data:
         try:
             courier_name = courier.get("courier_name", "")
+            print("courier_name================================", courier_name)
             
-            # Skip if courier name matches any in the skipping list
-            if courier_name and skipping_courier_names:
-                if courier_name in skipping_courier_names:
-                    continue
+            # Only consider couriers that are in the allowed list
+            if courier_name and allowed_courier_names:
+                if courier_name not in allowed_courier_names:
+                    continue  # Skip couriers NOT in the allowed list
+            else:
+                # If no allowed list is configured, skip this courier
+                continue
             
             # Check rating - skip if 4 or below
             rating = float(courier.get("rating", 0) or 0)
@@ -2149,8 +2183,11 @@ def shiprocket_awb_number(doc):
             
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
+            print("freight_charge================================", freight_charge)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
+            print("cod_charges================================", cod_charges)
             total = freight_charge + cod_charges
+            print("total================================", total)
             
             # Select courier with lowest total cost
             if total < lowest_total:
@@ -2163,12 +2200,12 @@ def shiprocket_awb_number(doc):
                     "freight_charge": freight_charge,
                     "cod_charges": cod_charges
                 }
+                print("best_courier================================", best_courier)
         except (ValueError, TypeError) as e:
             continue
 
     if not best_courier:
-        frappe.throw("No suitable courier found after applying filters.")
-
+        frappe.throw("No suitable courier found from the allowed courier list with rating above 4.")
     if best_courier:
         courier_service_name = best_courier.get("courier_name")
         

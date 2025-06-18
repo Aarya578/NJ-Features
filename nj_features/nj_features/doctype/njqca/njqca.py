@@ -977,18 +977,7 @@ def get_info_from_serial_no(doc=None):
         serial_no = doc_json.get('serial_no')
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
 
-        if 'serial_no' in doc_json:
-            serial_no = doc_json['serial_no']
-
-            sql_query = """
-                SELECT name,item_code, warehouse, purchase_rate,
-                    bios_serial_no, model, item_group, brand
-                FROM `tabSerial No`
-                WHERE name = %s and status = 'Active' """
-
-            sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
-
-        if 'bios_serialno' in doc_json and not sle:
+        if 'bios_serialno' in doc_json:
 
             bios_serial_no_in_ui = doc_json['bios_serialno']
 
@@ -999,6 +988,17 @@ def get_info_from_serial_no(doc=None):
                 WHERE bios_serial_no = %s and status = 'Active' """
 
             sle = frappe.db.sql(sql_query, (bios_serial_no_in_ui), as_dict=1)
+
+            if 'serial_no' in doc_json and not sle:
+                serial_no = doc_json['serial_no']
+
+                sql_query = """
+                    SELECT name,item_code, warehouse, purchase_rate,
+                        bios_serial_no, model, item_group, brand
+                    FROM `tabSerial No`
+                    WHERE name = %s and status = 'Active' """
+
+                sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
 
             if sle and len(sle) > 0:
                 sle_entry = sle[0]

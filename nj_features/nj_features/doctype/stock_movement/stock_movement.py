@@ -193,7 +193,6 @@ class StockMovement(Document):
 
         return return_unpack_items_data
 
-
 @frappe.whitelist()
 def get_all_emp_warehouse(user):
     try:
@@ -305,6 +304,7 @@ def validate_serial_no_and_department(row, error_messages):
         if not is_component and s_department != department:
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
             validate_grade_restriction(serial_doc, department_doc, error_messages)
+            check_bag_list_validation(serial_doc, error_messages, department_doc)
 
         if (
                 s_department and 
@@ -321,6 +321,18 @@ def validate_serial_no_and_department(row, error_messages):
             return True
 
     return True
+
+def check_bag_list_validation(serial_doc, error_messages, department_doc):
+
+    if serial_doc and department_doc.get("check_for_bag_list"):
+        bag_list = serial_doc.get("bag_list", [])
+        if bag_list:
+            item_groups = list({item.get("item_group") for item in bag_list if item.get("item_group")})
+            item_groups_str = ", ".join(f"<b>{group}</b>" for group in item_groups)
+            error_messages.append(
+                f"Serial No <b>{serial_doc.get('name')}</b> cannot be moved as it contains parts in a bag. "
+                f"Item groups present in the bag: {item_groups_str}. Please remove them before proceeding."
+            )
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_department):
 
@@ -540,7 +552,6 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
         # At least one valid pair must match (among only present item groups)
         match_found = False
         for item_group, allowed_grades in allowed_map.items():
-            print("allowed_grades", allowed_grades)
             if item_group not in serial_item_groups_present:
                 continue
             if any((item_group, grade) in serial_set for grade in allowed_grades):

@@ -187,7 +187,6 @@ def get_inwarded_counts_merged(warehouse):
         GROUP BY sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
     """, (warehouse,), explain=1, debug=1, as_dict=True)
 
-
 def get_forwarded_counts_merged(warehouse):
     return frappe.db.sql("""
         SELECT 
@@ -534,8 +533,6 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
 
     return updated_item_code_list
 
-from collections import defaultdict
-
 def get_shopify_variant_item_code(merged_data, updated_item_code_list):
     # print("merged_data", merged_data)
 
@@ -638,7 +635,6 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
             updated_item_code_list.append(new_row)
 
     return updated_item_code_list
-
 
 def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
@@ -906,13 +902,6 @@ def sort_by_multiple_keys(configs, keys):
         return tuple(key_values)
     return sorted(configs, key=sort_key)
 
-from tabulate import tabulate
-import frappe
-import time
-import math
-from datetime import datetime
-
-
 def calculate_to_make(doc):
     print("🔄 Started Executing Calculate To Make")
 
@@ -1085,7 +1074,6 @@ def calculate_to_make(doc):
     doc.save()
     print("💾 Document saved successfully")
     return doc.get("nj_production_planning_child", [])
-
 
 def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
     print("Started suggest_to_make_serial_no")

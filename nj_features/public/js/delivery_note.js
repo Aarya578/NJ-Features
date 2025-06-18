@@ -262,7 +262,7 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     after_save: function(frm) {
-        console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
+        // console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
          
         // frappe.call({
         //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',

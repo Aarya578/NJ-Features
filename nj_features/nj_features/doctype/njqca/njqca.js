@@ -553,7 +553,7 @@ frappe.ui.form.on('NJQCA', {
         //                 frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
         //                     () => {
         //                         frappe.validated = true;
-        //                         frm.save('Submit');
+        //             model            frm.save('Submit');
         //                     },
         //                     () => { frm.set_value('repack_item_code', ''); }
         //                 );

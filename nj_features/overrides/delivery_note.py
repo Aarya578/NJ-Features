@@ -2537,7 +2537,7 @@ def allow_to_save(doc):
                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
                         try:
                           if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
-                            return "Repacked Adapter Serial No:" + repacked_serial_no +" "+nj_serial_no+ " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
+                            return "Repacked Adapter Serial No for Serial No: " +nj_serial_no+ " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
                         except IndexError:
                           return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
                 else:

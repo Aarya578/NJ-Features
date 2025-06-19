@@ -19,23 +19,77 @@ class DeliveryCharges(Document):
 	pass
 
 
+@frappe.whitelist()
+def criticalog_awb_number_tracking_status():
+    # Get only those Delivery Charges records which are not yet marked as Delivered
+    docs = frappe.get_all(
+        "Delivery Charges",
+        filters={
+            "awb_number": ["!=", ""],
+            "remark_status": ["!=", "Delivered"]  # <-- skip already delivered
+        },
+        fields=["name", "awb_number", "delivery_note"]
+    )
+    # print(f"Processing {len(docs)} Delivery Charges records...",docs)
 
+    url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
+    headers = {"Content-Type": "application/json"}
+
+    for doc in docs:
+        if not doc.delivery_note:
+            print(f"[{doc.name}] Delivery Note not found, skipping...")
+            continue
+
+        try:
+            payload = {
+                "Auth": " MTMzMzQzNzMwMzIz",  # Preserve leading space
+                "DocketNo": doc.delivery_note
+            }
+
+            response = requests.post(url, headers=headers, json=payload)
+
+            if response.status_code == 200:
+                data = response.json()
+                print(f"[{doc.name}] Response: {data}")
+
+                # Extract remark
+                docket_details = data.get("data", {}).get("docketDetails", {})
+                remark = docket_details.get("Booking_Status", {}).get("Remark")
+
+                if remark:
+                    frappe.db.set_value("Delivery Charges", doc.name, "remark_status", remark)
+                    frappe.db.commit()
+                    print(f"[{doc.name}] Updated remark_status to: {remark}")
+                else:
+                    print(f"[{doc.name}] No remark found in response.")
+            else:
+                print(f"[{doc.name}] API returned status code: {response.status_code}")
+
+        except Exception as e:
+            print(f"[{doc.name}] Error: {str(e)}")
 
 
 @frappe.whitelist()
 def awb_number_tracking_status():
-    # Get all Delivery Charges docs with AWB number
-    docs = frappe.get_all("Delivery Charges", filters={"awb_number": ["!=", ""]}, fields=["name", "awb_number"])
-    
-    # Authenticate to Shiprocket
+    # Get all Delivery Charges records that have an AWB number and are not Delivered
+    docs = frappe.get_all(
+        "Delivery Charges",
+        filters={
+            "awb_number": ["!=", ""],
+            "current_status": ["!=", "Delivered"]  # <-- Skip Delivered entries
+        },
+        fields=["name", "awb_number"]
+    )
+    # print("docs=====================",docs)
+    # Get authentication token from Shiprocket
     auth_token = get_auth_token().get("token")
     if not auth_token:
         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
 
     headers = {
         "Content-Type": "application/json",
-		"Authorization": f"Bearer {auth_token}"
-	}
+        "Authorization": f"Bearer {auth_token}"
+    }
     
     for doc in docs:
         awb = doc.awb_number
@@ -43,7 +97,7 @@ def awb_number_tracking_status():
         res = requests.get(url, headers=headers)
 
         if res.status_code != 200:
-            print(f"Failed to get tracking for AWB {awb}")
+            print(f"[{doc.name}] Failed to get tracking for AWB {awb}")
             continue
 
         response = res.json()
@@ -61,9 +115,7 @@ def awb_number_tracking_status():
             activity = activities[0].get("activity")
             location = activities[0].get("location")
 
-        print("current_status========", current_status)
-        print("activity========", activity)
-        print("location========", location)
+        print(f"[{doc.name}] current_status: {current_status}, activity: {activity}, location: {location}")
 
         if current_status or activity or location:
             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
@@ -71,4 +123,4 @@ def awb_number_tracking_status():
             delivery_doc.activity = activity
             delivery_doc.location = location
             delivery_doc.save(ignore_permissions=True)
-            frappe.db.commit()  # Commit after every save if running in batch
+            frappe.db.commit()

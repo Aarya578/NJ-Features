@@ -31,19 +31,19 @@ class CustomDeliveryNote(DeliveryNote):
             against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
             
             # Early return for Snapmint orders (skipping trigger_fulfillment)
-            if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
-                self.rto_charges_update()
-                self.fetching_tracking_details()
-                # self.set_cit_image_from_sales_order()
-                self.update_details_to_delivery_charege_doc()
-                qi_mandatory_checks_on_dn_submit(self, method=None)
-                # self.qc_nj_of_days_checking()
-                if self.is_return == 0:
-                    send_sales_invoice_email_on_delivery_note(self, method=None)
+            # if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+            #     self.rto_charges_update()
+            #     self.fetching_tracking_details()
+            #     # self.set_cit_image_from_sales_order()
+            #     self.update_details_to_delivery_charege_doc()
+            #     qi_mandatory_checks_on_dn_submit(self, method=None)
+            #     # self.qc_nj_of_days_checking()
+            #     if self.is_return == 0:
+            #         send_sales_invoice_email_on_delivery_note(self, method=None)
                 
-                if not self.is_return:
-                    self._process_customer_details()
-                return
+            #     if not self.is_return:
+            #         self._process_customer_details()
+            #     return
             
             # For non-Snapmint orders, proceed with normal flow
             raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
@@ -277,6 +277,7 @@ class CustomDeliveryNote(DeliveryNote):
             serial_no_doc.save(ignore_permissions=True) 
         
     def fetching_tracking_details(self):
+        print("inside the function=====================")
         start_time = time.time()
 
         if self.is_return:
@@ -300,6 +301,7 @@ class CustomDeliveryNote(DeliveryNote):
             
             if response.status_code == 200:
                 data = response.json()
+                print("data==========================", data)
                 
                 # Check if there's an error message
                 if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
@@ -313,8 +315,10 @@ class CustomDeliveryNote(DeliveryNote):
                     .get("Booking_Status", {})
                     .get("Remark")
                 )
+                print("remark==========================", remark)
                 if remark:
                     self.remark_status = remark
+                    print("remark_status==========================", self.remark_status)
                     # self.cost_amount = cost_of_delivery
                     # self.awb_number = awb_number
                     self.db_update()
@@ -436,19 +440,25 @@ class CustomDeliveryNote(DeliveryNote):
             limit=1
         )
 
-        serial_nos = []
-        sales_orders = []
+        serial_nos = set()
+        sales_orders = set()
 
-        # Collect all serial numbers and sales orders from items
+        # Loop through items and collect serial numbers and sales orders
         for row in self.get("items"):
             if row.get("serial_no"):
-                serial_nos.append(row.get("serial_no"))
+                serial_nos.add(row.get("serial_no"))
             if row.get("against_sales_order"):
-                sales_orders.append(row.get("against_sales_order"))
+                sales_orders.add(row.get("against_sales_order"))
 
-        # Convert lists to comma-separated unique values
-        serial_nos_str = ",".join(sorted(set(serial_nos)))
-        sales_orders_str = ",".join(sorted(set(sales_orders)))
+        # If no serial numbers found in items, check packed_items
+        if not serial_nos:
+            for row in self.get("packed_items"):
+                if row.get("serial_no"):
+                    serial_nos.add(row.get("serial_no"))
+
+        # Convert sets to sorted, comma-separated strings
+        serial_nos_str = ",".join(sorted(serial_nos))
+        sales_orders_str = ",".join(sorted(sales_orders))
 
         if existing_delivery_charge:
             # If exists, get the document
@@ -2427,42 +2437,42 @@ def shiprocket_awb_number(doc):
 #     return warranty_info
 
 
-def adapter_repacked_serial_no(nj_serial_no):
-    try:
-        query="""
-            SELECT tot_sed.serial_no as adapter_serial_no
-            FROM `tabStock Entry Detail` AS sed
-            INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-            INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-            WHERE
-                (sed.serial_no = %(serial_no)s OR 
-                    sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
-                stock_entry.purpose = 'Repack' AND 
-                stock_entry.docstatus = 1 AND
-                tot_sed.s_warehouse IS NOT NULL AND 
-                tot_sed.item_group = 'Laptop Adaptors'
-            ORDER BY stock_entry.creation DESC
-            LIMIT 1
-        """
-        partlist_query="""
-          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" limit 1;
-        """
-        if nj_serial_no is not None and nj_serial_no:
+# def adapter_repacked_serial_no(nj_serial_no):
+#     try:
+#         query="""
+#             SELECT tot_sed.serial_no as adapter_serial_no
+#             FROM `tabStock Entry Detail` AS sed
+#             INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+#             INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+#             WHERE
+#                 (sed.serial_no = %(serial_no)s OR 
+#                     sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+#                 stock_entry.purpose = 'Repack' AND 
+#                 stock_entry.docstatus = 1 AND
+#                 tot_sed.s_warehouse IS NOT NULL AND 
+#                 tot_sed.item_group = 'Laptop Adaptors'
+#             ORDER BY stock_entry.creation DESC
+#             LIMIT 1
+#         """
+#         partlist_query="""
+#           Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" limit 1;
+#         """
+#         if nj_serial_no is not None and nj_serial_no:
 
-            data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
+#             data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
         
-        if data is not None and data:  
-            return data[0].get("adapter_serial_no","")
-        else:
-            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
-            if data is not None and data:
-                return data[0].get("adapter_serial_no","")
-            else:
-              return "No repacked serial no found"
-    except Exception as e:
-        return str(e)
+#         if data is not None and data:  
+#             return data[0].get("adapter_serial_no","")
+#         else:
+#             data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
+#             if data is not None and data:
+#                 return data[0].get("adapter_serial_no","")
+#             else:
+#               return "No repacked serial no found"
+#     except Exception as e:
+#         return str(e)
 @frappe.whitelist()
 def sanitize_phone(phone):
     # Remove all non-digit characters
@@ -2472,56 +2482,56 @@ def sanitize_phone(phone):
         digits = digits[-10:]
     # Return only if it's exactly 10 digits
     return digits if len(digits) == 10 else ""
-@frappe.whitelist()
-def allow_to_save(doc):
-    try:
-        if isinstance(doc,str):
-            doc=json.loads(doc)
-        child_data=doc["packed_items"]
+# @frappe.whitelist()
+# def allow_to_save(doc):
+#     try:
+#         if isinstance(doc,str):
+#             doc=json.loads(doc)
+#         child_data=doc["packed_items"]
         
 
-        if not child_data:
-            child_data=doc["items"]
+#         if not child_data:
+#             child_data=doc["items"]
         
-        for data in child_data:
-            child_nj_serial_data=data.get("serial_no","")
-            child_adapter_serial_no=data.get("adapter_serial_no","")
-            nj_serial_nos=[]
-            adapter_serial_nos=[]
+#         for data in child_data:
+#             child_nj_serial_data=data.get("serial_no","")
+#             child_adapter_serial_no=data.get("adapter_serial_no","")
+#             nj_serial_nos=[]
+#             adapter_serial_nos=[]
 
-            if  child_nj_serial_data:
-                if '\n' in child_nj_serial_data:
-                    nj_serial_nos=child_nj_serial_data.split('\n')
-                else:
-                    nj_serial_nos.append(child_nj_serial_data)
-            else:
-                continue
+#             if  child_nj_serial_data:
+#                 if '\n' in child_nj_serial_data:
+#                     nj_serial_nos=child_nj_serial_data.split('\n')
+#                 else:
+#                     nj_serial_nos.append(child_nj_serial_data)
+#             else:
+#                 continue
 
-            if child_adapter_serial_no:
-                if '\n' in child_adapter_serial_no:
-                    adapter_serial_nos=child_adapter_serial_no.split('\n')
-                else:
-                    adapter_serial_nos.append(child_adapter_serial_no)
+#             if child_adapter_serial_no:
+#                 if '\n' in child_adapter_serial_no:
+#                     adapter_serial_nos=child_adapter_serial_no.split('\n')
+#                 else:
+#                     adapter_serial_nos.append(child_adapter_serial_no)
 
-            serial_no_order=0
+#             serial_no_order=0
 
-            for nj_serial_no in nj_serial_nos:
-                item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
-                if item_group and item_group=="Laptops" or item_group=="Chromebooks":
-                    serial_no_order+=1
-                    if not adapter_serial_nos:
-                        return "Please enter Adapter Serial No"
-                    else:
-                        repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
-                        try:
-                          if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
-                            return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
-                        except IndexError:
-                          return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
-                else:
-                    continue
-        return "pass"
+#             for nj_serial_no in nj_serial_nos:
+#                 item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
+#                 if item_group and item_group=="Laptops" or item_group=="Chromebooks":
+#                     serial_no_order+=1
+#                     if not adapter_serial_nos:
+#                         return "Please enter Adapter Serial No"
+#                     else:
+#                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
+#                         try:
+#                           if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
+#                             return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
+#                         except IndexError:
+#                           return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
+#                 else:
+#                     continue
+#         return "pass"
     
-    except Exception as e:
-        return str(e)
+#     except Exception as e:
+#         return str(e)
 

@@ -277,64 +277,91 @@ class CustomDeliveryNote(DeliveryNote):
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
         
+    # def fetching_tracking_details(self):
+        
+    #     if self.is_return:
+    #         return
+       
+    #     try:
+    #         payload = {
+    #             "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
+    #             "DocketNo": self.name
+    #         }
+    #         url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
+    #         headers = {"Content-Type": "application/json"}
+    #         response = requests.post(url, headers=headers, json=payload)
+            
+    #         if response.status_code == 200:
+    #             data = response.json()
+    #             print("data==========================", data)
+                
+    #             # Check if there's an error message
+    #             if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
+    #                 frappe.msgprint(f"The sales order number '{self.name}' is not recognized as a valid tracking number.")
+    #                 return
+                    
+    #             # If successful, extract the remark
+    #             remark = (
+    #                 data.get("data", {})
+    #                 .get("docketDetails", {})
+    #                 .get("Booking_Status", {})
+    #                 .get("Remark")
+    #             )
+    #             print("remark==========================", remark)
+    #             if remark:
+    #                 self.remark_status = remark
+    #                 print("remark_status==========================", self.remark_status)
+    #                 # self.cost_amount = cost_of_delivery
+    #                 # self.awb_number = awb_number
+    #                 self.db_update()
+    #             else:
+    #                 print("No remark found in the response")
+    #         else:
+    #             frappe.msgprint(f"API returned status code: {response.status_code}")
+                
+    #     except Exception as e:
+    #         frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
     def fetching_tracking_details(self):
-        print("inside the function=====================")
-        start_time = time.time()
-
-        if self.is_return:
+    # Skip if return or not CriticaLog
+        if self.is_return or self.courier_service != "CriticaLog":
             return
-        # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
-        # # Check if we have a value to send
-        # if not against_sales_order:
-        #     frappe.msgprint("No sales order found for this delivery note.")
-        #     return
-        # if against_sales_order:
-        #     cost_of_delivery = frappe.db.get_value("Sales Order", against_sales_order, "cost_of_delivery")     
-
         try:
             payload = {
-                "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
+                "Auth": " MTMzMzQzNzMwMzIz",  # Include leading space
                 "DocketNo": self.name
             }
             url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
             headers = {"Content-Type": "application/json"}
             response = requests.post(url, headers=headers, json=payload)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 print("data==========================", data)
-                
-                # Check if there's an error message
+
+                # Check for invalid response
                 if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
                     frappe.msgprint(f"The sales order number '{self.name}' is not recognized as a valid tracking number.")
                     return
-                    
-                # If successful, extract the remark
+
+                # Extract and save remark
                 remark = (
                     data.get("data", {})
                     .get("docketDetails", {})
                     .get("Booking_Status", {})
                     .get("Remark")
                 )
-                print("remark==========================", remark)
                 if remark:
                     self.remark_status = remark
-                    print("remark_status==========================", self.remark_status)
-                    # self.cost_amount = cost_of_delivery
-                    # self.awb_number = awb_number
                     self.db_update()
                 else:
                     print("No remark found in the response")
             else:
                 frappe.msgprint(f"API returned status code: {response.status_code}")
-                
+
         except Exception as e:
             frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
-        finally:
-            end_time = time.time()
-            execution_time = round(end_time - start_time, 4)
-            logger.info(f"Execution Time: {execution_time} seconds")
 
+       
     def rto_charges_update(self):
         if not self.is_return:
             return
@@ -2172,7 +2199,6 @@ def shiprocket_awb_number(doc):
     if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
 
         allowed_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
-        print("allowed_courier_names================================", allowed_courier_names)
 
     # Calculate total charges for each courier
     best_courier = None
@@ -2181,7 +2207,6 @@ def shiprocket_awb_number(doc):
     for courier in courier_data:
         try:
             courier_name = courier.get("courier_name", "")
-            print("courier_name================================", courier_name)
             
             # Only consider couriers that are in the allowed list
             if courier_name and allowed_courier_names:
@@ -2198,11 +2223,8 @@ def shiprocket_awb_number(doc):
             
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
-            print("freight_charge================================", freight_charge)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
-            print("cod_charges================================", cod_charges)
             total = freight_charge + cod_charges
-            print("total================================", total)
             
             # Select courier with lowest total cost
             if total < lowest_total:
@@ -2215,7 +2237,6 @@ def shiprocket_awb_number(doc):
                     "freight_charge": freight_charge,
                     "cod_charges": cod_charges
                 }
-                print("best_courier================================", best_courier)
         except (ValueError, TypeError) as e:
             continue
 
@@ -2252,17 +2273,13 @@ def shiprocket_awb_number(doc):
             continue
         # Get item group
         item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
-        print("Item Group:==================", item_group)      
         # Get the item group document
         group_doc = frappe.get_doc("Item Group", item_group)
-        print("Group Doc:==================", group_doc)
         # Get item_charges (float)
         item_charges = group_doc.get("item_charges")
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
-            print("Item Total Charge:==================", item_total_charge)
             total_item_charges += item_total_charge
-            print("Total Item Charges:==================", total_item_charges)
         else:
             print("Missing item_charges or quantity for item:", item.get("item_code"))
 
@@ -2280,25 +2297,19 @@ def shiprocket_awb_number(doc):
         if best_courier:
             # Calculate total cost with weight
             freight_charge = best_courier.get('freight_charge', 0)
-            print("Freight Charge:==================", freight_charge)
             cod_charges = best_courier.get('cod_charges', 0)
-            print("COD Charges:==================", cod_charges)
             doc_weight = doc.get('weight', 0) or 0
-            print("Doc Weight:==================", doc_weight)
             
             total_cost = (freight_charge * float(doc_weight)) + cod_charges
-            print("Total Cost:==================", total_cost)
             
             # Fetch COD charges from Ship Rocket Settings
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            print("COD Charges Table:==================", cod_charges_table)
             
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                print("Charges Value:==================", charges_value)
                 if charges_value:
                     break
             
@@ -2306,17 +2317,13 @@ def shiprocket_awb_number(doc):
                 
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
-                print("Numeric Charges Value:==================", numeric_charges_value)
                 
                 # Calculate percentage of grand_total
                 # grand_total = doc.get("grand_total", 0) or 0
                 # cod_percentage_amount = (numeric_charges_value / 100) * float(grand_total)
                 grand_total = float(doc.get("grand_total", 0) or 0)
-                print("grand_total=============", grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-                print("cod_percentage_amount=============", cod_percentage_amount)
                 cod_and_item_charges_total = cod_percentage_amount+total_item_charges
-                print("cod_and_item_charges_total=============", cod_and_item_charges_total)
 
                 # Compare COD percentage amount with total_cost
                 if cod_and_item_charges_total< total_cost:

@@ -383,83 +383,9 @@ class CustomDeliveryNote(DeliveryNote):
 
 
 
-    # def update_details_to_delivery_charege_doc(self):
-    # # Check if a Delivery Charges document with the same AWB number exists
-    #     existing_delivery_charge = frappe.get_all(
-    #         "Delivery Charges",
-    #         filters={"tracking_id": self.tracking_id},
-    #         limit=1
-    #     )
-
-    #     serial_nos = []
-    #     sales_orders = []
-
-    #     # Collect all serial numbers and sales orders from items
-    #     for row in self.get("items"):
-    #         if row.get("serial_no"):
-    #             serial_nos.append(row.get("serial_no"))
-    #         if row.get("against_sales_order"):
-    #             sales_orders.append(row.get("against_sales_order"))
-
-    #     # Convert lists to comma-separated unique values
-    #     serial_nos_str = ",".join(sorted(set(serial_nos)))
-    #     sales_orders_str = ",".join(sorted(set(sales_orders)))
-
-    #     if existing_delivery_charge:
-    #         # If exists, get the document
-    #         delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
-
-    #         # Update serial_no if missing or append new ones
-    #         if delivery_charge.serial_no:
-    #             existing_serials = set(delivery_charge.serial_no.split(","))
-    #             new_serials = set(serial_nos)
-    #             all_serials = existing_serials.union(new_serials)
-    #             delivery_charge.serial_no = ",".join(sorted(all_serials))
-    #         else:
-    #             delivery_charge.serial_no = serial_nos_str
-
-    #         # Update sales_order similarly
-    #         if delivery_charge.sales_order:
-    #             existing_orders = set(delivery_charge.sales_order.split(","))
-    #             new_orders = set(sales_orders)
-    #             all_orders = existing_orders.union(new_orders)
-    #             delivery_charge.sales_order = ",".join(sorted(all_orders))
-    #         else:
-    #             delivery_charge.sales_order = sales_orders_str
-    #     else:
-    #         # Create a new document
-    #         delivery_charge = frappe.new_doc("Delivery Charges")
-    #         delivery_charge.awb_number = self.tracking_id
-    #         delivery_charge.serial_no = serial_nos_str
-    #         delivery_charge.sales_order = sales_orders_str
-    #         delivery_charge.delivery_date = self.name
-    #         delivery_charge.shiprocket_order_id = self.shiprocket_order_id
-    #         delivery_charge.shiprocket_shipment_id = self.shiprocket_shipment_id
-    #         delivery_charge.courier_service = self.courier_service
-    #         delivery_charge.remark_status = self.remark_status
-    #         delivery_charge.cit_image = self.cit_image
-    #         delivery_charge.shiprocket_manifests = self.shiprocket_manifests
-    #         delivery_charge.shiprocket_image = self.shiprocket_image
-    #         delivery_charge.shiprocket_invoice = self.shiprocket_invoice
-    #         delivery_charge.remark_status = self.remark_status
-
-
-    #     # Set common fields
-    #     delivery_charge.rto_charges = self.cost_amount
-    #     delivery_charge.cit_image = self.cit_image
-
-    #     if hasattr(self, 'is_return') and self.is_return:
-    #         delivery_charge.cause_of_return = self.cause_of_return
-
-    #     try:
-    #         if delivery_charge.is_new():
-    #             delivery_charge.insert(ignore_permissions=True)
-    #         else:
-    #             delivery_charge.save(ignore_permissions=True)
-    #     except Exception as e:
-    #         frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
 
     def update_details_to_delivery_charege_doc(self):
+        # print("update_details_to_delivery_charege_doc======================================")
 
         # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
@@ -474,15 +400,36 @@ class CustomDeliveryNote(DeliveryNote):
         # Loop through items and collect serial numbers and sales orders
         for row in self.get("items"):
             if row.get("serial_no"):
-                serial_nos.add(row.get("serial_no"))
+                # Handle serial numbers separated by comma, newline, or both
+                # First split by newlines, then by commas
+                serial_text = row.get("serial_no")
+                # Split by newlines first
+                for line in serial_text.split("\n"):
+                    # Then split each line by commas
+                    for serial in line.split(","):
+                        serial = serial.strip()  # Remove any whitespace
+                        if serial:  # Only add non-empty serials
+                            serial_nos.add(serial)
             if row.get("against_sales_order"):
-                sales_orders.add(row.get("against_sales_order"))
+                # Handle multiple sales orders if comma-separated
+                for order in row.get("against_sales_order").split(","):
+                    order = order.strip()
+                    if order:
+                        sales_orders.add(order)
 
-        # If no serial numbers found in items, check packed_items
-        if not serial_nos:
-            for row in self.get("packed_items"):
-                if row.get("serial_no"):
-                    serial_nos.add(row.get("serial_no"))
+        # Check packed_items as well (not just when items are empty)
+        for row in self.get("packed_items"):
+            if row.get("serial_no"):
+                # Handle serial numbers separated by comma, newline, or both
+                # First split by newlines, then by commas
+                serial_text = row.get("serial_no")
+                # Split by newlines first
+                for line in serial_text.split("\n"):
+                    # Then split each line by commas
+                    for serial in line.split(","):
+                        serial = serial.strip()  # Remove any whitespace
+                        if serial:  # Only add non-empty serials
+                            serial_nos.add(serial)
 
         # Convert sets to sorted, comma-separated strings
         serial_nos_str = ",".join(sorted(serial_nos))
@@ -493,12 +440,24 @@ class CustomDeliveryNote(DeliveryNote):
             delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
 
             # Update serial_no
-            existing_serials = set(delivery_charge.serial_no.split(",")) if delivery_charge.serial_no else set()
+            existing_serials = set()
+            if delivery_charge.serial_no:
+                for serial in delivery_charge.serial_no.split(","):
+                    serial = serial.strip()
+                    if serial:
+                        existing_serials.add(serial)
+            
             all_serials = existing_serials.union(serial_nos)
             delivery_charge.serial_no = ",".join(sorted(all_serials))
 
             # Update sales_order
-            existing_orders = set(delivery_charge.sales_order.split(",")) if delivery_charge.sales_order else set()
+            existing_orders = set()
+            if delivery_charge.sales_order:
+                for order in delivery_charge.sales_order.split(","):
+                    order = order.strip()
+                    if order:
+                        existing_orders.add(order)
+            
             all_orders = existing_orders.union(sales_orders)
             delivery_charge.sales_order = ",".join(sorted(all_orders))
         else:
@@ -514,7 +473,7 @@ class CustomDeliveryNote(DeliveryNote):
             delivery_charge.remark_status = self.remark_status
             delivery_charge.cit_image = self.cit_image
             delivery_charge.shiprocket_manifests = self.shiprocket_manifests
-            delivery_charge.shiprocket_image = self.shiprocket_image  # fixed bug here
+            delivery_charge.shiprocket_image = self.shiprocket_image
             delivery_charge.shiprocket_invoice = self.shiprocket_invoice
             delivery_charge.pickup_scheduled_date = self.pickup_scheduled_date
             delivery_charge.weight = self.weight
@@ -525,7 +484,7 @@ class CustomDeliveryNote(DeliveryNote):
 
         # Set common fields
         delivery_charge.rto_charges = self.cost_of_delivery
-        delivery_charge.cit_image = self.cit_image  # reassignment preserved if needed
+        delivery_charge.cit_image = self.cit_image
 
         if getattr(self, 'is_return', False):
             delivery_charge.cause_of_return = self.cause_of_return

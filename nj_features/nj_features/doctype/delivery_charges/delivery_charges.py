@@ -119,7 +119,7 @@ def awb_number_tracking_status():
 
         if current_status or activity or location:
             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
-            delivery_doc.current_status = current_status
+            delivery_doc.remark_status = current_status
             delivery_doc.activity = activity
             delivery_doc.location = location
             delivery_doc.save(ignore_permissions=True)

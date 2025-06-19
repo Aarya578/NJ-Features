@@ -205,6 +205,9 @@ scheduler_events = {
         ],
          "0 */2 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
+        ],
+         "0 */3 * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
         ]
     }
 }

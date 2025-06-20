@@ -11,11 +11,7 @@ frappe.ui.form.on('Sales Order', {
                 });
             });
         } 
-       
-       
     },
-   
-
    
     onload_post_render: function(frm) {
         frm.remove_custom_button('Delivery Note', 'Create');
@@ -43,18 +39,21 @@ function validateAmazonOrderID(frm) {
     }
 }
 
-frappe.listview_settings['Sales Order'] = {
-    refresh: function(listview) {
-        viewButton(listview);
-    }
-};
+frappe.require("/assets/nj_features/js/nj_features.js", function() {
+    extend_listview_setting('Sales Order', {
+        refresh: function(listview) {
+            viewButton(listview);
+        }
+    });
+});
 
 function viewButton(listview) {
     if (!listview.page.custom_buttons_added) {
         listview.page.set_secondary_action("Amazon Order Sync", function() {
-            openAmazonSyncForm(listview);
+            openAmazonSyncForm();
         }).addClass('btn-primary');
-        listview.page.custom_buttons_added = true; // Avoid adding the button multiple times
+
+        listview.page.custom_buttons_added = true;
     }
 }
 

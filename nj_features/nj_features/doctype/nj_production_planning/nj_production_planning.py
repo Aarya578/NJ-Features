@@ -1270,8 +1270,11 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
+    department_doc = frappe.get_doc('Department', doc.get('department'))
+    allocate_part = department_doc.get('allocate_parts')
+
     print("calling allocate_laptop_parts")
-    if doc.get("allocate_parts"):
+    if allocate_part:
         allocated_lap = allocate_laptop_parts(doc)
         doc.update({"laptop_allocation": allocated_lap})
 

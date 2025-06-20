@@ -79,9 +79,9 @@ def scan_serial_no_data_for_sales(serial_no):
             delivery_note_creation = frappe.db.get_value('Delivery Note', delivery_note, 'creation')
             if delivery_note_creation:
                 creation_date = getdate(delivery_note_creation)
-                two_days_ago = add_days(nowdate(), -2)
-                if creation_date < getdate(two_days_ago):
-                    frappe.throw("The latest Delivery Note was not created within the last 2 days.")
+                four_days_ago = add_days(nowdate(), -4)
+                if creation_date < getdate(four_days_ago):
+                    frappe.throw("The latest Delivery Note was not created within the last 4 days.")
 
         return {
             'serial_no': serial_no,

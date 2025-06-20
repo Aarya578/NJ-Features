@@ -1,3 +1,23 @@
+function extend_listview_setting(doctype, custom_settings) {
+    const existing = frappe.listview_settings[doctype] || {};
+
+    Object.keys(custom_settings).forEach(key => {
+        const original = existing[key];
+        const custom = custom_settings[key];
+
+        if (typeof original === 'function' && typeof custom === 'function') {
+            existing[key] = function(...args) {
+                original.apply(this, args);
+                custom.apply(this, args);
+            };
+        } else {
+            existing[key] = custom;
+        }
+    });
+
+    frappe.listview_settings[doctype] = existing;
+}
+
 document.addEventListener('keydown', function(event) {
     if ((event.ctrlKey && event.shiftKey && (event.key === 'I' || event.key === 'J')) || event.key === 'F12') {
         event.preventDefault(); 

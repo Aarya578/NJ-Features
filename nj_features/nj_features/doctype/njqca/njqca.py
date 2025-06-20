@@ -1031,7 +1031,7 @@ def get_info_from_serial_no(doc=None):
                 'repack_itm_price': item_code_data.get('valuation_rate'),
                 'department': emp_dept.get('department') if emp_dept else None,
                 'brand': sle_entry.get('brand') or item_code_data.get('brand'),
-                'model': sle_entry.get('model') or item_code_data.get('item_model'),
+                # 'model': sle_entry.get('model') or item_code_data.get('item_model'),
             })
 
             # item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
@@ -2531,15 +2531,16 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
             LIMIT 1
         """
         partlist_query="""
-          Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" limit 1;
+          Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" order by idx desc limit 1;
         """
-        if nj_serial_no is not None and nj_serial_no:
-            
+        if nj_serial_no is not None and nj_serial_no:          
             data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
+            log_error(str(data),"repacked battery serial_no  through part list for bios serial no "+bios_serial_no)
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
             else:
                 data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
+                log_error(str(data),"repacked battery serial_no  through stack entry for bios serial no "+bios_serial_no)
                 if data is not None and data:
                     return data[0].get("battery_serial_no")
                 else:

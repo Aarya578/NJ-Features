@@ -10,6 +10,7 @@ import requests
 import traceback
 from frappe import _
 from frappe.utils import now
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from datetime import datetime, timedelta
 from frappe.utils import now_datetime, get_datetime
 from nj_lib.utils.common_utils import get_latest_item_wizard
@@ -31,19 +32,19 @@ class CustomDeliveryNote(DeliveryNote):
             against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
             
             # Early return for Snapmint orders (skipping trigger_fulfillment)
-            if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
-                self.rto_charges_update()
-                self.fetching_tracking_details()
-                # self.set_cit_image_from_sales_order()
-                self.update_details_to_delivery_charege_doc()
-                qi_mandatory_checks_on_dn_submit(self, method=None)
-                # self.qc_nj_of_days_checking()
-                if self.is_return == 0:
-                    send_sales_invoice_email_on_delivery_note(self, method=None)
+            # if against_sales_order and against_sales_order.startswith("SO-Snapmint-"):
+            #     self.rto_charges_update()
+            #     self.fetching_tracking_details()
+            #     # self.set_cit_image_from_sales_order()
+            #     self.update_details_to_delivery_charege_doc()
+            #     qi_mandatory_checks_on_dn_submit(self, method=None)
+            #     # self.qc_nj_of_days_checking()
+            #     if self.is_return == 0:
+            #         send_sales_invoice_email_on_delivery_note(self, method=None)
                 
-                if not self.is_return:
-                    self._process_customer_details()
-                return
+            #     if not self.is_return:
+            #         self._process_customer_details()
+            #     return
             
             # For non-Snapmint orders, proceed with normal flow
             raw_order_id = frappe.get_value("Sales Order", {"name": against_sales_order}, "shopify_order_id")
@@ -276,37 +277,73 @@ class CustomDeliveryNote(DeliveryNote):
         if updated:
             serial_no_doc.save(ignore_permissions=True) 
         
+    # def fetching_tracking_details(self):
+        
+    #     if self.is_return:
+    #         return
+       
+    #     try:
+    #         payload = {
+    #             "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
+    #             "DocketNo": self.name
+    #         }
+    #         url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
+    #         headers = {"Content-Type": "application/json"}
+    #         response = requests.post(url, headers=headers, json=payload)
+            
+    #         if response.status_code == 200:
+    #             data = response.json()
+    #             print("data==========================", data)
+                
+    #             # Check if there's an error message
+    #             if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
+    #                 frappe.msgprint(f"The sales order number '{self.name}' is not recognized as a valid tracking number.")
+    #                 return
+                    
+    #             # If successful, extract the remark
+    #             remark = (
+    #                 data.get("data", {})
+    #                 .get("docketDetails", {})
+    #                 .get("Booking_Status", {})
+    #                 .get("Remark")
+    #             )
+    #             print("remark==========================", remark)
+    #             if remark:
+    #                 self.remark_status = remark
+    #                 print("remark_status==========================", self.remark_status)
+    #                 # self.cost_amount = cost_of_delivery
+    #                 # self.awb_number = awb_number
+    #                 self.db_update()
+    #             else:
+    #                 print("No remark found in the response")
+    #         else:
+    #             frappe.msgprint(f"API returned status code: {response.status_code}")
+                
+    #     except Exception as e:
+    #         frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
     def fetching_tracking_details(self):
-        start_time = time.time()
-
-        if self.is_return:
+    # Skip if return or not CriticaLog
+        if self.is_return or self.courier_service != "CriticaLog":
             return
-        # against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
-        # # Check if we have a value to send
-        # if not against_sales_order:
-        #     frappe.msgprint("No sales order found for this delivery note.")
-        #     return
-        # if against_sales_order:
-        #     cost_of_delivery = frappe.db.get_value("Sales Order", against_sales_order, "cost_of_delivery")     
-
         try:
             payload = {
-                "Auth": " MTMzMzQzNzMwMzIz",  # Added the space at the beginning to match your example
+                "Auth": " MTMzMzQzNzMwMzIz",  # Include leading space
                 "DocketNo": self.name
             }
             url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
             headers = {"Content-Type": "application/json"}
             response = requests.post(url, headers=headers, json=payload)
-            
+
             if response.status_code == 200:
                 data = response.json()
-                
-                # Check if there's an error message
+                print("data==========================", data)
+
+                # Check for invalid response
                 if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
                     frappe.msgprint(f"The sales order number '{self.name}' is not recognized as a valid tracking number.")
                     return
-                    
-                # If successful, extract the remark
+
+                # Extract and save remark
                 remark = (
                     data.get("data", {})
                     .get("docketDetails", {})
@@ -315,21 +352,16 @@ class CustomDeliveryNote(DeliveryNote):
                 )
                 if remark:
                     self.remark_status = remark
-                    # self.cost_amount = cost_of_delivery
-                    # self.awb_number = awb_number
                     self.db_update()
                 else:
                     print("No remark found in the response")
             else:
                 frappe.msgprint(f"API returned status code: {response.status_code}")
-                
+
         except Exception as e:
             frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
-        finally:
-            end_time = time.time()
-            execution_time = round(end_time - start_time, 4)
-            logger.info(f"Execution Time: {execution_time} seconds")
 
+       
     def rto_charges_update(self):
         if not self.is_return:
             return
@@ -351,83 +383,9 @@ class CustomDeliveryNote(DeliveryNote):
 
 
 
-    # def update_details_to_delivery_charege_doc(self):
-    # # Check if a Delivery Charges document with the same AWB number exists
-    #     existing_delivery_charge = frappe.get_all(
-    #         "Delivery Charges",
-    #         filters={"tracking_id": self.tracking_id},
-    #         limit=1
-    #     )
-
-    #     serial_nos = []
-    #     sales_orders = []
-
-    #     # Collect all serial numbers and sales orders from items
-    #     for row in self.get("items"):
-    #         if row.get("serial_no"):
-    #             serial_nos.append(row.get("serial_no"))
-    #         if row.get("against_sales_order"):
-    #             sales_orders.append(row.get("against_sales_order"))
-
-    #     # Convert lists to comma-separated unique values
-    #     serial_nos_str = ",".join(sorted(set(serial_nos)))
-    #     sales_orders_str = ",".join(sorted(set(sales_orders)))
-
-    #     if existing_delivery_charge:
-    #         # If exists, get the document
-    #         delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
-
-    #         # Update serial_no if missing or append new ones
-    #         if delivery_charge.serial_no:
-    #             existing_serials = set(delivery_charge.serial_no.split(","))
-    #             new_serials = set(serial_nos)
-    #             all_serials = existing_serials.union(new_serials)
-    #             delivery_charge.serial_no = ",".join(sorted(all_serials))
-    #         else:
-    #             delivery_charge.serial_no = serial_nos_str
-
-    #         # Update sales_order similarly
-    #         if delivery_charge.sales_order:
-    #             existing_orders = set(delivery_charge.sales_order.split(","))
-    #             new_orders = set(sales_orders)
-    #             all_orders = existing_orders.union(new_orders)
-    #             delivery_charge.sales_order = ",".join(sorted(all_orders))
-    #         else:
-    #             delivery_charge.sales_order = sales_orders_str
-    #     else:
-    #         # Create a new document
-    #         delivery_charge = frappe.new_doc("Delivery Charges")
-    #         delivery_charge.awb_number = self.tracking_id
-    #         delivery_charge.serial_no = serial_nos_str
-    #         delivery_charge.sales_order = sales_orders_str
-    #         delivery_charge.delivery_date = self.name
-    #         delivery_charge.shiprocket_order_id = self.shiprocket_order_id
-    #         delivery_charge.shiprocket_shipment_id = self.shiprocket_shipment_id
-    #         delivery_charge.courier_service = self.courier_service
-    #         delivery_charge.remark_status = self.remark_status
-    #         delivery_charge.cit_image = self.cit_image
-    #         delivery_charge.shiprocket_manifests = self.shiprocket_manifests
-    #         delivery_charge.shiprocket_image = self.shiprocket_image
-    #         delivery_charge.shiprocket_invoice = self.shiprocket_invoice
-    #         delivery_charge.remark_status = self.remark_status
-
-
-    #     # Set common fields
-    #     delivery_charge.rto_charges = self.cost_amount
-    #     delivery_charge.cit_image = self.cit_image
-
-    #     if hasattr(self, 'is_return') and self.is_return:
-    #         delivery_charge.cause_of_return = self.cause_of_return
-
-    #     try:
-    #         if delivery_charge.is_new():
-    #             delivery_charge.insert(ignore_permissions=True)
-    #         else:
-    #             delivery_charge.save(ignore_permissions=True)
-    #     except Exception as e:
-    #         frappe.log_error(f"Error updating Delivery Charges doc: {e}", "Delivery Charges Sync Error")
 
     def update_details_to_delivery_charege_doc(self):
+        # print("update_details_to_delivery_charege_doc======================================")
 
         # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
@@ -436,31 +394,70 @@ class CustomDeliveryNote(DeliveryNote):
             limit=1
         )
 
-        serial_nos = []
-        sales_orders = []
+        serial_nos = set()
+        sales_orders = set()
 
-        # Collect all serial numbers and sales orders from items
+        # Loop through items and collect serial numbers and sales orders
         for row in self.get("items"):
             if row.get("serial_no"):
-                serial_nos.append(row.get("serial_no"))
+                # Handle serial numbers separated by comma, newline, or both
+                # First split by newlines, then by commas
+                serial_text = row.get("serial_no")
+                # Split by newlines first
+                for line in serial_text.split("\n"):
+                    # Then split each line by commas
+                    for serial in line.split(","):
+                        serial = serial.strip()  # Remove any whitespace
+                        if serial:  # Only add non-empty serials
+                            serial_nos.add(serial)
             if row.get("against_sales_order"):
-                sales_orders.append(row.get("against_sales_order"))
+                # Handle multiple sales orders if comma-separated
+                for order in row.get("against_sales_order").split(","):
+                    order = order.strip()
+                    if order:
+                        sales_orders.add(order)
 
-        # Convert lists to comma-separated unique values
-        serial_nos_str = ",".join(sorted(set(serial_nos)))
-        sales_orders_str = ",".join(sorted(set(sales_orders)))
+        # Check packed_items as well (not just when items are empty)
+        for row in self.get("packed_items"):
+            if row.get("serial_no"):
+                # Handle serial numbers separated by comma, newline, or both
+                # First split by newlines, then by commas
+                serial_text = row.get("serial_no")
+                # Split by newlines first
+                for line in serial_text.split("\n"):
+                    # Then split each line by commas
+                    for serial in line.split(","):
+                        serial = serial.strip()  # Remove any whitespace
+                        if serial:  # Only add non-empty serials
+                            serial_nos.add(serial)
+
+        # Convert sets to sorted, comma-separated strings
+        serial_nos_str = ",".join(sorted(serial_nos))
+        sales_orders_str = ",".join(sorted(sales_orders))
 
         if existing_delivery_charge:
             # If exists, get the document
             delivery_charge = frappe.get_doc("Delivery Charges", existing_delivery_charge[0].name)
 
             # Update serial_no
-            existing_serials = set(delivery_charge.serial_no.split(",")) if delivery_charge.serial_no else set()
+            existing_serials = set()
+            if delivery_charge.serial_no:
+                for serial in delivery_charge.serial_no.split(","):
+                    serial = serial.strip()
+                    if serial:
+                        existing_serials.add(serial)
+            
             all_serials = existing_serials.union(serial_nos)
             delivery_charge.serial_no = ",".join(sorted(all_serials))
 
             # Update sales_order
-            existing_orders = set(delivery_charge.sales_order.split(",")) if delivery_charge.sales_order else set()
+            existing_orders = set()
+            if delivery_charge.sales_order:
+                for order in delivery_charge.sales_order.split(","):
+                    order = order.strip()
+                    if order:
+                        existing_orders.add(order)
+            
             all_orders = existing_orders.union(sales_orders)
             delivery_charge.sales_order = ",".join(sorted(all_orders))
         else:
@@ -476,7 +473,7 @@ class CustomDeliveryNote(DeliveryNote):
             delivery_charge.remark_status = self.remark_status
             delivery_charge.cit_image = self.cit_image
             delivery_charge.shiprocket_manifests = self.shiprocket_manifests
-            delivery_charge.shiprocket_image = self.shiprocket_image  # fixed bug here
+            delivery_charge.shiprocket_image = self.shiprocket_image
             delivery_charge.shiprocket_invoice = self.shiprocket_invoice
             delivery_charge.pickup_scheduled_date = self.pickup_scheduled_date
             delivery_charge.weight = self.weight
@@ -487,7 +484,7 @@ class CustomDeliveryNote(DeliveryNote):
 
         # Set common fields
         delivery_charge.rto_charges = self.cost_of_delivery
-        delivery_charge.cit_image = self.cit_image  # reassignment preserved if needed
+        delivery_charge.cit_image = self.cit_image
 
         if getattr(self, 'is_return', False):
             delivery_charge.cause_of_return = self.cause_of_return
@@ -2161,7 +2158,6 @@ def shiprocket_awb_number(doc):
     if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
 
         allowed_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
-        print("allowed_courier_names================================", allowed_courier_names)
 
     # Calculate total charges for each courier
     best_courier = None
@@ -2170,7 +2166,6 @@ def shiprocket_awb_number(doc):
     for courier in courier_data:
         try:
             courier_name = courier.get("courier_name", "")
-            print("courier_name================================", courier_name)
             
             # Only consider couriers that are in the allowed list
             if courier_name and allowed_courier_names:
@@ -2187,11 +2182,8 @@ def shiprocket_awb_number(doc):
             
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
-            print("freight_charge================================", freight_charge)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
-            print("cod_charges================================", cod_charges)
             total = freight_charge + cod_charges
-            print("total================================", total)
             
             # Select courier with lowest total cost
             if total < lowest_total:
@@ -2204,7 +2196,6 @@ def shiprocket_awb_number(doc):
                     "freight_charge": freight_charge,
                     "cod_charges": cod_charges
                 }
-                print("best_courier================================", best_courier)
         except (ValueError, TypeError) as e:
             continue
 
@@ -2241,17 +2232,13 @@ def shiprocket_awb_number(doc):
             continue
         # Get item group
         item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
-        print("Item Group:==================", item_group)      
         # Get the item group document
         group_doc = frappe.get_doc("Item Group", item_group)
-        print("Group Doc:==================", group_doc)
         # Get item_charges (float)
         item_charges = group_doc.get("item_charges")
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
-            print("Item Total Charge:==================", item_total_charge)
             total_item_charges += item_total_charge
-            print("Total Item Charges:==================", total_item_charges)
         else:
             print("Missing item_charges or quantity for item:", item.get("item_code"))
 
@@ -2269,25 +2256,19 @@ def shiprocket_awb_number(doc):
         if best_courier:
             # Calculate total cost with weight
             freight_charge = best_courier.get('freight_charge', 0)
-            print("Freight Charge:==================", freight_charge)
             cod_charges = best_courier.get('cod_charges', 0)
-            print("COD Charges:==================", cod_charges)
             doc_weight = doc.get('weight', 0) or 0
-            print("Doc Weight:==================", doc_weight)
             
             total_cost = (freight_charge * float(doc_weight)) + cod_charges
-            print("Total Cost:==================", total_cost)
             
             # Fetch COD charges from Ship Rocket Settings
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            print("COD Charges Table:==================", cod_charges_table)
             
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                print("Charges Value:==================", charges_value)
                 if charges_value:
                     break
             
@@ -2295,17 +2276,13 @@ def shiprocket_awb_number(doc):
                 
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
-                print("Numeric Charges Value:==================", numeric_charges_value)
                 
                 # Calculate percentage of grand_total
                 # grand_total = doc.get("grand_total", 0) or 0
                 # cod_percentage_amount = (numeric_charges_value / 100) * float(grand_total)
                 grand_total = float(doc.get("grand_total", 0) or 0)
-                print("grand_total=============", grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-                print("cod_percentage_amount=============", cod_percentage_amount)
                 cod_and_item_charges_total = cod_percentage_amount+total_item_charges
-                print("cod_and_item_charges_total=============", cod_and_item_charges_total)
 
                 # Compare COD percentage amount with total_cost
                 if cod_and_item_charges_total< total_cost:
@@ -2447,21 +2424,22 @@ def adapter_repacked_serial_no(nj_serial_no):
             LIMIT 1
         """
         partlist_query="""
-          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" limit 1;
+          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
         """
         if nj_serial_no is not None and nj_serial_no:
 
             data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)
         
-        if data is not None and data:  
-            return data[0].get("adapter_serial_no","")
-        else:
-            data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
-            if data is not None and data:
+            if data is not None and data:  
                 return data[0].get("adapter_serial_no","")
             else:
-              return "No repacked serial no found"
+                data=frappe.db.sql(query, {"serial_no": nj_serial_no}, as_dict=1)
+                if data is not None and data:
+                    return data[0].get("adapter_serial_no","")
+                else:
+                   return "Empty"
     except Exception as e:
+        log_error(traceback.format_exc(),"Error while getting adapter repacked serial no in for serial no "+nj_serial_no)
         return str(e)
 @frappe.whitelist()
 def sanitize_phone(phone):
@@ -2478,11 +2456,12 @@ def allow_to_save(doc):
         if isinstance(doc,str):
             doc=json.loads(doc)
         child_data=doc["packed_items"]
+        dn_name=doc.get("name","")
         
 
         if not child_data:
             child_data=doc["items"]
-        
+        log_error(str(child_data),"child_data for dn name "+dn_name)
         for data in child_data:
             child_nj_serial_data=data.get("serial_no","")
             child_adapter_serial_no=data.get("adapter_serial_no","")
@@ -2504,7 +2483,9 @@ def allow_to_save(doc):
                     adapter_serial_nos.append(child_adapter_serial_no)
 
             serial_no_order=0
-
+            log_error(str(adapter_serial_nos),"adapter_serial_nos for dn name "+dn_name)
+            log_error(str(nj_serial_nos),"nj_serial_nos for dn name "+dn_name)
+            
             for nj_serial_no in nj_serial_nos:
                 item_group=frappe.db.get_value("Serial No",nj_serial_no,"item_group")
                 if item_group and item_group=="Laptops" or item_group=="Chromebooks":
@@ -2515,7 +2496,7 @@ def allow_to_save(doc):
                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
                         try:
                           if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
-                            return "Repacked Adapter Serial No:" + repacked_serial_no + " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
+                            return "Repacked Adapter Serial No for Serial No: " +nj_serial_no+ " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
                         except IndexError:
                           return "NO Adapter Serial No Found for Serial No:" + nj_serial_no
                 else:
@@ -2523,5 +2504,6 @@ def allow_to_save(doc):
         return "pass"
     
     except Exception as e:
+        log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
 

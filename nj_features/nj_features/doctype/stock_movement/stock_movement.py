@@ -323,11 +323,14 @@ def validate_serial_no_and_department(row, error_messages):
     return True
 
 def check_bag_list_validation(serial_doc, error_messages, department_doc):
-
     if serial_doc and department_doc.get("check_for_bag_list"):
         bag_list = serial_doc.get("bag_list", [])
-        if bag_list:
-            item_groups = list({item.get("item_group") for item in bag_list if item.get("item_group")})
+        
+        # Filter items with quantity > 0
+        valid_items = [item for item in bag_list if item.get("quantity", 0) > 0]
+        
+        if valid_items:
+            item_groups = list({item.get("item_group") for item in valid_items if item.get("item_group")})
             item_groups_str = ", ".join(f"<b>{group}</b>" for group in item_groups)
             error_messages.append(
                 f"Serial No <b>{serial_doc.get('name')}</b> cannot be moved as it contains parts in a bag. "

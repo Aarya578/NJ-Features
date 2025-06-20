@@ -49,7 +49,8 @@ doctype_js = {
 doctype_list_js = {
     "Employee": "public/js/employee_list.js",
     "Sales Order": "public/js/sales_order.js",
-    "Serial No": "public/js/serial_no_list.js"
+    "Serial No": "public/js/serial_no_list.js",
+    "Sales Invoice": "public/js/sales_invoice_list.js"
 }
 
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -204,6 +205,9 @@ scheduler_events = {
         ],
          "0 */2 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
+        ],
+         "0 */3 * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
         ]
     }
 }

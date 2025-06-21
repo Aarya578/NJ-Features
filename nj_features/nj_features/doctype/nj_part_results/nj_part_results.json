@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "field:qi_check_name",
  "creation": "2024-02-03 12:52:18.224750",
  "doctype": "DocType",
@@ -55,9 +54,8 @@
    "fieldtype": "Section Break"
   }
  ],
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-02-03 18:25:01.898993",
+ "modified": "2025-06-21 16:49:07.815975",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Part Results",

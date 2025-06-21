@@ -76,10 +76,9 @@
    "label": "Sales Channel"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-28 16:37:13.558144",
+ "modified": "2025-06-21 16:51:31.143849",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

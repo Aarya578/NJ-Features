@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2024-12-20 14:59:54.013234",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -32,10 +31,9 @@
    "label": "Restricted Grade"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-12-21 12:57:35.563448",
+ "modified": "2025-06-21 16:51:25.904338",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement Restriction Child",

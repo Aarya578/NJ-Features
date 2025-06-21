@@ -2531,7 +2531,7 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
             LIMIT 1
         """
         partlist_query="""
-          Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" order by idx desc limit 1;
+          Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" order by item_group_idx desc limit 1;
         """
         if nj_serial_no is not None and nj_serial_no:          
             data=frappe.db.sql(partlist_query, nj_serial_no, as_dict=1)

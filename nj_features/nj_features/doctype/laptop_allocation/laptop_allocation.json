@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-04-03 15:24:34.132535",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -32,10 +31,9 @@
    "options": "Laptop Allocation Child"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-04-04 14:56:56.296479",
+ "modified": "2025-06-21 16:51:25.272281",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Allocation",

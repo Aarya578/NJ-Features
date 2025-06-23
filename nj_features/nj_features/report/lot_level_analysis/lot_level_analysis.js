@@ -8,7 +8,7 @@ frappe.query_reports["Lot Level Analysis"] = {
 			"fieldname": "model",
 			"label": __("Model"),
 			"fieldtype": "Link",
-			"options": "Model",
+			"options": "Models",
 			"reqd": 1
 		},
 		{

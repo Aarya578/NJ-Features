@@ -121,3 +121,51 @@ def validate_mandatory_links(doc, method=None):
 def set_missing_values(source, target):
 	target.run_method("set_missing_values")
 	target.run_method("calculate_taxes_and_totals")
+
+
+
+import frappe
+
+@frappe.whitelist()
+def part_warrnty_days(doc):
+    doc = frappe.get_doc(frappe.parse_json(doc))
+
+    if not doc.get("part_warranty"):
+        return {"status": "skipped"}
+
+    doc.set("purchase_order_warrenty_for_specific_parts", [])  # Clear existing
+
+    for row in doc.get("items", []):
+        item_code = row.get("item_code")
+        # print("item_code===================", item_code)
+        if not item_code:
+            continue
+
+        item_group = frappe.db.get_value("Item", item_code, "item_group")
+        print   ("item_group", item_group)
+        if not item_group:
+            continue
+
+        warranty_days = frappe.db.get_value("Item Group", item_group, "warranty_days") or 0
+        # print("warranty_days===================", warranty_days)
+
+        if warranty_days < 90:
+            return {
+                "error": (
+                    f"Warranty too short for Item: <b>{item_code}</b><br>"
+                    f"Item Group: <b>{item_group}</b><br>"
+                    f"Warranty Days: <b>{warranty_days}</b><br>"
+                    f"Warranty must be at least 90 days."
+                )
+            }
+
+        doc.append("purchase_order_warrenty_for_specific_parts", {
+            "item_group": item_group,
+            "warranty_days": warranty_days
+        })
+        # print("doc===================", doc)
+
+    doc.save(ignore_permissions=True)
+    return {"status": "OK"}
+12
+

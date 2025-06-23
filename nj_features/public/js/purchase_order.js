@@ -45,12 +45,39 @@ frappe.ui.form.on('Purchase Order', {
     },
 
     validate: function(frm) {
+
+        frappe.call({
+            method: 'nj_features.overrides.purchase_order.part_warrnty_days',
+            args: {
+                doc: frm.doc
+            },
+            freeze: true,
+            async: false, // wait until response
+            callback: function (r) {
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.msgprint(r.message.error);
+                        frappe.validated = false;
+                    } else if (r.message.status === "OK") {
+                        frm.reload_doc();  // Load updated child table
+                    }
+                }
+            },
+            error: function(r) {
+                frappe.msgprint("Server error occurred.");
+                frappe.validated = false;
+            }
+        });
+    
         var postingDate = frm.doc.transaction_date;
         var numberOfDays = frm.doc.warranty_days;
         var warrantyDate = frappe.datetime.add_days(postingDate, numberOfDays);
 
         cur_frm.set_value('warrenty_till_date', warrantyDate)
-    }
+
+        
+    },
+
 });
 
 const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({

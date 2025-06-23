@@ -178,9 +178,9 @@ class StockMovement(Document):
         purchase_item_code = self.get_matching_purchase_item(purchase_receipt, serial_no_value, main_item.item_code)
 
         
-        if not purchase_item_code:
+        # if not purchase_item_code:
 
-            frappe.throw(f"Could not find the purchase item for Serial No: {serial_no_value}")
+        #     frappe.throw(f"Could not find the purchase item for Serial No: {serial_no_value}")
 
         # Add the unpack item (item being put in)
         unpack_item = {

@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "Field:reason",
  "creation": "2023-06-27 01:32:29.015128",
  "doctype": "DocType",
@@ -16,9 +15,8 @@
    "label": "Reason"
   }
  ],
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-07-09 12:45:34.314680",
+ "modified": "2025-06-21 16:51:24.393615",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Master Reasons",

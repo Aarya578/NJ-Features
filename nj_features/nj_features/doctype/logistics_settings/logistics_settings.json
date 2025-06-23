@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-06-13 11:18:10.123369",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -66,10 +65,13 @@
    "options": "Shiprocket Courier Name Block List"
   }
  ],
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
+<<<<<<< HEAD
  "modified": "2025-06-21 16:14:02.407825",
+=======
+ "modified": "2025-06-21 16:51:25.046485",
+>>>>>>> ef94bd6f883c92a7e47700ed8f747e7959f3e52e
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

@@ -185,7 +185,7 @@ def adapter_repacked_serial_no(nj_serial_no):
             LIMIT 1
         """
         partlist_query="""
-          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
+          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by item_group_idx desc limit 1;
         """
         if nj_serial_no is not None and nj_serial_no:
 

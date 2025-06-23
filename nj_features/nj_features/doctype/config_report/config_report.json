@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-04-05 12:13:18.795203",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -25,10 +24,9 @@
    "label": "Config Name"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-04-05 15:25:17.256901",
+ "modified": "2025-06-21 16:51:28.154090",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Config Report",

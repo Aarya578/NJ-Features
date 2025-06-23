@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "format:{department}-{YYYY}-{MM}-{DD}-{####}",
  "creation": "2025-01-18 10:41:39.198467",
  "doctype": "DocType",
@@ -56,10 +55,9 @@
    "options": "Final Config"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-05-29 12:36:46.856638",
+ "modified": "2025-06-21 16:50:51.030626",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

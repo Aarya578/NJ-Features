@@ -239,7 +239,9 @@ def update_merged_counts(merged_data, counts, warehouse, count_type):
 
 def process_model_configuration(dept_doc):
     inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
+    print("inwarded_counts:", inwarded_counts)
     forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
+    print("forwarded_counts:", forwarded_counts)
     item_code_list = merge_model_counts(inwarded_counts, forwarded_counts)
     days = frappe.db.get_single_value("NJ Production Planning Settings", "days") or 30
     weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor") or 1.0
@@ -248,24 +250,48 @@ def process_model_configuration(dept_doc):
 
 def get_model_counts(dept_doc, inventory_type):
     counts = {}
+
     for row in dept_doc.get("inventory_details_child"):
         department = row.get(inventory_type)
-        if department:
-            if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
-                warehouses = row.get("inwarded_warehouse_list").split(",")
-            else:
-                warehouses = get_warehouses(department)
-            for warehouse in warehouses:
-                query = """
-                    SELECT COUNT(sn.name) AS count, sn.model
-                    FROM `tabSerial No` sn
-                    JOIN `tabItem Group` i ON sn.item_group = i.name
-                    WHERE sn.warehouse = %s
-                    AND i.parent_item_group = "Products"
-                    GROUP BY sn.model
-                """
-                results = frappe.db.sql(query, (warehouse,), as_dict=True)
-                update_counts(counts, results)
+
+        # Determine warehouses based on inventory type
+        if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
+            warehouses = [w.strip() for w in row.get("inwarded_warehouse_list").split(",") if w.strip()]
+        elif inventory_type == "forwarded_inventory":
+            query = """
+                SELECT name FROM `tabWarehouse`
+                WHERE department IN (
+                    SELECT name FROM `tabDepartment`
+                    WHERE department_sequence > %s
+                )
+            """
+            forwarded_warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
+            warehouses = [w["name"] for w in forwarded_warehouses]
+        else:
+            warehouses = get_warehouses(department)
+
+        if not warehouses:
+            continue  # Skip if no warehouses found
+
+        # Prepare query using IN clause for multiple warehouses
+        placeholders = ", ".join(["%s"] * len(warehouses))
+        query = f"""
+            SELECT COUNT(sn.name) AS count, sn.model
+            FROM `tabSerial No` sn
+            JOIN `tabItem Group` i ON sn.item_group = i.name
+            WHERE sn.warehouse IN ({placeholders})
+            AND i.parent_item_group = "Products"
+            GROUP BY sn.model
+        """
+        results = frappe.db.sql(query, tuple(warehouses), as_dict=True)
+
+        # Update cumulative counts per model
+        for row in results:
+            model = row.get("model")
+            count = row.get("count", 0)
+            if model:
+                counts[model] = counts.get(model, 0) + count
+
     return counts
 
 def merge_model_counts(inwarded, forwarded):
@@ -379,8 +405,8 @@ def calculate_doi(items):
     return items
 
 def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
-
     merged_data = item_code_list
+    print("merged_data:", merged_data)
 
     if not item_code_list:
         item_code_list = {}
@@ -388,63 +414,49 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     weights = {i: (days - i) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
 
+    # Fetch sales data (stock items + product bundle components)
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
-            -- 1. Direct stock items sold
             SELECT
                 soi.item_code,
                 i.item_name,
                 i.is_stock_item,
                 DATE(so.creation) AS sale_date,
                 SUM(soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabItem` i ON soi.item_code = i.item_code
-            WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND i.is_stock_item = 1
-            GROUP BY
-                soi.item_code, i.item_name, i.is_stock_item, sale_date
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN `tabItem` i ON soi.item_code = i.item_code
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND i.is_stock_item = 1
+            GROUP BY soi.item_code, i.item_name, i.is_stock_item, sale_date
 
             UNION ALL
 
-            -- 2. Stock components of non-stock Product Bundles
             SELECT
                 pbi.item_code,
                 i.item_name,
                 i.is_stock_item,
                 DATE(so.creation) AS sale_date,
                 SUM(pbi.qty * soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            INNER JOIN
-                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN
-                `tabItem` i ON pbi.item_code = i.item_code
-            WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  -- Bundle parent
-                AND i.is_stock_item = 1  -- Component item
-            GROUP BY
-                pbi.item_code, i.item_name, i.is_stock_item, sale_date
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            INNER JOIN `tabItem` i ON pbi.item_code = i.item_code
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+              AND i.is_stock_item = 1
+            GROUP BY pbi.item_code, i.item_name, i.is_stock_item, sale_date
         )
-
         SELECT * FROM SalesData
         ORDER BY sale_date DESC
-
     """, as_dict=True)
 
+    # Build sales map
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
@@ -452,28 +464,24 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
         item_code = sale['item_code']
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
-    
+
+    print("sales_map", sales_map)
+
     updated_item_code_list = []
+
+    # Step 1: Process known item_code_list entries
     for model_name, model_data in item_code_list.items():
-
         inward_qty = model_data['inwarded_count']
-        
         for item_code in model_data['item_codes']:
-
             if item_code not in sales_map:
                 continue
-            
             total_sales_qty = sum(sales_map[item_code].values())
-
             total_weighted_sales = sum(
-                        sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
-                        for day_offset in range(days + 1)
-                    ) if item_code in sales_map else 0
-
+                sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
+                for day_offset in range(days + 1)
+            )
             sales_rate = total_weighted_sales / total_weight if total_weight else 0
-
-            forwarded_qty = model_data['item_codes'][item_code] 
-
+            forwarded_qty = model_data['item_codes'][item_code]
             updated_item_code_list.append({
                 'model': model_name,
                 'item_code': item_code,
@@ -483,11 +491,12 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 'sales_rate': sales_rate
             })
 
-    item_codes = [item['item_code'] for item in updated_item_code_list]
+    # Step 2: Fetch item attributes
+    item_codes = list(sales_map.keys())
+    attributes_map = {}
 
     if item_codes:
         try:
-
             placeholders = ', '.join(['%s'] * len(item_codes))
             query = f"""
                 SELECT 
@@ -502,33 +511,77 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 INNER JOIN `tabItem` i ON iva.parent = i.name
                 WHERE iva.parent IN ({placeholders})
             """
-
             attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
-
-            attributes_map = {}
             for row in attribute_data:
-                item_code = row['item_code']
-                attribute = row['item_attribute'].replace(' ', '_') 
-                attribute_value = row['attribute_value']
-
-                if item_code not in attributes_map:
-                    attributes_map[item_code] = {
+                code = row['item_code']
+                attr = row['item_attribute'].replace(' ', '_')
+                val = row['attribute_value']
+                if code not in attributes_map:
+                    attributes_map[code] = {
                         'item_name': row['item_name'],
                         'model': row['item_model'],
                         'item_group': row['item_group'],
                         'parent': row['parent']
                     }
-
-                attributes_map[item_code][attribute] = attribute_value
-
-            for item in updated_item_code_list:
-                item_code = item['item_code']
-                if item_code in attributes_map:
-                    item.update(attributes_map[item_code])
-
+                attributes_map[code][attr] = val
         except Exception as e:
             print("Error fetching attributes:", str(e))
 
+    # Step 3: Add missing items from sales_map using model+processor inference
+    existing_item_codes = {item['item_code'] for item in updated_item_code_list}
+    for item_code, date_sales_map in sales_map.items():
+        if item_code in existing_item_codes:
+            continue
+
+        total_sales_qty = sum(date_sales_map.values())
+        total_weighted_sales = sum(
+            date_sales_map.get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
+            for day_offset in range(days + 1)
+        )
+        sales_rate = total_weighted_sales / total_weight if total_weight else 0
+
+        # Default values
+        model = None
+        inward_qty = 0
+        forwarded_qty = 0
+
+        attr = attributes_map.get(item_code)
+        processor = attr.get('processor_type') if attr else None
+        model_from_attr = attr.get('model') if attr else None
+
+        # Match against merged_data keys (model, processor)
+        if model_from_attr and processor:
+            for (mdl, proc), data in merged_data.items():
+                # print("data ------------- ", data)
+                if mdl == model_from_attr and proc == processor:
+                    model = mdl
+                    inward_qty = data.get('inwarded_count', 0)
+                    forwarded_qty = data['item_codes'].get(item_code, 0)
+                    break
+
+        item = {
+            'model': model,
+            'item_code': item_code,
+            'inwarded_qty': inward_qty,
+            'forwarded_qty': forwarded_qty,
+            'total_sales_qty': total_sales_qty,
+            'sales_rate': sales_rate
+        }
+
+        if attr:
+            item.update(attr)
+
+        updated_item_code_list.append(item)
+
+    # Final attribute enrich (in case missed before)
+    for item in updated_item_code_list:
+        code = item['item_code']
+        if code in attributes_map:
+            item.update(attributes_map[code])
+
+    print("updated_item_code_list", updated_item_code_list)
+
+    # Final: Add Shopify mapping if required
     updated_item_code_list = get_shopify_variant_item_code(merged_data, updated_item_code_list)
 
     return updated_item_code_list
@@ -637,6 +690,8 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
     return updated_item_code_list
 
 def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
+
+    print("item_code_list", item_code_list)
     if not item_code_list:
         item_code_list = []
 
@@ -645,56 +700,57 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
 
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
-                -- Fetch data for stock items directly from Sales Order Item
-                SELECT
-                    soi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(soi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabSales Order Item` soi ON so.name = soi.parent
-                INNER JOIN
-                    `tabItem` i ON soi.item_code = i.item_code
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND i.is_stock_item = 1  -- Only take stock items
-                GROUP BY
-                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+            -- 1. Direct stock items sold
+            SELECT
+                soi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(soi.qty) AS daily_sales
+            FROM
+                `tabSales Order` so
+            INNER JOIN
+                `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN
+                `tabItem` i ON soi.item_code = i.item_code
+            WHERE
+                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                AND so.docstatus = 1
+                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND i.is_stock_item = 1
+            GROUP BY
+                soi.item_code, i.item_name, i.is_stock_item, sale_date
 
-                UNION ALL
+            UNION ALL
 
-                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
-                SELECT
-                    pi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(pi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabPacked Item` pi ON so.name = pi.parent
-                INNER JOIN
-                    `tabItem` i ON pi.item_code = i.item_code
-                INNER JOIN
-                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
-                    AND i.is_stock_item = 1
-                    -- Only take packed items from non-stock (bundle) items
-                GROUP BY
-                    pi.item_code, i.item_name, i.is_stock_item, sale_date
-            )
-            SELECT * FROM SalesData
-            ORDER BY sale_date DESC
+            -- 2. Stock components of non-stock Product Bundles
+            SELECT
+                pbi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(pbi.qty * soi.qty) AS daily_sales
+            FROM
+                `tabSales Order` so
+            INNER JOIN
+                `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN
+                `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            INNER JOIN
+                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            INNER JOIN
+                `tabItem` i ON pbi.item_code = i.item_code
+            WHERE
+                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+                AND so.docstatus = 1
+                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+                AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+                AND i.is_stock_item = 1
+            GROUP BY
+                pbi.item_code, i.item_name, i.is_stock_item, sale_date
+        )
+        SELECT * FROM SalesData
+        ORDER BY sale_date DESC
     """, as_dict=True)
 
     updated_sales_data = []
@@ -955,31 +1011,11 @@ def calculate_to_make(doc):
         print("\n\n")
         print(f"\n🔁 Iteration {iteration}")
 
-        temp_config = [item for item in temp_config if item["inward_inventory"] > 0]
+        temp_config = [item for item in temp_config if item["inward_inventory"] > 0 and item["sales_rate"] > 0]
         if len(temp_config) < 2:
             break
 
         temp_config.sort(key=lambda x: x["days_of_inventory"])
-
-        iteration_data = []
-        for item in temp_config:
-            iteration_data.append([
-                item["item_code"],
-                item["sales_rate"],
-                item["inward_inventory"],
-                item["forward_inventory"],
-                round(item["days_of_inventory"], 2),
-                item["to_make"],
-                item["model"],
-                item["processor"],
-                item["ram"],
-                item["ssd"]
-            ])
-        print(tabulate(
-            iteration_data,
-            headers=["Item Code", "Sales Rate", "Inward", "Forward", "DoI", "To Make", "Model", "Processor", "RAM", "SSD"],
-            tablefmt="fancy_grid"
-        ))
 
         current = temp_config[0]
         next_cfg = temp_config[1]
@@ -994,10 +1030,6 @@ def calculate_to_make(doc):
 
         needed_units = math.ceil((doi_gap + 1) * sales_rate)
         make_units = min(needed_units, current["inward_inventory"])
-
-        if make_units <= 0:
-            iteration += 1
-            continue
 
         current["to_make"] += make_units
         current["inward_inventory"] -= make_units
@@ -1030,30 +1062,6 @@ def calculate_to_make(doc):
         row.ssd = current["ssd"]
         rank += 1
         row.rank = rank
-
-        # ✅ Tabulate entire final_config after each append
-        full_final_table = []
-        for r in doc.get("final_config", []):
-            full_final_table.append([
-                r.item_code,
-                r.to_make,
-                r.sales_rate,
-                r.inward_inventory,
-                r.forward_inventory,
-                round(r.days_of_inventory, 2),
-                r.model,
-                r.processor,
-                r.ram,
-                r.ssd,
-                r.rank
-            ])
-
-        print(f"\n📦 Updated final_config Table (Iteration {iteration}):")
-        print(tabulate(
-            full_final_table,
-            headers=["Item Code", "To Make", "Sales Rate", "Inward", "Forward", "DoI", "Model", "Processor", "RAM", "SSD", "Rank"],
-            tablefmt="fancy_grid"
-        ))
 
         iteration += 1
 

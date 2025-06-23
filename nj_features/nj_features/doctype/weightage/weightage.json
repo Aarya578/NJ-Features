@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-01-17 11:21:47.753677",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -24,10 +23,9 @@
    "label": "Value"
   }
  ],
- "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-01-18 12:26:12.629739",
+ "modified": "2025-06-21 16:51:26.373505",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Weightage",

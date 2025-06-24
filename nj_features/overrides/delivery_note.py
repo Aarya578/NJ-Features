@@ -749,6 +749,7 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):
+    # print("inside the function===========================================")
     doc = frappe.get_doc("Delivery Note", dn_name)
 
     if doc.is_return:
@@ -767,7 +768,9 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         """, (against_sales_order,), as_dict=1)
 
         if return_dn_exists:
+            # print("skipped========================================================")
             return # Skip fulfillment trigger
+
     try:
         headers = {
             "Content-Type": "application/json",

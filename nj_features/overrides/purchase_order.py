@@ -117,54 +117,120 @@ def validate_mandatory_links(doc, method=None):
     if requires_links:
         if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:
             frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
+
+
+
+
+def validate_warranty_on_submit(doc, method=None):
+    doc = frappe.get_doc(frappe.parse_json(doc))
+    
+    if not doc.get("part_warranty"):
+        # print("skipped=====================================")
+        return {"status": "skipped", "message": "Part warranty not enabled"}
+    print("validate_warranty_on_submit======================")
+    for row in doc.get("purchase_order_warrenty_for_specific_parts"):
+        if not row.item_group:
+            continue
+
+        standard_days = frappe.get_value("Item Group", row.item_group, "warranty_days") or 0
+        # print("standard_days======================", standard_days)
+        user_days = row.warranty_days or 0
+        # print("user_days======================", user_days) 
+
+        if user_days < standard_days:
+            frappe.throw(
+                f"Cannot submit.<br>Warranty days for <b>{row.item_group}</b> are too low.<br>"
+                f"Entered: <b>{user_days}</b>, Required Above: <b>{standard_days}</b>"
+            )
       
 def set_missing_values(source, target):
 	target.run_method("set_missing_values")
 	target.run_method("calculate_taxes_and_totals")
 
 
-
-
 @frappe.whitelist()
-def part_warrnty_days(doc):
+def part_warrnty_days_after_save(doc):
+    """
+    Update warranty table after document is saved
+    using latest values from the client (not DB).
+    """
     doc = frappe.get_doc(frappe.parse_json(doc))
-
+    
     if not doc.get("part_warranty"):
-        return {"status": "skipped"}
-
-    doc.set("purchase_order_warrenty_for_specific_parts", [])  # Clear existing
-
+        return {"status": "skipped", "message": "Part warranty not enabled"}
+    
+    # Collect item groups from items table
+    current_item_groups = set()
+    item_group_map = {}  # map item_group to warranty_days from Item Group
+    
     for row in doc.get("items", []):
         item_code = row.get("item_code")
-        # print("item_code===================", item_code)
         if not item_code:
             continue
-
-        item_group = frappe.db.get_value("Item", item_code, "item_group")
-        print   ("item_group", item_group)
-        if not item_group:
-            continue
-
-        warranty_days = frappe.db.get_value("Item Group", item_group, "warranty_days") 
-        # print("warranty_days===================", warranty_days)
-
-        if warranty_days < 90:
-            return {
-                "error": (
-                    f"Warranty too short for Item: <b>{item_code}</b><br>"
-                    f"Item Group: <b>{item_group}</b><br>"
-                    f"Warranty Days: <b>{warranty_days}</b><br>"
-                    f"Warranty must be at least 90 days."
-                )
-            }
-
-        doc.append("purchase_order_warrenty_for_specific_parts", {
-            "item_group": item_group,
-            "warranty_days": warranty_days
-        })
-        # print("doc===================", doc)
-
-    doc.save(ignore_permissions=True)
-    return {"status": "OK"}
-12
+            
+        item = frappe.get_doc("Item", item_code)
+        item_group = item.item_group
+        
+        if item_group:
+            current_item_groups.add(item_group)
+            if item_group not in item_group_map:
+                item_group_doc = frappe.get_doc("Item Group", item_group)
+                item_group_map[item_group] = item_group_doc.warranty_days or 0
+    
+    # Process child table - FIXED LOGIC
+    existing_rows = {r.item_group: r for r in doc.get("purchase_order_warrenty_for_specific_parts", []) if r.item_group}
+    new_warranty_entries = []  # Fresh list to rebuild the child table
+    added_count = 0
+    removed_count = len(existing_rows) - len(current_item_groups & set(existing_rows.keys()))
+    
+    for item_group in current_item_groups:
+        standard_days = item_group_map.get(item_group, 0)
+        print('standard_days', standard_days)
+        
+        existing_row = existing_rows.get(item_group)
+        print('existing_row', existing_row)
+        
+        if existing_row:
+            # Update existing row
+            user_days = existing_row.warranty_days or 0
+            if user_days < standard_days:
+                # frappe.throw(
+                #     f"Warranty days for <b>{item_group}</b> is less than standard.<br>"
+                #     f"Entered: <b>{user_days}</b>, Required: <b>{standard_days}</b>"
+                # )
+                return {
+                    "error": (
+                        f"Warranty days entered for Item Group <b>{item_group}</b> is less than the standard.<br>"
+                        f"Entered: <b>{user_days}</b> | Required Above: <b>{standard_days}</b>"
+                    )
+                }
+            # Keep the existing row with user-entered days
+            new_warranty_entries.append({
+                "item_group": item_group,
+                "warranty_days": existing_row.warranty_days
+            })
+        else:
+            # Add new row with standard days
+            new_warranty_entries.append({
+                "item_group": item_group,
+                "warranty_days": standard_days
+            })
+            added_count += 1
+    
+    # Clear and rebuild the child table
+    doc.set("purchase_order_warrenty_for_specific_parts", [])
+    
+    for entry in new_warranty_entries:
+        doc.append("purchase_order_warrenty_for_specific_parts", entry)
+    
+    # Save the document
+    doc.flags.ignore_validate_update_after_submit = True
+    doc.flags.ignore_permissions = True
+    doc.flags.ignore_mandatory = True  # Add this flag
+    doc.save()
+    
+    return {
+        "status": "updated",
+        "message": f"Added {added_count}, removed {removed_count} warranty entries"
+    }
 

@@ -124,7 +124,6 @@ def set_missing_values(source, target):
 
 
 
-import frappe
 
 @frappe.whitelist()
 def part_warrnty_days(doc):
@@ -146,7 +145,7 @@ def part_warrnty_days(doc):
         if not item_group:
             continue
 
-        warranty_days = frappe.db.get_value("Item Group", item_group, "warranty_days") or 0
+        warranty_days = frappe.db.get_value("Item Group", item_group, "warranty_days") 
         # print("warranty_days===================", warranty_days)
 
         if warranty_days < 90:

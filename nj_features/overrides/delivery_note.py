@@ -706,45 +706,45 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
 
-@frappe.whitelist()
-def get_cod_amount(so_name):
-    try:
-        headers = {
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": TOKEN
-        }
+# @frappe.whitelist()
+# def get_cod_amount(so_name):
+#     try:
+#         headers = {
+#             "Content-Type": "application/json",
+#             "X-Shopify-Access-Token": TOKEN
+#         }
 
-        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+#         filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
 
-        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
+#         raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
-        if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
-            order_id = raw_order_id.lstrip('#')
-        else:
-            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
-            order_id = raw_order_id.lstrip('#') if raw_order_id else None
+#         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
+#             order_id = raw_order_id.lstrip('#')
+#         else:
+#             raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
+#             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-            if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
-                order_id = raw_order_id.lstrip('#') if raw_order_id else None
+#             if not order_id:
+#                 raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
+#                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-        if not order_id:
-            return {"order_id": None, "cod_amount": 0}
+#         if not order_id:
+#             return {"order_id": None, "cod_amount": 0}
 
-        url = f"{SHOPIFY_URL}{order_id}"
-        response = requests.get(url, headers=headers)
-        data = response.json()
+#         url = f"{SHOPIFY_URL}{order_id}"
+#         response = requests.get(url, headers=headers)
+#         data = response.json()
 
-        if "orders" in data and data["orders"]:
-            order = data["orders"][0]
-            cod_amount = order.get("total_outstanding", 0)
-            return {"order_id": order_id, "cod_amount": cod_amount}
+#         if "orders" in data and data["orders"]:
+#             order = data["orders"][0]
+#             cod_amount = order.get("total_outstanding", 0)
+#             return {"order_id": order_id, "cod_amount": cod_amount}
 
-        return {"order_id": order_id, "cod_amount": 0}
+#         return {"order_id": order_id, "cod_amount": 0}
 
-    except Exception as e:
-        frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
-        return {"order_id": None, "cod_amount": 0}
+#     except Exception as e:
+#         frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
+#         return {"order_id": None, "cod_amount": 0}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1089,10 +1089,9 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 
 @frappe.whitelist()
 def update_item_details(self):
-    import json
-
     if isinstance(self, str):
         self = json.loads(self)
+
 
     # If weight/dimensions are already filled, assume user has set them — do not override
     if self.get("weight") or self.get("height") or self.get("length") or self.get("breadth"):
@@ -1162,6 +1161,18 @@ def update_item_details(self):
         'height': height,
         'length': length,
         'breadth': breadth
+           
+    }
+@frappe.whitelist()
+def fetch_cod_amount(doc_name):
+    against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
+    print("against_sales_order=============", against_sales_order)
+    
+    cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding")
+    print("cod_amt===========================", cod_amt)
+    
+    return {
+        'cod_amount': cod_amt
     }
 
 

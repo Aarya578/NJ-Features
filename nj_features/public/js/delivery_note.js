@@ -6,6 +6,7 @@ frappe.ui.form.on('Delivery Note', {
             frm.set_value("courier_service", "Shiprocket Manifest");
             frm.set_df_property("courier_service", "read_only", 1);
         }
+       
     },
 
     refresh: function(frm) {
@@ -190,19 +191,19 @@ frappe.ui.form.on('Delivery Note', {
                 } else { frappe.validated = true; }
             }
         });
-        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        if (first_so) {
-            frappe.call({
-                method: "nj_features.overrides.delivery_note.get_cod_amount",
-                args: { so_name: first_so },
-                callback: function(res) {
-                    if (res.message) {
-                        frm.set_value("cod_amount", res.message.cod_amount); 
-                        frm.set_value("shopify_order_id", res.message.order_id); 
-                    }
-                }
-            });
-        }
+        // let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
+        // if (first_so) {
+        //     frappe.call({
+        //         method: "nj_features.overrides.delivery_note.get_cod_amount",
+        //         args: { so_name: first_so },
+        //         callback: function(res) {
+        //             if (res.message) {
+        //                 frm.set_value("cod_amount", res.message.cod_amount); 
+        //                 frm.set_value("shopify_order_id", res.message.order_id); 
+        //             }
+        //         }
+        //     });
+        // }
         frappe.call({
             method: 'nj_features.overrides.delivery_note.update_item_details',
             args: { self: frm.doc },
@@ -226,8 +227,11 @@ frappe.ui.form.on('Delivery Note', {
                     if (breadth !== undefined && breadth !== null) {
                         frm.set_value('breadth', breadth);
                     }
+                    if(cod_amount !== undefined && cod_amount !== null) {
+                        frm.set_value('cod_amount', cod_amount);
+                    }
 
-                    frm.refresh_fields(['weight', 'height', 'length', 'breadth']);
+                    frm.refresh_fields(['weight', 'height', 'length', 'breadth', 'cod_amount']);
                 }
             }
         });
@@ -235,25 +239,25 @@ frappe.ui.form.on('Delivery Note', {
     },
 
 
-    // before_submit: async function(frm) {
-    //     await frappe.call({
-    //         method:'nj_features.overrides.delivery_note.allow_to_save',
-    //         args: {
-    //             "doc": frm.doc
-    //         },
-    //         callback: function(r) {
-    //             if (r.message) {
-    //                 if(r.message!="pass") {
-    //                     frappe.validated=false
-    //                     frappe.throw(r.message);
+    before_submit: async function(frm) {
+        await frappe.call({
+            method:'nj_features.overrides.delivery_note.allow_to_save',
+            args: {
+                "doc": frm.doc
+            },
+            callback: function(r) {
+                if (r.message) {
+                    if(r.message!="pass") {
+                        frappe.validated=false
+                        frappe.throw(r.message);
 
-    //                 }else{
-    //                     frappe.validated=true
-    //                 }
-    //             }
-    //         }
-    //     })
-    // },
+                    }else{
+                        frappe.validated=true
+                    }
+                }
+            }
+        })
+    },
   
     // after_save: function(frm) {
     //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
@@ -262,7 +266,7 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     after_save: function(frm) {
-        // console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
+        console.log("after save inside ===========333333333333333333333333333333333======Delivery Note saved");
          
         // frappe.call({
         //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',
@@ -293,7 +297,22 @@ frappe.ui.form.on('Delivery Note', {
         //         console.log("Error in frappe call:", r);
         //     }
         // });
-            
+        frappe.call({
+            method: 'nj_features.overrides.delivery_note.fetch_cod_amount',
+            args: {
+                doc_name: frm.doc.name  // ✅ Just pass the document name
+            },
+            callback: function(r) {
+                if (r.message) {
+                    const { cod_amount } = r.message;
+                    console.log("Fetched cod_amount:", cod_amount);
+                    if (cod_amount !== undefined && cod_amount !== null) {
+                        frm.set_value('cod_amount', cod_amount.toString());
+                    }
+                    frm.refresh_field('cod_amount');
+                }
+            }
+        });
        
         if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
@@ -315,21 +334,21 @@ frappe.ui.form.on('Delivery Note', {
     //         }
     //     });
     // },
-    fetch_cod: function(frm) {
-        let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        if (first_so) {
-            frappe.call({
-                method: "nj_features.overrides.delivery_note.get_cod_amount",
-                args: { so_name: first_so },
-                callback: function(res) {
-                    if (res.message) {
-                        frm.set_value("cod_amount", res.message.cod_amount); 
-                        frm.set_value("shopify_order_id", res.message.order_id); 
-                    }
-                }
-            });
-        }
-    }
+    // fetch_cod: function(frm) {
+    //     let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
+    //     if (first_so) {
+    //         frappe.call({
+    //             method: "nj_features.overrides.delivery_note.get_cod_amount",
+    //             args: { so_name: first_so },
+    //             callback: function(res) {
+    //                 if (res.message) {
+    //                     frm.set_value("cod_amount", res.message.cod_amount); 
+    //                     frm.set_value("shopify_order_id", res.message.order_id); 
+    //                 }
+    //             }
+    //         });
+    //     }
+    // }
 });
 
 

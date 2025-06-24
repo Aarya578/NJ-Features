@@ -501,10 +501,6 @@ class NJQCA(Document):
                     s5 = time.time()
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
-                    
-                    # s6 = time.time()
-                    # update_serial_no_component_for_njqca(self)
-                    # logger.debug(f"Time after update_serial_no_component_for_njqca '{self.name}': {s6 - time.time():.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -868,12 +864,14 @@ def model_change_for_serial_no(newmodel, serial_no):
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
-    try:
         sle = []
         result = {}
         doc_json = json.loads(doc)
         serial_no = doc_json.get('serial_no')
+
         emp_dept = get_active_emp(frappe.session.user, fields=['department'])
+        if isinstance(emp_dept, list):
+            emp_dept = emp_dept[0] if emp_dept else {}
 
         if 'bios_serialno' in doc_json:
 
@@ -896,103 +894,65 @@ def get_info_from_serial_no(doc=None):
                     FROM `tabSerial No`
                     WHERE name = %s and status = 'Active' """
 
-                sle = frappe.db.sql(sql_query, (serial_no), as_dict=1)
+                sle = frappe.db.sql(sql_query, (serial_no,), as_dict=1)
 
-            if sle and len(sle) > 0:
+            if sle:
                 sle_entry = sle[0]
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
                 serial_no = sle_entry.get('name')
 
-                if non_njqca_item_groups and non_njqca_item_groups is not None:
+                if non_njqca_item_groups:
                     sn_model = frappe.get_value('Serial No', {'name': serial_no}, 'model')
                     manufacturer_model = frappe.get_all('Manufacturer Model Child', {'parent': sn_model}, ['manufacturer_model'], order_by='idx')
-                
-                    if sle_entry.get('item_group') in non_njqca_item_groups and manufacturer_model and manufacturer_model is not None:
-                        result.update({'manufacturer_model': manufacturer_model[0].get("manufacturer_model"),})
+
+                    if sle_entry.get('item_group') in non_njqca_item_groups and manufacturer_model:
+                        result.update({'manufacturer_model': manufacturer_model[0].get("manufacturer_model")})
                     else:
                         if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bios_serial_no_in_ui:
                             frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
                         elif bios_serial_no_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
                             log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bios_serial_no_in_ui}</b>", doc_json.get('name'))
-                            frappe.db.sql("""UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
-                                            (bios_serial_no_in_ui, serial_no))
+                            frappe.db.sql(
+                                """UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
+                                (bios_serial_no_in_ui, serial_no)
+                            )
                 else:
                     frappe.throw(f"NJ Settings for non_njqca_item_groups is not defined.")
-            
-        all_models = frappe.get_all(
-                "Manufacturer Model Child",
-                filters={"manufacturer_model": "ThinkPad T480"},
-                fields=["parent"]
-            )
-        
-        all_models = [m.get("parent") for m in all_models]
 
-        if sle and len(sle) > 0:
+        if sle:
             sle_entry = sle[0]
-            print("sle_entry", sle_entry)
             item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-            
+
             result.update({
                 'warehouse': sle_entry.get('warehouse'),
                 'base_price': sle_entry.get('purchase_rate'),
                 'repack_itm_price': item_code_data.get('valuation_rate'),
                 'department': emp_dept.get('department') if emp_dept else None,
                 'brand': sle_entry.get('brand') or item_code_data.get('brand'),
-                'model': sle_entry.get('model') if sle_entry.get('model') in all_models else (
-                    item_code_data.get('item_model') if item_code_data.get('item_model') in all_models else None
-                )
+                'model': sle_entry.get('model') or item_code_data.get('item_model'),
             })
 
-            # item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
-            # nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value')
-            # doc_item_group = doc_json.get('item_group')  # safely get it
-            # if doc_item_group and doc_item_group not in nj_settings_item_group:
-            #     result['item_group'] = item_group
-            #     result['serial_no'] = sle_entry.get('name')
-
-
-            # if 'serial_no' in doc_json:
-            #     result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
-            # elif (doc_json['item_group']) in nj_settings_item_group:
-            #     pass
-            # else:
-            #     result['item_code'] = sle_entry.get('item_code')
-            # Get item_group from sle_entry or fallback to item_code_data
-            item_group = sle_entry.get('item_group') if sle_entry.get('item_group') else item_code_data.get('item_group')
-
-            # Get allowed item groups from NJ Settings as a list
+            item_group = sle_entry.get('item_group') or item_code_data.get('item_group')
             raw_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery_item_group'}, 'value') or ''
-            nj_settings_item_group = [g.strip() for g in raw_item_groups.split(',') if g.strip()]  # ['BATTERY', 'Laptop Adaptors']
-
-            # Get item group from the incoming document JSON
+            nj_settings_item_group = [g.strip() for g in raw_item_groups.split(',') if g.strip()]
             doc_item_group = doc_json.get('item_group')
 
-            # If doc_item_group is present and not in allowed NJ settings item groups
             if doc_item_group and doc_item_group not in nj_settings_item_group:
                 result['item_group'] = item_group
                 result['serial_no'] = sle_entry.get('name')
 
-            # Decide how to assign item_code based on conditions
             if 'serial_no' in doc_json:
                 result['item_code'] = frappe.db.get_value('Serial No', {'name': serial_no}, 'item_code')
             elif doc_item_group and doc_item_group in nj_settings_item_group:
-                pass  # Allowed group, do nothing
+                pass
             else:
                 result['item_code'] = sle_entry.get('item_code')
-                
-        result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
-        
-        # sudden_drop = ''
-        # sudden_drop = get_sudden_drop(doc_json['name'], doc_json.get('item_group'),doc_json.get('manufacturer_model'))
 
-        # result['sudden_drop'] = sudden_drop
-        # frappe.db.set_value(doc_json.get('doctype'), doc_json.get('name'), 'sudden_drop', str(sudden_drop), update_modified=False)
+        result['inspection_type'] = get_inspection_type() if 'inspection_type' not in doc_json else doc_json['inspection_type']
 
         return result
-    
-    except Exception as e:
-        log_error(traceback.format_exc(), "Error on get_info_from_serial_no in NJQCA")
-        return f"Error on submit: {str(e)}"
+
+
     
 @frappe.whitelist()
 def get_info_from_battery_serial_no(doc=None):
@@ -2037,163 +1997,176 @@ PARAMETER_TYPE_MAPPING = {
 
 @frappe.whitelist()
 def update_performance_criteria(doc):
-    try:
-        if isinstance(doc, str):
-            doc = json.loads(doc)
+    import json
 
-        item_code = doc.get("manual_repack_item_code")  
+    if isinstance(doc, str):
+        doc = json.loads(doc)
 
-        if not item_code:
-            frappe.msgprint(_("Item code is missing."), alert=True)
-            return
+    item_code = doc.get("manual_repack_item_code")  
 
-        get_item_config = '''
-            SELECT 
-                LOWER(iva.attribute) AS attribute,
-                LOWER(iva.attribute_value) AS value
-            FROM `tabItem Variant Attribute` iva
-            WHERE iva.parent = %s
-        '''
-        item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
-        transformed_data = transform_item_config(item_config)
+    if not item_code:
+        frappe.msgprint(_("Item code is missing."), alert=True)
+        return
 
-        # Get latest submitted Item Wizard
-        item_wizard_list = frappe.get_all(
-            "Item Wizards",
-            filters={
-                "model": doc.get("model"),
-                "item_template": doc.get("item_template"),
-                "docstatus": 1, "part_list_status": "Completed"
-            },
-            fields=["name"],
-            order_by="modified desc",
-            limit_page_length=1
-        )
+    get_item_config = '''
+        SELECT 
+            LOWER(iva.attribute) AS attribute,
+            LOWER(iva.attribute_value) AS value
+        FROM `tabItem Variant Attribute` iva
+        WHERE iva.parent = %s
+    '''
+    item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
+    transformed_data = transform_item_config(item_config)
 
-        disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group").lower() == "laptop storage"]
-        disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
+    item_wizard_list = frappe.db.sql(
+        """
+        SELECT `name`
+        FROM `tabItem Wizards`
+        WHERE `model` = %s
+        AND `item_template` = %s
+        AND `docstatus` = 1
+        AND `part_list_status` = 'Completed'
+        ORDER BY `modified` DESC
+        LIMIT 1
+        """,
+        (doc.get("model"), doc.get("item_template")), as_dict=True
+    )
 
-        if not item_wizard_list:
-            frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
-            return
+    print("item_wizard_list ------------- ", item_wizard_list)
 
-        item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
+    disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
+    disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
 
-        if not item_wizard_doc.get("performance_config_criteria"):
+    if not item_wizard_list:
+        frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
+        return
 
-            criteria_doc_raw = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+    item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
-            if not criteria_doc_raw:
-                return {"error": "NJ Settings not found for Performance Criteria."}
+    if not item_wizard_doc.get("performance_config_criteria"):
+        criteria_doc_raw = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
 
-            criteria_doc = json.loads(criteria_doc_raw)
-            disk_criteria_list = criteria_doc.get(disk_type)
+        if not criteria_doc_raw:
+            return {"error": "NJ Settings not found for Performance Criteria."}
 
-            if not disk_criteria_list:
-                return {"error": f"Performance criteria not found for disk type: {disk_type}"}
+        print("criteria_doc_raw ------------- ", criteria_doc_raw)
 
-            njqca_results = doc.get("njqca_result_parameters", [])
-            evaluation_results = []
+        # ✅ Fix: decode only if it's a string
+        try:
+            if isinstance(criteria_doc_raw, str):
+                criteria_doc = json.loads(criteria_doc_raw)
+            else:
+                criteria_doc = criteria_doc_raw
+        except json.JSONDecodeError as e:
+            frappe.log_error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
+            return {"error": "Invalid JSON format in NJ Settings."}
 
-            for criteria_row in disk_criteria_list:
-                param_name = criteria_row.get("parameter")
-                param_range = criteria_row.get("value")
-                njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+        disk_criteria_list = criteria_doc.get(disk_type)
 
-                if njqca_param:
-                    njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                    is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+        if not disk_criteria_list:
+            return {"error": f"Performance criteria not found for disk type: {disk_type}"}
 
-                    evaluation_results.append({
-                        "parameter": param_name,
-                        "njqca_value": njqca_value,
-                        "expected_range": param_range,
-                        "status": "Pass" if is_passing else "Fail",
-                        "message": message
-                    })
+        njqca_results = doc.get("njqca_result_parameters", [])
+        evaluation_results = []
 
-            frappe.logger().info("\nEvaluation Results:")
-            for result in evaluation_results:
-                frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+        for criteria_row in disk_criteria_list:
+            param_name = criteria_row.get("parameter")
+            param_range = criteria_row.get("parameter_value")
+            njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
 
-            update_njqca_doc(doc.get("name"), evaluation_results)
+            if njqca_param:
+                njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                is_passing, message = compare_parameter(param_name, njqca_value, param_range)
 
-            for entry in evaluation_results:
-                if entry.get("status") == "Fail":
-                    return {
-                        "parameter": "performance_status",
-                        "value": "FAIL",
-                        "score": 41,
-                        "item_group": "Software Configuration",
-                        "part_config_id": 0,
-                    }
+                evaluation_results.append({
+                    "parameter": param_name,
+                    "njqca_value": njqca_value,
+                    "expected_range": param_range,
+                    "status": "Pass" if is_passing else "Fail",
+                    "message": message
+                })
+        
+        print("evaluation_results ------------- ", evaluation_results)
 
-            return {
-                "parameter": "performance_status",
-                "value": "PASS",
-                "score": 0,
-                "item_group": "Software Configuration",
-                "part_config_id": 0
-            }
+        frappe.logger().info("\nEvaluation Results:")
+        for result in evaluation_results:
+            frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
 
-        else:
-            for row in item_wizard_doc.get("performance_config_criteria"):
-                row_data = {
-                    "processor": row.get("processor", "").lower(),
-                    "ram": row.get("ram", "").lower(),
-                    "ssd": row.get("ssd", "").lower()
+        update_njqca_doc(doc.get("name"), evaluation_results)
+
+        for entry in evaluation_results:
+            if entry.get("status") == "Fail":
+                return {
+                    "parameter": "performance_status",
+                    "value": "FAIL",
+                    "score": 41,
+                    "item_group": "Software Configuration",
+                    "part_config_id": 0,
                 }
 
-                if transformed_data == row_data:
-                    criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
-                    njqca_results = doc.get("njqca_result_parameters", [])
-                    evaluation_results = []
+        return {
+            "parameter": "performance_status",
+            "value": "PASS",
+            "score": 0,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        }
 
-                    for criteria_row in criteria_doc.get("criteria_child"):
-                        param_name = criteria_row.get("parameter")
-                        param_range = criteria_row.get("parameter_value")
+    else:
+        for row in item_wizard_doc.get("performance_config_criteria"):
+            row_data = {
+                "processor": row.get("processor", "").lower(),
+                "ram": row.get("ram", "").lower(),
+                "ssd": row.get("ssd", "").lower()
+            }
 
-                        njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
+            if transformed_data == row_data:
+                criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
+                njqca_results = doc.get("njqca_result_parameters", [])
+                evaluation_results = []
 
-                        if njqca_param:
-                            njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                            is_passing, message = compare_parameter(param_name, njqca_value, param_range)
+                for criteria_row in criteria_doc.get("criteria_child"):
+                    param_name = criteria_row.get("parameter")
+                    param_range = criteria_row.get("parameter_value")
 
-                            evaluation_results.append({
-                                "parameter": param_name,
-                                "njqca_value": njqca_value,
-                                "expected_range": param_range,
-                                "status": "Pass" if is_passing else "Fail",
-                                "message": message
-                            })
+                    njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
 
-                    frappe.logger().info("\nEvaluation Results:")
-                    for result in evaluation_results:
-                        frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+                    if njqca_param:
+                        njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                        is_passing, message = compare_parameter(param_name, njqca_value, param_range)
 
-                    update_njqca_doc(doc.get("name"), evaluation_results)
+                        evaluation_results.append({
+                            "parameter": param_name,
+                            "njqca_value": njqca_value,
+                            "expected_range": param_range,
+                            "status": "Pass" if is_passing else "Fail",
+                            "message": message
+                        })
 
-                    for entry in evaluation_results:
-                        if entry.get("status") == "Fail":
-                            return {
-                                "parameter": "performance_status",
-                                "value": "FAIL",
-                                "score": 41,
-                                "item_group": "Software Configuration",
-                                "part_config_id": 0,
-                            }
+                frappe.logger().info("\nEvaluation Results:")
+                for result in evaluation_results:
+                    frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
 
-                    return {
-                        "parameter": "performance_status",
-                        "value": "PASS",
-                        "score": 0,
-                        "item_group": "Software Configuration",
-                        "part_config_id": 0
-                    }
+                update_njqca_doc(doc.get("name"), evaluation_results)
 
-    except Exception as e:
-        frappe.msgprint(f"An error occurred: {str(e)}")
-        return None
+                for entry in evaluation_results:
+                    if entry.get("status") == "Fail":
+                        return {
+                            "parameter": "performance_status",
+                            "value": "FAIL",
+                            "score": 41,
+                            "item_group": "Software Configuration",
+                            "part_config_id": 0,
+                        }
+
+                return {
+                    "parameter": "performance_status",
+                    "value": "PASS",
+                    "score": 0,
+                    "item_group": "Software Configuration",
+                    "part_config_id": 0
+                }
+
 
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""

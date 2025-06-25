@@ -7,8 +7,8 @@ def execute(filters=None):
     supplier = filters.get("supplier") or ""
     purchase_order = filters.get("purchase_order") or ""
 
-    # Only run if all filters are present
-    if not (model and supplier and purchase_order):
+    # Run the query only if at least one filter is provided
+    if not (model or supplier or purchase_order):
         return [], []
 
     # Create pattern strings with wildcards for LIKE clauses
@@ -65,7 +65,7 @@ def execute(filters=None):
           AND Sr.model LIKE %(model_pattern)s
           AND Sr.supplier LIKE %(supplier_pattern)s
           AND Sr.purchase_order LIKE %(purchase_order_pattern)s
-          AND SED1.parent NOT LIKE 'NJ-QI-%%'  -- Escaped wildcard
+          AND SED1.parent NOT LIKE 'NJ-QI-%%'
         GROUP BY 1, 2, 3
         HAVING Net_Added > 0
     ) Final)
@@ -98,12 +98,12 @@ def execute(filters=None):
     }, as_dict=True)
 
     columns = [
-        {"label": "Supplier", "fieldname": "Supplier", "fieldtype": "Data", "width": 150},
-        {"label": "Model", "fieldname": "model", "fieldtype": "Data", "width": 150},
-        {"label": "Label", "fieldname": "Label", "fieldtype": "Data", "width": 150},
-        {"label": "Numbers", "fieldname": "Numbers", "fieldtype": "Int", "width": 100},
-        {"label": "Purchase", "fieldname": "Purchase", "fieldtype": "Currency", "width": 100},
-        {"label": "Total", "fieldname": "Total", "fieldtype": "Currency", "width": 120}
+        {"label": "Supplier", "fieldname": "Supplier", "fieldtype": "Data", "width": 200},
+        {"label": "Model", "fieldname": "model", "fieldtype": "Data", "width": 200},
+        {"label": "Label", "fieldname": "Label", "fieldtype": "Data", "width": 200},
+        {"label": "Numbers", "fieldname": "Numbers", "fieldtype": "Int", "width": 200},
+        {"label": "Purchase", "fieldname": "Purchase", "fieldtype": "Currency", "width": 200},
+        {"label": "Total", "fieldname": "Total", "fieldtype": "Currency", "width": 200}
     ]
 
     return columns, data

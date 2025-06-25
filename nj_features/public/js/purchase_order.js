@@ -1,41 +1,14 @@
+
 frappe.provide("erpnext.buying");
 {% include 'erpnext/public/js/controllers/buying.js' %};
 
 frappe.ui.form.on('Purchase Order', {
-    onload() { $('.col-lg-2.layout-side-section').hide(); },
+    onload() { 
+        $('.col-lg-2.layout-side-section').hide(); 
+    },
 
     refresh: function(frm) {
-        // if (frm.doc.docstatus == 1 && frm.doc.status != "Closed" && frm.doc.status != "On Hold") {
-            
-        //     // Override Purchase Receipt button
-        //     frm.add_custom_button(__('SIR Purchase Receipt'), function() {
-
-        //         frappe.call({
-        //             method: 'nj_features.nj_features.doctype.security_inward_registry.security_inward_registry.get_registry_in_warehouse',
-        //             args: { po_number: frm.doc.name },
-        //             callback: function(r) {
-        //                 if (r && r.message.length > 0) {
-        //                     $.each(r.message, function(i, d) {
-        //                         frappe.model.nj_open_mapped_doc({
-        //                             method: "nj_features.overrides.purchase_order.make_purchase_receipt",
-        //                             frm: cur_frm,
-        //                             args: { sir_name: d.parent },
-        //                             freeze_message: __("Creating PR from Registry ...")
-        //                         });
-        //                     });
-        //                 }
-        //             }
-        //         });
-        //     }, __('Create'));
-
-        //     // Material to Supplier logic
-        //     if (frm.doc.is_subcontracted === "Yes" && me.has_unsupplied_items()) {
-        //         frm.page.remove_inner_button(__('Material to Supplier'), __('Transfer'));
-        //         frm.add_custom_button(__('Material to Supplier'), function() {
-        //             me.make_stock_entry();
-        //         }, __("Transfer"));
-        //     }
-        // }
+        // No warranty updates on refresh - only after save
     },
     
     has_warranty(frm) {
@@ -45,44 +18,110 @@ frappe.ui.form.on('Purchase Order', {
     },
 
     validate: function(frm) {
-
-        frappe.call({
-            method: 'nj_features.overrides.purchase_order.part_warrnty_days',
-            args: {
-                doc: frm.doc
-            },
-            freeze: true,
-            async: false, // wait until response
-            callback: function (r) {
-                if (r.message) {
-                    if (r.message.error) {
-                        frappe.msgprint(r.message.error);
-                        frappe.validated = false;
-                    } else if (r.message.status === "OK") {
-                        frm.reload_doc();  // Load updated child table
-                    }
-                }
-            },
-            error: function(r) {
-                frappe.msgprint("Server error occurred.");
-                frappe.validated = false;
-            }
-        });
-    
         var postingDate = frm.doc.transaction_date;
         var numberOfDays = frm.doc.warranty_days;
         var warrantyDate = frappe.datetime.add_days(postingDate, numberOfDays);
 
         cur_frm.set_value('warrenty_till_date', warrantyDate)
-
-        
+        if (frm.doc.part_warranty) {
+        // frappe.call({
+        //     method: 'nj_features.overrides.purchase_order.part_warrnty_days_after_save',
+        //     args: {
+        //         doc: frm.doc // send full unsaved doc values
+        //     },
+        //     freeze: true,
+        //     callback: function(r) {
+        //         if (r.message.error){
+        //             frappe.show_alert({
+        //                 title: __("Warranty Update Failed"),
+        //                 message: __(r.message.error),
+        //                 indicator: 'red'
+        //             });
+        //             frappe.validated = false;
+        //         }
+        //         else if (r.message?.status === "updated") {
+        //             frappe.show_alert({
+        //                 message: r.message.message,
+        //                 indicator: 'green'
+        //             });
+        //             // Use refresh instead of reload_doc for better performance
+        //             frm.refresh();
+        //         } else if (r.message?.status === "no_changes") {
+        //             frappe.show_alert({
+        //                 message: r.message.message,
+        //                 indicator: 'blue'
+        //             });
+        //         }
+        //     },
+        //     error: function(xhr) {
+        //         let responseJSON = xhr?.xhr?.responseJSON;
+        //         let message = responseJSON?.message || "Error updating warranty table";
+        //         frappe.msgprint({
+        //             title: __("Warranty Update Failed"),
+        //             message: __(message),
+        //             indicator: 'red'
+        //         });
+        //     }
+        // });
+    }
+    
     },
 
+
+after_save: function(frm) {
+        frappe.call({
+            method: 'nj_features.overrides.purchase_order.part_warrnty_days_after_save',
+            args: {
+                doc: frm.doc // send full unsaved doc values
+            },
+            freeze: true,
+            callback: function(r) {
+                if (r.message.error){
+                    frappe.show_alert({
+                        title: __("Warranty Update Failed"),
+                        message: __(r.message.error),
+                        indicator: 'red'
+                    });
+                    frappe.validated = false;
+                }
+                else if (r.message?.status === "updated") {
+                    frappe.show_alert({
+                        message: r.message.message,
+                        indicator: 'green'
+                    });
+                    // Use refresh instead of reload_doc for better performance
+                    frm.refresh();
+                } else if (r.message?.status === "no_changes") {
+                    frappe.show_alert({
+                        message: r.message.message,
+                        indicator: 'blue'
+                    });
+                }
+            },
+            error: function(xhr) {
+                let responseJSON = xhr?.xhr?.responseJSON;
+                let message = responseJSON?.message || "Error updating warranty table";
+                frappe.msgprint({
+                    title: __("Warranty Update Failed"),
+                    message: __(message),
+                    indicator: 'red'
+                });
+            }
+    });
+}
+
+
+});
+
+frappe.ui.form.on("Purchase Order Warrenty for Specific Parts", {
+    purchase_order_warrenty_for_specific_parts_add: function(frm, cdt, cdn) {
+        var child = locals[cdt][cdn];
+        frappe.model.set_value(cdt, cdn, 'warranty_days', frm.doc.warranty_days);
+    }
 });
 
 const purchaseOrderValidation = erpnext.buying.PurchaseOrderController.extend({
     close_purchase_order: function(){
-
         frappe.call({
             method: 'nj_features.overrides.purchase_order.check_billed_and_closed_amount',
             args: {'purchase_order': cur_frm.doc.name, 'po_grand_total': cur_frm.doc.grand_total},
@@ -153,11 +192,3 @@ $.extend(frappe.model, {
         });
     }
 });
-
-
-frappe.ui.form.on("Purchase Order Warrenty for Specific Parts", {
-    purchase_order_warrenty_for_specific_parts_add: function(frm, cdt, cdn) {
-        var child = locals[cdt][cdn];
-        frappe.model.set_value(cdt, cdn, 'warranty_days', frm.doc.warranty_days);
-    }
-})

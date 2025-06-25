@@ -94,7 +94,7 @@ frappe.ui.form.on('NJQCA', {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
-        frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
+        // frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
         frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');

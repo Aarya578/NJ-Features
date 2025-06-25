@@ -1629,7 +1629,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     avg_rate,
                     count_gt_2x as count,
                     CASE
-                        WHEN max_rate > 3 * avg_rate OR count_gt_2x >= 3 THEN "Yes"
+                        WHEN (max_rate > 3 * avg_rate OR count_gt_2x >= 3 )or (Select 1 from RateValues where delta_seconds>300) THEN "Yes"
                         ELSE "NO"
                     END AS condition_met
                 

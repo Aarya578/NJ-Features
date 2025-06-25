@@ -126,8 +126,7 @@ class CustomDeliveryNote(DeliveryNote):
                         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
                         LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
                         LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                        WHERE so.name = %s
-                        LIMIT 1
+                        WHERE so.name = %s LIMIT 1
                     """, (item.against_sales_order,), as_dict=True)
 
                     if not sales_order_data:
@@ -138,15 +137,18 @@ class CustomDeliveryNote(DeliveryNote):
                         "info": sales_order_data[0]
                     }
 
-            # Function to process serial numbers
-            def process_serials(item):
+            def process_serials(item, child_table="Delivery Note Item"):
                 serial_no = item.serial_no.strip() if item.serial_no else ""
                 if not serial_no:
                     return
 
                 serial_list = serial_no.split('\n')
 
-                order_entry = sales_order_info_map.get(item.item_code)
+                if child_table == "Packed Item":
+                    order_entry = sales_order_info_map.get(item.parent_item)
+                else:
+                    order_entry = sales_order_info_map.get(item.item_code)
+
                 if not order_entry:
                     frappe.throw(f"Cannot find Sales Order info for item: {item.item_code}")
 
@@ -190,7 +192,7 @@ class CustomDeliveryNote(DeliveryNote):
                 process_serials(item)
 
             for item in self.get('packed_items', []):
-                process_serials(item)
+                process_serials(item, "Packed Item")
 
         except Exception as e:
             frappe.throw(f"Error in _process_customer_details: {str(e)}")

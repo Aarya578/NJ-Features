@@ -119,23 +119,18 @@ def validate_mandatory_links(doc, method=None):
             frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
 
 
-
-
 def validate_warranty_on_submit(doc, method=None):
     doc = frappe.get_doc(frappe.parse_json(doc))
     
     if not doc.get("part_warranty"):
-        # print("skipped=====================================")
         return {"status": "skipped", "message": "Part warranty not enabled"}
-    print("validate_warranty_on_submit======================")
+
     for row in doc.get("purchase_order_warrenty_for_specific_parts"):
         if not row.item_group:
             continue
 
         standard_days = frappe.get_value("Item Group", row.item_group, "warranty_days") or 0
-        # print("standard_days======================", standard_days)
         user_days = row.warranty_days or 0
-        # print("user_days======================", user_days) 
 
         if user_days < standard_days:
             frappe.throw(
@@ -185,10 +180,8 @@ def part_warrnty_days_after_save(doc):
     
     for item_group in current_item_groups:
         standard_days = item_group_map.get(item_group, 0)
-        print('standard_days', standard_days)
         
         existing_row = existing_rows.get(item_group)
-        print('existing_row', existing_row)
         
         if existing_row:
             # Update existing row
@@ -223,14 +216,12 @@ def part_warrnty_days_after_save(doc):
     for entry in new_warranty_entries:
         doc.append("purchase_order_warrenty_for_specific_parts", entry)
     
-    # Save the document
     doc.flags.ignore_validate_update_after_submit = True
     doc.flags.ignore_permissions = True
-    doc.flags.ignore_mandatory = True  # Add this flag
+    doc.flags.ignore_mandatory = True
     doc.save()
     
     return {
         "status": "updated",
         "message": f"Added {added_count}, removed {removed_count} warranty entries"
     }
-

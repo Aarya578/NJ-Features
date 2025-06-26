@@ -21,8 +21,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Serial No",
-   "options": "Serial No",
-   "unique": 1
+   "options": "Serial No"
   },
   {
    "columns": 2,
@@ -79,7 +78,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2024-11-28 16:37:13.558144",
+ "modified": "2025-06-26 09:57:35.243842",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

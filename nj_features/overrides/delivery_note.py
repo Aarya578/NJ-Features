@@ -83,6 +83,7 @@ class CustomDeliveryNote(DeliveryNote):
                         print(f"Skipping fulfillment trigger for DN {self.name} - Order Type: {order_type}, Sale Type: {sale_type}")
                 else:
                     print(f"No Sales Order found for DN {self.name}")
+
             self.rto_charges_update()
             # self.set_cit_image_from_sales_order()
             self.fetching_tracking_details()
@@ -92,16 +93,14 @@ class CustomDeliveryNote(DeliveryNote):
             # self.qc_nj_of_days_checking()
             if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
-            
-            if not self.is_return:
                 self._process_customer_details()
-                return
-            
-            self._process_serial_numbers()
+            else:
+                self._process_serial_numbers()
             
         except Exception as e:
             frappe.db.rollback()
-            frappe.throw(str(e))
+            log_error(traceback.format_exc(), "Error in on_submit")
+            frappe.throw("Error in on_submit", str(e))
 
 
     def _process_customer_details(self):
@@ -185,8 +184,13 @@ class CustomDeliveryNote(DeliveryNote):
                         end_date = posting_date_raw
 
                     serial_no_doc.end_date = end_date + timedelta(days=365)
-                    serial_no_doc.modified = now()
-                    serial_no_doc.save(ignore_permissions=True)
+                    # serial_no_doc.modified = now()
+
+                    try:
+                        serial_no_doc.save(ignore_permissions=True)
+                    except Exception as e:
+                        log_error(traceback.format_exc(), "Error in saving serial_no_doc")
+                        frappe.throw("Error while updating Serial No", str(e))
 
             for item in self.get('items', []):
                 process_serials(item)
@@ -195,6 +199,7 @@ class CustomDeliveryNote(DeliveryNote):
                 process_serials(item, "Packed Item")
 
         except Exception as e:
+            log_error(traceback.format_exc(), "Error in _process_customer_details")
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
     def _process_serial_numbers(self):
@@ -205,8 +210,6 @@ class CustomDeliveryNote(DeliveryNote):
             
             self._update_serial_number_components(item)
         
-        frappe.db.commit()
-    
     def _should_process_item(self, item):
        
         has_serial_no = frappe.db.get_value('Item', item.item_code, 'has_serial_no')
@@ -277,7 +280,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.modified = now()
 
         if updated:
-            serial_no_doc.save(ignore_permissions=True) 
+            serial_no_doc.save(ignore_permissions=True)
         
     # def fetching_tracking_details(self):
         
@@ -295,7 +298,6 @@ class CustomDeliveryNote(DeliveryNote):
             
     #         if response.status_code == 200:
     #             data = response.json()
-    #             print("data==========================", data)
                 
     #             # Check if there's an error message
     #             if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
@@ -309,20 +311,17 @@ class CustomDeliveryNote(DeliveryNote):
     #                 .get("Booking_Status", {})
     #                 .get("Remark")
     #             )
-    #             print("remark==========================", remark)
     #             if remark:
     #                 self.remark_status = remark
-    #                 print("remark_status==========================", self.remark_status)
     #                 # self.cost_amount = cost_of_delivery
     #                 # self.awb_number = awb_number
     #                 self.db_update()
-    #             else:
-    #                 print("No remark found in the response")
     #         else:
     #             frappe.msgprint(f"API returned status code: {response.status_code}")
                 
     #     except Exception as e:
     #         frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
+    
     def fetching_tracking_details(self):
     # Skip if return or not CriticaLog
         if self.is_return or self.courier_service != "CriticaLog":
@@ -338,7 +337,6 @@ class CustomDeliveryNote(DeliveryNote):
 
             if response.status_code == 200:
                 data = response.json()
-                print("data==========================", data)
 
                 # Check for invalid response
                 if data.get("code") == 5 and "Invalid Con Number" in str(data.get("data", {}).get("docketDetails", "")):
@@ -383,12 +381,7 @@ class CustomDeliveryNote(DeliveryNote):
             except Exception as e:
                 frappe.log_error(f"RTO Cost update failed: {e}", "RTO Charges Update")
 
-
-
-
     def update_details_to_delivery_charege_doc(self):
-        # print("update_details_to_delivery_charege_doc======================================")
-
         # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
             "Delivery Charges",
@@ -570,7 +563,6 @@ class CustomDeliveryNote(DeliveryNote):
             unique_errors = list(set(error_messages))
             frappe.throw("<br>".join(unique_errors))
 
-
 @frappe.whitelist()
 def get_link_1(name):
     nj_setting_value = frappe.db.get_value("NJ Settings", {"parameter": "NJpulse_url"}, "value")
@@ -579,7 +571,6 @@ def get_link_1(name):
     for item in link:
         item["linked_data"] = nj_setting_value + item["linked_data"]
     return link
-
 
 @frappe.whitelist()
 def validate_delivery_bios(doc):
@@ -621,7 +612,6 @@ def validate_delivery_bios(doc):
                             )
 
     return error_message if error_message else True
-
 
 @frappe.whitelist()
 def send_sales_invoice_email_on_delivery_note(doc, method=None):
@@ -748,10 +738,8 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
 #         frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
 #         return {"order_id": None, "cod_amount": 0}
 
-
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):
-    # print("inside the function===========================================")
     doc = frappe.get_doc("Delivery Note", dn_name)
 
     if doc.is_return:
@@ -770,7 +758,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         """, (against_sales_order,), as_dict=1)
 
         if return_dn_exists:
-            # print("skipped========================================================")
             return # Skip fulfillment trigger
 
     try:
@@ -778,7 +765,6 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": TOKEN
         }
-        # print("continue from here")
         url = f"{SHOPIFY_URL}{order_id}"
         response = requests.get(url, headers=headers)  
         data = response.json()
@@ -939,8 +925,8 @@ def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn
         else:
             frappe.throw("Order not found.")
     except Exception as e:
-        print(f"Error in trigger_fulfillment: {str(e)}")
         frappe.throw(str(e))
+
 # @frappe.whitelist()
 # def awb_number_update(doc):
 #     if isinstance(doc, str):
@@ -1097,10 +1083,8 @@ def update_item_details(self):
     if isinstance(self, str):
         self = json.loads(self)
 
-
     # If weight/dimensions are already filled, assume user has set them — do not override
     if self.get("weight") or self.get("height") or self.get("length") or self.get("breadth"):
-        print("Skipping auto-fetch: weight/dimensions already set.")
         return None
 
     total_weight = 0
@@ -1166,28 +1150,21 @@ def update_item_details(self):
         'height': height,
         'length': length,
         'breadth': breadth
-           
     }
+           
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
-    print("against_sales_order=============", against_sales_order)
     
     cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding")
-    print("cod_amt===========================", cod_amt)
     
-    return {
-        'cod_amount': cod_amt
-    }
-
-
+    return { 'cod_amount': cod_amt }
 
 # @frappe.whitelist()
 # def total_item_group_sum(doc):
 #     doc = frappe._dict(json.loads(doc))
 #     # Fetch full document to access child table objects
 #     delivery_note = frappe.get_doc("Delivery Note", doc.name)
-#     print("delivery_note================================", delivery_note)
 # @frappe.whitelist()
 # def total_item_group_sum(doc):
 #     doc = frappe._dict(json.loads(doc))
@@ -1202,12 +1179,10 @@ def fetch_cod_amount(doc_name):
 # #     )
     
 # #     if not item_group_value:
-# #         print("No item group validation found")
 # #         return {"item_group_qty": 0}
     
 # #     # Step 2: Convert to list
 # #     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-# #     print("allowed_item_groups================================", allowed_item_groups)
     
 # #     # Step 3: Calculate total qty for allowed groups
 # #     total_qty = 0
@@ -1215,10 +1190,7 @@ def fetch_cod_amount(doc_name):
 # #         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
 # #         if item_group in allowed_item_groups:
 # #             total_qty += item.qty
-# #             print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
     
-# #     print("total_qty================================", total_qty)
-
 #     if not item_group_value:
 #         return {"item_group_qty": 0}
     
@@ -1237,7 +1209,7 @@ def fetch_cod_amount(doc_name):
 #     return {"item_group_qty": total_qty}
 #     # Update the delivery note document with the calculated value
 #     # frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)
-#     # frappe.db.commit()
+
 @frappe.whitelist()
 def send_consignement_data(doc):
     # start_time = time.time()
@@ -1250,13 +1222,10 @@ def send_consignement_data(doc):
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
         item_group_value = frappe.db.get_value(
-            "NJ Settings",
-            {"parameter": "Item Group Validation"},
-            "value"
+            "NJ Settings", {"parameter": "Item Group Validation"}, "value"
         )
     
         if not item_group_value:
-            print("No item group validation found")
             return {"item_group_qty": 0}
         
         # Step 2: Convert to list
@@ -1268,7 +1237,6 @@ def send_consignement_data(doc):
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
             if item_group in allowed_item_groups:
                 total_qty += item.qty
-                print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
         
         
@@ -1295,7 +1263,6 @@ def send_consignement_data(doc):
                 print("Missing item_charges or quantity for item:", item.get("item_code"))
         # Get the pincode from the Address doctype
         pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
-        # pincode("pincode===========================", pincode)
         if not pincode:
             frappe.throw("Pincode not found in the shipping address.")
         
@@ -1388,7 +1355,6 @@ def send_consignement_data(doc):
                                         total_default_charge += float(item_group_doc.default_charge)
                                         found_charges = True
                                 except:
-                                    # Continue if item group not found or error occurs
                                     continue
                     
                     # Set consignment value based on what was found
@@ -1420,14 +1386,12 @@ def send_consignement_data(doc):
         
         # Get allowed item groups from NJ Settings
         item_group_value = frappe.db.get_value(
-            "NJ Settings",
-            {"parameter": "Item Group Validation"},
-            "value"
+            "NJ Settings", {"parameter": "Item Group Validation"}, "value"
         )
+
         allowed_item_groups = []
         if item_group_value:
             allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-        
         
         # Calculate total quantity for allowed items only
         total_quantity = 0
@@ -1498,17 +1462,14 @@ def send_consignement_data(doc):
             "Header": [header],
             "ItemsDetails": items
         }
-        print("data", data)
         
         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
         
         response = requests.post(url, headers=headers, json=data)
-        print("response:", response.json())
        
         resp_json = response.json()
-        print("resp_json:", resp_json)
         
         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
@@ -1524,11 +1485,11 @@ def send_consignement_data(doc):
             delivery_note.save()
             
             # Use db_set to update without triggering validations or changing docstatus
-            delivery_note.db_set('tracking_id', tracking_id)
-            delivery_note.db_set('cit_image', cit_data)
-            delivery_note.db_set('cost_of_delivery', cost_of_delivery)
-            delivery_note.db_set('courier_service', 'CriticaLog')
-            delivery_note.db_set('item_group_qty', total_quantity)
+            # delivery_note.db_set('tracking_id', tracking_id)
+            # delivery_note.db_set('cit_image', cit_data)
+            # delivery_note.db_set('cost_of_delivery', cost_of_delivery)
+            # delivery_note.db_set('courier_service', 'CriticaLog')
+            # delivery_note.db_set('item_group_qty', total_quantity)
             
             frappe.msgprint(f"AWB Number generated successfully: {tracking_id}")
             
@@ -1549,7 +1510,6 @@ def shiprocket_awb_number(doc):
 
     if not auth_token:
         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
-
     
     try:
         # Get the actual Sales Order document to access child table properly
@@ -1632,7 +1592,6 @@ def shiprocket_awb_number(doc):
                                         total_default_charge += float(item_group_doc.default_charge)
                                         found_charges = True
                                 except:
-                                    # Continue if item group not found or error occurs
                                     continue
                     
                     # Set consignment value based on what was found
@@ -1692,12 +1651,7 @@ def shiprocket_awb_number(doc):
                     # Update document with ShipRocket IDs
                     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_order_id", resp_json.get('order_id'))
                     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_shipment_id", resp_json.get('shipment_id'))
-                    
-                    # Update local doc object for further processing
-                    doc.shiprocket_order_id = resp_json.get('order_id')
-                    doc.shiprocket_shipment_id = resp_json.get('shipment_id')
-                    
-                    frappe.db.commit()
+
                 else:
                     frappe.throw(f"Order creation failed: {response.text}")
             except ValueError as json_err:
@@ -1825,6 +1779,7 @@ def shiprocket_awb_number(doc):
 
     if not best_courier:
         frappe.throw("No suitable courier found from the allowed courier list with rating above 4.")
+    
     if best_courier:
         courier_service_name = best_courier.get("courier_name")
         
@@ -1897,7 +1852,6 @@ def shiprocket_awb_number(doc):
                     break
             
             if charges_value:
-                
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
                 
@@ -1930,7 +1884,6 @@ def shiprocket_awb_number(doc):
     })
     awb_json = awb_response.json()
 
-    # ✅ If there's an error message, show and stop
     if "message" in awb_json:
         # frappe.msgprint(f"AWB Assignment Failed: {awb_json.get('message')}")
         frappe.throw(f"ShipRocket response: {awb_json.get('message')}")
@@ -1949,14 +1902,11 @@ def shiprocket_awb_number(doc):
         frappe.msgprint("AWB Assignment Failed: Invalid response format.")
         frappe.throw(f"ShipRocket response: {data}")
 
-    # ✅ Validate AWB code
     if not awb_code:
         frappe.throw("AWB code not found in response.")
 
-    # ✅ Save AWB Code to Sales Order
     frappe.db.set_value("Delivery Note", doc.name, "tracking_id", awb_code)
 
-    # ✅ Save pickup date if available
     skip_pickup_generation = False
     if pickup_scheduled_date:
         frappe.db.set_value("Delivery Note", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
@@ -2014,8 +1964,6 @@ def shiprocket_awb_number(doc):
     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_image", label_pdf_b64)
 
-    frappe.db.commit()
-
     return {
         "awb_code": awb_code,
         "pickup_scheduled_date": pickup_scheduled_date,
@@ -2024,8 +1972,6 @@ def shiprocket_awb_number(doc):
         "invoice_url": invoice_pdf_url,
         "shiprocket_courier_name": best_courier
     }
-
-#     return warranty_info
 
 
 # def adapter_repacked_serial_no(nj_serial_no):
@@ -2051,6 +1997,7 @@ def shiprocket_awb_number(doc):
 #           Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
 #         """
 #         if nj_serial_no is not None and nj_serial_no:
+
 def adapter_repacked_serial_no(nj_serial_no):
     try:
         query="""
@@ -2085,9 +2032,11 @@ def adapter_repacked_serial_no(nj_serial_no):
                     return data[0].get("adapter_serial_no","")
                 else:
                    return "Empty"
+                
     except Exception as e:
         log_error(traceback.format_exc(),"Error while getting adapter repacked serial no in for serial no "+nj_serial_no)
         return str(e)
+    
 @frappe.whitelist()
 def sanitize_phone(phone):
     # Remove all non-digit characters
@@ -2097,6 +2046,7 @@ def sanitize_phone(phone):
         digits = digits[-10:]
     # Return only if it's exactly 10 digits
     return digits if len(digits) == 10 else ""
+
 @frappe.whitelist()
 def allow_to_save(doc):
     try:
@@ -2153,4 +2103,3 @@ def allow_to_save(doc):
     except Exception as e:
         log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
-

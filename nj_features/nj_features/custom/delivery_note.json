@@ -1175,7 +1175,7 @@
     "insert_after": "is_store_pick_up",
     "label": "Courier Service",
     "length": 0,
-    "mandatory_depends_on": "eval:!doc.is_store_pick_up",
+    "mandatory_depends_on": null,
     "modified": "2021-12-09 22:37:50.956390",
     "modified_by": "Administrator",
     "name": "Delivery Note-courier_service",

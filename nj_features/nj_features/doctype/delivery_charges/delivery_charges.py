@@ -76,7 +76,7 @@ def awb_number_tracking_status():
         "Delivery Charges",
         filters={
             "awb_number": ["!=", ""],
-            "current_status": ["!=", "Delivered"]  # <-- Skip Delivered entries
+            "remark_status": ["!=", "Delivered"]  # <-- Skip Delivered entries
         },
         fields=["name", "awb_number"]
     )

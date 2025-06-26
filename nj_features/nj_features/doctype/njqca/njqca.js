@@ -94,7 +94,7 @@ frappe.ui.form.on('NJQCA', {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
         frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
-        frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
+        // frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
         frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');
@@ -242,6 +242,11 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: function(frm) {
+        
+        var selectedModel = frm.doc.model;
+        var selectedBrand = frm.doc.brand;
+        var selectedItemGroup = frm.doc.item_group;
+
         if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name){
 
             frappe.call({
@@ -271,9 +276,7 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        var selectedModel = frm.doc.model;
-        var selectedBrand = frm.doc.brand;
-        var selectedItemGroup = frm.doc.item_group;
+        
 
         if (selectedModel && selectedBrand && selectedItemGroup == "Laptops") {
             frappe.call({

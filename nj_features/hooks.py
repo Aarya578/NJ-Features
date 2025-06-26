@@ -121,19 +121,34 @@ override_doctype_class = {
 # ---------------
 # Hook on document methods and events
 
+# doc_events = {
+# 	"Purchase Receipt": {
+# 		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
+# 		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
+# 	},
+#     "Purchase Order": {
+#         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
+#     },
+#     "NJQCA": {
+#         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
+#         "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration"
+# 	}
+# }
 doc_events = {
-	"Purchase Receipt": {
-		"before_save": "nj_features.overrides.purchase_receipt.get_batch",
-		"on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
-	},
+    "Purchase Receipt": {
+        "before_save": "nj_features.overrides.purchase_receipt.get_batch",
+        "on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
+    },
     "Purchase Order": {
+        "on_submit": "nj_features.overrides.purchase_order.validate_warranty_on_submit",  # ✅ NEW ENTRY
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration"
-	}
+    }
 }
+
 
 # doc_events = {
 #     "Sales Order": {
@@ -178,6 +193,10 @@ doc_events = {
 # 		]
 # 	}
 # }
+
+
+
+
 scheduler_events = {
     
     "cron": {

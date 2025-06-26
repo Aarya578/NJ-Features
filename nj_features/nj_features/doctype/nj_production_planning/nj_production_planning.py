@@ -3,8 +3,7 @@ import math
 import time
 import frappe
 import traceback
-from tabulate import tabulate
-from datetime import datetime, timedelta
+from datetime import datetime
 from operator import itemgetter
 from collections import defaultdict
 from frappe.utils import getdate, flt
@@ -54,7 +53,6 @@ def get_department_details():
         elif str(in_model) == '1' and str(fw_config) == '1':
             t2 = time.time()
             data = process_merged_configuration(dept_doc)
-            print("data:", data)
             t3 = time.time()
             print(f"process_merged_configuration: {t3 - t2:.2f} seconds")
 
@@ -93,15 +91,13 @@ def get_department_details():
 
 @frappe.whitelist()
 def create_production_planning(data, department):
-
-    print('\n\n data ============= 97', data)
     new_doc = frappe.new_doc("NJ Production Planning")
 
     for item in data:
         new_doc.department = department
         child = new_doc.append("nj_production_planning_child", {})
         child.model = item.get("model", "").upper() if item.get("model", "") else ""
-        child.processor = item.get("processor_type", "").upper() or item.get("processor", "").upper() if item.get("processor_type", "") or item.get("processor", "") else ""
+        child.processor = item.get("processor_type", "").upper() if item.get("processor_type", "") else ""
         child.ram = item.get("ram_capacity", "").upper() if item.get("ram_capacity", "") else ""
         child.ssd = item.get("storage_capacity", "").upper() if item.get("storage_capacity", "") else ""
         child.sales_rate = item.get("sales_rate", 0.0)
@@ -128,6 +124,7 @@ def process_merged_configuration(dept_doc):
     merged_data = process_inventory_rows(dept_doc)
     days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
     weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
+    # merged_data = get_shopify_items(merged_data)
     item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data, days=int(days), weight_factor=int(weight_factor))
     return calculate_doi(item_code_list)
 
@@ -164,7 +161,6 @@ def process_forwarded_inventory_merged(row, merged_data, dept_doc):
         update_merged_counts(merged_data, counts, warehouse, "forwarded_count")
 
 def get_warehouses(department):
-    print("department ------------- 165", department)
     return frappe.db.get_all(
         "Warehouse",
         filters={"department": department},
@@ -243,11 +239,10 @@ def update_merged_counts(merged_data, counts, warehouse, count_type):
 
 def process_model_configuration(dept_doc):
     inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
-    # print("inwarded_counts ---------------- ", inwarded_counts)
+    print("inwarded_counts:", inwarded_counts)
     forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
-    # print("forwarded_counts ---------------- ", forwarded_counts)
+    print("forwarded_counts:", forwarded_counts)
     item_code_list = merge_model_counts(inwarded_counts, forwarded_counts)
-    # print("item_code_list ------------ ", item_code_list)
     days = frappe.db.get_single_value("NJ Production Planning Settings", "days") or 30
     weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor") or 1.0
     item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list, days=int(days), weight_factor=int(weight_factor))
@@ -259,8 +254,9 @@ def get_model_counts(dept_doc, inventory_type):
     for row in dept_doc.get("inventory_details_child"):
         department = row.get(inventory_type)
 
+        # Determine warehouses based on inventory type
         if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
-            warehouses = row.get("inwarded_warehouse_list").split(",")
+            warehouses = [w.strip() for w in row.get("inwarded_warehouse_list").split(",") if w.strip()]
         elif inventory_type == "forwarded_inventory":
             query = """
                 SELECT name FROM `tabWarehouse`
@@ -269,50 +265,41 @@ def get_model_counts(dept_doc, inventory_type):
                     WHERE department_sequence > %s
                 )
             """
-            warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
-            warehouses = [w["name"] for w in warehouses]
+            forwarded_warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
+            warehouses = [w["name"] for w in forwarded_warehouses]
         else:
             warehouses = get_warehouses(department)
 
         if not warehouses:
             continue  # Skip if no warehouses found
 
-        # Using SQL IN clause for multiple warehouses
-        placeholders = ', '.join(['%s'] * len(warehouses))
+        # Prepare query using IN clause for multiple warehouses
+        placeholders = ", ".join(["%s"] * len(warehouses))
         query = f"""
-            SELECT 
-                COUNT(sn.name) AS count,
-                sn.model,
-                COALESCE(LOWER(iva.attribute_value), 'unknown') AS processor
+            SELECT COUNT(sn.name) AS count, sn.model
             FROM `tabSerial No` sn
             JOIN `tabItem Group` i ON sn.item_group = i.name
-            LEFT JOIN (
-                SELECT 
-                    parent AS item_code,
-                    LOWER(attribute_value) AS attribute_value
-                FROM `tabItem Variant Attribute`
-                WHERE LOWER(attribute) = 'processor type'
-            ) AS iva ON iva.item_code = sn.item_code
             WHERE sn.warehouse IN ({placeholders})
-            AND i.parent_item_group = 'Products'
-            GROUP BY sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
+            AND i.parent_item_group = "Products"
+            GROUP BY sn.model
         """
-        results = frappe.db.sql(query, tuple(warehouses),explain=1, debug=1, as_dict=True)
-        update_counts(counts, results)
+        results = frappe.db.sql(query, tuple(warehouses), as_dict=True)
+
+        # Update cumulative counts per model
+        for row in results:
+            model = row.get("model")
+            count = row.get("count", 0)
+            if model:
+                counts[model] = counts.get(model, 0) + count
 
     return counts
 
 def merge_model_counts(inwarded, forwarded):
-    print("🔄 Started Executing Merge Model Counts")
-    print("inwarded:", inwarded)
-    print("forwarded:", forwarded)
-
     return [{
         "model": model,
-        "processor": processor,
-        "inwarded_qty": inwarded.get((model, processor), 0),
-        "forwarded_qty": forwarded.get((model, processor), 0)
-    } for (model, processor) in set(inwarded) | set(forwarded)]
+        "inwarded_qty": inwarded.get(model, 0),
+        "forwarded_qty": forwarded.get(model, 0)
+    } for model in set(inwarded) | set(forwarded)]
 
 def process_default_configuration(dept_doc):
     inwarded_counts = get_item_counts(dept_doc, "inwarded_inventory")
@@ -397,11 +384,8 @@ def fetch_item_attributes(item_list):
 
 def update_counts(count_dict, results):
     for item in results:
-        model = item.get("model")
-        processor = item.get("processor", "unknown")
-
-        if model:
-            key = (model, processor)    
+        key = item.get("model") or item.get("item_code")
+        if key:
             count_dict[key] = count_dict.get(key, 0) + item.get("count", 0)
 
 def calculate_doi(items):
@@ -421,8 +405,8 @@ def calculate_doi(items):
     return items
 
 def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
-
     merged_data = item_code_list
+    print("merged_data:", merged_data)
 
     if not item_code_list:
         item_code_list = {}
@@ -430,63 +414,49 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
     weights = {i: (days - i) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
 
+    # Fetch sales data (stock items + product bundle components)
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
-            -- 1. Direct stock items sold
             SELECT
                 soi.item_code,
                 i.item_name,
                 i.is_stock_item,
                 DATE(so.creation) AS sale_date,
                 SUM(soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabItem` i ON soi.item_code = i.item_code
-            WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND i.is_stock_item = 1
-            GROUP BY
-                soi.item_code, i.item_name, i.is_stock_item, sale_date
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN `tabItem` i ON soi.item_code = i.item_code
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND i.is_stock_item = 1
+            GROUP BY soi.item_code, i.item_name, i.is_stock_item, sale_date
 
             UNION ALL
 
-            -- 2. Stock components of non-stock Product Bundles
             SELECT
                 pbi.item_code,
                 i.item_name,
                 i.is_stock_item,
                 DATE(so.creation) AS sale_date,
                 SUM(pbi.qty * soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            INNER JOIN
-                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN
-                `tabItem` i ON pbi.item_code = i.item_code
-            WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  -- Bundle parent
-                AND i.is_stock_item = 1  -- Component item
-            GROUP BY
-                pbi.item_code, i.item_name, i.is_stock_item, sale_date
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            INNER JOIN `tabItem` i ON pbi.item_code = i.item_code
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+              AND i.is_stock_item = 1
+            GROUP BY pbi.item_code, i.item_name, i.is_stock_item, sale_date
         )
-
         SELECT * FROM SalesData
         ORDER BY sale_date DESC
-
     """, as_dict=True)
 
+    # Build sales map
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
@@ -494,28 +464,24 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
             sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
         item_code = sale['item_code']
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
-    
+
+    print("sales_map", sales_map)
+
     updated_item_code_list = []
+
+    # Step 1: Process known item_code_list entries
     for model_name, model_data in item_code_list.items():
-
         inward_qty = model_data['inwarded_count']
-        
         for item_code in model_data['item_codes']:
-
             if item_code not in sales_map:
                 continue
-            
             total_sales_qty = sum(sales_map[item_code].values())
-
             total_weighted_sales = sum(
-                        sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
-                        for day_offset in range(days + 1)
-                    ) if item_code in sales_map else 0
-
+                sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
+                for day_offset in range(days + 1)
+            )
             sales_rate = total_weighted_sales / total_weight if total_weight else 0
-
-            forwarded_qty = model_data['item_codes'][item_code] 
-
+            forwarded_qty = model_data['item_codes'][item_code]
             updated_item_code_list.append({
                 'model': model_name,
                 'item_code': item_code,
@@ -525,11 +491,12 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 'sales_rate': sales_rate
             })
 
-    item_codes = [item['item_code'] for item in updated_item_code_list]
+    # Step 2: Fetch item attributes
+    item_codes = list(sales_map.keys())
+    attributes_map = {}
 
     if item_codes:
         try:
-
             placeholders = ', '.join(['%s'] * len(item_codes))
             query = f"""
                 SELECT 
@@ -544,42 +511,83 @@ def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, day
                 INNER JOIN `tabItem` i ON iva.parent = i.name
                 WHERE iva.parent IN ({placeholders})
             """
-
             attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
-
-            attributes_map = {}
             for row in attribute_data:
-                item_code = row['item_code']
-                attribute = row['item_attribute'].replace(' ', '_') 
-                attribute_value = row['attribute_value']
-
-                if item_code not in attributes_map:
-                    attributes_map[item_code] = {
+                code = row['item_code']
+                attr = row['item_attribute'].replace(' ', '_')
+                val = row['attribute_value']
+                if code not in attributes_map:
+                    attributes_map[code] = {
                         'item_name': row['item_name'],
                         'model': row['item_model'],
                         'item_group': row['item_group'],
                         'parent': row['parent']
                     }
-
-                attributes_map[item_code][attribute] = attribute_value
-
-            for item in updated_item_code_list:
-                item_code = item['item_code']
-                if item_code in attributes_map:
-                    item.update(attributes_map[item_code])
-
+                attributes_map[code][attr] = val
         except Exception as e:
             print("Error fetching attributes:", str(e))
 
+    # Step 3: Add missing items from sales_map using model+processor inference
+    existing_item_codes = {item['item_code'] for item in updated_item_code_list}
+    for item_code, date_sales_map in sales_map.items():
+        if item_code in existing_item_codes:
+            continue
+
+        total_sales_qty = sum(date_sales_map.values())
+        total_weighted_sales = sum(
+            date_sales_map.get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
+            for day_offset in range(days + 1)
+        )
+        sales_rate = total_weighted_sales / total_weight if total_weight else 0
+
+        # Default values
+        model = None
+        inward_qty = 0
+        forwarded_qty = 0
+
+        attr = attributes_map.get(item_code)
+        processor = attr.get('processor_type') if attr else None
+        model_from_attr = attr.get('model') if attr else None
+
+        # Match against merged_data keys (model, processor)
+        if model_from_attr and processor:
+            for (mdl, proc), data in merged_data.items():
+                # print("data ------------- ", data)
+                if mdl == model_from_attr and proc == processor:
+                    model = mdl
+                    inward_qty = data.get('inwarded_count', 0)
+                    forwarded_qty = data['item_codes'].get(item_code, 0)
+                    break
+
+        item = {
+            'model': model,
+            'item_code': item_code,
+            'inwarded_qty': inward_qty,
+            'forwarded_qty': forwarded_qty,
+            'total_sales_qty': total_sales_qty,
+            'sales_rate': sales_rate
+        }
+
+        if attr:
+            item.update(attr)
+
+        updated_item_code_list.append(item)
+
+    # Final attribute enrich (in case missed before)
+    for item in updated_item_code_list:
+        code = item['item_code']
+        if code in attributes_map:
+            item.update(attributes_map[code])
+
+    print("updated_item_code_list", updated_item_code_list)
+
+    # Final: Add Shopify mapping if required
     updated_item_code_list = get_shopify_variant_item_code(merged_data, updated_item_code_list)
-
-    # updated_item_code_list = [{'name': '468f90390a', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 1, 'docstatus': 0, 'date': '2025-06-19', 'model': 'E5470', 'processor_type': 'CORE I7 - 6TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 0, 'forwarded_qty': 1, 'DOI': 5, 'to_make': 0, 'item_code': 'S-Dell E5470-CORE I7 - 6TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '5b0fc876db', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 2, 'docstatus': 0, 'date': '2025-06-19', 'model': '5420 TOUCH(IR)', 'processor_type': 'CORE I7 - 11TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 9, 'forwarded_qty': 1, 'DOI': 7, 'to_make': 0, 'item_code': 'S-Dell 5420 TOUCH(IR)-CORE I7 - 11TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'e4ef6947ad', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 3, 'docstatus': 0, 'date': '2025-06-19', 'model': 'T580 TOUCH', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 4, 'forwarded_qty': 1, 'DOI': 7, 'to_make': 0, 'item_code': 'S-Lenovo T580 TOUCH-CORE I5 - 8TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'd1d11ef682', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 4, 'docstatus': 0, 'date': '2025-06-19', 'model': 'E5480 (KBD WTB)', 'processor_type': 'CORE I5 - 7TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 8, 'forwarded_qty': 2, 'DOI': 14, 'to_make': 0, 'item_code': 'S-Dell E5480 (KBD WTB)-CORE I5 - 7TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '7eed5aaa14', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 5, 'docstatus': 0, 'date': '2025-06-19', 'model': 'OPTIPLEX 9020 USFF', 'processor_type': 'CORE I5 - 4TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 0, 'forwarded_qty': 2, 'DOI': 14, 'to_make': 0, 'item_code': 'S-Dell Optiplex 9020 USFF-CORE I5 - 4TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'e1a50ac58c', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 6, 'docstatus': 0, 'date': '2025-06-19', 'model': '5410(KBD WTB)', 'processor_type': 'CORE I7 - 10TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 0, 'forwarded_qty': 3, 'DOI': 21, 'to_make': 0, 'item_code': 'S-Dell 5410(KBD WTB)-CORE I7 - 10TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'f468bf1fb3', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 7, 'docstatus': 0, 'date': '2025-06-19', 'model': '5290', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '500 GB', 'sales_rate': 0.10714285714285714, 'inwarded_qty': 15, 'forwarded_qty': 3, 'DOI': 28, 'to_make': 0, 'item_code': 'S-Dell 5290-CORE I5 - 8TH GEN-8 GB-500 GB', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '5fa59b5f68', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 8, 'docstatus': 0, 'date': '2025-06-19', 'model': '820 G4(KBD WTB)', 'processor_type': 'CORE I5 - 7TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.2857142857142857, 'inwarded_qty': 5, 'forwarded_qty': 8, 'DOI': 28, 'to_make': 0, 'item_code': 'S-HP 820 G4(KBD WTB)-CORE I5 - 7TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '6322f44b62', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 9, 'docstatus': 0, 'date': '2025-06-19', 'model': 'E5490', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 7, 'forwarded_qty': 5, 'DOI': 28, 'to_make': 0, 'item_code': 'S-Dell E5490-CORE I5 - 8TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '9c37269a05', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 10, 'docstatus': 0, 'date': '2025-06-19', 'model': 'EB 840 G7(KBD WTB)', 'processor_type': 'CORE I5 - 10TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 8, 'forwarded_qty': 6, 'DOI': 33, 'to_make': 0, 'item_code': 'S-HP EB 840 G7(KBD WTB)-CORE I5 - 10TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'c918027791', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 11, 'docstatus': 0, 'date': '2025-06-19', 'model': 'E5470 (KBD WTB)', 'processor_type': 'CORE I5 - 6TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 9, 'forwarded_qty': 5, 'DOI': 35, 'to_make': 0, 'item_code': 'S-Dell E5470 (KBD WTB)-CORE I5 - 6TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '13c5b9f5b1', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 12, 'docstatus': 0, 'date': '2025-06-19', 'model': 'C640 TOUCH WIN', 'processor_type': 'CORE I5 - 10TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '64 GB', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 0, 'forwarded_qty': 10, 'DOI': 70, 'to_make': 0, 'item_code': 'S-HP Chromebook C640 Touch Win-CORE I5 - 10TH GEN-8 GB-64 GB', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '84fd795e72', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 13, 'docstatus': 0, 'date': '2025-06-19', 'model': '5320 TOUCH', 'processor_type': 'CORE I5 - 11TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.32142857142857145, 'inwarded_qty': 11, 'forwarded_qty': 23, 'DOI': 71, 'to_make': 0, 'item_code': 'S-Dell 5320 TOUCH-CORE I5 - 11TH GEN-8 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '4102ab7109', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 14, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X270', 'processor_type': 'CORE I7 - 7TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 30, 'forwarded_qty': 14, 'DOI': 78, 'to_make': 0, 'item_code': 'S-Lenovo X270-CORE I7 - 7TH GEN-16 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '171c3453df', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 15, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X270', 'processor_type': 'CORE I7 - 7TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '1 TB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 30, 'forwarded_qty': 15, 'DOI': 84, 'to_make': 0, 'item_code': 'S-Lenovo X270-CORE I7 - 7TH GEN-16 GB-1 TB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'c83f3c1c14', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 16, 'docstatus': 0, 'date': '2025-06-19', 'model': 'T460', 'processor_type': 'CORE I5 - 6TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 24, 'forwarded_qty': 13, 'DOI': 91, 'to_make': 0, 'item_code': 'S-Lenovo T460-CORE I5 - 6TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'bc62007142', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 17, 'docstatus': 0, 'date': '2025-06-19', 'model': 'L480', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.5, 'inwarded_qty': 33, 'forwarded_qty': 64, 'DOI': 128, 'to_make': 0, 'item_code': 'S-Lenovo L480-CORE I5 - 8TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'f106cd750b', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 18, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X270', 'processor_type': 'CORE I7 - 7TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 30, 'forwarded_qty': 23, 'DOI': 128, 'to_make': 0, 'item_code': 'S-Lenovo X270-CORE I7 - 7TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'dd2f3dce3c', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 19, 'docstatus': 0, 'date': '2025-06-19', 'model': '640 G5', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.14285714285714285, 'inwarded_qty': 28, 'forwarded_qty': 24, 'DOI': 168, 'to_make': 0, 'item_code': 'S-HP 640 G5-CORE I5 - 8TH GEN-16 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '479a229d70', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 20, 'docstatus': 0, 'date': '2025-06-19', 'model': '640 G5', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.17857142857142858, 'inwarded_qty': 28, 'forwarded_qty': 31, 'DOI': 173, 'to_make': 0, 'item_code': 'S-HP 640 G5-CORE I5 - 8TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '3a7c25a371', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 21, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X13 GEN 1', 'processor_type': 'CORE I5 - 10TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.8928571428571429, 'inwarded_qty': 23, 'forwarded_qty': 179, 'DOI': 200, 'to_make': 0, 'item_code': 'S-Lenovo x13 Gen 1-CORE I5 - 10TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'db1fb99f84', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 22, 'docstatus': 0, 'date': '2025-06-19', 'model': 'L450', 'processor_type': 'CORE I5 - 5TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '500 GB', 'sales_rate': 0.0, 'inwarded_qty': 9, 'forwarded_qty': 1, 'DOI': 0, 'to_make': 0, 'item_code': 'S-Lenovo L450-CORE I5 - 5TH GEN-8 GB-500 GB', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'f41d26ed0b', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 23, 'docstatus': 0, 'date': '2025-06-19', 'model': 'L480', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.0, 'inwarded_qty': 33, 'forwarded_qty': 5, 'DOI': 0, 'to_make': 0, 'item_code': 'S-Lenovo L480-CORE I5 - 8TH GEN-8 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': 'c66c91105a', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 24, 'docstatus': 0, 'date': '2025-06-19', 'model': 'PB 430 G6', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.0, 'inwarded_qty': 27, 'forwarded_qty': 7, 'DOI': 0, 'to_make': 0, 'item_code': 'S-HP PB 430 G6-CORE I5 - 8TH GEN-16 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '43c6adbc4a', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 25, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X13 GEN 1', 'processor_type': 'CORE I5 - 10TH GEN', 'ram_capacity': '16 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.0, 'inwarded_qty': 23, 'forwarded_qty': 21, 'DOI': 0, 'to_make': 0, 'item_code': 'S-Lenovo x13 Gen 1-CORE I5 - 10TH GEN-16 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '867435d04f', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 26, 'docstatus': 0, 'date': '2025-06-19', 'model': 'EB 745 G6(KBD WTB)', 'processor_type': 'AMD RYZEN 5 PRO', 'ram_capacity': '16 GB', 'storage_capacity': '512 GB SSD', 'sales_rate': 0.0, 'inwarded_qty': 9, 'forwarded_qty': 5, 'DOI': 0, 'to_make': 0, 'item_code': 'S-HP EB 745 G6(KBD WTB)-AMD RYZEN 5 PRO-16 GB-512 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}, {'name': '190fb4a530', 'owner': 'Administrator', 'creation': '2025-06-19 12:40:46.108191', 'modified': '2025-06-19 12:40:46.108191', 'modified_by': 'Administrator', 'parent': 'Stores - NJ-2025-06-19-311769', 'parentfield': 'nj_production_planning_child', 'parenttype': 'NJ Production Planning', 'idx': 27, 'docstatus': 0, 'date': '2025-06-19', 'model': 'X280', 'processor_type': 'CORE I5 - 8TH GEN', 'ram_capacity': '8 GB', 'storage_capacity': '256 GB SSD', 'sales_rate': 0.0, 'inwarded_qty': 4, 'forwarded_qty': 2, 'DOI': 0, 'to_make': 0, 'item_code': 'S-Lenovo X280-CORE I5 - 8TH GEN-8 GB-256 GB SSD', 'doctype': 'NJ Production Planning Child', '__unsaved': 1}]
-
-    # updated_item_code_list = updated_item_code_list
 
     return updated_item_code_list
 
 def get_shopify_variant_item_code(merged_data, updated_item_code_list):
+    # print("merged_data", merged_data)
 
     # Extract unique model names from merged_data keys (model, processor)
     model_list = list({key[0] for key in merged_data.keys()})
@@ -682,15 +690,14 @@ def get_shopify_variant_item_code(merged_data, updated_item_code_list):
     return updated_item_code_list
 
 def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
-    print("item_code_list", item_code_list)
 
+    print("item_code_list", item_code_list)
     if not item_code_list:
         item_code_list = []
 
     weights = {i: (i + 1) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
 
-    # Step 1: Fetch sales data
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
             -- 1. Direct stock items sold
@@ -746,67 +753,52 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
         ORDER BY sale_date DESC
     """, as_dict=True)
 
-    # Step 2: Map sales data to model and processor
     updated_sales_data = []
 
     for item in sales_data:
+
         get_model = frappe.db.sql(f"""
-            SELECT 
-                LOWER(iva.attribute) AS item_attribute, 
-                LOWER(iva.attribute_value) AS attribute_value,
-                i.item_model
-            FROM `tabItem Variant Attribute` iva
-            INNER JOIN `tabItem` i ON iva.parent = i.name
-            WHERE iva.parent = %s
-            AND LOWER(iva.attribute) = 'processor type'
-        """, (item['item_code'],), as_dict=True)
+            SELECT item_model FROM `tabItem` WHERE name = '{item['item_code']}'
+        """, as_dict=True)
 
         if get_model:
             updated_sales_data.append({
                 "model": get_model[0]['item_model'],
-                "processor_type": get_model[0]['attribute_value'],
                 "sale_date": item['sale_date'],
                 "daily_sales": item['daily_sales']
             })
-
-    print("\n\nupdated_sales_data", updated_sales_data)
-
-    # Step 3: Build sales_map with (model, processor) as key
+    
     sales_map = {}
     for sale in updated_sales_data:
         sale_date = sale['sale_date']
         if isinstance(sale_date, str):
             sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
 
-        key = (sale['model'], sale['processor_type'])
-        sales_map.setdefault(key, {})[sale_date] = sale['daily_sales']
+        model = sale['model']
+        sales_map.setdefault(model, {})[sale_date] = sale['daily_sales']
 
-    print("\nsales_map", sales_map)
-
-    # Step 4: Update item_code_list with sales_qty and sales_rate
     updated_item_code_list = []
 
     for item in item_code_list:
+        
         model = item['model']
-        processor_type = item['processor']
-        key = (model, processor_type)
 
-        if key in sales_map:
-            total_sales_qty = sum(sales_map[key].values())
+        if model in sales_map:
+            total_sales_qty = sum(sales_map[model].values())
             total_weighted_sales = sum(
-                sales_map[key].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
+                sales_map[model].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
                 for day_offset in range(days)
             )
+            total_weight = sum(weights.get(day_offset, 1) for day_offset in range(days))
             item['total_sales_qty'] = total_sales_qty
-            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0
+            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
+            updated_item_code_list.append(item)
+
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
 
-        updated_item_code_list.append(item)
-
     return updated_item_code_list
-
 
 def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
@@ -946,7 +938,6 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         else:
             item['total_sales_qty'] = 0
             item['sales_rate'] = 0
-    
 
     return updated_item_code_list
 
@@ -1021,7 +1012,6 @@ def calculate_to_make(doc):
         print(f"\n🔁 Iteration {iteration}")
 
         temp_config = [item for item in temp_config if item["inward_inventory"] > 0 and item["sales_rate"] > 0]
-
         if len(temp_config) < 2:
             break
 
@@ -1037,13 +1027,8 @@ def calculate_to_make(doc):
             doi_gap = 0
         if not math.isfinite(sales_rate):
             sales_rate = 0
-        
-        print("doi_gap:", doi_gap)
-        print("sales_rate:", sales_rate)
-        print("sales_rate * doi_gap:", sales_rate * doi_gap)
-        print("math.ceil(sales_rate * doi_gap):", math.ceil(math.ceil(sales_rate) * doi_gap))
-        needed_units = math.ceil((doi_gap + 1) * math.ceil(sales_rate))
-        print("needed_units:", needed_units)
+
+        needed_units = math.ceil((doi_gap + 1) * sales_rate)
         make_units = min(needed_units, current["inward_inventory"])
 
         current["to_make"] += make_units
@@ -1054,12 +1039,11 @@ def calculate_to_make(doc):
         )
 
         model_to_reduce = current["model"]
-        processor_to_reduce = current["processor"]
         units_to_reduce = make_units
         for item in temp_config:
-            if item == current:
+            if item.get("name") == current.get("name"):
                 continue
-            if item["model"] == model_to_reduce and item["processor"] == processor_to_reduce and item["inward_inventory"] > 0:
+            if item["model"] == model_to_reduce and item["inward_inventory"] > 0:
                 reduce_qty = min(units_to_reduce, item["inward_inventory"])
                 item["inward_inventory"] -= reduce_qty
 
@@ -1090,16 +1074,10 @@ def calculate_to_make(doc):
         item_code = cfg.get("item_code")
         if item_code:
             final_config_map[item_code] = final_config_map.get(item_code, 0) + cfg.get("to_make", 0)
-        # else:
-        #     model = cfg.get("model")
-        #     if model:
-        #         final_config_map[model] = final_config_map.get(model, 0) + cfg.get("to_make", 0)
 
     for child in doc.get("nj_production_planning_child", []):
         if child.item_code in final_config_map:
             child.to_make += final_config_map[child.item_code]
-        # else:
-        #     child.to_make += final_config_map.get(child.model, 0)
 
     doc.save()
     print("💾 Document saved successfully")

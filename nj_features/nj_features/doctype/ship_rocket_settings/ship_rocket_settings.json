@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-05-26 14:37:53.266408",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -28,10 +27,9 @@
    "options": "COD Charges"
   }
  ],
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-06-13 11:19:09.033477",
+ "modified": "2025-06-21 16:51:24.823676",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Ship Rocket Settings",

@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-02-10 11:00:45.236245",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -63,9 +62,8 @@
    "fieldtype": "Section Break"
   }
  ],
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-02-10 11:02:22.801355",
+ "modified": "2025-06-21 16:50:59.332899",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Amazon Payment Error Logs",

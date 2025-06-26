@@ -29,83 +29,78 @@ def update_so_quantity_check(settings):
 
         warehouse_clause = f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
         # Step 1: Get inventory data from first query
+
         query = f"""
-            WITH Parent_Stock AS (
+                WITH Parent_Stock AS (
+                    SELECT 
+                        i.variant_of AS parent,
+                        COUNT(b.serial_no) AS total_actual_qty_for_parent
+                    FROM 
+                        `tabItem` i
+                    LEFT JOIN 
+                        `tabSerial No` b ON i.item_code = b.item_code
+                    LEFT JOIN 
+                        `tabWarehouse` w ON b.warehouse = w.name
+                    WHERE 
+                        b.item_group IN ({item_group_placeholders})
+                        AND w.department IN ({department_placeholders})
+                        {warehouse_clause}
+                    GROUP BY 
+                        i.variant_of
+                ),
+
+                Item_Stock AS (
+                    SELECT 
+                        s.item_code,
+                        COUNT(s.serial_no) AS total_actual_qty_for_itemcode
+                    FROM
+                        `tabSerial No` s
+                    INNER JOIN
+                        `tabWarehouse` w ON w.name = s.warehouse
+                    INNER JOIN
+                        `tabItem` i ON s.item_code = i.item_code
+                    WHERE 
+                        i.item_group IN ({item_group_placeholders})
+                                    AND w.department IN ({department_placeholders})
+                                    {warehouse_clause}
+                    GROUP BY 
+                        s.item_code
+                ),
+
+                Main_Data AS (
+                    SELECT DISTINCT
+                        pb.shopify_variant_id,
+                        i.item_code,
+                        i.item_group,
+                        i.variant_of AS parent,
+                        ps.total_actual_qty_for_parent,
+                        isq.total_actual_qty_for_itemcode
+                    FROM 
+                        `tabProduct Bundle` pb
+                    LEFT JOIN 
+                        `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                    LEFT JOIN 
+                        `tabItem` i ON pbi.item_code = i.item_code
+                    LEFT JOIN 
+                        Parent_Stock ps ON ps.parent = i.variant_of
+                    LEFT JOIN 
+                        Item_Stock isq ON isq.item_code = i.item_code
+                    WHERE 
+                        i.item_group IN ({item_group_placeholders})
+                )
+
                 SELECT 
-                    CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
-                    CAST(SUM(b.actual_qty) AS DECIMAL(10, 2)) AS total_actual_qty_for_parent
+                    shopify_variant_id,
+                    item_code,
+                    item_group,
+                    total_actual_qty_for_itemcode AS actual_qty,
+                    parent,
+                    total_actual_qty_for_parent
                 FROM 
-                    tabItem i
-                INNER JOIN 
-                    `tabItem Variant Attribute` proc ON i.name = proc.parent 
-                        AND proc.attribute LIKE '%%Processor%%'
-                LEFT JOIN 
-                    tabBin b ON i.item_code = b.item_code
-                LEFT JOIN 
-                    tabWarehouse w ON b.warehouse = w.name
-                WHERE 
-                    i.item_group IN ({item_group_placeholders})
-                    AND w.department IN ({department_placeholders})
-                    {warehouse_clause}
-                GROUP BY 
-                    parent
-            ),
-
-            Item_Stock AS (
-                SELECT 
-                    i.item_code,
-                    CAST(SUM(b.actual_qty) AS DECIMAL(10, 2)) AS total_actual_qty_for_itemcode
-                FROM 
-                    tabItem i
-                LEFT JOIN 
-                    tabBin b ON i.item_code = b.item_code
-                LEFT JOIN 
-                    tabWarehouse w ON b.warehouse = w.name
-                WHERE 
-                    i.item_group IN ({item_group_placeholders})
-                    AND w.department IN ({department_placeholders})
-                    {warehouse_clause}
-                GROUP BY 
-                    i.item_code
-            ),
-
-            Main_Data AS (
-                SELECT DISTINCT
-                    pb.shopify_variant_id,
-                    i.item_code,
-                    i.item_group,
-                    CONCAT(i.item_model, ' ', proc.attribute_value) AS parent,
-                    ps.total_actual_qty_for_parent,
-                    isq.total_actual_qty_for_itemcode
-                FROM 
-                    `tabProduct Bundle` pb
-                LEFT JOIN 
-                    `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                LEFT JOIN 
-                    tabItem i ON pbi.item_code = i.item_code
-                LEFT JOIN 
-                    `tabItem Variant Attribute` proc ON i.name = proc.parent 
-                        AND proc.attribute LIKE '%%Processor%%'
-                LEFT JOIN 
-                    Parent_Stock ps ON ps.parent = CONCAT(i.item_model, ' ', proc.attribute_value)
-                LEFT JOIN 
-                    Item_Stock isq ON isq.item_code = i.item_code
-                WHERE 
-                    i.item_group IN ({item_group_placeholders})
-            )
-
-            SELECT 
-                shopify_variant_id,
-                item_code,
-                item_group,
-                total_actual_qty_for_itemcode AS actual_qty,
-                parent,
-                total_actual_qty_for_parent
-            FROM 
-                Main_Data
-            ORDER BY 
+                    Main_Data
+                ORDER BY 
                 shopify_variant_id, item_code
-        """
+            """
 
         params = (
             item_groups_list + departments_list + warehouses_list +

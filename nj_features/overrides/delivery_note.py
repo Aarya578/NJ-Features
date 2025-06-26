@@ -126,8 +126,7 @@ class CustomDeliveryNote(DeliveryNote):
                         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
                         LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
                         LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                        WHERE so.name = %s
-                        LIMIT 1
+                        WHERE so.name = %s LIMIT 1
                     """, (item.against_sales_order,), as_dict=True)
 
                     if not sales_order_data:
@@ -138,15 +137,18 @@ class CustomDeliveryNote(DeliveryNote):
                         "info": sales_order_data[0]
                     }
 
-            # Function to process serial numbers
-            def process_serials(item):
+            def process_serials(item, child_table="Delivery Note Item"):
                 serial_no = item.serial_no.strip() if item.serial_no else ""
                 if not serial_no:
                     return
 
                 serial_list = serial_no.split('\n')
 
-                order_entry = sales_order_info_map.get(item.item_code)
+                if child_table == "Packed Item":
+                    order_entry = sales_order_info_map.get(item.parent_item)
+                else:
+                    order_entry = sales_order_info_map.get(item.item_code)
+
                 if not order_entry:
                     frappe.throw(f"Cannot find Sales Order info for item: {item.item_code}")
 
@@ -190,7 +192,7 @@ class CustomDeliveryNote(DeliveryNote):
                 process_serials(item)
 
             for item in self.get('packed_items', []):
-                process_serials(item)
+                process_serials(item, "Packed Item")
 
         except Exception as e:
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
@@ -706,56 +708,77 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
 
-@frappe.whitelist()
-def get_cod_amount(so_name):
-    try:
-        headers = {
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": TOKEN
-        }
+# @frappe.whitelist()
+# def get_cod_amount(so_name):
+#     try:
+#         headers = {
+#             "Content-Type": "application/json",
+#             "X-Shopify-Access-Token": TOKEN
+#         }
 
-        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+#         filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
 
-        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
+#         raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
-        if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
-            order_id = raw_order_id.lstrip('#')
-        else:
-            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
-            order_id = raw_order_id.lstrip('#') if raw_order_id else None
+#         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
+#             order_id = raw_order_id.lstrip('#')
+#         else:
+#             raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
+#             order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-            if not order_id:
-                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
-                order_id = raw_order_id.lstrip('#') if raw_order_id else None
+#             if not order_id:
+#                 raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
+#                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-        if not order_id:
-            return {"order_id": None, "cod_amount": 0}
+#         if not order_id:
+#             return {"order_id": None, "cod_amount": 0}
 
-        url = f"{SHOPIFY_URL}{order_id}"
-        response = requests.get(url, headers=headers)
-        data = response.json()
+#         url = f"{SHOPIFY_URL}{order_id}"
+#         response = requests.get(url, headers=headers)
+#         data = response.json()
 
-        if "orders" in data and data["orders"]:
-            order = data["orders"][0]
-            cod_amount = order.get("total_outstanding", 0)
-            return {"order_id": order_id, "cod_amount": cod_amount}
+#         if "orders" in data and data["orders"]:
+#             order = data["orders"][0]
+#             cod_amount = order.get("total_outstanding", 0)
+#             return {"order_id": order_id, "cod_amount": cod_amount}
 
-        return {"order_id": order_id, "cod_amount": 0}
+#         return {"order_id": order_id, "cod_amount": 0}
 
-    except Exception as e:
-        frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
-        return {"order_id": None, "cod_amount": 0}
+#     except Exception as e:
+#         frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
+#         return {"order_id": None, "cod_amount": 0}
 
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):
+    # print("inside the function===========================================")
+    doc = frappe.get_doc("Delivery Note", dn_name)
+
+    if doc.is_return:
+        return
+    # 2. Skip if any return DN exists with items against the same Sales Order
+    against_sales_order = frappe.get_value("Delivery Note Item", {"parent": dn_name}, "against_sales_order")
+
+    # 3. Check if any return Delivery Note exists for the same against_sales_order
+    if against_sales_order:
+        return_dn_exists = frappe.db.sql("""
+            SELECT 1 FROM `tabDelivery Note Item` dn_item
+            JOIN `tabDelivery Note` dn ON dn.name = dn_item.parent
+            WHERE dn.is_return = 1
+            AND dn_item.against_sales_order = %s
+            LIMIT 1
+        """, (against_sales_order,), as_dict=1)
+
+        if return_dn_exists:
+            # print("skipped========================================================")
+            return # Skip fulfillment trigger
 
     try:
         headers = {
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": TOKEN
         }
-
+        # print("continue from here")
         url = f"{SHOPIFY_URL}{order_id}"
         response = requests.get(url, headers=headers)  
         data = response.json()
@@ -1071,10 +1094,9 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
 
 @frappe.whitelist()
 def update_item_details(self):
-    import json
-
     if isinstance(self, str):
         self = json.loads(self)
+
 
     # If weight/dimensions are already filled, assume user has set them — do not override
     if self.get("weight") or self.get("height") or self.get("length") or self.get("breadth"):
@@ -1144,89 +1166,21 @@ def update_item_details(self):
         'height': height,
         'length': length,
         'breadth': breadth
+           
+    }
+@frappe.whitelist()
+def fetch_cod_amount(doc_name):
+    against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
+    print("against_sales_order=============", against_sales_order)
+    
+    cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding")
+    print("cod_amt===========================", cod_amt)
+    
+    return {
+        'cod_amount': cod_amt
     }
 
 
-
-# @frappe.whitelist()
-# def update_item_details(self):
-#     from datetime import datetime
-#     import json
-
-#     if isinstance(self, str):
-#         self = json.loads(self)
-
-#     total_weight = 0
-#     height = length = breadth = None
-
-#     # Step 1: Get allowed item groups from NJ Settings
-#     item_group_value = frappe.db.get_value(
-#         "NJ Settings",
-#         {"parameter": "Item Group Validation"},
-#         "value"
-#     )
-
-#     allowed_item_groups = []
-#     if item_group_value:
-#         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-
-#     # Step 2: Count how many matching item group rows exist
-#     matching_rows = []
-#     for row in self.get("items", []):
-#         item_code = row.get("item_code")
-#         if not item_code:
-#             continue
-#         item_group = frappe.db.get_value("Item", item_code, "item_group")
-#         if item_group in allowed_item_groups:
-#             matching_rows.append(row)
-
-#     # Step 3: If more than one matching row, skip fetching weight/dimensions
-#     if len(matching_rows) != 1:
-#         print("Skipping weight and dimension fetch due to multiple matching item group rows.")
-#         return None  # <- Change here (Don't override)
-
-#     # Step 4: Only one row matched — process it
-#     item = matching_rows[0]
-#     if item.get("qty") != 1:
-#         print("Skipping because qty is not 1.")
-#         return None  # <- Change here (Don't override)
-
-#     item_code = item.get("item_code")
-#     item_group = frappe.db.get_value("Item", item_code, "item_group")
-
-#     try:
-#         group_doc = frappe.get_doc("Item Group", item_group)
-#         if group_doc.get("weight"):
-#             try:
-#                 weight_value = float(group_doc.weight)
-#                 total_weight += weight_value
-#             except ValueError:
-#                 frappe.log_error(
-#                     f"Invalid weight '{group_doc.weight}' in Item Group: {group_doc.name}",
-#                     "Weight Parsing Error"
-#                 )
-#         else:
-#             print(f"No weight found in item group {group_doc.name}")
-
-#         for dim in group_doc.get("dimensions", []):
-#             param = dim.parameter.strip().lower()
-#             value = dim.value
-#             if "height" in param and not height:
-#                 height = value
-#             elif "length" in param and not length:
-#                 length = value
-#             elif "breadth" in param and not breadth:
-#                 breadth = value
-
-#     except Exception as e:
-#         print(f"Error processing item group {item_group}: {str(e)}")
-
-#     return {
-#         'weight': total_weight,
-#         'height': height,
-#         'length': length,
-#         'breadth': breadth
-#     }
 
 # @frappe.whitelist()
 # def total_item_group_sum(doc):
@@ -1284,303 +1238,6 @@ def update_item_details(self):
 #     # Update the delivery note document with the calculated value
 #     # frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)
 #     # frappe.db.commit()
-
-
-
-# @frappe.whitelist()
-# def send_consignement_data(doc):
-#     # start_time = time.time()
-#     try:
-#         # Convert string to Frappe dict
-#         doc = frappe._dict(json.loads(doc))
-#         # sales_order_doc = frappe.get_doc("Sales Order", doc.name)
-#         delivery_note = frappe.get_doc("Delivery Note", doc.name)
-#         against_sales_order = frappe.get_value(
-#             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
-#         )
-#         print("against_sales_order===========================", against_sales_order)
-#         item_group_value = frappe.db.get_value(
-#             "NJ Settings",
-#             {"parameter": "Item Group Validation"},
-#             "value"
-#         )
-    
-#         if not item_group_value:
-#             print("No item group validation found")
-#             return {"item_group_qty": 0}
-        
-#         # Step 2: Convert to list
-#         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-#         print("allowed_item_groups================================", allowed_item_groups)
-        
-#         # Step 3: Calculate total qty for allowed groups
-#         total_qty = 0
-#         for item in delivery_note.items:
-#             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-#             if item_group in allowed_item_groups:
-#                 total_qty += item.qty
-#                 print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
-#         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
-        
-#         print("total_qty================================", total_qty)
-        
-#         # Validate shipping address and calculate cost of delivery
-#         if not doc.shipping_address_name:
-#             frappe.throw("Shipping address is not set.")
-        
-#         # Get the pincode from the Address doctype
-#         pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
-#         # pincode("pincode===========================", pincode)
-#         if not pincode:
-#             frappe.throw("Pincode not found in the shipping address.")
-        
-#         # Check if Pincode exists in Pincode doctype
-#         pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
-#         if not pincode_doc:
-#             frappe.throw(f"Pincode {pincode} not found in Pincode master.")
-        
-#         if not doc.weight:
-#             frappe.throw("Weight is not set in Delivery Note.")
-        
-#         # Convert string to float for arithmetic
-#         rate = float(pincode_doc.rate or 0)
-#         cod_charge = float(pincode_doc.cod or 0)
-#         weight = float(doc.weight or 0)
-#         is_cod = False
-#         if against_sales_order:
-#             # Method 1: Fetch only is_cod field
-#             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
-#             print("is_cod===========================", is_cod)
-#         if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
-#             cost_of_delivery = (rate * weight) + cod_charge
-#         else:
-#             cost_of_delivery = rate * weight
-#         # if doc.get('is_cod'):
-#         #     cost_of_delivery = (rate * weight) + cod_charge
-#         # else:
-#         #     cost_of_delivery = rate * weight
-
-#         ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
-#         cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            
-#             # Find the charges_value from COD Charges child table
-#         charges_value = None
-#         for cod_charge_row in cod_charges_table:
-#             charges_value = cod_charge_row.charges_value  # Access as field attribute
-#             if charges_value:
-#                 break
-        
-#         if charges_value:
-            
-#             # Extract numeric value from percentage string (e.g., "8%" -> 8)
-#             numeric_charges_value = float(charges_value.replace('%', '').strip())
-#             # Calculate percentage of grand_total
-#             grand_total = float(doc.get("grand_total", 0) or 0)
-#             cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-            
-#             # Compare COD percentage amount with total_cost
-#             if cod_percentage_amount < cost_of_delivery:
-#                 frappe.throw(f"COD validation failed: COD charges courier total cost ({cost_of_delivery:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")    
-
-#         # Update the document with calculated cost
-#         doc.cost_of_delivery = cost_of_delivery
-        
-#         # Fetch addresses
-#         company_address = frappe.get_doc("Address", doc.company_address) if doc.company_address else None
-#         shipping_address = frappe.get_doc("Address", doc.shipping_address_name) if doc.shipping_address_name else None
-#         # formatted_date = doc.delivery_date.strftime("%Y-%m-%d") if hasattr(doc.delivery_date, 'strftime') else str(doc.delivery_date)
-#         formatted_date = datetime.today().strftime("%Y-%m-%d")
-        
-#         against_sales_order = frappe.get_value(
-#             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
-#         )
-#         if against_sales_order:
-#             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-#             print
-#             if sales_order_doc.is_cod == 1:
-#                 PaymentType = "COD"
-#                 consignmentValue = float(sales_order_doc.total_outstanding or 0)
-#             else:
-#                 PaymentType = "Prepaid"
-#                 # Check if grand_total exists and has value
-#                 if sales_order_doc.grand_total:
-#                     consignmentValue = float(sales_order_doc.grand_total)
-#                     print("consignmentValue==================", consignmentValue)
-#                 else:
-#                     # If grand_total not found, fetch from item groups
-#                     total_default_charge = 0
-#                     print("sales_order_doc.items==================", sales_order_doc.items)
-#                     found_charges = False
-                    
-#                     # Loop through items in Sales Order
-#                     for item in sales_order_doc.items:
-#                         if item.item_code:
-#                             # Get item document to fetch item_group
-#                             item_doc = frappe.get_doc("Item", item.item_code)
-#                             print("item_doc==================", item_doc)
-#                             if item_doc.item_group:
-#                                 try:
-#                                     # Get item group document and fetch default_charge
-#                                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-#                                     print("item_group_doc==================", item_group_doc)
-#                                     if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
-#                                         total_default_charge += float(item_group_doc.default_charge)
-#                                         print("total_default_charge==================", total_default_charge)
-#                                         found_charges = True
-#                                         print("found_charges==================", found_charges)
-#                                 except:
-#                                     # Continue if item group not found or error occurs
-#                                     continue
-                    
-#                     # Set consignment value based on what was found
-#                     if found_charges and total_default_charge > 0:
-#                         consignmentValue = total_default_charge
-#                         print("consignmentValue==================", consignmentValue)
-#                     else:
-#                         # Fallback to Rs 1000 if no default charges found
-#                         consignmentValue = 300.0
-#                         print("consignmentValue==================", consignmentValue)
-#         else:
-#             frappe.throw("Sales Order not linked to this Delivery Note.")
-
-#         # if against_sales_order:
-#         #     sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-
-#         #     if sales_order_doc.is_cod == 1:
-#         #         PaymentType = "COD"
-#         #         consignmentValue = float(sales_order_doc.total_outstanding or 0)
-#         #     else:
-#         #         PaymentType = "Prepaid"
-#         #         consignmentValue = float(sales_order_doc.grand_total or 0)
-#         # else:
-#         #     frappe.throw("Sales Order not linked to this Delivery Note.")
-#         # if delivery_note.is_cod == 1:
-#         #     PaymentType = "COD"
-#         #     consignmentValue = float(delivery_note.total_outstanding) if delivery_note.total_outstanding else 0
-#         # else:
-#         #     PaymentType = "Prepaid"
-#         #     consignmentValue = float(delivery_note.grand_total) if delivery_note.grand_total else 0
-        
-#         # Get allowed item groups from NJ Settings
-#         item_group_value = frappe.db.get_value(
-#             "NJ Settings",
-#             {"parameter": "Item Group Validation"},
-#             "value"
-#         )
-#         allowed_item_groups = []
-#         if item_group_value:
-#             allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-        
-        
-#         # Calculate total quantity for allowed items only
-#         total_quantity = 0
-#         items = []
-#         for row in doc.get('items', []):
-#             # Get item group for current item
-#             item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group")
-            
-#             # Only include items whose item group is in the allowed list
-#             if not allowed_item_groups or item_group in allowed_item_groups:
-#                 qty = float(row.get('qty', 1))
-#                 total_quantity += qty  # Sum up quantities for allowed items only
-#                 items.append({
-#                     "Length": f"{float(doc.length):.2f}",
-#                     "Breadth": f"{float(doc.breadth):.2f}",
-#                     "Height": f"{float(doc.height):.2f}",
-#                     "ProductCode": "AUTO",
-#                     "ProductDescription": row.get("item_name"),
-#                     "SplitPcs": f"{qty:.4f}",  # Individual item quantity
-#                     "IsPackaging": "0"
-#                 })
-#             else:
-#                 print(f"Skipping item {row.get('item_name')} - item group {item_group} not in allowed list")
-        
-#         # Check if any items are left after filtering
-#         if not items:
-#             frappe.throw("No items found with allowed item groups for shipping.")
-        
-#         # Prepare header with correct total quantity
-#         header = {
-#             "ClientCode": "207433",
-#             "OrderNo/InvoiceNo": doc.name,
-#             "Order/InvoiceDate": formatted_date,
-#             "SenderName": doc.company,
-#             "SenderAdd1": company_address.address_line1 or " ",
-#             "SenderAdd2": company_address.address_line2 or "",
-#             "SenderCity": company_address.city or "",
-#             "SenderState": company_address.state or "",
-#             "SenderCountry": company_address.country or "India",
-#             "SenderPin": company_address.pincode or "",
-#             "SenderMobile": sanitize_phone(shipping_address.phone),
-#             "SenderEmail": company_address.email_id or "",
-#             "ReceiverName": doc.customer_name or "",
-#             "ReceiverAdd1": shipping_address.address_line1 or "",
-#             "ReceiverAdd2": shipping_address.address_line2 or " ",
-#             "ReceiverCity": shipping_address.city or "",
-#             "ReceiverState": shipping_address.state or "",
-#             "ReceiverCountry": shipping_address.country or "India",
-#             "ReceiverPin": shipping_address.pincode or "",
-#             "ReceiverMobile": sanitize_phone(shipping_address.phone),
-#             "ConsignmentValue": consignmentValue,
-#             "NoQuantity": int(total_quantity),  # Fixed: Use total quantity of all items
-#             "consignmentValue": consignmentValue,
-#             "Weight": f"{weight:.2f}",  # Fixed: Use doc.weight instead of doc.length
-#             "TransitMode": doc.mode_of_transfer,
-#             "ProductMode": "Normal",
-#             "PaymentType": PaymentType,
-#             "Amount": str(doc.grand_total),
-#             "Need_CitImage": "1"
-#         }
-#         # Add validation to ensure quantities match
-#         calculated_total = sum(float(item["SplitPcs"]) for item in items)
-#         if abs(calculated_total - total_quantity) > 0.001:  # Allow for small floating point differences
-#             frappe.throw(f"Quantity mismatch: Total quantity ({total_quantity}) doesn't match sum of split quantities ({calculated_total})")
-        
-#         data = {
-#             "ResponseHeader": "yes",
-#             "Header": [header],
-#             "ItemsDetails": items
-#         }
-        
-#         url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
-#         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
-#         headers = {"Content-Type": "application/json"}
-        
-#         response = requests.post(url, headers=headers, json=data)
-       
-#         resp_json = response.json()
-        
-#         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
-#             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
-#             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')
-            
-#             # Update the Sales Order document with AWB number, CIT image, cost of delivery, and courier service
-#             delivery_note = frappe.get_doc("Delivery Note", doc.name)
-#             delivery_note.tracking_id = tracking_id
-#             delivery_note.cit_image = cit_data
-#             delivery_note.cost_of_delivery = cost_of_delivery
-#             delivery_note.courier_service = "CriticaLog"  # Set courier service
-#             delivery_note.item_group_qty = total_quantity
-#             delivery_note.save()
-            
-#             # Use db_set to update without triggering validations or changing docstatus
-#             delivery_note.db_set('tracking_id', tracking_id)
-#             delivery_note.db_set('cit_image', cit_data)
-#             delivery_note.db_set('cost_of_delivery', cost_of_delivery)
-#             delivery_note.db_set('courier_service', 'CriticaLog')
-#             delivery_note.db_set('item_group_qty', total_quantity)
-            
-#             frappe.msgprint(f"AWB Number generated successfully: {tracking_id}")
-            
-#             return {"awb_number": tracking_id, "cit_image": cit_data, "cost_of_delivery": cost_of_delivery}
-            
-#         else:
-#             frappe.throw(f"API returned error: {response.text}")
-         
-#     except Exception as e:
-#         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")
-
-
 @frappe.whitelist()
 def send_consignement_data(doc):
     # start_time = time.time()
@@ -1592,7 +1249,6 @@ def send_consignement_data(doc):
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
-        print("against_sales_order===========================", against_sales_order)
         item_group_value = frappe.db.get_value(
             "NJ Settings",
             {"parameter": "Item Group Validation"},
@@ -1605,7 +1261,6 @@ def send_consignement_data(doc):
         
         # Step 2: Convert to list
         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-        print("allowed_item_groups================================", allowed_item_groups)
         
         # Step 3: Calculate total qty for allowed groups
         total_qty = 0
@@ -1616,7 +1271,6 @@ def send_consignement_data(doc):
                 print(f"Item: {item.item_code}, Group: {item_group}, Qty: {item.qty}")
         frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)        
         
-        print("total_qty================================", total_qty)
         
         # Validate shipping address and calculate cost of delivery
         if not doc.shipping_address_name:
@@ -1630,17 +1284,13 @@ def send_consignement_data(doc):
                 continue
             # Get item group
             item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
-            print("Item Group:==================", item_group)      
             # Get the item group document
             group_doc = frappe.get_doc("Item Group", item_group)
-            print("Group Doc:==================", group_doc)
             # Get item_charges (float)
             item_charges = group_doc.get("item_charges")
             if item_charges and item.get("qty"):
                 item_total_charge = float(item_charges) * float(item.get("qty"))
-                print("Item Total Charge:==================", item_total_charge)
                 total_item_charges += item_total_charge
-                print("Total Item Charges:==================", total_item_charges)
             else:
                 print("Missing item_charges or quantity for item:", item.get("item_code"))
         # Get the pincode from the Address doctype
@@ -1665,38 +1315,29 @@ def send_consignement_data(doc):
         if against_sales_order:
             # Method 1: Fetch only is_cod field
             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
-            print("is_cod===========================", is_cod)
         
         # Calculate cost of delivery and run COD validation only for COD orders
         if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
             cost_of_delivery = (rate * weight) + cod_charge
-            print("cost_of_delivery===========================", cost_of_delivery)
             
             # COD validation - only run for COD orders
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            print("cod_charges_table===========================", cod_charges_table)
                 
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                print("charges_value===============",charges_value)
                 if charges_value:
                     break
             
             if charges_value:
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
-                print("numeric_charges_value==========================",numeric_charges_value)
                 # Calculate percentage of grand_total
                 grand_total = float(doc.get("grand_total", 0) or 0)
-                print("grand_total==========================",grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-                print("cod_percentage_amount==========================",cod_percentage_amount)
                 cod_and_item_charges_total = cost_of_delivery + cod_percentage_amount
-                print("cod_and_item_charges_total==========================",cod_and_item_charges_total)
-
                 
                 # Compare COD percentage amount with total_cost
                 if cod_and_item_charges_total < cost_of_delivery:
@@ -1720,21 +1361,18 @@ def send_consignement_data(doc):
         )
         if against_sales_order:
             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-            print
+            
             if sales_order_doc.is_cod == 1:
                 PaymentType = "COD"
                 consignmentValue = float(sales_order_doc.total_outstanding or 0)
-                print("consignmentValue==================", consignmentValue)   
             else:
                 PaymentType = "Prepaid"
                 # Check if grand_total exists and has value
                 if sales_order_doc.grand_total:
                     consignmentValue = float(sales_order_doc.grand_total)
-                    print("consignmentValue==================", consignmentValue)
                 else:
                     # If grand_total not found, fetch from item groups
                     total_default_charge = 0
-                    print("sales_order_doc.items==================", sales_order_doc.items)
                     found_charges = False
                     
                     # Loop through items in Sales Order
@@ -1742,17 +1380,13 @@ def send_consignement_data(doc):
                         if item.item_code:
                             # Get item document to fetch item_group
                             item_doc = frappe.get_doc("Item", item.item_code)
-                            print("item_doc==================", item_doc)
                             if item_doc.item_group:
                                 try:
                                     # Get item group document and fetch default_charge
                                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-                                    print("item_group_doc==================", item_group_doc)
                                     if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
                                         total_default_charge += float(item_group_doc.default_charge)
-                                        print("total_default_charge==================", total_default_charge)
                                         found_charges = True
-                                        print("found_charges==================", found_charges)
                                 except:
                                     # Continue if item group not found or error occurs
                                     continue
@@ -1760,11 +1394,9 @@ def send_consignement_data(doc):
                     # Set consignment value based on what was found
                     if found_charges and total_default_charge > 0:
                         consignmentValue = total_default_charge
-                        print("consignmentValue==================", consignmentValue)
                     else:
                         # Fallback to Rs 1000 if no default charges found
                         consignmentValue = 300.0
-                        print("consignmentValue==================", consignmentValue)
         else:
             frappe.throw("Sales Order not linked to this Delivery Note.")
 
@@ -1982,11 +1614,9 @@ def shiprocket_awb_number(doc):
                 # sub_total = float(sales_order_doc.grand_total or 0)
                 if sales_order_doc.grand_total:
                     sub_total = float(sales_order_doc.grand_total)
-                    print("sub_total==================", sub_total)
                 else:
                     # If grand_total not found, fetch from item groups
                     total_default_charge = 0
-                    print("sales_order_doc.items==================", sales_order_doc.items)
                     found_charges = False
                     
                     # Loop through items in Sales Order
@@ -1994,17 +1624,13 @@ def shiprocket_awb_number(doc):
                         if item.item_code:
                             # Get item document to fetch item_group
                             item_doc = frappe.get_doc("Item", item.item_code)
-                            print("item_doc==================", item_doc)
                             if item_doc.item_group:
                                 try:
                                     # Get item group document and fetch default_charge
                                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-                                    print("item_group_doc==================", item_group_doc)
                                     if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
                                         total_default_charge += float(item_group_doc.default_charge)
-                                        print("total_default_charge==================", total_default_charge)
                                         found_charges = True
-                                        print("found_charges==================", found_charges)
                                 except:
                                     # Continue if item group not found or error occurs
                                     continue
@@ -2012,11 +1638,9 @@ def shiprocket_awb_number(doc):
                     # Set consignment value based on what was found
                     if found_charges and total_default_charge > 0:
                         sub_total = total_default_charge
-                        print("sub_total==================", sub_total)
                     else:
                         # Fallback to Rs 1000 if no default charges found
                         sub_total = 300.0
-                        print("sub_total==================", sub_total)
         else:
             frappe.throw("Sales Order not linked to this Delivery Note.")
         # if sales_order_doc.is_cod == 1:
@@ -2404,6 +2028,29 @@ def shiprocket_awb_number(doc):
 #     return warranty_info
 
 
+# def adapter_repacked_serial_no(nj_serial_no):
+#     try:
+#         query="""
+#             SELECT tot_sed.serial_no as adapter_serial_no
+#             FROM `tabStock Entry Detail` AS sed
+#             INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+#             INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+#             WHERE
+#                 (sed.serial_no = %(serial_no)s OR 
+#                     sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+#                 stock_entry.purpose = 'Repack' AND 
+#                 stock_entry.docstatus = 1 AND
+#                 tot_sed.s_warehouse IS NOT NULL AND 
+#                 tot_sed.item_group = 'Laptop Adaptors'
+#             ORDER BY stock_entry.creation DESC
+#             LIMIT 1
+#         """
+#         partlist_query="""
+#           Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
+#         """
+#         if nj_serial_no is not None and nj_serial_no:
 def adapter_repacked_serial_no(nj_serial_no):
     try:
         query="""
@@ -2424,7 +2071,7 @@ def adapter_repacked_serial_no(nj_serial_no):
             LIMIT 1
         """
         partlist_query="""
-          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
+          Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by item_group_idx desc limit 1;
         """
         if nj_serial_no is not None and nj_serial_no:
 

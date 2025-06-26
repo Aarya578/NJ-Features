@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "autoname": "format:{user}-{date}",
  "creation": "2024-04-30 10:56:36.612146",
  "doctype": "DocType",
@@ -55,10 +54,9 @@
    "read_only": 1
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-06-10 14:06:12.812765",
+ "modified": "2025-06-21 16:51:25.471597",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Employee Allocation",

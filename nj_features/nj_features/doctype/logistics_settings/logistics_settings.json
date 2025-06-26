@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-06-13 11:18:10.123369",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -62,14 +61,13 @@
   {
    "fieldname": "shiprocketcourier_name_block_list",
    "fieldtype": "Table",
-   "label": "ShiprocketCourier Name Block List",
+   "label": "Allowed Ship Rocket Courier Names",
    "options": "Shiprocket Courier Name Block List"
   }
  ],
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-06-13 12:41:55.667455",
+ "modified": "2025-06-21 16:14:02.407825",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

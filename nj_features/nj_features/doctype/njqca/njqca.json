@@ -105,7 +105,7 @@
    "fieldtype": "Section Break"
   },
   {
-   "depends_on": "eval:doc.item_group != \"BATTERY\";",
+   "depends_on": "eval:doc.item_group == \"Laptops\" || doc.item_group == \"Chromebooks\"",
    "fieldname": "serial_no",
    "fieldtype": "Data",
    "label": "Serial No"
@@ -426,7 +426,7 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.item_group == \"BATTERY\";",
+   "depends_on": "eval:doc.item_group != \"Laptops\" && doc.item_group != \"Chromebooks\";",
    "fieldname": "component_serial_no",
    "fieldtype": "Data",
    "label": "Component Serial No"
@@ -434,7 +434,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-20 15:31:31.013891",
+ "modified": "2025-06-27 17:02:41.917220",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

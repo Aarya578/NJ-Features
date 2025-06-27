@@ -1,4 +1,4 @@
-function extend_listview_setting(doctype, custom_settings) {
+function extend_listview_settings(doctype, custom_settings) {
     const existing = frappe.listview_settings[doctype] || {};
 
     Object.keys(custom_settings).forEach(key => {

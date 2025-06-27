@@ -376,7 +376,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) && frm.doc.item_group != "Laptop RAM") {
+        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
@@ -598,7 +598,7 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.component_serial_no) {
             if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) {
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_battery_serial_no',
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_component_serial_no',
                     args: { 'doc': frm.doc },
                     callback: function(r) {
                         Object.keys(r.message).forEach(field => {
@@ -638,7 +638,10 @@ frappe.ui.form.on('NJQCA', {
             let employeeData = await frappe.db.get_value('Employee', {
                 'user_id': frappe.session.user_email, 'status': 'Active'
             }, 'work_warehouse');
-    
+            let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
+            const isComponent = item_group_data?.message?.is_component;
+            console.log("is_component in warehouse",isComponent)
+
             const workWarehouse = employeeData?.message?.work_warehouse;    
             if (!workWarehouse) {
                 frappe.msgprint(`Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`);
@@ -663,7 +666,7 @@ frappe.ui.form.on('NJQCA', {
                     primary_action: function() {
                         let scannedSerialNo = dialog.get_value("serial_num");
                         let frm_serial_no="";
-                        if(frm.doc.item_group!="BATTERY"){
+                        if(isComponent=="0"){
                            frm_serial_no= frm.doc.serial_no;
                         }
                         else{
@@ -728,12 +731,16 @@ frappe.ui.form.on('NJQCA', {
         }
     },
     
-    model: function(frm) {
+    model: async function(frm) {
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
+        let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
+        const isComponent = item_group_data?.message?.is_component;
+        console.log("is_component in model",isComponent)
 
-        if (selectedModel && selectedBrand && cur_frm.doc.serial_no && selectedItemGroup!='BATTERY' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+            console.log("cur_frm.doc.serial_no",cur_frm.doc.serial_no)
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
@@ -773,7 +780,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if (selectedItemGroup != "BATTERY" && selectedItemGroup != "Laptop RAM") {
+        if (isComponent=="0") {
             get_item_template(selectedModel, selectedBrand, selectedItemGroup)
         }
 
@@ -855,7 +862,7 @@ frappe.ui.form.on('NJQCA', {
 });
 
 function trigger_serial_no(frm) {
-    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && cur_frm.doc.item_group!='BATTERY' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
         console.log("trigger_serial_no");
         
         frappe.call({

@@ -474,3 +474,66 @@ def update_sales_order_etas(so_eta_map):
             WHERE name = %s
         """, (eta, so_name))
     frappe.db.commit()
+
+# @frappe.whitelist()
+# def get_item_group_taxes(item_code):
+#     # Get the Item Group from the Item
+#     item_group = frappe.db.get_value("Item", item_code, "item_group")
+#     if not item_group:
+#         return []
+
+#     # Fetch taxes from Item Group's taxes table
+#     tax_rows = frappe.get_all("Item Group Tax",  # Doctype of the child table
+#         filters={"parent": item_group, "parenttype": "Item Group"},
+#         fields=["charge_type", "account_head", "rate", "description", "cost_center"]
+#     )
+
+#     return tax_rows
+
+
+# @frappe.whitelist()
+# def get_item_group_tax_and_hsn(items):
+#     print("inside the function==========================")
+#     items = json.loads(items)
+
+#     tax_result = {
+#         "hsn_map": {},    # Maps item_code to HSN
+#         "taxes": []       # Final taxes list
+#     }
+#     print("tax_result==========================",tax_result)
+
+#     added_item_groups = set()
+
+#     for row in items:
+#         item_code = row.get("item_code")
+#         print("item_code===========",item_code)
+#         if not item_code:
+#             continue
+
+#         # Fetch item group
+#         item_group = frappe.db.get_value("Item", item_code, "item_group")
+#         print("item_group===========",item_group)
+#         if not item_group:
+#             continue
+
+#         # Fetch HSN from Item Group
+#         gst_hsn_code = frappe.db.get_value("Item Group", item_group, "gst_hsn_code")
+#         print("gst_hsn_code===========",gst_hsn_code)
+#         if gst_hsn_code:
+#             tax_result["hsn_map"][item_code] = gst_hsn_code
+
+#         # Avoid duplicating tax rows for same item group
+#         if item_group in added_item_groups:
+#             continue
+
+#         # ✅ Fetch taxes from the "Taxes" child table of Item Group
+#         # tax_rows = frappe.get_all("Item Group",  # <-- This must be the child table Doctype name
+#         #     filters={"parent": item_group, "parenttype": "Item Group"},
+#         #     fields=["charge_type", "account_head", "rate", "description", "cost_center"]
+#         # )
+#         # print("tax_rows===========",tax_rows)
+
+#         # tax_result["taxes"].extend(tax_rows)
+#         added_item_groups.add(item_group)
+
+#     return tax_result

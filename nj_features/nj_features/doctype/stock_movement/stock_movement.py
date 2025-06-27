@@ -10,40 +10,42 @@ logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
 class StockMovement(Document):
     def on_submit(self):
-        # self.validate_supplier_return()
         try:
             if self.get("make_supplier_return"):
+                print(self.get("make_supplier_return"))
+                print("inside ===========Supplier Return")
                 self.validate_supplier_return()
-                return
-
-            material_transfer_items = []
-            
-            stock_entry_data = {
-                "name": self.name,
-                "doctype": self.doctype,
-                "transfer_status": self.transfer_status,
-                "stock_entry_type": "Material Transfer",
-                "material_transfer_items": material_transfer_items,
-            }
-            
-            for row in self.items:
-                material_transfer_items.append({
-                    'qty': row.qty,
-                    'item_code': row.item_code,
-                    's_warehouse': row.s_warehouse,
-                    't_warehouse': row.t_warehouse,
-                    'reason': row.reason if row.reason else None,
-                    'serial_no': row.serial_no if row.serial_no else None,
-                })
-
-            if material_transfer_items:
-                return stock_entry_using_nj_lib(stock_entry_data)
+                print("======================")
             else:
-                frappe.throw("None available in <b>Items</b> table.")
+                material_transfer_items = []
+                
+                for row in self.items:
+                    material_transfer_items.append({
+                        'qty': row.qty,
+                        'item_code': row.item_code,
+                        's_warehouse': row.s_warehouse,
+                        't_warehouse': row.t_warehouse,
+                        'reason': row.reason if row.reason else None,
+                        'serial_no': row.serial_no if row.serial_no else None,
+                    })
+
+                if material_transfer_items:
+                    stock_entry_data = {
+                        "name": self.name,
+                        "doctype": self.doctype,
+                        "transfer_status": self.transfer_status,
+                        "stock_entry_type": "Material Transfer",
+                        "material_transfer_items": material_transfer_items,
+                    }
+                    return stock_entry_using_nj_lib(stock_entry_data)
+                else:
+                    frappe.throw("None available in <b>Items</b> table.")
 
         except Exception as e:
             frappe.db.rollback()
-            frappe.throw("Error while submitting Stock Entry: ", e)
+            frappe.log_error(frappe.get_traceback(), "Stock Movement Submit Failed")
+            frappe.throw(f"Error while submitting Stock Entry: {e}")
+
     def validate_supplier_return(self):
         """
         Validate item codes when making supplier return
@@ -137,49 +139,115 @@ class StockMovement(Document):
             stock_data["repack_items"] = repack_items_data
             stock_entry_using_nj_lib(stock_data)
 
-
     def get_repack_items(self):
         """
-        Prepare repack items data for stock entry
+        Prepare repack items data for stock entry for all items.
+        Also throws error if Serial No item code matches Purchase Receipt item code.
         """
         return_unpack_items_data = []
 
-        main_item = self.items[0]
-        if not main_item.serial_no:
-            frappe.throw("Serial No is missing in the Stock Movement Item.")
+        for item in self.items:
+            if not item.serial_no:
+                frappe.throw(f"Serial No is missing for Item Code: {item.item_code}")
 
-        serial_no_value = main_item.serial_no.strip()
-        serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
+            for serial_no_value in item.serial_no.strip().split('\n'):
+                serial_no_value = serial_no_value.strip()
+                if not serial_no_value:
+                    continue
 
-        # ✅ Correct field from Serial No
-        purchase_receipt = serial_no_doc.purchase_receipt
-        if not purchase_receipt:
-            frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
+                serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
 
-        # Get matching purchase item code
-        purchase_item_code = self.get_matching_purchase_item(
-            purchase_receipt, serial_no_value, main_item.item_code
-        )
+                # ✅ Get linked Purchase Receipt from Serial No
+                purchase_receipt = serial_no_doc.purchase_receipt
+                if not purchase_receipt:
+                    frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
 
-        # Item being removed (source)
-        main_repack_item = {
-            'repack_item_code': main_item.item_code,
-            'repack_serial_no': main_item.serial_no,
-            'repack_item_source_warehouse': main_item.s_warehouse,
-            'is_finished_item': 0
-        }
-        return_unpack_items_data.append(main_repack_item)
+                # ✅ Get item code from Purchase Receipt
+                purchase_item_code = self.get_matching_purchase_item(
+                    purchase_receipt, serial_no_value, item.item_code
+                )
 
-        # Item being added (target) – this must be marked as finished item
-        unpack_item = {
-            'unpack_serial_no': main_item.serial_no,
-            'unpack_item_code': purchase_item_code,
-            'unpack_item_target_warehouse': main_item.t_warehouse,
-            'is_finished_item': 1
-        }
-        return_unpack_items_data.append(unpack_item)
+                if not purchase_item_code:
+                    frappe.throw(f"Could not find matching item code in Purchase Receipt {purchase_receipt} for Serial No: {serial_no_value}")
+
+                # ✅ Throw error if both item codes are the same
+                if item.item_code == purchase_item_code:
+                    frappe.throw(
+                        f"Repack failed: Item Code from Serial No <b>{item.item_code}</b> and "
+                        f"Purchase Receipt Item Code <b>{purchase_item_code}</b> are the same "
+                        f"for Serial No: <b>{serial_no_value}</b>."
+                    )
+
+                # ✅ Item to be removed (source)
+                main_repack_item = {
+                    'repack_item_code': item.item_code,
+                    'repack_serial_no': serial_no_value,
+                    'repack_item_source_warehouse': item.s_warehouse,
+                    'is_finished_item': 0
+                }
+                return_unpack_items_data.append(main_repack_item)
+
+                # ✅ Item to be added (target)
+                unpack_item = {
+                    'unpack_serial_no': serial_no_value,
+                    'unpack_item_code': purchase_item_code,
+                    'unpack_item_target_warehouse': item.t_warehouse,
+                    'is_finished_item': 1
+                }
+                return_unpack_items_data.append(unpack_item)
 
         return return_unpack_items_data
+
+    # def get_repack_items(self):
+    #     """
+    #     Prepare repack items data for stock entry for all items
+    #     """
+    #     return_unpack_items_data = []
+    #     print("inside the function============================")
+
+    #     for item in self.items:
+    #         if not item.serial_no:
+    #             frappe.throw(f"Serial No is missing for Item Code: {item.item_code}")
+
+    #         for serial_no_value in item.serial_no.strip().split('\n'):
+    #             serial_no_value = serial_no_value.strip()
+    #             if not serial_no_value:
+    #                 continue
+
+    #             serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
+    #             print("serial_no_doc===========================", serial_no_doc)
+
+    #             # ✅ Correct field from Serial No
+    #             purchase_receipt = serial_no_doc.purchase_receipt
+    #             print("purchase_receipt===========================", purchase_receipt)
+    #             if not purchase_receipt:
+    #                 frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
+
+    #             # Get matching purchase item code
+    #             purchase_item_code = self.get_matching_purchase_item(
+    #                 purchase_receipt, serial_no_value, item.item_code
+    #             )
+
+    #             # Item being removed (source)
+    #             main_repack_item = {
+    #                 'repack_item_code': item.item_code,
+    #                 'repack_serial_no': serial_no_value,
+    #                 'repack_item_source_warehouse': item.s_warehouse,
+    #                 'is_finished_item': 0
+    #             }
+    #             return_unpack_items_data.append(main_repack_item)
+
+    #             # Item being added (target) – this must be marked as finished item
+    #             unpack_item = {
+    #                 'unpack_serial_no': serial_no_value,
+    #                 'unpack_item_code': purchase_item_code,
+    #                 'unpack_item_target_warehouse': item.t_warehouse,
+    #                 'is_finished_item': 1
+    #             }
+    #             return_unpack_items_data.append(unpack_item)
+
+    #     return return_unpack_items_data
+
 
 
 @frappe.whitelist()

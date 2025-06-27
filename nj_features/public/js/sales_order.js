@@ -25,6 +25,56 @@ frappe.ui.form.on('Sales Order', {
     },
 
     after_save: function(frm) {
+        console.log("inside the fucntion==================");
+        
+        // frm.call({
+        //     method: "nj_features.overrides.sales_order.fetching_HSN_code", // update with actual path
+        //     args: {
+        //         doc: frm.doc
+        //     },
+        //     callback: function(r) {
+        //         if (!r.exc) {
+        //             frm.reload_doc();  // Refresh updated HSN or tax data
+        //         }
+        //     }
+        // });
+    //    frappe.call({
+    //         method: "nj_features.overrides.sales_order.get_item_group_tax_and_hsn",
+    //         args: {
+    //             items: frm.doc.items
+    //         },
+    //         callback: function(r) {
+    //             if (!r.exc && r.message) {
+    //                 const hsn_map = r.message.hsn_map;
+    //                 const taxes = r.message.taxes;
+
+    //                 // Set HSN codes on each item row
+    //                 (frm.doc.items || []).forEach(row => {
+    //                     if (hsn_map[row.item_code]) {
+    //                         frappe.model.set_value(row.doctype, row.name, "hsn_code", hsn_map[row.item_code]);
+    //                     }
+    //                 });
+
+    //                 // Overwrite the taxes table
+    //                 frm.clear_table("taxes");
+    //                 taxes.forEach(tax => {
+    //                     let tax_row = frm.add_child("taxes");
+    //                     tax_row.charge_type = tax.charge_type || "On Net Total";
+    //                     tax_row.account_head = tax.account_head;
+    //                     tax_row.rate = tax.rate;
+    //                     tax_row.description = tax.description;
+    //                     tax_row.cost_center = tax.cost_center;
+    //                 });
+
+    //                 frm.refresh_field("items");
+    //                 frm.refresh_field("taxes");
+
+    //                 // Trigger recalculation
+    //                 frm.events.apply_taxes(frm);
+    //                 frm.events.set_unallocated_amount(frm);
+    //             }
+    //         }
+    //     });
         if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');

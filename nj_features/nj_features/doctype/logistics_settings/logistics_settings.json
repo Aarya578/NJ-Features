@@ -8,12 +8,20 @@
   "shiprocket_settings_section",
   "email",
   "password",
+  "adhoc_url",
+  "service_url",
+  "awb_number_url",
+  "pickup_url",
+  "invoice_url",
+  "manifest_url",
+  "label_url",
   "cod_charges",
   "shiprocketcourier_name_block_list",
   "shiprocket_courier_names",
   "critical_log_settings_section",
   "clientcode",
-  "url"
+  "url",
+  "critical_log_url"
  ],
  "fields": [
   {
@@ -63,11 +71,51 @@
    "fieldtype": "Table",
    "label": "Allowed Ship Rocket Courier Names",
    "options": "Shiprocket Courier Name Block List"
+  },
+  {
+   "fieldname": "awb_number_url",
+   "fieldtype": "Data",
+   "label": "AWB Number URL"
+  },
+  {
+   "fieldname": "service_url",
+   "fieldtype": "Data",
+   "label": "Service URL"
+  },
+  {
+   "fieldname": "pickup_url",
+   "fieldtype": "Data",
+   "label": "Pickup URL"
+  },
+  {
+   "fieldname": "manifest_url",
+   "fieldtype": "Data",
+   "label": "Manifest URL"
+  },
+  {
+   "fieldname": "invoice_url",
+   "fieldtype": "Data",
+   "label": "Invoice URL"
+  },
+  {
+   "fieldname": "label_url",
+   "fieldtype": "Data",
+   "label": "Label URL"
+  },
+  {
+   "fieldname": "critical_log_url",
+   "fieldtype": "Data",
+   "label": "Critical Log URL"
+  },
+  {
+   "fieldname": "adhoc_url",
+   "fieldtype": "Data",
+   "label": "Adhoc URL"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-06-21 16:14:02.407825",
+ "modified": "2025-06-27 12:32:01.076893",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

@@ -47,36 +47,36 @@ frappe.ui.form.on('Delivery Note', {
             frm.clear_custom_buttons();
             
             // Show Critical Log button only if AWB number has NOT been generated AND courier_service is not CriticaLog
-            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog') {
-                let critical_btn = frm.add_custom_button(__('Critical Log'), function() {
-                    frappe.show_alert({ message: __('Generating AWB Number...'), indicator: 'blue' });
-                    frappe.call({
-                        method: 'nj_features.overrides.delivery_note.send_consignement_data',
-                        args: { doc: JSON.stringify(frm.doc) },
-                        callback: function(response) {
-                            if (response.message) {
-                                frappe.call({
-                                    method: 'frappe.client.set_value',
-                                    args: {
-                                        doctype: 'Delivery Note',
-                                        name: frm.doc.name,
-                                        fieldname: 'courier_service',
-                                        value: 'CriticaLog'
-                                    },
-                                    callback: function() {
-                                        frm.reload_doc();
-                                        frappe.show_alert({
-                                            message: __('AWB Number generated successfully!'),
-                                            indicator: 'green'
-                                        });
-                                    }
-                                });
-                            }
-                        }
-                    });
-                });
-                critical_btn.addClass('btn-primary');
-            }
+            // if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog') {
+            //     let critical_btn = frm.add_custom_button(__('Critical Log'), function() {
+            //         frappe.show_alert({ message: __('Generating AWB Number...'), indicator: 'blue' });
+            //         frappe.call({
+            //             method: 'nj_features.overrides.delivery_note.send_consignement_data',
+            //             args: { doc: JSON.stringify(frm.doc) },
+            //             callback: function(response) {
+            //                 if (response.message) {
+            //                     frappe.call({
+            //                         method: 'frappe.client.set_value',
+            //                         args: {
+            //                             doctype: 'Delivery Note',
+            //                             name: frm.doc.name,
+            //                             fieldname: 'courier_service',
+            //                             value: 'CriticaLog'
+            //                         },
+            //                         callback: function() {
+            //                             frm.reload_doc();
+            //                             frappe.show_alert({
+            //                                 message: __('AWB Number generated successfully!'),
+            //                                 indicator: 'green'
+            //                             });
+            //                         }
+            //                     });
+            //                 }
+            //             }
+            //         });
+            //     });
+            //     critical_btn.addClass('btn-primary');
+            // }
             
             // Show Shiprocket button only if AWB number has NOT been generated AND courier_service is not Shiprocket
             if (!frm.doc.tracking_id && frm.doc.courier_service !== 'Shiprocket') {

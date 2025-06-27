@@ -172,7 +172,8 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.courier_name = self.get("courier_service")
                     serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
                     serial_no_doc.sales_channel = sales_order_info.get("sales_channel", "")
-                    serial_no_doc.mobile_no = sales_order_info.get("phone", "")
+                    phone = sales_order_info.get("phone", "")
+                    serial_no_doc.mobile_no = "" if phone.lower() == "na" else phone
                     serial_no_doc.email_id = sales_order_info.get("email_id", "")
                     serial_no_doc.address = sales_order_info.get("so_address", "")
                     serial_no_doc.warranty_start_date_ = self.get("posting_date")

@@ -1159,6 +1159,8 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
+                print("item_template", item_template)
+                print("consolidated", consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
                 part_data = get_fetched_item_code(doc.get('serial_no'), part_data)

@@ -168,7 +168,6 @@ def truncate_grade(input_string):
         return input_string
     
 @frappe.whitelist()
-
 def adapter_repacked_serial_no(nj_serial_no):
     try:
         query="""
@@ -207,22 +206,32 @@ def adapter_repacked_serial_no(nj_serial_no):
         return str(e)
 
 def get_attribute_prefix(item_code, item_group):
+    attribute_names = frappe.get_all(
+        "Variants of Item group",
+        filters={
+            "parent": item_group,
+            "enable_item_attribute_for_serial_no_prefix": 1
+        },
+        fields=["variant"]
+    )
 
-    attribute_name = frappe.db.get_value(
-    "Variants of Item group",
-    {
-        "parent": item_group,
-        "enable_item_attribute_for_serial_no_prefix": 1
-    },
-    "variant")
+    result_parts = []
 
-    attribute_value = frappe.db.get_value("Item Variant Attribute", {
-        "parent": item_code,
-        "attribute": attribute_name
-    }, "attribute_value")
-    
-    if attribute_value:
-        # Split by space and return the first part (before any space)
-        return attribute_value.split()[0]
-    else:
-        return ''
+    for row in attribute_names:
+        attribute_name = row.variant
+
+        attribute_value = frappe.db.get_value(
+            "Item Variant Attribute",
+            {
+                "parent": item_code,
+                "attribute": attribute_name
+            },
+            "attribute_value"
+        )
+
+        if attribute_value:
+            # Add the first part before any space
+            result_parts.append(attribute_value.split()[0])
+
+    return "-".join(result_parts) if result_parts else ""
+

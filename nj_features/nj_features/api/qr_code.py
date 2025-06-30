@@ -123,7 +123,11 @@ def create_serial_no(item_code=None, attempt=0, rfq=False):
             
             if has_serial_no and item_group:
                 serial_no_prefix = frappe.db.get_value("Item Group", item_group, "serial_no_prefix")
-                
+                attribute_prefix  = ''
+                if item_code and item_group:
+                    attribute_prefix = get_attribute_prefix(item_code, item_group)
+                    if attribute_prefix:
+                        attribute_prefix = attribute_prefix + '-'
                 if not serial_no_prefix:
                     frappe.msgprint(f"Serial No Prefix is not set for Item Group: {item_group}")
                     return None
@@ -133,7 +137,7 @@ def create_serial_no(item_code=None, attempt=0, rfq=False):
                 if rfq:
                     prefix = "EXT-"
 
-                serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                serial_no = prefix + serial_no_prefix + '-' + attribute_prefix + str(random.randint(100000, 999999))
                 
                 frappe.msgprint(f"Generated serial number: {serial_no}")
 
@@ -201,3 +205,24 @@ def adapter_repacked_serial_no(nj_serial_no):
                 return "No repacked serial no found"
     except Exception as e:
         return str(e)
+
+def get_attribute_prefix(item_code, item_group):
+
+    attribute_name = frappe.db.get_value(
+    "Variants of Item group",
+    {
+        "parent": item_group,
+        "enable_item_attribute_for_serial_no_prefix": 1
+    },
+    "variant")
+
+    attribute_value = frappe.db.get_value("Item Variant Attribute", {
+        "parent": item_code,
+        "attribute": attribute_name
+    }, "attribute_value")
+    
+    if attribute_value:
+        # Split by space and return the first part (before any space)
+        return attribute_value.split()[0]
+    else:
+        return ''

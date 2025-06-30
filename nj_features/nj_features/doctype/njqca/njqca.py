@@ -2052,6 +2052,9 @@ def update_performance_criteria(doc):
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
 
+    if not disk_type:
+        return
+
     if not item_wizard_list:
         frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
         return

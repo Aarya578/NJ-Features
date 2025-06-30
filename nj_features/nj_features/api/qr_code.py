@@ -132,7 +132,10 @@ def create_serial_no(item_code=None, attempt=0, rfq=False):
                     frappe.msgprint(f"Serial No Prefix is not set for Item Group: {item_group}")
                     return None
                 
-                prefix = "NJ-"
+                prefix = ""
+
+                if frappe.db.get_value("Item Group", item_group, "enable_nj_prefix"):
+                    prefix = "NJ-"
 
                 if rfq:
                     prefix = "EXT-"

@@ -64,6 +64,3 @@ def update_product_bundle_quantities():
             print(f"Updated {pb_doc.name}: Quantity = {total_count}")
         else:
             print(f"Skipped {pb_doc.name}: No valid item_code_count found.")
-
-
-

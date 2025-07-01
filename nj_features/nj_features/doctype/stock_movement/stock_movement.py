@@ -140,10 +140,6 @@ class StockMovement(Document):
             stock_entry_using_nj_lib(stock_data)
 
     def get_repack_items(self):
-        """
-        Prepare repack items data for stock entry for all items.
-        Also throws error if Serial No item code matches Purchase Receipt item code.
-        """
         return_unpack_items_data = []
 
         for item in self.items:
@@ -156,29 +152,19 @@ class StockMovement(Document):
                     continue
 
                 serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
-
-                # ✅ Get linked Purchase Receipt from Serial No
+                serial_item_code = serial_no_doc.item_code
                 purchase_receipt = serial_no_doc.purchase_receipt
+
                 if not purchase_receipt:
                     frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
 
-                # ✅ Get item code from Purchase Receipt
-                purchase_item_code = self.get_matching_purchase_item(
-                    purchase_receipt, serial_no_value, item.item_code
-                )
+                purchase_item_code = self.get_matching_purchase_item(purchase_receipt, serial_no_value,item.item_code)
 
                 if not purchase_item_code:
                     frappe.throw(f"Could not find matching item code in Purchase Receipt {purchase_receipt} for Serial No: {serial_no_value}")
 
-                # ✅ Throw error if both item codes are the same
-                if item.item_code == purchase_item_code:
-                    frappe.throw(
-                        f"Repack failed: Item Code from Serial No <b>{item.item_code}</b> and "
-                        f"Purchase Receipt Item Code <b>{purchase_item_code}</b> are the same "
-                        f"for Serial No: <b>{serial_no_value}</b>."
-                    )
+                # ✅ Removed item_code match check, repack always
 
-                # ✅ Item to be removed (source)
                 main_repack_item = {
                     'repack_item_code': item.item_code,
                     'repack_serial_no': serial_no_value,
@@ -187,7 +173,6 @@ class StockMovement(Document):
                 }
                 return_unpack_items_data.append(main_repack_item)
 
-                # ✅ Item to be added (target)
                 unpack_item = {
                     'unpack_serial_no': serial_no_value,
                     'unpack_item_code': purchase_item_code,
@@ -197,6 +182,66 @@ class StockMovement(Document):
                 return_unpack_items_data.append(unpack_item)
 
         return return_unpack_items_data
+        
+
+    # def get_repack_items(self):
+    #     """
+    #     Prepare repack items data for stock entry for all items.
+    #     Also throws error if Serial No item code matches Purchase Receipt item code.
+    #     """
+    #     return_unpack_items_data = []
+
+    #     for item in self.items:
+    #         if not item.serial_no:
+    #             frappe.throw(f"Serial No is missing for Item Code: {item.item_code}")
+
+    #         for serial_no_value in item.serial_no.strip().split('\n'):
+    #             serial_no_value = serial_no_value.strip()
+    #             if not serial_no_value:
+    #                 continue
+
+    #             serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
+
+    #             # ✅ Get linked Purchase Receipt from Serial No
+    #             purchase_receipt = serial_no_doc.purchase_receipt
+    #             if not purchase_receipt:
+    #                 frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
+
+    #             # ✅ Get item code from Purchase Receipt
+    #             purchase_item_code = self.get_matching_purchase_item(
+    #                 purchase_receipt, serial_no_value, item.item_code
+    #             )
+
+    #             if not purchase_item_code:
+    #                 frappe.throw(f"Could not find matching item code in Purchase Receipt {purchase_receipt} for Serial No: {serial_no_value}")
+
+    #             # ✅ Throw error if both item codes are the same
+    #             # if item.item_code == purchase_item_code:
+    #             #     frappe.throw(
+    #             #         f"Repack failed: Item Code from Serial No <b>{item.item_code}</b> and "
+    #             #         f"Purchase Receipt Item Code <b>{purchase_item_code}</b> are the same "
+    #             #         f"for Serial No: <b>{serial_no_value}</b>."
+    #             #     )
+
+    #             # ✅ Item to be removed (source)
+    #             main_repack_item = {
+    #                 'repack_item_code': item.item_code,
+    #                 'repack_serial_no': serial_no_value,
+    #                 'repack_item_source_warehouse': item.s_warehouse,
+    #                 'is_finished_item': 0
+    #             }
+    #             return_unpack_items_data.append(main_repack_item)
+
+    #             # ✅ Item to be added (target)
+    #             unpack_item = {
+    #                 'unpack_serial_no': serial_no_value,
+    #                 'unpack_item_code': purchase_item_code,
+    #                 'unpack_item_target_warehouse': item.t_warehouse,
+    #                 'is_finished_item': 1
+    #             }
+    #             return_unpack_items_data.append(unpack_item)
+
+    #     return return_unpack_items_data
 
     # def get_repack_items(self):
     #     """

@@ -49,7 +49,7 @@ def get_data(filters):
 
     query = f"""
         SELECT 
-            dni.serial_no,
+            COALESCE(dni.serial_no, pi.serial_no) AS serial_no,
             dn.name AS delivery_note,
             dn.creation,
             dni.against_sales_order,
@@ -63,9 +63,11 @@ def get_data(filters):
         INNER JOIN 
             `tabDelivery Note Item` dni ON dni.parent = dn.name
         INNER JOIN 
+            `tabPacked Item` pi ON pi.parent = dn.name
+        INNER JOIN 
             `tabSales Order` so ON so.name = dni.against_sales_order AND ({order_condition})
         INNER JOIN 
-            `tabSerial No` sn ON sn.name = dni.serial_no
+            `tabSerial No` sn ON sn.name = COALESCE(dni.serial_no, pi.serial_no)
         WHERE dn.docstatus = 1 AND {conditions_str}
         ORDER BY
             dn.creation DESC

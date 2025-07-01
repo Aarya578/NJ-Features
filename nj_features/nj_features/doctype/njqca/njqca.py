@@ -1159,6 +1159,8 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
+                print("item_template", item_template)
+                print("consolidated", consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
                 part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
@@ -2049,6 +2051,9 @@ def update_performance_criteria(doc):
 
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
+
+    if not disk_type:
+        return
 
     if not item_wizard_list:
         frappe.msgprint(_("No submitted Item Wizards found."), alert=True)

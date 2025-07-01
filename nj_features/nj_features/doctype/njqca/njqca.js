@@ -251,32 +251,42 @@ frappe.ui.form.on('NJQCA', {
 
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
-                args: { "serial_no": frm.doc.serial_no,"bios_serialno": frm.doc.bios_serialno ,"njqca_name": frm.doc.name, "manufacturer_model": frm.doc.manufacturer_model},
+                args: {
+                    "serial_no": frm.doc.serial_no,
+                    "bios_serialno": frm.doc.bios_serialno,
+                    "njqca_name": frm.doc.name,
+                    "manufacturer_model": frm.doc.manufacturer_model
+                },
+                freeze: true,
+                freeze: true,
+                freeze_message: `<div style="text-align: center;">
+                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i><br>
+                    <strong>Processing NJQCA...</strong><br>Please wait while we save or submit your data.
+                </div>`,
                 callback: function(r) {
-                    if(r.message){
+                    if (r.message) {
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-                        if(r.message == "PASS"){
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+
+                        if (r.message === "PASS") {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
-                        }else if(r.message == "FAIL"){
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        } else if (r.message === "FAIL") {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "42");
-                        }else if(r.message == "Report Not found"){
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+                        } else if (r.message === "Report Not found") {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
                         }
                     }
+
                     frm.refresh_field("njqca_result_parameters");
+                },
+                error: function(err) {
+                    console.error("Error while checking battery status:", err);
                 }
-            })
+            });
         }
-        
 
         if (selectedModel && selectedBrand && selectedItemGroup == "Laptops") {
             frappe.call({

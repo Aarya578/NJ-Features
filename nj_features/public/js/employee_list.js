@@ -7,8 +7,8 @@ frappe.require("/assets/nj_features/js/nj_features.js", function () {
                 listview.page.add_inner_button(label, function () {
                     frappe.db.get_value("NJ Settings", { parameter: "disable_qty_check" }, ["value", "name"]).then((r) => {
                         const { value, name } = r.message || {};
-
-                        if (value === 0) {
+                        
+                        if (value == "0") {
                             frappe.db.set_value("NJ Settings", name, "value", "1").then(() => {
                                 setButtonState(true);
                                 frappe.show_alert({

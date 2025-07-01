@@ -123,17 +123,24 @@ def create_serial_no(item_code=None, attempt=0, rfq=False):
             
             if has_serial_no and item_group:
                 serial_no_prefix = frappe.db.get_value("Item Group", item_group, "serial_no_prefix")
-                
+                attribute_prefix  = ''
+                if item_code and item_group:
+                    attribute_prefix = get_attribute_prefix(item_code, item_group)
+                    if attribute_prefix:
+                        attribute_prefix = attribute_prefix + '-'
                 if not serial_no_prefix:
                     frappe.msgprint(f"Serial No Prefix is not set for Item Group: {item_group}")
                     return None
                 
-                prefix = "NJ-"
+                prefix = ""
+
+                if frappe.db.get_value("Item Group", item_group, "enable_nj_prefix"):
+                    prefix = "NJ-"
 
                 if rfq:
                     prefix = "EXT-"
 
-                serial_no = prefix + serial_no_prefix + '-' + str(random.randint(100000, 999999))
+                serial_no = prefix + serial_no_prefix + '-' + attribute_prefix + str(random.randint(100000, 999999))
                 
                 frappe.msgprint(f"Generated serial number: {serial_no}")
 
@@ -164,7 +171,6 @@ def truncate_grade(input_string):
         return input_string
     
 @frappe.whitelist()
-
 def adapter_repacked_serial_no(nj_serial_no):
     try:
         query="""
@@ -201,3 +207,34 @@ def adapter_repacked_serial_no(nj_serial_no):
                 return "No repacked serial no found"
     except Exception as e:
         return str(e)
+
+def get_attribute_prefix(item_code, item_group):
+    attribute_names = frappe.get_all(
+        "Variants of Item group",
+        filters={
+            "parent": item_group,
+            "enable_item_attribute_for_serial_no_prefix": 1
+        },
+        fields=["variant"]
+    )
+
+    result_parts = []
+
+    for row in attribute_names:
+        attribute_name = row.variant
+
+        attribute_value = frappe.db.get_value(
+            "Item Variant Attribute",
+            {
+                "parent": item_code,
+                "attribute": attribute_name
+            },
+            "attribute_value"
+        )
+
+        if attribute_value:
+            # Add the first part before any space
+            result_parts.append(attribute_value.split()[0])
+
+    return "-".join(result_parts) if result_parts else ""
+

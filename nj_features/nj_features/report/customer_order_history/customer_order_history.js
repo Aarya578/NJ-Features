@@ -25,6 +25,18 @@ frappe.query_reports["Customer Order History"] = {
             "label": __("Delivery Note"),
             "fieldtype": "Link",
             "options": "Delivery Note"
+        },
+        {
+            "fieldname": "phone_no",
+            "label": __("Phone No."),
+            "fieldtype": "Data",
+            "options": "Phone"
+        },
+        {
+            "fieldname": "email_id",
+            "label": __("Email ID"),
+            "fieldtype": "Data",
+            "options": "Email"
         }
     ],
     onload: function(report) {

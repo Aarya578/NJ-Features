@@ -1,8 +1,4 @@
 frappe.ui.form.on('Knowledge Base', {
-    onload: function (frm) {
-        $('.col-lg-2.layout-side-section').hide();
-        addAttachmentButtons(frm);
-    },
     refresh: function (frm) {
         $('.col-lg-2.layout-side-section').hide();
         addAttachmentButtons(frm);
@@ -10,15 +6,65 @@ frappe.ui.form.on('Knowledge Base', {
     before_save: function (frm) {
         frappe.call({
             method: "nj_features.nj_features.doctype.knowledge_base.knowledge_base.validate_links",
-            args: {
-                doc: frm.doc
-            },
+            args: { doc: frm.doc },
         })
+    },
+    qc_name: function (frm) {
+        let wrapper = $('[data-fieldname="qc_value"]').closest('.control-input-wrapper');
+        if (frm.doc.qc_name  && frm.doc.qc_name !== '') {
+            frappe.call({
+                method: "nj_p1_features.nj_p1_features.doctype.nj_quality_checks.nj_quality_checks.process_check_name_options",
+                args: { 'check_name': frm.doc.qc_name },
+                callback: function (response) {
+                    let options = response.message || [];
+
+                    frm.set_df_property('qc_value', 'options', options.join('\n'));
+                    frm.refresh_field('qc_value');
+
+                    if (options.length > 0) {
+                        wrapper.css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid #5cb85c'
+                        });
+                    } else {
+                        wrapper.css({
+                            'border-radius': '0.25rem',
+                            'border': '2px solid red'
+                        });
+                    }
+                }
+            });
+        } else {
+            frm.set_df_property('qc_value', 'options', '');
+            frm.refresh_field('qc_value');
+
+            wrapper.css({
+                'border': '',
+                'border-radius': ''
+            });
+        }
+    },
+    qc_value: function (frm) {
+        if (frm.doc.qc_value && frm.doc.qc_value.trim() !== '') {
+            const newEntry = frm.doc.qc_name + '::' + frm.doc.qc_value;
+
+            if (frm.doc.qc_options && frm.doc.qc_options.trim() !== '') {
+                let existingEntries = frm.doc.qc_options
+                    .split(',')
+                    .map(entry => entry.trim());
+
+                if (!existingEntries.includes(newEntry)) {
+                    existingEntries.push(newEntry);
+                    frm.set_value('qc_options', existingEntries.join(', '));
+                }
+            } else {
+                frm.set_value('qc_options', newEntry);
+            }
+        }
     }
 });
 
 function addAttachmentButtons(frm) {
-    // Add attachment buttons for each attach field
     addAttachmentButton(frm, 'attach1');
     addAttachmentButton(frm, 'attach2');
     addAttachmentButton(frm, 'attach3');
@@ -110,5 +156,3 @@ function isImage(url) {
 function isVideo(url) {
     return /\.(mp4|webm|ogg|mov)$/i.test(url);
 }
-
-

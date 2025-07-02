@@ -15,9 +15,13 @@
   "section_break_1562o",
   "name1",
   "action_type",
+  "qc_name",
   "column_break_126gc",
   "priority",
   "active",
+  "qc_value",
+  "section_break_gbgnm",
+  "qc_options",
   "section_break_2htot",
   "attach1",
   "attach3",
@@ -70,7 +74,6 @@
    "default": "1",
    "fieldname": "active",
    "fieldtype": "Check",
-   "in_list_view": 1,
    "label": "Active"
   },
   {
@@ -125,10 +128,30 @@
    "fieldname": "attach3",
    "fieldtype": "Small Text",
    "label": "Attach3"
+  },
+  {
+   "fieldname": "qc_name",
+   "fieldtype": "Link",
+   "label": "QC Name",
+   "options": "NJ QC Check List"
+  },
+  {
+   "fieldname": "qc_value",
+   "fieldtype": "Select",
+   "label": "QC Value"
+  },
+  {
+   "fieldname": "section_break_gbgnm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "qc_options",
+   "fieldtype": "Small Text",
+   "label": "QC Options"
   }
  ],
  "links": [],
- "modified": "2025-06-10 16:25:47.424667",
+ "modified": "2025-07-01 13:21:37.443208",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

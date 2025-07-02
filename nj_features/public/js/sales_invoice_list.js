@@ -1,5 +1,5 @@
 frappe.require("/assets/nj_features/js/nj_features.js", function() {
-    extend_listview_setting('Sales Invoice', {
+    extend_listview_settings('Sales Invoice', {
         refresh: function (listview) {
             listview.page.add_inner_button('Set Approval', () => {
                 const selected = listview.get_checked_items();

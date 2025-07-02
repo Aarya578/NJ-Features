@@ -90,7 +90,7 @@ function validateAmazonOrderID(frm) {
 }
 
 frappe.require("/assets/nj_features/js/nj_features.js", function() {
-    extend_listview_setting('Sales Order', {
+    extend_listview_settings('Sales Order', {
         refresh: function(listview) {
             viewButton(listview);
         }

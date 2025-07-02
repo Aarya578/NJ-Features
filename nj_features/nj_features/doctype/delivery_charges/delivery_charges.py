@@ -230,11 +230,12 @@ def update_status_in_shopify():
         shopify_order_number = frappe.db.get_value("Sales Order", dc.sales_order, "shopify_order_number")
 
         if not shopify_order_number:
-            frappe.logger().error(f"[{dc.name}] Shopify order number not found for Sales Order {dc.sales_order}")
+            # frappe.logger().error(f"[{dc.name}] Shopify order number not found for Sales Order {dc.sales_order}")
             continue
 
         # Step 2: GET fulfillments
         fulfillment_url = f"{base_url}/orders/{shopify_order_number}/fulfillments.json"
+        # print("fulfillment_url=================================",fulfillment_url)
         
         headers = {
             "X-Shopify-Access-Token": token,
@@ -248,13 +249,13 @@ def update_status_in_shopify():
             fulfillments = get_response.json().get("fulfillments", [])
             # print("fulfillments=================================",fulfillments)
             if not fulfillments:
-                frappe.logger().info(f"[{dc.name}] No fulfillments found for order {shopify_order_number}")
+                # frappe.logger().info(f"[{dc.name}] No fulfillments found for order {shopify_order_number}")
                 continue
 
             fulfillment = fulfillments[0]
             fulfillment_id = fulfillment.get("id")
             if not fulfillment_id:
-                frappe.logger().error(f"[{dc.name}] Fulfillment ID missing in response")
+                # frappe.logger().error(f"[{dc.name}] Fulfillment ID missing in response")
                 continue
 
             # ✅ Safely check for shipment_status = delivered
@@ -263,7 +264,7 @@ def update_status_in_shopify():
             # print("shipment_status=================================",shipment_status)
 
             if shipment_status == "delivered":
-                frappe.logger().info(f"[{dc.name}] Shipment already delivered — skipping event post.")
+                # frappe.logger().info(f"[{dc.name}] Shipment already delivered — skipping event post.")
                 continue
 
             # Step 3: Map remark_status -> shopify_delivery_status (optimized)
@@ -286,7 +287,7 @@ def update_status_in_shopify():
                         break
 
             if not shopify_delivery_status:
-                frappe.logger().warning(f"[{dc.name}] No Shopify delivery status mapped for remark_status: '{dc.remark_status}'")
+                # frappe.logger().warning(f"[{dc.name}] No Shopify delivery status mapped for remark_status: '{dc.remark_status}'")
                 continue
 
             # Step 4: POST fulfillment event

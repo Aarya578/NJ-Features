@@ -32,7 +32,7 @@ def criticalog_awb_number_tracking_status():
     )
     # print(f"Processing {len(docs)} Delivery Charges records...",docs)
 
-    url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
+    url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
     headers = {"Content-Type": "application/json"}
 
     for doc in docs:

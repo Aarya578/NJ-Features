@@ -93,7 +93,7 @@ class CustomDeliveryNote(DeliveryNote):
             # self.qc_nj_of_days_checking()
             if self.is_return == 0:
                 send_sales_invoice_email_on_delivery_note(self, method=None)
-                self._process_customer_details()
+                # self._process_customer_details()
             else:
                 self._process_serial_numbers()
             

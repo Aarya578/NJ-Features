@@ -120,6 +120,7 @@ def validate_mandatory_links(doc, method=None):
 
 
 def validate_warranty_on_submit(doc, method=None):
+    print("validate_warranty_on_submit==================================")
     doc = frappe.get_doc(frappe.parse_json(doc))
     
     if not doc.get("part_warranty"):
@@ -144,13 +145,13 @@ def set_missing_values(source, target):
 
 
 @frappe.whitelist()
-def part_warrnty_days_after_save(doc):
+def part_warrnty_days_after_save(docname):
     """
     Update warranty table after document is saved
     using latest values from the client (not DB).
     """
-    doc = frappe.get_doc(frappe.parse_json(doc))
-    
+    doc = frappe.get_doc("Purchase Order", docname)
+    # print("inside the function ====================================")
     if not doc.get("part_warranty"):
         return {"status": "skipped", "message": "Part warranty not enabled"}
     

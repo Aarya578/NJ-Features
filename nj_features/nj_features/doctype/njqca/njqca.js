@@ -883,6 +883,10 @@ function trigger_serial_no(frm) {
                     frm.set_value(field, r.message[field]);
                     cur_frm.refresh_field(field);
                 });
+            },
+            error: function(err) { 
+                console.error(err);
+                $('.primary-action').hide();
             }
         });
     }

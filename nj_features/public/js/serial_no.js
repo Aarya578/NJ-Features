@@ -76,7 +76,7 @@ frappe.ui.form.on('Serial No', {
 
 function applyReadOnlyStyling(frm) {
 
-    frappe.db.get_value('NJ Settings', {'doc_type': 'Serial No', 'parameter': 'nc_modifier'}, 
+    frappe.db.get_value('NJ Settings', {'parameter': 'nc_modifier'}, 
     'value').then(function(r) {
         if (r.message && r.message.value) {
             if (!frappe.user.has_role(r.message.value)) {

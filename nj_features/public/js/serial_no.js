@@ -91,8 +91,6 @@ function applyReadOnlyStyling(frm) {
 
                 frm.set_df_property("bypass", "read_only", 1);
                 frm.set_df_property("reason_for_warranty_bypass", "read_only", 1);
-                frm.set_df_property('bypass', 'hidden', 1);
-                frm.set_df_property('reason_for_warranty_bypass', 'hidden', 1);
 
                 var lockIconHtml = '<i class="fa fa-lock" style="margin-right: 5px;"></i>';
                 $(sectionWrapper).prepend(lockIconHtml);

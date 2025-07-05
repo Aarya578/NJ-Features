@@ -244,7 +244,7 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
                     except Exception as e:
                       pass
         if backup_duration_mins==0:
-            backup_duration_mins=120
+            backup_duration_mins=110
                
         
         serial_no_battery_data_query="""

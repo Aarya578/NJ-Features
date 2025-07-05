@@ -247,6 +247,21 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
+        if(selectedItemGroup=="BATTERY"){
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_avg_discharge_rate',
+                args: { 
+                    "njqca_name": frm.doc.name                    
+                },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value( 'average_discharge_rate', r.message); 
+                        frm.refresh_field('average_discharge_rate');
+                    }
+                }
+            })
+        }
+
         if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name){
 
             frappe.call({

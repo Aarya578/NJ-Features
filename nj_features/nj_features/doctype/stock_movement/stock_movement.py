@@ -372,6 +372,7 @@ def validate_stock_movement_for_grade(doc):
         return {"error": str(e)}
 
 def validate_serial_no_and_department(row, error_messages):
+    print("+++++++++++++++++++++")
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
         return False
@@ -397,8 +398,8 @@ def validate_serial_no_and_department(row, error_messages):
 
     if not serial_doc.get("bypass"):
 
-        if department_doc.get('warrenty_restriction_check') and check_warranty_expiry(serial_doc, error_messages):
-            pass
+        if department_doc.get('warrenty_restriction_check'):  
+            check_warranty_expiry(serial_doc, error_messages)
         
         s_inspection_type = frappe.get_doc('Department', s_department)
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
@@ -501,6 +502,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
 
 
 def check_warranty_expiry(serial_doc, error_messages):
+    print("check_warranty_expiry")
     try:
         query = """
             SELECT DATE(creation) AS creation_date, warranty_days, part_warranty, all_except
@@ -516,14 +518,17 @@ def check_warranty_expiry(serial_doc, error_messages):
 
         if not is_component:
             return check_general_warranty(serial_doc, purchase_order[0], error_messages)
-        
-        return check_component_warranty(serial_doc, purchase_order[0], error_messages)
+        else:
+            check_general_warranty(serial_doc, purchase_order[0], error_messages)
+            check_component_warranty(serial_doc, purchase_order[0], error_messages)
+            return
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Error in check_warranty_expiry")
         error_messages.append(f"Error in warranty expiry check: {str(e)}")
 
 def check_general_warranty(serial_doc, purchase_order, error_messages):
+    print("check_general_warranty")
     creation_date = purchase_order.get('creation_date')
     warranty_days = purchase_order.get('warranty_days')
 

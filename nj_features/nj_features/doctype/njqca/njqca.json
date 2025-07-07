@@ -26,6 +26,7 @@
   "backup_duration_cycle_2",
   "backup_duration_cycle_3",
   "bdt_status",
+  "average_discharge_rate",
   "rapid_bdt",
   "column_break_1tl9d",
   "repack_item_code",
@@ -430,11 +431,17 @@
    "fieldname": "component_serial_no",
    "fieldtype": "Data",
    "label": "Component Serial No"
+  },
+  {
+   "fieldname": "average_discharge_rate",
+   "fieldtype": "Data",
+   "label": "Average Discharge Rate",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-27 17:02:41.917220",
+ "modified": "2025-07-05 15:10:15.020605",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

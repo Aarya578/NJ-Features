@@ -10,6 +10,36 @@ frappe.ui.form.on('Purchase Order', {
     refresh: function(frm) {
         // No warranty updates on refresh - only after save
     },
+
+    fetch_warranty_days: function (frm) {
+        console.log("insid the button =======================");
+        
+        frappe.call({
+
+            method: 'nj_features.overrides.purchase_order.part_warrnty_days_after_save',
+            args: {
+                docname: frm.doc.name
+            },
+            callback: function (r) {
+                if (r.message) {
+                    if (r.message.error) {
+                        frappe.msgprint({
+                            title: __('Warranty Error'),
+                            message: __(r.message.error),
+                            indicator: 'red'
+                        });
+                    } else {
+                        frappe.msgprint({
+                            title: __('Warranty Updated'),
+                            message: __(r.message.message),
+                            indicator: 'green'
+                        });
+                        frm.reload_doc();
+                    }
+                }
+            }
+        });
+    },
     
     has_warranty(frm) {
         if (frm.doc.has_warranty == 0 && frm.doc.docstatus == 0) {
@@ -68,47 +98,47 @@ frappe.ui.form.on('Purchase Order', {
     },
 
 
-after_save: function(frm) {
-        frappe.call({
-            method: 'nj_features.overrides.purchase_order.part_warrnty_days_after_save',
-            args: {
-                doc: frm.doc // send full unsaved doc values
-            },
-            freeze: true,
-            callback: function(r) {
-                if (r.message.error){
-                    frappe.show_alert({
-                        title: __("Warranty Update Failed"),
-                        message: __(r.message.error),
-                        indicator: 'red'
-                    });
-                    frappe.validated = false;
-                }
-                else if (r.message?.status === "updated") {
-                    frappe.show_alert({
-                        message: r.message.message,
-                        indicator: 'green'
-                    });
-                    // Use refresh instead of reload_doc for better performance
-                    frm.refresh();
-                } else if (r.message?.status === "no_changes") {
-                    frappe.show_alert({
-                        message: r.message.message,
-                        indicator: 'blue'
-                    });
-                }
-            },
-            error: function(xhr) {
-                let responseJSON = xhr?.xhr?.responseJSON;
-                let message = responseJSON?.message || "Error updating warranty table";
-                frappe.msgprint({
-                    title: __("Warranty Update Failed"),
-                    message: __(message),
-                    indicator: 'red'
-                });
-            }
-    });
-}
+// after_save: function(frm) {
+//         frappe.call({
+//             method: 'nj_features.overrides.purchase_order.part_warrnty_days_after_save',
+//             args: {
+//                 doc: frm.doc // send full unsaved doc values
+//             },
+//             freeze: true,
+//             callback: function(r) {
+//                 if (r.message.error){
+//                     frappe.show_alert({
+//                         title: __("Warranty Update Failed"),
+//                         message: __(r.message.error),
+//                         indicator: 'red'
+//                     });
+//                     frappe.validated = false;
+//                 }
+//                 else if (r.message?.status === "updated") {
+//                     frappe.show_alert({
+//                         message: r.message.message,
+//                         indicator: 'green'
+//                     });
+//                     // Use refresh instead of reload_doc for better performance
+//                     frm.refresh();
+//                 } else if (r.message?.status === "no_changes") {
+//                     frappe.show_alert({
+//                         message: r.message.message,
+//                         indicator: 'blue'
+//                     });
+//                 }
+//             },
+//             error: function(xhr) {
+//                 let responseJSON = xhr?.xhr?.responseJSON;
+//                 let message = responseJSON?.message || "Error updating warranty table";
+//                 frappe.msgprint({
+//                     title: __("Warranty Update Failed"),
+//                     message: __(message),
+//                     indicator: 'red'
+//                 });
+//             }
+//     });
+// }
 
 
 });

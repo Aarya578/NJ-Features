@@ -2697,3 +2697,19 @@ def get_product_key(doc,method=None):
                    
     except Exception:
         log_error(traceback.format_exc(), "An error occurred in get_product_key in NJQCA "+njqca_name)
+
+
+@frappe.whitelist()
+def get_avg_discharge_rate(njqca_name):
+    try:      
+      query="""
+        select round(avg(discharge_rate),4) as discharge_rate from `tabNJQCA Result Parameters` where parent=%s
+      """
+
+      avg_discharge_rate=frappe.db.sql(query, (njqca_name), as_dict=1)
+
+      if avg_discharge_rate is not None and avg_discharge_rate:
+        return avg_discharge_rate[0].get("discharge_rate")
+      
+    except Exception as e:
+        log_error(traceback.format_exc(), "An error occurred in get_avg_discharge_rate in NJQCA "+njqca_name)

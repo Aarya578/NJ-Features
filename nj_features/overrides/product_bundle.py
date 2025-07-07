@@ -11,56 +11,103 @@ class CustomProductBundle(ProductBundle):
 
 
 
-def update_product_bundle_quantities():
-    # Step 1: Fetch item_code and count from Serial No
+# def update_product_bundle_quantities():
+#     # Step 1: Fetch item_code and count from Serial No
     
+#     data = frappe.db.sql("""
+#         SELECT 
+#             a.item_code,
+#             COUNT(a.item_code) AS item_code_count
+#         FROM 
+#             `tabSerial No` a
+#         INNER JOIN 
+#             `tabWarehouse` b ON a.warehouse = b.name
+#         WHERE 
+#             a.item_group IN ('Desktops', 'Chromeboxes', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'MacBooks') 
+#             AND a.warehouse != ''
+#             AND b.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
+#         GROUP BY 
+#             a.item_code
+#         ORDER BY item_code_count DESC
+#     """, as_dict=True)
+
+#     # Step 2: Create a mapping of item_code → item_code_count
+#     item_code_count_map = {
+#         row.item_code.strip(): row.item_code_count
+#         for row in data if row.item_code
+#     }
+
+#     # Step 3: Loop through all Product Bundles
+#     all_bundles = frappe.get_all("Product Bundle", fields=["name"])
+    
+#     for pb in all_bundles:
+#         pb_doc = frappe.get_doc("Product Bundle", pb.name)
+
+#         # Step 4: Match child item codes with query item codes
+#         matched_codes = {
+#             d.item_code for d in pb_doc.items
+#             if d.item_code in item_code_count_map
+#         }
+#         print("matched_codes      =======",matched_codes)
+
+#         if not matched_codes:
+#             continue  # Skip if no matching item_code
+
+#         # Step 5: Sum the item_code_count for matched codes
+#         total_count = sum(item_code_count_map[code] for code in matched_codes)
+#         print("total_count      =======",total_count)
+
+#         if total_count:
+#             pb_doc.quantity = total_count
+#             pb_doc.save(ignore_permissions=True)
+#             frappe.db.commit()
+#             print(f"Updated {pb_doc.name}: Quantity = {total_count}")
+#         else:
+#             print(f"Skipped {pb_doc.name}: No valid item_code_count found.")
+
+def update_product_bundle_quantities():
+    # Step 1: Fetch item_code and update_qty2 from SO Quantity Check
     data = frappe.db.sql("""
         SELECT 
-            a.item_code,
-            COUNT(a.item_code) AS item_code_count
+            item_code, 
+            update_qty2 AS item_code_count 
         FROM 
-            `tabSerial No` a
-        INNER JOIN 
-            `tabWarehouse` b ON a.warehouse = b.name
-        WHERE 
-            a.item_group IN ('Desktops', 'Chromeboxes', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'MacBooks') 
-            AND a.warehouse != ''
-            AND b.department IN ('Packing & Dispatch - NJ', 'BG - Adaptor QC - NJ')
-        GROUP BY 
-            a.item_code
-        ORDER BY item_code_count DESC
+            `tabSO Quantity Check`
     """, as_dict=True)
 
-    # Step 2: Create a mapping of item_code → item_code_count
+    # Step 2: Convert item_code_count to int and create item_code → count map
     item_code_count_map = {
-        row.item_code.strip(): row.item_code_count
+        row.item_code.strip(): int(row.item_code_count or 0)
         for row in data if row.item_code
     }
 
-    # Step 3: Loop through all Product Bundles
+    # Step 3: Get all Product Bundles
     all_bundles = frappe.get_all("Product Bundle", fields=["name"])
-    
+
     for pb in all_bundles:
         pb_doc = frappe.get_doc("Product Bundle", pb.name)
 
-        # Step 4: Match child item codes with query item codes
+        # Step 4: Find matched item codes in bundle that are present in item_code_count_map
         matched_codes = {
             d.item_code for d in pb_doc.items
             if d.item_code in item_code_count_map
         }
-        print("matched_codes      =======",matched_codes)
+        print("matched_codes =======", matched_codes)
 
         if not matched_codes:
-            continue  # Skip if no matching item_code
+            continue  # Skip if no matching item_code found
 
-        # Step 5: Sum the item_code_count for matched codes
+        # Step 5: Sum item_code_count values for all matched codes
         total_count = sum(item_code_count_map[code] for code in matched_codes)
-        print("total_count      =======",total_count)
+        print("total_count =======", total_count)
 
+        # Step 6: Update and save Product Bundle quantity
         if total_count:
             pb_doc.quantity = total_count
             pb_doc.save(ignore_permissions=True)
             frappe.db.commit()
-            print(f"Updated {pb_doc.name}: Quantity = {total_count}")
+            print(f" Updated {pb_doc.name}: Quantity = {total_count}")
         else:
-            print(f"Skipped {pb_doc.name}: No valid item_code_count found.")
+            print(f" Skipped {pb_doc.name}: Total count is 0")
+
+

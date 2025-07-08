@@ -247,13 +247,26 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-
         // Check automated repack item code
         if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
-                self: frm.doc
-            })
+                args: { doc: frm.doc },
+                callback: function(r) {
+                    console.log(r.message);
+                    if (r.message.error) {
+                        frappe.show_alert({
+                            title: "Error",
+                            indicator: "red",
+                            message: "❌ Automated item code not found. Please check the configuration."
+                        });
+                    }
+                    else{
+                        frm.set_value('repack_item_code', r.message);
+                        frm.refresh_field('repack_item_code');
+                    }
+                }
+            });
         }
 
         if(selectedItemGroup=="BATTERY"){

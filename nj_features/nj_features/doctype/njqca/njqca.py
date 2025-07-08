@@ -6,6 +6,7 @@ import datetime
 import traceback
 from frappe import _
 from frappe.utils import get_url
+from collections import defaultdict
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -1159,11 +1160,12 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
-                print("item_template", item_template)
-                print("consolidated", consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
-                part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
+                result_part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
+
+                if result_part_data:
+                    part_data = result_part_data
 
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
@@ -1424,6 +1426,7 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
+    print("get_variant_from_value", item_template, args)
     try:
         missing_attribute = []
         args_list = []
@@ -1880,7 +1883,7 @@ def get_fetched_item_code(serial_no, partData):
                 "item_group": item_group  
             })
 
-    return updated_part_data
+    return updated_part_data if updated_part_data else partData
 
 @frappe.whitelist()
 def get_battery_auto_item_code(name,item_template,manufacturer_model):
@@ -2049,7 +2052,7 @@ def update_performance_criteria(doc):
         (doc.get("model"), doc.get("item_template")), as_dict=True
     )
 
-    print("item_wizard_list ------------- ", item_wizard_list)
+    # print("item_wizard_list ------------- ", item_wizard_list)
 
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
@@ -2069,7 +2072,7 @@ def update_performance_criteria(doc):
         if not criteria_doc_raw:
             return {"error": "NJ Settings not found for Performance Criteria."}
 
-        print("criteria_doc_raw ------------- ", criteria_doc_raw)
+        # print("criteria_doc_raw ------------- ", criteria_doc_raw)
 
         # ✅ Fix: decode only if it's a string
         try:
@@ -2105,8 +2108,6 @@ def update_performance_criteria(doc):
                     "status": "Pass" if is_passing else "Fail",
                     "message": message
                 })
-        
-        print("evaluation_results ------------- ", evaluation_results)
 
         frappe.logger().info("\nEvaluation Results:")
         for result in evaluation_results:
@@ -2717,5 +2718,62 @@ def get_avg_discharge_rate(njqca_name):
         log_error(traceback.format_exc(), "An error occurred in get_avg_discharge_rate in NJQCA "+njqca_name)
 
 @frappe.whitelist()
-def generate_automated_repack_item_code(self):
-    print("++++++++++++++++++++++++++++++++++++")
+def generate_automated_repack_item_code(doc):
+
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    processor_data = [{"processor_type": item.get("processor_type")} for item in doc.get("njqca_laptop_processors", [])]
+
+    total_ram_gb = sum(
+        int(re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper()).group(1))
+        for item in doc.get("njqca_laptop_ram", [])
+        if re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper())
+    )
+    merged_ram = [{"ram_capacity": f"{total_ram_gb} GB"}] if total_ram_gb else []
+
+    storage_table = doc.get("njqca_laptop_storage", [])
+    storage_by_type = defaultdict(float)
+
+    for item in storage_table:
+        raw_capacity = item.get("storage_capacity", "").upper()
+        storage_type = item.get("storage_type", "").upper()
+
+        match = re.search(r'(\d+(?:\.\d+)?)\s*(GB|TB)', raw_capacity)
+        if not match:
+            continue
+
+        size = float(match.group(1))
+        unit = match.group(2)
+        size_in_gb = size * 1024 if unit == "TB" else size
+
+        if storage_type in ["SSD", "HDD"]:
+            final_type = storage_type
+        elif "SSD" in raw_capacity:
+            final_type = "SSD"
+        elif "HDD" in raw_capacity:
+            final_type = "HDD"
+        else:
+            continue
+
+        storage_by_type[final_type] += size_in_gb
+
+    merged_storage = []
+    for s_type, total_gb in storage_by_type.items():
+        if total_gb >= 1024:
+            size_str = f"{total_gb / 1024:.1f} TB" if total_gb % 1024 != 0 else f"{int(total_gb // 1024)} TB"
+        else:
+            size_str = f"{int(total_gb)} GB"
+        merged_storage.append({"storage_capacity": f"{size_str} {s_type}"})
+
+    args = processor_data + merged_ram + merged_storage
+
+    variant_code = get_variant_from_value(doc.get("item_template"), args=args)
+
+    if not variant_code:
+        return {
+            "error": True,
+            "message": "❌ Automated item code not found. Please check the configuration."
+        }
+
+    return variant_code

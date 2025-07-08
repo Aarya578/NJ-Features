@@ -89,6 +89,20 @@ frappe.ui.form.on('Employee', {
                 }
             });
         }
+
+        // if (frm.doc.role_profile && frm.doc.previous_role_profile && frm.doc.role_profile !== frm.doc.previous_role_profile) {
+        //     frappe.call({
+        //         method: "nj_features.overrides.employee.auto_enroll_on_role_profile_change",
+        //         args: {
+        //             employee: frm.doc.name
+        //         },
+        //         callback: function(r) {
+        //             if (!r.exc) {
+        //                 frappe.msgprint("✅ Auto-enrollment completed.");
+        //             }
+        //         }
+        //     });
+        // }
     },
 
     role_profile(frm) {

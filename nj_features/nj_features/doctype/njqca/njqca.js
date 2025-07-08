@@ -247,6 +247,18 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
+
+        // Check automated repack item code
+        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
+                self: frm.doc,
+                callback: function(r) {
+                    console.log("++++++++++++++");
+                }
+            })
+        }
+
         if(selectedItemGroup=="BATTERY"){
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_avg_discharge_rate',
@@ -913,6 +925,7 @@ function processItemTemplate(frm) {
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
             args: {'doc': frm.doc, 'item_template': frm.doc.item_template},
             callback: function (r) {
+                console.log("r.message", r.message);
                 if (r.message.error) {
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),

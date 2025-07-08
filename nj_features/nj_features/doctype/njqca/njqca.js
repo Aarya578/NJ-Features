@@ -252,19 +252,14 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
-                self: frm.doc,
-                callback: function(r) {
-                    console.log("++++++++++++++");
-                }
+                self: frm.doc
             })
         }
 
         if(selectedItemGroup=="BATTERY"){
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.get_avg_discharge_rate',
-                args: { 
-                    "njqca_name": frm.doc.name                    
-                },
+                args: { "njqca_name": frm.doc.name },
                 callback: function(r) {
                     if (r.message) { 
                         frm.set_value( 'average_discharge_rate', r.message); 
@@ -274,7 +269,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name){
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)){
 
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
@@ -348,7 +343,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
         
-        if (selectedModel && selectedItemGroup == "Laptops") {
+        if (selectedModel && selectedItemGroup == "Laptops" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },

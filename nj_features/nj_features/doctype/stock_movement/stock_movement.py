@@ -406,6 +406,8 @@ def validate_serial_no_and_department(row, error_messages):
 
         if not is_component and s_department != department:
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
+            check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
+            
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
 
@@ -792,3 +794,35 @@ def get_grades_from_part_list(search_value):
 
     # Return the consolidated results
     return results
+
+def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
+    # Get mandatory item groups
+    item_wizards_mandatory_item_groups_data = frappe.db.get_all(
+        'Component',
+        {'parent': serial_doc.item_wizard, 'mandatory': '1'},
+        'component_type'
+    )
+    mandatory_item_groups = [row.get("component_type") for row in item_wizards_mandatory_item_groups_data]
+    for row in department_doc.get('allowed_item_group_grades'):
+        item_group = row.get('item_group')
+        if item_group in mandatory_item_groups:
+            total_quantity = 0
+            # Sum quantity from serial_no_component
+            for col in serial_doc.get('serial_no_component', []):
+                if col.get('item_group') == item_group:
+                    total_quantity += int(col.get('quantity') or 0)
+            # Sum quantity from bag_list
+            for col in serial_doc.get('bag_list', []):
+                if col.get('item_group') == item_group:
+                    total_quantity += int(col.get('quantity') or 0)
+            # Compare with min/max
+            min_qty = int(row.get('min_quantity') or 1)
+            max_qty = int(row.get('max_quantity') or 1)
+
+            if total_quantity < min_qty or total_quantity > max_qty:
+                error_messages.append(
+                    f"Serial No <b>{serial_doc.name}</b> for item_group <b>{item_group}</b> "
+                    f"has a Total quantity <b>{total_quantity}</b> that is not allowed for department <b>{department_doc.name}</b>. "
+                    f"(Min: {min_qty}, Max: {max_qty})"
+                )
+   

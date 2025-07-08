@@ -21,7 +21,9 @@
   "critical_log_settings_section",
   "clientcode",
   "url",
-  "critical_log_url"
+  "critical_log_url",
+  "shopify_status_section",
+  "shopify_status_update"
  ],
  "fields": [
   {
@@ -111,11 +113,22 @@
    "fieldname": "adhoc_url",
    "fieldtype": "Data",
    "label": "Adhoc URL"
+  },
+  {
+   "fieldname": "shopify_status_section",
+   "fieldtype": "Section Break",
+   "label": "Shopify Status "
+  },
+  {
+   "fieldname": "shopify_status_update",
+   "fieldtype": "Table",
+   "label": "Shopify Status Update",
+   "options": "Shopify Status Update"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-06-27 12:32:01.076893",
+ "modified": "2025-07-02 14:41:29.674835",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

@@ -9,6 +9,7 @@ from datetime import datetime, date
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 
+
 @frappe.whitelist()
 def create_user_and_warehouse(self):
     try:
@@ -569,3 +570,36 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
     except Exception as e:
         frappe.log_error(f"Error updating ramp level and target: {str(e)}", "Fetch and Update Ramp Level")
         frappe.throw(_("An unexpected error occurred while updating ramp level and target."))
+
+@frappe.whitelist()
+def auto_enroll_on_role_profile_change(employee):
+    print("calling auto_enroll_on_role_profile_change")
+    doc = frappe.get_doc("Employee", employee)
+    if not doc.role_profile or not doc.user_id:
+        frappe.throw("Missing role profile or user ID on employee.")
+
+    query = """
+        SELECT DISTINCT parent AS course
+        FROM `tabCourse Role Profile`
+        WHERE role_profile = %s
+    """
+    courses = frappe.db.sql(query, (doc.role_profile,), as_dict=True)
+
+    enrolled_count = 0
+
+    for row in courses:
+        course = row.course
+
+        if frappe.db.exists("LMS Batch Membership", {"user": doc.user_id, "course": course}):
+            continue
+
+        membership = frappe.new_doc("LMS Batch Membership")
+        membership.user = doc.user_id
+        membership.course = course
+        membership.status = "Enrolled"
+        membership.flags.ignore_permissions = True
+        membership.insert()
+
+        enrolled_count += 1
+
+    return f"{enrolled_count} course(s) enrolled for user {doc.user_id}."

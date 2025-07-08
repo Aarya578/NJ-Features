@@ -481,16 +481,16 @@ class NJQCA(Document):
                 if is_component is not None and is_component != 1:
                    check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
+
+                if self.rfq_id is not None:
+                    s3 = time.time()
+                    self.create_serial_no_based_on_rfq()
+                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group :
                     s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
-                
-                if self.rfq_id is not None:
-                    s3 = time.time()
-                    self.create_serial_no_based_on_rfq()
-                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_group == sn_item_group or self.item_group=='BATTERY':
                     s4 = time.time()
@@ -1813,6 +1813,8 @@ def get_options_for_label(label):
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
 
+    return
+
     unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
@@ -2697,3 +2699,23 @@ def get_product_key(doc,method=None):
                    
     except Exception:
         log_error(traceback.format_exc(), "An error occurred in get_product_key in NJQCA "+njqca_name)
+
+
+@frappe.whitelist()
+def get_avg_discharge_rate(njqca_name):
+    try:      
+      query="""
+        select round(avg(discharge_rate),4) as discharge_rate from `tabNJQCA Result Parameters` where parent=%s
+      """
+
+      avg_discharge_rate=frappe.db.sql(query, (njqca_name), as_dict=1)
+
+      if avg_discharge_rate is not None and avg_discharge_rate:
+        return avg_discharge_rate[0].get("discharge_rate")
+      
+    except Exception as e:
+        log_error(traceback.format_exc(), "An error occurred in get_avg_discharge_rate in NJQCA "+njqca_name)
+
+@frappe.whitelist()
+def generate_automated_repack_item_code(self):
+    print("++++++++++++++++++++++++++++++++++++")

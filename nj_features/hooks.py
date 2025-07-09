@@ -44,6 +44,7 @@ doctype_js = {
     "Purchase Order": "public/js/purchase_order.js",
     "Material Request": "public/js/material_request.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
+    "Quality Procedure": "public/js/quality_procedure.js",
 }
 
 doctype_list_js = {

@@ -57,6 +57,7 @@ def fetch_and_stage_inventory_sync():
 
 def create_rq_doc():
     settings = get_shopify_settings()
+    update_status = ''
     update_so_quantity_check_status = update_so_quantity_check(settings)
     if update_so_quantity_check_status:
         update_parent_quantity_status = update_parent_quantity()
@@ -91,9 +92,24 @@ def create_rq_doc():
 
                     for row in results:
                         row.total_actual_qty = safe_float(row.total_actual_qty)
-                        if row.total_actual_qty is None or row.total_actual_qty < 0:
+
+                        if row.total_actual_qty is None:
                             continue
 
+                        if 0 <= row.total_actual_qty <= 3:
+                            add_item_code_available_query = """
+                                SELECT pd.shopify_variant_id
+                                FROM `tabProduct Bundle` pd
+                                INNER JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
+                                WHERE pdi.item_code LIKE '%%additional%%' and pd.shopify_variant_id = %s
+                                GROUP BY pd.name
+                                HAVING COUNT(*) > 1"""
+                            add_item_code_available = frappe.db.sql(add_item_code_available_query, (row.shopify_variant_id), as_dict=True)
+                            
+                            if add_item_code_available:
+                                row.total_actual_qty = 0
+                                update_status = "0 <= row.total_actual_qty <= 3 & additional warranty available"
+                        
                         item_code_like_clauses = []
                         params = [row.shopify_variant_id]
                         for code in row.item_codes.split(', '):
@@ -116,16 +132,16 @@ def create_rq_doc():
                             if float(row.total_actual_qty) != existing_doc_actual_qty:
                                 frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                                     "is_active": 1,
-                                    "sync_error": "",
+                                    "sync_error": update_status,
                                     "status": "Queued",
                                     "actual_qty": row.total_actual_qty,
                                     "updated_qty": row.total_actual_qty,
-                                    "modified": frappe.utils.now()
+                                    "modified": frappe.utils.now(),
                                 })
 
                         else:
                             doc = frappe.new_doc("NJ Inventory Sync Main")
-                            qty = safe_float(row.total_actual_qty) or 0
+                            qty = safe_float(row.total_actual_qty)
 
                             doc.is_active = 1
                             doc.actual_qty = qty
@@ -134,6 +150,7 @@ def create_rq_doc():
                             doc.item_code = row.item_codes
                             doc.item_group = row.item_groups
                             doc.shopify_variant_id = row.shopify_variant_id
+                            doc.sync_error = update_status
 
                             try:
                                 doc.insert()

@@ -3069,7 +3069,7 @@
    "allow_on_submit": 0,
    "bold": 0,
    "collapsible": 1,
-   "collapsible_depends_on": "eval: doc.delivery_document_type = 'Delivery Note'",
+   "collapsible_depends_on": "eval: doc.delivery_document_type == 'Delivery Note'",
    "columns": 0,
    "creation": "2025-02-17 14:54:14.195819",
    "default": null,

@@ -23,6 +23,7 @@ frappe.ui.form.on('Quality Review', {
                                 row.severity = rowData.severity;
                                 row.reviewee = frm.doc.reviewee;
                                 row.item_group = rowData.item_group;
+                                row.step = rowData.step;
                             });
                             frm.refresh_field('review_procedures_table');
                         }

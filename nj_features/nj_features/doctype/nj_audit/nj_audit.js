@@ -5,11 +5,21 @@ frappe.ui.form.on('NJ Audit', {
         if (frm.doc.docstatus == 0 && !frm.doc.__islocal && frm.doc.__unsaved) {
             frm.set_df_property('nj_audit_items', 'cannot_add_rows', true);
         }
+        $('.col-lg-2.layout-side-section').hide();
+        frappe.call({
+            method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.update_create_permission',
+            args: {doctype: cur_frm.doctype, nj_parameter: 'nj_audit_activation_level'},
+            callback: function(response) {
+                let currentValue = response.message;
+                if (currentValue == '1') {
+                    $('.primary-action').show();
+                } else { $('.primary-action').hide(); }
+            }
+        });
     },
     
     refresh: function(frm) {
 		// handleScannerInput(frm, 'scan_serial_no');
-        $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="scan_serial_no"]').focus();
         }

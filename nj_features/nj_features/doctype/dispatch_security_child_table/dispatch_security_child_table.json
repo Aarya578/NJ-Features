@@ -12,7 +12,11 @@
   "approved",
   "delivery_note",
   "dn_status",
-  "sales_channel"
+  "sales_channel",
+  "customer_name",
+  "courier_name",
+  "tracking_id",
+  "email_id"
  ],
  "fields": [
   {
@@ -73,11 +77,32 @@
    "fieldname": "sales_channel",
    "fieldtype": "Data",
    "label": "Sales Channel"
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name"
+  },
+  {
+   "fieldname": "courier_name",
+   "fieldtype": "Data",
+   "label": "Courier Name"
+  },
+  {
+   "fieldname": "tracking_id",
+   "fieldtype": "Data",
+   "label": "Tracking Id"
+  },
+  {
+   "fieldname": "email_id",
+   "fieldtype": "Data",
+   "label": "Email Id",
+   "options": "Email"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-26 09:57:35.243842",
+ "modified": "2025-07-08 16:08:21.868371",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

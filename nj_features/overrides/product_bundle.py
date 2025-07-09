@@ -94,20 +94,15 @@ def update_product_bundle_quantities():
         }
         print("matched_codes =======", matched_codes)
 
-        if not matched_codes:
-            continue  # Skip if no matching item_code found
-
         # Step 5: Sum item_code_count values for all matched codes
-        total_count = sum(item_code_count_map[code] for code in matched_codes)
+        total_count = sum(item_code_count_map[code] for code in matched_codes) if matched_codes else 0
         print("total_count =======", total_count)
 
         # Step 6: Update and save Product Bundle quantity
-        if total_count:
-            pb_doc.quantity = total_count
-            pb_doc.save(ignore_permissions=True)
-            frappe.db.commit()
-            print(f" Updated {pb_doc.name}: Quantity = {total_count}")
-        else:
-            print(f" Skipped {pb_doc.name}: Total count is 0")
+        pb_doc.quantity = total_count
+        pb_doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        print(f"Updated {pb_doc.name}: Quantity = {total_count}")
+
 
 

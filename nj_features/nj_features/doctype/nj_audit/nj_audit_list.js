@@ -3,15 +3,15 @@ frappe.listview_settings['NJ Audit'] = {
     onload: function(listview) {
         $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
-        $('.btn-primary.btn-sm.primary-action').hide();
+        $('.primary-action').hide();
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.update_create_permission',
-            args: {doctype: cur_list.doctype},
+            args: {doctype: cur_list.doctype, nj_parameter: 'nj_audit_activation_level'},
             callback: function(response) {
                 let currentValue = response.message;
                 if (currentValue == '1') {
-                    $('.btn-primary.btn-sm.primary-action').show();
+                    $('.primary-action').show();
                     $('[data-label="Active"]').addClass('btn-primary');
                 } else {
                     $('[data-label="Active"]').removeClass('btn-primary');
@@ -24,6 +24,7 @@ frappe.listview_settings['NJ Audit'] = {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.nj_audit.nj_audit.update_create_permission',
                     args: {
+                        nj_parameter: 'nj_audit_activation_level',
                         doctype: cur_list.doctype,
                         active_status: 1,
                     },

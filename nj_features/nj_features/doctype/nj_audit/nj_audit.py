@@ -75,8 +75,8 @@ def get_work_and_audit_warehouse():
     }
 
 @frappe.whitelist()
-def update_create_permission(doctype, active_status=None):
-    nj_audit_activation_level = frappe.db.get_value('NJ Settings', {'parameter': 'nj_audit_activation_level'}, ['name', 'value'], as_dict=1)
+def update_create_permission(doctype, nj_parameter, active_status=None):
+    nj_audit_activation_level = frappe.db.get_value('NJ Settings', {'parameter': nj_parameter}, ['name', 'value'], as_dict=1)
     new_value = nj_audit_activation_level.get('value')
     if nj_audit_activation_level:
         if active_status == '1':

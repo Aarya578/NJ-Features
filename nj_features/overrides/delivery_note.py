@@ -264,6 +264,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_component.reference_doctype_no = reference_name
                     updated = True
         
+        serial_no_doc.awb_no = ''
         serial_no_doc.address = ''
         serial_no_doc.end_date = ''
         serial_no_doc.email_id = ''
@@ -1668,6 +1669,10 @@ def shiprocket_awb_number(doc):
 
         # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
         url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
+<<<<<<< HEAD
+=======
+
+>>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {auth_token.strip()}"
@@ -1714,7 +1719,6 @@ def shiprocket_awb_number(doc):
 
     # 1. Service Availability
     service_url = frappe.db.get_single_value("Logistics Settings", "service_url")
-    # print("service_url============================",service_url)
 
     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
     service_json = service_response.json()
@@ -1754,11 +1758,8 @@ def shiprocket_awb_number(doc):
             
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
-            # print("freight_charge===================",freight_charge)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
-            # print("cod_charges===================",cod_charges)
             total = freight_charge + cod_charges
-            # print("total===================",total)
             
             # Select courier with lowest total cost
             if total < lowest_total:
@@ -1771,7 +1772,6 @@ def shiprocket_awb_number(doc):
                     "freight_charge": freight_charge,
                     "cod_charges": cod_charges
                 }
-                # print("best_courier===================",best_courier)
         except (ValueError, TypeError) as e:
             continue
 
@@ -1779,7 +1779,6 @@ def shiprocket_awb_number(doc):
         frappe.throw("No suitable courier found from the allowed courier list with rating above 4.")
     if best_courier:
         courier_service_name = best_courier.get("courier_name")
-        # print("courier_service_name===================",courier_service_name)
         
         # Check if courier service exists, if not create it
         if courier_service_name:
@@ -1809,18 +1808,13 @@ def shiprocket_awb_number(doc):
             continue
         # Get item group
         item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group") 
-        # print("item_group===================",item_group)
         # Get the item group document
         group_doc = frappe.get_doc("Item Group", item_group)
-        # print("group_doc===================",group_doc)
         # Get item_charges (float)
         item_charges = group_doc.get("item_charges")
-        # print("item_charges===================",item_charges)
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
-            # print("item_total_charge===================",item_total_charge)
             total_item_charges += item_total_charge
-            # print("total_item_charges===================",total_item_charges)
         else:
             print("Missing item_charges or quantity for item:", item.get("item_code"))
 
@@ -1833,31 +1827,24 @@ def shiprocket_awb_number(doc):
     # cod_and_item_charges_total = 0
     if against_sales_order:
         is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
-        # print("is_cod===================",is_cod)
     # COD Validation - Check if is_cod is enabled
     if is_cod == 1:  # Check if COD is enabled
         
         if best_courier:
             # Calculate total cost with weight
             freight_charge = best_courier.get('freight_charge', 0)
-            # print("freight_charge===============", freight_charge)
             cod_charges = best_courier.get('cod_charges', 0)
-            # print("cod_charges===============", cod_charges)
             doc_weight = doc.get('weight', 0) or 0
-            # print("doc_weight===============", doc_weight)
             
             total_cost = (freight_charge ) + cod_charges
-            # print("total_cost===============", total_cost)
             # Fetch COD charges from Ship Rocket Settings
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            # print("cod_charges_table===============", cod_charges_table)
             
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                # print("charges_value===============", charges_value)
                 if charges_value:
                     break
             
@@ -1890,7 +1877,6 @@ def shiprocket_awb_number(doc):
     #2. AWB Assignment
     # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
     awb_url = frappe.db.get_single_value("Logistics Settings", "awb_number_url")
-    # print("awb_url============================================",awb_url)
     awb_response = requests.post(awb_url, headers=headers, json={
         "shipment_id": shipment_id,
         "courier_id": best_courier.get("courier_company_id")
@@ -1910,10 +1896,14 @@ def shiprocket_awb_number(doc):
 
     if isinstance(data, dict):
         awb_code = data.get("awb_code")
+<<<<<<< HEAD
         invoice_no = data.get("invoice_no")
         transporter_id = data.get("transporter_id")
         transporter_name = data.get("transporter_name")
         # pickup_scheduled_date = data.get("pickup_scheduled_date")
+=======
+        pickup_scheduled_date = data.get("pickup_scheduled_date")
+>>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
       
     else:
         frappe.msgprint("AWB Assignment Failed: Invalid response format.")
@@ -1939,7 +1929,6 @@ def shiprocket_awb_number(doc):
     if not skip_pickup_generation:
         # pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
         pickup_url = frappe.db.get_single_value("Logistics Settings", "pickup_url")
-        # print("pickup_url================================",pickup_url)
         pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
         pickup_json = pickup_response.json()
         pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
@@ -1955,7 +1944,6 @@ def shiprocket_awb_number(doc):
     invoice_order_id = doc.shiprocket_order_id
     # invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
     invoice_url = frappe.db.get_single_value("Logistics Settings", "invoice_url")
-    # print("invoice_url==========================",invoice_url)
     invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
     invoice_json = invoice_response.json()
     invoice_pdf_url = invoice_json.get("invoice_url")
@@ -1971,7 +1959,6 @@ def shiprocket_awb_number(doc):
     # 6. Label Generation
     # label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
     label_url = frappe.db.get_single_value("Logistics Settings", "label_url")
-    # print("label_url==================================",label_url)
     label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
     label_json = label_response.json()
     label_link = label_json.get("label_url")

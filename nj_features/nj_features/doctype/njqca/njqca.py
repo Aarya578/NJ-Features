@@ -6,6 +6,7 @@ import datetime
 import traceback
 from frappe import _
 from frappe.utils import get_url
+from collections import defaultdict
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -93,7 +94,6 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
         if self.bios_serialno and not self.serial_no and self.item_group != "BATTERY":
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
 
-        # ✅ FIXED get_list usage
         existing_qis = frappe.get_list(
             'NJ Quality Inspection',
             filters={
@@ -285,6 +285,7 @@ def get_itm_code_on_barcode(new_qi):
             "bios_serial_number": serial_no_data.bios_serial_no,
             "item_group": serial_no_data.item_group,
             "item_name": serial_no_data.item_name,
+            "rfq_id": serial_no_data.rfq_id,
             "base_price": serial_no_data.purchase_rate
         }
 
@@ -324,11 +325,13 @@ def get_itm_code_on_barcode(new_qi):
             work_warehouse = emp_data.get('work_warehouse')
             if not work_warehouse:
                 frappe.msgprint(_("Work Warehouse is not set for Employee: <b>{0}</b>").format(frappe.session.user))
-
             return new_qi
-        else:
+
+        elif serial_no_data.warehouse is None and serial_no_data.rfq_id is None:
             frappe.msgprint(_("Warehouse is not updated in Serial No: <b>{0}</b>").format(barcode))
             return {"disable_save": True}
+
+        return new_qi
         
     except Exception as e:
         frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}")
@@ -446,11 +449,16 @@ class NJQCA(Document):
         update_storage_type(self)
 
     def on_submit(self):
-        self.check_for_repack_access()
-        self.update_item_groups()
-        self.validate_item_code_match()
-        self.battery_readings()
-        self.update_serial_no_readings()
+        try:
+            self.check_for_repack_access()
+            self.update_item_groups()
+            self.validate_item_code_match()
+            self.battery_readings()
+            self.update_serial_no_readings()
+        except Exception as e:
+            log_error(traceback.format_exc(), "Error in on_submit in NJQCA")
+            frappe.throw(f"Error in before on_submit {str(traceback.format_exc())}")
+
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
 
         if self.power_on == 'Yes':
@@ -473,7 +481,7 @@ class NJQCA(Document):
                 
                 s1 = time.time()
                 logger.debug(f"Time for '{self.name}'")
-                if is_component is not None and is_component != 1:
+                if is_component is not None and is_component != 1 and self.rfq_id is None:
                    sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 else:
                    sn_item_group = frappe.db.get_value('Serial No', self.component_serial_no, 'item_group')
@@ -481,7 +489,7 @@ class NJQCA(Document):
                 if is_component is not None and is_component != 1:
                    check_item_code_vs_model_validation(self.manual_repack_item_code, self.model)
                 logger.debug(f"Time after check_item_code_vs_model_validation '{self.name}': {time.time() - s1:.2f} seconds")
-                
+
                 if self.item_code != self.manual_repack_item_code and self.rfq_id is None and self.item_group == sn_item_group :
                     s2 = time.time()
                     self.make_stock_entry_using_nj_lib()
@@ -492,7 +500,7 @@ class NJQCA(Document):
                     self.create_serial_no_based_on_rfq()
                     logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
-                if self.item_group == sn_item_group or self.item_group=='BATTERY':
+                if self.item_group == sn_item_group or self.item_group=='BATTERY' or self.rfq_id is not None:
                     s4 = time.time()
                     if self.qi_type is not None and self.qi_type=="is_defective":
                         qi_data = open_draft_qi(self,self.brand,self.model,is_defective="1")
@@ -514,7 +522,8 @@ class NJQCA(Document):
 
             except Exception as e:
                 frappe.db.rollback()
-                frappe.msgprint("Error during submission: " + str(e))
+                print("error in on submit", traceback.format_exc())
+                frappe.msgprint("Error during submission: " + str(traceback.format_exc()))
                 raise
 
     def check_for_repack_access(self):
@@ -561,6 +570,7 @@ class NJQCA(Document):
 
         except Exception as e:
             frappe.db.rollback()
+            frappe.throw("Error creating Serial No: " + str(e))
             return None
 
     def validate_item_code_match(self):
@@ -579,10 +589,15 @@ class NJQCA(Document):
                 frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
 
     def update_serial_no_readings(self):
+
+        if self.rfq_id is not None:
+            return
+
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
         if is_component is not None and is_component == 1:
             return
-    # Fetch relevant parameters from NJQCA Result Parameters
+        
+        # Fetch relevant parameters from NJQCA Result Parameters
         results = frappe.db.sql("""
             SELECT parameter, value 
             FROM `tabNJQCA Result Parameters` 
@@ -1159,11 +1174,12 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
-                print("item_template", item_template)
-                print("consolidated", consolidated)
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
-                part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
+                result_part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
+
+                if result_part_data:
+                    part_data = result_part_data
 
                 return {'data_attr': consolidated, 'repack_item_code': repack_item_code, 'part_data': part_data}
             else:
@@ -1424,6 +1440,7 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
+    print("get_variant_from_value", item_template, args)
     try:
         missing_attribute = []
         args_list = []
@@ -1813,6 +1830,8 @@ def get_options_for_label(label):
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
 
+    return
+
     unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
@@ -1878,7 +1897,7 @@ def get_fetched_item_code(serial_no, partData):
                 "item_group": item_group  
             })
 
-    return updated_part_data
+    return updated_part_data if updated_part_data else partData
 
 @frappe.whitelist()
 def get_battery_auto_item_code(name,item_template,manufacturer_model):
@@ -2047,7 +2066,7 @@ def update_performance_criteria(doc):
         (doc.get("model"), doc.get("item_template")), as_dict=True
     )
 
-    print("item_wizard_list ------------- ", item_wizard_list)
+    # print("item_wizard_list ------------- ", item_wizard_list)
 
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
@@ -2067,7 +2086,7 @@ def update_performance_criteria(doc):
         if not criteria_doc_raw:
             return {"error": "NJ Settings not found for Performance Criteria."}
 
-        print("criteria_doc_raw ------------- ", criteria_doc_raw)
+        # print("criteria_doc_raw ------------- ", criteria_doc_raw)
 
         # ✅ Fix: decode only if it's a string
         try:
@@ -2103,8 +2122,6 @@ def update_performance_criteria(doc):
                     "status": "Pass" if is_passing else "Fail",
                     "message": message
                 })
-        
-        print("evaluation_results ------------- ", evaluation_results)
 
         frappe.logger().info("\nEvaluation Results:")
         for result in evaluation_results:
@@ -2697,3 +2714,100 @@ def get_product_key(doc,method=None):
                    
     except Exception:
         log_error(traceback.format_exc(), "An error occurred in get_product_key in NJQCA "+njqca_name)
+
+
+@frappe.whitelist()
+def get_avg_discharge_rate(njqca_name):
+    try:      
+      query="""
+        select round(avg(discharge_rate),4) as discharge_rate from `tabNJQCA Result Parameters` where parent=%s
+      """
+
+      avg_discharge_rate=frappe.db.sql(query, (njqca_name), as_dict=1)
+
+      if avg_discharge_rate is not None and avg_discharge_rate:
+        return avg_discharge_rate[0].get("discharge_rate")
+      
+    except Exception as e:
+        log_error(traceback.format_exc(), "An error occurred in get_avg_discharge_rate in NJQCA "+njqca_name)
+
+@frappe.whitelist()
+def generate_automated_repack_item_code(doc):
+    import json
+    import re
+    from collections import defaultdict
+
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    # ===== Processor =====
+    processor_data = [
+        {"processor_type": item.get("processor_type")}
+        for item in doc.get("njqca_laptop_processors", [])
+    ]
+
+    # ===== RAM =====
+    total_ram_gb = sum(
+        int(re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper()).group(1))
+        for item in doc.get("njqca_laptop_ram", [])
+        if re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper())
+    )
+    merged_ram = [{"ram_capacity": f"{total_ram_gb} GB"}] if total_ram_gb else []
+
+    # ===== Storage =====
+    storage_table = doc.get("njqca_laptop_storage", [])
+    storage_by_type = defaultdict(float)
+
+    for item in storage_table:
+        raw_capacity = item.get("storage_capacity", "").upper()
+        storage_type = item.get("storage_type", "").upper()
+
+        match = re.search(r'(\d+(?:\.\d+)?)\s*(GB|TB)', raw_capacity)
+        if not match:
+            continue
+
+        size = float(match.group(1))
+        unit = match.group(2)
+        size_in_gb = size * 1024 if unit == "TB" else size
+
+        # ✅ Only consider SSD or HDD
+        if storage_type in ["SSD", "HDD"]:
+            final_type = storage_type
+        elif "SSD" in raw_capacity:
+            final_type = "SSD"
+        elif "HDD" in raw_capacity:
+            final_type = "HDD"
+        else:
+            continue  # Ignore types like MSATA, EMMC, etc.
+
+        storage_by_type[final_type] += size_in_gb
+
+    # ===== Format storage (with GB ➜ TB conversion if ≥ 1000 GB) =====
+    merged_storage = []
+    for s_type, total_gb in storage_by_type.items():
+        if total_gb >= 1000:
+            tb_value = round(total_gb / 1024, 1)
+            # Optional: round to int if it's exact TB
+            size_str = f"{int(tb_value)} TB" if tb_value.is_integer() else f"{tb_value:.1f} TB"
+        else:
+            size_str = f"{int(total_gb)} GB"
+        merged_storage.append({"storage_capacity": f"{size_str} {s_type}"})
+
+    # ===== Final Args =====
+    args = processor_data + merged_ram + merged_storage
+
+    print("Processors:", processor_data)
+    print("RAM:", merged_ram)
+    print("Storage:", merged_storage)
+    print("Final Args for Variant Lookup:", args)
+
+    variant_code = get_variant_from_value(doc.get("item_template"), args=args)
+    print("Variant Code:", variant_code)
+
+    if not variant_code:
+        return {
+            "error": True,
+            "message": "❌ Automated item code not found. Please check the configuration."
+        }
+
+    return variant_code

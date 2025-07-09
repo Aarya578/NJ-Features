@@ -247,7 +247,42 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name){
+        // Check automated repack item code
+        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
+                args: { doc: frm.doc },
+                callback: function(r) {
+                    console.log(r.message);
+                    if (r.message.error) {
+                        frappe.show_alert({
+                            title: "Error",
+                            indicator: "red",
+                            message: "❌ Automated item code not found. Please check the configuration."
+                        });
+                    }
+                    else{
+                        frm.set_value('repack_item_code', r.message);
+                        frm.refresh_field('repack_item_code');
+                    }
+                }
+            });
+        }
+
+        if(selectedItemGroup=="BATTERY"){
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_avg_discharge_rate',
+                args: { "njqca_name": frm.doc.name },
+                callback: function(r) {
+                    if (r.message) { 
+                        frm.set_value( 'average_discharge_rate', r.message); 
+                        frm.refresh_field('average_discharge_rate');
+                    }
+                }
+            })
+        }
+
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)){
 
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
@@ -321,7 +356,7 @@ frappe.ui.form.on('NJQCA', {
             });
         }
         
-        if (selectedModel && selectedItemGroup == "Laptops") {
+        if (selectedModel && selectedItemGroup == "Laptops" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
@@ -883,6 +918,10 @@ function trigger_serial_no(frm) {
                     frm.set_value(field, r.message[field]);
                     cur_frm.refresh_field(field);
                 });
+            },
+            error: function(err) { 
+                console.error(err);
+                $('.primary-action').hide();
             }
         });
     }
@@ -894,6 +933,7 @@ function processItemTemplate(frm) {
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
             args: {'doc': frm.doc, 'item_template': frm.doc.item_template},
             callback: function (r) {
+                console.log("r.message", r.message);
                 if (r.message.error) {
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),

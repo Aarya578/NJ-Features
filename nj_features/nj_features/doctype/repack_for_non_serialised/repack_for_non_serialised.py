@@ -122,11 +122,13 @@ def get_new_grade(doctype, txt, searchfield, start, page_len, filters):
 @frappe.whitelist()
 def get_valuation_rate(item_code,grade):
     grade_a_item_code = get_repack_item_code_with_new_grade(item_code, 'Grade A')
-
+    valuation_rate_for_grade_a = 0
     valuation_rate_for_grade_a = frappe.db.get_value('Stock Ledger Entry', {'item_code': grade_a_item_code}, 'valuation_rate')
 
     if not valuation_rate_for_grade_a:
-        frappe.throw("No 'valuation_rate' found for the given Item Code: <b>" + grade_a_item_code + "</b>")
+        valuation_rate_for_grade_a = frappe.db.get_value('Purchase Receipt Item',{'item_code': grade_a_item_code}, 'valuation_rate')
+        if not valuation_rate_for_grade_a:
+            valuation_rate_for_grade_a = frappe.db.get_value('Item',{'name': grade_a_item_code}, 'valuation_rate')
 
     item_group_of_grade_a = frappe.db.get_value('Item', {'name': grade_a_item_code}, 'item_group')
 

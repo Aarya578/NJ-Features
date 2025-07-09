@@ -495,12 +495,12 @@ class NJQCA(Document):
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
                 
-                if self.rfq_id is not None:
+                if self.rfq_id:
                     s3 = time.time()
                     self.create_serial_no_based_on_rfq()
                     logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
-                if self.item_group == sn_item_group or self.item_group=='BATTERY' or self.rfq_id is not None:
+                if self.item_group == sn_item_group or self.item_group=='BATTERY':
                     s4 = time.time()
                     if self.qi_type is not None and self.qi_type=="is_defective":
                         qi_data = open_draft_qi(self,self.brand,self.model,is_defective="1")

@@ -2733,12 +2733,20 @@ def get_avg_discharge_rate(njqca_name):
 
 @frappe.whitelist()
 def generate_automated_repack_item_code(doc):
+    import json
+    import re
+    from collections import defaultdict
 
     if isinstance(doc, str):
         doc = json.loads(doc)
 
-    processor_data = [{"processor_type": item.get("processor_type")} for item in doc.get("njqca_laptop_processors", [])]
+    # ===== Processor =====
+    processor_data = [
+        {"processor_type": item.get("processor_type")}
+        for item in doc.get("njqca_laptop_processors", [])
+    ]
 
+    # ===== RAM =====
     total_ram_gb = sum(
         int(re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper()).group(1))
         for item in doc.get("njqca_laptop_ram", [])
@@ -2746,6 +2754,7 @@ def generate_automated_repack_item_code(doc):
     )
     merged_ram = [{"ram_capacity": f"{total_ram_gb} GB"}] if total_ram_gb else []
 
+    # ===== Storage =====
     storage_table = doc.get("njqca_laptop_storage", [])
     storage_by_type = defaultdict(float)
 
@@ -2761,6 +2770,7 @@ def generate_automated_repack_item_code(doc):
         unit = match.group(2)
         size_in_gb = size * 1024 if unit == "TB" else size
 
+        # ✅ Only consider SSD or HDD
         if storage_type in ["SSD", "HDD"]:
             final_type = storage_type
         elif "SSD" in raw_capacity:
@@ -2768,21 +2778,31 @@ def generate_automated_repack_item_code(doc):
         elif "HDD" in raw_capacity:
             final_type = "HDD"
         else:
-            continue
+            continue  # Ignore types like MSATA, EMMC, etc.
 
         storage_by_type[final_type] += size_in_gb
 
+    # ===== Format storage (with GB ➜ TB conversion if ≥ 1000 GB) =====
     merged_storage = []
     for s_type, total_gb in storage_by_type.items():
-        if total_gb >= 1024:
-            size_str = f"{total_gb / 1024:.1f} TB" if total_gb % 1024 != 0 else f"{int(total_gb // 1024)} TB"
+        if total_gb >= 1000:
+            tb_value = round(total_gb / 1024, 1)
+            # Optional: round to int if it's exact TB
+            size_str = f"{int(tb_value)} TB" if tb_value.is_integer() else f"{tb_value:.1f} TB"
         else:
             size_str = f"{int(total_gb)} GB"
         merged_storage.append({"storage_capacity": f"{size_str} {s_type}"})
 
+    # ===== Final Args =====
     args = processor_data + merged_ram + merged_storage
 
+    print("Processors:", processor_data)
+    print("RAM:", merged_ram)
+    print("Storage:", merged_storage)
+    print("Final Args for Variant Lookup:", args)
+
     variant_code = get_variant_from_value(doc.get("item_template"), args=args)
+    print("Variant Code:", variant_code)
 
     if not variant_code:
         return {

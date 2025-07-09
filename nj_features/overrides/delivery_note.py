@@ -84,6 +84,7 @@ class CustomDeliveryNote(DeliveryNote):
                 else:
                     print(f"No Sales Order found for DN {self.name}")
 
+            self.update_mail_from_address()
             self.rto_charges_update()
             # self.set_cit_image_from_sales_order()
             self.fetching_tracking_details()
@@ -92,8 +93,8 @@ class CustomDeliveryNote(DeliveryNote):
             qi_mandatory_checks_on_dn_submit(self, method=None)
             # self.qc_nj_of_days_checking()
             if self.is_return == 0:
-                send_sales_invoice_email_on_delivery_note(self, method=None)
-                # self._process_customer_details()
+                # send_sales_invoice_email_on_delivery_note(self, method=None)
+                self._process_customer_details()
             else:
                 self._process_serial_numbers()
             
@@ -324,6 +325,34 @@ class CustomDeliveryNote(DeliveryNote):
     #     except Exception as e:
     #         frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
     
+
+
+    def update_mail_from_address(self):
+        try:
+            if not self.shipping_address_name:
+                frappe.throw("Shipping address not set on Delivery Note.")
+            
+            address = frappe.get_doc("Address", self.shipping_address_name)
+            # print("address=======================", address)
+            
+            email_id = address.get("email_id")  # Use .get() for safer access
+            # print("email_id=======================", email_id)
+            
+            if not email_id:
+                frappe.throw(f"No email_id found in address {self.shipping_address_name}")
+            
+            self.email = email_id
+            # print("self.email=======================", self.email)
+            
+            self.save(ignore_permissions=True)
+            return f"Email set to {email_id} for Delivery Note {self.name}"
+            
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Error in update_mail_from_address")
+            frappe.throw(f"Error updating email from address: {str(e)}")
+        
+
+            
     def fetching_tracking_details(self):
     # Skip if return or not CriticaLog
         if self.is_return or self.courier_service != "CriticaLog":
@@ -384,6 +413,8 @@ class CustomDeliveryNote(DeliveryNote):
                 frappe.log_error(f"RTO Cost update failed: {e}", "RTO Charges Update")
 
     def update_details_to_delivery_charege_doc(self):
+        if self.is_return:
+            return
         # Check if a Delivery Charges document with the same AWB number exists
         existing_delivery_charge = frappe.get_all(
             "Delivery Charges",
@@ -1464,8 +1495,8 @@ def send_consignement_data(doc):
             "Header": [header],
             "ItemsDetails": items
         }
-        
-        url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
+        url = frappe.db.get_single_value("Logistics Settings", "url")
+        # url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
         
@@ -1607,12 +1638,6 @@ def shiprocket_awb_number(doc):
                         sub_total = 300.0
         else:
             frappe.throw("Sales Order not linked to this Delivery Note.")
-        # if sales_order_doc.is_cod == 1:
-        #     payment_method = "COD"
-        #     sub_total = float(sales_order_doc.total_outstanding) if sales_order_doc.total_outstanding else 0
-        # else:
-        #     payment_method = "Prepaid"
-        #     sub_total = float(sales_order_doc.grand_total) if sales_order_doc.grand_total else 0
 
         # ShipRocket API payload structure
         data = {
@@ -1644,7 +1669,10 @@ def shiprocket_awb_number(doc):
 
         # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
         url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
+<<<<<<< HEAD
+=======
 
+>>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {auth_token.strip()}"
@@ -1868,7 +1896,14 @@ def shiprocket_awb_number(doc):
 
     if isinstance(data, dict):
         awb_code = data.get("awb_code")
+<<<<<<< HEAD
+        invoice_no = data.get("invoice_no")
+        transporter_id = data.get("transporter_id")
+        transporter_name = data.get("transporter_name")
+        # pickup_scheduled_date = data.get("pickup_scheduled_date")
+=======
         pickup_scheduled_date = data.get("pickup_scheduled_date")
+>>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
       
     else:
         frappe.msgprint("AWB Assignment Failed: Invalid response format.")
@@ -1880,6 +1915,9 @@ def shiprocket_awb_number(doc):
 
     # ✅ Save AWB Code to Sales Order
     frappe.db.set_value("Delivery Note", doc.name, "tracking_id", awb_code)
+    frappe.db.set_value("Delivery Note", doc.name, "lr_no", invoice_no)
+    frappe.db.set_value("Delivery Note", doc.name, "gst_transporter_id", transporter_id)
+    frappe.db.set_value("Delivery Note", doc.name, "transporter_name", transporter_name)
 
     # ✅ Save pickup date if available
     skip_pickup_generation = False
@@ -1895,24 +1933,12 @@ def shiprocket_awb_number(doc):
         pickup_json = pickup_response.json()
         pickup_scheduled_date = pickup_json.get("response", {}).get("pickup_scheduled_date")
         
+        
         if pickup_scheduled_date:
             frappe.db.set_value("Delivery Note", doc.name, "pickup_scheduled_date", pickup_scheduled_date)
         else:
             frappe.throw("Pickup scheduled date not found in response.")
 
-    # 4. Manifest Generation
-    # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
-    manifest_url = frappe.db.get_single_value("Logistics Settings", "manifest_url")
-    manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
-    manifest_json = manifest_response.json()
-    manifest_pdf_url = manifest_json.get("manifest_url")
-    if not manifest_pdf_url:
-        frappe.throw(" URL not found in response.")
-    manifest_file_response = requests.get(manifest_pdf_url)
-    if manifest_file_response.status_code != 200:
-        frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
-    manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
-    frappe.db.set_value("Delivery Note", doc.name, "shiprocket_manifests", manifest_pdf_b64)
 
     # 5. Invoice Generation
     invoice_order_id = doc.shiprocket_order_id
@@ -1929,6 +1955,7 @@ def shiprocket_awb_number(doc):
     invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_invoice", invoice_pdf_b64)
 
+
     # 6. Label Generation
     # label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
     label_url = frappe.db.get_single_value("Logistics Settings", "label_url")
@@ -1941,7 +1968,21 @@ def shiprocket_awb_number(doc):
     if label_file_response.status_code != 200:
         frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
     label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
-    frappe.db.set_value("Delivery Note", doc.name, "shiprocket_image", label_pdf_b64)
+    frappe.db.set_value("Delivery Note", doc.name, "shiprocket_image", label_pdf_b64) 
+       
+    # 4. Manifest Generation
+    # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+    manifest_url = frappe.db.get_single_value("Logistics Settings", "manifest_url")
+    manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
+    manifest_json = manifest_response.json()
+    manifest_pdf_url = manifest_json.get("manifest_url")
+    if not manifest_pdf_url:
+        frappe.throw(" URL not found in response.")
+    manifest_file_response = requests.get(manifest_pdf_url)
+    if manifest_file_response.status_code != 200:
+        frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
+    manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
+    frappe.db.set_value("Delivery Note", doc.name, "shiprocket_manifests", manifest_pdf_b64)
 
     frappe.db.commit()
 
@@ -1951,7 +1992,10 @@ def shiprocket_awb_number(doc):
         "label_url": label_link,
         "manifest_url": manifest_pdf_url,
         "invoice_url": invoice_pdf_url,
-        "shiprocket_courier_name": best_courier
+        "shiprocket_courier_name": best_courier,
+        "tranporter_name": transporter_name,
+        "lr_no" : invoice_no,
+        "gst_transporter_id" : transporter_id
     }
 
 # def adapter_repacked_serial_no(nj_serial_no):
@@ -2083,3 +2127,6 @@ def allow_to_save(doc):
     except Exception as e:
         log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
+
+
+

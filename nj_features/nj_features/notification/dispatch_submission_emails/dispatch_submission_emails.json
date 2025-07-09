@@ -1,0 +1,29 @@
+{
+ "attach_print": 0,
+ "channel": "Email",
+ "creation": "2025-07-08 11:03:38.043078",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Dispatch Security Checkpoints",
+ "enabled": 1,
+ "event": "Submit",
+ "idx": 0,
+ "is_standard": 1,
+ "message": "Hi {{ doc.owner }},\n\nA new Dispatch ({{ doc.name }}) has been submitted.\n\nDetails:\n\n- Date: {{ doc.posting_date }}\n\n{% for row in doc.dispatch_security_child_table %}\n- Customer: {{ row.customer_name }}\n- Courier: {{ row.courier_name }}\n- Tracking ID: {{ row.tracking_id }}\n- Email: {{ row.emai_ig }}\n{% endfor %}\n\nThanks,  \nERP System\n",
+ "modified": "2025-07-08 12:45:31.207943",
+ "modified_by": "postman@mail.com",
+ "module": "NJ Features",
+ "name": "Dispatch Submission Emails",
+ "owner": "postman@mail.com",
+ "recipients": [
+  {
+   "receiver_by_document_field": "owner"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "sender": "NewJaisa",
+ "sender_email": "support@newjaisa.com",
+ "subject": "Dispatch {{ doc.name }} Submitted"
+}

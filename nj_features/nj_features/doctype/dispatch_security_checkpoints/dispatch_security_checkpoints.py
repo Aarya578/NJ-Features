@@ -8,6 +8,30 @@ from frappe.utils import add_days, nowdate, getdate
 
 class DispatchSecurityCheckpoints(Document):
     pass
+    def on_submit(self):
+        self.update_send_email_DN()
+
+    def update_send_email_DN(self):
+        try:
+            for row in self.dispatch_security_child_table:
+                if row.delivery_note:
+                    # Fetch the Delivery Note
+                    dn_doc = frappe.get_doc("Delivery Note", row.delivery_note)
+                    # print("dn_doc=======================", dn_doc)
+
+                    # Set send_email = 1
+                    dn_doc.send_email = 1
+
+                    # Save and commit changes
+                    dn_doc.save(ignore_permissions=True)
+                    frappe.db.commit()
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Error in update_send_email_DN")
+            frappe.throw(f"Error while updating Delivery Note send_email: {e}")
+
+
+
 
 @frappe.whitelist()
 def scan_serial_no_data_for_sales(serial_no):
@@ -83,17 +107,52 @@ def scan_serial_no_data_for_sales(serial_no):
                 if creation_date < getdate(four_days_ago):
                     frappe.throw("The latest Delivery Note was not created within the last 4 days.")
 
-        return {
-            'serial_no': serial_no,
-            'item_code': item_code,
-            'delivery_note': delivery_note,
-            'sales_invoice': sales_invoice,
-            'sales_order': sales_order,
-            'si_status': si_status,
-            'dn_status': dn_status,
-            'sales_channel': sales_channel,
-            'approved': approved
-        }
+            customer_name = ""
+            courier_name = ""
+            tracking_id = ""
+            email_id = ""
+            dn_doc = frappe.get_doc("Delivery Note", delivery_note)
+            # print("dn_doc=======================", dn_doc)
+            customer_name = dn_doc.customer 
+            # print("customer_name=======================", customer_name)
+            courier_name = dn_doc.get("courier_service", "")
+            # print("courier_name=======================", courier_name)
+            tracking_id = dn_doc.get("tracking_id", "")
+            # print("tracking_id=======================", tracking_id)
+            if dn_doc.shipping_address_name:
+                try:
+                    address = frappe.get_doc("Address", dn_doc.shipping_address_name)
+                    email_id = address.get("email_id", "")
+                    # print("email_id=======================", email_id)
+                except frappe.DoesNotExistError:
+                    pass
+
+            return {
+                'serial_no': serial_no,
+                'item_code': item_code,
+                'delivery_note': delivery_note,
+                'sales_invoice': sales_invoice,
+                'sales_order': sales_order,
+                'si_status': si_status,
+                'dn_status': dn_status,
+                'sales_channel': sales_channel,
+                'approved': approved,
+                'customer_name': customer_name,
+                'courier_name': courier_name,
+                'tracking_id': tracking_id,
+                'email_id': email_id
+            }
+        # return {
+        #     'serial_no': serial_no,
+        #     'item_code': item_code,
+        #     'delivery_note': delivery_note,
+        #     'sales_invoice': sales_invoice,
+        #     'sales_order': sales_order,
+        #     'si_status': si_status,
+        #     'dn_status': dn_status,
+        #     'sales_channel': sales_channel,
+        #     'approved': approved
+        # }
 
     except Exception as e:
         frappe.throw(e)
@@ -165,3 +224,7 @@ def get_item_code_details_for_transfer(ste_number):
             result.append(row)
 
     return result
+
+
+
+    

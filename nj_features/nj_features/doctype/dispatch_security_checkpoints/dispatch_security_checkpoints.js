@@ -5,7 +5,21 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
             frm.set_df_property('dispatch_security_retutn_table', 'cannot_add_rows', true);
         }
     },
-    
+    // after_save(frm) {
+    //     frappe.call({
+    //         method: "nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.fsetting_email_in_parent",
+    //         args: {
+    //             docname: frm.doc.name
+    //         },
+    //         callback: function (r) {
+    //             if (r.message) {
+    //                 frm.set_value("dispatch_email", r.message);
+    //                 frm.refresh_field("dispatch_email");
+    //                 frappe.show_alert({ message: "Dispatch Email Updated", indicator: "green" });
+    //             }
+    //         }
+    //     });
+    // },
     refresh: function(frm) {
         handleScannerInput(frm, 'scan_serial_no');
         $('.col-lg-2.layout-side-section').hide();
@@ -49,7 +63,11 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                                     "si_status": r.message.si_status || 'Not Available',
                                     "dn_status": r.message.dn_status || 'Not Available',
                                     "approved": r.message.approved,
-                                    "sales_channel": r.message.sales_channel || 'Not Available'
+                                    "sales_channel": r.message.sales_channel || 'Not Available',
+                                    "customer_name": r.message.customer_name || 'Not Available',
+                                    "courier_name": r.message.courier_name || 'Not Available',
+                                    "tracking_id": r.message.tracking_id || 'Not Available',
+                                    "email_id": r.message.email_id || 'Not Available'
                                 };
                                 frm.add_child("dispatch_security_child_table", dispatch_security_child_table);
                                 frm.refresh_field("dispatch_security_child_table");

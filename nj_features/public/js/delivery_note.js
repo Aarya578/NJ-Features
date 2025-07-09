@@ -1,13 +1,13 @@
 frappe.ui.form.on('Delivery Note', {
 
-    onload: function(frm) {
-        const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
-        if (snapmintItem) {
-            frm.set_value("courier_service", "Shiprocket Manifest");
-            frm.set_df_property("courier_service", "read_only", 1);
-        }
+    // onload: function(frm) {
+    //     const snapmintItem = frm.doc.items.find(item => item.against_sales_order && item.against_sales_order.startsWith("SO-Snapmint-"));
+    //     if (snapmintItem) {
+    //         frm.set_value("courier_service", "Shiprocket Manifest");
+    //         frm.set_df_property("courier_service", "read_only", 1);
+    //     }
        
-    },
+    // },
 
     refresh: function(frm) {
         
@@ -124,19 +124,7 @@ frappe.ui.form.on('Delivery Note', {
                 } else { frappe.validated = true; }
             }
         });
-        // let first_so = frm.doc.items.find(item => item.against_sales_order)?.against_sales_order;
-        // if (first_so) {
-        //     frappe.call({
-        //         method: "nj_features.overrides.delivery_note.get_cod_amount",
-        //         args: { so_name: first_so },
-        //         callback: function(res) {
-        //             if (res.message) {
-        //                 frm.set_value("cod_amount", res.message.cod_amount); 
-        //                 frm.set_value("shopify_order_id", res.message.order_id); 
-        //             }
-        //         }
-        //     });
-        // }
+
         frappe.call({
             method: 'nj_features.overrides.delivery_note.update_item_details',
             args: { self: frm.doc },
@@ -169,6 +157,23 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
 
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.validate_delivery_bios",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                if (r.message && Array.isArray(r.message) && r.message.length > 0) {
+                    frappe.msgprint({
+                        title: __('Validation Error'),
+                        message: r.message.join('<br>'),
+                        indicator: 'red'
+                    });
+                    frappe.validated = false;
+                } else {
+                    frappe.validated = true;
+                }
+            }
+        });
+
     },
 
 
@@ -190,6 +195,7 @@ frappe.ui.form.on('Delivery Note', {
                 }
             }
         })
+
     },
   
     // after_save: function(frm) {

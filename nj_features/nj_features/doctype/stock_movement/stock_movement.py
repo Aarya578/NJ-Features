@@ -632,11 +632,12 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     allowed_map = defaultdict(set)
     for entry in allowed_table:
         item_group = entry.get("item_group")
-        grades = entry.get("restricted_grade", "").split(",")
-        for grade in grades:
-            grade = grade.strip()
-            if item_group and grade:
-                allowed_map[item_group].add(grade)
+        if entry.get("restricted_grade"):
+            grades = entry.get("restricted_grade", "").split(",")
+            for grade in grades:
+                grade = grade.strip()
+                if item_group and grade:
+                    allowed_map[item_group].add(grade)
 
     if all_must_match:
         for item_group, allowed_grades in allowed_map.items():

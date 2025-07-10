@@ -98,12 +98,14 @@ def create_rq_doc():
 
                         if 0 <= row.total_actual_qty <= 3:
                             add_item_code_available_query = """
-                                SELECT pd.shopify_variant_id
+                                SELECT item_code
+                                FROM `tabProduct Bundle Item` 
+                                WHERE parent in (SELECT pdi.parent
                                 FROM `tabProduct Bundle` pd
-                                INNER JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
-                                WHERE pdi.item_code LIKE '%%additional%%' and pd.shopify_variant_id = %s
-                                GROUP BY pd.name
-                                HAVING COUNT(*) > 1"""
+                                LEFT JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
+                                WHERE pd.shopify_variant_id = %s
+                                group by pdi.parent having count(pdi.parent) > 0) and item_code like '%%additional%%';
+                            """
                             add_item_code_available = frappe.db.sql(add_item_code_available_query, (row.shopify_variant_id), as_dict=True)
                             
                             if add_item_code_available:

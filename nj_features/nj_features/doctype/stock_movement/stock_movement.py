@@ -817,7 +817,7 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
             # Compare with min/max
-            min_qty = int(row.get('min_quantity') or 1)
+            min_qty = int(row.get('min_quantity') or 0)
             max_qty = int(row.get('max_quantity') or 1)
 
             if total_quantity < min_qty or total_quantity > max_qty:

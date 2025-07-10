@@ -42,6 +42,5 @@ frappe.ui.form.on('Quality Review', {
                 frappe.msgprint(__("Please select a Review Type and Reviewee"));
             }
         }
-    }
-
+    },
 });

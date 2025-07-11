@@ -252,7 +252,7 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
        
-        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+        if (!frm.doc.shipping_address_name && frm.doc.customer_address) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');
         }

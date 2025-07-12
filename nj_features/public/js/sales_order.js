@@ -16,11 +16,14 @@ frappe.ui.form.on('Sales Order', {
         } 
     },
    
-    // onload_post_render: function(frm) {
+    onload_post_render: function(frm) {
+        frm.remove_custom_button('Delivery Note', 'Create');
+        $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();
+    },
+        // onload_post_render: function(frm) {
     //     frm.remove_custom_button('Sales Invoice', 'Create');
     //     $('span.menu-item-label[data-label="Create%20%3E%Sales%20Invoice"]').closest('li').hide();
     // },
-
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
             validateAmazonOrderID(frm);
@@ -28,7 +31,8 @@ frappe.ui.form.on('Sales Order', {
     },
 
     after_save: function(frm) {
-
+        // console.log("inside the fucntion==================");
+        
         // frm.call({
         //     method: "nj_features.overrides.sales_order.fetching_HSN_code", // update with actual path
         //     args: {
@@ -77,8 +81,7 @@ frappe.ui.form.on('Sales Order', {
     //             }
     //         }
     //     });
-
-        if (!frm.doc.shipping_address_name && frm.doc.customer_address) {
+        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');
         }

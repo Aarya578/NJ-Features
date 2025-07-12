@@ -2145,4 +2145,3 @@ def allow_to_save(doc):
     except Exception as e:
         log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
-

@@ -1,5 +1,7 @@
 frappe.ui.form.on('Sales Order', {
+    
     refresh: function(frm) {
+        // frm.page.remove_inner_button('Sales Invoice', 'Create');
         if (frm.doc.status !== 'Closed' && frm.doc.status !== 'On Hold' && frm.doc.docstatus === 1) {
             frm.add_custom_button('Initiate Refund', function () {
                 frappe.call({
@@ -10,6 +12,7 @@ frappe.ui.form.on('Sales Order', {
                     }
                 });
             });
+            
         } 
     },
    
@@ -17,7 +20,10 @@ frappe.ui.form.on('Sales Order', {
         frm.remove_custom_button('Delivery Note', 'Create');
         $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();
     },
-
+        // onload_post_render: function(frm) {
+    //     frm.remove_custom_button('Sales Invoice', 'Create');
+    //     $('span.menu-item-label[data-label="Create%20%3E%Sales%20Invoice"]').closest('li').hide();
+    // },
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
             validateAmazonOrderID(frm);
@@ -25,7 +31,7 @@ frappe.ui.form.on('Sales Order', {
     },
 
     after_save: function(frm) {
-        console.log("inside the fucntion==================");
+        // console.log("inside the fucntion==================");
         
         // frm.call({
         //     method: "nj_features.overrides.sales_order.fetching_HSN_code", // update with actual path

@@ -28,8 +28,7 @@ frappe.ui.form.on('Sales Order', {
     },
 
     after_save: function(frm) {
-        console.log("inside the fucntion==================");
-        
+
         // frm.call({
         //     method: "nj_features.overrides.sales_order.fetching_HSN_code", // update with actual path
         //     args: {
@@ -78,7 +77,8 @@ frappe.ui.form.on('Sales Order', {
     //             }
     //         }
     //     });
-        if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
+
+        if (!frm.doc.shipping_address_name && frm.doc.customer_address) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');
         }

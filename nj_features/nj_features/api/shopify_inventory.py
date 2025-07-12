@@ -90,10 +90,28 @@ def create_rq_doc():
                     product_ids = [row.shopify_variant_id for row in results]
 
                     for row in results:
+                        update_status = ''
                         row.total_actual_qty = safe_float(row.total_actual_qty)
-                        if row.total_actual_qty is None or row.total_actual_qty < 0:
+
+                        if row.total_actual_qty is None:
                             continue
 
+                        if 0 <= row.total_actual_qty <= 3:
+                            add_item_code_available_query = """
+                                SELECT item_code
+                                FROM `tabProduct Bundle Item` 
+                                WHERE parent in (SELECT pdi.parent
+                                FROM `tabProduct Bundle` pd
+                                LEFT JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
+                                WHERE pd.shopify_variant_id = %s
+                                group by pdi.parent having count(pdi.parent) > 0) and item_code like '%%additional%%';
+                            """
+                            add_item_code_available = frappe.db.sql(add_item_code_available_query, (row.shopify_variant_id), as_dict=True)
+                            
+                            if add_item_code_available:
+                                row.total_actual_qty = 0
+                                update_status = "0 <= row.total_actual_qty <= 3 & additional warranty available"
+                        
                         item_code_like_clauses = []
                         params = [row.shopify_variant_id]
                         for code in row.item_codes.split(', '):
@@ -116,16 +134,16 @@ def create_rq_doc():
                             if float(row.total_actual_qty) != existing_doc_actual_qty:
                                 frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                                     "is_active": 1,
-                                    "sync_error": "",
+                                    "sync_error": update_status,
                                     "status": "Queued",
                                     "actual_qty": row.total_actual_qty,
                                     "updated_qty": row.total_actual_qty,
-                                    "modified": frappe.utils.now()
+                                    "modified": frappe.utils.now(),
                                 })
 
                         else:
                             doc = frappe.new_doc("NJ Inventory Sync Main")
-                            qty = safe_float(row.total_actual_qty) or 0
+                            qty = safe_float(row.total_actual_qty)
 
                             doc.is_active = 1
                             doc.actual_qty = qty
@@ -134,6 +152,7 @@ def create_rq_doc():
                             doc.item_code = row.item_codes
                             doc.item_group = row.item_groups
                             doc.shopify_variant_id = row.shopify_variant_id
+                            doc.sync_error = update_status
 
                             try:
                                 doc.insert()
@@ -145,8 +164,6 @@ def create_rq_doc():
                     for data in get_shopify_variant_data:
                         frappe.db.sql("""UPDATE `tabNJ Inventory Sync Main` SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW() WHERE shopify_variant_id = %s""", (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
 
-                    frappe.db.commit()
-
                     all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
                     all_doc_names = set(doc["name"] for doc in all_docs)
 
@@ -156,8 +173,10 @@ def create_rq_doc():
 
                     for name in not_updated_doc_names:
                         frappe.db.set_value("NJ Inventory Sync Main", name, {
+                            "sync_error": "",
                             "actual_qty": "0",
                             "updated_qty": "0",
+                            "status": "Queued",
                             "modified": frappe.utils.now()
                         })
 

@@ -37,8 +37,8 @@ def create_user_and_warehouse(self):
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
 
-            # if db_department and db_department != self.get("department"):
-            #     update_department_in_work_warehouse(self)
+            if db_department and db_department != self.get("department"):
+                update_department_in_work_warehouse(self)
         else:
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 

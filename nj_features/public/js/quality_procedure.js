@@ -17,7 +17,13 @@ frappe.ui.form.on('Tools and Equipements', {
 });
 
 frappe.ui.form.on('Quality Procedure', {
-    refresh: function(frm) {
-        console.log("🔁 Quality Procedure loaded");
+    onload: function(frm) {
+        frm.fields_dict.quality_processes.grid.get_field('procedure').get_query = function(doc, cdt, cdn) {
+            return {
+                filters: [
+                    ['name', '!=', frm.doc.name] // exclude self-reference
+                ]
+            };
+        };
     }
 });

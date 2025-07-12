@@ -632,11 +632,12 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     allowed_map = defaultdict(set)
     for entry in allowed_table:
         item_group = entry.get("item_group")
-        grades = entry.get("restricted_grade", "").split(",")
-        for grade in grades:
-            grade = grade.strip()
-            if item_group and grade:
-                allowed_map[item_group].add(grade)
+        if entry.get("restricted_grade"):
+            grades = entry.get("restricted_grade", "").split(",")
+            for grade in grades:
+                grade = grade.strip()
+                if item_group and grade:
+                    allowed_map[item_group].add(grade)
 
     if all_must_match:
         for item_group, allowed_grades in allowed_map.items():
@@ -816,7 +817,7 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
             # Compare with min/max
-            min_qty = int(row.get('min_quantity') or 1)
+            min_qty = int(row.get('min_quantity') or 0)
             max_qty = int(row.get('max_quantity') or 1)
 
             if total_quantity < min_qty or total_quantity > max_qty:

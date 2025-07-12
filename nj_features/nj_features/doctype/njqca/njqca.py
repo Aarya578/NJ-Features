@@ -4,6 +4,7 @@ import time
 import frappe
 import datetime
 import traceback
+from datetime import datetime
 from frappe import _
 from frappe.utils import get_url
 from collections import defaultdict
@@ -483,7 +484,7 @@ class NJQCA(Document):
                 
                 s1 = time.time()
                 logger.debug(f"Time for '{self.name}'")
-                if is_component is not None and is_component != 1 and self.rfq_id is None:
+                if is_component is not None and is_component != 1 :
                    sn_item_group = frappe.db.get_value('Serial No', self.serial_no, 'item_group')
                 else:
                    sn_item_group = frappe.db.get_value('Serial No', self.component_serial_no, 'item_group')
@@ -497,12 +498,12 @@ class NJQCA(Document):
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
                 
-                if self.rfq_id:
-                    s3 = time.time()
-                    self.create_serial_no_based_on_rfq()
-                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
+                # if self.rfq_id:
+                #     s3 = time.time()
+                #     self.create_serial_no_based_on_rfq()
+                #     logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
-                if self.item_group == sn_item_group or self.item_group=='BATTERY':
+                if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
                     s4 = time.time()
                     if self.qi_type is not None and self.qi_type=="is_defective":
                         qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,is_defective="1")
@@ -552,28 +553,31 @@ class NJQCA(Document):
         stock_data_str = json.dumps(stock_data)
         stock_entry_using_nj_lib(stock_data_str)
 
-    def create_serial_no_based_on_rfq(self):
-        try:
-            sn_doc = frappe.new_doc("Serial No")
-            sn_doc.model = self.model
-            sn_doc.rfq_id = self.rfq_id
-            sn_doc.name = self.serial_no
-            sn_doc.item_source = self.doctype
-            sn_doc.item_code = self.item_code
-            sn_doc.item_name = self.item_code
-            sn_doc.serial_no = self.serial_no
-            sn_doc.item_group = self.item_group
-            sn_doc.description = self.item_code
-            sn_doc.bios_serial_no = self.serial_no
-            sn_doc.reference_doctype_no = self.name
+    # def create_serial_no_based_on_rfq(self):
+    #     try:
+    #         sn_doc = frappe.new_doc("Serial No")
+    #         sn_doc.model = self.model
+    #         sn_doc.rfq_id = self.rfq_id
+    #         sn_doc.name = self.serial_no
+    #         sn_doc.item_source = self.doctype
+    #         sn_doc.item_code = self.item_code
+    #         sn_doc.item_name = self.item_code
+    #         sn_doc.serial_no = self.serial_no
+    #         sn_doc.item_group = self.item_group
+    #         sn_doc.description = self.item_code
+    #         sn_doc.bios_serial_no = self.serial_no
+    #         sn_doc.reference_doctype_no = self.name
 
-            sn_doc.save()
-            frappe.msgprint("Serial No: <b>" + self.serial_no + "</b> is created successfully.")
+    #         sn_doc.save()
+    #         frappe.msgprint("Serial No: <b>" + self.serial_no + "</b> is created successfully.")
 
-        except Exception as e:
-            frappe.db.rollback()
-            frappe.throw("Error creating Serial No: " + str(e))
-            return None
+    #     except Exception as e:
+    #         frappe.db.rollback()
+    #         frappe.throw("Error creating Serial No: " + str(e))
+    #         return None
+
+
+    
 
     def validate_item_code_match(self):
         if self.item_group != "Laptops":
@@ -1832,8 +1836,6 @@ def get_options_for_label(label):
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
 
-    return
-
     unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
@@ -2813,3 +2815,49 @@ def generate_automated_repack_item_code(doc):
         }
 
     return variant_code
+
+
+@frappe.whitelist()
+def create_serial_no_based_on_rfq(serial_info):
+        try:
+            if isinstance(serial_info, str):
+                serial_info = json.loads(serial_info)
+            query = """
+                SELECT serial_no FROM `tabSerial No` WHERE serial_no = %s AND (rfq_id is null or rfq_id ="");
+            """
+            serial_no=serial_info.get('serial_no')
+            result=None
+            if serial_no:
+                result=frappe.db.sql(query,(serial_no),as_dict=1)
+            if result is not None and len(result)>0:
+                frappe.throw("Serial No: <b>" + serial_info.get('serial_no') + "</b> already exists.")
+
+            exist_query="""
+                SELECT serial_no FROM `tabSerial No` WHERE serial_no = %s AND rfq_id <> null;
+            """
+            serial_no_result=None
+            if serial_no:
+                serial_no_result=frappe.db.sql(exist_query,(serial_no),as_dict=1)
+            if serial_no_result is not None and len(serial_no_result)>0:
+                return "Already exists"
+
+            sn_doc = frappe.new_doc("Serial No")
+            sn_doc.model = serial_info.get('model')
+            sn_doc.rfq_id = serial_info.get('rfq_id')
+            sn_doc.name = serial_info.get('serial_no')
+            sn_doc.item_source = serial_info.get('doctype')
+            sn_doc.item_code = serial_info.get('item_code')
+            sn_doc.item_name = serial_info.get('item_code')
+            sn_doc.serial_no = serial_info.get('serial_no')
+            sn_doc.item_group = serial_info.get('item_group')
+            sn_doc.description = serial_info.get('item_code')
+            sn_doc.bios_serial_no = serial_info.get('serial_no')
+            sn_doc.reference_doctype_no = serial_info.get('name')
+
+            sn_doc.save()
+            frappe.msgprint("Serial No: <b>" + serial_info.get('serial_no') + "</b> is created successfully.")
+
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.throw("Error creating Serial No: " + str(e))
+            return None

@@ -1669,10 +1669,7 @@ def shiprocket_awb_number(doc):
 
         # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
         url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
-<<<<<<< HEAD
-=======
 
->>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {auth_token.strip()}"
@@ -1896,14 +1893,11 @@ def shiprocket_awb_number(doc):
 
     if isinstance(data, dict):
         awb_code = data.get("awb_code")
-<<<<<<< HEAD
         invoice_no = data.get("invoice_no")
         transporter_id = data.get("transporter_id")
         transporter_name = data.get("transporter_name")
         # pickup_scheduled_date = data.get("pickup_scheduled_date")
-=======
         pickup_scheduled_date = data.get("pickup_scheduled_date")
->>>>>>> f6070c0509282e5f389979b4803a2e8cbf32acea
       
     else:
         frappe.msgprint("AWB Assignment Failed: Invalid response format.")

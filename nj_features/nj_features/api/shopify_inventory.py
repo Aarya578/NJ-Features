@@ -57,7 +57,6 @@ def fetch_and_stage_inventory_sync():
 
 def create_rq_doc():
     settings = get_shopify_settings()
-    update_status = ''
     update_so_quantity_check_status = update_so_quantity_check(settings)
     if update_so_quantity_check_status:
         update_parent_quantity_status = update_parent_quantity()
@@ -91,6 +90,7 @@ def create_rq_doc():
                     product_ids = [row.shopify_variant_id for row in results]
 
                     for row in results:
+                        update_status = ''
                         row.total_actual_qty = safe_float(row.total_actual_qty)
 
                         if row.total_actual_qty is None:
@@ -164,8 +164,6 @@ def create_rq_doc():
                     for data in get_shopify_variant_data:
                         frappe.db.sql("""UPDATE `tabNJ Inventory Sync Main` SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW() WHERE shopify_variant_id = %s""", (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
 
-                    frappe.db.commit()
-
                     all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
                     all_doc_names = set(doc["name"] for doc in all_docs)
 
@@ -175,8 +173,10 @@ def create_rq_doc():
 
                     for name in not_updated_doc_names:
                         frappe.db.set_value("NJ Inventory Sync Main", name, {
+                            "sync_error": "",
                             "actual_qty": "0",
                             "updated_qty": "0",
+                            "status": "Queued",
                             "modified": frappe.utils.now()
                         })
 

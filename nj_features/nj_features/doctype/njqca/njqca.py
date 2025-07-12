@@ -74,7 +74,7 @@ def get_inspection_type():
         frappe.msgprint("<b>Inspection Type</b> is not updated in either <b>Role Profile</b> or <b>Department: {0}</b>".format(department))
         return None
     
-def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None):
+def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None):
     try:
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
         if is_component is not None and is_component == 1:
@@ -91,8 +91,10 @@ def open_draft_qi(self, brand=None, model=None, is_defective=None, re_check=None
 
         inspection_type = self.inspection_type or get_inspection_type()
 
-        if self.bios_serialno and not self.serial_no and self.item_group != "BATTERY":
+        if self.bios_serialno and not self.serial_no and is_component is not None and is_component == 0:
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
+        elif (self.component_serial_no is None or self.component_serial_no == "") and component_serial_no is not None and is_component is not None and is_component == 1:
+            serial_num = component_serial_no
 
         existing_qis = frappe.get_list(
             'NJ Quality Inspection',
@@ -350,7 +352,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         
         response = frappe._dict()
         
-        response = validation_for_nj_readings_in_nj_qi(barcode, inspection_type, is_defective, re_check)
+        response = validation_for_nj_readings_in_nj_qi(barcode, inspection_type, is_defective, re_check, is_njqca=True)
 
         doc_data = response.get('doc_data')
 
@@ -503,11 +505,11 @@ class NJQCA(Document):
                 if self.item_group == sn_item_group or self.item_group=='BATTERY':
                     s4 = time.time()
                     if self.qi_type is not None and self.qi_type=="is_defective":
-                        qi_data = open_draft_qi(self,self.brand,self.model,is_defective="1")
+                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,is_defective="1")
                     elif self.qi_type is not None and self.qi_type=="re_check":
-                        qi_data = open_draft_qi(self,self.brand,self.model,re_check="1")
+                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,re_check="1")
                     else:
-                        qi_data = open_draft_qi(self,self.brand,self.model)
+                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model)
                     logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
                 if qi_data:
@@ -1026,17 +1028,17 @@ def get_info_from_component_serial_no(doc=None):
         return f"Error while getting component serial info: {str(e)}"
 
 @frappe.whitelist()
-def after_save_njqca(docname, brand=None, model=None, qi_type=None):
+def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         if doc.power_on == 'Yes' and (qi_type==None or not qi_type):
-            qi_draft_data = open_draft_qi(doc,brand,model)
+            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model)
             return qi_draft_data
         elif doc.power_on == 'Yes' and qi_type=='is_defective':
-            qi_draft_data = open_draft_qi(doc,brand,model,is_defective="1")
+            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model,is_defective="1")
             return qi_draft_data
         elif doc.power_on == 'Yes' and qi_type=='re_check':
-            qi_draft_data = open_draft_qi(doc,brand,model,re_check="1")
+            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model,re_check="1")
             return qi_draft_data
         elif doc.power_on == 'No':
             frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")

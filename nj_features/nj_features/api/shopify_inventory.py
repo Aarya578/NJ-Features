@@ -57,7 +57,6 @@ def fetch_and_stage_inventory_sync():
 
 def create_rq_doc():
     settings = get_shopify_settings()
-    update_status = ''
     update_so_quantity_check_status = update_so_quantity_check(settings)
     if update_so_quantity_check_status:
         update_parent_quantity_status = update_parent_quantity()
@@ -91,6 +90,7 @@ def create_rq_doc():
                     product_ids = [row.shopify_variant_id for row in results]
 
                     for row in results:
+                        update_status = ''
                         row.total_actual_qty = safe_float(row.total_actual_qty)
 
                         if row.total_actual_qty is None:
@@ -98,12 +98,14 @@ def create_rq_doc():
 
                         if 0 <= row.total_actual_qty <= 3:
                             add_item_code_available_query = """
-                                SELECT pd.shopify_variant_id
+                                SELECT item_code
+                                FROM `tabProduct Bundle Item` 
+                                WHERE parent in (SELECT pdi.parent
                                 FROM `tabProduct Bundle` pd
-                                INNER JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
-                                WHERE pdi.item_code LIKE '%%additional%%' and pd.shopify_variant_id = %s
-                                GROUP BY pd.name
-                                HAVING COUNT(*) > 1"""
+                                LEFT JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
+                                WHERE pd.shopify_variant_id = %s
+                                group by pdi.parent having count(pdi.parent) > 0) and item_code like '%%additional%%';
+                            """
                             add_item_code_available = frappe.db.sql(add_item_code_available_query, (row.shopify_variant_id), as_dict=True)
                             
                             if add_item_code_available:
@@ -162,8 +164,6 @@ def create_rq_doc():
                     for data in get_shopify_variant_data:
                         frappe.db.sql("""UPDATE `tabNJ Inventory Sync Main` SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW() WHERE shopify_variant_id = %s""", (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
 
-                    frappe.db.commit()
-
                     all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
                     all_doc_names = set(doc["name"] for doc in all_docs)
 
@@ -173,8 +173,10 @@ def create_rq_doc():
 
                     for name in not_updated_doc_names:
                         frappe.db.set_value("NJ Inventory Sync Main", name, {
+                            "sync_error": "",
                             "actual_qty": "0",
                             "updated_qty": "0",
+                            "status": "Queued",
                             "modified": frappe.utils.now()
                         })
 

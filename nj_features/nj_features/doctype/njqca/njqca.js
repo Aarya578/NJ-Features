@@ -425,7 +425,7 @@ frappe.ui.form.on('NJQCA', {
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: { 'docname': frm.doc.name, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
+                args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
                 callback: function(r) {
                     if (r && r.message) {
                         let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
@@ -671,6 +671,7 @@ frappe.ui.form.on('NJQCA', {
                 callback: function(r) {
                     if (r && r.message  && r.message=="1") {
                         frm.set_value('qi_type', 'is_defective');
+                        frm.refresh_field('qi_type');
                     }
                 }
             })

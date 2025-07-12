@@ -29,6 +29,8 @@
   "shiprocket_manifests",
   "shiprocket_invoice",
   "shiprocket_image",
+  "section_break_xhi0z",
+  "item_tracking_table",
   "amended_from"
  ],
  "fields": [
@@ -65,6 +67,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "Delivery Charges",
@@ -155,11 +158,21 @@
    "fieldname": "location",
    "fieldtype": "Data",
    "label": "Location"
+  },
+  {
+   "fieldname": "section_break_xhi0z",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "item_tracking_table",
+   "fieldtype": "Table",
+   "label": "Item Tracking Table",
+   "options": "Item Tracking Table"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-16 12:37:35.225731",
+ "modified": "2025-07-12 16:00:43.788908",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

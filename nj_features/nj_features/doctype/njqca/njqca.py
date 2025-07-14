@@ -2833,7 +2833,7 @@ def create_serial_no_based_on_rfq(serial_info):
                 frappe.throw("Serial No: <b>" + serial_info.get('serial_no') + "</b> already exists.")
 
             exist_query="""
-                SELECT serial_no FROM `tabSerial No` WHERE serial_no = %s AND rfq_id <> null;
+                SELECT serial_no FROM `tabSerial No` WHERE serial_no = %s AND rfq_id is not null;
             """
             serial_no_result=None
             if serial_no:

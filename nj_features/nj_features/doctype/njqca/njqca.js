@@ -442,7 +442,7 @@ frappe.ui.form.on('NJQCA', {
         
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         
-        if ((frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if (frm.doc.serial_no || frm.doc.component_serial_no) {
 
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',

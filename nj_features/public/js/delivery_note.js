@@ -47,7 +47,7 @@ frappe.ui.form.on('Delivery Note', {
             frm.clear_custom_buttons();
             
             // Show Critical Log button only if AWB number has NOT been generated AND courier_service is not CriticaLog
-            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog') {
+            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog' && frm.doc.cod_amount) {
                 let critical_btn = frm.add_custom_button(__('Critical Log'), function() {
                     frappe.show_alert({ message: __('Generating AWB Number...'), indicator: 'blue' });
                     frappe.call({
@@ -177,26 +177,26 @@ frappe.ui.form.on('Delivery Note', {
     },
 
 
-    before_submit: async function(frm) {
-        await frappe.call({
-            method:'nj_features.overrides.delivery_note.allow_to_save',
-            args: {
-                "doc": frm.doc
-            },
-            callback: function(r) {
-                if (r.message) {
-                    if(r.message!="pass") {
-                        frappe.validated=false
-                        frappe.throw(r.message);
+    // before_submit: async function(frm) {
+    //     await frappe.call({
+    //         method:'nj_features.overrides.delivery_note.allow_to_save',
+    //         args: {
+    //             "doc": frm.doc
+    //         },
+    //         callback: function(r) {
+    //             if (r.message) {
+    //                 if(r.message!="pass") {
+    //                     frappe.validated=false
+    //                     frappe.throw(r.message);
 
-                    }else{
-                        frappe.validated=true
-                    }
-                }
-            }
-        })
+    //                 }else{
+    //                     frappe.validated=true
+    //                 }
+    //             }
+    //         }
+    //     })
 
-    },
+    // },
   
     // after_save: function(frm) {
     //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {

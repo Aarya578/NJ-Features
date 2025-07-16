@@ -603,3 +603,14 @@ def auto_enroll_on_role_profile_change(employee):
         enrolled_count += 1
 
     return f"{enrolled_count} course(s) enrolled for user {doc.user_id}."
+
+@frappe.whitelist()
+def validate_employee_department_and_role(user, department, role_profile):
+    employee = frappe.get_value("Employee", {"user_id": user}, ["department", "role_profile"])
+
+    if not employee:
+        return False
+
+    employee_department, employee_role = employee
+
+    return employee_department == department and employee_role == role_profile

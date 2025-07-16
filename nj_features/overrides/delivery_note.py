@@ -2092,6 +2092,9 @@ def sanitize_phone(phone):
 @frappe.whitelist()
 def allow_to_save(doc):
     try:
+        execute=frappe.db.get_value("NJ Settings", {"parameter": "Adaptor_restriction_in_DN"}, "value")
+        if execute is not None and execute=="0":
+            return ""
         if isinstance(doc,str):
             doc=json.loads(doc)
         child_data=doc["packed_items"]

@@ -2,7 +2,7 @@ import re
 import json
 import time
 import frappe
-import datetime
+import datetime as dt
 import traceback
 from datetime import datetime
 from frappe import _
@@ -307,7 +307,7 @@ def get_itm_code_on_barcode(new_qi):
             result.update(preferred_prices)
 
         if serial_no_data.rfq_id is None:
-            current_date = datetime.date.today()
+            current_date = dt.date.today()
             serial_item_date = serial_no_data.purchase_date
             difference = (current_date - serial_item_date).days
 

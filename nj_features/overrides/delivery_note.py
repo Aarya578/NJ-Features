@@ -189,7 +189,7 @@ class CustomDeliveryNote(DeliveryNote):
                     # serial_no_doc.modified = now()
 
                     try:
-                        serial_no_doc.save(ignore_permissions=True)
+                        serial_no_doc.save()
                     except Exception as e:
                         log_error(traceback.format_exc(), "Error in saving serial_no_doc")
                         frappe.throw("Error while updating Serial No", str(e))
@@ -283,7 +283,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.modified = now()
 
         if updated:
-            serial_no_doc.save(ignore_permissions=True)
+            serial_no_doc.save()
         
     # def fetching_tracking_details(self):
         
@@ -333,18 +333,14 @@ class CustomDeliveryNote(DeliveryNote):
                 frappe.throw("Shipping address not set on Delivery Note.")
             
             address = frappe.get_doc("Address", self.shipping_address_name)
-            # print("address=======================", address)
-            
             email_id = address.get("email_id")  # Use .get() for safer access
-            # print("email_id=======================", email_id)
             
             if not email_id:
                 frappe.throw(f"No email_id found in address {self.shipping_address_name}")
             
             self.email = email_id
-            # print("self.email=======================", self.email)
             
-            self.save(ignore_permissions=True)
+            self.save()
             return f"Email set to {email_id} for Delivery Note {self.name}"
             
         except Exception as e:

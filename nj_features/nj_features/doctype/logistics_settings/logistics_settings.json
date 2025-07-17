@@ -8,6 +8,7 @@
   "shiprocket_settings_section",
   "email",
   "password",
+  "rating",
   "adhoc_url",
   "service_url",
   "awb_number_url",
@@ -16,11 +17,18 @@
   "manifest_url",
   "label_url",
   "cod_charges",
+  "rto_contains_table",
   "shiprocketcourier_name_block_list",
   "shiprocket_courier_names",
   "critical_log_settings_section",
-  "clientcode",
+  "surface_auth",
+  "air_auth",
+  "surface",
+  "cod_air",
+  "critical_cl_column",
   "url",
+  "cod_surface",
+  "air",
   "critical_log_url",
   "shopify_status_section",
   "shopify_status_update"
@@ -57,11 +65,6 @@
    "fieldname": "critical_log_settings_section",
    "fieldtype": "Section Break",
    "label": "Critical Log Settings"
-  },
-  {
-   "fieldname": "clientcode",
-   "fieldtype": "Int",
-   "label": "ClientCode"
   },
   {
    "fieldname": "url",
@@ -124,11 +127,57 @@
    "fieldtype": "Table",
    "label": "Shopify Status Update",
    "options": "Shopify Status Update"
+  },
+  {
+   "fieldname": "rating",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rating"
+  },
+  {
+   "fieldname": "critical_cl_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "surface_auth",
+   "fieldtype": "Data",
+   "label": "Surface Auth"
+  },
+  {
+   "fieldname": "air_auth",
+   "fieldtype": "Data",
+   "label": "Air Auth"
+  },
+  {
+   "fieldname": "surface",
+   "fieldtype": "Int",
+   "label": "Surface"
+  },
+  {
+   "fieldname": "cod_surface",
+   "fieldtype": "Int",
+   "label": "COD Surface"
+  },
+  {
+   "fieldname": "air",
+   "fieldtype": "Int",
+   "label": "Air"
+  },
+  {
+   "fieldname": "cod_air",
+   "fieldtype": "Data",
+   "label": "COD Air"
+  },
+  {
+   "fieldname": "rto_contains_table",
+   "fieldtype": "Table",
+   "label": "RTO Contains Table",
+   "options": "RTO Contains Table"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-07-02 14:41:29.674835",
+ "modified": "2025-07-17 17:12:03.085938",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

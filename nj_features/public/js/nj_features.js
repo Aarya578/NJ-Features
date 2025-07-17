@@ -690,7 +690,9 @@ function show_login_popup() {
     if (!user || user === "Guest") return;
 
     const currentPath = window.location.pathname;
-    const isAppRoot = currentPath.startsWith("/app");
+    const isAppRoot = currentPath.endsWith("/app");
+
+    console.log("🔍 Current path:", currentPath);
 
     if (!isAppRoot) {
         console.log("🔕 Not in /app route, skipping popup.");

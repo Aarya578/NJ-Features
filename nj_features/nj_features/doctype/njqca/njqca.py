@@ -2102,7 +2102,7 @@ def update_performance_criteria(doc):
         disk_criteria_list = criteria_doc.get(disk_type)
 
         if not disk_criteria_list:
-            return {"error": f"Performance criteria not found for disk type: {disk_type}"}
+            return
 
         njqca_results = doc.get("njqca_result_parameters", [])
         evaluation_results = []

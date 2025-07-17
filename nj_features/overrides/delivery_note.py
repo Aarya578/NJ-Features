@@ -189,7 +189,7 @@ class CustomDeliveryNote(DeliveryNote):
                     # serial_no_doc.modified = now()
 
                     try:
-                        serial_no_doc.save(ignore_permissions=True)
+                        serial_no_doc.save()
                     except Exception as e:
                         log_error(traceback.format_exc(), "Error in saving serial_no_doc")
                         frappe.throw("Error while updating Serial No", str(e))
@@ -283,23 +283,29 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.modified = now()
 
         if updated:
-            serial_no_doc.save(ignore_permissions=True)
+            serial_no_doc.save()
         
 
     def update_mail_from_address(self):
         try:
             if not self.shipping_address_name:
-                frappe.throw("Shipping address not set on Delivery Note.")        
+                frappe.throw("Shipping address not set on Delivery Note.")
+            
             address = frappe.get_doc("Address", self.shipping_address_name)
-            # print("address=======================", address)          
+            # print("address=======================", address)
+            
             email_id = address.get("email_id")  # Use .get() for safer access
-            # print("email_id=======================", email_id)          
+            # print("email_id=======================", email_id)
+            
             if not email_id:
-                frappe.throw(f"No email_id found in address {self.shipping_address_name}")          
+                frappe.throw(f"No email_id found in address {self.shipping_address_name}")
+            
             self.email = email_id
-            # print("self.email=======================", self.email)          
+            # print("self.email=======================", self.email)
+            
             self.save(ignore_permissions=True)
-            return f"Email set to {email_id} for Delivery Note {self.name}"        
+            return f"Email set to {email_id} for Delivery Note {self.name}"
+            
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_mail_from_address")
             frappe.throw(f"Error updating email from address: {str(e)}")

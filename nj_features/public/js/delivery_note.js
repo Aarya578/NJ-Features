@@ -20,6 +20,17 @@ frappe.ui.form.on('Delivery Note', {
                 openDjangoUrl(frm.doc.doctype, frm.doc.name);
             }).addClass('btn-primary');
         }
+        if ( frm.doc.docstatus === 0 && frm.doc.return_reason && !frm.doc.cause_of_return) {
+            if(frm.doc.return_reason === "Replacement"){
+                frm.set_value('cause_of_return', "Replace");
+            }
+            if(frm.doc.return_reason === "In-House Repair"){
+                frm.set_value('cause_of_return', "Repair");
+            }
+            if(frm.doc.return_reason === "Refund"){
+                frm.set_value('cause_of_return', "Refund");
+            }
+        }
 
         if (frm.doc.__islocal) {
             frm.set_value("posting_time", frappe.datetime.now_time());
@@ -47,7 +58,7 @@ frappe.ui.form.on('Delivery Note', {
             frm.clear_custom_buttons();
             
             // Show Critical Log button only if AWB number has NOT been generated AND courier_service is not CriticaLog
-            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog') {
+            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog' && frm.doc.cod_amount) {
                 let critical_btn = frm.add_custom_button(__('Critical Log'), function() {
                     frappe.show_alert({ message: __('Generating AWB Number...'), indicator: 'blue' });
                     frappe.call({

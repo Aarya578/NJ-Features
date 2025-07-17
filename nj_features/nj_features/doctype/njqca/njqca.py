@@ -640,7 +640,7 @@ class NJQCA(Document):
         # Also set reference to the NJQCA doc
         serial_no_doc.set("njqca_reference_name", self.name)
 
-        serial_no_doc.save(ignore_permissions=True)
+        serial_no_doc.save()
         frappe.db.commit()
 
     def battery_readings(self):
@@ -699,7 +699,7 @@ class NJQCA(Document):
                 # Update average fields in Serial No
                 serial_no_doc.battery_average_cpu_load = average_cpu_load
                 serial_no_doc.battery_average_discharge_rate = average_discharge_rate                
-                serial_no_doc.save(ignore_permissions=True)
+                serial_no_doc.save()
                 frappe.db.commit()            
                 frappe.msgprint("Battery readings and averages updated successfully.")
                 
@@ -777,7 +777,7 @@ class NJQCA(Document):
                         "specification": specification
                     })
 
-            serial_doc.save(ignore_permissions=True)
+            serial_doc.save()
             frappe.db.commit()
 
         except Exception as e:
@@ -831,7 +831,6 @@ def model_change_for_serial_no(newmodel, serial_no):
                 return { "status": 'failed' }
             if newmodel:
                 serial_no_doc.serial_no_component = []
-                serial_no_doc.save()
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                 return { "status": 'success' }
         else:
@@ -861,7 +860,6 @@ def model_change_for_serial_no(newmodel, serial_no):
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    serial_no_doc.save()
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                     return { "status": 'success' }
                 
@@ -882,7 +880,6 @@ def model_change_for_serial_no(newmodel, serial_no):
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    serial_no_doc.save()
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                     return { "status": 'success' }
             else:
@@ -2404,7 +2401,6 @@ def update_njqca_doc(njqca_name, evaluation_results):
             })
         
         njqca_doc.save()
-        frappe.db.commit()
     except Exception as e:
         log_error(f"Error updating NJQCA document {njqca_name}: {str(e)}")
         
@@ -2851,7 +2847,7 @@ def create_serial_no_based_on_rfq(serial_info):
             sn_doc.serial_no = serial_info.get('serial_no')
             sn_doc.item_group = serial_info.get('item_group')
             sn_doc.description = serial_info.get('item_code')
-            sn_doc.bios_serial_no = serial_info.get('serial_no')
+            sn_doc.bios_serial_no = serial_info.get('bios_serialno')
             sn_doc.reference_doctype_no = serial_info.get('name')
 
             sn_doc.save()

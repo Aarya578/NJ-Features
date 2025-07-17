@@ -190,6 +190,7 @@ def create_warehouse(user, department, location, emp_id=None, warehouse_type=Non
         warehouse.warehouse_name = wk_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
+        warehouse.warehouse_type = 'Operation Warehouse'
         
     else:
         parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')

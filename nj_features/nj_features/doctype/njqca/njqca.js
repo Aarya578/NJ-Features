@@ -274,7 +274,6 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
                 args: { doc: frm.doc },
                 callback: function(r) {
-                    console.log(r.message);
                     if (r.message.error) {
                         frappe.show_alert({
                             title: "Error",
@@ -707,7 +706,6 @@ frappe.ui.form.on('NJQCA', {
             }, 'work_warehouse');
             let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
             const isComponent = item_group_data?.message?.is_component;
-            console.log("is_component in warehouse",isComponent)
 
             const workWarehouse = employeeData?.message?.work_warehouse;    
             if (!workWarehouse) {
@@ -804,10 +802,8 @@ frappe.ui.form.on('NJQCA', {
         var selectedItemGroup = frm.doc.item_group;
         let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
         const isComponent = item_group_data?.message?.is_component;
-        console.log("is_component in model",isComponent)
 
         if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
-            console.log("cur_frm.doc.serial_no",cur_frm.doc.serial_no)
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
@@ -942,12 +938,11 @@ function trigger_serial_no(frm) {
 }
 
 function processItemTemplate(frm) {
-    if (frm.doc.njqca_item_component && frm.doc.power_on == 'Yes') {
+    if (frm.doc.njqca_item_component && frm.doc.item_template) {
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_part_mapping',
-            args: {'doc': frm.doc, 'item_template': frm.doc.item_template},
+            args: { 'doc': frm.doc },
             callback: function (r) {
-                console.log("r.message", r.message);
                 if (r.message.error) {
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),
@@ -1063,8 +1058,9 @@ function get_item_template(model, brand, item_group) {
             if (r.message) {
                 var itemTemplates = r.message.item_template ? r.message.item_template.map(item => item.name) : [];
 
+                cur_frm.set_value('item_template', '');
                 if (Array.isArray(itemTemplates) && itemTemplates.length > 0) {
-                    cur_frm.set_value('item_template', '');
+                    
                     if (itemTemplates.length == 1) {
                         cur_frm.set_value('item_template', itemTemplates[0]);
                         cur_frm.set_df_property('item_template', 'read_only', 1);
@@ -1110,7 +1106,6 @@ function get_item_template(model, brand, item_group) {
                     }
 
                 } else {
-                    cur_frm.set_value('item_template', '');
                     cur_frm.set_df_property('item_template', 'options', []);
                     cur_frm.refresh_field('item_template');
                     $('[data-fieldname="item_template"]').closest('.control-input-wrapper').css({

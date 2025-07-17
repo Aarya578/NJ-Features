@@ -402,7 +402,7 @@ frappe.ui.Scanner = class Scanner {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
-    show_login_popup();
+    // show_login_popup();
     if (document.getElementById("network-indicator")) return;
 
     const html = `

@@ -3,8 +3,12 @@ frappe.ui.form.on('Quality Review', {
         console.log("🔁 Quality Review loaded");
     },
     quality_procedure_name: function(frm) {
-        if (frm.doc.review_type && frm.doc.review_type !== 'Adhoc Review') {
-            if (frm.doc.review_type &&  frm.doc.reviewee) {
+        if (frm.doc.review_type) {
+            if (frm.doc.review_type != "Adhoc Review") {
+                if(frm.doc.review_type != "Adhoc Review" && !frm.doc.reviewee){
+                    frm.set_value('quality_procedure_name', '');
+                    frappe.throw(__("Please select a Reviewee"));
+                }
                 console.log("quality_procedure_name", frm.doc.quality_procedure_name);
                 frappe.call({
                     method: 'nj_features.overrides.quality_review.get_quality_procedure_details',
@@ -39,9 +43,13 @@ frappe.ui.form.on('Quality Review', {
                 })
             }
             else{
-                frm.set_value('quality_procedure_name', '');
-                frappe.msgprint(__("Please select a Review Type and Reviewee"));
+                frm.clear_table('review_procedures_table');
+                frm.refresh_field('review_procedures_table');
             }
+        }
+        else{
+            frm.set_value('quality_procedure_name', '');
+            frappe.msgprint(__("Please select a Review Type"));
         }
     },
 });

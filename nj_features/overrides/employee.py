@@ -190,6 +190,7 @@ def create_warehouse(user, department, location, emp_id=None, warehouse_type=Non
         warehouse.warehouse_name = wk_warehouse_name
         warehouse.parent_warehouse = parent_warehouse
         warehouse.department = department
+        warehouse.warehouse_type = 'Operation Warehouse'
         
     else:
         parent_warehouse = frappe.db.get_value('NJ Settings', {'doc_type': 'Employee', 'parameter': 'asset_ware'}, 'value')
@@ -603,3 +604,14 @@ def auto_enroll_on_role_profile_change(employee):
         enrolled_count += 1
 
     return f"{enrolled_count} course(s) enrolled for user {doc.user_id}."
+
+@frappe.whitelist()
+def validate_employee_department_and_role(user, department, role_profile):
+    employee = frappe.get_value("Employee", {"user_id": user}, ["department", "role_profile"])
+
+    if not employee:
+        return False
+
+    employee_department, employee_role = employee
+
+    return employee_department == department and employee_role == role_profile

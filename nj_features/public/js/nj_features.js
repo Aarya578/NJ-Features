@@ -402,6 +402,7 @@ frappe.ui.Scanner = class Scanner {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
+    show_login_popup();
     if (document.getElementById("network-indicator")) return;
 
     const html = `
@@ -604,3 +605,120 @@ document.addEventListener("DOMContentLoaded", function () {
         dragElement.style.cursor = "grab";
     });
 });
+
+
+function show_login_verification_popup(user) {
+    // Create overlay to freeze background
+    const overlay = document.createElement("div");
+    overlay.id = "login-block-overlay";
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.4)";
+    overlay.style.zIndex = "1039"; // Must be below modal
+    overlay.style.pointerEvents = "auto";
+    overlay.style.backdropFilter = "blur(2px)";
+    document.body.appendChild(overlay);
+
+    // Create modal dialog with static backdrop
+    const dialog = new frappe.ui.Dialog({
+        title: "🔐 Verify Department & Role",
+        fields: [
+            {
+                label: "Department",
+                fieldname: "department",
+                fieldtype: "Link",
+                options: "Department",
+                reqd: 1
+            },
+            {
+                label: "Role Profile",
+                fieldname: "role_profile",
+                fieldtype: "Link",
+                options: "Role Profile",
+                reqd: 1
+            }
+        ],
+        static: 1,
+        primary_action_label: "Submit",
+        primary_action(values) {
+            console.log("🔍 Submitted values:", values);
+
+            frappe.call({
+                method: "nj_features.overrides.employee.validate_employee_department_and_role",
+                args: {
+                    user: user,
+                    department: values.department,
+                    role_profile: values.role_profile
+                },
+                callback: (r) => {
+                    if (r.message === true) {
+                        frappe.show_alert("✅ Department and Role matched.");
+                        dialog.hide();
+                        document.getElementById("login-block-overlay")?.remove();
+                    } else {
+                        frappe.msgprint({
+                            title: "Access Denied",
+                            message: "❌ Department or Role Profile doesn't match. Access is blocked.",
+                            indicator: "red"
+                        });
+
+                        // Replace entire body with lock screen
+                        document.body.innerHTML = `
+                            <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fff;font-size:24px;">
+                                🚫 Access Denied — Contact Administrator
+                            </div>`;
+                    }
+                }
+            });
+        },
+        no_cancel_button: true // hides cancel button
+    }, { 
+        backdrop: 'static', // Prevent closing on overlay click
+        keyboard: false    // Prevent closing with ESC key
+    });
+
+    dialog.show();
+}
+
+function show_login_popup() {
+    const user = frappe.session?.user;
+    console.log("🔍 User:", user);
+
+    if (!user || user === "Guest") return;
+
+    const currentPath = window.location.pathname;
+    const isAppRoot = currentPath.startsWith("/app");
+
+    if (!isAppRoot) {
+        console.log("🔕 Not in /app route, skipping popup.");
+        return;
+    }
+
+    const today = frappe.datetime.get_today();
+
+    frappe.call({
+        method: "frappe.client.get_list",
+        args: {
+            doctype: "Activity Log",
+            fields: ["name"],
+            filters: {
+                user: user,
+                operation: "Login",
+                creation: [">=", today + " 00:00:00"]
+            },
+        },
+        callback: (r) => {
+            console.log("🔍 User login activity:", r.message);
+
+            if (!r.message || r.message.length <= 1) {
+                console.log("🚨 No login today — show popup.");
+                show_login_verification_popup(user);
+            } else {
+                console.log("✅ User already logged in today — no popup.");
+            }
+        }
+    });
+}

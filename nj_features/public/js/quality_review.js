@@ -14,6 +14,7 @@ frappe.ui.form.on('Quality Review', {
                         severity_level: frm.doc.severity_level
                     },
                     callback: function(r) {
+                        console.log("get_quality_procedure_details-------", r);
                         if (r.message && r.message.length > 0) {
                             frm.clear_table('review_procedures_table');
                             r.message.forEach(function(rowData) {

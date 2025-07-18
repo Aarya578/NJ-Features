@@ -6,6 +6,7 @@ import frappe
 import traceback
 from frappe import _
 from datetime import datetime, date
+from frappe import db, session, throw
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 
@@ -666,3 +667,23 @@ def validate_employee_department_and_role(user, department, role_profile):
         return {"False": "Department has been changed Successfully"}
 
     return {"True": True}
+
+
+@frappe.whitelist()
+def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filters):
+    user = frappe.session.user
+
+    # ✅ Correct: Use frappe.db.get_value, not just db.get_value
+    employee_level = frappe.db.get_value("Employee", {"user_id": user}, "employee_level")
+
+    if not employee_level:
+        frappe.throw(_("No employee_level found for the current user."))
+
+    return frappe.db.sql("""
+        SELECT name
+        FROM `tabRole Profile`
+        WHERE employee_level <= %s
+        AND name LIKE %s
+        ORDER BY employee_level DESC, name ASC
+        LIMIT %s OFFSET %s
+    """, (employee_level, f"%{txt}%", page_len, start))

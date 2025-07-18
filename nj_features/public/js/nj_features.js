@@ -402,7 +402,7 @@ frappe.ui.Scanner = class Scanner {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
-    // show_login_popup();
+    show_login_popup();
     if (document.getElementById("network-indicator")) return;
 
     const html = `
@@ -631,7 +631,23 @@ function show_login_verification_popup(user) {
                 fieldname: "department",
                 fieldtype: "Link",
                 options: "Department",
-                reqd: 1
+                reqd: 1,
+                onchange: function () {
+                    const selected_department = dialog.get_value("department");
+
+                    // Clear previous Role Profile selection
+                    dialog.set_value("role_profile", "");
+
+                    // Set dynamic get_query to call Python method
+                    dialog.fields_dict.role_profile.get_query = function () {
+                        return {
+                            query: "nj_features.overrides.employee.get_filtered_role_profiles",
+                            filters: {
+                                department: selected_department
+                            }
+                        };
+                    };
+                }
             },
             {
                 label: "Role Profile",
@@ -655,31 +671,32 @@ function show_login_verification_popup(user) {
                 },
                 callback: (r) => {
                     if (r.message === true || r.message?.True === true) {
-                            frappe.show_alert("✅ Department and Role matched.");
-                            dialog.hide();
-                            document.getElementById("login-block-overlay")?.remove();
-                        } else if (r.message?.error) {
-                            frappe.msgprint({
-                                title: __("Cannot Change Department"),
-                                message: r.message.error,
-                                indicator: 'red'
-                            });
-                        } else if (r.message?.False) {
-                            frappe.show_alert("✅ Department and Role updated successfully.");
-                            dialog.hide();
-                            document.getElementById("login-block-overlay")?.remove();
-                        }
+                        frappe.show_alert("✅ Department and Role matched.");
+                        dialog.hide();
+                        document.getElementById("login-block-overlay")?.remove();
+                    } else if (r.message?.error) {
+                        frappe.msgprint({
+                            title: __("Cannot Change Department"),
+                            message: r.message.error,
+                            indicator: 'red'
+                        });
+                    } else if (r.message?.False) {
+                        frappe.show_alert("✅ Department and Role updated successfully.");
+                        dialog.hide();
+                        document.getElementById("login-block-overlay")?.remove();
+                    }
                 }
             });
         },
-        no_cancel_button: true // hides cancel button
-    }, { 
-        backdrop: 'static', // Prevent closing on overlay click
-        keyboard: false    // Prevent closing with ESC key
+        no_cancel_button: true
+    }, {
+        backdrop: 'static',  // disable click-out close
+        keyboard: false      // disable ESC close
     });
 
     dialog.show();
 }
+
 
 function show_login_popup() {
     const user = frappe.session?.user;

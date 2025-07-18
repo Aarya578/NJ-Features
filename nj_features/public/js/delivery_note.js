@@ -20,6 +20,17 @@ frappe.ui.form.on('Delivery Note', {
                 openDjangoUrl(frm.doc.doctype, frm.doc.name);
             }).addClass('btn-primary');
         }
+        if ( frm.doc.docstatus === 0 && frm.doc.return_reason && !frm.doc.cause_of_return) {
+            if(frm.doc.return_reason === "Replacement"){
+                frm.set_value('cause_of_return', "Replace");
+            }
+            if(frm.doc.return_reason === "In-House Repair"){
+                frm.set_value('cause_of_return', "Repair");
+            }
+            if(frm.doc.return_reason === "Refund"){
+                frm.set_value('cause_of_return', "Refund");
+            }
+        }
 
         if (frm.doc.__islocal) {
             frm.set_value("posting_time", frappe.datetime.now_time());

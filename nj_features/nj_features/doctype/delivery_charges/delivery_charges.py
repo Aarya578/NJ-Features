@@ -13,55 +13,125 @@ from frappe.utils import now
 from datetime import datetime, timedelta
 from frappe.utils import now_datetime, get_datetime
 from frappe.model.document import Document
+from datetime import datetime
 from nj_features.nj_features.api.shiprocket_api import get_auth_token
-
 class DeliveryCharges(Document):
 	pass
 
 
+# @frappe.whitelist()
+# def criticalog_awb_number_tracking_status():
+
+#     docs = frappe.get_all(
+#         "Delivery Charges",
+#         filters={
+#             "awb_number": ["!=", ""],
+#             "remark_status": ["!=", "Delivered"]
+#         },
+#         fields=["name", "awb_number", "delivery_note"]
+#     )
+
+#     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
+#     headers = {"Content-Type": "application/json"}
+
+#     for doc in docs:
+#         if not doc.delivery_note:
+#             print(f"[{doc.name}] Delivery Note not found, skipping...")
+#             continue
+
+#         try:
+#             dn = frappe.get_doc("Delivery Note", doc.delivery_note)
+#             # print(f"[{doc.name}] Delivery Note=======================: {dn}")
+#             mode = (dn.mode_of_transfer or "").lower()
+#             # print("mode=======================", mode)
+
+#             if "air" in mode:
+#                 auth = frappe.db.get_single_value("Logistics Settings", "air_auth")
+#             elif "surface" in mode or "road" in mode:
+#                 auth = frappe.db.get_single_value("Logistics Settings", "surface_auth")
+#             else:
+#                 print(f"[{doc.name}] Unknown mode_of_transport: {dn.mode_of_transport}, skipping...")
+#                 continue
+
+#             payload = {
+#                 "Auth": auth,
+#                 "DocketNo": doc.delivery_note
+#             }
+
+#             # print(f"[{doc.name}] Payload========================: {payload}")
+#             response = requests.post(url, headers=headers, json=payload)
+#             # print(f"[{doc.name}] Response status code: ==================={response.status_code}")
+
+#             if response.status_code == 200:
+#                 data = response.json()
+#                 print(f"[{doc.name}] Response: {data}")
+
+#                 docket_data = data.get("data", {})
+#                 docket_details = docket_data.get("docketDetails", {})
+
+#                 # Fix: If docket_details is not a dict, skip
+#                 if not isinstance(docket_details, dict):
+#                     print(f"[{doc.name}] Invalid docketDetails format: {docket_details}")
+#                     continue
+
+#                 remark = docket_details.get("Booking_Status", {}).get("Remark")
+#                 if remark:
+#                     frappe.db.set_value("Delivery Charges", doc.name, "remark_status", remark)
+#                     frappe.db.commit()
+#                     print(f"[{doc.name}] Updated remark_status to: {remark}")
+#                 else:
+#                     print(f"[{doc.name}] No remark found in response.")
+#             else:
+#                 print(f"[{doc.name}] API returned status code: {response.status_code}")
+
+#         except Exception as e:
+#             print(f"[{doc.name}] Error: {str(e)}")
+
 @frappe.whitelist()
 def criticalog_awb_number_tracking_status():
-    import requests
-
     docs = frappe.get_all(
         "Delivery Charges",
         filters={
             "awb_number": ["!=", ""],
             "remark_status": ["!=", "Delivered"]
         },
-        fields=["name", "awb_number", "delivery_note"]
+        fields=["name", "awb_number", "delivery_note", "courier_service"]
     )
 
     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
+    # url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
     headers = {"Content-Type": "application/json"}
 
+
     for doc in docs:
+        # Only proceed if courier_service is CriticaLog
+        if doc.courier_service != "CriticaLog":
+            print(f"[{doc.name}] Skipping because courier_service is not CriticaLog")
+            continue
+
         if not doc.delivery_note:
             print(f"[{doc.name}] Delivery Note not found, skipping...")
             continue
 
         try:
             dn = frappe.get_doc("Delivery Note", doc.delivery_note)
-            # print(f"[{doc.name}] Delivery Note=======================: {dn}")
             mode = (dn.mode_of_transfer or "").lower()
-            # print("mode=======================", mode)
 
             if "air" in mode:
                 auth = frappe.db.get_single_value("Logistics Settings", "air_auth")
             elif "surface" in mode or "road" in mode:
                 auth = frappe.db.get_single_value("Logistics Settings", "surface_auth")
             else:
-                print(f"[{doc.name}] Unknown mode_of_transport: {dn.mode_of_transport}, skipping...")
+                print(f"[{doc.name}] Unknown mode_of_transfer: {dn.mode_of_transfer}, skipping...")
                 continue
 
             payload = {
                 "Auth": auth,
                 "DocketNo": doc.delivery_note
             }
+            print(f"[{doc.name}] Payload========================: {payload}")
 
-            # print(f"[{doc.name}] Payload========================: {payload}")
             response = requests.post(url, headers=headers, json=payload)
-            # print(f"[{doc.name}] Response status code: ==================={response.status_code}")
 
             if response.status_code == 200:
                 data = response.json()
@@ -70,7 +140,6 @@ def criticalog_awb_number_tracking_status():
                 docket_data = data.get("data", {})
                 docket_details = docket_data.get("docketDetails", {})
 
-                # Fix: If docket_details is not a dict, skip
                 if not isinstance(docket_details, dict):
                     print(f"[{doc.name}] Invalid docketDetails format: {docket_details}")
                     continue
@@ -87,64 +156,10 @@ def criticalog_awb_number_tracking_status():
 
         except Exception as e:
             print(f"[{doc.name}] Error: {str(e)}")
-
-
-
-# @frappe.whitelist()
-# def criticalog_awb_number_tracking_status():
-#     # Get only those Delivery Charges records which are not yet marked as Delivered
-#     docs = frappe.get_all(
-#         "Delivery Charges",
-#         filters={
-#             "awb_number": ["!=", ""],
-#             "remark_status": ["!=", "Delivered"]  # <-- skip already delivered
-#         },
-#         fields=["name", "awb_number", "delivery_note"]
-#     )
-#     # print(f"Processing {len(docs)} Delivery Charges records...",docs)
-
-#     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
-#     headers = {"Content-Type": "application/json"}
-
-#     for doc in docs:
-#         if not doc.delivery_note:
-#             print(f"[{doc.name}] Delivery Note not found, skipping...")
-#             continue
-
-#         try:
-#             payload = {
-#                 "Auth": " MTMzMzQzNzMwMzIz",  # Preserve leading space
-#                 "DocketNo": doc.delivery_note
-#             }
-#             print(f"[{doc.name}] Payload========================: {payload}")
-
-#             response = requests.post(url, headers=headers, json=payload)
-
-#             print(f"[{doc.name}] Response status code: ==================={response.status_code}")
-
-#             if response.status_code == 200:
-#                 data = response.json()
-#                 print(f"[{doc.name}] Response: {data}")
-
-#                 # Extract remark
-#                 docket_details = data.get("data", {}).get("docketDetails", {})
-#                 remark = docket_details.get("Booking_Status", {}).get("Remark")
-
-#                 if remark:
-#                     frappe.db.set_value("Delivery Charges", doc.name, "remark_status", remark)
-#                     frappe.db.commit()
-#                     print(f"[{doc.name}] Updated remark_status to: {remark}")
-#                 else:
-#                     print(f"[{doc.name}] No remark found in response.")
-#             else:
-#                 print(f"[{doc.name}] API returned status code: {response.status_code}")
-
-#         except Exception as e:
-#             print(f"[{doc.name}] Error: {str(e)}")
+ 
 @frappe.whitelist()
 def awb_number_tracking_status():
-    import requests
-    from datetime import datetime
+
 
     # Fetch Delivery Charges entries with valid AWB number and not Delivered
     docs = frappe.get_all(

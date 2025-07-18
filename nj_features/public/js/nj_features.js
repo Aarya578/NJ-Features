@@ -654,23 +654,21 @@ function show_login_verification_popup(user) {
                     role_profile: values.role_profile
                 },
                 callback: (r) => {
-                    if (r.message === true) {
-                        frappe.show_alert("✅ Department and Role matched.");
-                        dialog.hide();
-                        document.getElementById("login-block-overlay")?.remove();
-                    } else {
-                        frappe.msgprint({
-                            title: "Access Denied",
-                            message: "❌ Department or Role Profile doesn't match. Access is blocked.",
-                            indicator: "red"
-                        });
-
-                        // Replace entire body with lock screen
-                        document.body.innerHTML = `
-                            <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fff;font-size:24px;">
-                                🚫 Access Denied — Contact Administrator
-                            </div>`;
-                    }
+                    if (r.message === true || r.message?.True === true) {
+                            frappe.show_alert("✅ Department and Role matched.");
+                            dialog.hide();
+                            document.getElementById("login-block-overlay")?.remove();
+                        } else if (r.message?.error) {
+                            frappe.msgprint({
+                                title: __("Cannot Change Department"),
+                                message: r.message.error,
+                                indicator: 'red'
+                            });
+                        } else if (r.message?.False) {
+                            frappe.show_alert("✅ Department and Role updated successfully.");
+                            dialog.hide();
+                            document.getElementById("login-block-overlay")?.remove();
+                        }
                 }
             });
         },

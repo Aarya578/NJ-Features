@@ -607,11 +607,62 @@ def auto_enroll_on_role_profile_change(employee):
 
 @frappe.whitelist()
 def validate_employee_department_and_role(user, department, role_profile):
-    employee = frappe.get_value("Employee", {"user_id": user}, ["department", "role_profile"])
+    employee = frappe.get_value("Employee", {"user_id": user}, ["name", "department", "role_profile"])
 
     if not employee:
         return False
 
-    employee_department, employee_role = employee
+    employee_name, employee_department, employee_role = employee
 
-    return employee_department == department and employee_role == role_profile
+    if employee_department != department or employee_role != role_profile:
+        if employee_department:
+            work_warehouses = frappe.get_all(
+                "Warehouse",
+                filters={"department": employee_department, "disabled": 0},
+                fields=["name", "department"]
+            )
+
+            warehouse_names = [w["name"] for w in work_warehouses]
+
+            if warehouse_names:
+                query = """
+                    SELECT SUM(Bin.actual_qty) AS total_qty
+                    FROM `tabBin` Bin
+                    INNER JOIN `tabWarehouse` WH ON Bin.warehouse = WH.name
+                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name IN %s
+                """
+                data = frappe.db.sql(query, (tuple(warehouse_names),), as_dict=True)
+                total_qty = sum((d.get("total_qty") or 0) for d in data)
+
+                if total_qty > 0:
+                    warehouse_info = [
+                        f"{w['name']} (Dept: {w['department'] or 'N/A'})"
+                        for w in work_warehouses
+                    ]
+                    warehouse_str = ", ".join(warehouse_info)
+
+                    return {
+                        "error": _("Cannot change department. Please transfer the stock of <b>{0} Qty(s)</b> from the following warehouses: <br><b>{1}</b>").format(
+                            total_qty, warehouse_str)
+                    }
+
+        # Safe to update
+        employee_doc = frappe.get_doc("Employee", employee_name)
+        employee_doc.previous_department = employee_doc.get("department")
+        employee_doc.previous_role_profile = employee_doc.get("role_profile")
+        employee_doc.department = department
+        employee_doc.role_profile = role_profile
+        employee_doc.save()
+
+        if employee_doc.get("work_warehouse"):
+
+            query = """
+                    UPDATE `tabWarehouse`
+                    SET department = %s, previous_department = %s
+                    WHERE name = %s
+                """
+            frappe.db.sql(query, (employee_doc.get("department"), employee_doc.get("previous_department"), employee_doc.get("work_warehouse")))
+
+        return {"False": "Department has been changed Successfully"}
+
+    return {"True": True}

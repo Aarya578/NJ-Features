@@ -6,10 +6,10 @@ frappe.ui.form.on('Delivery Note', {
     //         frm.set_value("courier_service", "Shiprocket Manifest");
     //         frm.set_df_property("courier_service", "read_only", 1);
     //     }
-       
     // },
 
     refresh: function(frm) {
+        // console.log("inside refresh=================================================");
         
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -19,17 +19,6 @@ frappe.ui.form.on('Delivery Note', {
             frm.add_custom_button(__('Record'), function() {
                 openDjangoUrl(frm.doc.doctype, frm.doc.name);
             }).addClass('btn-primary');
-        }
-        if ( frm.doc.docstatus === 0 && frm.doc.return_reason && !frm.doc.cause_of_return) {
-            if(frm.doc.return_reason === "Replacement"){
-                frm.set_value('cause_of_return', "Replace");
-            }
-            if(frm.doc.return_reason === "In-House Repair"){
-                frm.set_value('cause_of_return', "Repair");
-            }
-            if(frm.doc.return_reason === "Refund"){
-                frm.set_value('cause_of_return', "Refund");
-            }
         }
 
         if (frm.doc.__islocal) {
@@ -58,7 +47,7 @@ frappe.ui.form.on('Delivery Note', {
             frm.clear_custom_buttons();
             
             // Show Critical Log button only if AWB number has NOT been generated AND courier_service is not CriticaLog
-            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog' && frm.doc.cod_amount) {
+            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'CriticaLog') {
                 let critical_btn = frm.add_custom_button(__('Critical Log'), function() {
                     frappe.show_alert({ message: __('Generating AWB Number...'), indicator: 'blue' });
                     frappe.call({
@@ -111,6 +100,7 @@ frappe.ui.form.on('Delivery Note', {
                 shiprocket_btn.addClass('btn-primary');
             }
         }
+
     },
     
     onload_post_render: function(frm) {
@@ -135,6 +125,8 @@ frappe.ui.form.on('Delivery Note', {
                 } else { frappe.validated = true; }
             }
         });
+
+
 
         frappe.call({
             method: 'nj_features.overrides.delivery_note.update_item_details',
@@ -246,6 +238,15 @@ frappe.ui.form.on('Delivery Note', {
         //         console.log("Error in frappe call:", r);
         //     }
         // });
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.setting_dispatch_address",
+            args: { doc: frm.doc },
+            callback: function(r) {
+                    if (r.message) {
+                        frm.set_value("dispatch_address_name", r.message);
+                    }
+                }
+        });
         frappe.call({
             method: 'nj_features.overrides.delivery_note.fetch_cod_amount',
             args: {

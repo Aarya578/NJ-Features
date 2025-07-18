@@ -92,11 +92,11 @@ class CustomDeliveryNote(DeliveryNote):
             self.update_details_to_delivery_charege_doc()
             qi_mandatory_checks_on_dn_submit(self, method=None)
             # self.qc_nj_of_days_checking()
-            if self.is_return == 0:
-                # send_sales_invoice_email_on_delivery_note(self, method=None)
-                self._process_customer_details()
-            else:
-                self._process_serial_numbers()
+            # if self.is_return == 0:
+            #     # send_sales_invoice_email_on_delivery_note(self, method=None)
+            #     self._process_customer_details()
+            # else:
+            #     self._process_serial_numbers()
             
         except Exception as e:
             frappe.db.rollback()
@@ -2005,3 +2005,29 @@ def allow_to_save(doc):
     except Exception as e:
         log_error(traceback.format_exc(),"Error while saving delivery note "+dn_name)
         return str(e)
+
+
+@frappe.whitelist()
+def setting_dispatch_address(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    bg_address = frappe.db.get_value("NJ Settings", {"parameter": "bg_dispatch_address"}, "value")
+    nj_address = frappe.db.get_value("NJ Settings", {"parameter": "jn_dispatch_address"}, "value")
+
+    dispatch_location = None
+
+    for item in doc.get("items", []):
+        warehouse = item.get("warehouse")
+        if not warehouse:
+            continue
+
+        location = frappe.db.get_value("Warehouse", warehouse, "location")
+        if location == "BG":
+            dispatch_location = bg_address
+            break
+        elif location == "JN":
+            dispatch_location = nj_address
+            break
+
+    return dispatch_location

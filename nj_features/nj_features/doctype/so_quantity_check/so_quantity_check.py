@@ -44,6 +44,7 @@ def update_so_quantity_check(settings):
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
+                        AND (b.return_reason IS NULL OR b.return_reason = '')
                         {warehouse_clause}
                     GROUP BY 
                         i.variant_of
@@ -59,10 +60,11 @@ def update_so_quantity_check(settings):
                         `tabWarehouse` w ON w.name = s.warehouse
                     INNER JOIN
                         `tabItem` i ON s.item_code = i.item_code
-                    WHERE 
+                    WHERE
                         i.item_group IN ({item_group_placeholders})
-                                    AND w.department IN ({department_placeholders})
-                                    {warehouse_clause}
+                        AND w.department IN ({department_placeholders})
+                        AND (b.return_reason IS NULL OR b.return_reason = '')
+                        {warehouse_clause}
                     GROUP BY 
                         s.item_code
                 ),

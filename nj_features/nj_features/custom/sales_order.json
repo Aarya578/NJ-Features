@@ -819,7 +819,7 @@
    "modified": "2018-01-08 13:27:08.251938",
    "modified_by": "Administrator",
    "name": "Sales Order-is_cod",
-   "no_copy": 0,
+   "no_copy": 1,
    "non_negative": 0,
    "options": null,
    "owner": "Administrator",

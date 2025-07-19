@@ -44,7 +44,7 @@ def update_so_quantity_check(settings):
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (b.return_reason IS NULL OR b.return_reason = '')
+                        AND (b.return_reason = 'Repair' OR b.is_replace = 1)
                         {warehouse_clause}
                     GROUP BY 
                         i.variant_of
@@ -63,7 +63,7 @@ def update_so_quantity_check(settings):
                     WHERE
                         i.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (b.return_reason IS NULL OR b.return_reason = '')
+                        AND (b.return_reason = 'Repair' OR b.is_replace = 1)
                         {warehouse_clause}
                     GROUP BY 
                         s.item_code

@@ -2536,7 +2536,7 @@ def get_bdt_status(doc, method=None):
                 pass
         
         if required_backup==0:
-            required_backup=120
+            required_backup=110
 
         if backup3 is not None and backup3:
             if float(backup3)>=required_backup:

@@ -10,15 +10,15 @@ import requests
 import traceback
 from frappe import _
 from frappe.utils import now
-from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from datetime import datetime, timedelta
 from frappe.utils import now_datetime, get_datetime
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.common_utils import get_latest_item_wizard
-from frappe.utils import add_days, nowdate, getdate, add_years
-from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
-logger = frappe.logger('DNLogger', allow_site=True, file_count=1)
+from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
+
+logger = frappe.logger('DNLogger', allow_site=True, file_count=1)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -92,17 +92,16 @@ class CustomDeliveryNote(DeliveryNote):
             self.update_details_to_delivery_charege_doc()
             qi_mandatory_checks_on_dn_submit(self, method=None)
             # self.qc_nj_of_days_checking()
-            # if self.is_return == 0:
-            #     # send_sales_invoice_email_on_delivery_note(self, method=None)
-            #     self._process_customer_details()
-            # else:
-            #     self._process_serial_numbers()
+            if self.is_return == 0:
+                # send_sales_invoice_email_on_delivery_note(self, method=None)
+                self._process_customer_details()
+            else:
+                self._process_serial_numbers()
             
         except Exception as e:
             frappe.db.rollback()
             log_error(traceback.format_exc(), "Error in on_submit")
             frappe.throw("Error in on_submit", str(e))
-
 
     def _process_customer_details(self):
         try:
@@ -178,6 +177,8 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.email_id = sales_order_info.get("email_id", "")
                     serial_no_doc.address = sales_order_info.get("so_address", "")
                     serial_no_doc.warranty_start_date_ = self.get("posting_date")
+                    serial_no_doc.return_reason = ""
+                    serial_no_doc.is_replace = 0
 
                     posting_date_raw = self.get("posting_date")
                     if isinstance(posting_date_raw, str):
@@ -1948,6 +1949,12 @@ def allow_to_save(doc):
     try:
         if isinstance(doc,str):
             doc=json.loads(doc)
+        is_return=frappe.db.get_value("Delivery Note",{"name":doc.get("name","")},"is_return")
+        if is_return is not None and is_return==1:
+            return "pass"
+        execute=frappe.db.get_value("NJ Settings", {"parameter": "Adaptor_restriction_in_DN"}, "value")
+        if execute is not None and execute=="0":
+            return "pass"
         child_data=doc["packed_items"]
         dn_name=doc.get("name","")
         

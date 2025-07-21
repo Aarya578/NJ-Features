@@ -139,7 +139,7 @@ override_doctype_class = {
 # }
 doc_events = {
     "Purchase Receipt": {
-        "before_save": "nj_features.overrides.purchase_receipt.get_batch",
+        "after_submit": "nj_features.overrides.purchase_receipt.get_batch",
         "on_submit": "nj_features.overrides.purchase_receipt.update_serial_no_on_pr_submit",
     },
     "Purchase Order": {

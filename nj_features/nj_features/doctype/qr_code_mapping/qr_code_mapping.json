@@ -1,12 +1,13 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2024-06-03 13:11:34.166893",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "item_code"
+  "item_code",
+  "serial_no",
+  "doctype1"
  ],
  "fields": [
   {
@@ -15,18 +16,37 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Item Code",
+   "mandatory_depends_on": "eval:doc.doctype1=='Item'",
    "options": "Item",
    "read_only": 1,
-   "reqd": 1,
    "set_only_once": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Serial No",
+   "mandatory_depends_on": "eval:doc.doctype1=='Serial No'",
+   "options": "Serial No",
+   "read_only": 1,
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "doctype1",
+   "fieldtype": "Link",
+   "label": "Doctype",
+   "options": "DocType",
+   "reqd": 1
   }
  ],
  "links": [],
- "modified": "2025-06-21 16:51:31.518843",
+ "modified": "2025-07-10 15:27:07.522800",
  "modified_by": "Administrator",
  "module": "NJ Features",
- "name": "Non Serialized QR Code Mapping",
+ "name": "QR Code Mapping",
  "owner": "Administrator",
  "permissions": [
   {
@@ -42,6 +62,7 @@
    "write": 1
   }
  ],
+ "read_only": 1,
  "sort_field": "modified",
  "sort_order": "DESC"
 }

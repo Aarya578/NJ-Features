@@ -618,10 +618,15 @@ def validate_employee_department_and_role(user, department, role_profile):
     if employee_department != department or employee_role != role_profile:
         if employee_department:
             work_warehouses = frappe.get_all(
-                "Warehouse",
-                filters={"department": employee_department, "disabled": 0},
-                fields=["name", "department"]
-            )
+                            "Warehouse",
+                            filters={
+                                "department": employee_department,
+                                "disabled": 0,
+                                "warehouse_owner": user,
+                                "warehouse_type": ["not in", ["Department Asset Warehouse", "Employee Personal Warehouse"]],
+                            },
+                            fields=["name", "department"]
+                        )
 
             warehouse_names = [w["name"] for w in work_warehouses]
 

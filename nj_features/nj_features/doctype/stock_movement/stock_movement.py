@@ -12,10 +12,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             if self.get("make_supplier_return"):
-                print(self.get("make_supplier_return"))
-                print("inside ===========Supplier Return")
                 self.validate_supplier_return()
-                print("======================")
             else:
                 material_transfer_items = []
                 
@@ -248,7 +245,6 @@ class StockMovement(Document):
     #     Prepare repack items data for stock entry for all items
     #     """
     #     return_unpack_items_data = []
-    #     print("inside the function============================")
 
     #     for item in self.items:
     #         if not item.serial_no:
@@ -260,11 +256,9 @@ class StockMovement(Document):
     #                 continue
 
     #             serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
-    #             print("serial_no_doc===========================", serial_no_doc)
 
     #             # ✅ Correct field from Serial No
     #             purchase_receipt = serial_no_doc.purchase_receipt
-    #             print("purchase_receipt===========================", purchase_receipt)
     #             if not purchase_receipt:
     #                 frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
 
@@ -372,7 +366,6 @@ def validate_stock_movement_for_grade(doc):
         return {"error": str(e)}
 
 def validate_serial_no_and_department(row, error_messages):
-    print("+++++++++++++++++++++")
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
         return False
@@ -504,7 +497,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
 
 
 def check_warranty_expiry(serial_doc, error_messages):
-    print("check_warranty_expiry")
     try:
         query = """
             SELECT DATE(creation) AS creation_date, warranty_days, part_warranty, all_except
@@ -530,7 +522,6 @@ def check_warranty_expiry(serial_doc, error_messages):
         error_messages.append(f"Error in warranty expiry check: {str(e)}")
 
 def check_general_warranty(serial_doc, purchase_order, error_messages):
-    print("check_general_warranty")
     creation_date = purchase_order.get('creation_date')
     warranty_days = purchase_order.get('warranty_days')
 

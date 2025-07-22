@@ -623,7 +623,6 @@ def validate_employee_department_and_role(user, department, role_profile):
                                 "department": employee_department,
                                 "disabled": 0,
                                 "warehouse_owner": user,
-                                "warehouse_type": ["not in", ["Department Asset Warehouse", "Employee Personal Warehouse"]],
                             },
                             fields=["name", "department"]
                         )
@@ -688,7 +687,7 @@ def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filte
         SELECT name
         FROM `tabRole Profile`
         WHERE employee_level <= %s
-        AND name LIKE %s
+        AND department = %s
         ORDER BY employee_level DESC, name ASC
         LIMIT %s OFFSET %s
-    """, (employee_level, f"%{txt}%", page_len, start))
+    """, (employee_level, filters.get("department"), page_len, start), explain=True, debug=True)

@@ -402,7 +402,28 @@ frappe.ui.Scanner = class Scanner {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
-    // show_login_popup();
+
+    frappe.call({
+        method: "frappe.client.get_value",
+        args: {
+            doctype: "NJ Settings", // or your actual doctype name if it's not NJ Settings
+            filters: {
+                parameter: "allow_department_check",
+                module: "HR",
+                doc_type: "Department"
+            },
+            fieldname: "value"
+        },
+        callback: function(r) {
+            if (!r.exc && r.message) {
+                const allowCheck = cint(r.message.value);  // convert string "1"/"0" to int
+                if (allowCheck === 1) {
+                    show_login_popup();
+                }
+            }
+        }
+    });
+
     if (document.getElementById("network-indicator")) return;
 
     const html = `
@@ -631,7 +652,23 @@ function show_login_verification_popup(user) {
                 fieldname: "department",
                 fieldtype: "Link",
                 options: "Department",
-                reqd: 1
+                reqd: 1,
+                onchange: function () {
+                    const selected_department = dialog.get_value("department");
+
+                    // Clear previous Role Profile selection
+                    dialog.set_value("role_profile", "");
+
+                    // Set dynamic get_query to call Python method
+                    dialog.fields_dict.role_profile.get_query = function () {
+                        return {
+                            query: "nj_features.overrides.employee.get_filtered_role_profiles",
+                            filters: {
+                                department: selected_department
+                            }
+                        };
+                    };
+                }
             },
             {
                 label: "Role Profile",
@@ -655,37 +692,40 @@ function show_login_verification_popup(user) {
                 },
                 callback: (r) => {
                     if (r.message === true || r.message?.True === true) {
-                            frappe.show_alert("✅ Department and Role matched.");
-                            dialog.hide();
-                            document.getElementById("login-block-overlay")?.remove();
-                        } else if (r.message?.error) {
-                            frappe.msgprint({
-                                title: __("Cannot Change Department"),
-                                message: r.message.error,
-                                indicator: 'red'
-                            });
-                        } else if (r.message?.False) {
-                            frappe.show_alert("✅ Department and Role updated successfully.");
-                            dialog.hide();
-                            document.getElementById("login-block-overlay")?.remove();
-                        }
+                        frappe.show_alert("✅ Department and Role matched.");
+                        dialog.hide();
+                        document.getElementById("login-block-overlay")?.remove();
+                    } else if (r.message?.error) {
+                        frappe.msgprint({
+                            title: __("Cannot Change Department"),
+                            message: r.message.error,
+                            indicator: 'red'
+                        });
+                    } else if (r.message?.False) {
+                        frappe.show_alert("✅ Department and Role updated successfully.");
+                        dialog.hide();
+                        document.getElementById("login-block-overlay")?.remove();
+                    }
+
+                    popUpWorkInventory();
                 }
             });
         },
-        no_cancel_button: true // hides cancel button
-    }, { 
-        backdrop: 'static', // Prevent closing on overlay click
-        keyboard: false    // Prevent closing with ESC key
+        no_cancel_button: true
+    }, {
+        backdrop: 'static',  // disable click-out close
+        keyboard: false      // disable ESC close
     });
 
     dialog.show();
 }
 
+
 function show_login_popup() {
     const user = frappe.session?.user;
     console.log("🔍 User:", user);
 
-    if (!user || user === "Guest") return;
+    if (!user || user === "Guest" || user === "Administrator" || frappe.user.has_role("Developer")) return;
 
     const currentPath = window.location.pathname;
     const isAppRoot = currentPath.endsWith("/app");
@@ -721,4 +761,206 @@ function show_login_popup() {
             }
         }
     });
+}
+
+function popUpWorkInventory() {
+    const dialog = new frappe.ui.Dialog({
+        title: __('Work Warehouse Inventory'),
+        fields: [
+            {fieldtype:'Section Break'},
+            {
+                fieldname: "work_warehouse_inventory",
+                fieldtype: "Table",
+                in_place_edit: true,
+                fields: [
+                    {
+                        label: __('Sr. No.'),
+                        fieldname: 'sr_no',
+                        fieldtype: 'Int',
+                        read_only: 1,
+                        in_list_view: 1,
+                        columns: 1
+                    },
+                    {
+                        label: __('Item Code'),
+                        fieldname: 'item_code',
+                        fieldtype: 'Link',
+                        reqd: 1,
+                        options: 'Item',
+                        in_list_view: 1,
+                        read_only: 1,
+                        columns: 2
+                    },
+                    {
+                        label: __('Serial No'),
+                        fieldname: 'serial_no',
+                        fieldtype: 'Link',
+                        options: 'Serial No',
+                        in_list_view: 1,
+                        columns: 2
+                    },
+                    {
+                        label: __('Warehouse'),
+                        fieldname: 'warehouse',
+                        fieldtype: 'Link',
+                        options: 'Warehouse',
+                        in_list_view: 1,
+                        columns: 1
+                    },
+                    {
+                        label: __('Yes'),
+                        fieldname: 'yes',
+                        fieldtype: 'Check',
+                        default: 1,
+                        in_list_view: 1,
+                        columns: 1
+                    },
+                    {
+                        label: __('No'),
+                        fieldname: 'no',
+                        fieldtype: 'Check',
+                        default: 0,
+                        in_list_view: 1,
+                        columns: 1
+                    },
+                    {
+                        label: __('User Activity'),
+                        fieldname: 'user_activity',
+                        fieldtype: 'Select',
+                        options: '\nLog In\nLog Out',
+                        default: 'Log Out',
+                        read_only: 1
+                    },
+                    {
+                        label: __('Reason'),
+                        fieldname: 'reason',
+                        fieldtype: 'Text Editor',
+                        in_list_view: 1,
+                        columns: 2
+                    }
+                ]
+            }
+        ],
+        size: 'extra-large',
+        primary_action_label: __('Submit'),
+        static: true,
+        primary_action: function() {
+            const values = dialog.get_values();
+            if (values) {
+                let showPopup = false;
+                let missingReasonRows = [];
+        
+                values.work_warehouse_inventory.forEach((row) => {
+                    if (row.no) { row.yes = false; }
+                });
+        
+                dialog.get_field('work_warehouse_inventory').grid.refresh();
+        
+                values.work_warehouse_inventory.forEach((row, index) => {
+                    if (row.no && !row.reason) {
+                        showPopup = true;
+                        missingReasonRows.push(index + 1);
+                    }
+                });
+        
+                if (showPopup) {
+                    frappe.msgprint({
+                        title: __('Missing Fields'),
+                        indicator: 'red',
+                        message: __('Reason is mandatory when No is checked in row(s): {0}', [missingReasonRows.join(', ')])
+                    });
+                } else {
+                    frappe.call({
+                        method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
+                        callback: function (r) {
+                            if (r.message) {
+                                frappe.call({
+                                    method: 'frappe.client.save',
+                                    args: {
+                                        doc: {
+                                            doctype: 'Daily Individual Report',
+                                            work_warehouse_inventory: values.work_warehouse_inventory,
+                                            warehouse: r.message,
+                                            created_by: frappe.session.user
+                                        }
+                                    },
+                                    callback: function(r) {
+                                        if (!r.exc) {
+                                            frappe.call({
+                                                method: 'frappe.client.submit',
+                                                args: { doc: r.message },
+                                                callback: function(r) {
+                                                    if (!r.exc) {
+                                                        frappe.msgprint(__('Report submitted successfully.'));
+                                                        dialog.hide();
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                            } else {
+                                frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
+                            }
+                        }
+                    })
+                }
+            }
+        }
+    });
+
+    frappe.call({
+        method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
+        callback: function (r) {
+            if (!r.exc) {
+                dialog.fields_dict.work_warehouse_inventory.df.data = [];
+                dialog.fields_dict.work_warehouse_inventory.refresh();
+
+                r.message.forEach(function (row, index) {
+                    dialog.fields_dict.work_warehouse_inventory.df.data.push({
+                        sr_no: index + 1,
+                        item_code: row.item_code,
+                        serial_no: row.serial_no,
+                        warehouse: row.warehouse,
+                        yes: 1,
+                        no: 0,
+                        user_activity: 'Log Out'
+                    });
+                });
+
+                dialog.fields_dict.work_warehouse_inventory.grid.refresh();
+                
+                dialog.fields_dict.work_warehouse_inventory.$wrapper.on('change', 'input[data-fieldname="yes"]', function () {
+                    toggle_checkboxes(this);
+                });
+
+                dialog.fields_dict.work_warehouse_inventory.$wrapper.on('change', 'input[data-fieldname="no"]', function () {
+                    toggle_checkboxes(this);
+                });                    
+            }
+        }
+    });
+    dialog.show();
+}
+
+function toggle_checkboxes(field) {
+    let row = $(field).closest('.grid-row');
+    let yes_field = row.find('input[data-fieldname="yes"]');
+    let no_field = row.find('input[data-fieldname="no"]');
+
+    if ($(field).is(':checked')) {
+        if (field.dataset.fieldname === 'yes') {
+            no_field.prop('checked', false).change();
+        } else {
+            yes_field.prop('checked', false).change();
+        }
+    } else {
+        if (!yes_field.is(':checked') && !no_field.is(':checked')) {
+            if (field.dataset.fieldname === 'yes') {
+                no_field.prop('checked', true).change();
+            } else {
+                yes_field.prop('checked', true).change();
+            }
+        }
+    }
 }

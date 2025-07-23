@@ -6,6 +6,7 @@ import frappe
 import traceback
 from frappe import _
 from datetime import datetime, date
+from frappe import db, session, throw
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 
@@ -607,9 +608,10 @@ def auto_enroll_on_role_profile_change(employee):
 
 @frappe.whitelist()
 def validate_employee_department_and_role(user, department, role_profile):
-    employee = frappe.get_value("Employee", {"user_id": user}, ["name", "department", "role_profile"])
+    employee = frappe.get_value("Employee", {"user_id": user, "status": "Active"}, ["name", "department", "role_profile"])
 
     if not employee:
+        frappe.msgprint(_(f"Active Employee not found for Email: {user}."))
         return False
 
     employee_name, employee_department, employee_role = employee
@@ -617,10 +619,14 @@ def validate_employee_department_and_role(user, department, role_profile):
     if employee_department != department or employee_role != role_profile:
         if employee_department:
             work_warehouses = frappe.get_all(
-                "Warehouse",
-                filters={"department": employee_department, "disabled": 0},
-                fields=["name", "department"]
-            )
+                            "Warehouse",
+                            filters={
+                                "department": employee_department,
+                                "disabled": 0,
+                                "warehouse_owner": user,
+                            },
+                            fields=["name", "department"]
+                        )
 
             warehouse_names = [w["name"] for w in work_warehouses]
 
@@ -666,3 +672,23 @@ def validate_employee_department_and_role(user, department, role_profile):
         return {"False": "Department has been changed Successfully"}
 
     return {"True": True}
+
+
+@frappe.whitelist()
+def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filters):
+    user = frappe.session.user
+
+    # ✅ Correct: Use frappe.db.get_value, not just db.get_value
+    employee_level = frappe.db.get_value("Employee", {"user_id": user}, "employee_level")
+
+    if not employee_level:
+        frappe.throw(_("No employee_level found for the current user."))
+
+    return frappe.db.sql("""
+        SELECT name
+        FROM `tabRole Profile`
+        WHERE employee_level <= %s
+        AND department = %s
+        ORDER BY employee_level DESC, name ASC
+        LIMIT %s OFFSET %s
+    """, (employee_level, filters.get("department"), page_len, start), explain=True, debug=True)

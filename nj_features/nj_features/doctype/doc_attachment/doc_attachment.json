@@ -28,6 +28,7 @@
    "in_list_view": 1,
    "label": "Doc Type",
    "options": "DocType",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -35,24 +36,28 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "DocTypeName",
+   "read_only": 1,
    "reqd": 1
   },
   {
    "fieldname": "quality_inspection_type",
    "fieldtype": "Link",
    "label": "Quality Inspection Type",
-   "options": "Inspection Type"
+   "options": "Inspection Type",
+   "read_only": 1
   },
   {
    "fieldname": "file_type",
    "fieldtype": "Select",
    "label": "File Type",
-   "options": "\nimage\nVideo\nYoutube\naudio\ntext"
+   "options": "\nimage\nVideo\nYoutube\naudio\ntext",
+   "read_only": 1
   },
   {
    "fieldname": "file_location",
    "fieldtype": "Data",
-   "label": "File Location"
+   "label": "File Location",
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -70,32 +75,38 @@
   {
    "fieldname": "linked_data",
    "fieldtype": "Data",
-   "label": "Linked Data"
+   "label": "Linked Data",
+   "read_only": 1
   },
   {
    "fieldname": "media_size",
    "fieldtype": "Data",
-   "label": "Media Size"
+   "label": "Media Size",
+   "read_only": 1
   },
   {
    "fieldname": "time_taken_to_upload",
    "fieldtype": "Data",
-   "label": "Time Taken To Upload"
+   "label": "Time Taken To Upload",
+   "read_only": 1
   },
   {
    "fieldname": "starting_time",
    "fieldtype": "Data",
-   "label": "Starting time"
+   "label": "Starting time",
+   "read_only": 1
   },
   {
    "fieldname": "ending_time",
    "fieldtype": "Data",
-   "label": "Ending Time"
+   "label": "Ending Time",
+   "read_only": 1
   },
   {
    "fieldname": "status",
    "fieldtype": "Data",
-   "label": "Status"
+   "label": "Status",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_8c7bn",
@@ -105,7 +116,7 @@
  "hide_toolbar": 1,
  "in_create": 1,
  "links": [],
- "modified": "2025-07-07 14:22:34.459743",
+ "modified": "2025-07-23 16:03:51.412642",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Doc Attachment",

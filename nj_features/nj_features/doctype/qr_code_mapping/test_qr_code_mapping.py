@@ -4,5 +4,5 @@
 # import frappe
 import unittest
 
-class TestNonSerializedQRCodeMapping(unittest.TestCase):
+class TestQRCodeMapping(unittest.TestCase):
 	pass

@@ -9,7 +9,6 @@ from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
 
-
 class CustomPurchaseReceipt(PurchaseReceipt):
 
     def on_submit(self):
@@ -159,6 +158,12 @@ class CustomPurchaseReceipt(PurchaseReceipt):
 def get_batch(doc, method=None):
     for item in doc.items:
         set_registry_no(item)
+
+        if item.item_code and item.qty and is_serialized(item.item_code) == 1:
+            serial_nos = item.serial_no.split('\n') if item.serial_no else []
+            for serial_no in serial_nos:
+                update_serial_no(serial_no, doc, item)
+
         item_has_batch_no = frappe.db.get_value('Item', {'name': item.item_code}, 'has_batch_no')
         item_idx = frappe.db.get_value('Purchase Order Item', {'item_code': item.item_code, 'parent': item.purchase_order, 'docstatus': 1}, 'idx')
         if item_has_batch_no and item_idx:
@@ -181,6 +186,7 @@ def get_batch(doc, method=None):
                     generate_and_save_qrcode(stripped_serial_number)
         elif item.truncated_item_code:
             generate_and_save_qrcode(item.truncated_item_code)
+
 
 def before_save_purchase_receipt(doc, method):
     if doc.doctype == "Purchase Receipt":

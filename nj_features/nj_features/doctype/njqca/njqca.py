@@ -2,7 +2,7 @@ import re
 import json
 import time
 import frappe
-import datetime
+import datetime as dt
 import traceback
 from datetime import datetime
 from frappe import _
@@ -307,7 +307,7 @@ def get_itm_code_on_barcode(new_qi):
             result.update(preferred_prices)
 
         if serial_no_data.rfq_id is None:
-            current_date = datetime.date.today()
+            current_date = dt.date.today()
             serial_item_date = serial_no_data.purchase_date
             difference = (current_date - serial_item_date).days
 
@@ -2425,24 +2425,24 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
         nj_serial_no=""
         if serial_no:
             nj_serial_no=serial_no[0].name
-        query="""
-            SELECT tot_sed.serial_no as battery_serial_no
-            FROM `tabStock Entry Detail` AS sed
-            INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-            INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-            WHERE
-                (sed.serial_no = %(serial_no)s OR 
-                    sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
-                stock_entry.purpose = 'Repack' AND 
-                stock_entry.docstatus = 1 AND
-                tot_sed.s_warehouse IS NOT NULL AND 
-                tot_sed.item_group = 'Battery' AND
-                tot_sed.creation < %(njqca_creation)s
-            ORDER BY stock_entry.creation DESC
-            LIMIT 1
-        """
+        # query="""
+        #     SELECT tot_sed.serial_no as battery_serial_no
+        #     FROM `tabStock Entry Detail` AS sed
+        #     INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+        #     INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+        #     WHERE
+        #         (sed.serial_no = %(serial_no)s OR 
+        #             sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+        #             sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+        #             sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+        #         stock_entry.purpose = 'Repack' AND 
+        #         stock_entry.docstatus = 1 AND
+        #         tot_sed.s_warehouse IS NOT NULL AND 
+        #         tot_sed.item_group = 'Battery' AND
+        #         tot_sed.creation < %(njqca_creation)s
+        #     ORDER BY stock_entry.creation DESC
+        #     LIMIT 1
+        # """
         partlist_query="""
           Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" and component_serial_no <> '' order by item_group_idx desc limit 1;
         """
@@ -2451,15 +2451,9 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
             log_error(str(data),"repacked battery serial_no  through part list for bios serial no "+bios_serial_no)
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
-            else:
-                data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
-                log_error(str(data),"repacked battery serial_no  through stack entry for bios serial no "+bios_serial_no)
-                if data is not None and data:
-                    return data[0].get("battery_serial_no")
-                else:
-                   return nj_serial_no
-        else:
-            return ""
+            
+        
+        return ""
         
     except Exception as e:
         log_error(traceback.format_exc(), "An error occurred in get_battery_serialno in battery NJQCA "+bios_serial_no)
@@ -2536,7 +2530,7 @@ def get_bdt_status(doc, method=None):
                 pass
         
         if required_backup==0:
-            required_backup=120
+            required_backup=110
 
         if backup3 is not None and backup3:
             if float(backup3)>=required_backup:

@@ -247,7 +247,7 @@ frappe.ui.form.on('NJQCA', {
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
 
-        if (frm.doc.item_code != '' && (frm.doc.rfq_id) && (frm.doc.serial_no === '' || frm.doc.serial_no === null || frm.doc.serial_no === undefined)) {
+        if (frm.doc.item_code != '' && (frm.doc.rfq_id) && (!frm.doc.serial_no)) {
             await frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.create_serial_no',
                 args: { 'item_code': frm.doc.item_code, "rfq": true },
@@ -302,7 +302,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)){
+        if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (!frm.doc.rfq_id)){
 
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
@@ -376,14 +376,12 @@ frappe.ui.form.on('NJQCA', {
         //     });
         // }
         
-        if (selectedModel && selectedItemGroup == "Laptops" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if (selectedModel && selectedItemGroup == "Laptops" && (!frm.doc.rfq_id)) {
             frappe.call({
                 method: 'nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria',
                 args: { 'doc': frm.doc },
                 callback: function(r) {
-                    if (!r || !r.message) {
-                        return;
-                    }
+                    if (!r || !r.message) { return; }
 
                     if (r && r.message.error) {
                         frappe.msgprint({
@@ -392,10 +390,10 @@ frappe.ui.form.on('NJQCA', {
                             indicator: "red"
                         });
                         frappe.validated = false;
+
                     } else if (r.message) {
                         
                         let existingRow = null;
-        
                         (frm.doc.njqca_result_parameters || []).forEach(row => {
                             if (row.parameter === r.message.parameter) {
                                 existingRow = row;
@@ -417,8 +415,8 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         }
+        
         var requiredFields = ['serial_no', 'item_group', 'brand', 'manufacturer_model', 'model'];
-
         if (frm.doc.rfq_id ) { requiredFields.push('warehouse'); }
         
         var errorMessages = [];
@@ -527,6 +525,7 @@ frappe.ui.form.on('NJQCA', {
             frm.refresh_field('serial_no');
         }
     },
+
     before_submit: async function(frm) {
         await frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
@@ -645,23 +644,58 @@ frappe.ui.form.on('NJQCA', {
         cur_frm.set_df_property('model', 'hidden', !isYes);
     },
 
+    barcode: function(frm) {
+        handleScannerInput(frm, 'barcode');
+        if (frm.doc.barcode) {
+			frappe.call({
+				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+				args: {  search_value: frm.doc.barcode },
+				callback: function(r) {
+					if (r.message) {
+						if (r.message.serial_no) {
+							frm.set_value('serial_no', r.message.serial_no);
+						} else if (r.message.scan) {
+							frappe.msgprint("Please Scan the Serial No.");
+							frm.set_value('serial_no', '');
+							frm.set_value('barcode', '');
+						}
+						frm.refresh_field("serial_no");
+						frm.refresh_field("barcode");
+						$('[data-fieldname="barcode"]').focus();
+					}
+				},
+				error: function(r) {
+					frappe.msgprint("Error while scanning Serial No.");
+					frm.set_value('barcode', '');
+					frm.set_value('serial_no', '');
+					frm.refresh_field("barcode");
+					frm.refresh_field("serial_no");
+					$('[data-fieldname="barcode"]').focus();
+				}
+			});
+		}
+    },
+    
     serial_no: function(frm) {
-        handleScannerInput(frm, 'serial_no');
         if (frm.doc.serial_no) {
-            if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) { trigger_serial_no(frm); } 
+            if (!frm.doc.rfq_id) { 
+                frm.set_value('warehouse', '')
+                trigger_serial_no(frm); 
+            } 
         } else {
             frm.set_value('warehouse', '')
             frm.refresh_field('warehouse')
         }
 
-        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)){
+        if(!frappe.user.has_role("NJ IQC Manager") && frm.doc.serial_no && frm.doc.serial_no.trim() !== '' && (!frm.doc.rfq_id)){
             cur_frm.set_df_property('serial_no', 'read_only', 1);
         }
     },
+
     component_serial_no: function(frm) {
         handleScannerInput(frm, 'component_serial_no');
         if (frm.doc.component_serial_no) {
-            if (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined) {
+            if (!frm.doc.rfq_id) {
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.njqca.njqca.get_info_from_component_serial_no',
                     args: { 'doc': frm.doc },
@@ -699,11 +733,10 @@ frappe.ui.form.on('NJQCA', {
     },
 
     warehouse: async function(frm) {
-        if (frm.doc.warehouse && (frm.doc.serial_no || frm.doc.component_serial_no) && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if (frm.doc.warehouse && (frm.doc.serial_no || frm.doc.component_serial_no) && (!frm.doc.rfq_id)) {
             let ware = frm.doc.warehouse;    
-            let employeeData = await frappe.db.get_value('Employee', {
-                'user_id': frappe.session.user_email, 'status': 'Active'
-            }, 'work_warehouse');
+            let employeeData = await frappe.db.get_value('Employee',
+                { 'user_id': frappe.session.user_email, 'status': 'Active' }, 'work_warehouse');
             let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
             const isComponent = item_group_data?.message?.is_component;
 
@@ -803,7 +836,7 @@ frappe.ui.form.on('NJQCA', {
         let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
         const isComponent = item_group_data?.message?.is_component;
 
-        if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+        if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (!frm.doc.rfq_id)) {
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
@@ -917,7 +950,7 @@ frappe.ui.form.on('NJQCA', {
 });
 
 function trigger_serial_no(frm) {
-    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && (frm.doc.rfq_id === '' || frm.doc.rfq_id === null || frm.doc.rfq_id === undefined)) {
+    if ((cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) && cur_frm.doc.power_on == 'Yes' && (!frm.doc.rfq_id)) {
         console.log("trigger_serial_no");
         
         frappe.call({
@@ -960,7 +993,7 @@ function processItemTemplate(frm) {
                         }
                     }
 
-                    if (r.message.repack_item_code !== undefined && r.message.repack_item_code !== null) {
+                    if (r.message.repack_item_code) {
                         if (r.message.repack_item_code.error) {
                             frappe.utils.play_sound("error");
                             var errorMessageString = 'Repack Item code not found: ' + r.message.repack_item_code.error;

@@ -9,6 +9,7 @@
  "field_order": [
   "njqca_information_section",
   "power_on",
+  "barcode",
   "serial_no",
   "component_serial_no",
   "bios_serialno",
@@ -108,8 +109,11 @@
   {
    "depends_on": "eval:doc.item_group == \"Laptops\" || doc.item_group == \"Chromebooks\"",
    "fieldname": "serial_no",
-   "fieldtype": "Data",
-   "label": "Serial No"
+   "fieldtype": "Link",
+   "label": "Serial No",
+   "options": "Serial No",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "item_group",
@@ -437,11 +441,17 @@
    "fieldtype": "Data",
    "label": "Average Discharge Rate",
    "read_only": 1
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "Barcode",
+   "options": "Barcode"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-05 15:10:15.020605",
+ "modified": "2025-07-23 16:04:54.684119",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

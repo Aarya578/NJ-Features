@@ -1,12 +1,9 @@
-import os
 import json
 import frappe
-import random
 import traceback
 from nj_lib.utils.common_utils import get_item_wizard
 from nj_lib.utils.common_utils import latest_repacked_battery_serialno
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
-                                      
 
 @frappe.whitelist()
 def on_submit(doc, handler=""):
@@ -43,28 +40,44 @@ def crt_amzsl_inv(sales_order_name):
 
 @frappe.whitelist()
 def search_for_serial_or_batch_or_barcode_no(search_value):
+    serial_no_data = ''
+
+    qr_mapping_data = frappe.db.get_value(
+        "QR Code Mapping", search_value, ["doctype1", "item_code", "serial_no"], as_dict=True
+    )
+
+    if qr_mapping_data and qr_mapping_data.get("doctype1") == "Serial No":
+        serial_no_data = frappe.db.get_value(
+            "Serial No", qr_mapping_data.get("serial_no"), 
+            ["name as serial_no", "item_code", "warehouse", "delivery_document_no", "delivery_document_type"], 
+            as_dict=True
+        )
+
+        if serial_no_data and (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
+            frappe.throw("Delivered items can't be moved")
+            return
+        
+        if serial_no_data:
+            return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
+
     serial_no_data = frappe.db.get_value(
         "Serial No", search_value, 
-        ["name as serial_no", "item_code", "warehouse", "delivery_document_no", "delivery_document_type"], 
+        ["name as serial_no", "item_code", "warehouse", "delivery_document_no", "delivery_document_type", "is_encrypted"], 
         as_dict=True
     )
-    if serial_no_data and (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
-        frappe.throw("Delivered items can't be moved")
-    
+
     if serial_no_data:
+        if (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
+            frappe.throw("Delivered items can't be moved")
+            return
+
+        if serial_no_data.get("is_encrypted"):
+            frappe.throw("Use correct Serial No. barcode.")
+            return
+        
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 
     return {"scan": 1}
-
-
-@frappe.whitelist()
-def serializer_or_notserializer(item_code=None):
-    if item_code:
-        has_serial_no = frappe.db.get_value(
-            "Item", {"name": item_code}, ["has_serial_no"], as_dict=True
-        )
-        return has_serial_no.has_serial_no if has_serial_no else 0
-    return 0  # Return 0 if item code or has_serial_no is not found or is None
 
 # Barcode Printing in Purchase Receipt:
 
@@ -214,7 +227,6 @@ def battery_data():
 
 @frappe.whitelist()
 def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model=""):
-    
     try:
         frappe.get_doc({
             "doctype": "Comment",
@@ -249,17 +261,17 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
         
         serial_no_battery_data_query="""
             SELECT name FROM `tabNJQCA` where component_serial_no=%(serial_no)s and docstatus=1 and item_group="BATTERY" and 
-                (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") and bios_serialno=%(bios_serial_no)s order by creation DESC limit 1;
-            """
+            (backup_duration_cycle_1 <> "" or backup_duration_cycle_2 <> "" or backup_duration_cycle_3 <> "") and bios_serialno=%(bios_serial_no)s order by creation DESC limit 1;
+        """
         
         fbdt_status_query="""
-                    SELECT battery_status FROM (SELECT
-					CASE
-					WHEN sudden_drop LIKE '%%YES%%' OR (
-					COALESCE(backup_duration_cycle_3, backup_duration_cycle_2, backup_duration_cycle_1) < %(backup_duration_mins)s )  THEN ''
-                    ELSE 'PASS'
-                    END AS battery_status
-                    FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
+                SELECT battery_status FROM (SELECT
+                CASE
+                WHEN sudden_drop LIKE '%%YES%%' OR (
+                COALESCE(backup_duration_cycle_3, backup_duration_cycle_2, backup_duration_cycle_1) < %(backup_duration_mins)s )  THEN ''
+                ELSE 'PASS'
+                END AS battery_status
+                FROM `tabNJQCA` where name=%(battery_data_parent_name)s ) AS result ORDER BY battery_status DESC LIMIT 1;
             """ 
 
         get_bty_serial_no= latest_repacked_battery_serialno(bios_serial_no)
@@ -289,7 +301,6 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
                         else:
                             return "FAIL"
           
-
         battery_Data_parent_name=""
         battery_Data_parent_name_result=frappe.db.sql(serial_no_battery_data_query,{'serial_no':parent_serial_no,'bios_serial_no':bios_serial_no}, as_dict=True)
         log_error(str(battery_Data_parent_name_result),"battery_Data_parent_name_result for serial no "+parent_serial_no+" in NJQCA "+njqca_name)
@@ -306,7 +317,6 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
                 return "Report Not found in NJQCA"
         else:
             return "Report Not found"
-
 
     except Exception as e:
         log_error(traceback.format_exc(), "An error occurred in get_battery_status in NJQCA "+njqca_name)   
@@ -441,6 +451,3 @@ def get_backup_duration(doc, method=None):
             
     except Exception as e:
         print("error while getting backup duration", e)
-    
-
-    

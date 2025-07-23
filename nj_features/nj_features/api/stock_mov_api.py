@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 from nj_features.nj_features.doctype.stock_movement.stock_movement import StockMovement, get_all_emp_warehouse
 
 @frappe.whitelist()
@@ -12,7 +13,9 @@ def process_stock_movement_data():
     data = frappe.request.data.decode('utf-8')
     data = json.loads(data)
     user_id = data['user_id']
-    owner_warehouse = frappe.db.get_value("Employee", {'user_id': user_id}, 'work_warehouse')
+    owner_warehouse = frappe.db.get_value("Employee", {'user_id': user_id, 'status': 'Active'}, 'work_warehouse')
+    if not owner_warehouse:
+        raise frappe.ValidationError(f"Active Employee not found for the user: {user_id}.")
     has_serial_no = {'has_serial_no': 2}
     rack_target_warehouse_msg = {'rack_target_warehouse_msg': ''}
     rack_target_warehouse = {'rack_target_warehouse': ''}
@@ -291,25 +294,11 @@ def handle_submission(data, stock_movement, submit_status):
     else:
         submit_status['submitStatus'] = 0
 
-@frappe.whitelist()
-def search_for_serial_or_batch_or_barcode_no(search_value):
-    serial_no_data = frappe.db.get_value(
-        "Serial No", search_value, ["name as serial_no", "item_code", "warehouse"], as_dict=True
-    )
-    if serial_no_data:
-        return {
-            "serial_no": serial_no_data.get("serial_no"), 
-            "item_code": serial_no_data.item_code, 
-            "warehouse": serial_no_data.warehouse, 
-            "scan": 0
-        }
-    return {"scan": 1}
-
 def search_for_non_serialized_item(scan_barcode, scan_grade, scan_warehouse):
     if '/' in scan_barcode:
         return scan_barcode
     elif '@' in scan_barcode:
         return scan_barcode.replace('@', '/')
     else:
-        item_code = frappe.db.get_value('Non Serialized QR Code Mapping', {'name': scan_barcode}, 'item_code')
+        item_code = frappe.db.get_value('QR Code Mapping', {'name': scan_barcode, 'doctype1': 'Item'}, 'item_code')
         return item_code if item_code else scan_barcode

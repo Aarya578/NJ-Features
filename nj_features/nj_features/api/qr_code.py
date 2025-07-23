@@ -29,6 +29,8 @@ def generate_and_save_qrcode(data, format='png'):
             qr_code_mapping_doc.serial_no = encoded_data
             qr_code_mapping_doc.doctype1 = 'Serial No'
             qr_code_mapping_doc.save(ignore_permissions=True)
+
+            frappe.db.set_value('Serial No', encoded_data, 'is_encrypted', True)
             encoded_data = qr_code_mapping_doc.name
             
         elif qr_code_serial_name:

@@ -402,7 +402,28 @@ frappe.ui.Scanner = class Scanner {
 };
 
 document.addEventListener("DOMContentLoaded", function () {
-    show_login_popup();
+
+    frappe.call({
+        method: "frappe.client.get_value",
+        args: {
+            doctype: "NJ Settings", // or your actual doctype name if it's not NJ Settings
+            filters: {
+                parameter: "allow_department_check",
+                module: "HR",
+                doc_type: "Department"
+            },
+            fieldname: "value"
+        },
+        callback: function(r) {
+            if (!r.exc && r.message) {
+                const allowCheck = cint(r.message.value);  // convert string "1"/"0" to int
+                if (allowCheck === 1) {
+                    show_login_popup();
+                }
+            }
+        }
+    });
+
     if (document.getElementById("network-indicator")) return;
 
     const html = `

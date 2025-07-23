@@ -1,0 +1,34 @@
+{
+ "attach_print": 0,
+ "channel": "Email",
+ "condition": "doc.send_email == True",
+ "creation": "2025-07-22 16:21:54.454284",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Delivery Charges",
+ "enabled": 1,
+ "event": "Value Change",
+ "idx": 0,
+ "is_standard": 1,
+ "message": "Hi Your AWB {{ doc.name }} status is {{ doc.remark_status }}",
+ "modified": "2025-07-22 19:04:54.677272",
+ "modified_by": "postman@mail.com",
+ "module": "NJ Features",
+ "name": "Delivery Charges Mails",
+ "owner": "postman@mail.com",
+ "recipients": [
+  {
+   "receiver_by_document_field": "first_email"
+  },
+  {
+   "receiver_by_document_field": "second_email"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "sender": "NewJaisa",
+ "sender_email": "support@newjaisa.com",
+ "subject": "Hi AWB {{ doc.name }} ",
+ "value_changed": "send_email"
+}

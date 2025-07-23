@@ -129,8 +129,7 @@
   {
    "fieldname": "suggested_warehouse",
    "fieldtype": "Long Text",
-   "label": "Suggested Warehouse",
-   "read_only": 1
+   "label": "Suggested Warehouse"
   },
   {
    "fieldname": "naming_series",
@@ -148,7 +147,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-04-28 12:28:39.300699",
+ "modified": "2025-07-21 10:39:05.480636",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement",

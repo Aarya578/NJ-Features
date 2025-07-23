@@ -6,6 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "send_email",
   "awb_number",
   "rto_charges",
   "serial_no",
@@ -22,6 +23,10 @@
   "breadth",
   "item_group_qty",
   "current_status",
+  "etd",
+  "etd_hours",
+  "picked_date",
+  "delivered_date",
   "activity",
   "location",
   "column_break_30oxe",
@@ -30,27 +35,33 @@
   "shiprocket_invoice",
   "shiprocket_image",
   "section_break_xhi0z",
+  "first_email",
+  "second_email",
   "item_tracking_table",
   "amended_from"
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "awb_number",
    "fieldtype": "Data",
    "label": "AWB Number",
    "unique": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "rto_charges",
    "fieldtype": "Float",
    "label": "RTO Charges"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "serial_no",
    "fieldtype": "Data",
    "label": "Serial No"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sales_order",
    "fieldtype": "Data",
    "label": "Sales Order"
@@ -75,6 +86,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "pickup_scheduled_date",
    "fieldtype": "Datetime",
    "label": "Pickup Scheduled Date"
@@ -95,36 +107,43 @@
    "label": "Shiprocket Image"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "remark_status",
    "fieldtype": "Data",
    "label": "Remark Status"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "courier_service",
    "fieldtype": "Data",
    "label": "Courier Service"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "shiprocket_order_id",
    "fieldtype": "Data",
    "label": "ShipRocket Order ID"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "shiprocket_shipment_id",
    "fieldtype": "Data",
    "label": "ShipRocket Shipment ID"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "delivery_note",
    "fieldtype": "Data",
    "label": "Delivery Note"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "weight",
    "fieldtype": "Data",
    "label": "Weight"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "height",
    "fieldtype": "Data",
    "label": "Height"
@@ -168,11 +187,54 @@
    "fieldtype": "Table",
    "label": "Item Tracking Table",
    "options": "Item Tracking Table"
+  },
+  {
+   "fieldname": "etd",
+   "fieldtype": "Data",
+   "label": "ETD"
+  },
+  {
+   "fieldname": "etd_hours",
+   "fieldtype": "Data",
+   "label": "Etd Hours"
+  },
+  {
+   "fieldname": "delivered_date",
+   "fieldtype": "Datetime",
+   "label": "Delivered Date"
+  },
+  {
+   "fieldname": "picked_date",
+   "fieldtype": "Datetime",
+   "label": "Picked Date"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "manjuvaddar9538@gmail.com",
+   "fieldname": "first_email",
+   "fieldtype": "Data",
+   "label": "First Email",
+   "options": "Email"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "manjuvaddar9538@gmail.com",
+   "fieldname": "second_email",
+   "fieldtype": "Data",
+   "label": "Second Email",
+   "options": "Email"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "send_email",
+   "fieldtype": "Check",
+   "label": "Send Email"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-12 16:00:43.788908",
+ "modified": "2025-07-22 18:05:51.536159",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

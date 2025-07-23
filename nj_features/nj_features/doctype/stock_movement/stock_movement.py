@@ -179,115 +179,6 @@ class StockMovement(Document):
                 return_unpack_items_data.append(unpack_item)
 
         return return_unpack_items_data
-        
-
-    # def get_repack_items(self):
-    #     """
-    #     Prepare repack items data for stock entry for all items.
-    #     Also throws error if Serial No item code matches Purchase Receipt item code.
-    #     """
-    #     return_unpack_items_data = []
-
-    #     for item in self.items:
-    #         if not item.serial_no:
-    #             frappe.throw(f"Serial No is missing for Item Code: {item.item_code}")
-
-    #         for serial_no_value in item.serial_no.strip().split('\n'):
-    #             serial_no_value = serial_no_value.strip()
-    #             if not serial_no_value:
-    #                 continue
-
-    #             serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
-
-    #             # ✅ Get linked Purchase Receipt from Serial No
-    #             purchase_receipt = serial_no_doc.purchase_receipt
-    #             if not purchase_receipt:
-    #                 frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
-
-    #             # ✅ Get item code from Purchase Receipt
-    #             purchase_item_code = self.get_matching_purchase_item(
-    #                 purchase_receipt, serial_no_value, item.item_code
-    #             )
-
-    #             if not purchase_item_code:
-    #                 frappe.throw(f"Could not find matching item code in Purchase Receipt {purchase_receipt} for Serial No: {serial_no_value}")
-
-    #             # ✅ Throw error if both item codes are the same
-    #             # if item.item_code == purchase_item_code:
-    #             #     frappe.throw(
-    #             #         f"Repack failed: Item Code from Serial No <b>{item.item_code}</b> and "
-    #             #         f"Purchase Receipt Item Code <b>{purchase_item_code}</b> are the same "
-    #             #         f"for Serial No: <b>{serial_no_value}</b>."
-    #             #     )
-
-    #             # ✅ Item to be removed (source)
-    #             main_repack_item = {
-    #                 'repack_item_code': item.item_code,
-    #                 'repack_serial_no': serial_no_value,
-    #                 'repack_item_source_warehouse': item.s_warehouse,
-    #                 'is_finished_item': 0
-    #             }
-    #             return_unpack_items_data.append(main_repack_item)
-
-    #             # ✅ Item to be added (target)
-    #             unpack_item = {
-    #                 'unpack_serial_no': serial_no_value,
-    #                 'unpack_item_code': purchase_item_code,
-    #                 'unpack_item_target_warehouse': item.t_warehouse,
-    #                 'is_finished_item': 1
-    #             }
-    #             return_unpack_items_data.append(unpack_item)
-
-    #     return return_unpack_items_data
-
-    # def get_repack_items(self):
-    #     """
-    #     Prepare repack items data for stock entry for all items
-    #     """
-    #     return_unpack_items_data = []
-
-    #     for item in self.items:
-    #         if not item.serial_no:
-    #             frappe.throw(f"Serial No is missing for Item Code: {item.item_code}")
-
-    #         for serial_no_value in item.serial_no.strip().split('\n'):
-    #             serial_no_value = serial_no_value.strip()
-    #             if not serial_no_value:
-    #                 continue
-
-    #             serial_no_doc = frappe.get_doc("Serial No", serial_no_value)
-
-    #             # ✅ Correct field from Serial No
-    #             purchase_receipt = serial_no_doc.purchase_receipt
-    #             if not purchase_receipt:
-    #                 frappe.throw(f"No Purchase Receipt linked to Serial No: {serial_no_value}")
-
-    #             # Get matching purchase item code
-    #             purchase_item_code = self.get_matching_purchase_item(
-    #                 purchase_receipt, serial_no_value, item.item_code
-    #             )
-
-    #             # Item being removed (source)
-    #             main_repack_item = {
-    #                 'repack_item_code': item.item_code,
-    #                 'repack_serial_no': serial_no_value,
-    #                 'repack_item_source_warehouse': item.s_warehouse,
-    #                 'is_finished_item': 0
-    #             }
-    #             return_unpack_items_data.append(main_repack_item)
-
-    #             # Item being added (target) – this must be marked as finished item
-    #             unpack_item = {
-    #                 'unpack_serial_no': serial_no_value,
-    #                 'unpack_item_code': purchase_item_code,
-    #                 'unpack_item_target_warehouse': item.t_warehouse,
-    #                 'is_finished_item': 1
-    #             }
-    #             return_unpack_items_data.append(unpack_item)
-
-    #     return return_unpack_items_data
-
-
 
 @frappe.whitelist()
 def get_all_emp_warehouse(user):
@@ -346,7 +237,6 @@ def get_child_warehouses(parent_warehouse):
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
     
-    try:
         if isinstance(doc, str):
             doc = json.loads(doc)
 
@@ -360,10 +250,6 @@ def validate_stock_movement_for_grade(doc):
             return {"error": error_messages}
 
         return {"success": "Validation passed without errors."}
-    
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Error in validate_stock_movement_for_grade")
-        return {"error": str(e)}
 
 def validate_serial_no_and_department(row, error_messages):
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
@@ -398,9 +284,11 @@ def validate_serial_no_and_department(row, error_messages):
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
         if not is_component and s_department != department:
+            check_lesson_validation = frappe.db.get_value('NJ settings', {'paramter': 'check_lesson_validation'} , 'value')
+            if int(check_lesson_validation):
+                validate_lesson_completion_for_serial_model(serial_doc, error_messages)
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
             check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
-            
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
 
@@ -419,6 +307,86 @@ def validate_serial_no_and_department(row, error_messages):
             return True
 
     return True
+
+def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
+    
+    user = frappe.session.user
+    model = serial_no_doc.model
+
+    if not model:
+        return
+
+    # Step 1: Get all enrolled courses via LMS Batch Membership
+    enrolled_courses = frappe.get_all("LMS Batch Membership",
+        filters={"member": user},
+        pluck="course"
+    )
+
+    print("Enrolled courses via LMS Batch Membership:", enrolled_courses)
+
+    if not enrolled_courses:
+        return
+
+    # Step 2: Filter courses where model is in Course.models table
+    matched_courses = []
+    for course_name in enrolled_courses:
+        course_doc = frappe.get_doc("LMS Course", course_name)
+        course_models = [row.models for row in course_doc.model]  # assuming 'model' is the child table field
+        if model in course_models:
+            matched_courses.append(course_name)
+
+    print("Matched courses for model:", model, "->", matched_courses)
+
+    if not matched_courses:
+        return
+
+    # Step 3: Get chapters from those courses
+    chapters = frappe.get_all("Course Chapter",
+        filters={"course": ["in", matched_courses]},
+        pluck="name"
+    )
+
+    if not chapters:
+        return
+
+    print("Chapters from matched courses:", chapters)
+
+    # Step 4: Get lessons linked in chapter.lesson (child table: Lesson Reference)
+    required_lessons = set()
+    for chapter in chapters:
+        chapter_doc = frappe.get_doc("Course Chapter", chapter)
+        lesson_names = [row.lesson for row in chapter_doc.lessons if row.lesson]
+        
+        for lesson_name in lesson_names:
+            lesson_doc = frappe.get_doc("Course Lesson", lesson_name)
+            lesson_models = [row.models for row in lesson_doc.model]
+            if model in lesson_models:
+                required_lessons.add(lesson_name)
+
+    print("Required lessons for model:", required_lessons)
+
+    if not required_lessons:
+        return
+
+    # Step 5: Check which lessons are completed
+    completed_lessons = frappe.get_all("LMS Course Progress",
+        filters={
+            "owner": user,
+            "lesson": ["in", list(required_lessons)],
+            "status": "Complete"
+        },
+        pluck="lesson"
+    )
+
+    print("Completed lessons by user:", completed_lessons)
+
+    not_completed = list(required_lessons - set(completed_lessons))
+
+    if not_completed:
+        lesson_list = ", ".join(not_completed)
+        error_messages.append(
+            f"❌ You must complete all LMS lessons for model '<b>{model}</b>' before using Serial No '<b>{serial_no_doc.name}</b>'.<br>Pending Lessons: <b>{lesson_list}</b>"
+        )
 
 def check_bag_list_validation(serial_doc, error_messages, department_doc):
     if serial_doc and department_doc.get("check_for_bag_list"):
@@ -494,7 +462,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                             )
             else:
                 error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")
-
 
 def check_warranty_expiry(serial_doc, error_messages):
     try:
@@ -680,7 +647,6 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
 
     return error_messages
 
-
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
 
@@ -715,7 +681,6 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
                         f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                         f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
                     )
-
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):

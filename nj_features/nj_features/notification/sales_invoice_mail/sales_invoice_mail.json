@@ -1,0 +1,30 @@
+{
+ "attach_print": 1,
+ "channel": "Email",
+ "condition": "doc.send_email == True",
+ "creation": "2025-07-22 14:50:44.740202",
+ "days_in_advance": 0,
+ "docstatus": 0,
+ "doctype": "Notification",
+ "document_type": "Sales Invoice",
+ "enabled": 1,
+ "event": "Value Change",
+ "idx": 0,
+ "is_standard": 1,
+ "message": "Hi You PDF is Successfully Sended",
+ "modified": "2025-07-22 14:52:10.037654",
+ "modified_by": "postman@mail.com",
+ "module": "NJ Features",
+ "name": "Sales Invoice Mail",
+ "owner": "postman@mail.com",
+ "print_format": "GST E-Invoice",
+ "recipients": [
+  {
+   "receiver_by_document_field": "email"
+  }
+ ],
+ "send_system_notification": 0,
+ "send_to_all_assignees": 0,
+ "subject": "Dispatch {{ doc.name }} Submitted",
+ "value_changed": "send_email"
+}

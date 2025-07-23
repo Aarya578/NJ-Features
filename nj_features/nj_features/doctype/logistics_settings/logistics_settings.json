@@ -31,7 +31,15 @@
   "air",
   "critical_log_url",
   "shopify_status_section",
-  "shopify_status_update"
+  "shopify_status_update",
+  "invoice_credentials_section",
+  "api_token",
+  "api_secret",
+  "username",
+  "column_break_xm8zx",
+  "e_password",
+  "gstin",
+  "eway_url"
  ],
  "fields": [
   {
@@ -173,11 +181,50 @@
    "fieldtype": "Table",
    "label": "RTO Contains Table",
    "options": "RTO Contains Table"
+  },
+  {
+   "fieldname": "invoice_credentials_section",
+   "fieldtype": "Section Break",
+   "label": "Invoice Credentials"
+  },
+  {
+   "fieldname": "api_token",
+   "fieldtype": "Data",
+   "label": "API Token"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Data",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "username",
+   "fieldtype": "Data",
+   "label": "UserName"
+  },
+  {
+   "fieldname": "column_break_xm8zx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "e_password",
+   "fieldtype": "Data",
+   "label": "E Password"
+  },
+  {
+   "fieldname": "gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN"
+  },
+  {
+   "fieldname": "eway_url",
+   "fieldtype": "Data",
+   "label": "eway_url"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-07-17 17:12:03.085938",
+ "modified": "2025-07-22 10:57:28.503860",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

@@ -41,11 +41,13 @@ frappe.ui.form.on('Serial No', {
         frm.refresh_field('bag_list');
 
         // frappe.call({
+            
         //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
         //     args: {
         //         search_value: cur_frm.doc.name
         //     },
         //     callback: function(gradesResponse) {
+        //         print("inside the functio============================================")
         //         const gradesData = gradesResponse && gradesResponse.message;
             
         //         if (gradesData && gradesData.length > 0) {
@@ -65,6 +67,45 @@ frappe.ui.form.on('Serial No', {
         //         }
         //     }
         // });
+        frappe.call({
+            method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
+            args: {
+                search_value: cur_frm.doc.name
+            },
+            callback: function(gradesResponse) {
+                const gradesData = gradesResponse && gradesResponse.message;
+
+                if (gradesData && gradesData.length > 0) {
+                    // Remove duplicates
+                    const uniqueDepartments = [...new Set(gradesData.map(entry => entry.department))];
+                    const departmentsWithSequence = [];
+
+                    let remaining = uniqueDepartments.length;
+
+                    uniqueDepartments.forEach(dept => {
+                        frappe.db.get_doc('Department', dept).then(doc => {
+                            departmentsWithSequence.push({
+                                department: doc.name,
+                                department_sequence: doc.department_sequence || 0
+                            });
+
+                            remaining--;
+
+                            if (remaining === 0) {
+                                // All docs fetched
+                                departmentsWithSequence.sort((a, b) => a.department_sequence - b.department_sequence);
+                                const sortedNames = departmentsWithSequence.map(entry => entry.department);
+                                cur_frm.set_value('suggested_warehouse', sortedNames.join(', '));
+                            }
+                        });
+                    });
+                } else {
+                    cur_frm.set_value('suggested_warehouse', '');
+                }
+            }
+        });
+
+
     },
     after_save: (frm)=>{
         frm.set_df_property("bypass", "read_only", 1);

@@ -758,14 +758,18 @@ def get_grades_from_part_list(search_value):
         search_value,
         as_dict=True
     )
+    print("qury==============================",query)
 
     results = []
 
     # Loop through each item_group from the query result
     for row in query:
         item_group = row['item_group']
+        print("item_group==============================",item_group)
         aesthetic_issue = row['aesthetic_issue']
+        print
         functional_issue = row['functional_issue']
+        print("functional_issue==============================",functional_issue)
         damage_types = []
 
         if aesthetic_issue == 1:
@@ -787,6 +791,7 @@ def get_grades_from_part_list(search_value):
             (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
             as_dict=True
         )
+        print("department_query==============================",department_query)
 
         # If department data is found, append it to the result list
         if department_query:

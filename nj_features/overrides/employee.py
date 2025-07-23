@@ -608,9 +608,10 @@ def auto_enroll_on_role_profile_change(employee):
 
 @frappe.whitelist()
 def validate_employee_department_and_role(user, department, role_profile):
-    employee = frappe.get_value("Employee", {"user_id": user}, ["name", "department", "role_profile"])
+    employee = frappe.get_value("Employee", {"user_id": user, "status": "Active"}, ["name", "department", "role_profile"])
 
     if not employee:
+        frappe.msgprint(_(f"Active Employee not found for Email: {user}."))
         return False
 
     employee_name, employee_department, employee_role = employee

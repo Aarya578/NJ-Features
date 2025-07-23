@@ -1,7 +1,6 @@
 // Copyright (c) 2024, NewJaisa - IT Team and contributors
 // For license information, please see license.txt
-$('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"], .icon-btn[data-original-title="Print"]')
-    .hide();
+$('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Cancel"]').hide();
 
 var item_code_init = "";
 var default_ware = "";
@@ -11,6 +10,7 @@ frappe.ui.form.on('Stock Movement', {
         $('.col-lg-2.layout-side-section').hide();
         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
     },
+
     refresh() {
         $('[data-fieldname="scan_barcode"]').focus();
         $("button[data-original-title=Print]").hide();
@@ -29,6 +29,7 @@ frappe.ui.form.on('Stock Movement', {
                         } else if (cur_frm.doc.transfer_status == "Racking") {
                             cur_frm.toggle_display(['scan_grade'], true);
                         }
+
                         $('[data-fieldname="scan_grade"]').focus();
                     } else {
                         cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
@@ -39,24 +40,18 @@ frappe.ui.form.on('Stock Movement', {
 
                         frappe.call({
                             method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
-                            args: {
-                                search_value: r.message.serial_no
-                            },
+                            args: { search_value: r.message.serial_no },
                             callback: function(gradesResponse) {
                                 const gradesData = gradesResponse && gradesResponse.message;
                             
                                 if (gradesData && gradesData.length > 0) {
                             
-                                    // Extract department names from the response
                                     const departmentNames = gradesData.map(entry => entry.department);
                             
-                                    // Update the options of the 'suggested_warehouse' field
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
                             
-                                    // Optionally, set the first department as the default value
                                     cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
                                 } else {
-                                    // Clear the options if no data is found
                                     // cur_frm.set_df_property('suggested_warehouse', 'options', '');
                                     cur_frm.set_value('suggested_warehouse', '');
                                 }
@@ -78,7 +73,7 @@ frappe.ui.form.on('Stock Movement', {
             changed_item_code = frm.doc.scan_barcode.replaceAll('@', '/');
             executeRemainingCode(frm, changed_item_code);
         } else {
-            frappe.db.get_value('Non Serialized QR Code Mapping', {'name': frm.doc.scan_barcode}, 'item_code')
+            frappe.db.get_value('QR Code Mapping', {'name': frm.doc.scan_barcode, 'doctype1': 'Item'}, 'item_code')
             .then(function(r) {
                 if (r && r.message.item_code) {
                     changed_item_code = r.message.item_code;
@@ -90,7 +85,6 @@ frappe.ui.form.on('Stock Movement', {
             });
         }
         
-        // Get the child table data
         // if (frm.doc.scan_grade != '' && changed_item_code != '') {
         //     var new_item_code = ''
         //     frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
@@ -251,16 +245,9 @@ frappe.ui.form.on('Stock Movement', {
             }
         }
     }
-    
-    // after_submit(frm) {
-    //     setTimeout(function(){
-    //         frappe.set_route('List', frm.doc.doctype);
-    //     }, 5000)
-    // }
 })
 
 function executeRemainingCode(frm, changed_item_code) {
-    // Get the child table data
     if (frm.doc.scan_grade != '' && changed_item_code != '') {
         var new_item_code = '';
         frappe.db.get_value('Grade', { 'name': cur_frm.doc.scan_grade }, 'name')
@@ -391,7 +378,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             }
                         ];
     
-                        // Add the "Centralized Warehouse" field if the user has the role
                         if (hasCentralizedRole) {
                             fields.push({
                                 label: 'Centralized Warehouse',
@@ -411,7 +397,7 @@ function createDialogForLastRecord(child, cdt, cdn) {
                                 if (t_warehouse_value.trim() === '') {
                                     let row = cur_frm.fields_dict.items.grid.grid_rows_by_docname[cdn];
                                     if (row) {
-                                        row.remove();  // Remove the row from the grid
+                                        row.remove();
                                     }
                                 }
                                 d.hide();
@@ -424,13 +410,12 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             static: 1
                         });
                         
-                        // On blur of the t_warehouse field
                         d.fields_dict.t_warehouse.$input.on("blur", function() {
                             handleScannerInput(d, 't_warehouse');
                             let t_warehouse_value = $(this).val().trim();
                         
                             if (t_warehouse_value === '') {
-                                return; // No further checks or messages, just return
+                                return;
                             }
                         
                             let isValidWarehouse = recommended.includes(t_warehouse_value) || centralized.includes(t_warehouse_value);
@@ -451,7 +436,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
                             }
                         });
                         
-                        // Prevent form refresh by blocking ENTER key in the dialog
                         d.$wrapper.on("keydown", function(event) {
                             if (event.key === "Enter") {
                                 event.preventDefault();
@@ -466,7 +450,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
         cur_frm.refresh_field('items');
     }
 }
-
 
 // frappe.ui.form.on('Stock Movement Detail', {
 //     item_code: function(frm, cdt, cdn) {
@@ -600,7 +583,6 @@ function createDialogForLastRecord(child, cdt, cdn) {
 //     return warehouseObject;
 // }
 
-
 function modify_table_after_scan(frm, data) {
     let cur_grid = frm.fields_dict.items.grid;
     let row_to_modify = null;
@@ -627,7 +609,6 @@ function modify_table_after_scan(frm, data) {
 }
 
 function set_scanned_values(row_to_modify, data) {
-    // Fetch item details from the backend
     frappe.call({
         method: 'frappe.client.get',
         args: {

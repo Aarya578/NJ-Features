@@ -9,7 +9,6 @@ from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
 
-
 class CustomPurchaseReceipt(PurchaseReceipt):
 
     def on_submit(self):
@@ -157,37 +156,37 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                     break
                                 
 def get_batch(doc, method=None):
-    print("get_batch----------", doc.as_dict())
     for item in doc.items:
-        print('161')
         set_registry_no(item)
+
+        if item.item_code and item.qty and is_serialized(item.item_code) == 1:
+            serial_nos = item.serial_no.split('\n') if item.serial_no else []
+            for serial_no in serial_nos:
+                update_serial_no(serial_no, doc, item)
+
         item_has_batch_no = frappe.db.get_value('Item', {'name': item.item_code}, 'has_batch_no')
         item_idx = frappe.db.get_value('Purchase Order Item', {'item_code': item.item_code, 'parent': item.purchase_order, 'docstatus': 1}, 'idx')
         if item_has_batch_no and item_idx:
-            print('166')
             batch_id = item.purchase_order + '-' + str(item_idx)
             item.batch_no = batch_id
 
             if frappe.db.exists('Batch', batch_id):
-                print('171')
                 batch_doc = frappe.get_doc('Batch', batch_id)
             else:
-                print('174')
                 batch_doc = frappe.new_doc('Batch')
                 batch_doc.batch_id = batch_id
                 batch_doc.item = item.item_code
                 batch_doc.save()
 
         if item.serial_no:
-            print('180')
             serial_numbers = item.serial_no.split('\n')
             for serial_number in serial_numbers:
                 stripped_serial_number = serial_number.strip()
                 if stripped_serial_number:
                     generate_and_save_qrcode(stripped_serial_number)
         elif item.truncated_item_code:
-            print('185')
             generate_and_save_qrcode(item.truncated_item_code)
+
 
 def before_save_purchase_receipt(doc, method):
     if doc.doctype == "Purchase Receipt":

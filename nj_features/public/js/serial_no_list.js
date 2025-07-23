@@ -13,6 +13,14 @@ frappe.require("/assets/nj_features/js/nj_features.js", function() {
                             in_place_edit: true,
                             fields: [
                                 {
+                                    label: __('Sr. No.'),
+                                    fieldname: 'sr_no',
+                                    fieldtype: 'Int',
+                                    read_only: 1,
+                                    in_list_view: 1,
+                                    columns: 1
+                                },
+                                {
                                     label: __('Item Code'),
                                     fieldname: 'item_code',
                                     fieldtype: 'Link',
@@ -20,7 +28,7 @@ frappe.require("/assets/nj_features/js/nj_features.js", function() {
                                     options: 'Item',
                                     in_list_view: 1,
                                     read_only: 1,
-                                    columns: 3
+                                    columns: 2
                                 },
                                 {
                                     label: __('Serial No'),
@@ -147,8 +155,9 @@ frappe.require("/assets/nj_features/js/nj_features.js", function() {
                             dialog.fields_dict.work_warehouse_inventory.df.data = [];
                             dialog.fields_dict.work_warehouse_inventory.refresh();
     
-                            r.message.forEach(function (row) {
+                            r.message.forEach(function (row, index) {
                                 dialog.fields_dict.work_warehouse_inventory.df.data.push({
+                                    sr_no: index + 1,
                                     item_code: row.item_code,
                                     serial_no: row.serial_no,
                                     warehouse: row.warehouse,

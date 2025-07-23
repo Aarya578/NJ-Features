@@ -222,27 +222,31 @@ def awb_number_tracking_status():
             delivery_doc.activity = activity
             delivery_doc.location = location
 
-            # Check for final status or 30+ days after picked_date
+            # Initialize
             picked_date = delivery_doc.picked_date
             print("picked_date:=============================", picked_date)
             send_due_to_age = False
-            
-            if picked_date:
-                try:
-                    # Ensure picked_date is a datetime object
+
+            try:
+                if picked_date:
+                    # Parse if string
                     if isinstance(picked_date, str):
-                        picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")  # format based on your example
+                        picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
                         print("parsed picked_date:=============================", picked_date)
 
-                    if picked_date <= datetime.now() - timedelta(days=30):
-                        send_due_to_age = True
-                except Exception as e:
-                    print(f"Error parsing picked_date for {delivery_doc.name}: {e}")
+                    # Check if more than 30 days have passed
+                    if datetime.now() - picked_date > timedelta(days=30):
+                        if current_status not in ["Delivered", "RTO Delivered"]:
+                            send_due_to_age = True
 
-            # ✅ Send email if status is final OR picked_date > 30 days ago
-            if current_status in ["Delivered", "RTO Delivered", "Lost"] or send_due_to_age:
+            except Exception as e:
+                print(f"Error parsing picked_date for {delivery_doc.name}: {e}")
+
+            # Final check for Lost status or delay
+            if current_status == "Lost" or send_due_to_age:
                 delivery_doc.send_email = 1
                 print("delivery_doc.send_email set due to status or 30+ days:===========================", delivery_doc.send_email)
+
 
             # # ✅ Auto-check send_email if final status
             # if current_status in ["Delivered", "RTO Delivered", "Lost"]:

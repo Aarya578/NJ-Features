@@ -2113,7 +2113,16 @@ def update_performance_criteria(doc):
             njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
 
             if njqca_param:
-                njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                njqca_value=""
+                if(njqca_param.lower() == "average_restart_time"):
+                    avg_time =convert_to_seconds(njqca_param.get("value"))
+                    for parameter in njqca_results:
+                        if parameter.get("parameter") == "Restart_1" or parameter.get("parameter") == "Restart_2" or parameter.get("parameter") == "Restart_3":
+                            if avg_time >convert_to_seconds(parameter.get("value")):
+                                njqca_value=parameter.get("value")
+
+                if not njqca_value:
+                   njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
                 is_passing, message = compare_parameter(param_name, njqca_value, param_range)
 
                 evaluation_results.append({
@@ -2270,7 +2279,7 @@ def compare_parameter(param_name, actual_value, expected_range):
 def convert_to_seconds(time_str,param_name=""):
     """Convert time string to seconds."""
     if (not time_str or str(time_str).lower() == "none") and param_name.lower() == "excel_time":
-        return -1
+        return 0
     if not time_str or str(time_str).lower() == "none":
         return 0
         

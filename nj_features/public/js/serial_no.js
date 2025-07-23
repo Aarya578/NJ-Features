@@ -104,9 +104,8 @@ frappe.ui.form.on('Serial No', {
                 }
             }
         });
-
-
     },
+    
     after_save: (frm)=>{
         frm.set_df_property("bypass", "read_only", 1);
         frm.set_df_property("reason_for_warranty_pass", "read_only", 1);
@@ -147,6 +146,7 @@ function applyReadOnlyStyling(frm) {
 
 function printQRCode(frm) {
     var docname = encodeURIComponent(frm.doc.name);
+    var doctype = encodeURIComponent("Serial No");
     var format = "Serial No Barcode";
     var print_trigger = 0;
 
@@ -199,19 +199,26 @@ function printQRCode(frm) {
                             callback: function() {
                                 // Generate QR code and open the print view
                                 frappe.call({
-                                    method: "nj_features.qr_code.get_print_format_role",
+                                    method: "nj_features.nj_features.api.qr_code.get_print_format_role",
                                     callback: function(r) {
                                         if (r.message == true) {
+
+                                            if (frm.doc.is_encrypted == 1) {
+                                                format = "SN QR Code Mapping";
+                                                docname = frm.doc.qr_code_mapping
+                                                doctype=encodeURIComponent("QR Code Mapping")
+                                            }
+
                                             window.open(frappe.urllib.get_full_url("/printview?" +
-                                            "doctype=" + encodeURIComponent("Serial No") +
+                                            "doctype=" + doctype +
                                             "&name=" + docname +
                                             "&trigger_print=" + print_trigger +
                                             "&format=" + format +
                                             "&no_letterhead=0" +
                                             "&_lang=" + (frappe.boot.lang || "en")));
                                             frm.reload_doc();
-                                        }else{
-                                            frappe.msgprint(__('QR code generation failed.'));
+                                        } else {
+                                            frappe.msgprint(__('You do not have permission to print QR code. Please contact your Reporting Manager.'));
                                         }
                                     }
                                 });
@@ -221,7 +228,7 @@ function printQRCode(frm) {
                 } else {
                     // If under the limit, directly open the print view
                     window.open(frappe.urllib.get_full_url("/printview?" +
-                        "doctype=" + encodeURIComponent("Serial No") +
+                        "doctype=" + doctype +
                         "&name=" + docname +
                         "&trigger_print=" + print_trigger +
                         "&format=" + format +
@@ -233,7 +240,6 @@ function printQRCode(frm) {
         });
     });
 }
-
 
 
 function  get_report_data(frm) {

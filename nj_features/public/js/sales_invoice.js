@@ -12,7 +12,7 @@ frappe.ui.form.on('Sales Invoice', {
         // Custom E-Invoicing functionality override
         setup_custom_einvoice_actions(frm);
     },
-12
+
     // validate:  function(frm) {
     //     console.log("inside the validate===========================");
         

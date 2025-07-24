@@ -10,8 +10,6 @@ class DispatchSecurityCheckpoints(Document):
     pass
     def on_submit(self):
         self.update_send_email_DN()
-        self.update_send_email_SI()
-        # self.updating_creating_in_dc()
 
     def update_send_email_DN(self):
         try:
@@ -31,35 +29,6 @@ class DispatchSecurityCheckpoints(Document):
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_send_email_DN")
             frappe.throw(f"Error while updating Delivery Note send_email: {e}")
-    def update_send_email_SI(self):
-        try:
-            for row in self.dispatch_security_child_table:
-                if row.sales_invoice:
-                    # Fetch the Delivery Note
-                    si_doc = frappe.get_doc("Sales Invoice", row.sales_invoice)
-                    # Set send_email = 1
-                    si_doc.send_email = 1
-                    # Save and commit changes
-                    si_doc.save(ignore_permissions=True)
-                    frappe.db.commit()
-
-        except Exception as e:
-            frappe.log_error(frappe.get_traceback(), "Error in update_send_email_SI")
-            frappe.throw(f"Error while updating Sales Invoice send_email: {e}")        
-
-    def updating_creating_in_dc(self):
-        for row in self.dispatch_security_child_table:
-            if row.tracking_id:
-                # Fetch the Delivery Charges doc where name == tracking_id
-                dc_doc = frappe.get_doc("Delivery Charges", row.tracking_id)
-                # Update picked_date with current doc's creation datetime
-                dc_doc.picked_date = self.creation
-                # Save changes
-                dc_doc.save(ignore_permissions=True)
-
-        # Commit all changes at the end
-        frappe.db.commit()
-
 
 
 
@@ -75,9 +44,10 @@ def scan_serial_no_data_for_sales(serial_no):
         
         serial_no_from_dn_query = """
             SELECT dn.name as delivery_note, dn.status as dn_status, 
-                dni.against_sales_order AS sales_order, 
-                dni.item_code
+                dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
+                dni.item_code, si.status as si_status, si.approved, si.sales_channel
             FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             LEFT JOIN `tabPacked Item` pi ON dn.name = pi.parent
             WHERE (
@@ -99,31 +69,20 @@ def scan_serial_no_data_for_sales(serial_no):
         )
         
         result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
+
         if result:
             delivery_note_data = result[0]
+
             delivery_note = delivery_note_data.get('delivery_note')
+            dn_status = delivery_note_data.get('dn_status')
+            sales_invoice = delivery_note_data.get('sales_invoice')
+            sales_order = delivery_note_data.get('sales_order')
+            item_code = delivery_note_data.get('item_code')
+            si_status = delivery_note_data.get('si_status')
+            approved = delivery_note_data.get('approved')
+            sales_channel = delivery_note_data.get('sales_channel')
 
-            query = """
-                SELECT sn.parent 
-                FROM `tabDelivery Note Item` dn 
-                INNER JOIN `tabSales Invoice Item` sn 
-                    ON sn.delivery_note = dn.parent 
-                WHERE dn.parent = %s
-            """
-            sales_invoice_result = frappe.db.sql(query, (delivery_note,), as_dict=True)
-
-            if sales_invoice_result:
-                sales_invoice_name = sales_invoice_result[0]["parent"]
-                si_doc = frappe.get_doc("Sales Invoice", sales_invoice_name)
-
-                dn_status = delivery_note_data.get('dn_status')
-                sales_invoice = si_doc.name
-                sales_order = delivery_note_data.get('sales_order')
-                item_code = delivery_note_data.get('item_code')
-                si_status = si_doc.status
-                approved = si_doc.approved
-                sales_channel = si_doc.sales_channel
-
+            if sales_invoice:
                 if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):
                     frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
                     return None
@@ -133,53 +92,12 @@ def scan_serial_no_data_for_sales(serial_no):
                 elif sales_channel != 'Amazon' and si_status == 'Paid' and approved == 0:
                     frappe.msgprint(_("Sales Invoice '{}' must be approved to proceed.").format(sales_invoice))
                     return None
-
             else:
-                frappe.throw(_("No matching sales invoice found for delivery note <b>{}</b>").format(delivery_note))
+                frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
                 return None
-
         else:
-            frappe.throw(_("No matching delivery note found for serial number <b>{}</b>").format(serial_no))
+            frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
             return None
-
-        # if result:
-        #     delivery_note_data = result[0]
-            
-        #     delivery_note = delivery_note_data.get('delivery_note')
-        #     print("delivery_note=======================", delivery_note)
-        #     query = """
-        #     SELECT sn.parent FROM `tabDelivery Note Item` dn INNER JOIN `tabSales Invoice Item` sn      ON sn.delivery_note = dn.parent WHERE dn.parent = %s"""
-        #     sales_invoice_result = frappe.db.sql(query, (delivery_note,), as_dict=True)
-        #     print("sales_invoice=======================", sales_invoice)
-        #     if sales_invoice_result:
-        #         sales_invoice_name = sales_invoice_result[0]["parent"]
-        #         si_doc = frappe.get_doc("Sales Invoice", sales_invoice_name)
-        #     dn_status = delivery_note_data.get('dn_status')
-        #     sales_invoice = si_doc.name
-        #     sales_order = delivery_note_data.get('sales_order')
-        #     item_code = delivery_note_data.get('item_code')
-        #     # si_status = sales_invoice.get('si_status')
-        #     si_status = si_doc.status
-        #     # approved = sales_invoice.get('approved')
-        #     approved = si_doc.approved
-        #     # sales_channel = sales_invoice.get('sales_channel')
-        #     sales_channel = si_doc.sales_channel
-        #     if sales_invoice:
-        #         if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):
-        #             frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
-        #             return None
-        #         elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 0:
-        #             frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed and it is approved.").format(sales_invoice))
-        #             return None
-        #         elif sales_channel != 'Amazon' and si_status == 'Paid' and approved == 0:
-        #             frappe.msgprint(_("Sales Invoice '{}' must be approved to proceed.").format(sales_invoice))
-        #             return None
-        #     else:
-        #         frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
-        #         return None
-        # else:
-        #     frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
-        #     return None
         
         if delivery_note:
             delivery_note_creation = frappe.db.get_value('Delivery Note', delivery_note, 'creation')
@@ -306,9 +224,3 @@ def get_item_code_details_for_transfer(ste_number):
             result.append(row)
 
     return result
-
-
-
-
-
-    

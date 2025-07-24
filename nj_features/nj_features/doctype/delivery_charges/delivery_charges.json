@@ -25,6 +25,12 @@
   "current_status",
   "etd",
   "etd_hours",
+  "charge_weight",
+  "cod_charges",
+  "coverage_charges",
+  "other_charges",
+  "ship_rocket_rto_charges",
+  "freight_charge",
   "picked_date",
   "delivered_date",
   "activity",
@@ -204,6 +210,7 @@
    "label": "Delivered Date"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "picked_date",
    "fieldtype": "Datetime",
    "label": "Picked Date"
@@ -230,11 +237,47 @@
    "fieldname": "send_email",
    "fieldtype": "Check",
    "label": "Send Email"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "charge_weight",
+   "fieldtype": "Float",
+   "label": "Charge Weight"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "cod_charges",
+   "fieldtype": "Float",
+   "label": "Cod Charges"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "coverage_charges",
+   "fieldtype": "Float",
+   "label": "Coverage Charges"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "freight_charge",
+   "fieldtype": "Float",
+   "label": "Freight Charge"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "other_charges",
+   "fieldtype": "Float",
+   "label": "Other Charges"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ship_rocket_rto_charges",
+   "fieldtype": "Float",
+   "label": "Ship Rocket Rto Charges"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-22 18:05:51.536159",
+ "modified": "2025-07-24 13:44:20.450899",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

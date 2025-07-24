@@ -43,7 +43,7 @@
   }
  ],
  "links": [],
- "modified": "2025-07-10 15:27:07.522800",
+ "modified": "2025-07-24 12:18:02.103680",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "QR Code Mapping",
@@ -58,6 +58,43 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "NJPulse",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Tech MR & Transfer Access",
+   "select": 1,
    "share": 1,
    "write": 1
   }

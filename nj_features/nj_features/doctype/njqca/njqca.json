@@ -112,8 +112,7 @@
    "fieldtype": "Link",
    "label": "Serial No",
    "options": "Serial No",
-   "read_only": 1,
-   "reqd": 1
+   "read_only": 1
   },
   {
    "fieldname": "item_group",
@@ -451,7 +450,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-23 16:04:54.684119",
+ "modified": "2025-07-24 12:16:41.993994",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

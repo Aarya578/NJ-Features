@@ -150,6 +150,12 @@ function printQRCode(frm) {
     var format = "Serial No Barcode";
     var print_trigger = 0;
 
+    if (frm.doc.is_encrypted == 1) {
+        format = "SN QR Code Mapping";
+        docname = frm.doc.qr_code_mapping
+        doctype=encodeURIComponent("QR Code Mapping")
+    }
+
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
         args: { data: frm.doc.name }
@@ -202,12 +208,6 @@ function printQRCode(frm) {
                                     method: "nj_features.nj_features.api.qr_code.get_print_format_role",
                                     callback: function(r) {
                                         if (r.message == true) {
-
-                                            if (frm.doc.is_encrypted == 1) {
-                                                format = "SN QR Code Mapping";
-                                                docname = frm.doc.qr_code_mapping
-                                                doctype=encodeURIComponent("QR Code Mapping")
-                                            }
 
                                             window.open(frappe.urllib.get_full_url("/printview?" +
                                             "doctype=" + doctype +

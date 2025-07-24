@@ -725,7 +725,7 @@ function show_login_popup() {
     const user = frappe.session?.user;
     console.log("🔍 User:", user);
 
-    if (!user || user === "Guest" || user === "Administrator" || frappe.user.has_role("Developer")) return;
+    if (!user || user === "Guest" || user === "Administrator") return;
 
     const currentPath = window.location.pathname;
     const isAppRoot = currentPath.endsWith("/app");
@@ -828,7 +828,7 @@ function popUpWorkInventory() {
                         fieldname: 'user_activity',
                         fieldtype: 'Select',
                         options: '\nLog In\nLog Out',
-                        default: 'Log Out',
+                        default: 'Log In',
                         read_only: 1
                     },
                     {

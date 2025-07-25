@@ -133,6 +133,7 @@ frappe.ui.form.on('Employee', {
     },
 
     department(frm) {
+        // frm.set_value('department_under', '');
         if (!frm.doc.department) {
             frm.set_query('role_profile', function() {
                 return { filters: { name: "" } };
@@ -141,6 +142,7 @@ frappe.ui.form.on('Employee', {
             return;
         }
         if (frm.doc.department) {
+            frm.set_value('department_under', '');
             frappe.call({
                 method: "nj_features.overrides.employee.get_role_profiles",
                 args: { department: frm.doc.department },

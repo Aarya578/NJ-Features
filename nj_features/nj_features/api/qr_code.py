@@ -10,31 +10,31 @@ from nj_lib.utils.common_utils import is_serialized
 @frappe.whitelist()        
 def generate_and_save_qrcode(data, format='png'):
     try:
-        print('data',data)
         encoded_data = data
         template_item_code = frappe.db.exists('Item', encoded_data)
         qr_code_item_name = frappe.db.exists('QR Code Mapping', {'item_code': encoded_data})
         qr_code_serial_name = frappe.db.exists('QR Code Mapping', {'serial_no': encoded_data})
 
-        print('qr_code_mapping_name',qr_code_item_name,'encoded_data',encoded_data,'template_item_code',template_item_code)
         if template_item_code:
             if not qr_code_item_name:
                 qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
                 qr_code_mapping_doc.item_code = encoded_data
                 qr_code_mapping_doc.doctype1 = 'Item'
-                qr_code_mapping_doc.save()
+                qr_code_mapping_doc.save(ignore_permissions=True)
                 encoded_data = qr_code_mapping_doc.name
             else:
                 encoded_data = qr_code_item_name
         elif not qr_code_serial_name:
-            if not qr_code_serial_name:
-                qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
-                qr_code_mapping_doc.serial_no = encoded_data
-                qr_code_mapping_doc.doctype1 = 'Serial No'
-                qr_code_mapping_doc.save()
-                encoded_data = qr_code_mapping_doc.name
-            else:
-                encoded_data = qr_code_serial_name
+            qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
+            qr_code_mapping_doc.serial_no = encoded_data
+            qr_code_mapping_doc.doctype1 = 'Serial No'
+            qr_code_mapping_doc.save(ignore_permissions=True)
+
+            frappe.db.set_value('Serial No', encoded_data, {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name})
+            encoded_data = qr_code_mapping_doc.name
+            
+        elif qr_code_serial_name:
+            encoded_data = qr_code_serial_name
         
         url = pyqrcode.create(encoded_data)
         filename = f"{encoded_data}.{format}"
@@ -51,26 +51,27 @@ def generate_and_save_qrcode(data, format='png'):
     except Exception as e:
         return f"Error in generating QR code: {e}"
     
+import frappe
+from frappe import _
+
 @frappe.whitelist()
 def get_print_format_role():
     try:
         user = frappe.session.user
-        if not user:
-            raise ValueError("User is not logged in.")
-        user_id = frappe.db.get_value('User', {'name': user}, 'name')
-        if not user_id:
-            raise ValueError(f"No user found with email: {user}")
-        query = """
-            SELECT role
-            FROM `tabHas Role`
-            WHERE parent = %s
-        """
-        roles = frappe.db.sql(query, user_id, as_dict=True)
-        role_list = [role['role'] for role in roles]
-        return True if 'Print Format' in role_list else False
+        
+        roles = frappe.db.get_all(
+            "Has Role",
+            filters={"parent": user},
+            fields=["role"]
+        )
+
+        role_list = [r["role"] for r in roles]
+
+        return "Print Format" in role_list
+
     except Exception as e:
-        frappe.log_error(f"Error in get_print_format_role: {str(e)}")
-        return []
+        frappe.log_error(f"Error in get_print_format_role: {frappe.get_traceback()}")
+        return False
 
 @frappe.whitelist()
 def print_barcode(doc):

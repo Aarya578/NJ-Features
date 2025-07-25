@@ -224,7 +224,3 @@ def get_item_code_details_for_transfer(ste_number):
             result.append(row)
 
     return result
-
-
-
-    

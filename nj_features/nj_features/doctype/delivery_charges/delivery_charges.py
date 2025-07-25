@@ -13,6 +13,7 @@ from frappe.utils import now
 from datetime import datetime, timedelta
 from frappe.utils import now_datetime, get_datetime
 from frappe.model.document import Document
+from datetime import datetime, timedelta
 from datetime import datetime
 from nj_features.nj_features.api.shiprocket_api import get_auth_token
 class DeliveryCharges(Document):
@@ -203,9 +204,11 @@ def awb_number_tracking_status():
         current_status = None
         activity = None
         location = None
+        delivered_date = None
 
         if shipment_track:
             current_status = shipment_track[0].get("current_status")
+            delivered_date = shipment_track[0].get("delivered_date")
         if activities:
             activity = activities[0].get("activity")
             location = activities[0].get("location")
@@ -215,10 +218,41 @@ def awb_number_tracking_status():
         if current_status or activity or location:
             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
             delivery_doc.remark_status = current_status
+            delivery_doc.delivered_date = delivered_date
             delivery_doc.activity = activity
             delivery_doc.location = location
 
-            # Check and add to child table if unique
+            # Initialize
+            picked_date = delivery_doc.picked_date
+            print("picked_date:=============================", picked_date)
+            send_due_to_age = False
+
+            try:
+                if picked_date:
+                    # Parse if string
+                    if isinstance(picked_date, str):
+                        picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
+                        print("parsed picked_date:=============================", picked_date)
+
+                    # Check if more than 30 days have passed
+                    if datetime.now() - picked_date > timedelta(days=30):
+                        if current_status not in ["Delivered", "RTO Delivered"]:
+                            send_due_to_age = True
+
+            except Exception as e:
+                print(f"Error parsing picked_date for {delivery_doc.name}: {e}")
+
+            # Final check for Lost status or delay
+            if current_status == "Lost" or send_due_to_age:
+                delivery_doc.send_email = 1
+                print("delivery_doc.send_email set due to status or 30+ days:===========================", delivery_doc.send_email)
+
+
+            # # ✅ Auto-check send_email if final status
+            # if current_status in ["Delivered", "RTO Delivered", "Lost"]:
+            #     delivery_doc.send_email = 1
+            #     print("delivery_doc.send_email==========================================================", delivery_doc.send_email)
+            # Check and add to child table if uniqueunique
             exists = False
             for row in delivery_doc.item_tracking_table:
                 if row.activity == activity and row.location == location:

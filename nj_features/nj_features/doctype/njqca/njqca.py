@@ -97,30 +97,53 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         elif (self.component_serial_no is None or self.component_serial_no == "") and component_serial_no is not None and is_component is not None and is_component == 1:
             serial_num = component_serial_no
 
-        existing_qis = frappe.get_list(
+        create_new_qi = True
+        new_qi = None
+        
+        sync_njqca_qis = frappe.get_list(
             'NJ Quality Inspection',
             filters={
                 'barcode': serial_num,
                 'docstatus': 0,
                 'inspection_type': inspection_type,
-                'brand': brand,
-                'model': model
+                'owner':self.created,
+                'sync_njqca': 1
             },
             fields=['name', 'creation'],
             order_by='creation desc'
         )
+        log_error(str(sync_njqca_qis),f"sync_njqca_qis for serial no {serial_num} {inspection_type} {self.created} in open draft qi")
 
-        create_new_qi = True
-        new_qi = None
+        if not sync_njqca_qis:
+            existing_qis = frappe.get_list(
+                'NJ Quality Inspection',
+                filters={
+                    'barcode': serial_num,
+                    'docstatus': 0,
+                    'inspection_type': inspection_type,
+                    'brand': brand,
+                    'model': model
+                },
+                fields=['name', 'creation'],
+                order_by='creation desc'
+            )
 
-        if existing_qis:
+        if sync_njqca_qis:
+            latest_qi = sync_njqca_qis[0]
+            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
+            log_error(str(time_diff)+str(latest_qi.name),"time_diff for serial no "+str(serial_num)+" in open draft qi")
+            if time_diff < 3600:
+                new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                create_new_qi = False
+        elif existing_qis:
             latest_qi = existing_qis[0]
-            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now(), latest_qi.creation)
+            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 create_new_qi = False
 
         if create_new_qi:
+            log_error(str(create_new_qi),"create_new_qi for serial no "+str(serial_num)+" in open draft qi")
             new_qi = frappe.new_doc('NJ Quality Inspection')
             new_qi.inspection_type = inspection_type
             new_qi.barcode = serial_num
@@ -2113,7 +2136,16 @@ def update_performance_criteria(doc):
             njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
 
             if njqca_param:
-                njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
+                njqca_value=""
+                if(njqca_param.lower() == "average_restart_time"):
+                    avg_time =convert_to_seconds(njqca_param.get("value"))
+                    for parameter in njqca_results:
+                        if parameter.get("parameter") == "Restart_1" or parameter.get("parameter") == "Restart_2" or parameter.get("parameter") == "Restart_3":
+                            if avg_time >convert_to_seconds(parameter.get("value")):
+                                njqca_value=parameter.get("value")
+
+                if not njqca_value:
+                   njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
                 is_passing, message = compare_parameter(param_name, njqca_value, param_range)
 
                 evaluation_results.append({
@@ -2270,7 +2302,7 @@ def compare_parameter(param_name, actual_value, expected_range):
 def convert_to_seconds(time_str,param_name=""):
     """Convert time string to seconds."""
     if (not time_str or str(time_str).lower() == "none") and param_name.lower() == "excel_time":
-        return -1
+        return 0
     if not time_str or str(time_str).lower() == "none":
         return 0
         
@@ -2425,24 +2457,24 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
         nj_serial_no=""
         if serial_no:
             nj_serial_no=serial_no[0].name
-        query="""
-            SELECT tot_sed.serial_no as battery_serial_no
-            FROM `tabStock Entry Detail` AS sed
-            INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-            INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-            WHERE
-                (sed.serial_no = %(serial_no)s OR 
-                    sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
-                    sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
-                stock_entry.purpose = 'Repack' AND 
-                stock_entry.docstatus = 1 AND
-                tot_sed.s_warehouse IS NOT NULL AND 
-                tot_sed.item_group = 'Battery' AND
-                tot_sed.creation < %(njqca_creation)s
-            ORDER BY stock_entry.creation DESC
-            LIMIT 1
-        """
+        # query="""
+        #     SELECT tot_sed.serial_no as battery_serial_no
+        #     FROM `tabStock Entry Detail` AS sed
+        #     INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
+        #     INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
+        #     WHERE
+        #         (sed.serial_no = %(serial_no)s OR 
+        #             sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
+        #             sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
+        #             sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
+        #         stock_entry.purpose = 'Repack' AND 
+        #         stock_entry.docstatus = 1 AND
+        #         tot_sed.s_warehouse IS NOT NULL AND 
+        #         tot_sed.item_group = 'Battery' AND
+        #         tot_sed.creation < %(njqca_creation)s
+        #     ORDER BY stock_entry.creation DESC
+        #     LIMIT 1
+        # """
         partlist_query="""
           Select component_serial_no as battery_serial_no from `tabSerial No Component` where parent=%s and item_group="BATTERY" and component_serial_no <> '' order by item_group_idx desc limit 1;
         """
@@ -2451,15 +2483,9 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
             log_error(str(data),"repacked battery serial_no  through part list for bios serial no "+bios_serial_no)
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
-            else:
-                data=frappe.db.sql(query, {"serial_no": nj_serial_no, "njqca_creation": creation_date}, as_dict=1)
-                log_error(str(data),"repacked battery serial_no  through stack entry for bios serial no "+bios_serial_no)
-                if data is not None and data:
-                    return data[0].get("battery_serial_no")
-                else:
-                   return nj_serial_no
-        else:
-            return ""
+            
+        
+        return ""
         
     except Exception as e:
         log_error(traceback.format_exc(), "An error occurred in get_battery_serialno in battery NJQCA "+bios_serial_no)

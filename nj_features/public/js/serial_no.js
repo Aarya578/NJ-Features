@@ -41,11 +41,13 @@ frappe.ui.form.on('Serial No', {
         frm.refresh_field('bag_list');
 
         // frappe.call({
+            
         //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
         //     args: {
         //         search_value: cur_frm.doc.name
         //     },
         //     callback: function(gradesResponse) {
+        //         print("inside the functio============================================")
         //         const gradesData = gradesResponse && gradesResponse.message;
             
         //         if (gradesData && gradesData.length > 0) {
@@ -65,7 +67,46 @@ frappe.ui.form.on('Serial No', {
         //         }
         //     }
         // });
+        
+        // frappe.call({
+        //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
+        //     args: {
+        //         search_value: cur_frm.doc.name
+        //     },
+        //     callback: function(gradesResponse) {
+        //         const gradesData = gradesResponse && gradesResponse.message;
+
+        //         if (gradesData && gradesData.length > 0) {
+        //             // Remove duplicates
+        //             const uniqueDepartments = [...new Set(gradesData.map(entry => entry.department))];
+        //             const departmentsWithSequence = [];
+
+        //             let remaining = uniqueDepartments.length;
+
+        //             uniqueDepartments.forEach(dept => {
+        //                 frappe.db.get_doc('Department', dept).then(doc => {
+        //                     departmentsWithSequence.push({
+        //                         department: doc.name,
+        //                         department_sequence: doc.department_sequence || 0
+        //                     });
+
+        //                     remaining--;
+
+        //                     if (remaining === 0) {
+        //                         // All docs fetched
+        //                         departmentsWithSequence.sort((a, b) => a.department_sequence - b.department_sequence);
+        //                         const sortedNames = departmentsWithSequence.map(entry => entry.department);
+        //                         cur_frm.set_value('suggested_warehouse', sortedNames.join(', '));
+        //                     }
+        //                 });
+        //             });
+        //         } else {
+        //             cur_frm.set_value('suggested_warehouse', '');
+        //         }
+        //     }
+        // });
     },
+    
     after_save: (frm)=>{
         frm.set_df_property("bypass", "read_only", 1);
         frm.set_df_property("reason_for_warranty_pass", "read_only", 1);
@@ -106,8 +147,15 @@ function applyReadOnlyStyling(frm) {
 
 function printQRCode(frm) {
     var docname = encodeURIComponent(frm.doc.name);
+    var doctype = encodeURIComponent("Serial No");
     var format = "Serial No Barcode";
     var print_trigger = 0;
+
+    if (frm.doc.is_encrypted == 1) {
+        format = "SN QR Code Mapping";
+        docname = frm.doc.qr_code_mapping
+        doctype=encodeURIComponent("QR Code Mapping")
+    }
 
     frappe.call({
         method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
@@ -158,19 +206,20 @@ function printQRCode(frm) {
                             callback: function() {
                                 // Generate QR code and open the print view
                                 frappe.call({
-                                    method: "nj_features.qr_code.get_print_format_role",
+                                    method: "nj_features.nj_features.api.qr_code.get_print_format_role",
                                     callback: function(r) {
                                         if (r.message == true) {
+
                                             window.open(frappe.urllib.get_full_url("/printview?" +
-                                            "doctype=" + encodeURIComponent("Serial No") +
+                                            "doctype=" + doctype +
                                             "&name=" + docname +
                                             "&trigger_print=" + print_trigger +
                                             "&format=" + format +
                                             "&no_letterhead=0" +
                                             "&_lang=" + (frappe.boot.lang || "en")));
                                             frm.reload_doc();
-                                        }else{
-                                            frappe.msgprint(__('QR code generation failed.'));
+                                        } else {
+                                            frappe.msgprint(__('You do not have permission to print QR code. Please contact your Reporting Manager.'));
                                         }
                                     }
                                 });
@@ -180,7 +229,7 @@ function printQRCode(frm) {
                 } else {
                     // If under the limit, directly open the print view
                     window.open(frappe.urllib.get_full_url("/printview?" +
-                        "doctype=" + encodeURIComponent("Serial No") +
+                        "doctype=" + doctype +
                         "&name=" + docname +
                         "&trigger_print=" + print_trigger +
                         "&format=" + format +
@@ -192,7 +241,6 @@ function printQRCode(frm) {
         });
     });
 }
-
 
 
 function  get_report_data(frm) {

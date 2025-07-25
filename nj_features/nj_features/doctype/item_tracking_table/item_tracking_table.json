@@ -10,12 +10,14 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "activity",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Activity"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "location",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -25,7 +27,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-07-12 16:01:13.779914",
+ "modified": "2025-07-22 18:04:37.824371",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Item Tracking Table",

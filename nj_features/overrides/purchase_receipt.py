@@ -157,17 +157,25 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                 
 def get_batch(doc, method=None):
     for item in doc.items:
+        qr_code_mappings = []
+
         set_registry_no(item)
 
         if item.item_code and item.qty and is_serialized(item.item_code) == 1:
             serial_nos = item.serial_no.split('\n') if item.serial_no else []
             for serial_no in serial_nos:
-                update_serial_no(serial_no, doc, item)
+                if serial_no.strip():
+                    update_serial_no(serial_no.strip(), doc, item)
 
-        item_has_batch_no = frappe.db.get_value('Item', {'name': item.item_code}, 'has_batch_no')
-        item_idx = frappe.db.get_value('Purchase Order Item', {'item_code': item.item_code, 'parent': item.purchase_order, 'docstatus': 1}, 'idx')
-        if item_has_batch_no and item_idx:
-            batch_id = item.purchase_order + '-' + str(item_idx)
+        has_batch_no = frappe.db.get_value('Item', item.item_code, 'has_batch_no')
+        item_idx = frappe.db.get_value('Purchase Order Item', {
+            'item_code': item.item_code,
+            'parent': item.purchase_order,
+            'docstatus': 1
+        }, 'idx')
+
+        if has_batch_no and item_idx:
+            batch_id = f"{item.purchase_order}-{item_idx}"
             item.batch_no = batch_id
 
             if frappe.db.exists('Batch', batch_id):
@@ -179,13 +187,19 @@ def get_batch(doc, method=None):
                 batch_doc.save()
 
         if item.serial_no:
-            serial_numbers = item.serial_no.split('\n')
-            for serial_number in serial_numbers:
-                stripped_serial_number = serial_number.strip()
-                if stripped_serial_number:
-                    generate_and_save_qrcode(stripped_serial_number)
+            for serial in item.serial_no.split('\n'):
+                serial = serial.strip()
+                if serial:
+                    qr_code_mappings.append(generate_and_save_qrcode(serial))
         elif item.truncated_item_code:
             generate_and_save_qrcode(item.truncated_item_code)
+
+        qr_code_mapping_str = '\n'.join(qr_code_mappings)
+        frappe.db.sql("""
+            UPDATE `tabPurchase Receipt Item` 
+            SET qr_code_mapping = %s 
+            WHERE name = %s
+        """, (qr_code_mapping_str, item.name))
 
 
 def before_save_purchase_receipt(doc, method):

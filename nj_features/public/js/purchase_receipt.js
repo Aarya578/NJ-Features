@@ -85,7 +85,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
             });
         }
 
-        if((child_doc.serial_no || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
+        if((child_doc.qr_code_mapping || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
             let objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
                                         "doctype=" + encodeURIComponent("Purchase Receipt Item") +
                                         "&name=" + encodeURIComponent(child_doc.name) +

@@ -191,7 +191,7 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                 ORDER BY se.creation DESC
                 LIMIT 1
             """
-            result = frappe.db.sql(query, (serial_no), explain=1, debug=1, as_dict=True)
+            result = frappe.db.sql(query, (serial_no), as_dict=True)
 
             print("insultion_types", inspection_types)
             print("result", result)
@@ -210,7 +210,7 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                     ORDER BY creation DESC
                     LIMIT 1
                 """
-                qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), serial_no), explain=1, debug=1, as_dict=True)
+                qi_result = frappe.db.sql(qi_query, (tuple(inspection_types), serial_no), as_dict=True)
 
                 if qi_result:
                     qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])

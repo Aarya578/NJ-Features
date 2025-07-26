@@ -185,7 +185,7 @@ def get_inwarded_counts_merged(warehouse):
         WHERE sn.warehouse = %s
         AND i.parent_item_group = 'Products'
         GROUP BY sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
-    """, (warehouse,), explain=1, debug=1, as_dict=True)
+    """, (warehouse,), as_dict=True)
 
 def get_forwarded_counts_merged(warehouse):
     return frappe.db.sql("""

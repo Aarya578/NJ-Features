@@ -416,7 +416,7 @@ document.addEventListener("DOMContentLoaded", function () {
         },
         callback: function(r) {
             if (!r.exc && r.message) {
-                const allowCheck = cint(r.message.value);  // convert string "1"/"0" to int
+                const allowCheck = cint(r.message.value);
                 if (allowCheck === 1) {
                     show_login_popup();
                 }
@@ -746,7 +746,7 @@ function show_login_popup() {
             fields: ["name"],
             filters: {
                 user: user,
-                operation: "Login",
+                operation: "Login", status: "Success",
                 creation: [">=", today + " 00:00:00"]
             },
         },
@@ -789,7 +789,7 @@ function popUpWorkInventory() {
                         options: 'Item',
                         in_list_view: 1,
                         read_only: 1,
-                        columns: 2
+                        columns: 3
                     },
                     {
                         label: __('Serial No'),
@@ -805,7 +805,7 @@ function popUpWorkInventory() {
                         fieldtype: 'Link',
                         options: 'Warehouse',
                         in_list_view: 1,
-                        columns: 1
+                        columns: 2
                     },
                     {
                         label: __('Yes'),
@@ -816,27 +816,12 @@ function popUpWorkInventory() {
                         columns: 1
                     },
                     {
-                        label: __('No'),
-                        fieldname: 'no',
-                        fieldtype: 'Check',
-                        default: 0,
-                        in_list_view: 1,
-                        columns: 1
-                    },
-                    {
                         label: __('User Activity'),
                         fieldname: 'user_activity',
                         fieldtype: 'Select',
                         options: '\nLog In\nLog Out',
                         default: 'Log In',
                         read_only: 1
-                    },
-                    {
-                        label: __('Reason'),
-                        fieldname: 'reason',
-                        fieldtype: 'Text Editor',
-                        in_list_view: 1,
-                        columns: 2
                     }
                 ]
             }
@@ -846,6 +831,8 @@ function popUpWorkInventory() {
         static: true,
         primary_action: function() {
             const values = dialog.get_values();
+            console.log("values", values);
+            
             if (values) {
                 let showPopup = false;
                 let missingReasonRows = [];
@@ -900,7 +887,8 @@ function popUpWorkInventory() {
                                     }
                                 });
                             } else {
-                                frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
+                                frappe.msgprint(__('No Active Warehouse found for Employee.'));
+                                dialog.hide();
                             }
                         }
                     })

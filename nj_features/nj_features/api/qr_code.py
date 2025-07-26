@@ -31,7 +31,8 @@ def generate_and_save_qrcode(data, format='png'):
             qr_code_mapping_doc.doctype1 = 'Serial No'
             qr_code_mapping_doc.save(ignore_permissions=True)
 
-            frappe.db.set_value('Serial No', encoded_data, {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name})
+            frappe.db.set_value('Serial No', encoded_data, 
+                {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name}, update_modified=False)
             encoded_data = qr_code_mapping_doc.name
             
         elif qr_code_serial_name:
@@ -44,10 +45,10 @@ def generate_and_save_qrcode(data, format='png'):
         file_path = os.path.join(base_directory, filename)
 
         if os.path.exists(file_path):
-            return filename
+            return encoded_data
 
         url.png(file_path, scale=8)
-        return filename
+        return encoded_data
     
     except Exception as e:
         return f"Error in generating QR code: {e}"

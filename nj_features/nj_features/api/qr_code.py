@@ -5,6 +5,7 @@ import os
 import random
 import frappe
 import pyqrcode
+from frappe import _
 from nj_lib.utils.common_utils import is_serialized
 
 @frappe.whitelist()        
@@ -30,7 +31,8 @@ def generate_and_save_qrcode(data, format='png'):
             qr_code_mapping_doc.doctype1 = 'Serial No'
             qr_code_mapping_doc.save(ignore_permissions=True)
 
-            frappe.db.set_value('Serial No', encoded_data, {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name})
+            frappe.db.set_value('Serial No', encoded_data, 
+                {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name}, update_modified=False)
             encoded_data = qr_code_mapping_doc.name
             
         elif qr_code_serial_name:
@@ -43,16 +45,14 @@ def generate_and_save_qrcode(data, format='png'):
         file_path = os.path.join(base_directory, filename)
 
         if os.path.exists(file_path):
-            return filename
+            return encoded_data
 
         url.png(file_path, scale=8)
-        return filename
+        return encoded_data
     
     except Exception as e:
         return f"Error in generating QR code: {e}"
     
-import frappe
-from frappe import _
 
 @frappe.whitelist()
 def get_print_format_role():
@@ -80,9 +80,6 @@ def print_barcode(doc):
         item_code = doc_dict.get('item_code') or doc_dict.get('component')
         serial_no = doc_dict.get('serial_no')
         qty = doc_dict.get('qty', 1)
-        
-        if serial_no:
-            generate_and_save_qrcode(serial_no)
         
         has_serial_no = is_serialized(item_code)
         has_batch_no = frappe.db.get_value('Item', {'name': item_code}, 'has_batch_no')
@@ -162,7 +159,6 @@ def create_serial_no(item_code=None, attempt=0, rfq=False):
                     frappe.msgprint(f"Serial number {serial_no} already exists. Attempt {attempt + 1} of {MAX_ATTEMPTS}. Generating another one.")
                     return create_serial_no(item_code, attempt + 1)  # Recursive call with increased attempt count
                 else:
-                    generate_and_save_qrcode(serial_no)
                     return serial_no
             else:
                 frappe.msgprint(f"Item Group or Serial No status is not defined for Item Code: <strong>{item_code}</strong>.")

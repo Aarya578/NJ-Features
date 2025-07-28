@@ -97,30 +97,53 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         elif (self.component_serial_no is None or self.component_serial_no == "") and component_serial_no is not None and is_component is not None and is_component == 1:
             serial_num = component_serial_no
 
-        existing_qis = frappe.get_list(
+        create_new_qi = True
+        new_qi = None
+        
+        sync_njqca_qis = frappe.get_list(
             'NJ Quality Inspection',
             filters={
                 'barcode': serial_num,
                 'docstatus': 0,
                 'inspection_type': inspection_type,
-                'brand': brand,
-                'model': model
+                'owner':self.created,
+                'sync_njqca': 1
             },
             fields=['name', 'creation'],
             order_by='creation desc'
         )
+        log_error(str(sync_njqca_qis),f"sync_njqca_qis for serial no {serial_num} {inspection_type} {self.created} in open draft qi")
 
-        create_new_qi = True
-        new_qi = None
+        if not sync_njqca_qis:
+            existing_qis = frappe.get_list(
+                'NJ Quality Inspection',
+                filters={
+                    'barcode': serial_num,
+                    'docstatus': 0,
+                    'inspection_type': inspection_type,
+                    'brand': brand,
+                    'model': model
+                },
+                fields=['name', 'creation'],
+                order_by='creation desc'
+            )
 
-        if existing_qis:
+        if sync_njqca_qis:
+            latest_qi = sync_njqca_qis[0]
+            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
+            log_error(str(time_diff)+str(latest_qi.name),"time_diff for serial no "+str(serial_num)+" in open draft qi")
+            if time_diff < 3600:
+                new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                create_new_qi = False
+        elif existing_qis:
             latest_qi = existing_qis[0]
-            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now(), latest_qi.creation)
+            time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 create_new_qi = False
 
         if create_new_qi:
+            log_error(str(create_new_qi),"create_new_qi for serial no "+str(serial_num)+" in open draft qi")
             new_qi = frappe.new_doc('NJ Quality Inspection')
             new_qi.inspection_type = inspection_type
             new_qi.barcode = serial_num

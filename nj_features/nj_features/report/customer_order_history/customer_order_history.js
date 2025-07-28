@@ -16,8 +16,8 @@ frappe.query_reports["Customer Order History"] = {
             "options": "Sales Order"
         },
         {
-            "fieldname": "serial_no",
-            "label": __("Serial No"),
+            "fieldname": "barcode",
+            "label": __("NJ Barcode"),
             "fieldtype": "Data"
         },
         {

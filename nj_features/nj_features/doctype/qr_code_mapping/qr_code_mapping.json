@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "creation": "2024-06-03 13:11:34.166893",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -39,11 +40,13 @@
    "fieldtype": "Link",
    "label": "Doctype",
    "options": "DocType",
+   "read_only": 1,
    "reqd": 1
   }
  ],
+ "hide_toolbar": 1,
  "links": [],
- "modified": "2025-07-24 12:18:02.103680",
+ "modified": "2025-07-26 13:05:37.957988",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "QR Code Mapping",

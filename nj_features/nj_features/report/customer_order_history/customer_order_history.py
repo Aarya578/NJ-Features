@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 
 def get_columns():
     return [
@@ -18,9 +19,13 @@ def get_data(filters):
     conditions = []
     params = {}
 
-    if filters.get("serial_no"):
-        conditions.append("dni.serial_no = %(serial_no)s")
-        params["serial_no"] = filters["serial_no"]
+    if filters.get("barcode"):
+        nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"))
+
+        if nj_serial_no is not None and nj_serial_no.get("serial_no"):
+            serial_no = nj_serial_no.get('serial_no')
+            conditions.append("dni.serial_no = %(serial_no)s")
+            params["serial_no"] = serial_no
         
     if filters.get("delivery_note"):
         conditions.append("dn.name = %(delivery_note)s")

@@ -5,46 +5,53 @@ import frappe
 from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 
 class AutoStockEntry(Document):
 	pass
 
 @frappe.whitelist()
 def submit_ste(t_warehouse, serial_no):
-	try:
-		sn_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['item_code', 'warehouse', 'status'], as_dict=1)
-		if sn_data is None:
-			frappe.throw(f"Serial No <b>{serial_no}</b> not found.")
-		else:
-			if sn_data.get('status') != 'Active':
-				frappe.throw(f"Serial No <b>{serial_no}</b> is not Active.")
-		
-		check_validation_for_auto_stock_entry(t_warehouse, serial_no)
+    try:
+        nj_serial_no = search_for_serial_or_batch_or_barcode_no(serial_no, raise_exp=True)
+        if nj_serial_no and nj_serial_no.get('serial_no') is None:
+            frappe.throw(f"Serial No <b>{serial_no}</b> not found.")
+        serial_no = nj_serial_no.get('serial_no')
+        sn_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['item_code', 'warehouse', 'status'], as_dict=1)
+        
+        if sn_data is None:
+            frappe.throw(f"Serial No <b>{serial_no}</b> not found.")
+        else:
+            if sn_data.get('status') != 'Active':
+                frappe.throw(f"Serial No <b>{serial_no}</b> is not Active.")
 
-		material_transfer_items = []
+        check_validation_for_auto_stock_entry(t_warehouse, serial_no)
 
-		stock_entry_data = {
-			"doctype": "Auto Stock Entry",
-			"stock_entry_type": "Material Transfer",
-			"material_transfer_items": material_transfer_items,
-		}
+        material_transfer_items = []
 
-		material_transfer_items.append({
-			'qty': 1,
-			'item_code': sn_data.get('item_code'),
-			's_warehouse': sn_data.get('warehouse'),
-			't_warehouse': t_warehouse,
-			'serial_no': serial_no,
-		})
+        stock_entry_data = {
+            "doctype": "Auto Stock Entry",
+            "stock_entry_type": "Material Transfer",
+            "material_transfer_items": material_transfer_items,
+        }
 
-		if material_transfer_items:
-			return stock_entry_using_nj_lib(stock_entry_data)
-		else:
-			frappe.throw("None available in <b>Items</b> table.")
+        material_transfer_items.append({
+            'qty': 1,
+            'item_code': sn_data.get('item_code'),
+            's_warehouse': sn_data.get('warehouse'),
+            't_warehouse': t_warehouse,
+            'serial_no': serial_no,
+        })
 
-	except Exception as e:
-		frappe.db.rollback()
-		frappe.throw(f"Error while submitting Stock Entry: {e}")
+        if material_transfer_items:
+            return stock_entry_using_nj_lib(stock_entry_data)
+        else:
+            frappe.throw("None available in <b>Items</b> table.")
+
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.throw(f"Error while submitting Stock Entry: {str(e)}")
+
 
 @frappe.whitelist()
 def get_work_warehouse():

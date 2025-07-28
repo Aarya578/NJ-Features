@@ -6,6 +6,7 @@ import random
 import frappe
 import pyqrcode
 from frappe import _
+from datetime import datetime
 from nj_lib.utils.common_utils import is_serialized
 
 @frappe.whitelist()        
@@ -26,6 +27,13 @@ def generate_and_save_qrcode(data, format='png'):
             else:
                 encoded_data = qr_code_item_name
         elif not qr_code_serial_name:
+
+            sn_creation = frappe.db.get_value('Serial No', encoded_data, 'creation')
+            if sn_creation:
+                threshold_date = datetime(2025, 7, 24, 0, 0, 0)
+                if sn_creation < threshold_date:
+                    return encoded_data
+            
             qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
             qr_code_mapping_doc.serial_no = encoded_data
             qr_code_mapping_doc.doctype1 = 'Serial No'
@@ -53,7 +61,6 @@ def generate_and_save_qrcode(data, format='png'):
     except Exception as e:
         return f"Error in generating QR code: {e}"
     
-
 @frappe.whitelist()
 def get_print_format_role():
     try:

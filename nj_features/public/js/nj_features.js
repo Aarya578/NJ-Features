@@ -831,68 +831,46 @@ function popUpWorkInventory() {
         static: true,
         primary_action: function() {
             const values = dialog.get_values();
-            console.log("values", values);
             
             if (values) {
-                let showPopup = false;
-                let missingReasonRows = [];
-        
-                values.work_warehouse_inventory.forEach((row) => {
-                    if (row.no) { row.yes = false; }
-                });
         
                 dialog.get_field('work_warehouse_inventory').grid.refresh();
         
-                values.work_warehouse_inventory.forEach((row, index) => {
-                    if (row.no && !row.reason) {
-                        showPopup = true;
-                        missingReasonRows.push(index + 1);
-                    }
-                });
-        
-                if (showPopup) {
-                    frappe.msgprint({
-                        title: __('Missing Fields'),
-                        indicator: 'red',
-                        message: __('Reason is mandatory when No is checked in row(s): {0}', [missingReasonRows.join(', ')])
-                    });
-                } else {
-                    frappe.call({
-                        method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
-                        callback: function (r) {
-                            if (r.message) {
-                                frappe.call({
-                                    method: 'frappe.client.save',
-                                    args: {
-                                        doc: {
-                                            doctype: 'Daily Individual Report',
-                                            work_warehouse_inventory: values.work_warehouse_inventory,
-                                            warehouse: r.message,
-                                            created_by: frappe.session.user
-                                        }
-                                    },
-                                    callback: function(r) {
-                                        if (!r.exc) {
-                                            frappe.call({
-                                                method: 'frappe.client.submit',
-                                                args: { doc: r.message },
-                                                callback: function(r) {
-                                                    if (!r.exc) {
-                                                        frappe.msgprint(__('Report submitted successfully.'));
-                                                        dialog.hide();
-                                                    }
-                                                }
-                                            });
-                                        }
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
+                    callback: function (r) {
+                        if (r.message) {
+                            frappe.call({
+                                method: 'frappe.client.save',
+                                args: {
+                                    doc: {
+                                        doctype: 'Daily Individual Report',
+                                        work_warehouse_inventory: values.work_warehouse_inventory,
+                                        warehouse: r.message,
+                                        created_by: frappe.session.user
                                     }
-                                });
-                            } else {
-                                frappe.msgprint(__('No Active Warehouse found for Employee.'));
-                                dialog.hide();
-                            }
+                                },
+                                callback: function(r) {
+                                    if (!r.exc) {
+                                        frappe.call({
+                                            method: 'frappe.client.submit',
+                                            args: { doc: r.message },
+                                            callback: function(r) {
+                                                if (!r.exc) {
+                                                    frappe.msgprint(__('Report submitted successfully.'));
+                                                    dialog.hide();
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        } else {
+                            frappe.msgprint(__('No Active Warehouse found for Employee.'));
+                            dialog.hide();
                         }
-                    })
-                }
+                    }
+                })
             }
         }
     });
@@ -911,8 +889,7 @@ function popUpWorkInventory() {
                         serial_no: row.serial_no,
                         warehouse: row.warehouse,
                         yes: 1,
-                        no: 0,
-                        user_activity: 'Log Out'
+                        user_activity: 'Log In'
                     });
                 });
 

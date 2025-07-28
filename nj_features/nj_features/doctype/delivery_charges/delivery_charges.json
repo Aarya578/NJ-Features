@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "send_email",
+  "verified",
   "awb_number",
   "rto_charges",
   "serial_no",
@@ -43,6 +44,7 @@
   "section_break_xhi0z",
   "first_email",
   "second_email",
+  "rto_reason",
   "item_tracking_table",
   "amended_from"
  ],
@@ -273,11 +275,23 @@
    "fieldname": "ship_rocket_rto_charges",
    "fieldtype": "Float",
    "label": "Ship Rocket Rto Charges"
+  },
+  {
+   "fieldname": "rto_reason",
+   "fieldtype": "Select",
+   "label": "RTO Reason",
+   "options": "\nRTO Customer\nRTO Courier"
+  },
+  {
+   "default": "0",
+   "fieldname": "verified",
+   "fieldtype": "Check",
+   "label": "Verified/Payment Recieved"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-24 13:44:20.450899",
+ "modified": "2025-07-28 15:11:32.061668",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

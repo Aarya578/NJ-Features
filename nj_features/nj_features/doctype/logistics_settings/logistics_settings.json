@@ -17,7 +17,7 @@
   "manifest_url",
   "label_url",
   "cod_charges",
-  "rto_contains_table",
+  "return_reason",
   "shiprocketcourier_name_block_list",
   "shiprocket_courier_names",
   "critical_log_settings_section",
@@ -177,12 +177,6 @@
    "label": "COD Air"
   },
   {
-   "fieldname": "rto_contains_table",
-   "fieldtype": "Table",
-   "label": "RTO Contains Table",
-   "options": "RTO Contains Table"
-  },
-  {
    "fieldname": "invoice_credentials_section",
    "fieldtype": "Section Break",
    "label": "Invoice Credentials"
@@ -220,11 +214,17 @@
    "fieldname": "eway_url",
    "fieldtype": "Data",
    "label": "eway_url"
+  },
+  {
+   "fieldname": "return_reason",
+   "fieldtype": "Table",
+   "label": "Return Reason",
+   "options": "Return Reason"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-07-22 10:57:28.503860",
+ "modified": "2025-07-26 11:51:35.319693",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

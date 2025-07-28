@@ -6,7 +6,11 @@ import json
 import frappe
 import time
 import base64
+import json
 import requests
+import base64
+from datetime import datetime
+import logging
 import traceback
 from frappe import _
 from frappe.utils import now
@@ -18,7 +22,7 @@ from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 
-logger = frappe.logger('DNLogger', allow_site=True, file_count=1)
+logger = frappe.logger('DNLoggerssss', allow_site=True, file_count=1)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -1412,7 +1416,6 @@ def send_consignement_data(doc):
          
     except Exception as e:
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")   
-
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
 
@@ -1438,7 +1441,7 @@ def shiprocket_awb_number(doc):
                 # print("total_qty==================",total_qty)
 
         # Update the item_group_qty field in the parent Delivery Note
-        frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty,update_modified=False)
+        frappe.db.set_value("Delivery Note", doc.name, "item_group_qty", total_qty)
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
         )       
@@ -1472,7 +1475,7 @@ def shiprocket_awb_number(doc):
                 # sub_total = float(sales_order_doc.grand_total or 0)
                 if delivery_note_doc.grand_total:
                     sub_total = float(delivery_note_doc.grand_total)
-                    print("sub_total==================",sub_total)
+                    # print("sub_total==================",sub_total)
                 else:
                     # If grand_total not found, fetch from item groups
                     total_default_charge = 0
@@ -1482,12 +1485,12 @@ def shiprocket_awb_number(doc):
                         if item.item_code:
                             # Get item document to fetch item_group
                             item_doc = frappe.get_doc("Item", item.item_code)
-                            print("item_doc==================",item_doc)
+                            # print("item_doc==================",item_doc)
                             if item_doc.item_group:
                                 try:
                                     # Get item group document and fetch default_charge
                                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-                                    print("item_group_doc==================",item_group_doc)
+                                    # print("item_group_doc==================",item_group_doc)
                                     if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
                                         total_default_charge += float(item_group_doc.default_charge)
                                         # print("total_default_charge==================",total_default_charge)
@@ -1533,7 +1536,7 @@ def shiprocket_awb_number(doc):
             "height": str(delivery_note_doc.height),
             "weight": str(delivery_note_doc.weight)
         }
-        print("Data: ===========", data)
+        # print("Data: ===========", data)
 
         # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
         url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
@@ -1546,16 +1549,13 @@ def shiprocket_awb_number(doc):
         if response.status_code == 200:
             try:
                 resp_json = response.json()
-                print("resp_json==================",resp_json)
                 if resp_json.get('order_id'):
                     # Update document with ShipRocket IDs
-                    # frappe.db.set_value("Delivery Note", doc.name, "shiprocket_order_id", resp_json.get('order_id'),)
-                    # frappe.db.set_value("Delivery Note", doc.name, "shiprocket_shipment_id", resp_json.get('shipment_id'))
+
                     frappe.db.set_value("Delivery Note", doc.name, {
                         "shiprocket_order_id": resp_json.get("order_id"),
                         "shiprocket_shipment_id": resp_json.get("shipment_id")
                     }, update_modified=False)
-
                     
                     # Update local doc object for further processing
                     doc.shiprocket_order_id = resp_json.get('order_id')
@@ -1590,219 +1590,95 @@ def shiprocket_awb_number(doc):
     service_url = frappe.db.get_single_value("Logistics Settings", "service_url")
     service_response = requests.get(service_url, headers=headers, json={"order_id": invoice_order_id})
     service_json = service_response.json()
-    # print("service_json==================",service_json)
     courier_data = service_json.get("data", {}).get("available_courier_companies", [])
     if not courier_data:
         frappe.throw("No courier companies found in serviceability response.")
 
-    
-    # logistics_settings = frappe.get_doc("Logistics Settings")
-    # skipping_courier_names = []
-    # logistics_settings = frappe.get_doc("Logistics Settings")
-    # allowed_courier_names = []
-    # if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
-    #     allowed_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
-
-    # # Calculate total charges for each courier
-    # best_courier = None
-    # lowest_total = float('inf')
-
-    # for courier in courier_data:
-    #     try:
-    #         courier_name = courier.get("courier_name", "")
-    #         print("courier_name==================",courier_name)
-    #         etd = courier.get("etd", "")
-    #         print("etd==================",etd)
-    #         etd_hours = courier.get("etd_hours", "")
-    #         print("etd_hours==================",etd_hours)
-            
-    #         # Only consider couriers that are in the allowed list
-    #         if courier_name and allowed_courier_names:
-    #             if courier_name not in allowed_courier_names:
-    #                 continue  # Skip couriers NOT in the allowed list
-    #         else:
-    #             # If no allowed list is configured, skip this courier
-    #             continue        
-    #         # Check rating - skip if 4 or below
-    #         log_rating = frappe.db.get_single_value("Logistics Settings", "rating")
-    #         # print("log_rating==================================", log_rating)
-    #         rating = float(courier.get("rating", 0) or 0)
-    #         if rating < log_rating:
-    #             continue           
-    #         # Calculate total cost
-    #         freight_charge = float(courier.get("freight_charge", 0) or 0)
-    #         cod_charges = float(courier.get("cod_charges", 0) or 0)
-    #         total = freight_charge + cod_charges
-            
-    #         # Select courier with lowest total cost
-    #         if total < lowest_total:
-    #             lowest_total = total
-    #             best_courier = {
-    #                 "courier_name": courier.get("courier_name"),
-    #                 "courier_company_id": courier.get("courier_company_id"),
-    #                 "total_cost": total,
-    #                 "rating": rating,
-    #                 "freight_charge": freight_charge,
-    #                 "cod_charges": cod_charges,
-    #                 "etd": etd,
-    #                 "etd_hours": etd_hours
-                
-    #             print("best_courier======7890============",best_courier)
-    #     except (ValueError, TypeError) as e:
-    #         continue
-
-    # if not best_courier:
-    #     frappe.throw(f"NNoo suitable courier found from the allowed courier list with rating above {log_rating}.")
-    # Step 1: Get the max item_charges from Items table
-# Get highest item charges from all items
-    highest_item_charges = 0
-    for item in doc.get("items", []):
-        # Check if item_code exists
-        if not item.get("item_code"):
-            continue
-        # Get item group
-        item_group = frappe.db.get_value("Item", item.get("item_code"), "item_group")
-        # Get the item group document
-        group_doc = frappe.get_doc("Item Group", item_group)
-        # Get item_charges (float)
-        item_charges = group_doc.get("item_charges", 0) or 0
-        if item_charges > highest_item_charges:
-            highest_item_charges = item_charges
-
-    print("highest_item_charges==================", highest_item_charges)
-
+    # Get  courier names from Logistics Settings child table
+    logistics_settings = frappe.get_doc("Logistics Settings")
+    skipping_courier_names = []
     logistics_settings = frappe.get_doc("Logistics Settings")
     allowed_courier_names = []
     if logistics_settings and logistics_settings.shiprocketcourier_name_block_list:
         allowed_courier_names = [row.courier_name.strip() for row in logistics_settings.shiprocketcourier_name_block_list if row.courier_name]
 
-    # Create a dictionary to map courier names to their priorities from child table
-    courier_priority_map = {}
-    for row in logistics_settings.shiprocketcourier_name_block_list:
-        if row.courier_name and hasattr(row, 'priority'):
-            courier_priority_map[row.courier_name.strip()] = row.priority
-
-    print("courier_priority_map==================", courier_priority_map)
-
-    # First, show all courier names from response
-    print("=== ALL COURIERS FROM RESPONSE ===")
-    for courier in courier_data:
-        courier_name = courier.get("courier_name", "")
-        print(f"courier_name================== {courier_name}")
-        etd = courier.get("etd", "")
-        print(f"etd================== {etd}")
-        etd_hours = courier.get("etd_hours", "")
-        print(f"etd_hours================== {etd_hours}")
-        freight_charge = float(courier.get("freight_charge", 0) or 0)
-        print(f"freight_charge================== {freight_charge}")
-        cod_charges = float(courier.get("cod_charges", 0) or 0)
-        print(f"cod_charges================== {cod_charges}")
-        charge_weight = float(courier.get("charge_weight", 0) or 0)
-        print("charge_weight==================", charge_weight)
-        coverage_charges = float(courier.get("coverage_charges", 0) or 0)
-        print("coverage_charges==================", coverage_charges) 
-        other_charges = float(courier.get("other_charges", 0) or 0)
-        print("other_charges==================", other_charges)
-        rto_charges = float(courier.get("rto_charges", 0) or 0)
-        print("rto_charges==================", rto_charges)
-        total = freight_charge + cod_charges
-        if total > 0:
-            print(f"total================== {total}")
-
-    print("=== FILTERING PROCESS ===")
-
-    # Filter and prepare valid couriers with their details
-    valid_couriers = []
-    log_rating = frappe.db.get_single_value("Logistics Settings", "rating")
+    # Calculate total charges for each courier
+    best_courier = None
+    lowest_total = float('inf')
 
     for courier in courier_data:
         try:
             courier_name = courier.get("courier_name", "")
-            print(f"Processing courier: {courier_name}")
+            # logger.info(f"courier_name================== {courier_name}")
+            # print(f"courier_name================== {courier_name}")
+            etd = courier.get("etd", "")
+            # logger.info(f"etd================== {etd}")
+            # print(f"etd================== {etd}")
+            etd_hours = courier.get("etd_hours", "")
+            # logger.info(f"etd_hours================== {etd_hours}")
+            # print(f"etd_hours================== {etd_hours}")
+            freight_charge = float(courier.get("freight_charge", 0) or 0)
+            # logger.info(f"freight_charge================== {freight_charge}")
+            # print(f"freight_charge================== {freight_charge}")
+            cod_charges = float(courier.get("cod_charges", 0) or 0)
+            # logger.info(f"cod_charges================== {cod_charges}")
+            # print(f"cod_charges================== {cod_charges}")
+            charge_weight = float(courier.get("charge_weight", 0) or 0)
+            # logger.info(f"charge_weight================== {charge_weight}")
+            # print("charge_weight==================", charge_weight)
+            coverage_charges = float(courier.get("coverage_charges", 0) or 0)
+            # logger.info(f"coverage_charges================== {coverage_charges}")
+            # print("coverage_charges==================", coverage_charges) 
+            other_charges = float(courier.get("other_charges", 0) or 0)
+            # logger.info(f"other_charges================== {other_charges}")
+            # print("other_charges==================", other_charges)
+            rto_charges = float(courier.get("rto_charges", 0) or 0)
+            # logger.info(f"rto_charges================== {rto_charges}")
+            # print("rto_charges==================", rto_charges)
             
-            if not courier_name:
-                print(f"  - Skipped: No courier name")
-                continue
-                
-            # Check if courier is in allowed list (if allowed list exists)
-            if allowed_courier_names and courier_name not in allowed_courier_names:
-                print(f"  - Skipped: Not in allowed list")
-                continue
-            
-            # Check rating
+            # Only consider couriers that are in the allowed list
+            if courier_name and allowed_courier_names:
+                if courier_name not in allowed_courier_names:
+                    continue  # Skip couriers NOT in the allowed list
+            else:
+                # If no allowed list is configured, skip this courier
+                continue        
+            # Check rating - skip if 4 or below
+            log_rating = frappe.db.get_single_value("Logistics Settings", "rating")
+            # print("log_rating==================================", log_rating)
             rating = float(courier.get("rating", 0) or 0)
             if rating < log_rating:
-                print(f"  - Skipped: Rating {rating} < {log_rating}")
-                continue
-            
+                continue           
             # Calculate total cost
             freight_charge = float(courier.get("freight_charge", 0) or 0)
             cod_charges = float(courier.get("cod_charges", 0) or 0)
             total = freight_charge + cod_charges
-            print(f"  - Total======================================: {total}")
             
-            # Check if total is less than highest_item_charges
-            if total >= highest_item_charges:
-                print(f"  - Skipped: total {total} >= highest_item_charges {highest_item_charges}")
-                continue
-            
-            # Get priority for this courier (default to 999 if not found)
-            priority = courier_priority_map.get(courier_name, 999)
-            
-            valid_couriers.append({
-                "courier_name": courier_name,
-                "courier_company_id": courier.get("courier_company_id"),
-                "total_cost": total,
-                "rating": rating,
-                "freight_charge": freight_charge,
-                "cod_charges": cod_charges,
-                "charge_weight": courier.get("charge_weight", 0),
-                "coverage_charges": courier.get("coverage_charges", 0),
-                "other_charges": courier.get("other_charges", 0),
-                "rto_charges": courier.get("rto_charges", 0),
-                "etd": courier.get("etd", ""),
-                "etd_hours": courier.get("etd_hours", ""),
-                "priority": priority
-            })
-            
-            print(f"  ✓ VALID: Courier: {courier_name}, Priority: {priority}, Total: {total}")
-            
+            # Select courier with lowest total cost
+            if total < lowest_total:
+                lowest_total = total
+                best_courier = {
+                    "courier_name": courier_name,
+                    "courier_company_id": courier.get("courier_company_id"),
+                    "total_cost": total,
+                    "rating": rating,
+                    "freight_charge": freight_charge,
+                    "cod_charges": cod_charges,
+                    "charge_weight": courier.get("charge_weight", 0),
+                    "coverage_charges": courier.get("coverage_charges", 0),
+                    "other_charges": courier.get("other_charges", 0),
+                    "rto_charges": courier.get("rto_charges", 0),
+                    "etd": courier.get("etd", ""),
+                    "etd_hours": courier.get("etd_hours", "")
+                }
         except (ValueError, TypeError) as e:
-            print(f"  - Skipped: Error processing {courier_name}: {e}")
             continue
 
-    print(f"=== TOTAL VALID COURIERS: {len(valid_couriers)} ===")
-
-    # Find best courier based on priority
-    best_courier = None
-
-    if valid_couriers:
-        # First try to find couriers with priority > 0
-        priority_couriers = [c for c in valid_couriers if c["priority"] > 0]
-        
-        if priority_couriers:
-            # Sort by priority (lowest number = highest priority) for priority > 0 couriers
-            priority_couriers.sort(key=lambda x: x["priority"])
-            best_courier = priority_couriers[0]
-            print(f"Selected courier with priority > 0: {best_courier['courier_name']}, Priority: {best_courier['priority']}")
-        else:
-            # If no couriers with priority > 0, fall back to any available courier
-            print("No couriers with priority > 0 found, selecting from all available couriers")
-            valid_couriers.sort(key=lambda x: x["priority"])
-            best_courier = valid_couriers[0]
-            print(f"Selected fallback courier: {best_courier['courier_name']}, Priority: {best_courier['priority']}")
-        
-        print("best_courier======7890============", best_courier)
-    else:
-        frappe.throw(f"No suitable courier found from the allowed courier list total cost less than {highest_item_charges}.")
-
     if not best_courier:
-        frappe.throw(f"No suitable courier found from the allowed courier list total cost less than {highest_item_charges}.")
-
-        
+        frappe.throw(f"No suitable courier found from the allowed courier list with rating above {log_rating}.")
     if best_courier:
-        courier_service_name = best_courier.get("courier_name")  
-        # print("courier_service_name==================",courier_service_name) 
+        courier_service_name = best_courier.get("courier_name")     
+        # Check if courier service exists, if not create it
         if courier_service_name:
             if not frappe.db.exists("Courier Service", courier_service_name):
                 # Create new Courier Service with tracking URL
@@ -1817,7 +1693,9 @@ def shiprocket_awb_number(doc):
             
             # Set values on Delivery Note
             # dn_doc.db_set("awb_number", awb_number)  # Uncomment when awb_number is available
-            delivery_note_doc.db_set("courier_service", courier_service_name)          
+            delivery_note_doc.db_set("courier_service", courier_service_name)
+            # dn_doc.db_set("shiprocket_courier_name", courier_service_name)
+            
         else:
             frappe.throw("Courier name not found in best courier selection")    
     # Calculate total item charges
@@ -1832,7 +1710,7 @@ def shiprocket_awb_number(doc):
         group_doc = frappe.get_doc("Item Group", item_group)
         # Get item_charges (float)
         item_charges = group_doc.get("item_charges")
-        print("item_charges=======================",item_charges)
+        # print("item_charges=======================",item_charges)
         if item_charges and item.get("qty"):
             item_total_charge = float(item_charges) * float(item.get("qty"))
             total_item_charges += item_total_charge
@@ -1895,37 +1773,29 @@ def shiprocket_awb_number(doc):
         if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
             frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
 
-    # frappe.db.set_value("Delivery Note", doc.name,  "shiprocket_courier_name", best_courier.get("courier_name"))
-    # frappe.db.set_value("Delivery Note", doc.name, "etd", best_courier.get("etd"))
-    # frappe.db.set_value("Delivery Note", doc.name, "etd_hours", best_courier.get("etd_hours"))
-    # frappe.db.set_value("Delivery Note", doc.name, "cod_charges", best_courier.get("cod_charges"))
-    # frappe.db.set_value("Delivery Note", doc.name, "freight_charge", best_courier.get("freight_charge"))
-    # frappe.db.set_value("Delivery Note", doc.name, "charge_weight", best_courier.get("charge_weight"))
-    # frappe.db.set_value("Delivery Note", doc.name, "coverage_charges", best_courier.get("coverage_charges"))
-    # frappe.db.set_value("Delivery Note", doc.name, "other_charges", best_courier.get("other_charges"))
-    # frappe.db.set_value("Delivery Note", doc.name, "rto_charges", best_courier.get("rto_charges"))
+    # frappe.db.set_value("Delivery Note", doc.name, "shiprocket_courier_name", best_courier.get("courier_name"))
+    # Update Delivery Note with courier details
     frappe.db.set_value("Delivery Note", doc.name, {
-            "shiprocket_courier_name": best_courier.get("courier_name"),
-            "etd": best_courier.get("etd"),
-            "etd_hours": best_courier.get("etd_hours"),
-            "cod_charges": best_courier.get("cod_charges"),
-            "freight_charge": best_courier.get("freight_charge"),
-            "charge_weight": best_courier.get("charge_weight"),
-            "coverage_charges": best_courier.get("coverage_charges"),
-            "other_charges": best_courier.get("other_charges"),
-            "rto_charges": best_courier.get("rto_charges")
-        }, update_modified=False)
-
+        "shiprocket_courier_name": best_courier.get("courier_name"),
+        "etd": best_courier.get("etd"),
+        "etd_hours": best_courier.get("etd_hours"),
+        "cod_charges": best_courier.get("cod_charges"),
+        "freight_charge": best_courier.get("freight_charge"),
+        "charge_weight": best_courier.get("charge_weight"),
+        "coverage_charges": best_courier.get("coverage_charges"),
+        "other_charges": best_courier.get("other_charges"),
+        "rto_charges": best_courier.get("rto_charges")
+    }, update_modified=False)
 
     # 2. AWB Assignment
-    awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
+    # awb_url = "https://apiv2.shiprocket.in/v1/external/courier/assign/awb"
+    awb_url = frappe.db.get_single_value("Logistics Settings", "awb_number_url")
+
     awb_response = requests.post(awb_url, headers=headers, json={
         "shipment_id": shipment_id,
         "courier_id": best_courier.get("courier_company_id")
     })
     awb_json = awb_response.json()
-    print("awb_json==================",awb_json)
-
 
     # ✅ If there's an error message, show and stop
     if "message" in awb_json:
@@ -1953,11 +1823,8 @@ def shiprocket_awb_number(doc):
 
         frappe.throw(f"ShipRocket AWB Assignment Failed: Invalid response format - {data}")
 
-    # ✅ Save AWB Code and other details to Delivery Note
-    # frappe.db.set_value("Delivery Note", doc.name, "tracking_id", awb_code)
-    # frappe.db.set_value("Delivery Note", doc.name, "lr_no", invoice_no)
-    # frappe.db.set_value("Delivery Note", doc.name, "gst_transporter_id", transporter_id)
-    # frappe.db.set_value("Delivery Note", doc.name, "transporter_name", transporter_name)
+    # # ✅ Save AWB Code and other details to Delivery Note
+        # ✅ Save AWB Code and other details to Delivery Note
     frappe.db.set_value("Delivery Note", doc.name, {
         "tracking_id": awb_code,
         "lr_no": invoice_no,
@@ -1974,12 +1841,12 @@ def shiprocket_awb_number(doc):
     else:
         # 3. Pickup Generation (when pickup date was not in AWB response)
         try:
-            pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
+            # pickup_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/pickup"
+            pickup_url = frappe.db.get_single_value("Logistics Settings", "pickup_url")
             # print("pickup_url===============",pickup_url)
             pickup_response = requests.post(pickup_url, headers=headers, json={"shipment_id": shipment_list})
             # print("pickup_response===============",pickup_response)
             pickup_json = pickup_response.json()
-            print("pickup_json===============",pickup_json)
 
             if "message" in pickup_json and pickup_json.get("message") != "Pickup scheduled successfully":
                 frappe.msgprint(f"Pickup scheduling message: {pickup_json.get('message')}")
@@ -2040,7 +1907,8 @@ def shiprocket_awb_number(doc):
 
     
     # 4. Manifest Generation
-    manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+    # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+    manifest_url = frappe.db.get_single_value("Logistics Settings", "manifest_url")
     manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
     manifest_json = manifest_response.json()
 
@@ -2062,49 +1930,27 @@ def shiprocket_awb_number(doc):
     frappe.db.set_value("Delivery Note", doc.name, "shiprocket_manifests", manifest_pdf_b64,update_modified=False)
     frappe.db.commit()
 
+
     return {
         "awb_code": awb_code,
         "pickup_scheduled_date": pickup_scheduled_date,
-        "etd": etd,
-        "charge_weight": charge_weight,
-        "cod_charges": cod_charges,
-        "coverage_charges": coverage_charges,
-        "freight_charges": freight_charge,
-        "other_charges": other_charges,
-        "rto_charges": rto_charges,
-        "etd_hours": etd_hours,
+        "etd": best_courier.get("etd"),
+        "charge_weight": best_courier.get("charge_weight"),
+        "cod_charges": best_courier.get("cod_charges"),
+        "coverage_charges": best_courier.get("coverage_charges"),
+        "freight_charges": best_courier.get("freight_charge"),
+        "other_charges": best_courier.get("other_charges"),
+        "rto_charges": best_courier.get("rto_charges"),
+        "etd_hours": best_courier.get("etd_hours"),
         "label_url": label_link,
         "manifest_url": manifest_pdf_url,
         "invoice_url": invoice_pdf_url,
-        "shiprocket_courier_name": best_courier,
+        "shiprocket_courier_name": best_courier.get("courier_name"),
         "tranporter_name": transporter_name,
-        "lr_no" : invoice_no,
-        "gst_transporter_id" : transporter_id,
+        "lr_no": invoice_no,
+        "gst_transporter_id": transporter_id,
     }
 
-# def adapter_repacked_serial_no(nj_serial_no):
-#     try:
-#         query="""
-#             SELECT tot_sed.serial_no as adapter_serial_no
-#             FROM `tabStock Entry Detail` AS sed
-#             INNER JOIN `tabStock Entry Detail` AS tot_sed ON tot_sed.parent = sed.parent
-#             INNER JOIN `tabStock Entry` AS stock_entry ON stock_entry.name = sed.parent
-#             WHERE
-#                 (sed.serial_no = %(serial_no)s OR 
-#                     sed.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%') OR 
-#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s) OR 
-#                     sed.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')) AND
-#                 stock_entry.purpose = 'Repack' AND 
-#                 stock_entry.docstatus = 1 AND
-#                 tot_sed.s_warehouse IS NOT NULL AND 
-#                 tot_sed.item_group = 'Laptop Adaptors'
-#             ORDER BY stock_entry.creation DESC
-#             LIMIT 1
-#         """
-#         partlist_query="""
-#           Select component_serial_no as adapter_serial_no from `tabSerial No Component` where parent=%s and item_group="Laptop Adaptors" order by idx desc limit 1;
-#         """
-#         if nj_serial_no is not None and nj_serial_no:
 
 def adapter_repacked_serial_no(nj_serial_no):
     try:

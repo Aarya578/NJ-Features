@@ -1,0 +1,52 @@
+{
+ "add_total_row": 0,
+ "columns": [
+  {
+   "fieldname": "name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "width": 200
+  },
+  {
+   "fieldname": "picked_date",
+   "fieldtype": "Datetime",
+   "label": "Picked Date",
+   "width": 180
+  },
+  {
+   "fieldname": "remark_status",
+   "fieldtype": "Data",
+   "label": "Remark Status",
+   "width": 0
+  }
+ ],
+ "creation": "2025-07-26 16:30:17.520268",
+ "disable_prepared_report": 0,
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "modified": "2025-07-28 15:15:05.483507",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Delivery Charges Report",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "query": "SELECT \n    name,\n    picked_date,\n    remark_status\nFROM \n    `tabDelivery Charges`\nWHERE \n    remark_status NOT IN ('Delivered', 'RTO Delivered')\n    AND picked_date IS NOT NULL\n    AND picked_date  < DATE_SUB(CURDATE(), INTERVAL 30 DAY)\n    AND (verified IS NULL OR verified = 0);",
+ "ref_doctype": "Delivery Charges",
+ "report_name": "Delivery Charges Report",
+ "report_type": "Query Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "NJPulse"
+  },
+  {
+   "role": "All"
+  }
+ ]
+}

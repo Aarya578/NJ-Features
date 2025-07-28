@@ -196,6 +196,11 @@ doc_events = {
 # 	}
 # }
 
+override_whitelisted_methods = {
+    "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice"
+}
+
+
 
 
 

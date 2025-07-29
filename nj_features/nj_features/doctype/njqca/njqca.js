@@ -846,6 +846,13 @@ frappe.ui.form.on('NJQCA', {
         const isComponent = item_group_data?.message?.is_component;
 
         if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (!frm.doc.rfq_id)) {
+
+            frappe.db.get_value('Models', {'name': selectedModel}, 'model_description', function(result) {
+                if (result && result.model_description) {
+                    frm.set_value('model_description', result.model_description);
+                    frm.refresh_field('model_description');
+                }
+            });
             
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 

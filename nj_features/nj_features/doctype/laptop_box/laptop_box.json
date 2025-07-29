@@ -18,6 +18,7 @@
   "section_break_tvmby",
   "nj_barcode",
   "barcode",
+  "qr_code_mapping",
   "column_break_j2lg9",
   "nj_adaptor_barcode",
   "adapter_serial_no",
@@ -49,8 +50,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Model",
-   "options": "Models",
-   "read_only": 1
+   "options": "Models"
   },
   {
    "fieldname": "os",
@@ -194,11 +194,19 @@
    "label": "NJ Adaptor Barcode",
    "options": "Barcode",
    "print_hide": 1
+  },
+  {
+   "fieldname": "qr_code_mapping",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "QR Code Mapping",
+   "options": "QR Code Mapping",
+   "print_hide": 1
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-07-26 11:33:26.369431",
+ "modified": "2025-07-29 15:16:26.543978",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

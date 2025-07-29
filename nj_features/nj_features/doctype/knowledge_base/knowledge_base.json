@@ -29,7 +29,10 @@
   "attach2",
   "attach4",
   "section_break_rl8nf",
-  "description"
+  "kms_content_section",
+  "kms_content_child",
+  "description",
+  "html_content"
  ],
  "fields": [
   {
@@ -82,7 +85,7 @@
   },
   {
    "fieldname": "description",
-   "fieldtype": "HTML Editor",
+   "fieldtype": "Text Editor",
    "label": "Description"
   },
   {
@@ -148,10 +151,27 @@
    "fieldname": "qc_options",
    "fieldtype": "Small Text",
    "label": "QC Options"
+  },
+  {
+   "fieldname": "kms_content_child",
+   "fieldtype": "Table",
+   "label": "KMS Content Child",
+   "options": "KMS Content Child"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "kms_content_section",
+   "fieldtype": "Section Break",
+   "label": "KMS Content"
+  },
+  {
+   "fieldname": "html_content",
+   "fieldtype": "HTML Editor",
+   "label": "Html Content"
   }
  ],
  "links": [],
- "modified": "2025-07-29 13:14:28.071835",
+ "modified": "2025-07-29 18:34:04.373329",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

@@ -39,10 +39,10 @@ frappe.ui.form.on('Laptop Box', {
 
     nj_adaptor_barcode: function(frm) {
 		handleScannerInput(frm, 'nj_adaptor_barcode');
-		if (frm.doc.nj_barcode) { 
+		if (frm.doc.nj_adaptor_barcode) { 
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
-				args: {  search_value: frm.doc.nj_barcode, raise_exp: true },
+				args: {  search_value: frm.doc.nj_adaptor_barcode, raise_exp: false },
 				callback: function(r) {
 					if (r.message) {
 						if (r.message.serial_no) {

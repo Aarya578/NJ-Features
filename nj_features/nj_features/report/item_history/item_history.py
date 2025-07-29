@@ -32,7 +32,7 @@ def get_api_data():
 def get_data(filters):
     conditions = []
 
-    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"))
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False)
 
     if filters.get("item_group"):
         conditions.append(f"AND sle.item_group = '{filters['item_group']}'")
@@ -77,6 +77,7 @@ def get_data(filters):
         {conditions_sql}
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
+    LIMIT 50
     """
     data = frappe.db.sql(query, filters, as_dict=True)
     if filters.get("serial_no"):

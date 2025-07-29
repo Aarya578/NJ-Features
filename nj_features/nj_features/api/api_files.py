@@ -40,6 +40,10 @@ def crt_amzsl_inv(sales_order_name):
 
 @frappe.whitelist()
 def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True):
+
+    if isinstance(raise_exp, str):
+        raise_exp = raise_exp.lower() in ['true', '1', 'yes']
+    
     serial_no_data = ''
 
     qr_mapping_data = frappe.db.get_value(
@@ -68,15 +72,13 @@ def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True):
         ["name as serial_no", "item_code", "warehouse", "delivery_document_no", "delivery_document_type", "is_encrypted"], 
         as_dict=True
     )
-
+    
     if serial_no_data:
         if (serial_no_data.get("delivery_document_type") or serial_no_data.get("delivery_document_no")):
             if raise_exp:
                 frappe.throw("Delivered items can't be moved")
                 return
             
-            return
-
         if serial_no_data.get("is_encrypted"):
             frappe.throw("Use correct Serial No. barcode.")
             return

@@ -649,7 +649,7 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.barcode) {
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
-				args: {  search_value: frm.doc.barcode },
+				args: {  search_value: frm.doc.barcode, raise_exp: 1 },
 				callback: function(r) {
 					if (r.message) {
 						if (r.message.serial_no) {

@@ -49,6 +49,8 @@
   "column_break_w1v6n",
   "item_code",
   "item_template",
+  "model_description_section",
+  "model_description",
   "laptop_processor_section",
   "njqca_laptop_processors",
   "laptop_ram_section",
@@ -448,11 +450,21 @@
    "fieldtype": "Data",
    "label": "Barcode",
    "options": "Barcode"
+  },
+  {
+   "fieldname": "model_description",
+   "fieldtype": "Long Text",
+   "label": "Model Description"
+  },
+  {
+   "fieldname": "model_description_section",
+   "fieldtype": "Section Break",
+   "label": "Model Description"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-26 18:11:12.864025",
+ "modified": "2025-07-29 17:37:48.894995",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

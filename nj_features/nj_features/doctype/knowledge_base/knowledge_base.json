@@ -82,7 +82,7 @@
   },
   {
    "fieldname": "description",
-   "fieldtype": "Text Editor",
+   "fieldtype": "HTML Editor",
    "label": "Description"
   },
   {
@@ -151,7 +151,7 @@
   }
  ],
  "links": [],
- "modified": "2025-07-01 13:21:37.443208",
+ "modified": "2025-07-29 13:14:28.071835",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Knowledge Base",

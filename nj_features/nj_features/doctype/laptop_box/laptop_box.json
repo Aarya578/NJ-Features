@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "creation": "2024-09-04 14:37:37.058049",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -15,8 +16,11 @@
   "qty",
   "bios_serial_no",
   "section_break_tvmby",
+  "nj_barcode",
   "barcode",
+  "qr_code_mapping",
   "column_break_j2lg9",
+  "nj_adaptor_barcode",
   "adapter_serial_no",
   "warehouse",
   "item_code",
@@ -37,7 +41,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Brand ",
-   "options": "Brand"
+   "options": "Brand",
+   "read_only": 1
   },
   {
    "fieldname": "model",
@@ -125,15 +130,18 @@
   },
   {
    "fieldname": "barcode",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Serial No"
+   "label": "Serial No",
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "bios_serial_no",
    "fieldtype": "Data",
-   "label": "BIOS Serial No"
+   "label": "BIOS Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "warehouse",
@@ -160,8 +168,10 @@
   },
   {
    "fieldname": "adapter_serial_no",
-   "fieldtype": "Data",
-   "label": "Adapter Serial No"
+   "fieldtype": "Link",
+   "label": "Adapter Serial No",
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_j2lg9",
@@ -170,11 +180,33 @@
   {
    "fieldname": "column_break_sdlhf",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "nj_barcode",
+   "fieldtype": "Data",
+   "label": "NJ Barcode",
+   "options": "Barcode",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "nj_adaptor_barcode",
+   "fieldtype": "Data",
+   "label": "NJ Adaptor Barcode",
+   "options": "Barcode",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "qr_code_mapping",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "QR Code Mapping",
+   "options": "QR Code Mapping",
+   "print_hide": 1
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-06-11 15:28:56.921457",
+ "modified": "2025-07-29 15:16:26.543978",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

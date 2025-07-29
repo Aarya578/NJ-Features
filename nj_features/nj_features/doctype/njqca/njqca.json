@@ -432,8 +432,10 @@
   {
    "depends_on": "eval:doc.item_group != \"Laptops\" && doc.item_group != \"Chromebooks\";",
    "fieldname": "component_serial_no",
-   "fieldtype": "Data",
-   "label": "Component Serial No"
+   "fieldtype": "Link",
+   "label": "Component Serial No",
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "average_discharge_rate",
@@ -450,7 +452,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-24 12:16:41.993994",
+ "modified": "2025-07-26 18:11:12.864025",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

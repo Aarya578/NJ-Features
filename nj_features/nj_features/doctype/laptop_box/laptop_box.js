@@ -1,4 +1,74 @@
 frappe.ui.form.on('Laptop Box', {
+    onload: function() {
+        $('[data-fieldname="nj_barcode"]').focus();
+    },
+
+    nj_barcode: function(frm) {
+		handleScannerInput(frm, 'nj_barcode');
+		if (frm.doc.nj_barcode) { 
+			frappe.call({
+				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+				args: {  search_value: frm.doc.nj_barcode, raise_exp: true },
+				callback: function(r) {
+					if (r.message) {
+						if (r.message.serial_no) {
+							frm.set_value('barcode', r.message.serial_no);
+						} else if (r.message.scan) {
+							frappe.msgprint("Please Scan the Serial No.");
+							frm.set_value('nj_barcode', '');
+							frm.set_value('barcode', '');
+						}
+						frm.refresh_field("nj_barcode");
+						frm.refresh_field("barcode");
+						$('[data-fieldname="nj_barcode"]').focus();
+					}
+				},
+				error: function(r) {
+					frappe.msgprint("Error while scanning Serial No.");
+					frm.set_value('barcode', '');
+					frm.set_value('nj_barcode', '');
+					frm.refresh_field("barcode");
+					frm.refresh_field("nj_barcode");
+					$('[data-fieldname="nj_barcode"]').focus();
+				}
+			});
+        } else {
+            frm.set_value('barcode', '');
+        }
+    },
+
+    nj_adaptor_barcode: function(frm) {
+		handleScannerInput(frm, 'nj_adaptor_barcode');
+		if (frm.doc.nj_adaptor_barcode) { 
+			frappe.call({
+				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+				args: {  search_value: frm.doc.nj_adaptor_barcode, raise_exp: false },
+				callback: function(r) {
+					if (r.message) {
+						if (r.message.serial_no) {
+							frm.set_value('adapter_serial_no', r.message.serial_no);
+						} else if (r.message.scan) {
+							frappe.msgprint("Please Scan the Serial No.");
+							frm.set_value('nj_adaptor_barcode', '');
+							frm.set_value('adapter_serial_no', '');
+						}
+						frm.refresh_field("nj_adaptor_barcode");
+						frm.refresh_field("adapter_serial_no");
+						$('[data-fieldname="nj_adaptor_barcode"]').focus();
+					}
+				},
+				error: function(r) {
+					frappe.msgprint("Error while scanning Serial No.");
+					frm.set_value('adapter_serial_no', '');
+					frm.set_value('nj_adaptor_barcode', '');
+					frm.refresh_field("adapter_serial_no");
+					frm.refresh_field("nj_adaptor_barcode");
+					$('[data-fieldname="nj_adaptor_barcode"]').focus();
+				}
+			});
+		}
+    },
+
     barcode: function(frm) {
         frappe.call({
             method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
@@ -21,6 +91,10 @@ frappe.ui.form.on('Laptop Box', {
                         frm.set_value("bios_serial_no", serial_no_data.bios_serial_no);  
                         frm.set_value("warehouse", serial_no_data.warehouse);  
                         frm.set_value("item_code", serial_no_data.item_code);  
+
+                        if (serial_no_data.is_encrypted == 1) {
+                            frm.set_value("qr_code_mapping", serial_no_data.qr_code_mapping);
+                        }
 
                         frappe.call({
                             method: "frappe.client.get",
@@ -142,26 +216,20 @@ frappe.ui.form.on('Laptop Box', {
                     frappe.validated=false
                     frappe.throw("Please enter Adapter Serial No");
                 }
-            }else{
-                return ;
-            }
+            } else { return; }
             
             await frappe.call({
                 method:'nj_features.nj_features.api.qr_code.adapter_repacked_serial_no',
-                args: {
-                    "nj_serial_no": frm.doc.barcode
-                },
+                args: { "nj_serial_no": frm.doc.barcode },
                 callback: function(r) {
                     if (r.message) {
                         if(r.message!=frm.doc.adapter_serial_no) {
                             frappe.validated=false
-                            frappe.throw("Repacked Adapter Serial No:" + r.message + " does not match with the scanned Serial No");
-
+                            frappe.throw("Repacked Adapter Serial No: '" + r.message + "' does not match with the scanned Serial No");
                         }
                     }
                 }
             })
         }
-        
     }
 });

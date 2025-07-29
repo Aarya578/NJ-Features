@@ -649,10 +649,19 @@ frappe.ui.form.on('NJQCA', {
         if (frm.doc.barcode) {
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
-				args: {  search_value: frm.doc.barcode },
+				args: {  search_value: frm.doc.barcode, raise_exp: 1 },
 				callback: function(r) {
 					if (r.message) {
 						if (r.message.serial_no) {
+                            if (frm.doc.item_group) {
+                                frappe.db.get_value("Item Group", frm.doc.item_group, "is_component", (ig) => {
+                                    if (ig.is_component == "0") {
+                                        frm.set_value('serial_no', r.message.serial_no);
+                                    } else {
+                                        frm.set_value('component_serial_no', r.message.serial_no);
+                                    }
+                                })    
+                            }
 							frm.set_value('serial_no', r.message.serial_no);
 						} else if (r.message.scan) {
 							frappe.msgprint("Please Scan the Serial No.");

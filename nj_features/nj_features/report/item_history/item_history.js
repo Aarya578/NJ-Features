@@ -1,8 +1,8 @@
 frappe.query_reports["Item History"] = {
         "filters": [
             {
-                "fieldname": "serial_no",
-                "label": __("Serial No"),
+                "fieldname": "barcode",
+                "label": __("NJ Barcode"),
                 "fieldtype": "Data",
                 "reqd": 1
             },

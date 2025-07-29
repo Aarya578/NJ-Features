@@ -142,7 +142,7 @@ def reset_scan_fields(stock_movement):
     stock_movement.scan_warehouse = None
 
 def handle_serialized_item(data, stock_movement, has_serial_no, owner_warehouse,rack_target_warehouse_msg,rack_target_warehouse,check_status):
-    serial_no_data = search_for_serial_or_batch_or_barcode_no(data['scan_barcode'])
+    serial_no_data = search_for_serial_or_batch_or_barcode_no(data['scan_barcode'], raise_exp=True)
 
     if data['transfer_status'] == 'Stock Accept':
         if 'serial_no' in serial_no_data:

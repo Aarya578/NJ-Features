@@ -4,11 +4,13 @@
 import json
 import frappe
 from frappe import _
+from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 
 def get_columns():
     return [
         {"label": _("Date"), "fieldname": "date", "fieldtype": "Date"},
         {"label": _("STE Number"), "fieldname": "ste_number", "fieldtype": "Data"},
+        {"label": _("Serial No"), "fieldname": "serial_no", "fieldtype": "Link", "options": "Serial No"},
         {"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse"},
         {"label": _("Parent Warehouse"), "fieldname": "parent_warehouse", "fieldtype": "Link", "options": "Warehouse"},
         {"label": _("Department"), "fieldname": "department", "fieldtype": "Link", "options": "Department"},
@@ -30,6 +32,8 @@ def get_api_data():
 def get_data(filters):
     conditions = []
 
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False)
+
     if filters.get("item_group"):
         conditions.append(f"AND sle.item_group = '{filters['item_group']}'")
     if filters.get("brand"):
@@ -42,8 +46,8 @@ def get_data(filters):
         conditions.append(f"AND sle.voucher_type = '{filters['Doctype']}'")
     if filters.get("department"):
         conditions.append(f"AND d.name = '{filters['department']}'")
-    if filters.get("serial_no"):
-        serial_no = filters["serial_no"].replace("'", "\\'")
+    if nj_serial_no is not None and nj_serial_no.get("serial_no"):
+        serial_no = nj_serial_no.get("serial_no")
         conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n' OR sle.serial_no LIKE '\n{serial_no}') OR sle.serial_no LIKE '\n{serial_no}\n'")
 
     conditions_sql = " ".join(conditions)
@@ -73,6 +77,7 @@ def get_data(filters):
         {conditions_sql}
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
+    LIMIT 50
     """
     data = frappe.db.sql(query, filters, as_dict=True)
     if filters.get("serial_no"):

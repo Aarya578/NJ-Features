@@ -4,6 +4,7 @@
 import json
 import frappe
 from frappe import _
+from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 
 def get_columns():
     return [
@@ -30,7 +31,10 @@ def get_api_data():
     return response_data
 
 def get_data(filters):
-    serial_no = filters.get('serial_no').replace("'", "\\'")
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"))
+
+    if nj_serial_no is not None and nj_serial_no.get("serial_no"):
+        serial_no = nj_serial_no.get('serial_no')
 
     query = f"""
         SELECT DISTINCT

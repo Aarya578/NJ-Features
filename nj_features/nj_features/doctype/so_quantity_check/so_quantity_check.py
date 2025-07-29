@@ -168,7 +168,7 @@ def update_so_quantity_check(settings):
                 LEFT JOIN `tabItem` it ON it.item_code = pb.item_code
                 WHERE 
                     so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
-                    AND so.creation > CURDATE() - INTERVAL 20 DAY
+                    AND so.creation > CURDATE() - INTERVAL 50 DAY
                     AND soi.item_group IN ('Laptops','Chromebooks')
                     AND so.sale_type != 'Amazon'
                     AND (
@@ -185,7 +185,7 @@ def update_so_quantity_check(settings):
                 FROM `tabDelivery Note Item` dni
                 WHERE 
                     dni.docstatus = 1
-                    AND dni.creation >= CURDATE() - INTERVAL 20 DAY
+                    AND dni.creation >= CURDATE() - INTERVAL 50 DAY
                     AND dni.item_group IN ('Laptops', 'Chromebooks')
                     AND dni.qty > 0
                 GROUP BY dni.against_sales_order, dni.item_code

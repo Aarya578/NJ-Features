@@ -19,75 +19,6 @@ from nj_features.nj_features.api.shiprocket_api import get_auth_token
 class DeliveryCharges(Document):
 	pass
 
-
-# @frappe.whitelist()
-# def criticalog_awb_number_tracking_status():
-
-#     docs = frappe.get_all(
-#         "Delivery Charges",
-#         filters={
-#             "awb_number": ["!=", ""],
-#             "remark_status": ["!=", "Delivered"]
-#         },
-#         fields=["name", "awb_number", "delivery_note"]
-#     )
-
-#     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
-#     headers = {"Content-Type": "application/json"}
-
-#     for doc in docs:
-#         if not doc.delivery_note:
-#             print(f"[{doc.name}] Delivery Note not found, skipping...")
-#             continue
-
-#         try:
-#             dn = frappe.get_doc("Delivery Note", doc.delivery_note)
-#             # print(f"[{doc.name}] Delivery Note=======================: {dn}")
-#             mode = (dn.mode_of_transfer or "").lower()
-#             # print("mode=======================", mode)
-
-#             if "air" in mode:
-#                 auth = frappe.db.get_single_value("Logistics Settings", "air_auth")
-#             elif "surface" in mode or "road" in mode:
-#                 auth = frappe.db.get_single_value("Logistics Settings", "surface_auth")
-#             else:
-#                 print(f"[{doc.name}] Unknown mode_of_transport: {dn.mode_of_transport}, skipping...")
-#                 continue
-
-#             payload = {
-#                 "Auth": auth,
-#                 "DocketNo": doc.delivery_note
-#             }
-
-#             # print(f"[{doc.name}] Payload========================: {payload}")
-#             response = requests.post(url, headers=headers, json=payload)
-#             # print(f"[{doc.name}] Response status code: ==================={response.status_code}")
-
-#             if response.status_code == 200:
-#                 data = response.json()
-#                 print(f"[{doc.name}] Response: {data}")
-
-#                 docket_data = data.get("data", {})
-#                 docket_details = docket_data.get("docketDetails", {})
-
-#                 # Fix: If docket_details is not a dict, skip
-#                 if not isinstance(docket_details, dict):
-#                     print(f"[{doc.name}] Invalid docketDetails format: {docket_details}")
-#                     continue
-
-#                 remark = docket_details.get("Booking_Status", {}).get("Remark")
-#                 if remark:
-#                     frappe.db.set_value("Delivery Charges", doc.name, "remark_status", remark)
-#                     frappe.db.commit()
-#                     print(f"[{doc.name}] Updated remark_status to: {remark}")
-#                 else:
-#                     print(f"[{doc.name}] No remark found in response.")
-#             else:
-#                 print(f"[{doc.name}] API returned status code: {response.status_code}")
-
-#         except Exception as e:
-#             print(f"[{doc.name}] Error: {str(e)}")
-
 @frappe.whitelist()
 def criticalog_awb_number_tracking_status():
     docs = frappe.get_all(
@@ -102,7 +33,6 @@ def criticalog_awb_number_tracking_status():
     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
     # url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
     headers = {"Content-Type": "application/json"}
-
 
     for doc in docs:
         # Only proceed if courier_service is CriticaLog
@@ -130,7 +60,6 @@ def criticalog_awb_number_tracking_status():
                 "Auth": auth,
                 "DocketNo": doc.delivery_note
             }
-            print(f"[{doc.name}] Payload========================: {payload}")
 
             response = requests.post(url, headers=headers, json=payload)
 
@@ -158,12 +87,8 @@ def criticalog_awb_number_tracking_status():
         except Exception as e:
             print(f"[{doc.name}] Error: {str(e)}")
  
-
 @frappe.whitelist()
 def awb_number_tracking_status():
-    from datetime import datetime, timedelta
-    import requests
-
     # Fetch Delivery Charges entries with valid AWB number and not Delivered
     docs = frappe.get_all(
         "Delivery Charges",
@@ -189,6 +114,7 @@ def awb_number_tracking_status():
         url = f"https://apiv2.shiprocket.in/v1/external/courier/track/awb/{awb}"
         try:
             res = requests.get(url, headers=headers, timeout=15)
+            print("response:--------159===============================", res.json())
         except Exception as e:
             print(f"[{doc.name}] Exception during request: {str(e)}")
             continue
@@ -198,7 +124,6 @@ def awb_number_tracking_status():
             continue
 
         response = res.json()
-        print("response:--------159", response)
         tracking_data = response.get("tracking_data", {})
         shipment_track = tracking_data.get("shipment_track", [])
         activities = tracking_data.get("shipment_track_activities", [])
@@ -228,7 +153,6 @@ def awb_number_tracking_status():
 
             # Initialize
             picked_date = delivery_doc.picked_date
-            print("picked_date:=============================", picked_date)
             send_due_to_age = False
 
             try:
@@ -236,7 +160,6 @@ def awb_number_tracking_status():
                     # Parse if string
                     if isinstance(picked_date, str):
                         picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
-                        print("parsed picked_date:=============================", picked_date)
 
                     # Check if more than 30 days have passed
                     if datetime.now() - picked_date > timedelta(days=30):
@@ -249,7 +172,6 @@ def awb_number_tracking_status():
             # Final check for Lost status or delay
             if current_status == "Lost" or send_due_to_age:
                 delivery_doc.send_email = 1
-                print("delivery_doc.send_email set due to status or 30+ days:===========================", delivery_doc.send_email)
 
             # Only process activities if it's a valid list
             if isinstance(activities, list) and activities:
@@ -290,7 +212,6 @@ def awb_number_tracking_status():
                             "sr_status": activity_data.get("sr-status", ""),
                             "sr_status_label": activity_data.get("sr-status-label", "")
                         })
-                        print(f"Added new tracking entry: {activity} - {location} at {timestamp}")
                
                 delivery_doc.save(ignore_permissions=True)
                 frappe.db.commit()
@@ -299,11 +220,8 @@ def awb_number_tracking_status():
             else:
                 print(f"[{doc.name}] No activities found for AWB {awb}. Skipping activity processing.")
 
-import frappe
 
 def update_rto_reason_in_delivery_charges():
-    print("Running update_rto_reason_in_delivery_charges() from nj_features")
-
     delivery_charges_docs = frappe.get_all(
         "Delivery Charges",
         filters={"docstatus": ("!=", 2)},
@@ -344,172 +262,12 @@ def update_rto_reason_in_delivery_charges():
                 print(f"Updating Delivery Note==================== {dn.name} - return_reason: {dn.return_reason}")
                 dn.return_reason = doc.rto_reason
                 dn.save(ignore_permissions=True)
-                print(f"Updated Delivery Note {dn.name} - return_reason: {dn.return_reason}")
+                # print(f"Updated Delivery Note {dn.name} - return_reason: {dn.return_reason}")
             except Exception as e:
                 print(f"Failed to update Delivery Note {doc.delivery_note}: {e}")
 
         frappe.db.commit()
         print(f"{doc.name} updated - rto_reason: {doc.rto_reason}")
-
-
-# import frappe
-
-# def update_rto_reason_in_delivery_charges():
-#     print("Running update_rto_reason_in_delivery_charges() from nj_features")
-
-#     delivery_charges_docs = frappe.get_all(
-#         "Delivery Charges",
-#         filters={"docstatus": ("!=", 2)},
-#         fields=["name"]
-#     )
-
-#     for dc in delivery_charges_docs:
-#         doc = frappe.get_doc("Delivery Charges", dc.name)
-
-#         # Step 1: Check if any activity contains "RTO"
-#         found_rto = False
-#         all_activities = []
-
-#         for row in doc.get("item_tracking_table", []):
-#             activity = (row.activity or "").strip()
-#             all_activities.append(activity)
-#             if "RTO" in activity.upper():
-#                 found_rto = True
-
-#         if not found_rto:
-#             continue  # Skip if no RTO activity
-
-#         # Step 2: Fetch return reason activities
-#         logistics_settings = frappe.get_single("Logistics Settings")
-#         return_reason_activities = [
-#             (r.activity or "").strip() for r in logistics_settings.get("return_reason") or []
-#         ]
-#         print(f"return_reason_activities: {return_reason_activities}")
-
-#         # Step 3: Check if any activity matches
-#         matched = False
-#         for activity in all_activities:
-#             if activity in return_reason_activities:
-#                 matched = True
-#                 break
-
-#         doc.rto_reason = "RTO Customer" if matched else "RTO Courier"
-#         doc.save(ignore_permissions=True)
-#         frappe.db.commit()
-#         print(f"{doc.name} updated - rto_reason: {doc.rto_reason}")
-
-
-
-
-
-# @frappe.whitelist()
-# def awb_number_tracking_status():
-
-
-#     # Fetch Delivery Charges entries with valid AWB number and not Delivered
-#     docs = frappe.get_all(
-#         "Delivery Charges",
-#         filters={
-#             "awb_number": ["!=", ""],
-#             "remark_status": ["!=", "Delivered"]
-#         },
-#         fields=["name", "awb_number"]
-#     )
-
-#     # Get Shiprocket auth token
-#     auth_token = get_auth_token().get("token")
-#     if not auth_token:
-#         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
-
-#     headers = {
-#         "Content-Type": "application/json",
-#         "Authorization": f"Bearer {auth_token}"
-#     }
-
-#     for doc in docs:
-#         awb = doc.awb_number
-#         url = f"https://apiv2.shiprocket.in/v1/external/courier/track/awb/{awb}"
-#         try:
-#             res = requests.get(url, headers=headers, timeout=15)
-#         except Exception as e:
-#             print(f"[{doc.name}] Exception during request: {str(e)}")
-#             continue
-
-#         if res.status_code != 200:
-#             print(f"[{doc.name}] Failed to get tracking for AWB {awb}")
-#             continue
-
-#         response = res.json()
-#         print("response:--------159", response)
-#         tracking_data = response.get("tracking_data", {})
-#         shipment_track = tracking_data.get("shipment_track", [])
-#         activities = tracking_data.get("shipment_track_activities", [])
-
-#         current_status = None
-#         activity = None
-#         location = None
-#         delivered_date = None
-
-#         if shipment_track:
-#             current_status = shipment_track[0].get("current_status")
-#             delivered_date = shipment_track[0].get("delivered_date")
-#         if activities:
-#             activity = activities[0].get("activity")
-#             location = activities[0].get("location")
-
-#         print(f"[{doc.name}] current_status: {current_status}, activity: {activity}, location: {location}")
-
-#         if current_status or activity or location:
-#             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
-#             delivery_doc.remark_status = current_status
-#             delivery_doc.delivered_date = delivered_date
-#             delivery_doc.activity = activity
-#             delivery_doc.location = location
-
-#             # Initialize
-#             picked_date = delivery_doc.picked_date
-#             print("picked_date:=============================", picked_date)
-#             send_due_to_age = False
-
-#             try:
-#                 if picked_date:
-#                     # Parse if string
-#                     if isinstance(picked_date, str):
-#                         picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
-#                         print("parsed picked_date:=============================", picked_date)
-
-#                     # Check if more than 30 days have passed
-#                     if datetime.now() - picked_date > timedelta(days=30):
-#                         if current_status not in ["Delivered", "RTO Delivered"]:
-#                             send_due_to_age = True
-
-#             except Exception as e:
-#                 print(f"Error parsing picked_date for {delivery_doc.name}: {e}")
-
-#             # Final check for Lost status or delay
-#             if current_status == "Lost" or send_due_to_age:
-#                 delivery_doc.send_email = 1
-#                 print("delivery_doc.send_email set due to status or 30+ days:===========================", delivery_doc.send_email)
-
-
-            
-#             exists = False
-#             for row in delivery_doc.item_tracking_table:
-#                 if row.activity == activity and row.location == location:
-#                     exists = True
-#                     break
-
-#             if not exists and (activity or location):
-#                 delivery_doc.append("item_tracking_table", {
-#                     "activity": activity,
-#                     "location": location,
-#                     "timestamp": datetime.now()  # Ensure you have a 'timestamp' field in child table
-#                 })
-
-#             delivery_doc.save(ignore_permissions=True)
-#             frappe.db.commit()
-
-
 
 def update_status_in_shopify():
     token = "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"
@@ -543,7 +301,7 @@ def update_status_in_shopify():
 
             try:
                 fulfillments = get_response.json().get("fulfillments", [])
-                print("fulfillments===================================",fulfillments)
+                # print("fulfillments===================================",fulfillments)
             except json.JSONDecodeError:
                 frappe.logger().error(f"[{dc.name}] Failed to parse JSON. Raw Response: {get_response.text}")
                 continue
@@ -570,7 +328,7 @@ def update_status_in_shopify():
                 },
                 "shopify_delivery_status"
             )
-            print("shopify_delivery_status=================================",shopify_delivery_status)
+            # print("shopify_delivery_status=================================",shopify_delivery_status)
 
             if not shopify_delivery_status:
                 logistics_settings = frappe.get_doc("Logistics Settings")

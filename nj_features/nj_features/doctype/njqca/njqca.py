@@ -521,10 +521,16 @@ class NJQCA(Document):
                     self.make_stock_entry_using_nj_lib()
                     logger.debug(f"Time after stock entry '{self.name}': {time.time() - s2:.2f} seconds")
                 
-                # if self.rfq_id:
-                #     s3 = time.time()
-                #     self.create_serial_no_based_on_rfq()
-                #     logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
+                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
+                if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
+                    s5 = time.time()
+                    update_serial_no_componont_for_grade(self)
+                    logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
+                    
+                if self.rfq_id:
+                    s3 = time.time()
+                    self.create_serial_no_based_on_rfq()
+                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
                     s4 = time.time()
@@ -540,11 +546,11 @@ class NJQCA(Document):
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
                 
-                nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
-                if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
-                    s5 = time.time()
-                    update_serial_no_componont_for_grade(self)
-                    logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
+                # nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
+                # if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
+                #     s5 = time.time()
+                #     update_serial_no_componont_for_grade(self)
+                #     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -1053,6 +1059,8 @@ def get_info_from_component_serial_no(doc=None):
 
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
+    # print("after_save_njqca==================================")
+    # frappe.throw("QI Draft is not created for Serial No: <b>====================={doc.serial_no}</b>.")
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         if doc.power_on == 'Yes' and (qi_type==None or not qi_type):

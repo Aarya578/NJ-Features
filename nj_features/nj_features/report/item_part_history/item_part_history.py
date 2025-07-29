@@ -31,51 +31,52 @@ def get_api_data():
     return response_data
 
 def get_data(filters):
+    data = []
     nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"))
 
     if nj_serial_no is not None and nj_serial_no.get("serial_no"):
         serial_no = nj_serial_no.get('serial_no')
 
-    query = f"""
-        SELECT DISTINCT
-            stock_entry_1.creation,
-            stock_entry.serial_no AS 'machine_serial',
-            ledger.parent AS 'ste_no',
-            item.item_group AS 'part_item_group',
-            ledger.item_code AS 'part_item_code',
-            ledger.s_warehouse,
-            ledger.t_warehouse,
-            ledger.serial_no AS 'part_serial_no',
-            ledger.valuation_rate,
-            serial_no.warehouse AS 'current_product_wh',
-            serial_no.item_code AS 'product_item_code'
-        FROM
-            `tabStock Entry Detail` AS ledger
-        INNER JOIN
-            (SELECT sed.parent, sed.serial_no
-             FROM `tabStock Entry Detail` sed
-             WHERE
-                 (sed.serial_no LIKE '{serial_no}' OR 
-                  sed.serial_no LIKE '{serial_no}\\n' OR 
-                  sed.serial_no LIKE '\\n{serial_no}' OR 
-                  sed.serial_no LIKE '\\n{serial_no}\\n')
-            ) AS stock_entry
-            ON stock_entry.parent = ledger.parent
-        INNER JOIN
-            `tabItem` AS item ON item.item_code = ledger.item_code
-        INNER JOIN
-            `tabStock Entry` AS stock_entry_1 ON stock_entry_1.name = stock_entry.parent
-        INNER JOIN
-            `tabSerial No` AS serial_no ON serial_no.serial_no = stock_entry.serial_no
-        WHERE
-            stock_entry_1.purpose = 'Repack' AND ledger.docstatus = 1
-        ORDER BY
-            stock_entry_1.creation, ledger.parent, ledger.s_warehouse DESC,
-            ledger.t_warehouse, ledger.basic_rate ASC;
-    """
+        query = f"""
+            SELECT DISTINCT
+                stock_entry_1.creation,
+                stock_entry.serial_no AS 'machine_serial',
+                ledger.parent AS 'ste_no',
+                item.item_group AS 'part_item_group',
+                ledger.item_code AS 'part_item_code',
+                ledger.s_warehouse,
+                ledger.t_warehouse,
+                ledger.serial_no AS 'part_serial_no',
+                ledger.valuation_rate,
+                serial_no.warehouse AS 'current_product_wh',
+                serial_no.item_code AS 'product_item_code'
+            FROM
+                `tabStock Entry Detail` AS ledger
+            INNER JOIN
+                (SELECT sed.parent, sed.serial_no
+                FROM `tabStock Entry Detail` sed
+                WHERE
+                    (sed.serial_no LIKE '{serial_no}' OR 
+                    sed.serial_no LIKE '{serial_no}\\n' OR 
+                    sed.serial_no LIKE '\\n{serial_no}' OR 
+                    sed.serial_no LIKE '\\n{serial_no}\\n')
+                ) AS stock_entry
+                ON stock_entry.parent = ledger.parent
+            INNER JOIN
+                `tabItem` AS item ON item.item_code = ledger.item_code
+            INNER JOIN
+                `tabStock Entry` AS stock_entry_1 ON stock_entry_1.name = stock_entry.parent
+            INNER JOIN
+                `tabSerial No` AS serial_no ON serial_no.serial_no = stock_entry.serial_no
+            WHERE
+                stock_entry_1.purpose = 'Repack' AND ledger.docstatus = 1
+            ORDER BY
+                stock_entry_1.creation, ledger.parent, ledger.s_warehouse DESC,
+                ledger.t_warehouse, ledger.basic_rate ASC;
+        """
 
-    data = frappe.db.sql(query, as_dict=1)
-    return data
+        data = frappe.db.sql(query, as_dict=1)
+        return data
 
 def execute(filters):
     columns = get_columns()

@@ -87,17 +87,150 @@ def criticalog_awb_number_tracking_status():
         except Exception as e:
             print(f"[{doc.name}] Error: {str(e)}")
  
+# @frappe.whitelist()
+# def awb_number_tracking_status():
+#     # Fetch Delivery Charges entries with valid AWB number and not Delivered
+#     docs = frappe.get_all(
+#         "Delivery Charges",
+#         filters={
+#             "awb_number": ["!=", ""],
+#             "remark_status": ["!=", "Delivered"]
+#         },
+#         fields=["name", "awb_number"]
+#     )
+
+#     # Get Shiprocket auth token
+#     auth_token = get_auth_token().get("token")
+#     if not auth_token:
+#         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
+
+#     headers = {
+#         "Content-Type": "application/json",
+#         "Authorization": f"Bearer {auth_token}"
+#     }
+
+#     for doc in docs:
+#         awb = doc.awb_number
+#         url = f"https://apiv2.shiprocket.in/v1/external/courier/track/awb/{awb}"
+#         try:
+#             res = requests.get(url, headers=headers, timeout=15)
+#             print("response:--------159===============================", res.json())
+#         except Exception as e:
+#             print(f"[{doc.name}] Exception during request: {str(e)}")
+#             continue
+
+#         if res.status_code != 200:
+#             print(f"[{doc.name}] Failed to get tracking for AWB {awb}")
+#             continue
+
+#         response = res.json()
+#         tracking_data = response.get("tracking_data", {})
+#         shipment_track = tracking_data.get("shipment_track", [])
+#         activities = tracking_data.get("shipment_track_activities", [])
+
+#         current_status = None
+#         delivered_date = None
+
+#         if shipment_track:
+#             current_status = shipment_track[0].get("current_status")
+#             delivered_date = shipment_track[0].get("delivered_date")
+
+#         # Get the latest activity and location for main fields
+#         latest_activity = None
+#         latest_location = None
+#         if isinstance(activities, list) and activities:
+#             latest_activity = activities[0].get("activity")
+#             latest_location = activities[0].get("location")
+
+#         print(f"[{doc.name}] current_status: {current_status}, latest_activity: {latest_activity}, latest_location: {latest_location}")
+
+#         if current_status or latest_activity or latest_location:
+#             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
+#             delivery_doc.remark_status = current_status
+#             delivery_doc.delivered_date = delivered_date
+#             delivery_doc.activity = latest_activity
+#             delivery_doc.location = latest_location
+
+#             # Initialize
+#             picked_date = delivery_doc.picked_date
+#             send_due_to_age = False
+
+#             try:
+#                 if picked_date:
+#                     # Parse if string
+#                     if isinstance(picked_date, str):
+#                         picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
+
+#                     # Check if more than 30 days have passed
+#                     if datetime.now() - picked_date > timedelta(days=30):
+#                         if current_status not in ["Delivered", "RTO Delivered"]:
+#                             send_due_to_age = True
+
+#             except Exception as e:
+#                 print(f"Error parsing picked_date for {delivery_doc.name}: {e}")
+
+#             # Final check for Lost status or delay
+#             if current_status == "Lost" or send_due_to_age:
+#                 delivery_doc.send_email = 1
+
+#             # Only process activities if it's a valid list
+#             if isinstance(activities, list) and activities:
+#                 # Sort activities by date in descending order (newest first)
+#                 sorted_activities = sorted(activities, key=lambda x: x.get("date", ""), reverse=True)
+
+#                 # Process all activities from shipment_track_activities
+#                 for activity_data in sorted_activities:
+#                     activity = activity_data.get("activity")
+#                     location = activity_data.get("location")
+#                     activity_date = activity_data.get("date")
+
+#                     # Skip if activity or location is empty
+#                     if not activity or not location:
+#                         continue
+
+#                     # Check if this combination already exists in the child table
+#                     exists = any(
+#                         row.activity == activity and row.location == location
+#                         for row in delivery_doc.item_tracking_table
+#                     )
+
+#                     # If not exists, add new row to child table
+#                     if not exists:
+#                         # Parse the activity date for timestamp
+#                         timestamp = datetime.now()
+#                         if activity_date:
+#                             try:
+#                                 timestamp = datetime.strptime(activity_date, "%Y-%m-%d %H:%M:%S")
+#                             except Exception as e:
+#                                 print(f"Error parsing activity date {activity_date}: {e}")
+
+#                         delivery_doc.append("item_tracking_table", {
+#                             "activity": activity,
+#                             "location": location,
+#                             "timestamp": timestamp,
+#                             "status": activity_data.get("status", ""),
+#                             "sr_status": activity_data.get("sr-status", ""),
+#                             "sr_status_label": activity_data.get("sr-status-label", "")
+#                         })
+               
+#                 delivery_doc.save(ignore_permissions=True)
+#                 frappe.db.commit()
+#                 print(f"[{doc.name}] Updated successfully with {len([a for a in activities if a.get('activity') and a.get('location')])} tracking activities")
+#             else:
+#                 print(f"[{doc.name}] No activities found for AWB {awb}. Skipping activity processing.")
 @frappe.whitelist()
 def awb_number_tracking_status():
-    # Fetch Delivery Charges entries with valid AWB number and not Delivered
+    # Fetch ALL Delivery Charges entries with valid AWB number, skip only if Delivered
     docs = frappe.get_all(
         "Delivery Charges",
         filters={
             "awb_number": ["!=", ""],
-            "remark_status": ["!=", "Delivered"]
+            "remark_status": ["!=", "Delivered"]  # Only skip Delivered records
         },
-        fields=["name", "awb_number"]
+        fields=["name", "awb_number", "remark_status"]  # Added remark_status for debugging
     )
+
+    print(f"Total records to process: {len(docs)}")
 
     # Get Shiprocket auth token
     auth_token = get_auth_token().get("token")
@@ -109,49 +242,72 @@ def awb_number_tracking_status():
         "Authorization": f"Bearer {auth_token}"
     }
 
+    success_count = 0
+    error_count = 0
+
     for doc in docs:
         awb = doc.awb_number
+        print(f"Processing [{doc.name}] AWB: {awb}, Current Status: {doc.remark_status}")
+        
         url = f"https://apiv2.shiprocket.in/v1/external/courier/track/awb/{awb}"
         try:
             res = requests.get(url, headers=headers, timeout=15)
-            print("response:--------159===============================", res.json())
+            print(f"[{doc.name}] API Response Status: {res.status_code}")
         except Exception as e:
             print(f"[{doc.name}] Exception during request: {str(e)}")
+            error_count += 1
             continue
 
         if res.status_code != 200:
-            print(f"[{doc.name}] Failed to get tracking for AWB {awb}")
+            print(f"[{doc.name}] Failed to get tracking for AWB {awb}, Status Code: {res.status_code}")
+            error_count += 1
             continue
 
-        response = res.json()
-        tracking_data = response.get("tracking_data", {})
-        shipment_track = tracking_data.get("shipment_track", [])
-        activities = tracking_data.get("shipment_track_activities", [])
+        try:
+            response = res.json()
+            tracking_data = response.get("tracking_data", {})
+            shipment_track = tracking_data.get("shipment_track", [])
+            activities = tracking_data.get("shipment_track_activities", [])
 
-        current_status = None
-        delivered_date = None
+            # Initialize variables
+            current_status = None
+            delivered_date = None
+            latest_activity = None
+            latest_location = None
 
-        if shipment_track:
-            current_status = shipment_track[0].get("current_status")
-            delivered_date = shipment_track[0].get("delivered_date")
+            # Get current status and delivered date from shipment_track
+            if shipment_track and len(shipment_track) > 0:
+                current_status = shipment_track[0].get("current_status")
+                delivered_date = shipment_track[0].get("delivered_date")
 
-        # Get the latest activity and location for main fields
-        latest_activity = None
-        latest_location = None
-        if isinstance(activities, list) and activities:
-            latest_activity = activities[0].get("activity")
-            latest_location = activities[0].get("location")
+            # Get the latest activity and location from activities
+            if isinstance(activities, list) and activities:
+                latest_activity = activities[0].get("activity")
+                latest_location = activities[0].get("location")
 
-        print(f"[{doc.name}] current_status: {current_status}, latest_activity: {latest_activity}, latest_location: {latest_location}")
+            print(f"[{doc.name}] API Data - current_status: {current_status}, latest_activity: {latest_activity}, latest_location: {latest_location}")
 
-        if current_status or latest_activity or latest_location:
+            # Always try to update the record (don't skip based on empty values)
             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
-            delivery_doc.remark_status = current_status
-            delivery_doc.delivered_date = delivered_date
-            delivery_doc.activity = latest_activity
-            delivery_doc.location = latest_location
+            
+            # Update main fields - use current_status primarily, fallback to latest_activity status
+            if current_status:
+                delivery_doc.remark_status = current_status
+            elif latest_activity:
+                # If no current_status, you might want to derive status from latest activity
+                delivery_doc.remark_status = latest_activity
 
-            # Initialize
+            # Update other fields
+            if delivered_date and delivered_date != "":
+                delivery_doc.delivered_date = delivered_date
+            
+            if latest_activity:
+                delivery_doc.activity = latest_activity
+            
+            if latest_location:
+                delivery_doc.location = latest_location
+
+            # Initialize picked_date logic
             picked_date = delivery_doc.picked_date
             send_due_to_age = False
 
@@ -161,9 +317,9 @@ def awb_number_tracking_status():
                     if isinstance(picked_date, str):
                         picked_date = datetime.strptime(picked_date, "%d-%m-%Y %H:%M:%S")
 
-                    # Check if more than 30 days have passed
-                    if datetime.now() - picked_date > timedelta(days=30):
-                        if current_status not in ["Delivered", "RTO Delivered"]:
+                    # Check if more than 50 days have passed
+                    if datetime.now() - picked_date > timedelta(days=50):
+                        if current_status and current_status not in ["Delivered", "RTO Delivered"]:
                             send_due_to_age = True
 
             except Exception as e:
@@ -173,11 +329,12 @@ def awb_number_tracking_status():
             if current_status == "Lost" or send_due_to_age:
                 delivery_doc.send_email = 1
 
-            # Only process activities if it's a valid list
+            # Process activities - always process if valid activities exist
             if isinstance(activities, list) and activities:
                 # Sort activities by date in descending order (newest first)
                 sorted_activities = sorted(activities, key=lambda x: x.get("date", ""), reverse=True)
 
+                new_activities_added = 0
                 # Process all activities from shipment_track_activities
                 for activity_data in sorted_activities:
                     activity = activity_data.get("activity")
@@ -212,15 +369,30 @@ def awb_number_tracking_status():
                             "sr_status": activity_data.get("sr-status", ""),
                             "sr_status_label": activity_data.get("sr-status-label", "")
                         })
-               
-                delivery_doc.save(ignore_permissions=True)
-                frappe.db.commit()
-                update_rto_reason_in_delivery_charges()
-                print(f"[{doc.name}] Updated successfully with {len([a for a in activities if a.get('activity') and a.get('location')])} tracking activities")
-            else:
-                print(f"[{doc.name}] No activities found for AWB {awb}. Skipping activity processing.")
+                        new_activities_added += 1
 
+                print(f"[{doc.name}] Added {new_activities_added} new activities")
 
+            # Save the document
+            delivery_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            success_count += 1
+            print(f"[{doc.name}] Updated successfully. New status: {delivery_doc.remark_status}")
+            update_rto_reason_in_delivery_charges()
+
+        except Exception as e:
+            print(f"[{doc.name}] Error processing response: {str(e)}")
+            error_count += 1
+            continue
+
+    print(f"Processing completed. Success: {success_count}, Errors: {error_count}, Total: {len(docs)}")
+    return {
+        "success": success_count,
+        "errors": error_count,
+        "total": len(docs)
+    }
+
+                # update_rto_reason_in_delivery_charges()
 def update_rto_reason_in_delivery_charges():
     delivery_charges_docs = frappe.get_all(
         "Delivery Charges",

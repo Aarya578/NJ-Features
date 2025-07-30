@@ -284,7 +284,7 @@ def validate_serial_no_and_department(row, error_messages):
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
         if not is_component and s_department != department:
-            check_lesson_validation = frappe.db.get_value('NJ settings', {'paramter': 'check_lesson_validation'} , 'value')
+            check_lesson_validation = frappe.db.get_value('NJ Settings', {'parameter': 'check_lesson_validation'} , 'value')
             if int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)

@@ -30,6 +30,7 @@ def get_api_data():
     return response_data
 
 def get_data(filters):
+    data = []
     conditions = []
 
     nj_serial_no = search_for_serial_or_batch_or_barcode_no(filters.get("barcode"), raise_exp=False)
@@ -77,9 +78,11 @@ def get_data(filters):
         {conditions_sql}
     ORDER BY
         sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
-    LIMIT 50
     """
-    data = frappe.db.sql(query, filters, as_dict=True)
+
+    if conditions_sql:
+        data = frappe.db.sql(query, filters, as_dict=True)
+
     if filters.get("serial_no"):
         serial_no_filter = filters["serial_no"].upper()
         data = [entry for entry in data if any(serial_no_filter in sn for sn in entry["serial_no"].split('\n'))]

@@ -1141,7 +1141,32 @@
    "width": null
   }
   ],
-  "doctype": "Item Group",
-  "property_setters": [],
-  "sync_on_migrate": 1
+ "doctype": "Item Group",
+ "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2025-07-30 10:23:15.169513",
+   "default_value": null,
+   "doc_type": "Item Group",
+   "docstatus": 0,
+   "doctype_or_field": "DocType",
+   "field_name": null,
+   "idx": 0,
+   "modified": "2025-07-30 10:23:15.169513",
+   "modified_by": "postman@mail.com",
+   "name": "Item Group-main-track_changes",
+   "owner": "postman@mail.com",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "track_changes",
+   "property_type": "Check",
+   "row_name": null,
+   "value": "1"
+  }
+ ],
+ "sync_on_migrate": 1
 }

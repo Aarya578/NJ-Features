@@ -77,9 +77,9 @@ def search_for_serial_or_batch_or_barcode_no(search_value, raise_exp=True):
                 frappe.throw("Delivered items can't be moved")
                 return
             
-        if serial_no_data.get("is_encrypted"):
-            frappe.throw("Use correct Serial No. barcode.")
-            return
+        # if serial_no_data.get("is_encrypted"):
+        #     frappe.throw("Use correct Serial No. barcode.")
+        #     return
         
         return {"serial_no": serial_no_data.get("serial_no"), "item_code": serial_no_data.item_code, "warehouse": serial_no_data.warehouse, "scan": 0}
 

@@ -118,7 +118,7 @@ class CustomDeliveryNote(DeliveryNote):
                 if item.against_sales_order not in sales_order_info_map:
                     sales_order_data = frappe.db.sql("""
                         SELECT 
-                            so.customer_name, so.name, 
+                            so.customer_name, so.name, so.sale_type,
                             COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
                             so.transaction_date, so.delivery_date, si.sales_channel, 
                             COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
@@ -176,6 +176,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.courier_name = self.get("courier_service")
                     serial_no_doc.deliver_date = sales_order_info.get("delivery_date")
                     serial_no_doc.sales_channel = sales_order_info.get("sales_channel", "")
+                    serial_no_doc.sale_type = sales_order_info.get("sale_type", "")
                     phone = sales_order_info.get("phone", "")
                     serial_no_doc.mobile_no = "" if phone.lower() == "na" else phone
                     serial_no_doc.email_id = sales_order_info.get("email_id", "")
@@ -283,6 +284,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.deliver_date = ''
         serial_no_doc.courier_name = ''
         serial_no_doc.sales_channel = ''
+        serial_no_doc.sale_type = ''
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
         serial_no_doc.modified = now()

@@ -49,35 +49,35 @@ def get_data(filters):
         conditions.append(f"AND d.name = '{filters['department']}'")
     if nj_serial_no is not None and nj_serial_no.get("serial_no"):
         serial_no = nj_serial_no.get("serial_no")
-        conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n' OR sle.serial_no LIKE '\n{serial_no}') OR sle.serial_no LIKE '\n{serial_no}\n'")
+        conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n%%' OR sle.serial_no LIKE '%%\n{serial_no}') OR sle.serial_no LIKE '%%\n{serial_no}\n%%'")
 
     conditions_sql = " ".join(conditions)
 
     query = f"""
-    SELECT
-        concat_ws(" ", sle.posting_date, sle.posting_time) AS date,
-        sle.voucher_no AS ste_number,
-        sle.item_code,
-        sle.warehouse,
-        w.parent_warehouse,
-        d.name AS department,
-        d.department_name,
-        u2.full_name AS created_by,
-        sle.serial_no,
-        u1.full_name AS warehouse_owner,
-        sle.voucher_type
-    FROM
-        `tabStock Ledger Entry` sle
-    LEFT JOIN `tabStock Entry` stock ON sle.voucher_no = stock.name
-    LEFT JOIN `tabWarehouse` w ON sle.warehouse = w.name
-    LEFT JOIN `tabUser` u1 ON u1.email = w.warehouse_owner
-    LEFT JOIN `tabUser` u2 ON u2.name = stock.owner
-    LEFT JOIN `tabDepartment` d ON d.name = w.department
-    WHERE
-        sle.is_cancelled = 0
-        {conditions_sql}
-    ORDER BY
-        sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
+        SELECT
+            concat_ws(" ", sle.posting_date, sle.posting_time) AS date,
+            sle.voucher_no AS ste_number,
+            sle.item_code,
+            sle.warehouse,
+            w.parent_warehouse,
+            d.name AS department,
+            d.department_name,
+            u2.full_name AS created_by,
+            sle.serial_no,
+            u1.full_name AS warehouse_owner,
+            sle.voucher_type
+        FROM
+            `tabStock Ledger Entry` sle
+        LEFT JOIN `tabStock Entry` stock ON sle.voucher_no = stock.name
+        LEFT JOIN `tabWarehouse` w ON sle.warehouse = w.name
+        LEFT JOIN `tabUser` u1 ON u1.email = w.warehouse_owner
+        LEFT JOIN `tabUser` u2 ON u2.name = stock.owner
+        LEFT JOIN `tabDepartment` d ON d.name = w.department
+        WHERE
+            sle.is_cancelled = 0
+            {conditions_sql}
+        ORDER BY
+            sle.posting_date DESC, sle.posting_time DESC, sle.creation DESC
     """
 
     if conditions_sql:

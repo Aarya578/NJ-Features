@@ -779,14 +779,29 @@ frappe.ui.form.on('NJQCA', {
                         else{
                             frm_serial_no= frm.doc.component_serial_no;
                         }
-                        if (scannedSerialNo.toLowerCase() != frm_serial_no.toLowerCase()) {
-                            $('.primary-action').hide();
-                            frappe.msgprint({
-                                title: 'Serial Number Mismatch',
-                                message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
-                            });
-                            dialog.hide();
-                            return;
+                        if (scannedSerialNo) {
+
+                            frappe.call({
+                                method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+                                args: {  search_value: scannedSerialNo, raise_exp: 1 },
+                                callback: function(r) {
+                                    if (r.message) {
+                                        if (r.message.serial_no) {
+                                            scannedSerialNo = r.message.serial_no;
+                                            if (scannedSerialNo.toLowerCase() !== frm_serial_no.toLowerCase()) {
+                                                $('.primary-action').hide();
+                                                frappe.msgprint({
+                                                    title: 'Serial Number Mismatch',
+                                                    message: `The scanned serial number ${scannedSerialNo} does not match the available serial number ${frm.doc.serial_no}. Please try again.`,
+                                                });
+                                                dialog.hide();
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                            })
+
                         }
     
                         let material_transfer_items = [{

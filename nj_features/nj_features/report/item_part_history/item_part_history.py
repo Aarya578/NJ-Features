@@ -57,9 +57,9 @@ def get_data(filters):
                 FROM `tabStock Entry Detail` sed
                 WHERE
                     (sed.serial_no LIKE '{serial_no}' OR 
-                    sed.serial_no LIKE '{serial_no}\n%' OR 
-                    sed.serial_no LIKE '%\n{serial_no}' OR 
-                    sed.serial_no LIKE '%\n{serial_no}\n%')
+                    sed.serial_no LIKE '{serial_no}\n%%' OR 
+                    sed.serial_no LIKE '%%\n{serial_no}' OR 
+                    sed.serial_no LIKE '%%\n{serial_no}\n%%')
                 ) AS stock_entry
                 ON stock_entry.parent = ledger.parent
             INNER JOIN

@@ -226,3 +226,16 @@ def part_warrnty_days_after_save(docname):
         "status": "updated",
         "message": f"Added {added_count}, removed {removed_count} warranty entries"
     }
+
+@frappe.whitelist()
+def get_tax_without_holding(supplier):
+    """
+    Fetch the Tax Withholding Category for the given Supplier.
+    Assumes 'tax_withholding_category' is a field in the Supplier doctype.
+    """
+    tax_category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
+    print("tax_category===============",tax_category)
+    
+    frappe.logger().info(f"Fetched Tax Withholding Category for {supplier}: {tax_category}")
+    
+    return tax_category

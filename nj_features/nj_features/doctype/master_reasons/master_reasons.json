@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "autoname": "Field:reason",
  "creation": "2023-06-27 01:32:29.015128",
  "doctype": "DocType",
@@ -15,8 +16,9 @@
    "label": "Reason"
   }
  ],
+ "hide_toolbar": 1,
  "links": [],
- "modified": "2025-06-21 16:51:24.393615",
+ "modified": "2025-08-01 14:51:11.946375",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Master Reasons",
@@ -31,6 +33,39 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Tech MR & Transfer Access",
+   "select": 1,
+   "share": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ops Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   }

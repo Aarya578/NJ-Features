@@ -284,7 +284,7 @@ def validate_serial_no_and_department(row, error_messages):
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
         if not is_component and s_department != department:
-            check_lesson_validation = frappe.db.get_value('NJ settings', {'paramter': 'check_lesson_validation'} , 'value')
+            check_lesson_validation = frappe.db.get_value('NJ Settings', {'parameter': 'check_lesson_validation'} , 'value')
             if int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
@@ -714,18 +714,15 @@ def get_grades_from_part_list(search_value):
         search_value,
         as_dict=True
     )
-    print("qury==============================",query)
 
     results = []
 
     # Loop through each item_group from the query result
     for row in query:
         item_group = row['item_group']
-        print("item_group==============================",item_group)
         aesthetic_issue = row['aesthetic_issue']
         print
         functional_issue = row['functional_issue']
-        print("functional_issue==============================",functional_issue)
         damage_types = []
 
         if aesthetic_issue == 1:
@@ -747,7 +744,6 @@ def get_grades_from_part_list(search_value):
             (item_group, tuple(damage_types)) if damage_types[0] else (item_group,),
             as_dict=True
         )
-        print("department_query==============================",department_query)
 
         # If department data is found, append it to the result list
         if department_query:
@@ -787,4 +783,3 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                     f"has a Total quantity <b>{total_quantity}</b> that is not allowed for department <b>{department_doc.name}</b>. "
                     f"(Min: {min_qty}, Max: {max_qty})"
                 )
-   

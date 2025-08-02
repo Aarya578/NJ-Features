@@ -46,6 +46,33 @@ frappe.ui.form.on('Purchase Order', {
             frm.set_value('warranty_days', 0);
         }
     },
+    supplier(frm) {            
+        if (!frm.doc.supplier) {
+            frm.set_value('tax_withholding_category', '');
+            return;
+        }
+
+        frappe.call({
+            method: "nj_features.overrides.purchase_order.get_tax_without_holding",
+            args: { supplier: frm.doc.supplier },
+            callback(response) {
+                const tax_category = response.message || '';
+
+                frm.set_query('tax_withholding_category', () => {
+                    return { filters: { name: tax_category } };
+                });
+
+                if (tax_category) {
+                    frm.set_value('tax_withholding_category', tax_category);
+                } else {
+                    frm.set_value('tax_withholding_category', '');
+                }
+
+                frm.refresh_field('tax_withholding_category');
+            }
+        });
+    }
+,
 
     validate: function(frm) {
         var postingDate = frm.doc.transaction_date;

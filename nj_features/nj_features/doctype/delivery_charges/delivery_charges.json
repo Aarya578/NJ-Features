@@ -8,6 +8,7 @@
  "field_order": [
   "send_email",
   "verified",
+  "customer_send_mail",
   "awb_number",
   "rto_charges",
   "serial_no",
@@ -44,6 +45,7 @@
   "section_break_xhi0z",
   "first_email",
   "second_email",
+  "customer_email",
   "rto_reason",
   "item_tracking_table",
   "amended_from"
@@ -287,11 +289,23 @@
    "fieldname": "verified",
    "fieldtype": "Check",
    "label": "Verified/Payment Recieved"
+  },
+  {
+   "fieldname": "customer_email",
+   "fieldtype": "Data",
+   "label": "Customer Email",
+   "options": "Email"
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_send_mail",
+   "fieldtype": "Check",
+   "label": "Customer Send Mail"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-28 15:11:32.061668",
+ "modified": "2025-07-31 15:32:50.045430",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Delivery Charges",

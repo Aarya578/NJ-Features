@@ -2,12 +2,10 @@ import re
 import json
 import time
 import frappe
-import datetime as dt
 import traceback
-from datetime import datetime
 from frappe import _
+import datetime as dt
 from frappe.utils import get_url
-from collections import defaultdict
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -334,7 +332,7 @@ def get_itm_code_on_barcode(new_qi):
             serial_item_date = serial_no_data.purchase_date
             difference = (current_date - serial_item_date).days
 
-            if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > datetime.strptime("2024-03-20", "%Y-%m-%d"):
+            if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > dt.strptime("2024-03-20", "%Y-%m-%d"):
                 if serial_no_data.bios_serial_no and serial_no_data.bios_serial_no.startswith('nj') and serial_no_data.bios_serial_no == barcode:
                     frappe.msgprint(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
                     return {"disable_save": True}
@@ -554,7 +552,6 @@ class NJQCA(Document):
 
             except Exception as e:
                 frappe.db.rollback()
-                print("error in on submit", traceback.format_exc())
                 frappe.msgprint("Error during submission: " + str(traceback.format_exc()))
                 raise
 
@@ -605,8 +602,6 @@ class NJQCA(Document):
     #         frappe.throw("Error creating Serial No: " + str(e))
     #         return None
 
-
-    
 
     def validate_item_code_match(self):
         if self.item_group != "Laptops":
@@ -807,7 +802,6 @@ class NJQCA(Document):
                     })
 
             serial_doc.save()
-            frappe.db.commit()
 
         except Exception as e:
             log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
@@ -1012,7 +1006,6 @@ def get_info_from_serial_no(doc=None):
 
         return result
 
-
     
 @frappe.whitelist()
 def get_info_from_component_serial_no(doc=None):
@@ -1059,8 +1052,6 @@ def get_info_from_component_serial_no(doc=None):
 
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
-    # print("after_save_njqca==================================")
-    # frappe.throw("QI Draft is not created for Serial No: <b>====================={doc.serial_no}</b>.")
     doc = frappe.get_doc("NJQCA", docname)
     if doc.bios_serialno:
         if doc.power_on == 'Yes' and (qi_type==None or not qi_type):
@@ -1474,7 +1465,6 @@ def normalize_gen(cpu_value):
     
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
-    print("get_variant_from_value", item_template, args)
     try:
         missing_attribute = []
         args_list = []
@@ -2086,19 +2076,17 @@ def update_performance_criteria(doc):
 
     item_wizard_list = frappe.db.sql(
         """
-        SELECT `name`
-        FROM `tabItem Wizards`
-        WHERE `model` = %s
-        AND `item_template` = %s
-        AND `docstatus` = 1
-        AND `part_list_status` = 'Completed'
-        ORDER BY `modified` DESC
-        LIMIT 1
+            SELECT `name`
+            FROM `tabItem Wizards`
+            WHERE `model` = %s
+            AND `item_template` = %s
+            AND `docstatus` = 1
+            AND `part_list_status` = 'Completed'
+            ORDER BY `modified` DESC
+            LIMIT 1
         """,
         (doc.get("model"), doc.get("item_template")), as_dict=True
     )
-
-    # print("item_wizard_list ------------- ", item_wizard_list)
 
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
@@ -2117,8 +2105,6 @@ def update_performance_criteria(doc):
 
         if not criteria_doc_raw:
             return {"error": "NJ Settings not found for Performance Criteria."}
-
-        # print("criteria_doc_raw ------------- ", criteria_doc_raw)
 
         # ✅ Fix: decode only if it's a string
         try:
@@ -2242,7 +2228,6 @@ def update_performance_criteria(doc):
                     "item_group": "Software Configuration",
                     "part_config_id": 0
                 }
-
 
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""
@@ -2646,7 +2631,6 @@ def check_ram_speed(njqca_name,item_template):
     
 
 @frappe.whitelist()
-
 def set_is_defective(inspection_type):
     try:        
         allowed_inspection_types = frappe.db.get_value("Inspection Type",{"name":inspection_type},"check_only_defectives")
@@ -2830,13 +2814,7 @@ def generate_automated_repack_item_code(doc):
     # ===== Final Args =====
     args = processor_data + merged_ram + merged_storage
 
-    print("Processors:", processor_data)
-    print("RAM:", merged_ram)
-    print("Storage:", merged_storage)
-    print("Final Args for Variant Lookup:", args)
-
     variant_code = get_variant_from_value(doc.get("item_template"), args=args)
-    print("Variant Code:", variant_code)
 
     if not variant_code:
         return {

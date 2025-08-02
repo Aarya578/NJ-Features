@@ -437,59 +437,57 @@ frappe.ui.form.on('NJQCA', {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
         
-        var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
-        
-        if (frm.doc.serial_no || frm.doc.component_serial_no) {
+        // if (frm.doc.serial_no || frm.doc.component_serial_no) {
 
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-                args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
-                callback: function(r) {
-                    if (r && r.message) {
-                        let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
-                        let pwd_njpulse_url = urlToCompare;
+        //     frappe.call({
+        //         method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+        //         args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
+        //         callback: function(r) {
+        //             if (r && r.message) {
+        //                 let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+        //                 let pwd_njpulse_url = urlToCompare;
     
-                        if (urlToCompare && !openedUrls.includes(urlToCompare)) {
-                            openedUrls.push(urlToCompare);
-                            localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+        //                 if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+        //                     openedUrls.push(urlToCompare);
+        //                     localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
         
-                            if (frm.doc.pwd && r.message.base_url) {
-                                pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
-                            }
-                            window.open(pwd_njpulse_url, "_blank");
-                        }
+        //                     if (frm.doc.pwd && r.message.base_url) {
+        //                         pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
+        //                     }
+        //                     window.open(pwd_njpulse_url, "_blank");
+        //                 }
     
-                        if (r.message.qi_name) {
-                            frm.set_value('qi_name', r.message.qi_name);
-                            frm.refresh_field('qi_name');
+        //                 if (r.message.qi_name) {
+        //                     frm.set_value('qi_name', r.message.qi_name);
+        //                     frm.refresh_field('qi_name');
     
-                            var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
-                            $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+        //                     var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+        //                     $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
     
-                            $qiNameWrapper.css('cursor', 'pointer');
-                            $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
+        //                     $qiNameWrapper.css('cursor', 'pointer');
+        //                     $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
     
-                            $qiNameWrapper.on('click', function() {
-                                window.open(pwd_njpulse_url, '_blank');
-                            });
+        //                     $qiNameWrapper.on('click', function() {
+        //                         window.open(pwd_njpulse_url, '_blank');
+        //                     });
     
-                            $qiNameWrapper.css({
-                                'user-select': 'none',
-                                'pointer-events': 'auto'
-                            });
-                        }
+        //                     $qiNameWrapper.css({
+        //                         'user-select': 'none',
+        //                         'pointer-events': 'auto'
+        //                     });
+        //                 }
     
-                        if (r.message.msg_pnt) {
-                            frappe.show_alert({
-                                message: r.message.msg_pnt,
-                                indicator: 'blue'
-                            }, 10);
-                        }
+        //                 if (r.message.msg_pnt) {
+        //                     frappe.show_alert({
+        //                         message: r.message.msg_pnt,
+        //                         indicator: 'blue'
+        //                     }, 10);
+        //                 }
     
-                    } else {  console.error('QI name is not defined'); }
-                }
-            });
-        }
+        //             } else {  console.error('QI name is not defined'); }
+        //         }
+        //     });
+        // }
     },
 
     rfq_id: function(frm) {
@@ -527,6 +525,9 @@ frappe.ui.form.on('NJQCA', {
     },
 
     before_submit: async function(frm) {
+
+        var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
+        console.log("triggering before_submit");
         await frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
             args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
@@ -577,60 +578,59 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        // return new Promise((resolve, reject) => {
-        //     let tablesToCheck = [
-        //         'njqca_laptop_ram', 'njqca_laptop_processors', 
-        //         'njqca_display', 'njqca_adaptor', 'njqca_laptop_storage'
-        //     ];
-        //     let mismatches = [];
-        //     let i = 0;
+        if (frm.doc.serial_no || frm.doc.component_serial_no) {
 
-        //     tablesToCheck.forEach((table) => {
-        //         frm.doc[table].forEach((row) => {
-                    
-        //             if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-        //                 mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-        //             } else if (row.calculated_item_code !== row.fetched_item_code) {
-        //                 mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-        //             }
+            console.log("calling after_save_njqca");
 
-        //             // Added condition: If fetched_item_code is filled but calculated_item_code is empty, throw an error
-        //             if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
-        //                 frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NPD team.`);
-        //             }
-                    
-        //         });
-        //     });
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
+                callback: function(r) {
+                    if (r && r.message) {
+                        let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+                        let pwd_njpulse_url = urlToCompare;
     
-        //     if (mismatches.length > 0) {
-        //         let mismatchMessage = mismatches.join('<br>');
-        //         frappe.confirm(
-        //             `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-        //             () => { resolve(); },
-        //             () => { reject(); }
-        //         );
-        //     } else { resolve(); }
-
-        // }).then(() => {
-        //     if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-        //         frappe.validated = false; 
-        //         frappe.confirm(
-        //             `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-        //             () => {
-        //                 frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-        //                     () => {
-        //                         frappe.validated = true;
-        //             model            frm.save('Submit');
-        //                     },
-        //                     () => { frm.set_value('repack_item_code', ''); }
-        //                 );
-        //             },
-        //             () => { frm.set_value('repack_item_code', ''); }
-        //         );
-        //     }
+                        if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+                            openedUrls.push(urlToCompare);
+                            localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+        
+                            if (frm.doc.pwd && r.message.base_url) {
+                                pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
+                            }
+                            window.open(pwd_njpulse_url, "_blank");
+                        }
     
-        //     return false;
-        // });
+                        if (r.message.qi_name) {
+                            frm.set_value('qi_name', r.message.qi_name);
+                            frm.refresh_field('qi_name');
+    
+                            var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+                            $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+    
+                            $qiNameWrapper.css('cursor', 'pointer');
+                            $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
+    
+                            $qiNameWrapper.on('click', function() {
+                                window.open(pwd_njpulse_url, '_blank');
+                            });
+    
+                            $qiNameWrapper.css({
+                                'user-select': 'none',
+                                'pointer-events': 'auto'
+                            });
+                        }
+    
+                        if (r.message.msg_pnt) {
+                            frappe.show_alert({
+                                message: r.message.msg_pnt,
+                                indicator: 'blue'
+                            }, 10);
+                        }
+    
+                    } else {  console.error('QI name is not defined'); }
+                }
+            });
+        }
     },
 
     power_on: function() {

@@ -166,7 +166,8 @@ class CustomDeliveryNote(DeliveryNote):
                         serial_no_doc = frappe.get_doc('Serial No', serial, for_update=True)
                     except frappe.DoesNotExistError:
                         frappe.throw(f"Serial No {serial} not found in the system")
-
+                    serial_no_doc.customer = sales_order_info.get("customer_name", "")
+                    serial_no_doc.customer_name = sales_order_info.get("customer_name", "")
                     serial_no_doc.first_name = sales_order_info.get("customer_name", "")
                     serial_no_doc.sales_order_id = sales_order_info.get("name", "")
                     serial_no_doc.order_id = sales_order_info.get("order_id", "")
@@ -278,6 +279,8 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.mobile_no = ''
         serial_no_doc.last_name = ''
         serial_no_doc.first_name = ''
+        serial_no_doc.customer = ''
+        serial_no_doc.customer_name = ''
         serial_no_doc.order_date = ''
         serial_no_doc.tracking_id = ''
         serial_no_doc.shipped_date = ''

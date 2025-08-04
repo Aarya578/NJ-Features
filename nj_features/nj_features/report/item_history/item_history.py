@@ -49,7 +49,7 @@ def get_data(filters):
         conditions.append(f"AND d.name = '{filters['department']}'")
     if nj_serial_no is not None and nj_serial_no.get("serial_no"):
         serial_no = nj_serial_no.get("serial_no")
-        conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n%' OR sle.serial_no LIKE '%\n{serial_no}') OR sle.serial_no LIKE '%\n{serial_no}\n%'")
+        conditions.append(f"AND (sle.serial_no LIKE '{serial_no}' OR sle.serial_no LIKE '{serial_no}\n%%' OR sle.serial_no LIKE '%%\n{serial_no}') OR sle.serial_no LIKE '%%\n{serial_no}\n%%'")
 
     conditions_sql = " ".join(conditions)
 

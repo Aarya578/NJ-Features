@@ -1,10 +1,43 @@
+from frappe import _
+import json
+import requests
 import frappe
+import six
+from frappe import _
+from frappe.utils import (
+    flt, getdate, cint
+)
+from erpnext.regional.india.e_invoice.utils import (
+    read_json,
+    get_transaction_details,
+    get_doc_details,
+    get_invoice_value_details,
+    get_party_details,
+    get_overseas_address_details,
+    get_place_of_supply,
+    sanitize_for_json,
+    get_payment_details,
+    get_return_doc_reference,
+    get_eway_bill_details,
+    update_item_taxes,
+    safe_json_load,
+    santize_einvoice_fields,
+    validate_totals,
+    show_link_to_error_log,
+    log_error,
+)
+from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
+from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_error
 from frappe import _
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
-
 class CustomSalesInvoice(SalesInvoice):
-
+    def validate(self):
+        einvoice_settings = frappe.get_cached_doc("E Invoice Settings")
+        if einvoice_settings.enable:
+            self.validate_einvoice_fields()
+        else:
+            return  # Skip validation if e-invoicing is not enabled
     def before_submit(self):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
@@ -14,13 +47,34 @@ class CustomSalesInvoice(SalesInvoice):
         if self.update_stock:
             make_packing_list(self)
         # Removed the `else` block to prevent clearing packed_items
+    def validate_einvoice_fields(self):
+        print("✅ CUSTOM validate_einvoice_fields() from nj_features called")
 
+        invoice_eligible = _validate_eligibility(self)
+        if not invoice_eligible:
+            return
+
+        if self.docstatus == 0 and self._action == "save":
+            if self.irn:
+                frappe.throw(_("You cannot edit the invoice after generating IRN"), title=_("Edit Not Allowed"))
+            if len(self.name) > 16:
+                raise_document_name_too_long_error()
+            self.einvoice_status = "Pending"
+
+        elif self.docstatus == 1 and self._action == "submit" and not self.irn:
+            frappe.throw(_("You must generate IRN before submitting the document."), title=_("Missing IRN"))
+
+        elif self.irn and self.docstatus == 2 and self._action == "cancel" and not self.irn_cancelled:
+            frappe.throw(_("You must cancel IRN before cancelling the document."), title=_("Cancel Not Allowed"))
 # Hook this class to override default Sales Invoice behavior
 def override_sales_invoice():
     from erpnext.accounts.doctype.sales_invoice import sales_invoice
     sales_invoice.SalesInvoice = CustomSalesInvoice
 
 from frappe.utils import nowdate, add_days, getdate
+
+
+
 
 @frappe.whitelist()
 def mail_trigger_for_payment_terms_from_quotation():
@@ -160,3 +214,429 @@ def custom_bulk_update_approved(names, approved_value):
         "updated": updated,
         "status": "success"
     }
+# ✅ Used inside validate()
+def custom_validate_mandatory_fields(doc):
+    print("✅ custom_validate_mandatory_fields() from nj_features")
+
+    if not doc.company_address:
+        frappe.throw(
+            _("Company Address is mandatory to fetch company GSTIN details. Please set Company Address and try again."),
+            title=_("Missing Fields"),
+        )
+
+    if not doc.customer_address:
+        frappe.throw(
+            _("Customer Address is mandatory to fetch customer GSTIN details. Please set Customer Address and try again."),
+            title=_("Missing Fields"),
+        )
+
+    company_gstin = frappe.db.get_value("Address", doc.company_address, "gstin")
+    if not company_gstin:
+        frappe.throw(
+            _("GSTIN is mandatory to fetch company GSTIN details. Please enter GSTIN in selected company address."),
+            title=_("Missing Fields"),
+        )
+
+    # ✅ Use shipping address GSTIN instead of customer address
+    shipping_gstin = (
+        frappe.db.get_value("Address", doc.shipping_address_name, "gstin")
+        if doc.shipping_address_name else None
+    )
+    if (doc.get("customer_gstin") is None or doc.get("customer_gstin") == "undefined") and flt(doc.get("grand_total")) <= 50000:  
+        return
+
+        # ✅ Only validate shipping GSTIN on SUBMIT
+    # if doc.docstatus == "save":
+    #     if flt(doc.get("grand_total")) >= 50000 and doc.gst_category != "Overseas" and not shipping_gstin:
+    #         frappe.throw(
+    #             _("GSTIN is not found in selected *Shipping Address*. Please Create 'E-Way Bill' Directly."),
+    #             title=_("Missing GSTIN in Shipping Address"),
+    #         )
+    # if frappe.flags.in_submit:
+    if doc.gst_category != "Overseas" and not shipping_gstin:
+        frappe.throw(
+            _(
+            "GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
+            title=_("Missing GSTIN in Shipping Address"),
+        )
+
+
+def custom_make_einvoice(invoice):
+    custom_validate_mandatory_fields(invoice)
+    schema = read_json("einv_template")
+
+    transaction_details = get_transaction_details(invoice)
+    item_list = get_item_list(invoice)
+    doc_details = get_doc_details(invoice)
+    invoice_value_details = get_invoice_value_details(invoice)
+    seller_details = get_party_details(invoice.company_address)
+    # dipatch_address = get_party_details(invoice.dispatch_address_name)
+    # print("✅ dipatch_address=================", dipatch_address)
+    # shipping_address = get_party_details(invoice.shipping_address_name)
+    # print("✅ shipping_address=================", shipping_address)
+
+    if invoice.gst_category == "Overseas":
+        buyer_details = get_overseas_address_details(invoice.customer_address)
+    else:
+        buyer_details = get_party_details(invoice.customer_address)
+        place_of_supply = get_place_of_supply(invoice, invoice.doctype)
+        if place_of_supply:
+            place_of_supply = place_of_supply.split("-")[0]
+        else:
+            place_of_supply = sanitize_for_json(invoice.billing_address_gstin)[:2]
+        buyer_details.update(dict(place_of_supply=place_of_supply))
+
+    seller_details.update(dict(legal_name=invoice.company))
+    buyer_details.update(dict(legal_name=invoice.customer_name or invoice.customer))
+
+    shipping_details = payment_details = prev_doc_details = eway_bill_details = frappe._dict({})
+    if invoice.shipping_address_name and invoice.customer_address != invoice.shipping_address_name:
+        if invoice.gst_category == "Overseas":
+            shipping_details = get_overseas_address_details(invoice.shipping_address_name)
+        else:
+            shipping_details = get_party_details(invoice.shipping_address_name, skip_gstin_validation=True)
+
+    dispatch_details = frappe._dict({})
+    if invoice.dispatch_address_name:
+        dispatch_details = get_party_details(invoice.dispatch_address_name, skip_gstin_validation=True)
+
+    if invoice.is_pos and invoice.base_paid_amount:
+        payment_details = get_payment_details(invoice)
+
+    if invoice.is_return and invoice.return_against:
+        prev_doc_details = get_return_doc_reference(invoice)
+
+    if invoice.transporter and not invoice.is_return:
+        eway_bill_details = get_eway_bill_details(invoice)
+
+    period_details = export_details = frappe._dict({})
+
+    einvoice = schema.format(
+        transaction_details=transaction_details,
+        doc_details=doc_details,
+        dispatch_details=dispatch_details,
+        seller_details=seller_details,
+        buyer_details=buyer_details,
+        shipping_details=shipping_details,
+        item_list=item_list,
+        invoice_value_details=invoice_value_details,
+        payment_details=payment_details,
+        period_details=period_details,
+        prev_doc_details=prev_doc_details,
+        export_details=export_details,
+        eway_bill_details=eway_bill_details,
+    )
+
+    try:
+        einvoice = safe_json_load(einvoice)
+        einvoice = santize_einvoice_fields(einvoice)
+    except json.JSONDecodeError:
+        raise
+    except Exception:
+        show_link_to_error_log(invoice, einvoice)
+
+    try:
+        validate_totals(einvoice)
+    except Exception:
+        log_error(einvoice)
+        raise
+
+    return einvoice
+
+
+def get_item_list(invoice):
+    item_list = []
+
+    hide_discount_in_einvoice = cint(
+        frappe.db.get_single_value("E Invoice Settings", "dont_show_discounts_in_e_invoice")
+    )
+
+    for d in invoice.items:
+        einvoice_item_schema = read_json("einv_item_template")
+        item = frappe._dict({})
+        item.update(d.as_dict())
+
+        item.sr_no = d.idx
+        item.description = sanitize_for_json(d.item_name)
+
+        item.qty = abs(item.qty)
+        item_qty = item.qty
+        item.taxable_value = abs(item.taxable_value)
+
+        if invoice.get("is_return") or invoice.get("is_debit_note"):
+            item_qty = item_qty or 1
+
+        if hide_discount_in_einvoice or invoice.is_internal_customer or item.discount_amount < 0:
+            item.unit_rate = item.taxable_value / item_qty
+            item.gross_amount = item.taxable_value
+            item.discount_amount = 0
+        else:
+            if invoice.get("apply_discount_on") and (abs(invoice.get("base_discount_amount") or 0.0) > 0.0):
+                item.discount_amount = (item.discount_amount * item_qty) + (
+                    abs(item.base_amount) - abs(item.base_net_amount)
+                )
+            else:
+                item.discount_amount = item.discount_amount * item_qty
+
+            try:
+                item.unit_rate = (item.taxable_value + item.discount_amount) / item_qty
+            except ZeroDivisionError:
+                frappe.throw(_("Quantity can't be zero unless it's Credit/Debit Note."), title=_("Error: Qty is Zero"))
+
+        item.gross_amount = item.taxable_value + item.discount_amount
+        item.is_service_item = "Y" if item.gst_hsn_code and item.gst_hsn_code[:2] == "99" else "N"
+        item.serial_no = ""
+
+        item = update_item_taxes(invoice, item)
+
+        item.total_value = abs(
+            item.taxable_value
+            + item.igst_amount
+            + item.sgst_amount
+            + item.cgst_amount
+            + item.cess_amount
+            + item.cess_nadv_amount
+            + item.other_charges
+        )
+
+        einv_item = einvoice_item_schema.format(item=item)
+        item_list.append(einv_item)
+
+    return ", ".join(item_list)
+# ✅ JS call-compatible
+@frappe.whitelist()
+def validate_eligibility(doc):
+    if isinstance(doc, six.string_types):
+        doc = json.loads(doc)
+    return _validate_eligibility(doc)
+
+# ✅ Internal validation
+def _validate_eligibility(doc):
+    print("✅ Inside _validate_eligibility")
+
+    if doc.get("doctype") != "Sales Invoice":
+        return False
+    if (doc.get("customer_gstin") is None or doc.get("customer_gstin") == "undefined") and flt(doc.get("grand_total")) >= 50000:
+        if doc.get("ewaybill"):
+            return False
+        return True
+
+    if (doc.get("customer_gstin")): 
+        return True
+    
+    if flt(doc.get("grand_total")) <= 50000:
+        return False
+    
+
+    einvoicing_enabled = cint(frappe.db.get_single_value("E Invoice Settings", "enable"))
+    if not einvoicing_enabled:
+        return False
+
+    einvoicing_eligible_from = (
+        frappe.db.get_single_value("E Invoice Settings", "applicable_from") or "2021-04-01"
+    )
+    if getdate(doc.get("posting_date")) < getdate(einvoicing_eligible_from):
+        return False
+
+    invalid_company_gstin = not frappe.db.get_value("E Invoice User", {"gstin": doc.get("company_gstin")})
+
+    no_taxes_applied = (
+        not doc.get("taxes")
+        and doc.get("gst_category") not in ["Overseas", "SEZ"]
+    )
+    has_non_gst_item = any(d for d in doc.get("items", []) if d.get("is_non_gst"))
+
+    if (
+        invalid_company_gstin
+        or no_taxes_applied
+        or has_non_gst_item
+    ):
+        return False
+
+    return True        
+
+@frappe.whitelist()
+def generate_eway_bill(docname):
+    try:
+        # Step 1: Authenticate
+        token = frappe.db.get_single_value("Logistics Settings", "api_token")
+        secret = frappe.db.get_single_value("Logistics Settings", "api_secret")
+        auth_headers = {
+            "gspappid": token,
+            "gspappsecret": secret,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        auth_res = requests.post(
+            "https://gsp.adaequare.com/gsp/authenticate?action=GSP&grant_type=token",
+            headers=auth_headers,
+            data={"grant_type": "client_credentials"}
+        )
+        auth_json = auth_res.json()
+        access_token = auth_json.get("access_token")
+        if not access_token:
+            frappe.throw(_("Failed to fetch access token."))
+
+        # Step 2: Load Sales Invoice
+        invoice = frappe.get_doc("Sales Invoice", docname)
+        dispatch_address_name = frappe.get_doc("Address", invoice.dispatch_address_name) if invoice.dispatch_address_name else None
+        company_address = frappe.get_doc("Address", invoice.company_address) if invoice.company_address else None
+
+        if dispatch_address_name:
+            final_address = dispatch_address_name
+        else:
+            final_address = company_address
+
+        customer_address = frappe.get_doc("Address", invoice.customer_address) if invoice.customer_address else None
+        shipping_address_name = frappe.get_doc("Address", invoice.shipping_address_name) if invoice.shipping_address_name else None
+
+        # Step 3: Prepare Item List
+        item_list = []
+        for row in invoice.items:
+            item = frappe.get_doc("Item", row.item_code)
+            item_list.append({
+                "productName": row.item_name,
+                "productDesc": item.description or "",
+                "hsnCode": item.gst_hsn_code or "",
+                "quantity": float(row.qty),
+                "qtyUnit": row.uom or "BOX",
+                "cgstRate": 0.0,
+                "sgstRate": 0.0,
+                "igstRate": 18.0,  # Adjust if needed based on tax logic
+                "cessRate": 0.0,
+                "cessNonadvol": 0.0,
+                "taxableAmount": float(row.amount)  # amount before tax
+            })
+
+        # Step 4: Prepare payload
+        payload = {
+            "supplyType": "O",
+            "subSupplyType": "1",
+            "subSupplyDesc": "",
+            "docType": "INV",
+            "docNo": invoice.name,
+            "docDate": invoice.posting_date.strftime("%d/%m/%Y"),
+            "fromGstin": company_address.gstin,
+            "fromTrdName": invoice.company,
+            "fromAddr1": final_address.address_line1,
+            "fromAddr2": final_address.address_line2,
+            "fromPlace": final_address.city,
+            "fromPincode": final_address.pincode,
+            "actFromStateCode": final_address.gst_state_number,
+            "fromStateCode": final_address.gst_state_number,
+            "toGstin": customer_address.gstin or "URP",
+            "toTrdName": invoice.customer,
+            "toAddr1": shipping_address_name.address_line1,
+            "toAddr2": shipping_address_name.address_line2,
+            "toPlace": shipping_address_name.city,
+            "toPincode": shipping_address_name.pincode,
+            "actToStateCode": shipping_address_name.gst_state_number,
+            "toStateCode": customer_address.gst_state_number,
+            "transactionType": 4,
+            "otherValue": "0",
+            "totalValue": invoice.total,
+            "cgstValue": 0,
+            "sgstValue": 0,
+            "igstValue": invoice.total * 0.18,  # Approximate IGST if applicable
+            "cessValue": 0,
+            "cessNonAdvolValue": 0,
+            "totInvValue": invoice.grand_total,
+            "transporterId": "29AMBPG7773M000",
+            "transporterName": "Test",
+            "transDocNo": "",
+            "transMode": "",
+            "transDistance": "0",
+            "transDocDate": "",
+            "vehicleNo": "",
+            "vehicleType": "",
+            "itemList": item_list
+        }
+        # logger.debug("payload=======================================",payload)
+
+        # Step 5: Make API Call
+        username = frappe.db.get_single_value("Logistics Settings", "username")
+        password = frappe.db.get_single_value("Logistics Settings", "e_password")
+        gstin = frappe.db.get_single_value("Logistics Settings", "gstin")
+        api_headers = {
+            "Content-Type": "application/json",
+            "username": username,
+            "password": password,
+            "gstin": gstin,
+            "authorization": f"Bearer {access_token}",
+            "requestid": "REQ-" + frappe.generate_hash(length=10),
+            "ctype": "irn"
+        }
+        # api_url = "https://gsp.adaequare.com/test/enriched/ewb/ewayapi?action=GENEWAYBILL"
+        api_url = frappe.db.get_single_value("Logistics Settings", "eway_url")
+
+        res = requests.post(api_url, headers=api_headers, data=json.dumps(payload))
+
+        try:
+            response_json = res.json()
+        except Exception as e:
+            frappe.log_error(f"[EWB] JSON parse error: {str(e)} | Raw: {res.text}")
+            frappe.throw(_("Invalid response from EWB server."))
+
+        # Get actual EWB number
+        ewaybill_no = response_json.get("result", {}).get("ewayBillNo")
+
+        # If ewaybill_no not present → show reason from API
+        if not ewaybill_no:
+            error_message = response_json.get("message") or "E-Way Bill Generation Failed. No reason provided."
+            frappe.throw(_(f"E-Way Bill Generation Failed: {error_message}"))
+
+        # Save EWB
+        frappe.db.set_value("Sales Invoice", invoice.name, "ewaybill", ewaybill_no)
+        frappe.db.commit()
+
+        # Step 6: Return response
+        try:
+            return res.json()
+        except Exception as e:
+            frappe.log_error(f"[EWB] JSON parse error: {str(e)} | Raw: {res.text}")
+            frappe.throw(_("Invalid response from EWB server."))
+
+    except Exception as e:
+        frappe.log_error(f"[EWB] Fatal Error: {frappe.get_traceback()}")
+        frappe.throw(_("E-Way Bill Generation Failed. See error log."))
+
+
+@frappe.whitelist()
+def fetching_transporter_details(docname):
+    invoice = frappe.get_doc("Sales Invoice", docname)
+
+    for item in invoice.items:
+        if item.delivery_note:
+            dn = frappe.get_doc("Delivery Note", item.delivery_note)
+
+            # Only set fields if they exist in DN
+            invoice.invoice_no = dn.lr_no or ""
+            invoice.transporter_id = dn.gst_transporter_id or ""
+            invoice.transporter_names = dn.transporter_name or ""
+            invoice.email = dn.email or ""
+
+            break  # Stop after first DN
+
+    invoice.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    return {
+        "status": "success",
+        "invoice_no": invoice.invoice_no,
+        "transporter_id": invoice.transporter_id,
+        "transporter_names": invoice.transporter_names,
+        "email": invoice.email,
+    }
+
+
+# ✅ Register override class
+def override_sales_invoice():
+    from erpnext.accounts.doctype.sales_invoice import sales_invoice
+    sales_invoice.SalesInvoice = CustomSalesInvoice
+
+
+# ✅ Monkey patch core validate_mandatory_fields
+import erpnext.regional.india.e_invoice.utils as einvoice_utils
+einvoice_utils.validate_mandatory_fields = custom_validate_mandatory_fields
+
+import erpnext.regional.india.e_invoice.utils as einvoice_utils
+einvoice_utils.make_einvoice = custom_make_einvoice

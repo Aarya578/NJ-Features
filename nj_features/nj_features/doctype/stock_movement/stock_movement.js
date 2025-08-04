@@ -307,7 +307,7 @@ frappe.ui.form.on('Stock Movement Detail', {
     item_code: function(frm, cdt, cdn) {
         var child = locals[cdt][cdn];
         var userRoles = frappe.user_roles;
-        var isKitter = userRoles.some(role => role.toLowerCase() === 'kitter');
+        var isKitter = userRoles.some(role => ['kitter', 'racking'].includes(role.toLowerCase()));
 
         if (isKitter && cur_frm.doc.transfer_status.toLowerCase() == "racking") {
             

@@ -860,15 +860,32 @@ frappe.ui.form.on('NJQCA', {
         let item_group_data=await frappe.db.get_value('Item Group', { 'name': frm.doc.item_group }, 'is_component');
         const isComponent = item_group_data?.message?.is_component;
 
-        if (selectedModel && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0" && (!frm.doc.rfq_id)) {
-
+        if(selectedModel){
+            await frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.validate_model',
+                args: { 'model': frm.doc.model,'manufacturer_model': frm.doc.manufacturer_model },
+                callback: function(r) {
+                    if (r.message && r.message=="0") {
+                        frm.set_value('model', '');
+                        frm.refresh_field('model');
+                    }
+                }
+            })
+        }
+        
+        if (frm.doc.model && selectedBrand && cur_frm.doc.serial_no  && isComponent=="0") {
             frappe.db.get_value('Models', {'name': selectedModel}, 'model_description', function(result) {
                 if (result && result.model_description) {
                     frm.set_value('model_description', result.model_description);
                     frm.refresh_field('model_description');
+
+                    setTimeout(() => {
+                        $(`[data-fieldname="model_description"] .control-value`)
+                            .css("font-weight", "800"); 
+                    }, 100);
                 }
             });
-            
+                    
             frappe.db.get_value('Serial No', {'serial_no': cur_frm.doc.serial_no}, 'model', function(r) {
 
                 if (!r.model && selectedItemGroup.toLowerCase() != "battery" && selectedItemGroup.toLowerCase() != "laptop ram") {
@@ -907,7 +924,7 @@ frappe.ui.form.on('NJQCA', {
             })
         }
 
-        if (isComponent=="0") {
+        if (isComponent=="0" && selectedModel && selectedBrand && selectedItemGroup) {
             get_item_template(selectedModel, selectedBrand, selectedItemGroup)
         }
 

@@ -2869,3 +2869,20 @@ def create_serial_no_based_on_rfq(serial_info):
             frappe.db.rollback()
             frappe.throw("Error creating Serial No: " + str(e))
             return None
+        
+
+@frappe.whitelist()
+def validate_model(model,manufacturer_model):
+    try:
+        if manufacturer_model and model:
+
+            query = """
+                select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
+            """
+            result=frappe.db.sql(query,(manufacturer_model,model),as_dict=1)
+            if result is not None and len(result)>0:
+                return "1"
+        return "0"
+    except Exception as e:
+        frappe.throw("Error While validating Model: " + str(e))
+        return None

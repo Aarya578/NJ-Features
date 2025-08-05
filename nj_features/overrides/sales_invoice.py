@@ -239,10 +239,10 @@ def custom_validate_mandatory_fields(doc):
 
     # ✅ Use shipping address GSTIN instead of customer address
     shipping_gstin = (
-        frappe.db.get_value("Address", doc.shipping_address_name, "gstin")
-        if doc.shipping_address_name else None
+        frappe.db.get_value("Address", doc.customer_address, "gstin")
+        if doc.customer_address else None
     )
-    if (doc.get("customer_gstin") is None or doc.get("customer_gstin") == "undefined") and flt(doc.get("grand_total")) <= 50000:  
+    if (doc.get("billing_address_gstin") is None or doc.get("billing_address_gstin") == "undefined") and flt(doc.get("grand_total")) <= 50000:  
         return
 
         # ✅ Only validate shipping GSTIN on SUBMIT
@@ -416,16 +416,16 @@ def _validate_eligibility(doc):
 
     if doc.get("doctype") != "Sales Invoice":
         return False
-    if (doc.get("customer_gstin") is None or doc.get("customer_gstin") == "undefined") and flt(doc.get("grand_total")) >= 50000:
+    if (doc.get("billing_address_gstin") is None or doc.get("billing_address_gstin") == "undefined") and flt(doc.get("grand_total")) >= 50000:
         if doc.get("ewaybill"):
             return False
         return True
 
-    if (doc.get("customer_gstin")): 
+    if (doc.get("billing_address_gstin")): 
         return True
     
-    # if flt(doc.get("grand_total")) <= 50000:
-    #     return False
+    if flt(doc.get("grand_total")) <= 50000:
+        return False
     
 
     einvoicing_enabled = cint(frappe.db.get_single_value("E Invoice Settings", "enable"))

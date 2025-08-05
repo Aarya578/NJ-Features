@@ -154,18 +154,10 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                 
                                 if int(updated_qty) + int(resulting_val) == int(item.qty): 
                                     break
-                                
-def get_batch(doc, method=None):
+
+def generate_batch_no(doc, method=None):
     for item in doc.items:
-        qr_code_mappings = []
-
         set_registry_no(item)
-
-        if item.item_code and item.qty and is_serialized(item.item_code) == 1:
-            serial_nos = item.serial_no.split('\n') if item.serial_no else []
-            for serial_no in serial_nos:
-                if serial_no.strip():
-                    update_serial_no(serial_no.strip(), doc, item)
 
         has_batch_no = frappe.db.get_value('Item', item.item_code, 'has_batch_no')
         item_idx = frappe.db.get_value('Purchase Order Item', {
@@ -185,6 +177,16 @@ def get_batch(doc, method=None):
                 batch_doc.batch_id = batch_id
                 batch_doc.item = item.item_code
                 batch_doc.save()
+                                
+def get_batch(doc, method=None):
+    for item in doc.items:
+        qr_code_mappings = []
+
+        if item.item_code and item.qty and is_serialized(item.item_code) == 1:
+            serial_nos = item.serial_no.split('\n') if item.serial_no else []
+            for serial_no in serial_nos:
+                if serial_no.strip():
+                    update_serial_no(serial_no.strip(), doc, item)
 
         if item.serial_no:
             for serial in item.serial_no.split('\n'):

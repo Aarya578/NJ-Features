@@ -19,18 +19,17 @@ frappe.ui.form.on('Inward', {
     refresh(frm) {
         $('.col-lg-2.layout-side-section').hide();
         
-        if (cur_frm.doc.docstatus == 0) {
-            frm.events.purchase_receipt(frm);
-            if (!cur_frm.doc.purchase_receipt) {
-                $('[data-fieldname="purchase_receipt"]').focus();
-            } else {
-                $('[data-fieldname="brand"]').focus();
+        if (frm.doc.docstatus == 0) {
+            if (!frm.doc.item_code && frm.doc.purchase_receipt) {
+                frm.events.purchase_receipt(frm);
             }
 
+            if (!frm.doc.purchase_receipt) {
+                $('[data-fieldname="purchase_receipt"]').focus();
+            } else { $('[data-fieldname="brand"]').focus(); }
+
             frm.set_query('purchase_receipt', function() {
-                return {
-                    filters: { "docstatus": ['=', 1] }
-                };
+                return { filters: { "docstatus": ['=', 1] } };
             });
 
             frm.add_custom_button(__('Submit & Next'), function() {
@@ -74,22 +73,31 @@ frappe.ui.form.on('Inward', {
                 method: 'nj_features.nj_features.doctype.inward.inward.get_item_list_from_pr',
                 args: {'pr': frm.doc.purchase_receipt},
                 callback: function(r) {
+                    console.log("response", r.message);
+                    
                     if (r.message) {
                         
                         if (r.message.length == 1) {
-                            frm.set_value('item_code', r.message[0])
-                            frm.set_df_property('item_code', 'read_only', 1);
+                            frm.set_value('item_code', r.message[0].item_code)
+                            frm.set_value('batch_no', r.message[0].batch_no)
+                            frm.set_value('base_rate', r.message[0].base_rate)
+                            frm.set_df_property('purchase_receipt_item', 'read_only', 1);
                         } else {
-                            var itemCodes = r.message.map(function(item) {
-                                return item;
-                            });
 
-                            var options = itemCodes.join('\n');
-                            frm.set_df_property('item_code', 'options', options);
+                            const purchaseReceiptItems = r.message.map(item => `${item.item_code} | ${item.batch_no}`);
+
+                            frm.set_df_property('purchase_receipt_item', 'options', purchaseReceiptItems.join('\n'));
+
+                            frm.set_value('item_code', '');
+                            frm.set_value('batch_no', '');
+                            frm.set_value('base_rate', '');
+
+                            frm.item_list_from_pr = r.message;
+                            frm.item_label_map = purchaseReceiptItems;
     
-                            $('[data-fieldname="serial_no"]').focus().closest('.control-input').css({
+                            $('[data-fieldname="purchase_receipt_item"]').closest('.control-input-wrapper').css({
                                 'border-radius': '0.25rem',
-                                'border': '2px solid rgba(173, 216, 230, 0.7)'
+                                'border': '2px solid rgba(173, 216, 230, 0.5)' 
                             });
                             
                             frappe.show_alert({
@@ -97,9 +105,7 @@ frappe.ui.form.on('Inward', {
                                 indicator: 'green'
                             });
                         }
-                    } else {
-                        frm.set_df_property('item_code', 'options', '');
-                    }
+                    } else { frm.set_df_property('item_code', 'options', ''); }
                 }
             });
         }
@@ -124,6 +130,30 @@ frappe.ui.form.on('Inward', {
         }
     },
 
+    purchase_receipt_item: function(frm) {
+        if (frm.item_list_from_pr && frm.item_label_map) {
+            const selectedLabel = frm.doc.purchase_receipt_item;
+
+            const [selectedItemCode, selectedBatchNo] = selectedLabel.split(' | ').map(s => s.trim());
+
+            const selected = frm.item_list_from_pr.find(item => item.batch_no === selectedBatchNo);
+            console.log("selected", selected)
+            if (selected) {
+                frm.set_value('item_code', selected.item_code);
+                frm.set_value('batch_no', selected.batch_no);
+                frm.set_value('base_rate', selected.rate);
+
+                frappe.show_alert(`Selected Batch: ${selected.batch_no}`);
+            } else {
+                frm.set_value('item_code', '');
+                frm.set_value('batch_no', '');
+                frm.set_value('base_rate', '');
+
+                frappe.msgprint(__('Selected batch not found. Please check.'));
+            }
+        }
+    },
+
     item_code: function(frm) {
         if (frm.doc.item_code) {
             if (cur_frm.doc.purchase_receipt) {
@@ -136,10 +166,10 @@ frappe.ui.form.on('Inward', {
                             var serialNo = r.message.serial_no;
 
                             if(result) {
-                                cur_frm.set_value('base_rate', result.incoming_rate);
+                                // cur_frm.set_value('base_rate', result.incoming_rate);
                                 cur_frm.set_value('source_warehouse', result.warehouse);
                                 cur_frm.set_value('item_group', result.item_group);
-                                cur_frm.set_value('batch_no', result.batch_no);
+                                // cur_frm.set_value('batch_no', result.batch_no);
                                 frappe.db.get_value('NJ Settings', {'parameter': 'inward_allowed_item_groups'}, 'value', function(response) {
                                     if(response && response.value){
                                         if(result.item_group != response.value){

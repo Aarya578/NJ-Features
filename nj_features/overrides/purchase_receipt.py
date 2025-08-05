@@ -160,14 +160,9 @@ def generate_batch_no(doc, method=None):
         set_registry_no(item)
 
         has_batch_no = frappe.db.get_value('Item', item.item_code, 'has_batch_no')
-        item_idx = frappe.db.get_value('Purchase Order Item', {
-            'item_code': item.item_code,
-            'parent': item.purchase_order,
-            'docstatus': 1
-        }, 'idx')
 
-        if has_batch_no and item_idx:
-            batch_id = f"{item.purchase_order}-{item_idx}"
+        if has_batch_no and item.idx:
+            batch_id = f"{item.purchase_order}-{item.idx}"
             item.batch_no = batch_id
 
             if frappe.db.exists('Batch', batch_id):
@@ -202,7 +197,6 @@ def get_batch(doc, method=None):
             SET qr_code_mapping = %s 
             WHERE name = %s
         """, (qr_code_mapping_str, item.name))
-
 
 def before_save_purchase_receipt(doc, method):
     if doc.doctype == "Purchase Receipt":

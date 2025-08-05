@@ -10,6 +10,7 @@
   "purchase_order",
   "item_group",
   "column_break_nvgty",
+  "purchase_receipt_item",
   "item_code",
   "base_rate",
   "serial_no",
@@ -29,8 +30,11 @@
  "fields": [
   {
    "fieldname": "item_code",
-   "fieldtype": "Select",
-   "label": "Purchase Receipt Item"
+   "fieldtype": "Link",
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "purchase_receipt",
@@ -100,6 +104,7 @@
    "fieldname": "serial_no",
    "fieldtype": "Data",
    "label": "Serial No",
+   "no_copy": 1,
    "read_only": 1,
    "unique": 1
   },
@@ -115,12 +120,14 @@
    "fieldname": "base_rate",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "Base Rate"
+   "label": "Base Rate",
+   "no_copy": 1
   },
   {
    "fieldname": "model_description",
    "fieldtype": "Long Text",
    "label": "Model Description",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -141,7 +148,8 @@
    "fieldname": "batch_no",
    "fieldtype": "Data",
    "hidden": 1,
-   "label": "Batch No"
+   "label": "Batch No",
+   "no_copy": 1
   },
   {
    "fieldname": "item_template",
@@ -157,11 +165,16 @@
    "label": "Department",
    "options": "Department",
    "read_only": 1
+  },
+  {
+   "fieldname": "purchase_receipt_item",
+   "fieldtype": "Select",
+   "label": "Purchase Receipt Item"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-21 16:51:23.984369",
+ "modified": "2025-08-05 19:20:51.198005",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inward",

@@ -86,11 +86,15 @@ def get_repack_items(self):
 
 @frappe.whitelist()
 def get_item_list_from_pr(pr):
-    item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
-    pr_item_codes = frappe.db.get_list('Purchase Receipt Item', {'parent': pr}, ['item_code'])
-    item_codes_in_pr = [item['item_code'] for item in pr_item_codes if item['item_code'] in item_codes]
-    
-    return item_codes_in_pr
+    batch_item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
+    pr_items = frappe.db.get_list('Purchase Receipt Item', filters={'parent': pr}, fields=['item_code', 'rate', 'batch_no'])
+
+    result = [
+        {'item_code': item['item_code'], 'rate': item['rate'], 'batch_no': item['batch_no']}
+        for item in pr_items if item['item_code'] in batch_item_codes
+    ]
+
+    return result
 
 @frappe.whitelist()
 def get_repack_item_code(item_template):

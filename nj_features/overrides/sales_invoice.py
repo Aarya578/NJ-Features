@@ -424,8 +424,8 @@ def _validate_eligibility(doc):
     if (doc.get("customer_gstin")): 
         return True
     
-    if flt(doc.get("grand_total")) <= 50000:
-        return False
+    # if flt(doc.get("grand_total")) <= 50000:
+    #     return False
     
 
     einvoicing_enabled = cint(frappe.db.get_single_value("E Invoice Settings", "enable"))

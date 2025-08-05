@@ -112,6 +112,7 @@ doctype_list_js = {
 override_doctype_class = {
     "Issue": "nj_features.overrides.issue.CustomIssue",
     "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
+    "Workstation": "nj_features.overrides.workstation.CustomeWorkstation",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Sales Invoice": "nj_features.overrides.sales_invoice.CustomSalesInvoice",	
     "Product Bundle": "nj_features.overrides.product_bundle.CustomProductBundle",

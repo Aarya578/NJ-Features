@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "barcode",
   "scan_serial_no",
   "delivery_partner_name",
   "delivery_partner_no",
@@ -34,9 +35,10 @@
   },
   {
    "fieldname": "scan_serial_no",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Scan Serial No",
-   "options": "Barcode"
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "dispatch_security_child_table",
@@ -114,11 +116,17 @@
    "label": "Dispatch Security Stock Entry Table",
    "options": "Dispatch Security Stock Entry Table",
    "read_only": 1
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "NJ Barcode",
+   "options": "Barcode"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-07-08 16:15:17.087725",
+ "modified": "2025-08-05 12:04:05.643329",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

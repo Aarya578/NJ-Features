@@ -28,11 +28,42 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
         }
     },
 
+    barcode: function(frm) {
+        handleScannerInput(frm, 'barcode');
+		if (frm.doc.barcode) { 
+			frappe.call({
+				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+				args: {  search_value: frm.doc.barcode, raise_exp: 0 },
+				callback: function(r) {
+					if (r.message) {
+						if (r.message.serial_no) {
+							frm.set_value('scan_serial_no', r.message.serial_no);
+						} else if (r.message.scan) {
+							frappe.msgprint("Please Scan the Serial No.");
+							frm.set_value('barcode', '');
+							frm.set_value('scan_serial_no', '');
+						}
+						frm.refresh_field("scan_serial_no");
+						frm.refresh_field("barcode");
+						$('[data-fieldname="barcode"]').focus();
+					}
+				},
+				error: function(r) {
+					frappe.msgprint("Error while scanning Serial No.");
+					frm.set_value('barcode', '');
+					frm.set_value('barcode', '');
+					frm.refresh_field("barcode");
+					frm.refresh_field("barcode");
+					$('[data-fieldname="barcode"]').focus();
+				}
+			});
+		}
+    },
+
     scan_serial_no: function (frm) {
 
-        handleScannerInput(frm, 'scan_serial_no');
-        if (frm.doc.scan_serial_no != '') {
-            if (frm.doc.dispatch_type == '' || frm.doc.dispatch_type == null) {
+        if (frm.doc.scan_serial_no) {
+            if (!frm.doc.dispatch_type) {
                 frappe.msgprint('Please Select Dispatch Type');
                 frm.set_value('scan_serial_no', '');
                 frm.refresh_field('scan_serial_no');

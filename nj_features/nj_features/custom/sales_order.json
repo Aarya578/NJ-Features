@@ -2019,7 +2019,7 @@
    "modified": "2025-03-13 21:18:21.650622",
    "modified_by": "postman@mail.com",
    "name": "Sales Order-payment_id",
-   "no_copy": 0,
+   "no_copy": 1,
    "non_negative": 0,
    "options": null,
    "owner": "Administrator",
@@ -2037,7 +2037,7 @@
    "reqd": 0,
    "search_index": 0,
    "translatable": 0,
-   "unique": 0,
+   "unique": 1,
    "width": null
   },
   {

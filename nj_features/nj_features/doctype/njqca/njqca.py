@@ -11,8 +11,8 @@ from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
+from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
-from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi,update_total_preferred_grade_a
 
 frappe.utils.logger.set_log_level("DEBUG")
 logger = frappe.logger("njqca", allow_site=True, file_count=1)
@@ -22,7 +22,6 @@ def update_serial_no_componont_for_grade(self):
     try:
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no, for_update=True)
         serial_no_doc.bios_serial_no = self.bios_serialno
-        serial_no_doc.purchase_price = self.base_price
         serial_no_doc.current_price = self.base_price
 
         if not serial_no_doc.model:
@@ -316,17 +315,6 @@ def get_itm_code_on_barcode(new_qi):
         for key,value in result.items():
             new_qi.set(key,value)
         
-        # Check if the item group is a component
-        is_component = frappe.db.get_value('Item Group', serial_no_data.item_group, 'is_component')
-
-        if is_component == 0:
-            preferred_prices = update_total_preferred_grade_a(barcode)
-            attribute_values = preferred_prices.get("attribute_values")
-            new_qi.set("preferred_a_grade_price",preferred_prices.get("preferred_a_grade_price"))
-            for key in attribute_values:
-                new_qi.set(key,attribute_values.get(key))
-            result.update(preferred_prices)
-
         if serial_no_data.rfq_id is None:
             current_date = dt.date.today()
             serial_item_date = serial_no_data.purchase_date
@@ -415,6 +403,7 @@ class NJQCA(Document):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
         if is_component is not None and is_component == 1:
             return
+        
         data = get_item_group_mapping(self.name)
         gen_score_map = {
         "CORE I3": 0.1,

@@ -9,13 +9,12 @@
  "field_order": [
   "serial_no",
   "username",
+  "total_qi_duration",
+  "column_break_gqsah",
   "activity_type",
-  "category",
   "link_name",
-  "column_break_ldbjl",
-  "from",
-  "to",
-  "total",
+  "section_break_7rc2e",
+  "nj_activity_time_log_child",
   "amended_from"
  ],
  "fields": [
@@ -24,8 +23,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Serial No",
-   "options": "Serial No",
-   "reqd": 1
+   "options": "Serial No"
   },
   {
    "fieldname": "username",
@@ -38,8 +36,7 @@
   {
    "fieldname": "activity_type",
    "fieldtype": "Data",
-   "label": "Activity type",
-   "reqd": 1
+   "label": "Activity type"
   },
   {
    "fieldname": "amended_from",
@@ -56,34 +53,29 @@
    "label": "Link Name"
   },
   {
-   "fieldname": "from",
-   "fieldtype": "Datetime",
-   "label": "From Date Time"
+   "fieldname": "nj_activity_time_log_child",
+   "fieldtype": "Table",
+   "label": "NJ Activity Time Log Child",
+   "options": "NJ Activity Time Log Child"
   },
   {
-   "fieldname": "to",
-   "fieldtype": "Datetime",
-   "label": "To Date Time"
-  },
-  {
-   "fieldname": "total",
-   "fieldtype": "Data",
-   "label": "Total Duration"
-  },
-  {
-   "fieldname": "column_break_ldbjl",
+   "fieldname": "column_break_gqsah",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "category",
+   "fieldname": "section_break_7rc2e",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qi_duration",
    "fieldtype": "Data",
-   "label": "Category"
+   "label": "Total QI Duration"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-05-07 23:39:04.814472",
+ "modified": "2025-08-08 10:38:23.269485",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log",

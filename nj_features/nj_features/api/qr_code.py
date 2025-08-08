@@ -81,13 +81,13 @@ def get_print_format_role():
         return False
 
 @frappe.whitelist()
-def print_barcode(doc):
+def print_barcode(doc,bios_serial_no=None):
     try:
         doc_dict = frappe.parse_json(doc)
         item_code = doc_dict.get('item_code') or doc_dict.get('component')
         serial_no = doc_dict.get('serial_no')
+        item_group= doc_dict.get('item_group')
         qty = doc_dict.get('qty', 1)
-        
         has_serial_no = is_serialized(item_code)
         has_batch_no = frappe.db.get_value('Item', {'name': item_code}, 'has_batch_no')
 
@@ -98,7 +98,12 @@ def print_barcode(doc):
             
             if remaining_qty > 0:
                 for _ in range(remaining_qty):
-                    serial_no = create_serial_no(item_code)
+                    if bios_serial_no is not None and bios_serial_no and item_group=="MOTHERBOARD":                    
+                        serial_no = "NJ-MBD-" + bios_serial_no
+                        if frappe.db.exists("Serial No", {"serial_no": serial_no}):
+                          serial_no = create_serial_no(item_code)                      
+                    else:
+                       serial_no = create_serial_no(item_code)
                     serial_no_list.append(serial_no)
                 
                 unique_serial_no = list(set(serial_no_list))

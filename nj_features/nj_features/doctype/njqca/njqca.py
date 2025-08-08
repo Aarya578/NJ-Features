@@ -22,7 +22,6 @@ def update_serial_no_componont_for_grade(self):
     try:
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no, for_update=True)
         serial_no_doc.bios_serial_no = self.bios_serialno
-        serial_no_doc.purchase_price = self.base_price
         serial_no_doc.current_price = self.base_price
 
         if not serial_no_doc.model:

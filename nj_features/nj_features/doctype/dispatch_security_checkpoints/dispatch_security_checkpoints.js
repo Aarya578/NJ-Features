@@ -122,12 +122,12 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                 frappe.show_progress('Fething Data...', 10);
                 frappe.call({
                     method: 'nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.scan_serial_no_data_for_return',
-                    args: { pr_name: frm.doc.scan_serial_no },
+                    args: { pr_name: frm.doc.purchase_reciept_name },
                     callback: function (r) {
                         frappe.show_progress('Fething Data...', 90);
                         if (r.message) {
-                            frm.set_value('scan_serial_no', '');
-                            frm.refresh_field('scan_serial_no');
+                            frm.set_value('purchase_reciept_name', '');
+                            frm.refresh_field('purchase_reciept_name');
                             
                             let dispatch_security_return_table = {
                                 "purchase_invoice": r.message.purchase_invoice || 'Not Available',
@@ -139,8 +139,8 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                             frm.add_child("dispatch_security_return_table", dispatch_security_return_table);
                             frm.refresh_field("dispatch_security_return_table");
                         } else {
-                            frm.set_value('scan_serial_no', '');
-                            frm.refresh_field('scan_serial_no');
+                            frm.set_value('purchase_reciept_name', '');
+                            frm.refresh_field('purchase_reciept_name');
                         }
                         frappe.hide_progress();
                     },
@@ -154,12 +154,12 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                 frappe.show_progress('Fething Data...', 10);
                 frappe.call({
                     method: "nj_features.nj_features.doctype.dispatch_security_checkpoints.dispatch_security_checkpoints.get_item_code_details_for_transfer",
-                    args: { ste_number: frm.doc.scan_serial_no },
+                    args: { ste_number: frm.doc.stock_entry_name },
                     callback: function(r) {
                         frappe.show_progress('Fething Data...', 90);
                         if (r.message) {
-                            frm.set_value('scan_serial_no', '');
-                            frm.refresh_field('scan_serial_no');
+                            frm.set_value('stock_entry_name', '');
+                            frm.refresh_field('stock_entry_name');
                             frm.clear_table("dispatch_security_stock_entry_table");
                             let errors = [];
                             let has_errors = false;

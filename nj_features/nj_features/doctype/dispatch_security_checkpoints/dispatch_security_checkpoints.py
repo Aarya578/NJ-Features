@@ -164,7 +164,6 @@ def scan_serial_no_data_for_return(pr_name):
         if not frappe.db.exists('Purchase Receipt', pr_name):
             frappe.throw(f"Serial No or Purchase Receipt: {pr_name} doesn't exist")
             return None
-        
         if pr_name:
             return_data = frappe.db.sql(f"""select Pr.name as PR, Pr.status as PR_Status , Pr.total as PR_Total, Pi.total as PI_Total,
                                             Pi.name as PI, Pi.status as PI_Status from `tabPurchase Receipt` Pr
@@ -173,7 +172,8 @@ def scan_serial_no_data_for_return(pr_name):
                                             on PII.purchase_receipt = Pr.name and 
                                             Pi.name = PII.parent
                                             where Pr.name = '{pr_name}' and Pr.is_return = 1
-                                """, as_dict=True)            
+                                """, as_dict=True)
+        print(return_data)            
         if not return_data:
             frappe.msgprint(_("No PR or PI data found for <b>{}</b>").format(pr_name))
             return None

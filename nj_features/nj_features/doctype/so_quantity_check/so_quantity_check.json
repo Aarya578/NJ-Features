@@ -14,7 +14,8 @@
   "update_qty",
   "need_to_reduce",
   "remove_parent_qty",
-  "update_qty2"
+  "update_qty2",
+  "sla"
  ],
  "fields": [
   {
@@ -79,11 +80,16 @@
   {
    "fieldname": "column_break_kqvru",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sla",
+   "fieldtype": "Int",
+   "label": "SLA"
   }
  ],
  "in_create": 1,
  "links": [],
- "modified": "2025-05-29 22:58:02.982762",
+ "modified": "2025-08-07 11:50:10.262564",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "SO Quantity Check",

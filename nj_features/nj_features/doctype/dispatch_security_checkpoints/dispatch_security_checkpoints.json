@@ -9,6 +9,8 @@
   "naming_series",
   "barcode",
   "scan_serial_no",
+  "purchase_reciept_name",
+  "stock_entry_name",
   "delivery_partner_name",
   "delivery_partner_no",
   "column_break_t5sng",
@@ -118,15 +120,28 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.dispatch_type=='Sales Order'",
    "fieldname": "barcode",
    "fieldtype": "Data",
    "label": "NJ Barcode",
    "options": "Barcode"
+  },
+  {
+   "depends_on": "eval:doc.dispatch_type=='Purchase Return'",
+   "fieldname": "purchase_reciept_name",
+   "fieldtype": "Data",
+   "label": "Purchase Reciept Name"
+  },
+  {
+   "depends_on": "eval:doc.dispatch_type=='Transfer'",
+   "fieldname": "stock_entry_name",
+   "fieldtype": "Data",
+   "label": "Stock Entry Name"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-05 12:04:05.643329",
+ "modified": "2025-08-08 17:22:11.561349",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

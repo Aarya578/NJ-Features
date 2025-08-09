@@ -33,6 +33,7 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
+        super(CustomSalesInvoice, self).validate()
         einvoice_settings = frappe.get_cached_doc("E Invoice Settings")
         if einvoice_settings.enable:
             self.validate_einvoice_fields()

@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-08-07 19:00:01.240150",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "start_time",
+  "end_time",
+  "total_duration"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "start_time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Start Time"
+  },
+  {
+   "fieldname": "end_time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "End Time"
+  },
+  {
+   "fieldname": "total_duration",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Total Duration"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-08-07 19:02:07.768416",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Activity Time Log Child",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -96,9 +96,9 @@ frappe.ui.form.on('NJQCA', {
         frm.set_df_property('njqca_item_component', 'cannot_delete_rows', true);
         frm.set_df_property('njqca_laptop_processors', 'cannot_delete_rows', true);
         frm.set_df_property('njqca_laptop_ram', 'cannot_delete_rows', true);
-        frm.get_field('njqca_laptop_storage', 'cannot_delete_rows', true);
-        frm.get_field('njqca_laptop_processors', 'cannot_add_rows', true);
-        frm.get_field('njqca_result_parameters', 'cannot_add_rows', true);
+        frm.set_df_property('njqca_laptop_storage', 'cannot_delete_rows', true);
+        frm.set_df_property('njqca_laptop_processors', 'cannot_add_rows', true);
+        frm.set_df_property('njqca_result_parameters', 'cannot_add_rows', true);
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');
         

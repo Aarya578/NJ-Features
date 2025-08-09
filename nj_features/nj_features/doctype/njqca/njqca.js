@@ -92,13 +92,13 @@ frappe.ui.form.on('NJQCA', {
     refresh: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
         $(frm.layout.wrapper).find('.form-message.red').remove();
-        frm.get_field('njqca_item_component').grid.cannot_add_rows = true;
-        frm.get_field('njqca_item_component').grid.cannot_delete_rows = true;
-        frm.get_field('njqca_laptop_processors').grid.cannot_delete_rows = true;
-        frm.get_field('njqca_laptop_ram').grid.cannot_delete_rows = true;
-        frm.get_field('njqca_laptop_storage').grid.cannot_delete_rows = true;
-        frm.get_field('njqca_laptop_processors').grid.cannot_add_rows = true;
-        frm.get_field('njqca_result_parameters').grid.cannot_add_rows = true;
+        frm.set_df_property('njqca_item_component', 'cannot_add_rows', true);
+        frm.set_df_property('njqca_item_component', 'cannot_delete_rows', true);
+        frm.set_df_property('njqca_laptop_processors', 'cannot_delete_rows', true);
+        frm.set_df_property('njqca_laptop_ram', 'cannot_delete_rows', true);
+        frm.get_field('njqca_laptop_storage', 'cannot_delete_rows', true);
+        frm.get_field('njqca_laptop_processors', 'cannot_add_rows', true);
+        frm.get_field('njqca_result_parameters', 'cannot_add_rows', true);
         frm.refresh_field('njqca_item_component');
         frm.refresh_field('njqca_result_parameters');
         

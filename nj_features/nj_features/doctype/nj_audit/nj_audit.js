@@ -21,7 +21,7 @@ frappe.ui.form.on('NJ Audit', {
     refresh: function(frm) {
 		// handleScannerInput(frm, 'scan_serial_no');
         if (frm.doc.docstatus == 0) {
-            $('[data-fieldname="scan_serial_no"]').focus();
+            $('[data-fieldname="barcode"]').focus();
         }
     },
 
@@ -38,13 +38,44 @@ frappe.ui.form.on('NJ Audit', {
         }
     },
 
+    barcode: function(frm) {
+        // handleScannerInput(frm, 'barcode');
+        if (frm.doc.barcode) { 
+			frappe.call({
+				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+				args: {  search_value: frm.doc.barcode },
+				callback: function(r) {
+					if (r.message) {
+						if (r.message.serial_no) {
+							frm.set_value('scan_serial_no', r.message.serial_no);
+						} else if (r.message.scan) {
+							frappe.msgprint("Please Scan the Serial No.");
+							frm.set_value('barcode', '');
+							frm.set_value('scan_serial_no', '');
+						}
+						frm.refresh_field("scan_serial_no");
+						frm.refresh_field("barcode");
+						$('[data-fieldname="barcode"]').focus();
+					}
+				},
+				error: function(r) {
+					frappe.msgprint("Error while scanning Serial No.");
+					frm.set_value('scan_serial_no', '');
+					frm.set_value('barcode', '');
+					frm.refresh_field("scan_serial_no");
+					frm.refresh_field("barcode");
+					$('[data-fieldname="barcode"]').focus();
+				}
+			});
+		}
+    },
+
     scan_serial_no: function (frm) {
         if (!frm.doc.scan_rack) {
             frm.set_value("scan_serial_no", "");
             frm.refresh_field("scan_serial_no");
             frappe.throw("Please select Rack");
         }
-        // handleScannerInput(frm, 'scan_serial_no');
         
         if (frm.doc.scan_serial_no != '' && frm.doc.scan_rack != '') {
             frappe.db.get_value("Serial No", {serial_no: frm.doc.scan_serial_no}, ["name","item_code","item_group", "warehouse", "purchase_rate"], (r) => {
@@ -66,7 +97,7 @@ frappe.ui.form.on('NJ Audit', {
                                     frappe.msgprint("<b>Audit Warehouse</b> is not filled.");
                                     $('.primary-action').hide();
                                     frappe.validated = false;
-                                    $('[data-fieldname="scan_serial_no"]').focus();
+                                    $('[data-fieldname="barcode"]').focus();
                                     return
                                 }
 
@@ -78,6 +109,7 @@ frappe.ui.form.on('NJ Audit', {
                             }
                             else{
                                 frm.set_value("scan_serial_no", "");
+                                frm.set_value("barcode", "");
                                 frappe.throw("Item Group <b>" + nj_audit_items.item_group + "</b> is not valid");
                             }
                         } else {
@@ -88,10 +120,13 @@ frappe.ui.form.on('NJ Audit', {
                     frappe.msgprint("Serial No: "+cur_frm.doc.scan_serial_no+" is not found.")
                 }
                 frm.set_value("scan_serial_no", "");
-                frm.refresh_field("scan_serial_no");
+                frm.set_value("barcode", "");
             })
         }
         frm.set_value("scan_serial_no", "");
+        frm.set_value("barcode", "");
+        frm.refresh_field("scan_serial_no");
+        frm.refresh_field("barcode");
     },
 
     scan_rack: function (frm) {

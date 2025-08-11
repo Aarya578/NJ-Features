@@ -21,9 +21,9 @@ frappe.ui.form.on('Serial No', {
         }
 
         $('.col-lg-2.layout-side-section').hide();
-        frm.add_custom_button(__('Print QR Code'), function() {
-            printQRCode(frm);
-        }).addClass('btn-primary');
+        // frm.add_custom_button(__('Print QR Code'), function() {
+        //     printQRCode(frm);
+        // }).addClass('btn-primary');
         frm.add_custom_button(__('Generate Report'), function() {
             get_report_data(frm);
         }).addClass('btn-primary');

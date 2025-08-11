@@ -14,7 +14,9 @@
   "grade",
   "item_template",
   "reference_row_name",
-  "check_button"
+  "check_button",
+  "reference_docname",
+  "merged"
  ],
  "fields": [
   {
@@ -94,11 +96,24 @@
    "fieldtype": "Button",
    "in_list_view": 1,
    "label": "Check Button"
+  },
+  {
+   "fieldname": "reference_docname",
+   "fieldtype": "Data",
+   "label": "Reference DocName",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "merged",
+   "fieldtype": "Check",
+   "label": "Merged",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-03 18:01:59.734578",
+ "modified": "2025-08-08 19:57:50.197040",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Ram",

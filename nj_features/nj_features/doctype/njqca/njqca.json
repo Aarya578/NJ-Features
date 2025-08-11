@@ -422,7 +422,8 @@
    "fieldname": "njqca_version",
    "fieldtype": "Data",
    "label": "NJQCA Version",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "bdt_status",
@@ -459,7 +460,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-04 11:35:05.047030",
+ "modified": "2025-08-08 18:51:22.360827",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

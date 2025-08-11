@@ -10,12 +10,13 @@
   "audit_interval",
   "audit_warehouse",
   "scan_rack",
-  "scan_serial_no",
+  "barcode",
   "column_break_j74uu",
   "stock_balance",
   "rack_balance",
   "serial_no_count",
   "work_warehouse",
+  "scan_serial_no",
   "section_break_dsalw",
   "nj_audit_items",
   "amended_from"
@@ -76,7 +77,8 @@
    "fieldname": "scan_serial_no",
    "fieldtype": "Data",
    "label": "Scan Serial No",
-   "options": "Barcode"
+   "options": "Barcode",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
@@ -113,11 +115,17 @@
    "fieldtype": "Data",
    "label": "Rack Balance",
    "read_only": 1
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "NJ Barcode",
+   "options": "Barcode"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-09-24 14:39:12.632883",
+ "modified": "2025-08-08 12:53:11.535038",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Audit",
@@ -125,67 +133,42 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 0,
-   "email": 0,
-   "export": 0,
-   "print": 0,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 0,
    "submit": 1,
    "write": 1
   },
   {
    "create": 1,
-   "delete": 0,
-   "email": 0,
-   "export": 0,
-   "print": 0,
    "read": 1,
    "report": 1,
    "role": "Stock User",
-   "share": 0,
    "submit": 1,
    "write": 1
   },
   {
    "create": 1,
-   "delete": 0,
-   "email": 0,
-   "export": 0,
-   "print": 0,
    "read": 1,
    "report": 1,
    "role": "Tech MR & Transfer Access",
-   "share": 0,
    "submit": 1,
    "write": 1
   },
   {
    "create": 1,
-   "delete": 0,
-   "email": 0,
-   "export": 0,
-   "print": 0,
    "read": 1,
    "report": 1,
    "role": "Stock Manager",
-   "share": 0,
    "submit": 1,
    "write": 1
   },
   {
    "create": 1,
-   "delete": 0,
-   "email": 0,
-   "export": 0,
-   "print": 0,
    "read": 1,
    "report": 1,
    "role": "NJ Audit Manager",
    "select": 1,
-   "share": 0,
    "submit": 1,
    "write": 1
   }

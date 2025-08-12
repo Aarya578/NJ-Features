@@ -92,12 +92,13 @@ class CustomDeliveryNote(DeliveryNote):
 
             self.update_mail_from_address()
             self.rto_charges_update()
+            # self.approve_validation()
             # self.set_cit_image_from_sales_order()
             self.fetching_tracking_details()
 
             self.update_details_to_delivery_charege_doc()
             # qi_mandatory_checks_on_dn_submit(self, method=None)
-            # # self.qc_nj_of_days_checking()
+            # self.qc_nj_of_days_checking()
             if self.is_return == 0:
                 # send_sales_invoice_email_on_delivery_note(self, method=None)
                 self._process_customer_details()
@@ -213,6 +214,36 @@ class CustomDeliveryNote(DeliveryNote):
             log_error(traceback.format_exc(), "Error in _process_customer_details")
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
+
+    def approve_validation(self):
+     
+        if self.is_return == 1:
+            return
+        # get first sales_order from child table
+        against_sales_order = frappe.get_value("Delivery Note Item", {"parent": self.name}, "against_sales_order")
+        if not against_sales_order:
+            frappe.throw("No sales order found for this sales invoice.")
+
+        query = """
+            SELECT 
+                dn.name AS delivery_note, 
+                so.approve 
+            FROM `tabDelivery Note` dn 
+            INNER JOIN `tabDelivery Note Item` dni     
+                ON dn.name = dni.parent 
+            INNER JOIN `tabSales Order` so
+                ON dni.against_sales_order = so.name 
+            WHERE so.name = %s
+        """
+        print
+        
+        results = frappe.db.sql(query, (against_sales_order,), as_dict=True)        
+        for row in results:        
+            if not row.approve or int(row.approve) != 1:
+                frappe.throw(f"Sales Order {against_sales_order} is not approved. Please approve it first.")
+
+
+
     def _process_serial_numbers(self):
 
         for item in self.items:

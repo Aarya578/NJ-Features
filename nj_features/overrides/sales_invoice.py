@@ -31,6 +31,7 @@ from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_
 from frappe import _
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
         super(CustomSalesInvoice, self).validate()
@@ -42,14 +43,15 @@ class CustomSalesInvoice(SalesInvoice):
     def before_submit(self):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
+        # self.approve_validation()
 
     def update_packing_list(self):
         """ Override the default method to prevent clearing packed_items """
         if self.update_stock:
             make_packing_list(self)
         # Removed the `else` block to prevent clearing packed_items
+
     def validate_einvoice_fields(self):
-        print("✅ CUSTOM validate_einvoice_fields() from nj_features called")
 
         invoice_eligible = _validate_eligibility(self)
         if not invoice_eligible:
@@ -67,15 +69,49 @@ class CustomSalesInvoice(SalesInvoice):
 
         elif self.irn and self.docstatus == 2 and self._action == "cancel" and not self.irn_cancelled:
             frappe.throw(_("You must cancel IRN before cancelling the document."), title=_("Cancel Not Allowed"))
+
+
+    def approve_validation(self):
+        if self.is_return == 1:
+            return
+        # get first sales_order from child table
+        sales_order_name = None
+        for item in self.items:
+            if item.sales_order:
+                sales_order_name = item.sales_order
+                break
+
+        if not sales_order_name:
+            frappe.throw("No sales order found for this sales invoice.")
+
+        query = """
+            SELECT 
+                si.name AS sales_invoice, 
+                so.approve 
+            FROM `tabSales Invoice` si 
+            INNER JOIN `tabSales Invoice Item` sii     
+                ON si.name = sii.parent 
+            INNER JOIN `tabSales Order` so
+                ON sii.sales_order = so.name 
+            WHERE so.name = %s
+        """
+        
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)
+        print("results======================",results)
+        
+        for row in results:        
+            if not row.approve or int(row.approve) != 1:
+                # self.approved = 1
+                frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
+            else:
+                self.approved = 1
+        
 # Hook this class to override default Sales Invoice behavior
 def override_sales_invoice():
     from erpnext.accounts.doctype.sales_invoice import sales_invoice
     sales_invoice.SalesInvoice = CustomSalesInvoice
 
 from frappe.utils import nowdate, add_days, getdate
-
-
-
 
 @frappe.whitelist()
 def mail_trigger_for_payment_terms_from_quotation():
@@ -125,7 +161,6 @@ def mail_trigger_for_payment_terms_from_quotation():
                         WHERE parent = %s
                     """, sinv_name, as_dict=1)
 
-                    print("payment_terms", payment_terms)
                     for term in payment_terms:
                         due_date = getdate(term["due_date"])
                         tomorrow = getdate(add_days(nowdate(), 1))
@@ -155,7 +190,6 @@ def mail_trigger_for_payment_terms_from_quotation():
                                 send_email_to_user_for_payment_terms(customer_email, subject, message, cc_mail)
                             else:
                                 msg = f"No email found for customer {customer}"
-                                print(msg)
                                 frappe.log_error(msg, "Email Not Sent")
     except Exception as e:
         frappe.log_error(message=str(e), title="Error while triggering payment terms email")
@@ -184,6 +218,9 @@ def send_email_to_user_for_payment_terms(recipient_email, subject, message, cc_e
 def custom_bulk_update_approved(names, approved_value):
     if isinstance(names, str):
         names = frappe.parse_json(names)
+    
+    if "Accounts Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw(_("You don't have the permission to perform this action."))
 
     has_permission = frappe.db.exists(
         "Custom DocPerm",
@@ -215,10 +252,9 @@ def custom_bulk_update_approved(names, approved_value):
         "updated": updated,
         "status": "success"
     }
+
 # ✅ Used inside validate()
 def custom_validate_mandatory_fields(doc):
-    print("✅ custom_validate_mandatory_fields() from nj_features")
-
     if not doc.company_address:
         frappe.throw(
             _("Company Address is mandatory to fetch company GSTIN details. Please set Company Address and try again."),
@@ -272,9 +308,7 @@ def custom_make_einvoice(invoice):
     invoice_value_details = get_invoice_value_details(invoice)
     seller_details = get_party_details(invoice.company_address)
     # dipatch_address = get_party_details(invoice.dispatch_address_name)
-    # print("✅ dipatch_address=================", dipatch_address)
     # shipping_address = get_party_details(invoice.shipping_address_name)
-    # print("✅ shipping_address=================", shipping_address)
 
     if invoice.gst_category == "Overseas":
         buyer_details = get_overseas_address_details(invoice.customer_address)
@@ -413,7 +447,6 @@ def validate_eligibility(doc):
 
 # ✅ Internal validation
 def _validate_eligibility(doc):
-    print("✅ Inside _validate_eligibility")
 
     if doc.get("doctype") != "Sales Invoice":
         return False

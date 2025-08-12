@@ -39,7 +39,7 @@ class CustomSalesOrder(SalesOrder):
 
             # if order_id:
             #     trigger_fulfillment(order_id)
-
+        self.payment_id_validation()
 
     def total_item_group_sum(self):
     # Step 1: Get item groups from NJ Settings
@@ -64,7 +64,39 @@ class CustomSalesOrder(SalesOrder):
 
         # Step 3: Update a custom field `item_group_qty` (you need to add this field in Sales Order)
         self.item_group_qty = total_qty
-        self.save(ignore_permissions=True)    
+        self.save(ignore_permissions=True)   
+
+    def payment_id_validation(self):
+        nj_setting_value = frappe.db.get_value(
+            "NJ Settings", 
+            {"parameter": "sale_type"}, 
+            "value"
+        )
+
+        # Skip if sale_type doesn't match NJ setting
+        if self.sale_type != nj_setting_value:
+            return
+
+        if self.payment_id:
+            existing_so = frappe.db.get_value(
+                "Sales Order",
+                {
+                    "payment_id": self.payment_id,
+                    "docstatus": 1,
+                    "name": ["!=", self.name]  # exclude self
+                },
+                "name"
+            )
+
+            if existing_so:
+                frappe.throw(
+                    f"Payment ID '{self.payment_id}' is already used in Sales Order: {existing_so}"
+                )
+            else:
+                self.approve = 1
+
+
+        
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):

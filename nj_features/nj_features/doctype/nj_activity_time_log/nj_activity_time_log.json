@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "serial_no.-.activity_type._.username.-.##",
+ "autoname": "serial_no.-.activity_type.-.##",
  "creation": "2024-01-27 18:53:25.775563",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -23,7 +23,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Serial No",
-   "options": "Serial No"
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "username",
@@ -31,12 +32,14 @@
    "in_list_view": 1,
    "label": "Username",
    "options": "User",
+   "read_only": 1,
    "reqd": 1
   },
   {
    "fieldname": "activity_type",
    "fieldtype": "Data",
-   "label": "Activity type"
+   "label": "Activity type",
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -50,7 +53,8 @@
   {
    "fieldname": "link_name",
    "fieldtype": "Data",
-   "label": "Link Name"
+   "label": "Link Name",
+   "read_only": 1
   },
   {
    "fieldname": "nj_activity_time_log_child",
@@ -69,13 +73,14 @@
   {
    "fieldname": "total_qi_duration",
    "fieldtype": "Data",
-   "label": "Total QI Duration"
+   "label": "Total QI Duration",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-08 10:38:23.269485",
+ "modified": "2025-08-08 18:32:03.146423",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log",

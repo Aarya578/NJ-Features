@@ -43,7 +43,7 @@ class CustomSalesInvoice(SalesInvoice):
     def before_submit(self):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
-        self.approve_validation()
+        # self.approve_validation()
 
     def update_packing_list(self):
         """ Override the default method to prevent clearing packed_items """

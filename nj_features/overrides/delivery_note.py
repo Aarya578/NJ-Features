@@ -92,7 +92,7 @@ class CustomDeliveryNote(DeliveryNote):
 
             self.update_mail_from_address()
             self.rto_charges_update()
-            self.approve_validation()
+            # self.approve_validation()
             # self.set_cit_image_from_sales_order()
             self.fetching_tracking_details()
 

@@ -40,6 +40,7 @@ class CustomSalesOrder(SalesOrder):
             # if order_id:
             #     trigger_fulfillment(order_id)
         self.payment_id_validation()
+        self.maintenance_order_validation()
 
     def total_item_group_sum(self):
     # Step 1: Get item groups from NJ Settings
@@ -94,9 +95,50 @@ class CustomSalesOrder(SalesOrder):
                 )
             else:
                 self.approve = 1
+                self.save(ignore_permissions=True) 
 
+    def maintenance_order_validation(self):
+        # Get NJ Settings value for order_type
+        nj_setting = frappe.db.get_value(
+            "NJ Settings", 
+            {"parameter": "order_type"}, 
+            "value"
+        )
+        if self.order_type != nj_setting:
+            return
 
-        
+        replacing_order_name = frappe.db.get_value(
+            "Sales Order",
+            self.name,
+            "replacing_order"
+        )
+        # print("replacing_order_name===========", replacing_order_name)
+        if not replacing_order_name:
+            frappe.throw("No replacing order found for this Sales Order.")
+
+        # Query for related Sales Invoices and their statuses
+        query = """
+            SELECT si.name, si.status
+            FROM `tabSales Invoice` si
+            INNER JOIN `tabSales Invoice Item` sii 
+                ON si.name = sii.parent
+            INNER JOIN `tabSales Order` so 
+                ON sii.sales_order = so.name
+            WHERE so.name = %s
+        """
+        results = frappe.db.sql(query, (replacing_order_name,), as_dict=True)
+        # print("results===========", results)
+
+        # Validate invoice status
+        for row in results:
+            if row.status != "Paid":
+                frappe.throw(
+                    f"Sales Invoice {row.name} has status '{row.status}'. Only 'Paid' invoices are allowed."
+                )
+            else:
+                self.approve = 1 
+
+                
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):

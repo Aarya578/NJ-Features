@@ -31,6 +31,7 @@ from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_
 from frappe import _
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
         super(CustomSalesInvoice, self).validate()
@@ -48,8 +49,8 @@ class CustomSalesInvoice(SalesInvoice):
         if self.update_stock:
             make_packing_list(self)
         # Removed the `else` block to prevent clearing packed_items
+
     def validate_einvoice_fields(self):
-        print("✅ CUSTOM validate_einvoice_fields() from nj_features called")
 
         invoice_eligible = _validate_eligibility(self)
         if not invoice_eligible:
@@ -73,9 +74,6 @@ def override_sales_invoice():
     sales_invoice.SalesInvoice = CustomSalesInvoice
 
 from frappe.utils import nowdate, add_days, getdate
-
-
-
 
 @frappe.whitelist()
 def mail_trigger_for_payment_terms_from_quotation():
@@ -125,7 +123,6 @@ def mail_trigger_for_payment_terms_from_quotation():
                         WHERE parent = %s
                     """, sinv_name, as_dict=1)
 
-                    print("payment_terms", payment_terms)
                     for term in payment_terms:
                         due_date = getdate(term["due_date"])
                         tomorrow = getdate(add_days(nowdate(), 1))
@@ -155,7 +152,6 @@ def mail_trigger_for_payment_terms_from_quotation():
                                 send_email_to_user_for_payment_terms(customer_email, subject, message, cc_mail)
                             else:
                                 msg = f"No email found for customer {customer}"
-                                print(msg)
                                 frappe.log_error(msg, "Email Not Sent")
     except Exception as e:
         frappe.log_error(message=str(e), title="Error while triggering payment terms email")
@@ -184,6 +180,9 @@ def send_email_to_user_for_payment_terms(recipient_email, subject, message, cc_e
 def custom_bulk_update_approved(names, approved_value):
     if isinstance(names, str):
         names = frappe.parse_json(names)
+    
+    if "Accounts Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw(_("You don't have the permission to perform this action."))
 
     has_permission = frappe.db.exists(
         "Custom DocPerm",
@@ -215,10 +214,9 @@ def custom_bulk_update_approved(names, approved_value):
         "updated": updated,
         "status": "success"
     }
+
 # ✅ Used inside validate()
 def custom_validate_mandatory_fields(doc):
-    print("✅ custom_validate_mandatory_fields() from nj_features")
-
     if not doc.company_address:
         frappe.throw(
             _("Company Address is mandatory to fetch company GSTIN details. Please set Company Address and try again."),
@@ -272,9 +270,7 @@ def custom_make_einvoice(invoice):
     invoice_value_details = get_invoice_value_details(invoice)
     seller_details = get_party_details(invoice.company_address)
     # dipatch_address = get_party_details(invoice.dispatch_address_name)
-    # print("✅ dipatch_address=================", dipatch_address)
     # shipping_address = get_party_details(invoice.shipping_address_name)
-    # print("✅ shipping_address=================", shipping_address)
 
     if invoice.gst_category == "Overseas":
         buyer_details = get_overseas_address_details(invoice.customer_address)
@@ -413,7 +409,6 @@ def validate_eligibility(doc):
 
 # ✅ Internal validation
 def _validate_eligibility(doc):
-    print("✅ Inside _validate_eligibility")
 
     if doc.get("doctype") != "Sales Invoice":
         return False

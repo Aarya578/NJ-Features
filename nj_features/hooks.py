@@ -46,6 +46,7 @@ doctype_js = {
     "Purchase Receipt": "public/js/purchase_receipt.js",
     "Quality Procedure": "public/js/quality_procedure.js",
     "Quality Review": "public/js/quality_review.js",
+    "Product Bundle": "public/js/product_bundle.js",
 }
 
 doctype_list_js = {
@@ -240,7 +241,11 @@ scheduler_events = {
         ],
          "0 */5 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify"
-        ]
+        ],
+        "0 */2 * * *": [
+            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.updting_sla_department"
+        ],
+        
     }
 }
 # update_status_in_shopify

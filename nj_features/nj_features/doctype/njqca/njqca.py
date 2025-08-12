@@ -1848,7 +1848,7 @@ def get_fetched_item_code(serial_no, partData):
 
     serial_no_components = frappe.db.sql(
         """
-        SELECT item_group, item FROM `tabSerial No Component`
+        SELECT item_group, item, reference_doctype_no FROM `tabSerial No Component`
         WHERE parent = %s
         """, (serial_no,), as_dict=True
     )
@@ -1859,53 +1859,58 @@ def get_fetched_item_code(serial_no, partData):
         matched = False
 
         for row in serial_no_components:
-            query2 = frappe.db.sql("""
-                SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
-                FROM `tabItem Variant Attribute`
-                WHERE parent = %s
-            """, (row.get("item")), as_dict=True)
 
-            serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
-            njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
+            if row.get("item_group") == data.get("item_group"):
+                query2 = frappe.db.sql("""
+                    SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
+                    FROM `tabItem Variant Attribute`
+                    WHERE parent = %s
+                """, (row.get("item")), as_dict=True)
 
-            serial_no_grade = serial_no_attr_data.get("grade", "").upper()
+                serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
+                njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
 
-            serial_no_attr_data.pop("grade", None)
-            njqca_attr_data.pop("grade", None)
+                serial_no_grade = serial_no_attr_data.get("grade", "").upper()
 
-            if serial_no_attr_data == njqca_attr_data:
-                data["fetched_item_code"] = row["item"]
-                matched = True
+                serial_no_attr_data.pop("grade", None)
+                njqca_attr_data.pop("grade", None)
 
-                if serial_no_grade and serial_no_grade != "UNKNOWN":
-                    data["attr_data"]["Grade"] = serial_no_grade  
-                break 
+                if serial_no_attr_data == njqca_attr_data:
+                    data["fetched_item_code"] = row["item"]
+                    matched = True
 
-            if serial_no_attr_data != njqca_attr_data and row.get("item_group") == data.get("item_group"):
-                unmatched_item_code.append(row.get("item"))
-            else:
-                data["fetched_item_code"] = ""
+                    if serial_no_grade and serial_no_grade != "UNKNOWN":
+                        data["attr_data"]["Grade"] = serial_no_grade  
+                    break 
+
+                if serial_no_attr_data != njqca_attr_data:
+                    unmatched_item_code.append(row.get("item"))
+                    data["reference_docname"] = row["reference_doctype_no"]
+                else:
+                    data["fetched_item_code"] = ""
 
         # if data.get("fetched_item_code") and not data.get("part_item_code"):
         #     frappe.throw("Fetched item code and calculated item code are different. Please contact the NPD team.")
 
-        updated_part_data.append(data) 
+        updated_part_data.append(data)
     
     partData_fetched_item = sum(
         [[data.get("part_item_code", ""), data.get("fetched_item_code", "")]
         for data in partData], []
-        )
+    )
 
     partData_fetched_item = [item for item in partData_fetched_item if item]
-    serial_no_components_list = [(row.get("item"), row.get("item_group")) for row in serial_no_components]
+    serial_no_components_list = [(row.get("item"), row.get("item_group"), row.get("reference_doctype_no")) for row in serial_no_components]
+    partData_item_groups = {data.get("item_group") for data in partData if data.get("item_group")}
 
-    for item, item_group in serial_no_components_list:
-        if item not in partData_fetched_item:
+    for item, item_group, reference_docname in serial_no_components_list:
+        if item not in partData_fetched_item and item_group in partData_item_groups:
             updated_part_data.append({
                 "fetched_item_code": item,
                 "attr_data": {},
                 "part_item_code": "",
-                "item_group": item_group  
+                "item_group": item_group,
+                "reference_docname": reference_docname
             })
 
     return updated_part_data if updated_part_data else partData

@@ -933,10 +933,10 @@ frappe.ui.form.on('NJQCA', {
                     frm.set_value('model_description', result.model_description);
                     frm.refresh_field('model_description');
 
-                    setTimeout(() => {
-                        $(`[data-fieldname="model_description"] .control-value`)
-                            .css("font-weight", "800"); 
-                    }, 100);
+                    // setTimeout(() => {
+                    //     $(`[data-fieldname="model_description"] .control-value`)
+                    //         .css("font-weight", "800"); 
+                    // }, 100);
                 }
             });
                     

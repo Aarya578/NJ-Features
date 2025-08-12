@@ -98,12 +98,12 @@ class CustomDeliveryNote(DeliveryNote):
 
             self.update_details_to_delivery_charege_doc()
             # qi_mandatory_checks_on_dn_submit(self, method=None)
-            # # self.qc_nj_of_days_checking()
-            # if self.is_return == 0:
-            #     # send_sales_invoice_email_on_delivery_note(self, method=None)
-            #     self._process_customer_details()
-            # else:
-            #     self._process_serial_numbers()
+            # self.qc_nj_of_days_checking()
+            if self.is_return == 0:
+                # send_sales_invoice_email_on_delivery_note(self, method=None)
+                self._process_customer_details()
+            else:
+                self._process_serial_numbers()
             
         except Exception as e:
             frappe.db.rollback()

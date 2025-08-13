@@ -632,6 +632,59 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         }
+
+        // return new Promise((resolve, reject) => {
+        //     let tablesToCheck = [
+        //         'njqca_laptop_ram', 'njqca_laptop_processors', 'njqca_laptop_storage'
+        //     ];
+        //     let mismatches = [];
+        //     let i = 0;
+
+        //     tablesToCheck.forEach((table) => {
+        //         frm.doc[table].forEach((row) => {
+                    
+        //             if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+        //                 mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
+        //             } else if (row.calculated_item_code !== row.fetched_item_code) {
+        //                 mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+        //             }
+
+        //             if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
+        //                 frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NPD team.`);
+        //             }
+                    
+        //         });
+        //     });
+    
+        //     if (mismatches.length > 0) {
+        //         let mismatchMessage = mismatches.join('<br>');
+        //         frappe.confirm(
+        //             `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
+        //             () => { resolve(); },
+        //             () => { reject(); }
+        //         );
+        //     } else { resolve(); }
+
+        // }).then(() => {
+        //     if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+        //         frappe.validated = false; 
+        //         frappe.confirm(
+        //             `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
+        //             () => {
+        //                 frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
+        //                     () => {
+        //                         frappe.validated = true;
+        //                         frm.save('Submit');
+        //                     },
+        //                     () => { frm.set_value('repack_item_code', ''); }
+        //                 );
+        //             },
+        //             () => { frm.set_value('repack_item_code', ''); }
+        //         );
+        //     }
+    
+        //     return false;
+        // });
     },
 
     power_on: function() {
@@ -2276,23 +2329,22 @@ function handle_merge(frm, selected_rows, child_name) {
     const [row1, row2] = selected_rows;
 
     if (!row1.fetched_item_code && !row2.fetched_item_code) {
-        frappe.show_alert("No Fetched Item Code(Serial No.) found in either row(s).", 5);
+        frappe.show_alert({message: "No Fetched Item Code(Serial No.) found in either row(s).", indicator: "red"}, 5);
         return;
     }
 
     let source_row, target_row;
+    if (row2.merged === 1 || row1.merged === 1) {
+        frappe.show_alert({message: "One of the rows has already been merged.", indicator: "red"}, 5);
+        return;
+    } 
+
     if (row1.fetched_item_code && !row2.fetched_item_code) {
         source_row = row1;
         target_row = row2;
     } else if (row2.fetched_item_code && !row1.fetched_item_code) {
         source_row = row2;
         target_row = row1;
-    } else if (row2.merged == 1 || row1.merged == 1) {
-        frappe.show_alert("One of the rows has already been merged.", 5);
-        return;
-    } else {
-        frappe.show_alert("Both rows already have Fetched Item Code(Serial No.). Merge not needed.", 5);
-        return;
     }
 
     target_row.fetched_item_code = source_row.fetched_item_code;
@@ -2304,5 +2356,5 @@ function handle_merge(frm, selected_rows, child_name) {
 
     frm.refresh_field(child_name);
 
-    frappe.show_alert("Rows merged successfully.", 5);
+    frappe.show_alert({message: "Rows merged successfully.", indicator:"blue"}, 5);
 }

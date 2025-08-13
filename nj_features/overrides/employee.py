@@ -21,13 +21,10 @@ def create_user_and_warehouse(self):
         db_department = frappe.db.get_value('Employee', {'name': self.get("name")}, 'department')
         
         user_email = create_user(self)
-
-        if 'status' in user_email:
-            return user_email
         
         return_data = { "user_id": user_email }
         
-        if user_email is not None or user_email != "":
+        if user_email:
             if self.get("employee_asset_warehouse") is None:
                 emp_ware = create_emp_ware(self, user_email)
                 if emp_ware is not None:

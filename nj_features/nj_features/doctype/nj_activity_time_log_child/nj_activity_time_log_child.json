@@ -17,31 +17,35 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Group",
-   "options": "Item Group"
+   "options": "Item Group",
+   "read_only": 1
   },
   {
    "fieldname": "start_time",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Start Time"
+   "label": "Start Time",
+   "read_only": 1
   },
   {
    "fieldname": "end_time",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "End Time"
+   "label": "End Time",
+   "read_only": 1
   },
   {
    "fieldname": "total_duration",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Total Duration"
+   "label": "Total Duration",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-08-07 19:02:07.768416",
+ "modified": "2025-08-08 18:32:38.780523",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Activity Time Log Child",

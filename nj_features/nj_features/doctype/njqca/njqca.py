@@ -514,10 +514,6 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                     
-                if self.rfq_id:
-                    s3 = time.time()
-                    self.create_serial_no_based_on_rfq()
-                    logger.debug(f"Time after create_serial_no_based_on_rfq '{self.name}': {time.time() - s3:.2f} seconds")
                 
                 if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
                     s4 = time.time()
@@ -567,30 +563,6 @@ class NJQCA(Document):
         }
         stock_data_str = json.dumps(stock_data)
         stock_entry_using_nj_lib(stock_data_str)
-
-    # def create_serial_no_based_on_rfq(self):
-    #     try:
-    #         sn_doc = frappe.new_doc("Serial No")
-    #         sn_doc.model = self.model
-    #         sn_doc.rfq_id = self.rfq_id
-    #         sn_doc.name = self.serial_no
-    #         sn_doc.item_source = self.doctype
-    #         sn_doc.item_code = self.item_code
-    #         sn_doc.item_name = self.item_code
-    #         sn_doc.serial_no = self.serial_no
-    #         sn_doc.item_group = self.item_group
-    #         sn_doc.description = self.item_code
-    #         sn_doc.bios_serial_no = self.serial_no
-    #         sn_doc.reference_doctype_no = self.name
-
-    #         sn_doc.save()
-    #         frappe.msgprint("Serial No: <b>" + self.serial_no + "</b> is created successfully.")
-
-    #     except Exception as e:
-    #         frappe.db.rollback()
-    #         frappe.throw("Error creating Serial No: " + str(e))
-    #         return None
-
 
     def validate_item_code_match(self):
         if self.item_group != "Laptops":

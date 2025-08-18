@@ -3,13 +3,10 @@
 
 import json
 import frappe
-import traceback
 from frappe import _
 from datetime import datetime, date
-from frappe import db, session, throw
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
-
 
 @frappe.whitelist()
 def create_user_and_warehouse(self):
@@ -25,12 +22,12 @@ def create_user_and_warehouse(self):
         return_data = { "user_id": user_email }
         
         if user_email:
-            if self.get("employee_asset_warehouse") is None:
+            if self.get("employee_asset_warehouse") is None and self.get("status") == "Active":
                 emp_ware = create_emp_ware(self, user_email)
                 if emp_ware is not None:
                     return_data["employee_asset_warehouse"] = emp_ware
             
-            if self.get("work_warehouse") is None or self.get("work_warehouse") == '':
+            if (self.get("work_warehouse") is None or self.get("work_warehouse") == '') and self.get("status") == "Active":
                 work_ware = create_work_ware(self, user_email)
                 if work_ware is not None:
                     return_data["work_warehouse"] = work_ware
@@ -43,14 +40,14 @@ def create_user_and_warehouse(self):
         return return_data
     
     except Exception as e:
-        frappe.msgprint("Error while creating user and warehouse: ", e)
+        frappe.throw("Error while creating user and warehouse: ", e)
 
 def update_department_in_work_warehouse(self):
 
     qty_check = frappe.db.get_value('NJ Settings', {'parameter': 'disable_qty_check'}, 'value')
     if qty_check is None:
         frappe.msgprint("Please set disable_qty_check in NJ Settings")
-    
+
     work_ware = frappe.db.get_all( "Warehouse",
         {
             'warehouse_owner': self.get("user_id"), 'disabled': 0,
@@ -148,7 +145,7 @@ def create_user(self):
             except Exception as e:
                 frappe.throw("Error while creating user: ",e)
                 
-            user_email = new_user.email
+            user_email = new_user.name
         else:
             user_email = user_data.get('name')
             emp_data = get_active_emp(user_email, fields=['role_profile'], exists=True, ignore=True)
@@ -161,7 +158,8 @@ def create_user(self):
         
         return user_email
     else:
-        return {"status": self.get('status')}
+        frappe.db.set_value('User', self.get('user_id'), 'enabled', 0, update_modified=True)
+        return self.get('user_id')
 
 def create_warehouse(user, department, location, emp_id=None, warehouse_type=None):
     parent_warehouse, user_full_name, is_main_warehouse_exists = '', '', ''
@@ -276,7 +274,6 @@ def create_work_ware(self, user_email):
     else:
         return None
 
-
 @frappe.whitelist()
 def get_previous_department(docname):
     previous_department = frappe.db.get_value('Employee', {'name': docname}, 'department')
@@ -301,7 +298,7 @@ def department_change_log(docname, cur_department, previous_department):
         new_doc.current_department = cur_department
         new_doc.changed_by = changed_by
         new_doc.changed_on = ', '.join([row['user_id'] for row in changed_on]) if changed_on else 'No user found'
-        new_doc.save()
+        new_doc.save(ignore_permissions=True)
 
     return previous_department
 
@@ -321,7 +318,7 @@ def role_profile_change_log(user_id, cur_role_profile, previous_role_profile, ra
         new_doc.current_ramp_level = ramp_level if ramp_level else None
         new_doc.changed_by = changed_by
         new_doc.changed_on = user_id
-        new_doc.save()
+        new_doc.save(ignore_permissions=True)
 
         return "Change log created successfully."
 
@@ -335,22 +332,18 @@ def get_role_profiles(department):
 @frappe.whitelist()
 def get_ramp_level(role_profile, total_days):
     try:
-        # Fetch the role profile document
         role_profile_doc = frappe.get_doc("Role Profile", role_profile)
         ramp_table = role_profile_doc.get("ramp_table")
 
-        # Iterate through the ramp_table to find the matching range
         for row in ramp_table:
             from_days = int(row.from_days)
             to_days = int(row.to_days)
             if from_days <= total_days <= to_days:
-                # Return both ramp_level and target
                 return {
                     "ramp_level": row.ramp_level,
                     "target": row.target
                 }
 
-        # If no matching range is found, return a default value or None
         return {
             "ramp_level": "Level not defined",
             "target": None
@@ -408,9 +401,7 @@ def update_employee_experience(docname, date_of_joining):
             "no_of_days": str(no_of_days)
         })
         
-        # Save the document to persist changes
-        doc.save()
-        frappe.db.commit()
+        doc.save(ignore_permissions=True)
         return "Success"
 
     except Exception as e:
@@ -485,7 +476,7 @@ def update_employee_experience_table():
                 doc.ramp_level = ramp_data["ramp_level"]
                 doc.target = ramp_data["target"]
                 
-                doc.save()
+                doc.save(ignore_permissions=True)
                 stats["success"] += 1
                 
             except Exception as e:
@@ -532,13 +523,10 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
 
         ramp_level = exp_record[0].ramp_level
 
-        # Update the ramp_level in Employee
         frappe.db.set_value("Employee", docname, "ramp_level", ramp_level, update_modified=False)
 
-        # Fetch the role profile document
         role_profile_doc = frappe.get_doc("Role Profile", role_profile)
 
-        # Get the target from Ramp Table based on ramp_level
         target = None
         for ramp in role_profile_doc.ramp_table:
             if ramp.ramp_level == ramp_level:
@@ -546,25 +534,14 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
                 break
 
         if not target:
-            frappe.throw(_("No target found in Ramp Table for the specified ramp level."))
+            frappe.msgprint(_("No target found in Ramp Table for the specified ramp level."))
 
-
-        # Update the target field in Employee
         frappe.db.set_value("Employee", docname, "target", target, update_modified=False)
 
-        frappe.db.commit()
         return {
             "ramp_level": ramp_level,
             "target": target
         }
-
-    except frappe.DoesNotExistError as e:
-        error_message = f"Required document not found: {str(e)}"
-        frappe.log_error(error_message, "Fetch and Update Ramp Level")
-
-    except frappe.ValidationError as e:
-        frappe.log_error(f"Validation error: {str(e)}", "Fetch and Update Ramp Level")
-        raise
 
     except Exception as e:
         frappe.log_error(f"Error updating ramp level and target: {str(e)}", "Fetch and Update Ramp Level")
@@ -572,7 +549,6 @@ def fetch_and_update_ramp_level(docname, department, role_profile):
 
 @frappe.whitelist()
 def auto_enroll_on_role_profile_change(employee):
-    print("calling auto_enroll_on_role_profile_change")
     doc = frappe.get_doc("Employee", employee)
     if not doc.role_profile or not doc.user_id:
         frappe.throw("Missing role profile or user ID on employee.")
@@ -649,13 +625,12 @@ def validate_employee_department_and_role(user, department, role_profile):
                             total_qty, warehouse_str)
                     }
 
-        # Safe to update
         employee_doc = frappe.get_doc("Employee", employee_name)
         employee_doc.previous_department = employee_doc.get("department")
         employee_doc.previous_role_profile = employee_doc.get("role_profile")
         employee_doc.department = department
         employee_doc.role_profile = role_profile
-        employee_doc.save()
+        employee_doc.save(ignore_permissions=True)
 
         if employee_doc.get("work_warehouse"):
 
@@ -675,7 +650,6 @@ def validate_employee_department_and_role(user, department, role_profile):
 def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filters):
     user = frappe.session.user
 
-    # ✅ Correct: Use frappe.db.get_value, not just db.get_value
     employee_level = frappe.db.get_value("Employee", {"user_id": user}, "employee_level")
 
     if not employee_level:

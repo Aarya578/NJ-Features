@@ -1,9 +1,7 @@
 import json
-
 import frappe
 from frappe.utils import nowdate, add_days
 from frappe.model.document import Document
-from nj_lib.utils.common_utils import get_active_emp
 
 class DailyIndividualReport(Document):
     pass
@@ -18,16 +16,10 @@ def fetch_data_imports():
         filters={
             'creation': ['between', [yesterday + " 00:00:00", today + " 23:59:59"]],
             'owner': user
-        },
-        fields=['name', 'status']
+        }, fields=['name', 'status']
     )
 
-    sort_order = {
-        'error': 1,
-        'pending': 2,
-        'partial success': 3,
-        'success': 4
-    }
+    sort_order = { 'error': 1, 'pending': 2, 'partial success': 3, 'success': 4 }
 
     data_imports.sort(key=lambda x: sort_order.get(x['status'].lower(), 4))
     return data_imports
@@ -35,13 +27,12 @@ def fetch_data_imports():
 @frappe.whitelist()
 def get_serial_no_data():
     user = frappe.session.user
-    # emp_data = get_active_emp(user)
 
     get_work_warehouse_query = """
         SELECT DISTINCT name AS warehouse, warehouse_owner
         FROM `tabWarehouse` 
-        WHERE (name like '%%EMP%%' OR name like '%%TR2025%%' OR name like '%%NJVEN%%') 
-        AND department != "Asset - NJ" AND warehouse_owner = %s AND disabled = 0
+        WHERE warehouse_owner = %s AND disabled = 0 AND is_group = 0 
+        AND warehouse_type IN ('Employee Personal Warehouse','Operation Warehouse')
     """
 
     work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
@@ -80,8 +71,10 @@ def mail_button_data_for_not_scan_serial_no_report(data):
 @frappe.whitelist()
 def daily_report_to_send_personal_mail():
     all_warehouse_data = frappe.db.sql("""
-        SELECT w.name, w.warehouse_owner FROM `tabWarehouse` w JOIN `tabUser` u ON w.warehouse_owner = u.email 
-                                       WHERE w.parent_warehouse LIKE '%work-warehouse%' AND w.disabled = 0 AND u.enabled = 1;
+        SELECT w.name, w.warehouse_owner 
+        FROM `tabWarehouse` w JOIN `tabUser` u ON w.warehouse_owner = u.email 
+        WHERE w.parent_warehouse LIKE '%work-warehouse%' 
+        AND w.disabled = 0 AND u.enabled = 1;
     """, as_dict=1)
     
     submitted_warehouse_data = frappe.db.sql("""
@@ -103,11 +96,7 @@ def daily_report_to_send_personal_mail():
         <p>After visiting the page, please click on the "Update Inventory" button and submit your inventory.</p>
         <p>Thank you.</p>
         """
-        send_email_to_user(
-            email, 
-            'Inventory Not Updated', 
-            message
-        )
+        send_email_to_user( email, 'Inventory Not Updated', message )
 
 @frappe.whitelist()
 def daily_report_not_submitted_warehouses_data():
@@ -140,8 +129,7 @@ def all_no_selected_serial_no_data():
         SELECT DATE(creation) AS creation_date ,serial_no, reason, owner 
         FROM `tabWork Warehouse Inventory` 
         WHERE DATE(creation) = CURRENT_DATE 
-        AND docstatus = 1 
-        AND no = 1
+        AND docstatus = 1 AND no = 1
     """, as_dict=1)
 
     if data:
@@ -165,11 +153,9 @@ def all_no_selected_serial_no_data():
         cc_emails=cc_emails
     )
 
-
 @frappe.whitelist()
 def send_email_to_user(recipient_email, subject, message,cc_emails=None):
     try:
-        # Define the email content
         email_args = {
             'recipients': recipient_email,
             'cc': cc_emails,
@@ -186,20 +172,3 @@ def send_email_to_user(recipient_email, subject, message,cc_emails=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Email Sending Failed")
         frappe.throw(f"Failed to send email: {str(e)}")
-
-@frappe.whitelist()
-def get_emp_warehouses():
-
-    user = frappe.session.user
-
-    get_work_warehouse_query = """
-        SELECT DISTINCT name AS warehouse, warehouse_owner
-        FROM `tabWarehouse` 
-        WHERE warehouse_owner = %s AND disabled = 0
-    """
-
-    work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
-
-    word_warehouse = [row.get("warehouse") for row in work_warehouse]
-
-    return ','.join(word_warehouse)

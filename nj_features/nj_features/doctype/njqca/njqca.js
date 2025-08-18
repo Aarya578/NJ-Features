@@ -317,7 +317,6 @@ frappe.ui.form.on('NJQCA', {
                     "manufacturer_model": frm.doc.manufacturer_model
                 },
                 freeze: true,
-                freeze: true,
                 freeze_message: `<div style="text-align: center;">
                     <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i><br>
                     <strong>Processing NJQCA...</strong><br>Please wait while we save or submit your data.
@@ -416,6 +415,9 @@ frappe.ui.form.on('NJQCA', {
                         
                         frm.refresh_field("njqca_result_parameters");
                     }
+                },
+                error: function(err) {
+                    console.error("Error while updating performance criteria:", err);
                 }
             });
         }
@@ -530,12 +532,79 @@ frappe.ui.form.on('NJQCA', {
 
     before_submit: async function(frm) {
 
+        if (frm.doc.serial_no && frm.doc.item_group) {
+            
+            const { message: resp } = await frappe.db.get_value('Item Group', frm.doc.item_group, 'is_component');
+            
+            if (resp && resp.is_component == 0) {
+                
+                let tablesToCheck = [ 'njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage' ];
+                let mismatches = [];
+                let i = 0;
+
+                for (let table of tablesToCheck) {
+                    for (let row of (frm.doc[table] || [])) {
+
+                        if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
+                            mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing in <b>${table}</b>.`);
+                        } else if (row.calculated_item_code !== row.fetched_item_code) {
+                            mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
+                        }
+
+                        if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
+                            mismatches.push(`The fetched item code is present, but the calculated item code is missing.`);
+                        }
+                    }
+                    mismatches.push(`<br>`)
+                }
+                
+                if (mismatches.length > 0) {
+                    const { message: ign } = await frappe.db.get_value('Inspection Type', frm.doc.inspection_type, 'ignore_part_validation');
+                    
+                    if (ign && ign.ignore_part_validation == 0) {
+                        const confirmed = await new Promise((resolve) => {
+                            frappe.confirm(
+                                `<b>The following issues were found:</b><br>${mismatches.join('<br>')}<br>`,
+                                () => resolve(false),
+                                () => resolve(false)
+                            );
+                        });
+    
+                        if (!confirmed) {
+                            frappe.validated = false;
+                            frappe.throw("Submission cancelled by user due to mismatches.");
+                        }
+                    }
+                }
+
+                if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
+                    const repackConfirmed = await new Promise((resolve) => {
+                        frappe.confirm(
+                            `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`,
+                            () => {
+                                frappe.confirm("Are you sure you want to proceed with submitting this form with the current item codes?",
+                                    () => resolve(true),
+                                    () => resolve(false)
+                                );
+                            },
+                            () => resolve(false)
+                        );
+                    });
+
+                    if (!repackConfirmed) {
+                        frappe.validated = false;
+                        frappe.throw("Submission cancelled due to item code mismatch.");
+                    }
+                }
+            }
+        }
+
         var openedUrls = JSON.parse(localStorage.getItem('openedUrls')) || [];
         await frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_sudden_drop',
             args: { 'parent_name': frm.doc.name, "item_group":frm.doc.item_group,
                 "manufacturer_model":frm.doc.manufacturer_model
-             },
+            },
             callback: function(r) {
                 if (r.message) { 
                     frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
@@ -632,59 +701,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             });
         }
-
-        // return new Promise((resolve, reject) => {
-        //     let tablesToCheck = [
-        //         'njqca_laptop_ram', 'njqca_laptop_processors', 'njqca_laptop_storage'
-        //     ];
-        //     let mismatches = [];
-        //     let i = 0;
-
-        //     tablesToCheck.forEach((table) => {
-        //         frm.doc[table].forEach((row) => {
-                    
-        //             if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-        //                 mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing for an entry in <b>${table}</b>.`);
-        //             } else if (row.calculated_item_code !== row.fetched_item_code) {
-        //                 mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-        //             }
-
-        //             if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
-        //                 frappe.throw(`The fetched item code is present, but the calculated item code is missing for an entry in <b>${table}</b>. Please contact the NPD team.`);
-        //             }
-                    
-        //         });
-        //     });
-    
-        //     if (mismatches.length > 0) {
-        //         let mismatchMessage = mismatches.join('<br>');
-        //         frappe.confirm(
-        //             `<b>The following issues were found:</b><br><br>${mismatchMessage}<br><br>Do you agree to change all mismatched or missing item codes?`,
-        //             () => { resolve(); },
-        //             () => { reject(); }
-        //         );
-        //     } else { resolve(); }
-
-        // }).then(() => {
-        //     if (frm.doc.automated_repack_item != frm.doc.repack_item_code) {
-        //         frappe.validated = false; 
-        //         frappe.confirm(
-        //             `<b>Automated Item Code: ${frm.doc.automated_repack_item}</b> <br> <b>Repack Item Code: ${frm.doc.repack_item_code}</b> are not the same.<br>Are you sure you want to Submit?`, 
-        //             () => {
-        //                 frappe.confirm( "Are you sure you want to proceed with submitting this form with the current item codes?",
-        //                     () => {
-        //                         frappe.validated = true;
-        //                         frm.save('Submit');
-        //                     },
-        //                     () => { frm.set_value('repack_item_code', ''); }
-        //                 );
-        //             },
-        //             () => { frm.set_value('repack_item_code', ''); }
-        //         );
-        //     }
-    
-        //     return false;
-        // });
     },
 
     power_on: function() {
@@ -1667,6 +1683,8 @@ frappe.ui.form.on('NJQCA Display', {
 });
 
 function fetch_item_template_disp_adp(frm, item_group, callback) {
+    if (!frm.doc.serial_no) { frappe.msgprint("Please Scan the Serial No."); return; }
+    
     frappe.call({
         method: "nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data",
         args: { serial_no: frm.doc.serial_no, item_group: item_group },
@@ -1778,14 +1796,14 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         // Define the detailed relationships between interfaces and lengths
         const relationshipMap = {
             'interfaces': {
-                'SATA': ['2.5'],
+                'SATA': ['2.5"'],
                 'M.2 NVME': ['2242', '2280'],
                 'M.2 SATA': ['2242', '2230'],
                 'M.2 PCI': ['2280'],
                 'M.SATA': ['2242']
             },
             'lengths': {
-                '2.5': ['SATA'],
+                '2.5"': ['SATA'],
                 '2242': ['M.2 NVME', 'M.2 SATA','M.SATA'],
                 '2280': ['M.2 NVME', 'M.2 PCI'],
                 '2230': ['M.2 SATA']
@@ -1796,11 +1814,11 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         const storage_filters = {
             'SSD': {
                 interfaces: ['SATA', 'M.2 NVME', 'M.2 SATA', 'M.2 PCI' ,'M.SATA'],
-                lengths: ['2280', '2242', '22110', '2.5']
+                lengths: ['2280', '2242', '22110', '2.5"']
             },
             'HDD': {
                 interfaces: ['SATA'],
-                lengths: ['2.5']
+                lengths: ['2.5"']
             }
         };
 
@@ -2052,6 +2070,8 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
+        console.log("child",child);
+        
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
     

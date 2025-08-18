@@ -755,7 +755,8 @@ function show_login_popup() {
 
             if (!r.message || r.message.length <= 1) {
                 console.log("🚨 No login today — show popup.");
-                show_login_verification_popup(user);
+                // show_login_verification_popup(user);
+                popUpWorkInventory();
             } else {
                 console.log("✅ User already logged in today — no popup.");
             }
@@ -832,45 +833,34 @@ function popUpWorkInventory() {
         primary_action: function() {
             const values = dialog.get_values();
             
-            if (values) {
+            if (values && values.work_warehouse_inventory && values.work_warehouse_inventory.length > 0) {
         
                 dialog.get_field('work_warehouse_inventory').grid.refresh();
         
                 frappe.call({
-                    method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
-                    callback: function (r) {
-                        if (r.message) {
+                    method: 'frappe.client.save',
+                    args: {
+                        doc: {
+                            doctype: 'Daily Individual Report',
+                            work_warehouse_inventory: values.work_warehouse_inventory,
+                            created_by: frappe.session.user
+                        }
+                    },
+                    callback: function(r) {
+                        if (!r.exc) {
                             frappe.call({
-                                method: 'frappe.client.save',
-                                args: {
-                                    doc: {
-                                        doctype: 'Daily Individual Report',
-                                        work_warehouse_inventory: values.work_warehouse_inventory,
-                                        warehouse: r.message,
-                                        created_by: frappe.session.user
-                                    }
-                                },
+                                method: 'frappe.client.submit',
+                                args: { doc: r.message },
                                 callback: function(r) {
                                     if (!r.exc) {
-                                        frappe.call({
-                                            method: 'frappe.client.submit',
-                                            args: { doc: r.message },
-                                            callback: function(r) {
-                                                if (!r.exc) {
-                                                    frappe.msgprint(__('Report submitted successfully.'));
-                                                    dialog.hide();
-                                                }
-                                            }
-                                        });
+                                        frappe.msgprint(__('Report submitted successfully.'));
+                                        dialog.hide();
                                     }
                                 }
                             });
-                        } else {
-                            frappe.msgprint(__('No Active Warehouse found for Employee.'));
-                            dialog.hide();
                         }
                     }
-                })
+                });
             }
         }
     });

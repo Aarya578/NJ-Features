@@ -8,7 +8,6 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
-  "warehouse",
   "section_break_tul6u",
   "data_import_report",
   "section_break_znyrl",
@@ -51,16 +50,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "warehouse",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Warehouse",
-   "options": "Warehouse",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
    "fieldname": "section_break_tul6u",
    "fieldtype": "Section Break"
   }
@@ -68,7 +57,7 @@
  "hide_toolbar": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-04-28 18:36:56.438699",
+ "modified": "2025-08-16 18:36:56.098657",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Daily Individual Report",

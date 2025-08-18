@@ -755,8 +755,7 @@ function show_login_popup() {
 
             if (!r.message || r.message.length <= 1) {
                 console.log("🚨 No login today — show popup.");
-                // show_login_verification_popup(user);
-                popUpWorkInventory();
+                show_login_verification_popup(user);
             } else {
                 console.log("✅ User already logged in today — no popup.");
             }

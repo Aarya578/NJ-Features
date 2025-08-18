@@ -17,6 +17,7 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     scan_barcode: function () {
+        cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
         if (cur_frm.doc.scan_barcode) {
             frappe.call({
                 method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",

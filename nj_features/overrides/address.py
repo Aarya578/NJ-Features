@@ -86,10 +86,6 @@ def hiding_gst_filed(links):
 
 
 
-
-import frappe, requests, json, random, string
-from frappe import _
-
 def generate_request_id(length=12):
 	chars = string.ascii_uppercase + string.digits
 	return ''.join(random.choice(chars) for _ in range(length))
@@ -130,13 +126,15 @@ def fetch_gst_details(doc):
 			"Content-Type": "application/json",
 			"user_name": "API_NJ",
 			"password": "Accounts@1234",
-			"gstin": doc.get("gstin"),
+			"gstin": "29AAGCN9792H1ZO",
 			"requestid": requestid,
 			"Authorization": f"Bearer {access_token}"
 		}
 
 		res = requests.get(url, headers=headers)
+		print("res=======================", res.json())
 		data = res.json()
+		print("data=======================", data)
 
 		if not data.get("success"):
 			frappe.throw(_("Failed to fetch GST details: {0}").format(data.get("message")))

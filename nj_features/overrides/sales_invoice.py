@@ -3,7 +3,6 @@ import json
 import requests
 import frappe
 import six
-from frappe import _
 from frappe.utils import (
     flt, getdate, cint
 )
@@ -28,7 +27,6 @@ from erpnext.regional.india.e_invoice.utils import (
 )
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_error
-from frappe import _
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 
@@ -97,7 +95,7 @@ class CustomSalesInvoice(SalesInvoice):
         """
         
         results = frappe.db.sql(query, (sales_order_name,), as_dict=True)
-        print("results======================",results)
+        # print("results======================",results)
         
         for row in results:        
             if not row.approve or int(row.approve) != 1:

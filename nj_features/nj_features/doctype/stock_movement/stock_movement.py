@@ -410,7 +410,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
     if serial_no_doc.get("item_group") in ['Laptops']:
 
         s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
-
         s_inspection_type = frappe.get_doc('Department', s_department)
 
         inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
@@ -426,7 +425,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             LIMIT 1
         """
 
-        result = frappe.db.sql(query, (serial_no), as_dict=True)
+        result = frappe.db.sql(query, (serial_no,), as_dict=True)
 
         if result:
             creation_time = result[0]["creation"]
@@ -438,7 +437,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                 FROM `tabNJ Quality Inspection`
                 WHERE inspection_type IN %s AND docstatus = 1
                 AND barcode = %s
-                order by creation desc
+                ORDER BY creation DESC
                 LIMIT 1
             """
 
@@ -449,17 +448,18 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             if qi_result:
                 qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
-                if qi_doc:
-                    if t_inspection_type.get("quality_inspection_status_for_stock_movement"):
-                        quality_inspection_status_for_stock_movement = t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                if qi_doc and t_inspection_type.get("quality_inspection_status_for_stock_movement"):
+                    quality_inspection_status_for_stock_movement = [
+                        status.strip() for status in s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                    ]
 
-                        if t_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
-                            expected_status = ", ".join(quality_inspection_status_for_stock_movement)
-                            actual_status = qi_doc.get("status")
-                            
-                            error_messages.append(
-                                f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
-                            )
+                    if qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
+                        expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                        actual_status = qi_doc.get("status")
+
+                        error_messages.append(
+                            f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, but expected status is <b>{expected_status}</b> in department <b>{t_department}</b>."
+                        )
             else:
                 error_messages.append(f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b>.")
 

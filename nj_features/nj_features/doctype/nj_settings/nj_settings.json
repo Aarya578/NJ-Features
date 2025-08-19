@@ -58,6 +58,7 @@
    "columns": 1,
    "fieldname": "value",
    "fieldtype": "Small Text",
+   "ignore_xss_filter": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Value",
@@ -109,7 +110,7 @@
   }
  ],
  "links": [],
- "modified": "2025-04-23 13:38:03.021646",
+ "modified": "2025-08-16 12:31:45.590180",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Settings",

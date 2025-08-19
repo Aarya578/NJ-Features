@@ -122,6 +122,7 @@
    "print": 1,
    "read": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   },
@@ -160,6 +161,7 @@
    "email": 1,
    "export": 1,
    "print": 1,
+   "read": 1,
    "role": "Stock User",
    "select": 1,
    "share": 1
@@ -168,6 +170,7 @@
    "email": 1,
    "export": 1,
    "print": 1,
+   "read": 1,
    "role": "Tech MR & Transfer Access",
    "select": 1,
    "share": 1

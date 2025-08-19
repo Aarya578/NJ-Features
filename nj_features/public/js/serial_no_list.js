@@ -110,39 +110,30 @@ frappe.require("/assets/nj_features/js/nj_features.js", function() {
                                 });
                             } else {
                                 frappe.call({
-                                    method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_emp_warehouses',
-                                    callback: function (r) {
-                                        if (r.message) {
+                                    method: 'frappe.client.save',
+                                    args: {
+                                        doc: {
+                                            doctype: 'Daily Individual Report',
+                                            work_warehouse_inventory: values.work_warehouse_inventory,
+                                            warehouse: r.message,
+                                            created_by: frappe.session.user
+                                        }
+                                    },
+                                    callback: function(r) {
+                                        if (!r.exc) {
                                             frappe.call({
-                                                method: 'frappe.client.save',
-                                                args: {
-                                                    doc: {
-                                                        doctype: 'Daily Individual Report',
-                                                        work_warehouse_inventory: values.work_warehouse_inventory,
-                                                        warehouse: r.message,
-                                                        created_by: frappe.session.user
-                                                    }
-                                                },
+                                                method: 'frappe.client.submit',
+                                                args: { doc: r.message },
                                                 callback: function(r) {
                                                     if (!r.exc) {
-                                                        frappe.call({
-                                                            method: 'frappe.client.submit',
-                                                            args: { doc: r.message },
-                                                            callback: function(r) {
-                                                                if (!r.exc) {
-                                                                    frappe.msgprint(__('Report submitted successfully.'));
-                                                                    dialog.hide();
-                                                                }
-                                                            }
-                                                        });
+                                                        frappe.msgprint(__('Report submitted successfully.'));
+                                                        dialog.hide();
                                                     }
                                                 }
                                             });
-                                        } else {
-                                            frappe.msgprint(__('Please set your Work Warehouse in Employee.'));
                                         }
                                     }
-                                })
+                                });
                             }
                         }
                     }

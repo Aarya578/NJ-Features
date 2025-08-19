@@ -28,11 +28,6 @@ def update_serial_no_componont_for_grade(self):
             model = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'item_model')
             if model:
                 serial_no_doc.model = model
-        # for reading in (self.njqca_item_component):
-        #     if reading.part_item_code and reading.item_group:
-        #         for sn in serial_no_doc.serial_no_component:
-        #             if reading.item_group == sn.item_group:
-        #                 sn.item = reading.part_item_code
         
         item_template = frappe.db.get_value('Item', {'name':serial_no_doc.item_code}, 'variant_of')
 
@@ -528,12 +523,6 @@ class NJQCA(Document):
                 if qi_data:
                     if qi_data.get('msg_pnt'):
                         frappe.msgprint(qi_data.get('msg_pnt'))
-                
-                # nj_settings_item_group = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_battery'}, 'value')
-                # if nj_settings_item_group and self.item_group != nj_settings_item_group and self.item_group == sn_item_group:
-                #     s5 = time.time()
-                #     update_serial_no_componont_for_grade(self)
-                #     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
 
             except Exception as e:
                 frappe.db.rollback()
@@ -767,7 +756,6 @@ class NJQCA(Document):
         except Exception as e:
             log_error(f"Error updating Item Group Report: {str(e)}", "Item Group Report Update Error")
 
-        
 def get_repack_items(self):
     get_repack_items_list = []
 
@@ -1079,7 +1067,7 @@ def get_item_code_for_each_part(doc):
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
                             normalize_cpu = normalize_gen(cpu_value)
                             if normalize_cpu and len(normalize_cpu) > 0:
-                                attribute_object[mapping.get('attribute_name')] = normalize_cpu[0]
+                                attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(normalize_cpu, mapping.get('attribute_name'))
 
                         elif item_group.lower() == ram.lower() and (row.get('variant_1') != 'SYSTEM MEMORY' and row.get('variant_1') != '[EMPTY]'):
                             if part_item_group == item_group:
@@ -1088,32 +1076,32 @@ def get_item_code_for_each_part(doc):
                                         skip_ram = True
                                         continue
                                     else:
-                                        attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                                 
                                 if skip_ram:
                                     continue
 
                                 if variant == 'variant_7':
                                     if row.get(variant) == '26':
-                                        attribute_object[mapping.get('attribute_name')] = 'DDR4'
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp('DDR4', mapping.get('attribute_name'))
                                     elif row.get(variant) == '23':
-                                        attribute_object[mapping.get('attribute_name')] = 'DDR3'
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp('DDR3', mapping.get('attribute_name'))
                                     elif 'ddr' in row.get(variant).lower():
-                                        attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                                 
                                 if variant == 'variant_8':
                                     match = re.search(r'\d+', row.get(variant))
                                     if match:
-                                        attribute_object[mapping.get('attribute_name')] = f"{match.group()} GHZ"
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(f"{match.group()} GHZ", mapping.get('attribute_name'))
                                     else:
-                                        attribute_object[mapping.get('attribute_name')] = 'UNKNOWN SPEED'
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp('UNKNOWN SPEED', mapping.get('attribute_name'))
                             
                             else:
                                 if variant == 'variant_6':
                                     if 'GB' not in row.get(variant) or 'NO MODULE INSTALLED' in row.get(variant):
                                         continue
                                     else:
-                                        attribute_object[mapping.get('attribute_name')] = row.get(variant)
+                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
                         elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')):
                             variant_type = ''
@@ -1124,7 +1112,7 @@ def get_item_code_for_each_part(doc):
 
                             if variant == 'variant_10': 
                                 if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
-                                    attribute_object[mapping.get('attribute_name')] = row.get(variant) + variant_type
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant) + variant_type, mapping.get('attribute_name'))
                                     
                                 else:
                                     skip_memory = True
@@ -1140,7 +1128,6 @@ def get_item_code_for_each_part(doc):
                             if not process_variant_status and not skip_memory:
                                 process_variant('variant_6', row, mapping, attribute_object)
 
-                            
                 part_data = set_part_data(item_group, attribute_object, row, part_data, doc)
         parent_item_group = doc.get('item_group')
 
@@ -1174,6 +1161,14 @@ def get_item_code_for_each_part(doc):
     except Exception as e:
         frappe.throw("An error occurred: " + str(e))
         return {"error": f"An error occurred: {str(e)}"}
+    
+def get_attribute_from_erp(attribute_value, parent):
+    erp_normalize_cpu_query = """SELECT attribute_value FROM `tabItem Attribute Value` WHERE attribute_value = %s AND parent = %s"""
+    erp_normalize_cpu = frappe.db.sql(erp_normalize_cpu_query, (attribute_value, parent))
+
+    if erp_normalize_cpu:
+        return erp_normalize_cpu[0][0]
+    return None
 
 def process_variant(variant, row, mapping, attribute_object):
     if 'interface' in mapping.get('attribute_name').lower() and row.get(variant):
@@ -1297,7 +1292,8 @@ def consolidate_ram_capacities(data):
                             existing_type = existing_type or ''
                             
                             if existing_type.upper() == type_.upper():
-                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB {existing_type.strip()}"
+                                ram_type = existing_type.strip()
+                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB{f' {ram_type}' if ram_type else ''}"
                             else:
                                 frappe.msgprint(f"Different RAM Type is not allowed")
                                 return
@@ -1694,10 +1690,7 @@ def get_serial_no_attribute_data(serial_no, item_group):
         if adap_dis_item_code:
             return adap_dis_item_code
         
-        return None
-    
-    elif not serial_no:
-        frappe.msgprint(f"Part Data not found for Item Group: {item_group}")
+    return None
     
 
 @frappe.whitelist()

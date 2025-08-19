@@ -688,6 +688,7 @@ def awb_number_tracking_status():
     }
 
 def update_status_in_shopify():
+    print("Updating status in Shopify...========================")
     token = "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"
     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 
@@ -746,7 +747,7 @@ def update_status_in_shopify():
                 },
                 "shopify_delivery_status"
             )
-            # print("shopify_delivery_status=================================",shopify_delivery_status)
+            print("shopify_delivery_status=================================",shopify_delivery_status)
 
             if not shopify_delivery_status:
                 logistics_settings = frappe.get_doc("Logistics Settings")
@@ -776,7 +777,7 @@ def update_status_in_shopify():
                 continue
 
             post_result = post_response.json()
-            # print("post second api data==========================================", post_result)
+            print("post second api data==========================================", post_result)
 
         except requests.exceptions.RequestException as e:
             frappe.logger().error(f"[{dc.name}] Shopify API connection error: {str(e)}")

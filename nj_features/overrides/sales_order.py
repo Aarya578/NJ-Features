@@ -39,8 +39,8 @@ class CustomSalesOrder(SalesOrder):
 
             # if order_id:
             #     trigger_fulfillment(order_id)
-        # self.payment_id_validation()
-        # self.maintenance_order_validation()
+        self.payment_id_validation()
+        self.maintenance_order_validation()
 
     def total_item_group_sum(self):
     # Step 1: Get item groups from NJ Settings

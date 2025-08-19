@@ -90,9 +90,11 @@ class CustomDeliveryNote(DeliveryNote):
                 else:
                     print(f"No Sales Order found for DN {self.name}")
 
+            self.return_dn_validation()      
+            self.payment_validattion()
             self.update_mail_from_address()
             self.rto_charges_update()
-            # self.approve_validation()
+            self.approve_validation()
             # self.set_cit_image_from_sales_order()
             self.fetching_tracking_details()
 
@@ -214,7 +216,39 @@ class CustomDeliveryNote(DeliveryNote):
             log_error(traceback.format_exc(), "Error in _process_customer_details")
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
+    def return_dn_validation(self):
+        if self.is_return == 1:
+            # Fetch forward DN values
+            forward_dn = frappe.db.get_value(
+                "Delivery Note",
+                self.return_against,
+                ["grand_total", "total_taxes_and_charges"],
+                as_dict=True
+            )
 
+            if not forward_dn:
+                frappe.throw(_("Forward Delivery Note not found"))
+
+            # Convert return values to positive for comparison
+            return_grand_total = abs(self.grand_total)
+            return_taxes = abs(self.total_taxes_and_charges)
+
+            # Validate grand_total
+            if return_grand_total > forward_dn.grand_total:
+                frappe.throw(
+                    _(f"Return DN grand total {return_grand_total} is greater than "
+                    f"the forward DN grand total {forward_dn.grand_total}")
+                )
+
+            # Validate total_taxes_and_charges
+            if return_taxes > forward_dn.total_taxes_and_charges:
+                frappe.throw(
+                    _(f"Return DN taxes {return_taxes} are greater than "
+                    f"the forward DN taxes {forward_dn.total_taxes_and_charges}")
+                )
+
+
+            
     def approve_validation(self):
      
         if self.is_return == 1:
@@ -334,25 +368,62 @@ class CustomDeliveryNote(DeliveryNote):
             if not self.shipping_address_name:
                 frappe.throw("Shipping address not set on Delivery Note.")
             
-            address = frappe.get_doc("Address", self.shipping_address_name)
-            # print("address=======================", address)
-            
+            address = frappe.get_doc("Address", self.shipping_address_name)            
             email_id = address.get("email_id")  # Use .get() for safer access
-            # print("email_id=======================", email_id)
-            
+            # print("email_id=======================", email_id) 
             if not email_id:
-                frappe.throw(f"No email_id found in address {self.shipping_address_name}")
-            
+                frappe.throw(f"No email_id found in address {self.shipping_address_name}")       
             self.email = email_id
-            # print("self.email=======================", self.email)
-            
+            # print("self.email=======================", self.email)    
             self.save(ignore_permissions=True)
-            return f"Email set to {email_id} for Delivery Note {self.name}"
-            
+            return f"Email set to {email_id} for Delivery Note {self.name}"        
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_mail_from_address")
             frappe.throw(f"Error updating email from address: {str(e)}")
         
+
+
+    def payment_validattion(self):
+        if self.is_return:
+            return
+        # Get Shopify order number from the document
+        order_id = self.shopify_order_number
+        print("order_id=======================", order_id)
+        if not order_id:
+            return
+        # print("order_id=======================", order_id)
+
+        # Shopify API details
+        shopify_url = f"https://newjaisa.myshopify.com/admin/api/2025-01/orders/{order_id}.json"
+        headers = {
+            "X-Shopify-Access-Token": "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"
+        }
+
+        try:
+            # Fetch order data from Shopify
+            response = requests.get(shopify_url, headers=headers)
+            # print("response=======================", response)
+            response.raise_for_status()  # Raise exception if request failed
+
+            order_data = response.json().get("order", {})
+            # print("order_data=======================", order_data)
+
+            cancel_reason = order_data.get("cancel_reason")
+            # print("cancel_reason=======================", cancel_reason)
+            financial_status = order_data.get("financial_status", "").lower()
+            # print("financial_status=======================", financial_status)
+
+            # Condition 1: Order is cancelled
+            if cancel_reason is not None:
+                frappe.throw("Error from Reason Order is cancelled, please contact support.")
+
+
+            # Condition 2: Refund detected
+            if "refund" in financial_status:
+                frappe.throw("Error from financial_status Order is refunded, please contact support.")
+
+        except requests.RequestException as e:
+            frappe.throw(f"Error connecting to Shopify API: {e}")
 
             
     def fetching_tracking_details(self):
@@ -745,45 +816,45 @@ def send_sales_invoice_email_on_delivery_note(doc, method=None):
     except Exception as e:
         frappe.log_error(message=str(e), title="Sales Invoice Email Failed")
 
-# @frappe.whitelist()
-# def get_cod_amount(so_name):
-#     try:
-#         headers = {
-#             "Content-Type": "application/json",
-#             "X-Shopify-Access-Token": TOKEN
-#         }
+@frappe.whitelist()
+def get_cod_amount(so_name):
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": TOKEN
+        }
 
-#         filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
+        filters = {"name": so_name, "docstatus": 1,'order_type':"Sales"}
 
-#         raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
+        raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_id")
 
-#         if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
-#             order_id = raw_order_id.lstrip('#')
-#         else:
-#             raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
-#             order_id = raw_order_id.lstrip('#') if raw_order_id else None
+        if raw_order_id and len(raw_order_id.lstrip('#')) < 7:
+            order_id = raw_order_id.lstrip('#')
+        else:
+            raw_order_id = frappe.get_value("Sales Order", filters, "order_id")
+            order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-#             if not order_id:
-#                 raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
-#                 order_id = raw_order_id.lstrip('#') if raw_order_id else None
+            if not order_id:
+                raw_order_id = frappe.get_value("Sales Order", filters, "shopify_order_number")
+                order_id = raw_order_id.lstrip('#') if raw_order_id else None
 
-#         if not order_id:
-#             return {"order_id": None, "cod_amount": 0}
+        if not order_id:
+            return {"order_id": None, "cod_amount": 0}
 
-#         url = f"{SHOPIFY_URL}{order_id}"
-#         response = requests.get(url, headers=headers)
-#         data = response.json()
+        url = f"{SHOPIFY_URL}{order_id}"
+        response = requests.get(url, headers=headers)
+        data = response.json()
 
-#         if "orders" in data and data["orders"]:
-#             order = data["orders"][0]
-#             cod_amount = order.get("total_outstanding", 0)
-#             return {"order_id": order_id, "cod_amount": cod_amount}
+        if "orders" in data and data["orders"]:
+            order = data["orders"][0]
+            cod_amount = order.get("total_outstanding", 0)
+            return {"order_id": order_id, "cod_amount": cod_amount}
 
-#         return {"order_id": order_id, "cod_amount": 0}
+        return {"order_id": order_id, "cod_amount": 0}
 
-#     except Exception as e:
-#         frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
-#         return {"order_id": None, "cod_amount": 0}
+    except Exception as e:
+        frappe.log_error(f"Error in get_cod_amount: {str(e)}", "Shopify COD Fetch Error")
+        return {"order_id": None, "cod_amount": 0}
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id,original_order_id=None,shopify_order_no=None,dn_name=None):

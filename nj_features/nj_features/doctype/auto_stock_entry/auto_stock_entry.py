@@ -7,6 +7,8 @@ from frappe.model.document import Document
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_features.nj_features.api.api_files import search_for_serial_or_batch_or_barcode_no
 
+logger = frappe.logger("nj_auto_stock_entry", allow_site=True, file_count=1)
+
 class AutoStockEntry(Document):
 	pass
 
@@ -77,9 +79,9 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
         
-        print("department_doc.get('quality_inspection_status_for_stock_movement')", department_doc.get('quality_inspection_status_for_stock_movement'))
-        print("s_department_doc.get('inspection_types')", s_department_doc.get('inspection_types'))
-        print("department_doc.get('inspection_types')", department_doc.get('inspection_types'))
+        logger.debug(department_doc.get('quality_inspection_status_for_stock_movement'))
+        logger.debug(s_department_doc.get('inspection_types'))
+        logger.debug(department_doc.get('inspection_types'))
 
         if s_department_doc.get('quality_inspection_status_for_stock_movement') and (s_department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
             check_qi_validation(serial_no, s_warehouse, s_department, department)
@@ -223,9 +225,18 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                     qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
                     if qi_doc:
-                        allowed_statuses = s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                        allowed_statuses = [
+                            status.strip()
+                            for status in s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                        ]
 
-                        if s_inspection_type.get("quality_inspection_status_for_stock_movement") and qi_doc.get("status") not in allowed_statuses:
+                        logger.debug("\n\n")
+                        logger.debug("allowed_statuses: ")
+                        logger.debug(allowed_statuses)
+                        logger.debug("qi_doc.status: ")
+                        logger.debug(qi_doc.get("status"))
+
+                        if allowed_statuses and qi_doc.get("status") not in allowed_statuses:
                             expected_status = ", ".join(allowed_statuses)
                             actual_status = qi_doc.get("status")
 

@@ -168,7 +168,8 @@ def update_so_quantity_check(settings):
                 LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
                 LEFT JOIN `tabItem` it ON it.item_code = pb.item_code
                 WHERE 
-                    so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
+                    so.status NOT IN ('Closed', 'Completed', 'Cancelled')
+                    AND so.docstatus = 1
                     AND so.creation > CURDATE() - INTERVAL 50 DAY
                     AND soi.item_group IN ('Laptops','Chromebooks')
                     AND so.sale_type != 'Amazon'

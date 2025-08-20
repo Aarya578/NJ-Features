@@ -57,7 +57,10 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
 					$('[data-fieldname="barcode"]').focus();
 				}
 			});
-		}
+		} else {
+            frm.set_value('scan_serial_no', '');
+            frm.refresh_field("scan_serial_no");
+        }
     },
 
     scan_serial_no: function (frm) {

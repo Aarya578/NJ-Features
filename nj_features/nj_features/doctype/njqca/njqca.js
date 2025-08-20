@@ -538,7 +538,7 @@ frappe.ui.form.on('NJQCA', {
             
             if (resp && resp.is_component == 0) {
                 
-                let tablesToCheck = [ 'njqca_laptop_processors', 'njqca_laptop_ram', 'njqca_laptop_storage' ];
+                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage' ];
                 let mismatches = [];
                 let i = 0;
 
@@ -546,16 +546,9 @@ frappe.ui.form.on('NJQCA', {
                     for (let row of (frm.doc[table] || [])) {
 
                         if (!row.calculated_item_code || row.calculated_item_code.trim() === "") {
-                            mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing in <b>${table}</b>.`);
-                        } else if (row.calculated_item_code !== row.fetched_item_code) {
-                            mismatches.push(`<br><b>${++i}.</b> The <b>fetched item code: ${row.fetched_item_code}</b> is different from the <b>calculated item code: ${row.calculated_item_code}</b>.`);
-                        }
-
-                        if (row.fetched_item_code && (!row.calculated_item_code || row.calculated_item_code.trim() === "")) {
-                            mismatches.push(`The fetched item code is present, but the calculated item code is missing.`);
+                            mismatches.push(`<br><b>${++i}.</b> The calculated item code is missing in <b>${table}</b>.<br>`);
                         }
                     }
-                    mismatches.push(`<br>`)
                 }
                 
                 if (mismatches.length > 0) {
@@ -1187,10 +1180,14 @@ function processItemTemplate(frm) {
                             show_checkbutton_for_field(frm, 'njqca_laptop_storage');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);        
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_type', row.attr_data["Storage Type"]);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'storage_capacity', row.attr_data["Storage Capacity"]);
+                            let storageValue = row.attr_data["Storage Capacity"];
+                            if (storageValue) {
+                                storageValue = storageValue.replace(/\s*ssd\s*$/i, '');
+                                frappe.model.set_value(newRow.doctype, newRow.name, 'storage_capacity', storageValue);
+                            }
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_interface', row.attr_data["Storage Interface"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_length', row.attr_data["Storage Length"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);

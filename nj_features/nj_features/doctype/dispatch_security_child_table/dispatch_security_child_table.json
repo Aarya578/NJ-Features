@@ -16,7 +16,8 @@
   "customer_name",
   "courier_name",
   "tracking_id",
-  "email_id"
+  "email_id",
+  "is_cod"
  ],
  "fields": [
   {
@@ -98,11 +99,18 @@
    "fieldtype": "Data",
    "label": "Email Id",
    "options": "Email"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_cod",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is COD"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-07-08 16:08:21.868371",
+ "modified": "2025-08-20 18:11:37.814250",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Child Table",

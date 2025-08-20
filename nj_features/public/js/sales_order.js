@@ -17,14 +17,14 @@ frappe.ui.form.on('Sales Order', {
         
     },
    
-    onload_post_render: function(frm) {
-        frm.remove_custom_button('Delivery Note', 'Create');
-        $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();
-    },
-        // onload_post_render: function(frm) {
-    //     frm.remove_custom_button('Sales Invoice', 'Create');
-    //     $('span.menu-item-label[data-label="Create%20%3E%Sales%20Invoice"]').closest('li').hide();
+    // onload_post_render: function(frm) {
+    //     frm.remove_custom_button('Delivery Note', 'Create');
+    //     $('span.menu-item-label[data-label="Create%20%3E%20Delivery%20Note"]').closest('li').hide();
     // },
+    onload_post_render: function(frm) {
+        frm.remove_custom_button('Sales Invoice', 'Create');
+        $('span.menu-item-label[data-label="Create%20%3E%Sales%20Invoice"]').closest('li').hide();
+    },
     amazon_order_id: function(frm) {
         $(frm.fields_dict.amazon_order_id.input).on('blur', function() {
             validateAmazonOrderID(frm);

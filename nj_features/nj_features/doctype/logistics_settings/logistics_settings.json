@@ -39,7 +39,9 @@
   "column_break_xm8zx",
   "e_password",
   "gstin",
-  "eway_url"
+  "eway_url",
+  "section_break_reijd",
+  "coupon_codes"
  ],
  "fields": [
   {
@@ -220,11 +222,21 @@
    "fieldtype": "Table",
    "label": "Return Reason",
    "options": "Return Reason"
+  },
+  {
+   "fieldname": "coupon_codes",
+   "fieldtype": "Table",
+   "label": "Coupon Codes",
+   "options": "Coupon Codes"
+  },
+  {
+   "fieldname": "section_break_reijd",
+   "fieldtype": "Section Break"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-07-26 11:51:35.319693",
+ "modified": "2025-08-14 13:03:25.813140",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

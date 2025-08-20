@@ -64,4 +64,3 @@ def render_html_content_from_field(doctype, docname):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Render HTML Template Error")
         return f"Template rendering failed: {str(e)}"
-

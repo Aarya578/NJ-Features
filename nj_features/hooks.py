@@ -48,11 +48,12 @@ doctype_js = {
     "Quality Review": "public/js/quality_review.js",
     "Product Bundle": "public/js/product_bundle.js",
     "Address": "public/js/address.js",
+    "Sales Order": "public/js/sales_order.js",
 }
 
 doctype_list_js = {
     "Employee": "public/js/employee_list.js",
-    "Sales Order": "public/js/sales_order.js",
+    "Sales Order": "public/js/sales_order_list.js",
     "Serial No": "public/js/serial_no_list.js",
     "Sales Invoice": "public/js/sales_invoice_list.js"
 }

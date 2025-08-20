@@ -27,20 +27,19 @@ function viewButton(listview) {
 
 function openStockEntryForm(stockType) {
     frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, ['name', 'work_warehouse'], function(response) {
-        if (!response.name) {
-            frappe.msgprint(`Employee not found for User: `+$(frappe.session.user_email)+`. Please mail us at <strong><a href="mailto:itsupport@newjaisa.com">itsupport@newjaisa.com</a></strong> to create an employee.`);
+        if (!response || !response.name) {
+            frappe.msgprint(`Employee not found for User: `+frappe.session.user_email+`.`);
             return;
         }
 
-        // Employee exists, proceed with Stock Entry creation
         frappe.model.with_doctype('Stock Movement', function () {
             var doc = frappe.model.get_new_doc('Stock Movement');
             if (stockType === 1) {
                 doc.transfer_status = "Stock Accept";
                 doc.stock_entry_type = "Material Transfer"
                 doc.naming_series = "SMA-.YYYY.-.MM.-"
-                if (!response.work_warehouse) {
-                    frappe.msgprint('Work Warehouse does not exist.');
+                if (!response && !response.work_warehouse) {
+                    frappe.msgprint('Work Warehouse does not exist for User: '+frappe.session.user_email+'.');
                     return;
                 } else {
                     doc.default_target_warehouse = response.work_warehouse;
@@ -49,8 +48,8 @@ function openStockEntryForm(stockType) {
                 doc.transfer_status = "Racking";
                 doc.stock_entry_type = "Material Transfer"
                 doc.naming_series = "SMR-.YYYY.-.MM.-"
-                if (!response.work_warehouse) {
-                    frappe.msgprint('Work Warehouse does not exist.');
+                if (!response && !response.work_warehouse) {
+                    frappe.msgprint('Work Warehouse does not exist for User: '+frappe.session.user_email+'.');
                     return;
                 } else {
                     doc.default_source_warehouse = response.work_warehouse;

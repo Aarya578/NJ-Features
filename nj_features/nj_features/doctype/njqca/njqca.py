@@ -594,10 +594,8 @@ class NJQCA(Document):
         if not self.serial_no:
             frappe.throw("Serial No not set on NJQCA document.")
 
-        # Get Serial No doc
         serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
 
-        # Map result parameters to Serial No field names
         parameter_map = {
             'Average_CPU_Load_IDLE': 'average_cpu_load_idle',
             'Average_Discharge_Rate_IDLE': 'average_discharge_rate_idle',
@@ -605,17 +603,14 @@ class NJQCA(Document):
             'Average_Discharge_Rate_HEAVY': 'average_discharge_rate_heavy'
         }
 
-        # Update Serial No fields
         for row in results:
             field_name = parameter_map.get(row.parameter)
             if field_name:
                 serial_no_doc.set(field_name, row.value)
 
-        # Also set reference to the NJQCA doc
         serial_no_doc.set("njqca_reference_name", self.name)
 
         serial_no_doc.save()
-        frappe.db.commit()
 
     def battery_readings(self):
         # Check if NJQCA's item group is BATTERY
@@ -630,9 +625,7 @@ class NJQCA(Document):
             return
         
         try:
-            # Fetch Serial No doc
             serial_no_doc = frappe.get_doc("Serial No", self.component_serial_no)
-            # Check if Serial No's item group is Battery
             if serial_no_doc.item_group != 'BATTERY':
                 frappe.msgprint("Serial No's item group is not 'Battery'. Skipping update.")
                 return
@@ -652,7 +645,6 @@ class NJQCA(Document):
                 frappe.msgprint("No battery readings found in NJQCA Child.")
                 return
             
-            # Update basic battery fields
             serial_no_doc.full_charge_capacity = battery_data.variant_3
             serial_no_doc.current_charge_capacity = battery_data.variant_8
             serial_no_doc.health = battery_data.variant_10
@@ -674,7 +666,6 @@ class NJQCA(Document):
                 serial_no_doc.battery_average_cpu_load = average_cpu_load
                 serial_no_doc.battery_average_discharge_rate = average_discharge_rate                
                 serial_no_doc.save()
-                frappe.db.commit()            
                 frappe.msgprint("Battery readings and averages updated successfully.")
                 
         except Exception as e:
@@ -698,7 +689,6 @@ class NJQCA(Document):
 
             serial_doc = frappe.get_doc("Serial No", serial_no)
 
-            # Fetch NJQCA Child rows
             child_data = frappe.get_all(
                 "NJQCA Child",
                 filters={"parent": self.name},
@@ -708,7 +698,6 @@ class NJQCA(Document):
                 ]
             )
 
-            # Mapping item group to specific variants
             field_map = {
                 "Laptop RAM": ["variant_6", "variant_7", "variant_8"],
                 "Laptop Processors": ["variant_1", "variant_6", "variant_7"],
@@ -716,7 +705,6 @@ class NJQCA(Document):
                 "WIFI CARD": ["variant_1", "variant_2", "variant_3"]
             }
 
-            # Clear existing item_group_report entries
             serial_doc.item_group_report = []
 
             for row in child_data:
@@ -724,23 +712,20 @@ class NJQCA(Document):
                 if item_group not in field_map:
                     continue
 
-                # Conditional checks for Laptop RAM
                 if item_group == "Laptop RAM":
                     if not all([row.variant_6, row.variant_7, row.variant_8]):
-                        continue  # skip if any required RAM field is missing
+                        continue
 
-                # Conditional checks for LAPTOP STORAGE
                 if item_group == "LAPTOP STORAGE":
                     if not row.variant_6 or not row.variant_10:
-                        continue  # skip if required fields missing
+                        continue
                     try:
-                        storage_size = int(row.variant_10.split()[0])  # Assumes format like "256 GB"
+                        storage_size = int(row.variant_10.split()[0])
                         if storage_size < 64:
-                            continue  # skip if not >64 GB
+                            continue
                     except:
-                        continue  # skip if can't parse size
+                        continue
 
-                # Compose specification value
                 variant_fields = field_map[item_group]
                 values = [row.get(field) for field in variant_fields if row.get(field)]
 
@@ -881,10 +866,10 @@ def get_info_from_serial_no(doc=None):
             bios_serial_no_in_ui = doc_json['bios_serialno']
 
             sql_query = """
-                SELECT name,item_code, warehouse, purchase_rate,
+                SELECT name,item_code, warehouse, purchase_rate, status,
                     bios_serial_no, model, item_group, brand
                 FROM `tabSerial No`
-                WHERE bios_serial_no = %s and status = 'Active' """
+                WHERE bios_serial_no = %s"""
 
             sle = frappe.db.sql(sql_query, (bios_serial_no_in_ui), as_dict=1)
 
@@ -892,15 +877,18 @@ def get_info_from_serial_no(doc=None):
                 serial_no = doc_json['serial_no']
 
                 sql_query = """
-                    SELECT name,item_code, warehouse, purchase_rate,
+                    SELECT name,item_code, warehouse, purchase_rate, status,
                         bios_serial_no, model, item_group, brand
                     FROM `tabSerial No`
-                    WHERE name = %s and status = 'Active' """
+                    WHERE name = %s"""
 
                 sle = frappe.db.sql(sql_query, (serial_no,), as_dict=1)
 
             if sle:
                 sle_entry = sle[0]
+                if sle_entry.get('status') != 'Active' and sle_entry.get('item_group') in ['Laptop', 'Chromebooks']:
+                    frappe.throw(f"Serial No: <b>{serial_no}</b> is not active.")
+
                 non_njqca_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'non_njqca_item_groups'}, 'value')
                 serial_no = sle_entry.get('name')
 

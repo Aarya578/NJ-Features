@@ -91,7 +91,7 @@ class CustomDeliveryNote(DeliveryNote):
                     print(f"No Sales Order found for DN {self.name}")
 
             self.return_dn_validation()      
-            self.payment_validattion()
+            # self.payment_validattion()
             self.update_mail_from_address()
             self.rto_charges_update()
             self.approve_validation()
@@ -2064,6 +2064,149 @@ def shiprocket_awb_number(doc):
         }
     except Exception as e:
         frappe.log_error(f"Error in shiprocket_awb_number: {str(e)}", frappe.get_traceback())
+        raise
+
+
+
+@frappe.whitelist()
+def fetch_shiprocket_details(doc):
+    try:
+        if isinstance(doc, str):
+            doc = json.loads(doc)
+
+        auth_token = get_auth_token().get("token")
+        dn_name = doc.get("name")
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {auth_token.strip()}"
+        }
+
+        # 1. Fetch Shiprocket order by channel_order_id
+        # fetch_url = f"https://apiv2.shiprocket.in/v1/external/orders?filter_by=channel_order_id&filter={dn_name}"
+        fetch_url = f"https://apiv2.shiprocket.in/v1/external/orders?filter_by=channel_order_id&filter={dn_name}"
+        response = requests.get(fetch_url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        frappe.logger().info(f"Shiprocket order fetch response: {data}")
+
+        # 2. Extract order id and shipment id
+        orders = data.get("data", [])    
+        if not orders:
+            frappe.throw("No orders found in Shiprocket for this Delivery Note")
+
+        order_data = orders[0]
+        invoice_order_id = order_data.get("id")
+        shipments = order_data.get("shipments", [])
+
+        if not invoice_order_id:
+            frappe.throw("Order ID not found in Shiprocket response")
+        if not shipments:
+            frappe.throw("No shipments found for this order in Shiprocket")
+
+        shipment_data = shipments[0]
+        shipment_id = shipment_data.get("id")  # first shipment id
+        shipment_list = [shipment_id]
+
+        # Extract required fields for mapping
+        courier_name = shipment_data.get("courier")
+        pickup_scheduled_date = shipment_data.get("pickup_scheduled_date")
+        awb = shipment_data.get("awb")
+        # freight_charges = (
+        #     shipment_data.get("awb_data", {})
+        #     .get("charges", {})
+        #     .get("freight_charges")
+        # )
+
+        # Save values in Delivery Note
+        frappe.db.set_value("Delivery Note", dn_name, {
+            "shiprocket_order_id": invoice_order_id,
+            "shiprocket_shipment_id": shipment_id,
+            "shiprocket_courier_name": courier_name,
+            "courier_name": courier_name,
+            "pickup_scheduled_date": pickup_scheduled_date,
+            "tracking_id": awb,
+            # "freight_charges": freight_charges
+        }, update_modified=False)
+        # order_data = orders[0]
+        # invoice_order_id = order_data.get("id")
+        shipments = order_data.get("shipments", [])
+        if not invoice_order_id:
+            frappe.throw("Order ID not found in Shiprocket response")
+        if not shipments:
+            frappe.throw("No shipments found for this order in Shiprocket")
+
+        shipment_id = shipments[0].get("id")  # take first shipment id
+        shipment_list = [shipment_id]
+
+        # 3. Generate Invoice
+        invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"
+        invoice_response = requests.post(invoice_url, headers=headers, json={"ids": [invoice_order_id]})
+        invoice_response.raise_for_status()
+        invoice_json = invoice_response.json()
+        frappe.logger().info(f"Shiprocket invoice response: {invoice_json}")
+
+        invoice_pdf_url = invoice_json.get("invoice_url")
+        if not invoice_pdf_url:
+            frappe.throw("Invoice URL not found in Shiprocket response")
+
+        invoice_file_response = requests.get(invoice_pdf_url)
+        if invoice_file_response.status_code != 200:
+            frappe.throw(f"Could not fetch invoice PDF: {invoice_file_response.status_code}")
+
+        invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
+        frappe.db.set_value("Delivery Note", dn_name, "shiprocket_invoice", invoice_pdf_b64, update_modified=False)
+
+        # 4. Generate Label
+        label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
+        label_response = requests.post(label_url, headers=headers, json={"shipment_id": shipment_list})
+        label_response.raise_for_status()
+        label_json = label_response.json()
+        frappe.logger().info(f"Shiprocket label response: {label_json}")
+
+        label_link = label_json.get("label_url")
+        if not label_link:
+            frappe.throw("Label URL not found in Shiprocket response")
+
+        label_file_response = requests.get(label_link)
+        if label_file_response.status_code != 200:
+            frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
+
+        label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
+        frappe.db.set_value("Delivery Note", dn_name, "shiprocket_image", label_pdf_b64, update_modified=False)
+
+        # # 5. Generate Manifest
+        # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
+        # manifest_response = requests.post(manifest_url, headers=headers, json={"shipment_id": shipment_list})
+        # manifest_response.raise_for_status()
+        # manifest_json = manifest_response.json()
+        # frappe.logger().info(f"Shiprocket manifest response: {manifest_json}")
+
+        # if "message" in manifest_json:
+        #     frappe.throw(f"Manifest Generation Error: {manifest_json.get('message')}")
+
+        # manifest_pdf_url = manifest_json.get("manifest_url")
+        # if not manifest_pdf_url:
+        #     frappe.throw(f"Manifest URL not found. Full response: {manifest_json}")
+
+        # manifest_file_response = requests.get(manifest_pdf_url)
+        # if manifest_file_response.status_code != 200:
+        #     frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
+
+        # manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
+        # frappe.db.set_value("Delivery Note", dn_name, "shiprocket_manifests", manifest_pdf_b64, update_modified=False)
+
+        return {
+            "status": "success",
+            "order_id": invoice_order_id,
+            "shipment_id": shipment_id,
+            "invoice_url": invoice_pdf_url,
+            "label_url": label_link,
+            # "manifest_url": manifest_pdf_url
+        }
+
+    except Exception as e:
+        frappe.log_error(f"Error fetching Shiprocket invoice/label/manifest: {str(e)}", frappe.get_traceback())
         raise
 
 def adapter_repacked_serial_no(nj_serial_no):

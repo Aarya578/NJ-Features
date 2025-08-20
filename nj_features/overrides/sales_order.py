@@ -95,7 +95,7 @@ class CustomSalesOrder(SalesOrder):
                 )
             else:
                 self.approve = 1
-                self.save(ignore_permissions=True) 
+                # self.save(ignore_permissions=True) 
 
     def maintenance_order_validation(self):
         # Get NJ Settings value for order_type
@@ -132,11 +132,13 @@ class CustomSalesOrder(SalesOrder):
         # Validate invoice status
         for row in results:
             if row.status != "Paid":
-                frappe.throw(
-                    f"Sales Invoice {row.name} has status '{row.status}'. Only 'Paid' invoices are allowed."
-                )
+                # frappe.throw(
+                #     f"Sales Invoice {row.name} has status '{row.status}'. Only 'Paid' invoices are allowed."
+                # )
+                self.approve = 0
             else:
-                self.approve = 1 
+                self.approve = 1
+            self.save(ignore_permissions=True) 
 
                 
 

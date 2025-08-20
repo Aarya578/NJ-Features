@@ -13,7 +13,7 @@
       "columns": 0,
       "creation": "2023-11-28 14:33:50.616323",
       "default": null,
-      "depends_on": null,
+      "depends_on": "eval: doc.is_group == 0",
       "description": null,
       "docstatus": 0,
       "dt": "Warehouse",

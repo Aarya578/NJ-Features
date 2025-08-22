@@ -48,6 +48,7 @@ doctype_js = {
     "Quality Review": "public/js/quality_review.js",
     "Product Bundle": "public/js/product_bundle.js",
     "Address": "public/js/address.js",
+    "Sales Order": "public/js/sales_order.js",
 }
 
 doctype_list_js = {

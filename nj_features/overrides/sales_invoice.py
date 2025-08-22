@@ -27,7 +27,6 @@ from erpnext.regional.india.e_invoice.utils import (
 )
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_error
-from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 
 class CustomSalesInvoice(SalesInvoice):

@@ -31,8 +31,6 @@ class DispatchSecurityCheckpoints(Document):
             frappe.throw(f"Error while updating Delivery Note send_email: {e}")
 
 
-
-
 @frappe.whitelist()
 def scan_serial_no_data_for_sales(serial_no):
     try:
@@ -41,24 +39,37 @@ def scan_serial_no_data_for_sales(serial_no):
         if not serial_no_exists:
             frappe.throw(f"Serial No: {serial_no} doesn't exist")
             return None
-        
+
+        delivery_note = None
+        dn_status = None
+        sales_invoice = None
+        sales_order = None
+        item_code = None
+        si_status = None
+        approved = None
+        sales_channel = None
+        is_cod = None
         serial_no_from_dn_query = """
             SELECT dn.name as delivery_note, dn.status as dn_status, 
-                dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
-                dni.item_code, si.status as si_status, si.approved, si.sales_channel
+                dni.against_sales_invoice AS sales_invoice, 
+                dni.against_sales_order AS sales_order,
+                so.is_cod AS so_is_cod, 
+                dni.item_code, 
+                si.status as si_status, si.approved, si.sales_channel
             FROM `tabDelivery Note Item` dni
             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+            INNER JOIN `tabSales Order` so ON so.name = dni.against_sales_order
             LEFT JOIN `tabPacked Item` pi ON dn.name = pi.parent
             WHERE (
                 dni.serial_no = {0}
-                or dni.serial_no like {1}
-                or dni.serial_no like {2}
-                or dni.serial_no like {3}
-                or pi.serial_no = {0}
-                or pi.serial_no like {1}
-                or pi.serial_no like {2}
-                or pi.serial_no like {3}
+                OR dni.serial_no LIKE {1}
+                OR dni.serial_no LIKE {2}
+                OR dni.serial_no LIKE {3}
+                OR pi.serial_no = {0}
+                OR pi.serial_no LIKE {1}
+                OR pi.serial_no LIKE {2}
+                OR pi.serial_no LIKE {3}
             ) AND dn.docstatus = 1
             ORDER BY dn.creation DESC, dn.modified DESC
         """.format(
@@ -67,20 +78,62 @@ def scan_serial_no_data_for_sales(serial_no):
             frappe.db.escape("%\n{}".format(serial_no)),
             frappe.db.escape("%\n{}\n%".format(serial_no)),
         )
-        
+
         result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
+        print("result===========from 1 query============", result)
+        if not result:
+            serial_no_from_dn_query = """
+                SELECT 
+                    si.name AS sales_invoice,
+                    si.status AS si_status,
+                    sii.delivery_note AS delivery_note,
+                    dn.status AS dn_status,
+                    sii.sales_order AS sales_order,
+                    so.is_cod AS so_is_cod,
+                    sii.item_code,
+                    si.approved,
+                    si.sales_channel
+                FROM `tabSales Invoice Item` sii
+                INNER JOIN `tabSales Invoice` si 
+                    ON si.name = sii.parent
+                LEFT JOIN `tabDelivery Note` dn
+                    ON dn.name = sii.delivery_note
+                LEFT JOIN `tabSales Order` so
+                    ON so.name = sii.sales_order    
+                LEFT JOIN `tabPacked Item` pi ON si.name = pi.parent    
+                WHERE (
+                    sii.serial_no = {0}
+                    or sii.serial_no like {1}
+                    or sii.serial_no like {2}
+                    or sii.serial_no like {3}
+                    or pi.serial_no = {0}
+                    or pi.serial_no like {1}
+                    or pi.serial_no like {2}
+                    or pi.serial_no like {3}
+                )
+                AND si.docstatus = 1
+                ORDER BY si.creation DESC, si.modified DESC;
+            """.format(
+                frappe.db.escape(serial_no),
+                frappe.db.escape("{}\n%".format(serial_no)),
+                frappe.db.escape("%\n{}".format(serial_no)),
+                frappe.db.escape("%\n{}\n%".format(serial_no)),
+            )
+
+            result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
+            print("result===========from 2 query============", result)
 
         if result:
-            delivery_note_data = result[0]
-
-            delivery_note = delivery_note_data.get('delivery_note')
-            dn_status = delivery_note_data.get('dn_status')
-            sales_invoice = delivery_note_data.get('sales_invoice')
-            sales_order = delivery_note_data.get('sales_order')
-            item_code = delivery_note_data.get('item_code')
-            si_status = delivery_note_data.get('si_status')
-            approved = delivery_note_data.get('approved')
-            sales_channel = delivery_note_data.get('sales_channel')
+            data = result[0]
+            delivery_note = data.get('delivery_note')
+            dn_status = data.get('dn_status')
+            sales_invoice = data.get('sales_invoice')
+            sales_order = data.get('sales_order')
+            item_code = data.get('item_code')
+            si_status = data.get('si_status')
+            approved = data.get('approved')
+            sales_channel = data.get('sales_channel')
+            is_cod = data.get('so_is_cod')
 
             if sales_invoice:
                 if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):
@@ -95,15 +148,12 @@ def scan_serial_no_data_for_sales(serial_no):
             else:
                 frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
                 return None
-        else:
-            frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
-            return None
-        
+
         if delivery_note:
             delivery_note_creation = frappe.db.get_value('Delivery Note', delivery_note, 'creation')
             if delivery_note_creation:
                 creation_date = getdate(delivery_note_creation)
-                four_days_ago = add_days(nowdate(), -10)
+                four_days_ago = add_days(nowdate(), -10)  # actually checks 10 days back
                 if creation_date < getdate(four_days_ago):
                     frappe.throw("The latest Delivery Note was not created within the last 4 days.")
 
@@ -112,18 +162,13 @@ def scan_serial_no_data_for_sales(serial_no):
             tracking_id = ""
             email_id = ""
             dn_doc = frappe.get_doc("Delivery Note", delivery_note)
-            # print("dn_doc=======================", dn_doc)
             customer_name = dn_doc.customer 
-            # print("customer_name=======================", customer_name)
             courier_name = dn_doc.get("courier_service", "")
-            # print("courier_name=======================", courier_name)
             tracking_id = dn_doc.get("tracking_id", "")
-            # print("tracking_id=======================", tracking_id)
             if dn_doc.shipping_address_name:
                 try:
                     address = frappe.get_doc("Address", dn_doc.shipping_address_name)
                     email_id = address.get("email_id", "")
-                    # print("email_id=======================", email_id)
                 except frappe.DoesNotExistError:
                     pass
 
@@ -140,22 +185,139 @@ def scan_serial_no_data_for_sales(serial_no):
                 'customer_name': customer_name,
                 'courier_name': courier_name,
                 'tracking_id': tracking_id,
-                'email_id': email_id
+                'email_id': email_id,
+                'is_cod': is_cod
             }
-        # return {
-        #     'serial_no': serial_no,
-        #     'item_code': item_code,
-        #     'delivery_note': delivery_note,
-        #     'sales_invoice': sales_invoice,
-        #     'sales_order': sales_order,
-        #     'si_status': si_status,
-        #     'dn_status': dn_status,
-        #     'sales_channel': sales_channel,
-        #     'approved': approved
-        # }
+
+        return None
 
     except Exception as e:
         frappe.throw(e)
+
+
+# @frappe.whitelist()
+# def scan_serial_no_data_for_sales(serial_no):
+#     try:
+#         serial_no = serial_no.strip()
+#         serial_no_exists = frappe.db.exists('Serial No', serial_no)
+#         if not serial_no_exists:
+#             frappe.throw(f"Serial No: {serial_no} doesn't exist")
+#             return None
+        
+#         serial_no_from_dn_query = """
+#             SELECT dn.name as delivery_note, dn.status as dn_status, 
+#                 dni.against_sales_invoice AS sales_invoice, dni.against_sales_order AS sales_order, 
+#                 dni.item_code, si.status as si_status, si.approved, si.sales_channel
+#             FROM `tabDelivery Note Item` dni
+#             INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
+#             INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+#             LEFT JOIN `tabPacked Item` pi ON dn.name = pi.parent
+#             WHERE (
+#                 dni.serial_no = {0}
+#                 or dni.serial_no like {1}
+#                 or dni.serial_no like {2}
+#                 or dni.serial_no like {3}
+#                 or pi.serial_no = {0}
+#                 or pi.serial_no like {1}
+#                 or pi.serial_no like {2}
+#                 or pi.serial_no like {3}
+#             ) AND dn.docstatus = 1
+#             ORDER BY dn.creation DESC, dn.modified DESC
+#         """.format(
+#             frappe.db.escape(serial_no),
+#             frappe.db.escape("{}\n%".format(serial_no)),
+#             frappe.db.escape("%\n{}".format(serial_no)),
+#             frappe.db.escape("%\n{}\n%".format(serial_no)),
+#         )
+        
+#         result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
+
+#         if result:
+#             delivery_note_data = result[0]
+
+#             delivery_note = delivery_note_data.get('delivery_note')
+#             dn_status = delivery_note_data.get('dn_status')
+#             sales_invoice = delivery_note_data.get('sales_invoice')
+#             sales_order = delivery_note_data.get('sales_order')
+#             item_code = delivery_note_data.get('item_code')
+#             si_status = delivery_note_data.get('si_status')
+#             approved = delivery_note_data.get('approved')
+#             sales_channel = delivery_note_data.get('sales_channel')
+
+#             if sales_invoice:
+#                 if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):
+#                     frappe.msgprint(_("For Amazon orders, both Sales Invoice and Delivery Note must be submitted and available."))
+#                     return None
+#                 elif sales_channel != 'Amazon' and si_status != 'Paid' and approved == 0:
+#                     frappe.msgprint(_("Sales Invoice '{}' must have a 'Paid' status to proceed and it is approved.").format(sales_invoice))
+#                     return None
+#                 elif sales_channel != 'Amazon' and si_status == 'Paid' and approved == 0:
+#                     frappe.msgprint(_("Sales Invoice '{}' must be approved to proceed.").format(sales_invoice))
+#                     return None
+#             else:
+#                 frappe.throw(_("No matching sales invoice found for serial number <b>{}</b>").format(serial_no))
+#                 return None
+#         else:
+#             frappe.throw(_("No matching delivery note or sales invoice found for serial number <b>{}</b>").format(serial_no))
+#             return None
+        
+#         if delivery_note:
+#             delivery_note_creation = frappe.db.get_value('Delivery Note', delivery_note, 'creation')
+#             if delivery_note_creation:
+#                 creation_date = getdate(delivery_note_creation)
+#                 four_days_ago = add_days(nowdate(), -10)
+#                 if creation_date < getdate(four_days_ago):
+#                     frappe.throw("The latest Delivery Note was not created within the last 4 days.")
+
+#             customer_name = ""
+#             courier_name = ""
+#             tracking_id = ""
+#             email_id = ""
+#             dn_doc = frappe.get_doc("Delivery Note", delivery_note)
+#             # print("dn_doc=======================", dn_doc)
+#             customer_name = dn_doc.customer 
+#             # print("customer_name=======================", customer_name)
+#             courier_name = dn_doc.get("courier_service", "")
+#             # print("courier_name=======================", courier_name)
+#             tracking_id = dn_doc.get("tracking_id", "")
+#             # print("tracking_id=======================", tracking_id)
+#             if dn_doc.shipping_address_name:
+#                 try:
+#                     address = frappe.get_doc("Address", dn_doc.shipping_address_name)
+#                     email_id = address.get("email_id", "")
+#                     # print("email_id=======================", email_id)
+#                 except frappe.DoesNotExistError:
+#                     pass
+
+#             return {
+#                 'serial_no': serial_no,
+#                 'item_code': item_code,
+#                 'delivery_note': delivery_note,
+#                 'sales_invoice': sales_invoice,
+#                 'sales_order': sales_order,
+#                 'si_status': si_status,
+#                 'dn_status': dn_status,
+#                 'sales_channel': sales_channel,
+#                 'approved': approved,
+#                 'customer_name': customer_name,
+#                 'courier_name': courier_name,
+#                 'tracking_id': tracking_id,
+#                 'email_id': email_id
+#             }
+#         # return {
+#         #     'serial_no': serial_no,
+#         #     'item_code': item_code,
+#         #     'delivery_note': delivery_note,
+#         #     'sales_invoice': sales_invoice,
+#         #     'sales_order': sales_order,
+#         #     'si_status': si_status,
+#         #     'dn_status': dn_status,
+#         #     'sales_channel': sales_channel,
+#         #     'approved': approved
+#         # }
+
+#     except Exception as e:
+#         frappe.throw(e)
 
 @frappe.whitelist()
 def scan_serial_no_data_for_return(pr_name):

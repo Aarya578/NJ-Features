@@ -168,6 +168,7 @@ frappe.ui.form.on('NJQCA', {
             })
 
             if (!frappe.user.has_role('Ops Manager') && frm.doc.item_group == 'Laptops') {
+                frm.set_df_property('manual_repack_item_code', 'read_only', 1);
 				let $fieldWrapper = frm.fields_dict['manual_repack_item_code'].$wrapper;
 
 				$fieldWrapper.find('input').attr('disabled', true);

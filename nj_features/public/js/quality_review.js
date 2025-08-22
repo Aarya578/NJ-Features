@@ -18,19 +18,30 @@ frappe.ui.form.on('Quality Review', {
                         severity_level: frm.doc.severity_level
                     },
                     callback: function(r) {
-                        console.log("get_quality_procedure_details-------", r);
+                        // console.log("get_quality_procedure_details-------", r);
                         if (r.message && r.message.length > 0) {
                             frm.clear_table('review_procedures_table');
                             r.message.forEach(function(rowData) {
+                            // Parse the HTML in rowData.step
+                            let tempDiv = document.createElement("div");
+                            tempDiv.innerHTML = rowData.step;
+
+                            // Get all list items <li>
+                            let steps = tempDiv.querySelectorAll("li");
+
+                            steps.forEach(function(li) {
                                 let row = frm.add_child('review_procedures_table');
                                 row.sub_procedure = rowData.procedure;
                                 row.task = rowData.task;
                                 row.severity = rowData.severity;
                                 row.reviewee = frm.doc.reviewee;
                                 row.item_group = rowData.item_group;
-                                row.step = rowData.step;
+                                row.step = li.innerText;   // each individual step
                             });
-                            frm.refresh_field('review_procedures_table');
+                        });
+
+                        frm.refresh_field("review_procedures_table");
+
                         }
                         else{
                             frappe.msgprint({

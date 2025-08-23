@@ -13,7 +13,19 @@ frappe.ui.form.on('Sales Order', {
                 });
             });
         }
+        frappe.call({
+            method: "nj_features.overrides.sales_order.setting_sales_channel_value",
+            args: { doc: cur_frm.doc },
+            callback: function(r) {
+                if (r.message) {                 
+                    cur_frm.set_value("sales_channel", r.message.sales_channel);
+                    frm.refresh_field("sales_channel");
+
+                }
+            }
+        });
     },
+
    
     // onload_post_render: function(frm) {
     //     frm.remove_custom_button('Delivery Note', 'Create');
@@ -82,6 +94,8 @@ frappe.ui.form.on('Sales Order', {
             frm.set_value('shipping_address_name', frm.doc.customer_address);
             frm.refresh_field('shipping_address_name');
         }
+
+
     }
 });
 

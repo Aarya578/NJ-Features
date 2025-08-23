@@ -1,7 +1,5 @@
 frappe.ui.form.on('Sales Invoice', {
-    refresh: function(frm) {
-        console.log("inside the refresh===========================================");
-        
+    refresh: function(frm) {        
         // Ensure the button is shown even if update_stock == 1
 		var from_delivery_note = frm.doc.items.some(item => item.delivery_note ? true : false);
 
@@ -13,9 +11,20 @@ frappe.ui.form.on('Sales Invoice', {
         setup_custom_einvoice_actions(frm);
     },
 
+    // onload: function(frm) {   
+    //     if (!frm.doc.__islocal) return;
+    //     frappe.call({
+    //         method: "nj_features.overrides.sales_invoice.due_date_validation",
+    //         args: { doc: frm.doc },
+    //         callback: function(r) {             
+    //             if (r.message && r.message.due_date) {
+    //                 frm.set_value("due_date", r.message.due_date);
+    //             }
+    //         }
+    //     });
+    
+    // },
     validate:  function(frm) {
-        // console.log("inside the validate===========================");
-        
         if (!frm.doc.allocate_advances_automatically) {
             frm.trigger('get_advances');
         }
@@ -41,37 +50,27 @@ frappe.ui.form.on('Sales Invoice', {
     //     } else {
     //         console.log("Transporter details already present. Skipping update.");
     //     }
+    // frappe.call({
+    //         method: "nj_features.overrides.sales_invoice.due_date_validation",
+    //         args: {
+    //             doc: frm.doc
+    //         },
+    //         callback: function(r) {
+    //             console.log("r.message==================================", r.message);
+                
+    //             if (r.message) {
+    //                 frm.set_value("payment_schedule", r.message.payment_schedule);
+    //                 frm.refresh_field("payment_schedule");
+    //             }
+    //         }
+    //     });
     },
+    
 });
-
-
-
-
-// frappe.ui.form.on('Sales Invoice Item', {
-//     // Triggered when the serial_no field in any row is updated
-//     serial_no: function(frm, cdt, cdn) {
-//         const child = locals[cdt][cdn];  // Get the current child row
-
-//         // Call your custom function with the current serial_no value
-//         handleScannerInput(frm, child.serial_no);
-//     },
-
-//     // Event triggered when a row is rendered in the child table
-//     items_on_form_rendered: function(frm, cdt, cdn) {
-//         const child = locals[cdt][cdn];  // Get the current child row
-
-//         // Perform logic or call a function if needed when the row is rendered
-//         handleScannerInput(frm, child.serial_no);
-//     }
-// });
-
-
 
 function setup_custom_einvoice_actions(frm) {
 
-    if (frm.doc.docstatus == 2) return;
-    console.log("🔁 Sales Invoice loaded========================");
-    
+    if (frm.doc.docstatus == 2) return;    
     frappe.call({
         method: 'nj_features.overrides.sales_invoice.validate_eligibility', // Changed method name
         args: { doc: frm.doc },
@@ -118,9 +117,7 @@ function setup_custom_einvoice_actions(frm) {
             };
 
             // E-Way Bill Button Function
-            const add_eway_bill_button = () => {
-                console.log("Adding E-Way Bill button=======================================================");
-                
+            const add_eway_bill_button = () => {                
                 const action = () => {
                     const d = new frappe.ui.Dialog({
                         title: __('Generate E-Way Bill'),
@@ -141,7 +138,6 @@ function setup_custom_einvoice_actions(frm) {
                             
                             if (has_irn) {
                                 // If IRN exists, use the standard ERPNext method
-                                console.log("core is function is called ===============================");
                                 
                                 method_to_call = 'erpnext.regional.india.e_invoice.utils.generate_eway_bill';
                                 call_args = {
@@ -153,7 +149,6 @@ function setup_custom_einvoice_actions(frm) {
                                 console.log('Using standard ERPNext method - IRN exists:', irn_value);
                             } else {
                                 // If IRN is empty, use the custom method
-                                console.log("custom is function is called ===============================");
                                 
                                 method_to_call = 'nj_features.overrides.sales_invoice.generate_eway_bill';
                                 call_args = {
@@ -450,7 +445,6 @@ function setup_custom_einvoice_actions(frm) {
 
             // INITIALLY: Show only Generate IRN button if no IRN exists and button wasn't clicked
             if (!irn && !__unsaved && !irn_button_clicked) {
-                console.log("Showing initial Generate IRN button======================================================");
                 
                 const action = () => {
                     if (frm.doc.__unsaved) {
@@ -515,7 +509,6 @@ function setup_custom_einvoice_actions(frm) {
 }
 
 const get_custom_ewaybill_fields = (frm) => {
-    console.log("get_ewaybill_fields called==================================================", frm.doc);
     
 	return [
 		{

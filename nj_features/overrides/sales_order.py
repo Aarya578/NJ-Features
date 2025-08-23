@@ -22,8 +22,6 @@ class CustomSalesOrder(SalesOrder):
     def on_submit(self):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
-
- 
         # self.total_item_group_sum()
         raw_order_id = None
         if self.order_type!="Maintenance":
@@ -43,27 +41,21 @@ class CustomSalesOrder(SalesOrder):
         self.maintenance_order_validation()
 
     def total_item_group_sum(self):
-    # Step 1: Get item groups from NJ Settings
         item_group_value = frappe.db.get_value(
             "NJ Settings", 
             {"parameter": "Item Group Validation"}, 
             "value"
-        )
-        
+        )    
         if not item_group_value:
             return
 
-        # Convert comma-separated value to list
         allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-
-        # Step 2: Loop through items in Sales Order and calculate total qty
         total_qty = 0
         for item in self.items:
             item_group = frappe.db.get_value("Item", item.item_code, "item_group")
             if item_group in allowed_item_groups:
                 total_qty += item.qty
 
-        # Step 3: Update a custom field `item_group_qty` (you need to add this field in Sales Order)
         self.item_group_qty = total_qty
         self.save(ignore_permissions=True)   
 
@@ -73,8 +65,6 @@ class CustomSalesOrder(SalesOrder):
             {"parameter": "sale_type"}, 
             "value"
         )
-
-        # Skip if sale_type doesn't match NJ setting
         if self.sale_type != nj_setting_value:
             return
 
@@ -95,10 +85,9 @@ class CustomSalesOrder(SalesOrder):
                 )
             else:
                 self.approve = 1
-                # self.save(ignore_permissions=True) 
+                self.save(ignore_permissions=True) 
 
     def maintenance_order_validation(self):
-        # Get NJ Settings value for order_type
         nj_setting = frappe.db.get_value(
             "NJ Settings", 
             {"parameter": "order_type"}, 
@@ -112,11 +101,9 @@ class CustomSalesOrder(SalesOrder):
             self.name,
             "replacing_order"
         )
-        # print("replacing_order_name===========", replacing_order_name)
         if not replacing_order_name:
             frappe.throw("No replacing order found for this Sales Order.")
 
-        # Query for related Sales Invoices and their statuses
         query = """
             SELECT si.name, si.status
             FROM `tabSales Invoice` si
@@ -127,9 +114,7 @@ class CustomSalesOrder(SalesOrder):
             WHERE so.name = %s
         """
         results = frappe.db.sql(query, (replacing_order_name,), as_dict=True)
-        # print("results===========", results)
 
-        # Validate invoice status
         for row in results:
             if row.status != "Paid":
                 # frappe.throw(
@@ -612,4 +597,19 @@ def update_sales_order_etas(so_eta_map):
 #         # tax_result["taxes"].extend(tax_rows)
 #         added_item_groups.add(item_group)
 
-#     return tax_result
+#     return tax_result@frappe.whitelist()
+
+
+@frappe.whitelist()
+def setting_sales_channel_value(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    sales_type = doc.get("sale_type")
+    if sales_type == "Flipkart":
+        doc["sales_channel"] = "Flipkart"
+    elif sales_type == "NJ-Direct-B2B" or sales_type == "NJ-Direct-B2C":
+        doc["sales_channel"] = "Store"
+    elif sales_type == "NJ-Website-B2C":
+        doc["sales_channel"] = "Shopify"
+    return doc

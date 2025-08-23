@@ -91,6 +91,7 @@ frappe.ui.form.on('Dispatch Security Checkpoints', {
                                     "serial_no": r.message.serial_no,
                                     "item_code": r.message.item_code || 'Not Available',
                                     "sales_invoice": r.message.sales_invoice || 'Not Available',
+                                    "sales_order": r.message.sales_order || 'Not Available',
                                     "delivery_note": r.message.delivery_note || 'Not Available',
                                     "si_status": r.message.si_status || 'Not Available',
                                     "dn_status": r.message.dn_status || 'Not Available',

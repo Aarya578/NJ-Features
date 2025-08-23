@@ -1,3 +1,4 @@
+from tokenize import Ignore
 from frappe import _
 import json
 import requests
@@ -25,6 +26,7 @@ from erpnext.regional.india.e_invoice.utils import (
     show_link_to_error_log,
     log_error,
 )
+from frappe.utils.print_format import download_pdf
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_error
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
@@ -49,7 +51,6 @@ class CustomSalesInvoice(SalesInvoice):
         # Removed the `else` block to prevent clearing packed_items
 
     def validate_einvoice_fields(self):
-
         invoice_eligible = _validate_eligibility(self)
         if not invoice_eligible:
             return
@@ -91,24 +92,19 @@ class CustomSalesInvoice(SalesInvoice):
             INNER JOIN `tabSales Order` so
                 ON sii.sales_order = so.name 
             WHERE so.name = %s
-        """
-        
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)
-        # print("results======================",results)
-        
+        """  
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)        
         for row in results:        
             if not row.approve or int(row.approve) != 1:
                 # self.approved = 1
                 frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
             else:
                 self.approved = 1
-        
+
 # Hook this class to override default Sales Invoice behavior
 def override_sales_invoice():
     from erpnext.accounts.doctype.sales_invoice import sales_invoice
     sales_invoice.SalesInvoice = CustomSalesInvoice
-
-from frappe.utils import nowdate, add_days, getdate
 
 @frappe.whitelist()
 def mail_trigger_for_payment_terms_from_quotation():
@@ -163,7 +159,6 @@ def mail_trigger_for_payment_terms_from_quotation():
                         tomorrow = getdate(add_days(nowdate(), 1))
 
                         if due_date == tomorrow:
-                            # Try Address table first
                             customer_email = frappe.db.get_value("Address", {"address_title": customer}, "email_id")
 
                             # Fallback to Customer table if not found
@@ -293,7 +288,6 @@ def custom_validate_mandatory_fields(doc):
             "GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
             title=_("Missing GSTIN in Shipping Address"),
         )
-
 
 def custom_make_einvoice(invoice):
     custom_validate_mandatory_fields(invoice)
@@ -532,10 +526,10 @@ def generate_eway_bill(docname):
                 "qtyUnit": row.uom or "BOX",
                 "cgstRate": 0.0,
                 "sgstRate": 0.0,
-                "igstRate": 18.0,  # Adjust if needed based on tax logic
+                "igstRate": 18.0, 
                 "cessRate": 0.0,
                 "cessNonadvol": 0.0,
-                "taxableAmount": float(row.amount)  # amount before tax
+                "taxableAmount": float(row.amount)  
             })
 
         # Step 4: Prepare payload
@@ -581,8 +575,6 @@ def generate_eway_bill(docname):
             "vehicleType": "",
             "itemList": item_list
         }
-        # logger.debug("payload=======================================",payload)
-
         # Step 5: Make API Call
         username = frappe.db.get_single_value("Logistics Settings", "username")
         password = frappe.db.get_single_value("Logistics Settings", "e_password")
@@ -658,6 +650,19 @@ def fetching_transporter_details(docname):
         "email": invoice.email,
     }
 
+# @frappe.whitelist()
+# def due_date_validation(doc):
+#     if isinstance(doc, str):
+#         doc = json.loads(doc)
+
+#     si = frappe.get_doc(doc)
+#     current_date = getdate(nowdate())
+#     new_due_date = add_days(current_date, 7)
+#     si.due_date = new_due_date
+#     si.save(ignore_permissions=True)
+#     frappe.db.commit()
+
+#     return {"due_date": new_due_date}
 
 # ✅ Register override class
 def override_sales_invoice():

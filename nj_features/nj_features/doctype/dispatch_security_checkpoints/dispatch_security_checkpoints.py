@@ -10,25 +10,52 @@ class DispatchSecurityCheckpoints(Document):
     pass
     def on_submit(self):
         self.update_send_email_DN()
+        self.update_payment_recived()
+        # self.update_send_email_SI()
 
     def update_send_email_DN(self):
         try:
             for row in self.dispatch_security_child_table:
                 if row.delivery_note:
-                    # Fetch the Delivery Note
                     dn_doc = frappe.get_doc("Delivery Note", row.delivery_note)
                     # print("dn_doc=======================", dn_doc)
-
-                    # Set send_email = 1
                     dn_doc.send_email = 1
-
-                    # Save and commit changes
                     dn_doc.save(ignore_permissions=True)
                     frappe.db.commit()
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_send_email_DN")
             frappe.throw(f"Error while updating Delivery Note send_email: {e}")
+    def update_send_email_SI(self):
+        try:
+            for row in self.dispatch_security_child_table:
+                if row.sales_invoice:
+                    # Fetch the Delivery Note
+                    si_doc = frappe.get_doc("Sales Invoice", row.sales_invoice)
+                    si_doc.send_email = 1
+                    si_doc.save(ignore_permissions=True)
+                    frappe.db.commit()
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Error in update_send_email_SI")
+            frappe.throw(f"Error while updating Sales Invoice send_email: {e}")
+
+    def update_payment_recived(self):
+        try:
+            for row in self.dispatch_security_child_table:
+                if row.sales_order:
+                    so_doc = frappe.get_doc("Sales Order", row.sales_order)
+                    # print("so_doc=======================", so_doc)
+
+                    if so_doc.get("is_cod") and not so_doc.get("payment_received"):
+                        # print("so_doc=======================", so_doc.get("is_cod"))
+                        so_doc.payment_received = 1
+                        so_doc.save(ignore_permissions=True)
+                        frappe.db.commit()
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Error in update_payment_recived")
+            frappe.throw(f"Error while updating Sales Order payment_received: {e}")
 
 
 @frappe.whitelist()

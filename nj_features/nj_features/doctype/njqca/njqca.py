@@ -899,7 +899,7 @@ def get_info_from_serial_no(doc=None):
                     if sle_entry.get('item_group') in non_njqca_item_groups and manufacturer_model:
                         result.update({'manufacturer_model': manufacturer_model[0].get("manufacturer_model")})
                     else:
-                        if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no') != bios_serial_no_in_ui:
+                        if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no').upper() != bios_serial_no_in_ui.upper():
                             frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
                         elif bios_serial_no_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
                             log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bios_serial_no_in_ui}</b>", doc_json.get('name'))
@@ -974,11 +974,9 @@ def get_info_from_component_serial_no(doc=None):
                 'department': emp_dept.get('department') if emp_dept else None,
             })
 
-
             result['item_code'] = sle_entry.get('item_code')
             result['manual_repack_item_code']=sle_entry.get('item_code')
     
-                
         result['inspection_type'] = get_inspection_type() if not 'inspection_type' in doc_json else doc_json['inspection_type']
 
         return result
@@ -1255,8 +1253,8 @@ def get_part_mapping(doc):
             return json.dumps(get_item_code_for_each_part(doc))
             
         except Exception as e:
-            frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
             log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
+            frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
 
 def consolidate_ram_capacities(data):
     consolidated_data,ram_consolidation = [], {}
@@ -1789,8 +1787,8 @@ def get_item_attributes(selected_fields):
     
 @frappe.whitelist()
 def get_options_for_label(label):
-    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['abbr'], order_by='idx')
-    return [option['abbr'] for option in options]
+    options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
+    return [option['attribute_value'] for option in options]
 
 
 @frappe.whitelist()
@@ -1823,7 +1821,7 @@ def get_fetched_item_code(serial_no, partData):
                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
                 njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
 
-                serial_no_grade = serial_no_attr_data.get("grade", "").upper()
+                serial_no_grade = serial_no_attr_data.get("grade", "")
 
                 serial_no_attr_data.pop("grade", None)
                 njqca_attr_data.pop("grade", None)
@@ -1832,7 +1830,7 @@ def get_fetched_item_code(serial_no, partData):
                     data["fetched_item_code"] = row["item"]
                     matched = True
 
-                    if serial_no_grade and serial_no_grade != "UNKNOWN":
+                    if serial_no_grade and serial_no_grade.upper() != "UNKNOWN":
                         data["attr_data"]["Grade"] = serial_no_grade  
                     break 
 
@@ -2423,7 +2421,6 @@ def get_battery_serialno(bios_serial_no,inspection_type,creation_date):
             log_error(str(data),"repacked battery serial_no  through part list for bios serial no "+bios_serial_no)
             if data is not None and data:  
                 return data[0].get("battery_serial_no")
-            
         
         return ""
         

@@ -168,6 +168,7 @@ frappe.ui.form.on('NJQCA', {
             })
 
             if (!frappe.user.has_role('Ops Manager') && frm.doc.item_group == 'Laptops') {
+                frm.set_df_property('manual_repack_item_code', 'read_only', 1);
 				let $fieldWrapper = frm.fields_dict['manual_repack_item_code'].$wrapper;
 
 				$fieldWrapper.find('input').attr('disabled', true);
@@ -267,7 +268,7 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.create_serial_no_based_on_rfq',
                 args: { 'serial_info':frm.doc },
                 callback: function(r) {
-                    if (r.message) {console.log(r.message);}
+                    if (r.message) { console.log(r.message); }
                 }
             })
         }
@@ -836,12 +837,10 @@ frappe.ui.form.on('NJQCA', {
                     primary_action: function() {
                         let scannedSerialNo = dialog.get_value("serial_num");
                         let frm_serial_no="";
-                        if(isComponent=="0"){
+                        if (isComponent=="0") {
                            frm_serial_no= frm.doc.serial_no;
-                        }
-                        else{
-                            frm_serial_no= frm.doc.component_serial_no;
-                        }
+                        } else { frm_serial_no= frm.doc.component_serial_no; }
+
                         if (scannedSerialNo) {
 
                             frappe.call({
@@ -859,51 +858,50 @@ frappe.ui.form.on('NJQCA', {
                                                 });
                                                 dialog.hide();
                                                 return;
+                                            } else {
+                                                let material_transfer_items = [{
+                                                    'serial_no': frm_serial_no,
+                                                    'item_code': frm.doc.item_code,
+                                                    't_warehouse': workWarehouse,
+                                                    's_warehouse': frm.doc.warehouse
+                                                }];
+                                                
+                                                let data = {
+                                                    "doctype": frm.doc.doctype,
+                                                    "serial_no": frm_serial_no,
+                                                    "t_warehouse": workWarehouse,
+                                                    "stock_entry_type": "Material Transfer",
+                                                    "reference_serial_no": frm.doc.serial_no,
+                                                    "material_transfer_items": material_transfer_items,
+                                                };
+                                        
+                                                frappe.call({
+                                                    method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
+                                                    args: { 'data': JSON.stringify(data) },
+                                                    freeze: true,
+                                                    freeze_message: `<div style="text-align: center;">
+                                                        <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
+                                                        <br>Transferring Stock... Please Wait
+                                                    </div>`,
+                                                    callback: function(response) {
+                                                        if (response && response.message) {
+                                                            $('.primary-action').show();
+                                                            frm.set_value('warehouse', workWarehouse);
+                                                            frm.refresh_field('warehouse');
+                                                        }
+                                                    },
+                                                    error: function(err) { 
+                                                        console.error(err);
+                                                        $('.primary-action').hide();
+                                                    }
+                                                });
+                                                dialog.hide();
                                             }
                                         }
                                     }
                                 }
                             })
-
                         }
-    
-                        let material_transfer_items = [{
-                            'serial_no': frm_serial_no,
-                            'item_code': frm.doc.item_code,
-                            't_warehouse': workWarehouse,
-                            's_warehouse': frm.doc.warehouse
-                        }];
-                        
-                        let data = {
-                            "doctype": frm.doc.doctype,
-                            "serial_no": frm_serial_no,
-                            "t_warehouse": workWarehouse,
-                            "stock_entry_type": "Material Transfer",
-                            "reference_serial_no": frm.doc.serial_no,
-                            "material_transfer_items": material_transfer_items,
-                        };
-                
-                        frappe.call({
-                            method: 'nj_lib.utils.stock_entry.stock_entry_using_nj_lib',
-                            args: { 'data': JSON.stringify(data) },
-                            freeze: true,
-                            freeze_message: `<div style="text-align: center;">
-                                <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
-                                <br>Transferring Stock... Please Wait
-                            </div>`,
-                            callback: function(response) {
-                                if (response && response.message) {
-                                    $('.primary-action').show();
-                                    frm.set_value('warehouse', workWarehouse);
-                                    frm.refresh_field('warehouse');
-                                }
-                            },
-                            error: function(err) { 
-                                console.error(err);
-                                $('.primary-action').hide();
-                            }
-                        });
-                        dialog.hide();
                     },
                     secondary_action_label: "Cancel",
                     secondary_action: function() {
@@ -941,11 +939,6 @@ frappe.ui.form.on('NJQCA', {
                 if (result && result.model_description) {
                     frm.set_value('model_description', result.model_description);
                     frm.refresh_field('model_description');
-
-                    // setTimeout(() => {
-                    //     $(`[data-fieldname="model_description"] .control-value`)
-                    //         .css("font-weight", "800"); 
-                    // }, 100);
                 }
             });
                     
@@ -2067,8 +2060,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
-        console.log("child",child);
-        
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
     
@@ -2089,7 +2080,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                     label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', 
                     options: ['Loading...'], default: child.ram_speed || '', 
                     reqd: !child.ram_speed, 
-                    read_only: !!child.ram_speed && child.ram_speed !== "UNKNOWN SPEED" 
+                    read_only: !!child.ram_speed && child.ram_speed.toUpperCase() !== "UNKNOWN SPEED" 
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 

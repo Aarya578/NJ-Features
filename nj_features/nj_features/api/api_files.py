@@ -282,7 +282,6 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
 
         get_bty_serial_no= latest_repacked_battery_serialno(bios_serial_no)
 
-        log_error(get_bty_serial_no,"get_bty_serial_no for serial no "+bios_serial_no+" in NJQCA "+njqca_name)
 
         if  get_bty_serial_no :
             
@@ -292,7 +291,7 @@ def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model="")
                             """
 
             get_bty_njqca = frappe.db.sql(get_bty_njqca_query, {'serial_no':get_bty_serial_no,'bios_serialno':bios_serial_no},as_dict=True)
-            log_error(str(get_bty_njqca) + ""+str(backup_duration_mins),"get_bty_njqca for serial no "+get_bty_serial_no+" in NJQCA "+njqca_name)
+            # log_error(str(get_bty_njqca) + ""+str(backup_duration_mins),"get_bty_njqca for serial no "+get_bty_serial_no+" in NJQCA "+njqca_name)
             if get_bty_njqca:
                 bty_parent_njqca = get_bty_njqca[0].name
         

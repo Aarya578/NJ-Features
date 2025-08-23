@@ -47,10 +47,12 @@ frappe.ui.form.on('Employee', {
             });
         }
 
-        frappe.call({
-            method: "nj_features.overrides.employee.update_work_warehouse",
-            args:{ doc: frm.doc }
-        })
+        if (!frm.doc.work_warehouse) {
+            frappe.call({
+                method: "nj_features.overrides.employee.update_work_warehouse",
+                args:{ doc: frm.doc }
+            })
+        }
     },
 
     validate(frm) {

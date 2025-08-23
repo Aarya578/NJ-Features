@@ -664,9 +664,9 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
 
         if lap_item_group == restricted_item_group and lap_grade in restricted_grades:
             error_messages.append(
-                f"Serial No <b>{serial_doc.name}</b> for item <b>{serial_doc.get('item_code')}</b> "
-                f"with item_group <b>{lap_item_group}</b> has a grade <b>{lap_grade}</b> that is not allowed "
-                f"for department <b>{department_doc.name}</b>."
+                f"Serial No.: <b>{serial_doc.name}</b> for Item: <b>{serial_doc.get('item_code')}</b> "
+                f"with Item Group: <b>{lap_item_group}</b> has Grade: <b>{lap_grade}</b> this is not allowed "
+                f"for Department: <b>{department_doc.name}</b>."
             )
     
     for component in serial_doc.get('serial_no_component', []):

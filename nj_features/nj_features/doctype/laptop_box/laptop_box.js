@@ -70,12 +70,13 @@ frappe.ui.form.on('Laptop Box', {
     },
 
     barcode: function(frm) {
-        frappe.call({
-            method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
-            args: { data: frm.doc.barcode }
-        });
-
+        
         if (frm.doc.barcode) {
+            frappe.call({
+                method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
+                args: { data: frm.doc.barcode }
+            });
+            
             frappe.call({
                 method: "frappe.client.get",
                 args: {

@@ -123,9 +123,9 @@ def validate_non_component_grade(serial_doc, department_doc):
 
             if lap_item_group == restricted_item_group and lap_grade in restricted_grades:
                 frappe.throw(
-                    f"Serial No <b>{serial_doc.name}</b> for item <b>{serial_doc.get('item_code')}</b> "
-                    f"with item_group <b>{lap_item_group}</b> has a grade <b>{lap_grade}</b> that is not allowed "
-                    f"for department <b>{department_doc.name}</b>."
+                    f"Serial No.: <b>{serial_doc.name}</b> for Item: <b>{serial_doc.get('item_code')}</b> "
+                    f"with Item Group: <b>{lap_item_group}</b> has Grade: <b>{lap_grade}</b> this is not allowed "
+                    f"for Department: <b>{department_doc.name}</b>."
                 )
 
         for component in serial_doc.get('serial_no_component', []):
@@ -139,9 +139,9 @@ def validate_non_component_grade(serial_doc, department_doc):
                     component.get('quantity') == 1
                 ):
                     frappe.throw(
-                        f"Serial No <b>{serial_doc.name}</b> "
-                        f"with item_group <b>{component.get('item_group')}</b> has a grade <b>{component.get('grade')}</b> that is not allowed "
-                        f"for department <b>{department_doc.name}</b>."
+                        f"Serial No.: <b>{serial_doc.name}</b> "
+                        f"with Item Group: <b>{component.get('item_group')}</b> has Grade: <b>{component.get('grade')}</b> this is not allowed "
+                        f"for Department: <b>{department_doc.name}</b>."
                     )
 
     except Exception as e:

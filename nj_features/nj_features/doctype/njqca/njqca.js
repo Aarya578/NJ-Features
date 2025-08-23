@@ -267,7 +267,7 @@ frappe.ui.form.on('NJQCA', {
                 method: 'nj_features.nj_features.doctype.njqca.njqca.create_serial_no_based_on_rfq',
                 args: { 'serial_info':frm.doc },
                 callback: function(r) {
-                    if (r.message) {console.log(r.message);}
+                    if (r.message) { console.log(r.message); }
                 }
             })
         }
@@ -836,12 +836,10 @@ frappe.ui.form.on('NJQCA', {
                     primary_action: function() {
                         let scannedSerialNo = dialog.get_value("serial_num");
                         let frm_serial_no="";
-                        if(isComponent=="0"){
+                        if (isComponent=="0") {
                            frm_serial_no= frm.doc.serial_no;
-                        }
-                        else{
-                            frm_serial_no= frm.doc.component_serial_no;
-                        }
+                        } else { frm_serial_no= frm.doc.component_serial_no; }
+
                         if (scannedSerialNo) {
 
                             frappe.call({
@@ -864,7 +862,6 @@ frappe.ui.form.on('NJQCA', {
                                     }
                                 }
                             })
-
                         }
     
                         let material_transfer_items = [{
@@ -941,11 +938,6 @@ frappe.ui.form.on('NJQCA', {
                 if (result && result.model_description) {
                     frm.set_value('model_description', result.model_description);
                     frm.refresh_field('model_description');
-
-                    // setTimeout(() => {
-                    //     $(`[data-fieldname="model_description"] .control-value`)
-                    //         .css("font-weight", "800"); 
-                    // }, 100);
                 }
             });
                     
@@ -2067,8 +2059,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
-        console.log("child",child);
-        
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
     
@@ -2089,7 +2079,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                     label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', 
                     options: ['Loading...'], default: child.ram_speed || '', 
                     reqd: !child.ram_speed, 
-                    read_only: !!child.ram_speed && child.ram_speed !== "UNKNOWN SPEED" 
+                    read_only: !!child.ram_speed && child.ram_speed.toUpperCase() !== "UNKNOWN SPEED" 
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 

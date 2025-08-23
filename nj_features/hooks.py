@@ -114,15 +114,14 @@ doctype_list_js = {
 
 override_doctype_class = {
     "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Address": "nj_features.overrides.address.CustomeAddress",
     "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
     "Workstation": "nj_features.overrides.workstation.CustomeWorkstation",
     "Delivery Note": "nj_features.overrides.delivery_note.CustomDeliveryNote",
     "Sales Invoice": "nj_features.overrides.sales_invoice.CustomSalesInvoice",	
     "Product Bundle": "nj_features.overrides.product_bundle.CustomProductBundle",
-    "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
-	"Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quality Review": "nj_features.overrides.quality_review.CustomQualityReview",
-    "Address": "nj_features.overrides.address.CustomeAddress",
+    "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
 }
 
 # Document Events
@@ -148,15 +147,14 @@ doc_events = {
         "on_submit": "nj_features.overrides.purchase_receipt.get_batch"
     },
     "Purchase Order": {
-        "on_submit": "nj_features.overrides.purchase_order.validate_warranty_on_submit",  # ✅ NEW ENTRY
-        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links"
+        "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
+        "on_submit": "nj_features.overrides.purchase_order.validate_warranty_on_submit",
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration"
     }
 }
-
 
 # doc_events = {
 #     "Sales Order": {
@@ -207,12 +205,7 @@ override_whitelisted_methods = {
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
 }
 
-
-
-
-
 scheduler_events = {
-    
     "cron": {
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
@@ -247,10 +240,10 @@ scheduler_events = {
         ],
         "0 */2 * * *": [
             "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.updting_sla_department"
-        ],
-        
+        ]
     }
 }
+
 # update_status_in_shopify
 # Testing
 # -------

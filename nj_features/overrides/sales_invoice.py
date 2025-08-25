@@ -4,8 +4,9 @@ import json
 import requests
 import frappe
 import six
+import frappe, json, six
 from frappe.utils import (
-    flt, getdate, cint
+    flt, getdate, cint,add_days, nowdate, getdate
 )
 from erpnext.regional.india.e_invoice.utils import (
     read_json,
@@ -650,19 +651,19 @@ def fetching_transporter_details(docname):
         "email": invoice.email,
     }
 
-# @frappe.whitelist()
-# def due_date_validation(doc):
-#     if isinstance(doc, str):
-#         doc = json.loads(doc)
+@frappe.whitelist()
+def due_date_validation(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
 
-#     si = frappe.get_doc(doc)
-#     current_date = getdate(nowdate())
-#     new_due_date = add_days(current_date, 7)
-#     si.due_date = new_due_date
-#     si.save(ignore_permissions=True)
-#     frappe.db.commit()
+    si = frappe.get_doc(doc)
+    current_date = getdate(nowdate())
+    new_due_date = add_days(current_date, 7)
+    si.due_date = new_due_date
+    si.save(ignore_permissions=True)
+    frappe.db.commit()
 
-#     return {"due_date": new_due_date}
+    return {"due_date": new_due_date}
 
 # ✅ Register override class
 def override_sales_invoice():

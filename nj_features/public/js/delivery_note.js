@@ -101,26 +101,26 @@ frappe.ui.form.on('Delivery Note', {
             }
         }
 
-        // if (frm.doc.docstatus === 1) {
-        //     let shiprocket_btn = frm.add_custom_button(__('Fetch Shiprocket data'), function() {
-        //         frappe.show_alert({ message: __('Fetching Shiprocket data...'), indicator: 'blue' });
-        //         frappe.call({
-        //             method: 'nj_features.overrides.delivery_note.fetch_shiprocket_details',
-        //            args: { doc: JSON.stringify(frm.doc) },
-        //              callback: function(response) {
-        //                     if (response.message) {
-        //                         // Assuming your method sets courier_service to 'Shiprocket'
-        //                         frm.reload_doc();
-        //                         frappe.show_alert({
-        //                             message: __('Fetched Shiprocket data successfully!'),
-        //                             indicator: 'green'
-        //                         });
-        //                     }
-        //                 }
-        //         });
-        //     });
-        //     shiprocket_btn.addClass('btn-primary');
-        // }
+        if (frm.doc.docstatus === 0) {
+            let shiprocket_btn = frm.add_custom_button(__('Fetch Shiprocket data'), function() {
+                frappe.show_alert({ message: __('Fetching Shiprocket data...'), indicator: 'blue' });
+                frappe.call({
+                    method: 'nj_features.overrides.delivery_note.fetch_shiprocket_details',
+                   args: { doc: JSON.stringify(frm.doc) },
+                     callback: function(response) {
+                            if (response.message) {
+                                // Assuming your method sets courier_service to 'Shiprocket'
+                                frm.reload_doc();
+                                frappe.show_alert({
+                                    message: __('Fetched Shiprocket data successfully!'),
+                                    indicator: 'green'
+                                });
+                            }
+                        }
+                });
+            });
+            shiprocket_btn.addClass('btn-primary');
+        }
 
     },
     

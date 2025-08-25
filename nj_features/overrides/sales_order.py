@@ -91,28 +91,38 @@ class CustomSalesOrder(SalesOrder):
                 else:
                     self.save(ignore_permissions=True)
 
+    # def maintenance_order_validation(self):
+    #     print("inside the function=================")
+    #     nj_setting = frappe.db.get_value(
+    #         "NJ Settings", 
+    #         {"parameter": "order_type"}, 
+    #         "value"
+    #     )        
+    #     if self.order_type != nj_setting:
+    #         return
+
+    #     if self.grand_total < 500:
+    #         self.approve = 1  
+    #     else:
+    #         self.approve = 0  
+    #     self.save(ignore_permissions=True)
+
     def maintenance_order_validation(self):
         print("inside the function=================")
+        
         nj_setting = frappe.db.get_value(
             "NJ Settings", 
             {"parameter": "order_type"}, 
             "value"
         )        
+
         if self.order_type != nj_setting:
             return
 
-        if self.grand_total < 500:
-            self.approve = 1  
-        else:
-            self.approve = 0  
-        self.save(ignore_permissions=True)
-
-
-
+        approve_value = 1 if self.grand_total < 500 else 0
+        frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
+        self.approve = approve_value
     
-
-                
-
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:

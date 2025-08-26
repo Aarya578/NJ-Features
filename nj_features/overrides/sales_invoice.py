@@ -4,8 +4,9 @@ import json
 import requests
 import frappe
 import six
+import frappe, json, six
 from frappe.utils import (
-    flt, getdate, cint
+    flt, getdate, cint,add_days, nowdate, getdate
 )
 from erpnext.regional.india.e_invoice.utils import (
     read_json,
@@ -32,6 +33,47 @@ from erpnext.regional.india.e_invoice.utils import raise_document_name_too_long_
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 
 class CustomSalesInvoice(SalesInvoice):
+    def on_submit(self):
+        super(CustomSalesInvoice, self).on_submit()
+        self.close_sales_order_if_fully_refunded()
+    
+    def close_sales_order_if_fully_refunded(self):
+        """Close linked Sales Orders if full qty refunded via Credit Notes"""
+
+        if not self.is_return:
+            return
+
+        if not self.return_against:
+            return
+
+        original_sinv = frappe.get_doc("Sales Invoice", self.return_against)
+
+        # collect SOs from line items
+        sales_orders = {d.sales_order for d in original_sinv.items if d.sales_order}
+        if not sales_orders:
+            return
+
+        # Total qty of original SINV
+        total_original_qty = sum([d.qty for d in original_sinv.items])
+
+        # Total returned qty across all credit notes
+        returned_qty = 0
+        credit_notes = frappe.get_all(
+            "Sales Invoice",
+            filters={"is_return": 1, "return_against": original_sinv.name, "docstatus": 1},
+            fields=["name"]
+        )
+        for cn in credit_notes:
+            cn_doc = frappe.get_doc("Sales Invoice", cn.name)
+            returned_qty += sum([abs(d.qty) for d in cn_doc.items])
+
+        # If fully refunded, close each linked SO
+        if flt(returned_qty, 2) >= flt(total_original_qty, 2):
+            for so_name in sales_orders:
+                so = frappe.get_doc("Sales Order", so_name)
+                so.update_status("Closed")
+                frappe.msgprint(f"Sales Order {so.name} is closed as full qty refunded.")
+
     def validate(self):
         super(CustomSalesInvoice, self).validate()
         einvoice_settings = frappe.get_cached_doc("E Invoice Settings")
@@ -105,6 +147,7 @@ class CustomSalesInvoice(SalesInvoice):
 def override_sales_invoice():
     from erpnext.accounts.doctype.sales_invoice import sales_invoice
     sales_invoice.SalesInvoice = CustomSalesInvoice
+
 
 @frappe.whitelist()
 def mail_trigger_for_payment_terms_from_quotation():
@@ -650,19 +693,19 @@ def fetching_transporter_details(docname):
         "email": invoice.email,
     }
 
-# @frappe.whitelist()
-# def due_date_validation(doc):
-#     if isinstance(doc, str):
-#         doc = json.loads(doc)
+@frappe.whitelist()
+def due_date_validation(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
 
-#     si = frappe.get_doc(doc)
-#     current_date = getdate(nowdate())
-#     new_due_date = add_days(current_date, 7)
-#     si.due_date = new_due_date
-#     si.save(ignore_permissions=True)
-#     frappe.db.commit()
+    si = frappe.get_doc(doc)
+    current_date = getdate(nowdate())
+    new_due_date = add_days(current_date, 7)
+    si.due_date = new_due_date
+    si.save(ignore_permissions=True)
+    frappe.db.commit()
 
-#     return {"due_date": new_due_date}
+    return {"due_date": new_due_date}
 
 # ✅ Register override class
 def override_sales_invoice():

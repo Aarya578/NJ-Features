@@ -600,8 +600,9 @@ frappe.ui.form.on('NJQCA', {
                 "manufacturer_model":frm.doc.manufacturer_model
             },
             callback: function(r) {
-                if (r.message) { 
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                if (r.message) {
+                    frm.set_value('sudden_drop', r.message);
+                    // frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
                     frm.refresh_field('sudden_drop');
                 }
             }
@@ -617,7 +618,7 @@ frappe.ui.form.on('NJQCA', {
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         if(r.message == "Pass"){
                             frm.set_value('bdt_status', "Pass");
-                            frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
+                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
@@ -625,7 +626,7 @@ frappe.ui.form.on('NJQCA', {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
                         }else if(r.message == "Fail"){
                             frm.set_value('bdt_status', "Fail");
-                            frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
+                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);

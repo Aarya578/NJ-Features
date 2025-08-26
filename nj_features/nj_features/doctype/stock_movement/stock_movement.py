@@ -454,7 +454,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                     ]
 
                     if qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
-                        expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                        expected_status = ",".join(quality_inspection_status_for_stock_movement)
                         actual_status = qi_doc.get("status")
 
                         error_messages.append(

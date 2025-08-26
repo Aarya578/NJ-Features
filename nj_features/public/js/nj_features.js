@@ -676,6 +676,13 @@ function show_login_verification_popup(user) {
                 fieldtype: "Link",
                 options: "Role Profile",
                 reqd: 1
+            },
+            {
+                label: "Department Under",
+                fieldname: "department_under",
+                fieldtype: "Select",
+                options: "\nDesktop\nLaptop\nManagement",
+                reqd: 1
             }
         ],
         static: 1,
@@ -688,7 +695,8 @@ function show_login_verification_popup(user) {
                 args: {
                     user: user,
                     department: values.department,
-                    role_profile: values.role_profile
+                    role_profile: values.role_profile,
+                    department_under: values.department_under
                 },
                 callback: (r) => {
                     if (r.message === true || r.message?.True === true) {

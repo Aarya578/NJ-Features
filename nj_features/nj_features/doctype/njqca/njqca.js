@@ -1009,6 +1009,7 @@ frappe.ui.form.on('NJQCA', {
         //    })
         // }
     },
+
     before_save: function(frm) {
         if (frm.doc.name && frm.doc.item_template && frm.doc.item_group=="Laptops") {
             frappe.call({
@@ -1092,9 +1093,7 @@ function processItemTemplate(frm) {
                     if (typeof r.message === 'string') {
                         try {
                             r.message = JSON.parse(r.message);
-                        } catch (e) {
-                            console.error("Failed to parse message:", e);
-                        }
+                        } catch (e) { console.error("Failed to parse message:", e); }
                     }
 
                     if (r.message.repack_item_code) {
@@ -1544,36 +1543,6 @@ function generateRamItemCode(frm, cdt, cdn, child) {
     }
 }
 
-// - Not used replaced by pop-up
-// function set_options_for_attribute_fields_in_child(frm, grid) {
-//     let selectFields = [];
-    
-//     $.each(grid.grid_rows, function(i, row) {
-//         $.each(row.columns, function(j, field) {
-//             if (field.df.fieldtype === 'Select') {
-//                 selectFields.push({
-//                     fieldname: field.df.fieldname,
-//                     rowname: row.doc.name,
-//                     label: field.df.label
-//                 });
-//             }
-//         });
-//     });
-
-//     frappe.call({
-//         method: "nj_features.nj_features.doctype.njqca.njqca.get_item_attributes",
-//         args: { selected_fields: selectFields },
-//         callback: function(r) {
-//             if (r.message) {
-//                 $.each(r.message, function(i, field) {
-//                     frm.set_df_property(grid.df.fieldname, 'options', field.options, frm.docname, field.fieldname, field.rowname);
-//                     frm.refresh_field(grid.df.fieldname);
-//                 });
-//             }
-//         }
-//     });
-// }
-
 frappe.ui.form.on('NJQCA Display', {
     njqca_display_add: function(frm, cdt, cdn) {
         frm.fields_dict['njqca_display'].grid.refresh();
@@ -1658,6 +1627,7 @@ frappe.ui.form.on('NJQCA Display', {
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
+                        
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
                         } else { resolve([]); }

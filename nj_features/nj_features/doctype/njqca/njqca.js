@@ -239,6 +239,19 @@ frappe.ui.form.on('NJQCA', {
                 })
             }
 
+            if (frm.doc.inspection_type ) {
+                frappe.call({
+                    method: 'nj_features.nj_features.doctype.njqca.njqca.set_is_defective',
+                    args: { 'inspection_type': frm.doc.inspection_type },
+                    callback: function(r) {
+                        if (r && r.message  && r.message=="1") {
+                            frm.set_value('qi_type', 'is_defective');
+                            frm.refresh_field('qi_type');
+                        }
+                    }
+                })
+            }
+
             if (!frm.doc.__islocal) { get_model(frm.doc.manufacturer_model); }
 
             setup_merge_checkbox_handler(frm, 'njqca_laptop_processors');
@@ -308,7 +321,10 @@ frappe.ui.form.on('NJQCA', {
         }
 
         if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (!frm.doc.rfq_id)){
-
+            let inspection_type_data=await frappe.db.get_value("NJ Settings", {'parameter': 'battry_unknown_grade_inspection_types'}, 'value');
+            let inspection_type = inspection_type_data?.message?.value || "";
+            let inspection_types = inspection_type.split(",").map(s => s.trim());
+            console.log("inspecction_type",inspection_type);
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
                 args: {
@@ -318,12 +334,23 @@ frappe.ui.form.on('NJQCA', {
                     "manufacturer_model": frm.doc.manufacturer_model
                 },
                 freeze: true,
-                freeze_message: `<div style="text-align: center;">
-                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i><br>
-                    <strong>Processing NJQCA...</strong><br>Please wait while we save or submit your data.
-                </div>`,
+                freeze_message:__("Checking battery status..."),
                 callback: function(r) {
-                    if (r.message) {
+                    if (r.message && inspection_types.includes(frm.doc.inspection_type)){
+                        let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status_1");
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
+
+                        if (r.message === "PASS") {
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                        } else if (r.message === "FAIL") {
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "-3");
+                        } else if (r.message === "Report Not found") {
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "-2");
+                        }
+                    }else{
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
 
                         frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
@@ -337,6 +364,7 @@ frappe.ui.form.on('NJQCA', {
                         } else if (r.message === "Report Not found") {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
                         }
+
                     }
 
                     frm.refresh_field("njqca_result_parameters");

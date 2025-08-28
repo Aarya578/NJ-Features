@@ -1,6 +1,8 @@
 frappe.ui.form.on('Quality Review', {
     refresh: function(frm) {
-        console.log("🔁 Quality Review loaded");
+        if (frm.doc.reviewee) {
+            set_reviewee_data(frm);
+        }
     },
     quality_procedure_name: function(frm) {
         if (frm.doc.review_type) {
@@ -63,4 +65,75 @@ frappe.ui.form.on('Quality Review', {
             frappe.msgprint(__("Please select a Review Type"));
         }
     },
+    reviewee: function(frm) {
+        if (frm.doc.reviewee) {
+            set_reviewee_data(frm);
+        }
+    },
+    serial_no: function(frm) {
+        console.log('serial_no',frm.doc.serial_no);
+        if (frm.doc.serial_no) {
+            if(frm.doc.inspection){
+                console.log("serial_no", frm.doc.serial_no);
+                frappe.call({
+                    method: 'nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection.validation_for_nj_readings_in_nj_qi',
+                    args: {
+                        serial_no: frm.doc.serial_no,
+                        inspection_type: frm.doc.inspection,
+                        is_defective: 0,
+                        re_check: 0
+                    },
+                    callback: function(r) {
+                        console.log("get_serial_no_details-------", r.message.sequence_list_for_nj_readings_data);
+                        if(r.message.sequence_list_for_nj_readings_data){
+                            
+                        }
+                    }
+                })
+            }
+            else{
+                frappe.msgprint(__("Please select a Inspection Type"));
+            }
+        }
+        else if(frm.doc.serial_no == null){
+            frappe.msgprint(__("Please select a correct Serial No."));
+        }
+    }
 });
+
+
+function set_reviewee_data(frm) {
+    frappe.db.get_doc('User', frm.doc.reviewee)
+        .then(user => {
+            if (user.role_profile_name) {
+                frappe.db.get_doc('Role Profile', user.role_profile_name)
+                    .then(roleProfile => {
+                        // Department
+                        if (roleProfile.department) {
+                            frm.set_value('department', roleProfile.department);
+                        }
+
+                        // Inspection Types
+                        if (roleProfile.inspection_types && roleProfile.inspection_types.length > 0) {
+                            let options = roleProfile.inspection_types.map(d => d.inspection_type);
+
+                            // Update select field options
+                            frm.set_df_property('inspection', 'options', options);
+
+                            // Restore saved value if it exists, otherwise set default
+                            if (frm.doc.inspection && options.includes(frm.doc.inspection)) {
+                                frm.set_value('inspection', frm.doc.inspection);
+                            } else if (!frm.doc.inspection) {
+                                frm.set_value('inspection', options[0]);
+                            }
+                        }
+                        else {
+                            frm.set_value('inspection', '');
+                            frm.set_df_property('inspection', 'options', []);
+                        }
+                    });
+            } else {
+                frappe.msgprint(__('No Role Profile found for this user'));
+            }
+        });
+}

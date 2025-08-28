@@ -23,36 +23,36 @@ class CustomeAddress(Address):
 				frappe.throw(_("Please enter a valid 6-digit numeric Pin Code without spaces or special characters"))
 
 			# Call API
-			url = f"https://api.postalpincode.in/pincode/{self.pincode}"
-			# print("url=====================", url)
+			# url = f"https://api.postalpincode.in/pincode/{self.pincode}"
+			# # print("url=====================", url)
 
-			headers = {
-				"User-Agent": "Mozilla/5.0",
-				"Accept": "application/json"
-			}
+			# headers = {
+			# 	"User-Agent": "Mozilla/5.0",
+			# 	"Accept": "application/json"
+			# }
 
-			try:
-				response = requests.get(url, headers=headers, timeout=10)
-				data = response.json()
-				# print("data=====================", data)
+			# try:
+			# 	response = requests.get(url, headers=headers, timeout=10)
+			# 	data = response.json()
+			# 	# print("data=====================", data)
 
-				if data and data[0].get("Status") == "Success":
-					post_offices = data[0].get("PostOffice", [])
-					if post_offices:
-						state_name = post_offices[0].get("State")
-						# print("state_name=====================", state_name)
-						if state_name:
-							self.state = state_name
+			# 	if data and data[0].get("Status") == "Success":
+			# 		post_offices = data[0].get("PostOffice", [])
+			# 		if post_offices:
+			# 			state_name = post_offices[0].get("State")
+			# 			# print("state_name=====================", state_name)
+			# 			if state_name:
+			# 				self.state = state_name
 							
-						else:
-							frappe.throw(_("State information not found for this Pin Code"))
-					else:
-						frappe.throw(_("No Post Office data found for this Pin Code"))
-				else:
-					frappe.throw(_("Invalid Pin Code or data not found"))
+			# 			else:
+			# 				frappe.throw(_("State information not found for this Pin Code"))
+			# 		else:
+			# 			frappe.throw(_("No Post Office data found for this Pin Code"))
+			# 	else:
+			# 		frappe.throw(_("Invalid Pin Code or data not found"))
 				
-			except requests.exceptions.RequestException as e:
-				frappe.throw(_("Error fetching State from Pin Code API: {0}").format(str(e)))
+			# except requests.exceptions.RequestException as e:
+			# 	frappe.throw(_("Error fetching State from Pin Code API: {0}").format(str(e)))
 	# def state_validetion(self):
 	# 	if self.state!= self.gst_state:
 	# 						frappe.throw(_("State Province state and GST state do not match Please corect it"))

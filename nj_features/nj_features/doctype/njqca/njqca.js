@@ -600,8 +600,9 @@ frappe.ui.form.on('NJQCA', {
                 "manufacturer_model":frm.doc.manufacturer_model
             },
             callback: function(r) {
-                if (r.message) { 
-                    frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
+                if (r.message) {
+                    frm.set_value('sudden_drop', r.message);
+                    // frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
                     frm.refresh_field('sudden_drop');
                 }
             }
@@ -617,7 +618,7 @@ frappe.ui.form.on('NJQCA', {
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         if(r.message == "Pass"){
                             frm.set_value('bdt_status', "Pass");
-                            frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
+                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
@@ -625,7 +626,7 @@ frappe.ui.form.on('NJQCA', {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
                         }else if(r.message == "Fail"){
                             frm.set_value('bdt_status', "Fail");
-                            frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
+                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
@@ -1009,6 +1010,7 @@ frappe.ui.form.on('NJQCA', {
         //    })
         // }
     },
+
     before_save: function(frm) {
         if (frm.doc.name && frm.doc.item_template && frm.doc.item_group=="Laptops") {
             frappe.call({
@@ -1092,9 +1094,7 @@ function processItemTemplate(frm) {
                     if (typeof r.message === 'string') {
                         try {
                             r.message = JSON.parse(r.message);
-                        } catch (e) {
-                            console.error("Failed to parse message:", e);
-                        }
+                        } catch (e) { console.error("Failed to parse message:", e); }
                     }
 
                     if (r.message.repack_item_code) {
@@ -1544,36 +1544,6 @@ function generateRamItemCode(frm, cdt, cdn, child) {
     }
 }
 
-// - Not used replaced by pop-up
-// function set_options_for_attribute_fields_in_child(frm, grid) {
-//     let selectFields = [];
-    
-//     $.each(grid.grid_rows, function(i, row) {
-//         $.each(row.columns, function(j, field) {
-//             if (field.df.fieldtype === 'Select') {
-//                 selectFields.push({
-//                     fieldname: field.df.fieldname,
-//                     rowname: row.doc.name,
-//                     label: field.df.label
-//                 });
-//             }
-//         });
-//     });
-
-//     frappe.call({
-//         method: "nj_features.nj_features.doctype.njqca.njqca.get_item_attributes",
-//         args: { selected_fields: selectFields },
-//         callback: function(r) {
-//             if (r.message) {
-//                 $.each(r.message, function(i, field) {
-//                     frm.set_df_property(grid.df.fieldname, 'options', field.options, frm.docname, field.fieldname, field.rowname);
-//                     frm.refresh_field(grid.df.fieldname);
-//                 });
-//             }
-//         }
-//     });
-// }
-
 frappe.ui.form.on('NJQCA Display', {
     njqca_display_add: function(frm, cdt, cdn) {
         frm.fields_dict['njqca_display'].grid.refresh();
@@ -1658,6 +1628,7 @@ frappe.ui.form.on('NJQCA Display', {
                     method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
                     args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
                     callback: function(r) {
+                        
                         if (r.message && Array.isArray(r.message)) {
                             resolve(r.message);
                         } else { resolve([]); }

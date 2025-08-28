@@ -85,48 +85,44 @@ class CustomSalesOrder(SalesOrder):
                 )
             else:
                 self.approve = 1
-                self.save(ignore_permissions=True) 
+                # Use DB update to avoid document save validation
+                if self.docstatus == 1:  # Already submitted
+                    frappe.db.set_value("Sales Order", self.name, "approve", 1)
+                else:
+                    self.save(ignore_permissions=True)
+
+    # def maintenance_order_validation(self):
+    #     print("inside the function=================")
+    #     nj_setting = frappe.db.get_value(
+    #         "NJ Settings", 
+    #         {"parameter": "order_type"}, 
+    #         "value"
+    #     )        
+    #     if self.order_type != nj_setting:
+    #         return
+
+    #     if self.grand_total < 500:
+    #         self.approve = 1  
+    #     else:
+    #         self.approve = 0  
+    #     self.save(ignore_permissions=True)
 
     def maintenance_order_validation(self):
+        print("inside the function=================")
+        
         nj_setting = frappe.db.get_value(
             "NJ Settings", 
             {"parameter": "order_type"}, 
             "value"
-        )
+        )        
+
         if self.order_type != nj_setting:
             return
 
-        replacing_order_name = frappe.db.get_value(
-            "Sales Order",
-            self.name,
-            "replacing_order"
-        )
-        if not replacing_order_name:
-            frappe.throw("No replacing order found for this Sales Order.")
-
-        query = """
-            SELECT si.name, si.status
-            FROM `tabSales Invoice` si
-            INNER JOIN `tabSales Invoice Item` sii 
-                ON si.name = sii.parent
-            INNER JOIN `tabSales Order` so 
-                ON sii.sales_order = so.name
-            WHERE so.name = %s
-        """
-        results = frappe.db.sql(query, (replacing_order_name,), as_dict=True)
-
-        for row in results:
-            if row.status != "Paid":
-                # frappe.throw(
-                #     f"Sales Invoice {row.name} has status '{row.status}'. Only 'Paid' invoices are allowed."
-                # )
-                self.approve = 0
-            else:
-                self.approve = 1
-            self.save(ignore_permissions=True) 
-
-                
-
+        approve_value = 1 if self.grand_total < 500 else 0
+        frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
+        self.approve = approve_value
+    
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -612,4 +608,6 @@ def setting_sales_channel_value(doc):
         doc["sales_channel"] = "Store"
     elif sales_type == "NJ-Website-B2C":
         doc["sales_channel"] = "Shopify"
+    elif sales_type == "Amazon":
+        doc["sales_channel"] = "Amazon"
     return doc

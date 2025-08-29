@@ -85,9 +85,19 @@ frappe.ui.form.on('Quality Review', {
                     },
                     callback: function(r) {
                         console.log("get_serial_no_details-------", r.message.sequence_list_for_nj_readings_data);
+                        (frm.doc.review_procedures_table || []).forEach((row, idx) => {
+                            if (row.item_group) {
+                                frm.get_field("review_procedures_table").grid.grid_rows[idx].remove();
+                            }
+                        });
                         if(r.message.sequence_list_for_nj_readings_data){
-                            
+                            r.message.sequence_list_for_nj_readings_data.forEach(function(rowData) {
+                                let row = frm.add_child('review_procedures_table');
+                                row.item_group = rowData.item_group;
+                                row.step = rowData.quality_check;
+                            })
                         }
+                        frm.refresh_field("review_procedures_table");
                     }
                 })
             }

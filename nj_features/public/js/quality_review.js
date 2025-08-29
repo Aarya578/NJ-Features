@@ -23,28 +23,43 @@ frappe.ui.form.on('Quality Review', {
                         // console.log("get_quality_procedure_details-------", r);
                         if (r.message && r.message.length > 0) {
                             frm.clear_table('review_procedures_table');
-                            r.message.forEach(function(rowData) {
-                            // Parse the HTML in rowData.step
-                            let tempDiv = document.createElement("div");
-                            tempDiv.innerHTML = rowData.step;
 
-                            // Get all list items <li>
-                            let steps = tempDiv.querySelectorAll("li");
+                            // loop r.message in reverse
+                            for (let idx = r.message.length - 1; idx >= 0; idx--) {
+                                let rowData = r.message[idx];
 
-                            steps.forEach(function(li) {
-                                let row = frm.add_child('review_procedures_table');
-                                row.sub_procedure = rowData.procedure;
-                                row.task = rowData.task;
-                                row.severity = rowData.severity;
-                                row.reviewee = frm.doc.reviewee;
-                                row.item_group = rowData.item_group;
-                                row.step = li.innerText;   // each individual step
-                            });
-                        });
+                                let tempDiv = document.createElement("div");
+                                tempDiv.innerHTML = rowData.step || "";
 
-                        frm.refresh_field("review_procedures_table");
+                                let steps = tempDiv.querySelectorAll("li");
 
+                                if (steps.length > 0) {
+                                    // expand each <li> as separate row
+                                    steps.forEach(function(li) {
+                                        let row = frm.add_child('review_procedures_table');
+                                        row.sub_procedure = rowData.procedure;
+                                        row.task = rowData.task;
+                                        row.severity = rowData.severity;
+                                        row.reviewee = frm.doc.reviewee;
+                                        row.item_group = rowData.item_group;
+                                        row.step = li.innerText.trim();
+                                    });
+                                } else {
+                                    // plain text fallback
+                                    let row = frm.add_child('review_procedures_table');
+                                    row.sub_procedure = rowData.procedure;
+                                    row.task = rowData.task;
+                                    row.severity = rowData.severity;
+                                    row.reviewee = frm.doc.reviewee;
+                                    row.item_group = rowData.item_group;
+                                    row.step = (rowData.step || "").trim();
+                                }
+                            }
+
+                            frm.refresh_field("review_procedures_table");
                         }
+
+
                         else{
                             frappe.msgprint({
                                 title: __('Info'),

@@ -4,6 +4,15 @@ frappe.ui.form.on('Quality Review', {
             set_reviewee_data(frm);
         }
     },
+    onload: function(frm) {
+        frm.set_query("quality_procedure_name", function() {
+            return {
+                filters: {
+                    is_subprocedure: 0
+                }
+            };
+        });
+    },
     quality_procedure_name: function(frm) {
         if (frm.doc.review_type) {
             if (frm.doc.review_type != "Adhoc Review") {

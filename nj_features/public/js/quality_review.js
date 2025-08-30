@@ -86,10 +86,8 @@ frappe.ui.form.on('Quality Review', {
         }
     },
     serial_no: function(frm) {
-        console.log('serial_no',frm.doc.serial_no);
         if (frm.doc.serial_no) {
             if(frm.doc.inspection){
-                console.log("serial_no", frm.doc.serial_no);
                 frappe.call({
                     method: 'nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection.validation_for_nj_readings_in_nj_qi',
                     args: {
@@ -99,7 +97,6 @@ frappe.ui.form.on('Quality Review', {
                         re_check: 0
                     },
                     callback: function(r) {
-                        console.log("get_serial_no_details-------", r.message.sequence_list_for_nj_readings_data);
                         (frm.doc.review_procedures_table || []).forEach((row, idx) => {
                             if (row.item_group) {
                                 frm.get_field("review_procedures_table").grid.grid_rows[idx].remove();
@@ -110,6 +107,20 @@ frappe.ui.form.on('Quality Review', {
                                 let row = frm.add_child('review_procedures_table');
                                 row.item_group = rowData.item_group;
                                 row.step = rowData.quality_check;
+                                row.reviewee = frm.doc.reviewee;
+                                frappe.call({
+                                    method: 'nj_features.overrides.quality_review.get_kms_data',
+                                    args: {
+                                        item_group: rowData.item_group,
+                                        serial_no: frm.doc.serial_no,
+                                        department: frm.doc.department,
+                                    },
+                                    callback: function(r) {
+                                        if (r.message) {
+                                            row.kms = r.message
+                                        }
+                                    }
+                                })
                             })
                         }
                         frm.refresh_field("review_procedures_table");
@@ -137,6 +148,9 @@ function set_reviewee_data(frm) {
                         if (roleProfile.department) {
                             frm.set_value('department', roleProfile.department);
                         }
+                        else {
+                            frm.set_value('department', '');
+                        }
 
                         // Inspection Types
                         if (roleProfile.inspection_types && roleProfile.inspection_types.length > 0) {
@@ -162,3 +176,4 @@ function set_reviewee_data(frm) {
             }
         });
 }
+

@@ -1138,6 +1138,17 @@ def get_item_code_for_each_part(doc):
                 item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
+                if repack_item_code and 'error' in repack_item_code:
+                    old_commment = frappe.db.get_value("Comment", {'reference_doctype': doc.get('doctype'), 'reference_name': doc.get('name'), 'content': "Automated Item code not found: "+repack_item_code.get('error')}, "content")
+                    if not old_commment:
+                        frappe.get_doc({
+                            'doctype': 'Comment',
+                            'comment_type': 'Comment',
+                            'reference_doctype': doc.get('doctype'),
+                            'reference_name': doc.get('name'),
+                            'content':  "Automated Item code not found: "+repack_item_code.get('error'),
+                        }).insert(ignore_permissions=True)
+
                 result_part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
 
                 if result_part_data:

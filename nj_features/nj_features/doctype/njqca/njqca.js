@@ -539,7 +539,7 @@ frappe.ui.form.on('NJQCA', {
             
             if (resp && resp.is_component == 0) {
                 
-                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage' ];
+                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_adaptor', 'njqca_display' ];
                 let mismatches = [];
                 let i = 0;
 
@@ -1104,10 +1104,12 @@ function processItemTemplate(frm) {
                             var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
                             $(frm.layout.wrapper).find('.form-message.red').remove();
                             $(frm.layout.wrapper).prepend(errorDiv);
+                            
                             frappe.show_alert({
                                 message: errorMessageString,
                                 indicator: 'red'
                             }, 10)
+
                         } else {
                             frm.set_value('repack_item_code', r.message.repack_item_code);
                             frm.set_value('manual_repack_item_code', r.message.repack_item_code);

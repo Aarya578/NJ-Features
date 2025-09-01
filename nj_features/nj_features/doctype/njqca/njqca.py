@@ -131,6 +131,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                new_qi.njqca_laptop_name = self.name
                 create_new_qi = False
 
         if create_new_qi:

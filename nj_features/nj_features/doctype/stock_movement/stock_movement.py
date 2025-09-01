@@ -288,7 +288,7 @@ def validate_serial_no_and_department(row, error_messages):
             if int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
-            # check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
+            check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
             one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages)

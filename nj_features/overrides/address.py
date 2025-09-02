@@ -59,27 +59,22 @@ class CustomeAddress(Address):
 
 	def address_validations(self):
 
-		if self.address_line1 and len(self.address_line1) > 100:
-			# print("address_line1=====================", len(self.address_line1),self.address_line1)
-			frappe.throw(_("Address Line 1 should not exceed 100 characters"))
+		if self.address_line1 and len(self.address_line1) > 90:
+			frappe.throw(_("Address Line 1 should not exceed 90 characters"))
 
-		if self.address_line2 and len(self.address_line2) > 100:
-			# print("address_line2=====================", len(self.address_line2),self.address_line2)
-			frappe.throw(_("Address Line 2 should not exceed 100 characters"))
+		if self.address_line2 and len(self.address_line2) > 90:
+			frappe.throw(_("Address Line 2 should not exceed 90 characters"))
 
 
 @frappe.whitelist()
 def hiding_gst_filed(links):
 	if isinstance(links, str):
 		links = json.loads(links)
-		# print("links=======================",links)
 
 	for link in links:
 		if link.get("link_doctype") == "Customer":
 			customer_name = link.get("link_name")
-			# print("customer_name=======================",customer_name)
 			gst_category = frappe.db.get_value("Customer", customer_name, "gst_category")
-			# print("gst_category=======================",gst_category)
 			return {"hide_gstin": gst_category == "Unregistered"}
 
 	return {"hide_gstin": False}
@@ -112,7 +107,6 @@ def fetch_gst_details(doc):
 
 		auth_json = auth_res.json()
 		access_token = auth_json.get("access_token")
-		print("access_token=======================", access_token)
 		if not access_token:
 			frappe.throw(_("Failed to fetch access token."))
 
@@ -121,7 +115,6 @@ def fetch_gst_details(doc):
 
 		# Step 3: Call GST API with bearer token
 		url = f"https://gsp.adaequare.com/enriched/ei/api/master/gstin?gstin={doc.get('gstin')}"
-		print("url=======================", url)
 		headers = {
 			"Content-Type": "application/json",
 			"user_name": "API_NJ",
@@ -132,15 +125,12 @@ def fetch_gst_details(doc):
 		}
 
 		res = requests.get(url, headers=headers)
-		print("res=======================", res.json())
 		data = res.json()
-		print("data=======================", data)
 
 		if not data.get("success"):
 			frappe.throw(_("Failed to fetch GST details: {0}").format(data.get("message")))
 
 		result = data.get("result", {})
-		print("result=======================", result)
 
 		# Step 4: Map fields into doc
 		doc["address_title"] = result.get("LegalName")
@@ -151,9 +141,7 @@ def fetch_gst_details(doc):
 			# result.get("AddrSt"),
 			result.get("AddrLoc")
 		]))
-		print("doc=====line 1==================", doc["address_line1"])
 		doc["address_line2"] = result.get("AddrSt")
-		print("doc=====line 2==================", doc["address_line2"])
 		doc["city"] = result.get("AddrLoc")
 		doc["pincode"] = result.get("AddrPncd")
 		doc["gst_state_number"] = result.get("StateCode")

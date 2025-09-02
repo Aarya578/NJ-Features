@@ -8,7 +8,8 @@
   "item_group",
   "test_details",
   "results",
-  "proof"
+  "proof",
+  "cpu_load"
  ],
  "fields": [
   {
@@ -34,11 +35,17 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Item Group"
+  },
+  {
+   "fieldname": "cpu_load",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CPU Load"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-21 16:51:28.802426",
+ "modified": "2025-09-02 15:21:19.964759",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "QC Reports",

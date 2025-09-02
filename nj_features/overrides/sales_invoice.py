@@ -93,10 +93,38 @@ class CustomSalesInvoice(SalesInvoice):
         # Removed the `else` block to prevent clearing packed_items
 
     def validate_einvoice_fields(self):
+        
         invoice_eligible = _validate_eligibility(self)
         if not invoice_eligible:
             return
+        sales_order_name = None
+        for item in self.items:
+            if item.sales_order:
+                sales_order_name = item.sales_order
+                break
 
+        if not sales_order_name:
+            frappe.throw("No sales order found for this sales invoice.")
+
+        query = """
+            SELECT 
+                si.name AS sales_invoice, 
+                so.approve 
+            FROM `tabSales Invoice` si 
+            INNER JOIN `tabSales Invoice Item` sii     
+                ON si.name = sii.parent 
+            INNER JOIN `tabSales Order` so
+                ON sii.sales_order = so.name 
+            WHERE so.name = %s
+        """  
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True) 
+        # print("results=======================",results)       
+        for row in results:        
+            if not row.approve or int(row.approve) != 1:
+                # self.approved = 1
+                frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
+            else:
+                self.approved = 1
         if self.docstatus == 0 and self._action == "save":
             if self.irn:
                 frappe.throw(_("You cannot edit the invoice after generating IRN"), title=_("Edit Not Allowed"))
@@ -693,19 +721,19 @@ def fetching_transporter_details(docname):
         "email": invoice.email,
     }
 
-@frappe.whitelist()
-def due_date_validation(doc):
-    if isinstance(doc, str):
-        doc = json.loads(doc)
+# @frappe.whitelist()
+# def due_date_validation(doc):
+#     if isinstance(doc, str):
+#         doc = json.loads(doc)
 
-    si = frappe.get_doc(doc)
-    current_date = getdate(nowdate())
-    new_due_date = add_days(current_date, 7)
-    si.due_date = new_due_date
-    si.save(ignore_permissions=True)
-    frappe.db.commit()
+#     si = frappe.get_doc(doc)
+#     current_date = getdate(nowdate())
+#     new_due_date = add_days(current_date, 7)
+#     si.due_date = new_due_date
+#     si.save(ignore_permissions=True)
+#     frappe.db.commit()
 
-    return {"due_date": new_due_date}
+#     return {"due_date": new_due_date}
 
 # ✅ Register override class
 def override_sales_invoice():

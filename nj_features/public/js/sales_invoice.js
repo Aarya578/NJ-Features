@@ -8,23 +8,24 @@ frappe.ui.form.on('Sales Invoice', {
             () => frm.cscript['Make Delivery Note'](), __('Create'));
 		}
         // Custom E-Invoicing functionality override
-        setup_custom_einvoice_actions(frm);
+        // setup_custom_einvoice_actions(frm);
     },
 
-    onload: function(frm) {   
-        if (!frm.doc.__islocal) return;
-        frappe.call({
-            method: "nj_features.overrides.sales_invoice.due_date_validation",
-            args: { doc: frm.doc },
-            callback: function(r) {             
-                if (r.message && r.message.due_date) {
-                    frm.set_value("due_date", r.message.due_date);
-                }
-            }
-        });
+    // onload: function(frm) {   
+    //     if (!frm.doc.__islocal) return;
+    //     frappe.call({
+    //         method: "nj_features.overrides.sales_invoice.due_date_validation",
+    //         args: { doc: frm.doc },
+    //         callback: function(r) {             
+    //             if (r.message && r.message.due_date) {
+    //                 frm.set_value("due_date", r.message.due_date);
+    //             }
+    //         }
+    //     });
     
-    },
+    // },
     validate:  function(frm) {
+        setup_custom_einvoice_actions(frm);
         if (!frm.doc.allocate_advances_automatically) {
             frm.trigger('get_advances');
         }
@@ -72,7 +73,7 @@ function setup_custom_einvoice_actions(frm) {
 
     if (frm.doc.docstatus == 2) return;    
     frappe.call({
-        method: 'nj_features.overrides.sales_invoice.validate_eligibility', // Changed method name
+        method: 'nj_features.overrides.sales_invoice.validate_eligibility',
         args: { doc: frm.doc },
         callback: function(res) {
             const invoice_eligible = res.message;

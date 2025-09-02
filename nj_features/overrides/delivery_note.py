@@ -90,7 +90,8 @@ class CustomDeliveryNote(DeliveryNote):
                 else:
                     print(f"No Sales Order found for DN {self.name}")
 
-            self.return_dn_validation()      
+            self.approve_unchecking_for_cod_orders()    
+            self.return_dn_validation()  
             # self.payment_validattion()
             self.update_mail_from_address()
             self.rto_charges_update()
@@ -230,6 +231,36 @@ class CustomDeliveryNote(DeliveryNote):
             log_error(traceback.format_exc(), "Error in _process_customer_details")
             frappe.throw(f"Error in _process_customer_details: {str(e)}")
     
+
+    def approve_unchecking_for_cod_orders(self):
+        # Step 1: Check Delivery Note store pickup
+        if self.is_store_pick_up != 1:
+            return
+        # Step 2: Fetch linked Sales Order
+        against_sales_order = frappe.get_value(
+            "Delivery Note Item", {"parent": self.name}, "against_sales_order"
+        )
+        if not against_sales_order:
+            return
+
+        sales_order = frappe.get_doc("Sales Order", against_sales_order)
+        if sales_order.is_cod != 1:
+            return
+
+        # Step 3: Fetch linked Sales Invoice
+        against_sales_invoice = frappe.get_value(
+            "Delivery Note Item", {"parent": self.name}, "against_sales_invoice"
+        )
+        if not against_sales_invoice:
+            return
+
+        sales_invoice = frappe.get_doc("Sales Invoice", against_sales_invoice)
+        # Step 4: Uncheck approval if it is set
+        if sales_invoice.approved == 1:
+            sales_invoice.approved = 0
+            sales_invoice.save(ignore_permissions=True)
+            frappe.msgprint(f"This is an COD Order Please collect the remaining amount from Sales Invoice {sales_invoice.name} approve button is unchecked.")
+
     def return_dn_validation(self):
         if self.is_return == 1:
             forward_dn = frappe.db.get_value(
@@ -1617,8 +1648,6 @@ def shiprocket_awb_number(doc):
                 "height": str(delivery_note_doc.height),
                 "weight": str(delivery_note_doc.weight)
             }
-            # print("Data: ===========", data)
-
             # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
             url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
             headers = {
@@ -1903,7 +1932,7 @@ def shiprocket_awb_number(doc):
             except Exception as e:
                 # Don't fail the entire process if pickup scheduling fails
                 frappe.msgprint(f"AWB: {awb_code} assigned successfully, but pickup scheduling encountered an issue: {str(e)}")
-        mdedleldedeldelkdelkdelkd
+        # mdedleldedeldelkdelkdelkd
         # 5. Invoice Generation
         invoice_order_id = doc.shiprocket_order_id
         # invoice_url = "https://apiv2.shiprocket.in/v1/external/orders/print/invoice"

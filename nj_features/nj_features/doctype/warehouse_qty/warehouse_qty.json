@@ -1,0 +1,61 @@
+{
+ "actions": [],
+ "creation": "2025-08-25 14:26:45.641548",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse",
+  "max_capacity",
+  "available_capacity",
+  "qty_after_transaction"
+ ],
+ "fields": [
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "max_capacity",
+   "fieldtype": "Int",
+   "label": "Max Capacity"
+  },
+  {
+   "fieldname": "available_capacity",
+   "fieldtype": "Int",
+   "label": "Available Capacity"
+  },
+  {
+   "fieldname": "qty_after_transaction",
+   "fieldtype": "Int",
+   "label": "Qty After Transaction"
+  }
+ ],
+ "links": [],
+ "modified": "2025-08-25 14:26:45.641548",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Warehouse Qty",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "read_only": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

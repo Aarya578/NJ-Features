@@ -291,6 +291,7 @@ def validate_serial_no_and_department(row, error_messages):
             check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
+            one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages)
 
         if (
                 s_department and 
@@ -454,7 +455,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                     ]
 
                     if qi_doc.get("status") not in quality_inspection_status_for_stock_movement:
-                        expected_status = ", ".join(quality_inspection_status_for_stock_movement)
+                        expected_status = ",".join(quality_inspection_status_for_stock_movement)
                         actual_status = qi_doc.get("status")
 
                         error_messages.append(
@@ -783,3 +784,36 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                     f"has a Total quantity <b>{total_quantity}</b> that is not allowed for department <b>{department_doc.name}</b>. "
                     f"(Min: {min_qty}, Max: {max_qty})"
                 )
+
+
+def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages):
+    print("one_of_these_component_grades_must_be_true", department_doc.get('one_of_these_component_grades_must_be_true'))
+
+    if not department_doc.get('one_of_these_component_grades_must_be_true'):
+        return
+
+    sql_query = """
+        SELECT DISTINCT O.name
+        FROM `tabSerial No` Sr
+        INNER JOIN `tabSerial No Component` Comp ON Sr.name = Comp.parent
+        LEFT JOIN `tabOne of These Component Grades Must Be True` O 
+            ON (O.item_group = Comp.item_group)
+        INNER JOIN `tabDepartment` d
+        WHERE O.grade = Comp.grade
+        AND O.parent = %s
+        AND d.name = %s
+        AND Sr.name = %s
+        AND (
+                (Comp.aesthetic_issue = 1 AND d.damage_type = 'Aesthetic')
+            OR (Comp.functional_issue = 1 AND d.damage_type = 'Technical')
+        )
+    """
+
+    result = frappe.db.sql(
+        sql_query,
+        (department_doc.name, department_doc.name, serial_doc.name),
+        as_dict=True
+    )
+
+    if not result:
+        error_messages.append(f'This Serial No: <b>{serial_doc.name}</b> is not allowed to be moved to <b>{department_doc.name}</b> Department. Validate Item group , Grade and Work required for this Serial No to know the reason')

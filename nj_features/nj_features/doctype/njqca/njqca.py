@@ -57,8 +57,7 @@ def get_inspection_type():
         frappe.msgprint("<b>Department</b> is not set in Role Profile: {0}".format(emp_data.get('role_profile')))
         return None
     
-    dept_inspection_type = frappe.db.get_value('Department', 
-                                {'name': department}, 'inspection_type')
+    dept_inspection_type = frappe.db.get_value('Department', {'name': department}, 'inspection_type')
        
     if dept_inspection_type:
         return dept_inspection_type
@@ -132,6 +131,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                new_qi.njqca_laptop_name = self.name
                 create_new_qi = False
 
         if create_new_qi:
@@ -458,6 +458,10 @@ class NJQCA(Document):
 
     def on_submit(self):
         try:
+            if not self.qi_name:
+                frappe.throw("NJ QI is not created.")
+                return None
+            
             self.check_for_repack_access()
             self.qc_reports_update()
             self.update_item_groups()
@@ -478,11 +482,11 @@ class NJQCA(Document):
                 tmp_model = frappe.db.get_value('Item', self.item_template, 'item_model')
                 itm_model = frappe.db.get_value('Item', self.manual_repack_item_code, 'item_model')
                 if tmp_model and tmp_model != self.model:
-                    frappe.throw("Model: <b>" + tmp_model + "</b> in Item Template is not matching with Selected Model: <b>" + self.model + "</b>")
+                    frappe.throw("Model: <b>" + tmp_model + "</b> in Item Template is not matching with Selected Model: <b>" + self.model + "</b><br>Please contact <b>NPD Team</b>.")
                     return None
                 
                 if itm_model and itm_model != self.model:
-                    frappe.throw("Model: <b>" + itm_model + "</b> in Manual Repack Item Code is not matching with Selected Model: <b>" + self.model + "</b>")
+                    frappe.throw("Model: <b>" + itm_model + "</b> in Manual Repack Item Code is not matching with Selected Model: <b>" + self.model + "</b><br>Please contact <b>NPD Team</b>.")
                     return None
             
             try:
@@ -509,7 +513,6 @@ class NJQCA(Document):
                     s5 = time.time()
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
-                    
                 
                 if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
                     s4 = time.time()
@@ -527,7 +530,7 @@ class NJQCA(Document):
 
             except Exception as e:
                 frappe.db.rollback()
-                frappe.msgprint("Error during submission: " + str(traceback.format_exc()))
+                frappe.msgprint("Error during submission: " + traceback.format_exc())
                 raise
 
     def check_for_repack_access(self):
@@ -1189,6 +1192,7 @@ def get_item_code_for_each_part(doc):
                     child_attr_data.append(filtered_result)
 
             if doc.get('item_template'):
+                
                 consolidated = consolidate_ram_capacities(child_attr_data)
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
@@ -1256,7 +1260,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
     item_template = frappe.db.get_value('Item',
         {'item_group': part_item_group, 'has_variants': 1, 'disabled': 0}, 'name' )
     
-    attribute_object['Grade'] = Grade
+    attribute_object['Grade'] = get_attribute_from_erp(Grade, "Grade")
 
     if len(attribute_object) > 1:
         part_item_code = get_variant_from_value(item_template, [attribute_object])
@@ -1317,10 +1321,12 @@ def get_part_mapping(doc):
 
 def consolidate_ram_capacities(data):
     consolidated_data,ram_consolidation = [], {}
+    ram_found = False
 
     for obj in data:
         for key, value in obj.items():
             if key.lower() == ram_capacity.lower():
+                ram_found = True
                 ram_value = value
 
                 match = re.match(r'^(\d+)\s*GB\s*(\w+)?', ram_value, re.IGNORECASE)
@@ -1350,17 +1356,21 @@ def consolidate_ram_capacities(data):
     for key, value in ram_consolidation.items():
         consolidated_data.append({key: value})
 
+    if not ram_found:
+        consolidated_data.append({"Ram Capacity": unk_ram})
+
     return consolidated_data
 
 def consolidate_storage(data):
-    storage_parts = []
+    storage_parts, result_data = [], []
     total_storage_capacity = 0
-    storage_type = None 
-    result_data = []
+    storage_type = None
+    storage_found = False
     
     for obj in data:
         for key, value in obj.items():
             if key.lower() == 'storage capacity':
+                storage_found = True
                 if 'SSD' in value.upper():
                     if storage_type and storage_type != 'SSD':
                         raise ValueError("Mix of SSD and HDD is not allowed")
@@ -1386,6 +1396,9 @@ def consolidate_storage(data):
                     result_data.append(obj)
             else:
                 result_data.append(obj)
+
+    if not storage_found:
+        result_data.append({'Storage Capacity': unk_storage})
     
     if storage_parts:
         storage_parts.sort() 
@@ -1857,10 +1870,8 @@ def get_fetched_item_code(serial_no, partData):
     partData = frappe.parse_json(partData)
 
     serial_no_components = frappe.db.sql(
-        """
-        SELECT item_group, item, reference_doctype_no FROM `tabSerial No Component`
-        WHERE parent = %s
-        """, (serial_no,), as_dict=True
+        """ SELECT item_group, item, reference_doctype_no FROM `tabSerial No Component`
+        WHERE parent = %s """, (serial_no,), as_dict=True
     )
 
     updated_part_data = []  
@@ -1874,8 +1885,7 @@ def get_fetched_item_code(serial_no, partData):
                 query2 = frappe.db.sql("""
                     SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
                     FROM `tabItem Variant Attribute`
-                    WHERE parent = %s
-                """, (row.get("item")), as_dict=True)
+                    WHERE parent = %s """, (row.get("item")), as_dict=True)
 
                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
                 njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
@@ -1890,7 +1900,7 @@ def get_fetched_item_code(serial_no, partData):
                     matched = True
 
                     if serial_no_grade and serial_no_grade.upper() != "UNKNOWN":
-                        data["attr_data"]["Grade"] = serial_no_grade  
+                        data["attr_data"]["Grade"] = get_attribute_from_erp(serial_no_grade, "Grade")  
                     break 
 
                 if serial_no_attr_data != njqca_attr_data:
@@ -1898,9 +1908,6 @@ def get_fetched_item_code(serial_no, partData):
                     data["reference_docname"] = row["reference_doctype_no"]
                 else:
                     data["fetched_item_code"] = ""
-
-        # if data.get("fetched_item_code") and not data.get("part_item_code"):
-        #     frappe.throw("Fetched item code and calculated item code are different. Please contact the NPD team.")
 
         updated_part_data.append(data)
     
@@ -2722,8 +2729,10 @@ def get_product_key(doc,method=None):
 
       if njqca_name:
         product_key=""
-        product_key_query="""Select value from `tabNJQCA Result Parameters` where parent=%s and parameter='Product_key';
+        product_key_query="""
+            Select value from `tabNJQCA Result Parameters` where parent=%s and parameter='Product_key';
         """
+
         update_query="""
             update `tabSerial No` set product_key=%(product_key)s where parent=%(serial_no)s;
         """
@@ -2878,7 +2887,6 @@ def create_serial_no_based_on_rfq(serial_info):
 def validate_model(model,manufacturer_model):
     try:
         if manufacturer_model and model:
-
             query = """
                 select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
             """
@@ -2886,6 +2894,7 @@ def validate_model(model,manufacturer_model):
             if result is not None and len(result)>0:
                 return "1"
         return "0"
+    
     except Exception as e:
         frappe.throw("Error While validating Model: " + str(e))
         return None

@@ -182,7 +182,7 @@ def scan_serial_no_data_for_sales(serial_no):
                 creation_date = getdate(delivery_note_creation)
                 four_days_ago = add_days(nowdate(), -10)  # actually checks 10 days back
                 if creation_date < getdate(four_days_ago):
-                    frappe.throw("The latest Delivery Note was not created within the last 4 days.")
+                    frappe.throw("The latest Delivery Note was not created within the last 10 days.")
 
             customer_name = ""
             courier_name = ""

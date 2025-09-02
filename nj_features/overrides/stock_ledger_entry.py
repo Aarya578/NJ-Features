@@ -8,33 +8,48 @@ class CustomStockLedgerEntry(StockLedgerEntry):
     def db_update(self):
         super().db_update()
         self.update_available_capacity_in_warehouse()
-        # self.notify_warehouse_owner_if_applicable()
         
     def update_available_capacity_in_warehouse(self):
-        warehouse_doc_data = frappe.get_doc('Warehouse', self.warehouse)
-        if warehouse_doc_data:
-            available_capacity = int(warehouse_doc_data.max_capacity or 0) - int(self.qty_after_transaction or 0)
-            frappe.db.sql(f"update `tabWarehouse` set available_capacity = {available_capacity}, qty_after_transaction = {self.qty_after_transaction} where name = '{self.warehouse}'")
 
-    def notify_warehouse_owner_if_applicable(self):
-        warehouse_doc = frappe.get_doc('Warehouse', self.warehouse)
-        warehouse_owner = warehouse_doc.warehouse_owner
+        warehouse_name = self.warehouse
+        warehouse_doc = frappe.get_doc('Warehouse', warehouse_name)
 
-        if self.actual_qty > 0 and self.is_cancelled == 0:
-            subject = f"Stock has been received in your Warehouse ({self.warehouse})"
-            message = f"""
-                A Stock Entry - {self.voucher_no} was created:<br>
-                <b>Item:</b> {self.item_code}<br>
-                <b>Qty:</b> {self.actual_qty}<br>
-                <b>Serial No(s):</b> {self.serial_no}<br>
-                <b>Balance Qty:</b> {self.qty_after_transaction}
-            """
+        if warehouse_doc.is_group:
+            return
+
+        query = "SELECT COUNT(*) as qty FROM `tabSerial No` WHERE warehouse = %s"
+        params = [warehouse_name]
+
+        item_groups = [row.part for row in warehouse_doc.item_group]
+        if item_groups:
+            placeholders = ','.join(['%s'] * len(item_groups))
+            query += f" AND item_group IN ({placeholders})"
+            params += item_groups
+
+        brands = [row.brand for row in warehouse_doc.brand]
+        if brands:
+            placeholders = ','.join(['%s'] * len(brands))
+            query += f" AND brand IN ({placeholders})"
+            params += brands
+
+        result = frappe.db.sql(query, tuple(params), as_dict=True)
+        qty_after_transaction = result[0].qty if result else 0
+
+        max_capacity = warehouse_doc.max_capacity or 0
+        available_capacity = int(max_capacity) - int(qty_after_transaction or 0)
+
+        existing = frappe.get_value("Warehouse Qty", {"warehouse": warehouse_name}, "name")
+
+        if existing:
+            frappe.db.set_value("Warehouse Qty", existing, {
+                "available_capacity": available_capacity,
+                "qty_after_transaction": qty_after_transaction
+            }, update_modified=False)
+        else:
             frappe.get_doc({
-                "doctype": "Notification Log",
-                "subject": subject,
-                "email_content": message,
-                "for_user": warehouse_owner,
-                "document_type": self.doctype,
-                "document_name": self.name,
-                "type": "Alert",
+                "doctype": "Warehouse Qty",
+                "warehouse": warehouse_name,
+                "max_capacity": max_capacity,
+                "available_capacity": available_capacity,
+                "qty_after_transaction": qty_after_transaction
             }).insert(ignore_permissions=True)

@@ -787,7 +787,10 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
 
 
 def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages):
-    print("one_of_these_component_grades_must_be_true", serial_doc, department_doc, t_warehouse,error_messages)
+    print("one_of_these_component_grades_must_be_true", department_doc.get('one_of_these_component_grades_must_be_true'))
+
+    if not department_doc.get('one_of_these_component_grades_must_be_true'):
+        return
 
     sql_query = """
         SELECT DISTINCT O.name

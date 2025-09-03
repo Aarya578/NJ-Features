@@ -132,6 +132,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             time_diff = frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), latest_qi.creation)
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
+                new_qi.njqca_laptop_name = self.name
                 create_new_qi = False
 
         if create_new_qi:
@@ -463,6 +464,7 @@ class NJQCA(Document):
                 return None
             
             self.check_for_repack_access()
+            self.qc_reports_update()
             self.update_item_groups()
             self.validate_item_code_match()
             self.battery_readings()
@@ -674,6 +676,64 @@ class NJQCA(Document):
             logger.error(f"Error updating battery readings: {str(e)}")
             log_error(f"Failed to save Serial No: {str(e)}", "Error in battery_readings in NJQCA")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
+    def qc_reports_update(self):
+        if self.inspection_type != "Final QC" or self.item_group not in ["BATTERY", "Laptops"]:
+            return
+
+        bios_serialno = self.bios_serialno
+        if not bios_serialno:
+            frappe.msgprint("BIOS Serial No not found. QC Reports not updated.")
+            return
+
+        checks_data = frappe.db.sql("""
+            SELECT item_group, parameter, value, cpu_load
+            FROM `tabNJQCA Result Parameters`
+            WHERE parent = %s
+        """, (self.name,), as_dict=1)
+
+        if not checks_data:
+            frappe.msgprint("No check data found for this inspection.")
+            return
+
+        try:
+            serial_no_name = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
+            if not serial_no_name:
+                frappe.msgprint(f"No Serial No found with BIOS Serial No {bios_serialno}.")
+                return
+
+            serial_doc = frappe.get_doc("Serial No", serial_no_name)
+
+            # Index existing rows by (parameter, item_group) for uniqueness
+            existing_map = {(row.test_details, row.item_group): row for row in serial_doc.qc_reports}
+
+            for check in checks_data:
+                key = (check.parameter, check.item_group)
+                if key in existing_map:
+                    row = existing_map[key]
+                    row.results = check.value
+                    row.cpu_load = check.cpu_load
+                else:
+                    new_row = serial_doc.append("qc_reports", {
+                        "item_group": check.item_group,
+                        "test_details": check.parameter,
+                        "results": check.value,
+                        "cpu_load": check.cpu_load
+                    })
+                    existing_map[key] = new_row
+
+            # Update final QC info
+            serial_doc.final_qc_by = self.owner
+            serial_doc.final_qc_date = self.creation
+
+            serial_doc.save()
+
+        except Exception as e:
+            frappe.log_error(f"Error updating QC Reports: {str(e)}", "QC Reports Update Error")
+
+
+
+
+
 
     def update_item_groups(self):
         if self.inspection_type != "Final QC" or frappe.db.get_value("Item Group", self.item_group, "is_component"):

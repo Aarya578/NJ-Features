@@ -32,6 +32,7 @@ frappe.ui.form.on('Quality Review', {
                         if (r.message && r.message.length > 0) {
                             frm.clear_table('review_procedures_table');
                             for (let idx = r.message.length - 1; idx >= 0; idx--) {
+
                                 let rowData = r.message[idx];
                                 if (rowData.procedure == 'NJ Quality Inspection') {
                                     if(frm.doc.serial_no && frm.doc.inspection){

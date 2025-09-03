@@ -239,19 +239,6 @@ frappe.ui.form.on('NJQCA', {
                 })
             }
 
-            if (frm.doc.inspection_type ) {
-                frappe.call({
-                    method: 'nj_features.nj_features.doctype.njqca.njqca.set_is_defective',
-                    args: { 'inspection_type': frm.doc.inspection_type },
-                    callback: function(r) {
-                        if (r && r.message  && r.message=="1") {
-                            frm.set_value('qi_type', 'is_defective');
-                            frm.refresh_field('qi_type');
-                        }
-                    }
-                })
-            }
-
             if (!frm.doc.__islocal) { get_model(frm.doc.manufacturer_model); }
 
             setup_merge_checkbox_handler(frm, 'njqca_laptop_processors');
@@ -321,10 +308,7 @@ frappe.ui.form.on('NJQCA', {
         }
 
         if(frm.doc.item_group == "Laptops" && frm.doc.serial_no  && frm.doc.bios_serialno!="" && frm.doc.manufacturer_model && frm.doc.name && (!frm.doc.rfq_id)){
-            let inspection_type_data=await frappe.db.get_value("NJ Settings", {'parameter': 'battry_unknown_grade_inspection_types'}, 'value');
-            let inspection_type = inspection_type_data?.message?.value || "";
-            let inspection_types = inspection_type.split(",").map(s => s.trim());
-            console.log("inspecction_type",inspection_type);
+
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
                 args: {
@@ -334,23 +318,12 @@ frappe.ui.form.on('NJQCA', {
                     "manufacturer_model": frm.doc.manufacturer_model
                 },
                 freeze: true,
-                freeze_message:__("Checking battery status..."),
+                freeze_message: `<div style="text-align: center;">
+                    <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i><br>
+                    <strong>Processing NJQCA...</strong><br>Please wait while we save or submit your data.
+                </div>`,
                 callback: function(r) {
-                    if (r.message && inspection_types.includes(frm.doc.inspection_type)){
-                        let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
-
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status_1");
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
-                        frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "BATTERY");
-
-                        if (r.message === "PASS") {
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
-                        } else if (r.message === "FAIL") {
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "-3");
-                        } else if (r.message === "Report Not found") {
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "-2");
-                        }
-                    }else{
+                    if (r.message) {
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
 
                         frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Battery_status");
@@ -364,7 +337,6 @@ frappe.ui.form.on('NJQCA', {
                         } else if (r.message === "Report Not found") {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
                         }
-
                     }
 
                     frm.refresh_field("njqca_result_parameters");
@@ -630,7 +602,6 @@ frappe.ui.form.on('NJQCA', {
             callback: function(r) {
                 if (r.message) {
                     frm.set_value('sudden_drop', r.message);
-                    // frappe.db.set_value(frm.doctype, frm.doc.name, 'sudden_drop', r.message); 
                     frm.refresh_field('sudden_drop');
                 }
             }
@@ -646,7 +617,6 @@ frappe.ui.form.on('NJQCA', {
                         let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         if(r.message == "Pass"){
                             frm.set_value('bdt_status', "Pass");
-                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
@@ -654,7 +624,6 @@ frappe.ui.form.on('NJQCA', {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
                         }else if(r.message == "Fail"){
                             frm.set_value('bdt_status', "Fail");
-                            // frappe.db.set_value(frm.doctype, frm.doc.name, 'bdt_status', r.message);
                             frm.refresh_field('bdt_status');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "BDT_status");
                             frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
@@ -1168,7 +1137,6 @@ function processItemTemplate(frm) {
                         if (row.item_group === "Laptop RAM") {
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_ram");
-                            show_checkbutton_for_field(frm, 'njqca_laptop_ram');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_type', row.attr_data["RAM Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_capacity', row.attr_data["RAM Capacity"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'ram_speed', row.attr_data["RAM Speed"]);
@@ -1178,14 +1146,15 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group_idx', row.item_group_idx);
                             if (row.reference_docname) {
                                 frappe.model.set_value(newRow.doctype, newRow.name, 'reference_docname', row.reference_docname);
                             }
+                            show_checkbutton_for_field(frm, 'njqca_laptop_ram');
                             
                         }else if(row.item_group === "Laptop Processors"){
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_processors");
-                            show_checkbutton_for_field(frm, 'njqca_laptop_processors');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);                         
@@ -1193,14 +1162,15 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'processor_type', row.attr_data["Processor Type"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group_idx', row.item_group_idx);
                             if (row.reference_docname) {
                                 frappe.model.set_value(newRow.doctype, newRow.name, 'reference_docname', row.reference_docname);
                             }
+                            show_checkbutton_for_field(frm, 'njqca_laptop_processors');
 
                         }else if(row.item_group === "LAPTOP STORAGE"){
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_storage");
-                            show_checkbutton_for_field(frm, 'njqca_laptop_storage');
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);
@@ -1215,9 +1185,11 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'storage_length', row.attr_data["Storage Length"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group_idx', row.item_group_idx);
                             if (row.reference_docname) {
                                 frappe.model.set_value(newRow.doctype, newRow.name, 'reference_docname', row.reference_docname);
                             }
+                            show_checkbutton_for_field(frm, 'njqca_laptop_storage');
                         }
                     });
 
@@ -1227,6 +1199,35 @@ function processItemTemplate(frm) {
                 }
             }
         });
+
+        if (frm.doc.serial_no) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_disp_and_adp_data',
+                args: { 'serial_no': frm.doc.serial_no },
+                callback: function(r) {
+                    if (r.message) {
+                        r.message.forEach(item => {
+                            let newRow;
+
+                            if (item.item_group === "Display") {
+                                newRow = frappe.model.add_child(frm.doc, "njqca_display");
+                            } else if (item.item_group === "Laptop Adaptors") {
+                                newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
+                            }
+
+                            if (newRow) {
+                                for (let key in item) {
+                                    if (item.hasOwnProperty(key)) {
+                                        frappe.model.set_value(newRow.doctype, newRow.name, key, item[key]);
+                                    }
+                                }
+                            }
+                        });
+                        frm.refresh_fields();
+                    }
+                }
+            })
+        }
     }
 }
 
@@ -2247,7 +2248,7 @@ function show_checkbutton_for_field(frm, fieldname) {
 	const field = frm.fields_dict[fieldname];
 
 	if (!field || !field.$wrapper) return;
-
+    
 	field.$wrapper.find('.grid-body .rows .grid-row').each(function (i, item) {
 		let $row = $(item);
 		let $checkButtonCell = $row.find('[data-fieldname="check_button"]');
@@ -2362,8 +2363,27 @@ function handle_merge(frm, selected_rows, child_name) {
     target_row.merged = 1;
 
     frm.fields_dict[child_name].grid.grid_rows_by_docname[source_row.name].remove();
+    update_empty_param_in_child(frm, source_row, target_row)
 
     frm.refresh_field(child_name);
 
     frappe.show_alert({message: "Rows merged successfully.", indicator:"blue"}, 5);
+}
+
+function update_empty_param_in_child(frm, source_row, target_row) {
+    frappe.call({
+        method: "nj_features.nj_features.doctype.njqca.njqca.get_empty_param_in_child",
+        args: { item_code: target_row.fetched_item_code },
+        callback: function(r) {
+            if (r.message) {
+                for (let key in r.message) {
+                    if (r.message.hasOwnProperty(key)) {
+                        if ( target_row.reference_docname && ( key == "grade" && target_row[key] != r.message[key] || !target_row[key])) {
+                            frappe.model.set_value(target_row.doctype, target_row.name, key, r.message[key]);
+                        }
+                    }
+                }
+            }
+        }
+    })
 }

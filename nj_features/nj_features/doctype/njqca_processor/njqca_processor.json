@@ -14,7 +14,8 @@
   "reference_row_name",
   "check_button",
   "reference_docname",
-  "merged"
+  "merged",
+  "item_group_idx"
  ],
  "fields": [
   {
@@ -91,11 +92,17 @@
    "fieldtype": "Check",
    "label": "Merged",
    "read_only": 1
+  },
+  {
+   "fieldname": "item_group_idx",
+   "fieldtype": "Int",
+   "label": "Item Group Idx",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-08-08 19:57:18.209381",
+ "modified": "2025-09-01 19:19:21.320538",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA PROCESSOR",

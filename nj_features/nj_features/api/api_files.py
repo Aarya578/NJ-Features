@@ -234,13 +234,13 @@ def battery_data():
 @frappe.whitelist()
 def get_battery_status(serial_no,bios_serialno,njqca_name,manufacturer_model=""):
     try:
-        frappe.get_doc({
-            "doctype": "Comment",
-            "comment_type": "Comment",
-            "reference_doctype": "NJQCA",
-            "reference_name": njqca_name, 
-            "content": f"serial no: {serial_no}, bios serial no: {bios_serialno}, manufacturer model: {manufacturer_model}"
-        }).insert(ignore_permissions=True)
+        # frappe.get_doc({
+        #     "doctype": "Comment",
+        #     "comment_type": "Comment",
+        #     "reference_doctype": "NJQCA",
+        #     "reference_name": njqca_name, 
+        #     "content": f"serial no: {serial_no}, bios serial no: {bios_serialno}, manufacturer model: {manufacturer_model}"
+        # }).insert(ignore_permissions=True)
 
         parent_serial_no = serial_no
         bios_serial_no=bios_serialno

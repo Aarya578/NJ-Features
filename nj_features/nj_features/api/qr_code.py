@@ -59,7 +59,7 @@ def generate_and_save_qrcode(data, format='png'):
         return encoded_data
     
     except Exception as e:
-        return f"Error in generating QR code: {e}"
+        return f"Error in generating QR code: {str(e)}"
     
 @frappe.whitelist()
 def get_print_format_role():

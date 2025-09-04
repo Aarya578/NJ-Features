@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "autoname": "field:rule_name",
+ "creation": "2025-09-04 18:56:01.002244",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_name",
+  "enabled",
+  "priority",
+  "section_break_uqszl",
+  "python_condition",
+  "column_break_97mvu",
+  "python_action"
+ ],
+ "fields": [
+  {
+   "fieldname": "rule_name",
+   "fieldtype": "Data",
+   "label": "Rule Name",
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Data",
+   "label": "Priority"
+  },
+  {
+   "fieldname": "section_break_uqszl",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "python_condition",
+   "fieldtype": "Code",
+   "label": "Python Condition",
+   "options": "PythonExpression"
+  },
+  {
+   "fieldname": "column_break_97mvu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "python_action",
+   "fieldtype": "Code",
+   "label": "Python Action",
+   "options": "PythonExpression"
+  }
+ ],
+ "links": [],
+ "modified": "2025-09-04 18:56:47.501895",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Department Recommendation Engine",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_seen": 1
+}

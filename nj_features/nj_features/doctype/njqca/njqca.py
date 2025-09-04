@@ -678,6 +678,7 @@ class NJQCA(Document):
             logger.error(f"Error updating battery readings: {str(e)}")
             log_error(f"Failed to save Serial No: {str(e)}", "Error in battery_readings in NJQCA")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
+
     def laptop_reports_update(self):
         # Only process Final QC for Laptops
         if self.inspection_type != "Final QC" or self.item_group != "Laptops":
@@ -688,7 +689,7 @@ class NJQCA(Document):
             frappe.msgprint("BIOS Serial No not found. QC Reports not updated.")
             return
 
-        # Fetch QC check data from child table
+        # Fetch QC check data from NJQCA Result Parameters
         checks_data = frappe.db.sql("""
             SELECT item_group, parameter, value
             FROM `tabNJQCA Result Parameters`
@@ -700,7 +701,6 @@ class NJQCA(Document):
             return
 
         try:
-            # Find Serial No document matching BIOS Serial No
             serial_no_name = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
             if not serial_no_name:
                 frappe.msgprint(f"No Serial No found with BIOS Serial No {bios_serialno}.")
@@ -708,22 +708,20 @@ class NJQCA(Document):
 
             serial_doc = frappe.get_doc("Serial No", serial_no_name)
 
-            # Keep QC reports for other item groups
-            other_qc_reports = [row for row in serial_doc.qc_reports if row.item_group != "Laptops"]
-            serial_doc.qc_reports = other_qc_reports
+            # Remove all previous Laptop QC reports
+            serial_doc.qc_reports = [row for row in serial_doc.qc_reports if row.item_group != "Laptops"]
 
-            # Track unique parameters to avoid duplicates in the new batch
-            new_parameters = set()
-
-            # Append new unique Laptop QC reports
+            # Append only rows from NJQCA Result Parameters
+            added_rows = set()
             for check in checks_data:
-                if check.parameter not in new_parameters:
+                key = (check['item_group'], check['parameter'], check['value'])
+                if key not in added_rows:
                     serial_doc.append("qc_reports", {
-                        "item_group": check.item_group,
-                        "test_details": check.parameter,
-                        "results": check.value,
+                        "item_group": check['item_group'],
+                        "test_details": check['parameter'],
+                        "results": check['value']
                     })
-                    new_parameters.add(check.parameter)
+                    added_rows.add(key)
 
             # Update final QC info
             serial_doc.final_qc_by = self.owner
@@ -733,6 +731,62 @@ class NJQCA(Document):
 
         except Exception as e:
             frappe.log_error(f"Error updating QC Reports: {str(e)}", "QC Reports Update Error")
+        
+    # def laptop_reports_update(self):
+    #     # Only process Final QC for Laptops
+    #     if self.inspection_type != "Final QC" or self.item_group != "Laptops":
+    #         return
+
+    #     bios_serialno = self.bios_serialno
+    #     if not bios_serialno:
+    #         frappe.msgprint("BIOS Serial No not found. QC Reports not updated.")
+    #         return
+
+    #     # Fetch QC check data from child table
+    #     checks_data = frappe.db.sql("""
+    #         SELECT item_group, parameter, value
+    #         FROM `tabNJQCA Result Parameters`
+    #         WHERE parent = %s
+    #     """, (self.name,), as_dict=1)
+
+    #     if not checks_data:
+    #         frappe.msgprint("No check data found for this inspection.")
+    #         return
+
+    #     try:
+    #         # Find Serial No document matching BIOS Serial No
+    #         serial_no_name = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
+    #         if not serial_no_name:
+    #             frappe.msgprint(f"No Serial No found with BIOS Serial No {bios_serialno}.")
+    #             return
+
+    #         serial_doc = frappe.get_doc("Serial No", serial_no_name)
+
+    #         # Keep QC reports for other item groups
+    #         other_qc_reports = [row for row in serial_doc.qc_reports if row.item_group != "Laptops"]
+    #         serial_doc.qc_reports = other_qc_reports
+
+    #         # Track unique parameters to avoid duplicates in the new batch
+    #         new_parameters = set()
+
+    #         # Append new unique Laptop QC reports
+    #         for check in checks_data:
+    #             if check.parameter not in new_parameters:
+    #                 serial_doc.append("qc_reports", {
+    #                     "item_group": check.item_group,
+    #                     "test_details": check.parameter,
+    #                     "results": check.value,
+    #                 })
+    #                 new_parameters.add(check.parameter)
+
+    #         # Update final QC info
+    #         serial_doc.final_qc_by = self.owner
+    #         serial_doc.final_qc_date = self.creation
+
+    #         serial_doc.save()
+
+    #     except Exception as e:
+    #         frappe.log_error(f"Error updating QC Reports: {str(e)}", "QC Reports Update Error")
 
     def battery_reports_update(self):
         if self.inspection_type != "Final QC" or self.item_group != "BATTERY":

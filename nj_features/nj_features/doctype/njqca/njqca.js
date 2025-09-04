@@ -539,7 +539,7 @@ frappe.ui.form.on('NJQCA', {
             
             if (resp && resp.is_component == 0) {
                 
-                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_adaptor', 'njqca_display' ];
+                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display' ];
                 let mismatches = [];
                 let i = 0;
 
@@ -1589,14 +1589,14 @@ frappe.ui.form.on('NJQCA Display', {
         let d = new frappe.ui.Dialog({
             title: 'Edit Display Attributes',
             fields: [
-                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: child.model || '', reqd: 1 },
-                { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '', reqd: 1 },
-                { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '', reqd: 1 },
-                { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '', reqd: 1 },
-                { label: 'Resolution', fieldname: 'resolution', fieldtype: 'Select', options: ['Loading...'], default: child.resolution || '', reqd: 1 },
-                { label: 'Thickness', fieldname: 'thickness', fieldtype: 'Select', options: ['Loading...'], default: child.thickness || '', reqd: 1 },
-                { label: 'Display Bracket', fieldname: 'display_bracket', fieldtype: 'Select', options: ['Loading...'], default: child.display_bracket || '', reqd: 1 },
-                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '', reqd: 1 },
+                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: child.model || '' },
+                { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '' },
+                { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '' },
+                { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '' },
+                { label: 'Resolution', fieldname: 'resolution', fieldtype: 'Select', options: ['Loading...'], default: child.resolution || '' },
+                { label: 'Thickness', fieldname: 'thickness', fieldtype: 'Select', options: ['Loading...'], default: child.thickness || '' },
+                { label: 'Display Bracket', fieldname: 'display_bracket', fieldtype: 'Select', options: ['Loading...'], default: child.display_bracket || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
             ],
             primary_action_label: 'Save',
             primary_action(values) {

@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-04 13:35:12.918419",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "test_details",
+  "results"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Group"
+  },
+  {
+   "fieldname": "test_details",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Test Details"
+  },
+  {
+   "fieldname": "results",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Results"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-09-04 13:35:57.114289",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Adaptor Reports",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -284,7 +284,7 @@ frappe.ui.form.on('NJQCA', {
                             title: "Error",
                             indicator: "red",
                             message: "❌ Automated item code not found. Please check the configuration."
-                        });
+                        }, 10);
                     }
                     else{
                         frm.set_value('repack_item_code', r.message);
@@ -444,57 +444,57 @@ frappe.ui.form.on('NJQCA', {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
         }
         
-        // if (frm.doc.serial_no || frm.doc.component_serial_no) {
+        if (frm.doc.serial_no || frm.doc.component_serial_no) {
 
-        //     frappe.call({
-        //         method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
-        //         args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
-        //         callback: function(r) {
-        //             if (r && r.message) {
-        //                 let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
-        //                 let pwd_njpulse_url = urlToCompare;
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.after_save_njqca',
+                args: { 'docname': frm.doc.name,'component_serial_no': frm.doc.component_serial_no, 'brand': frm.doc.brand, 'model': frm.doc.model, 'qi_type':frm.doc.qi_type },
+                callback: function(r) {
+                    if (r && r.message) {
+                        let urlToCompare = r.message.njpulse_url.replace(/\/$/, '');
+                        let pwd_njpulse_url = urlToCompare;
     
-        //                 if (urlToCompare && !openedUrls.includes(urlToCompare)) {
-        //                     openedUrls.push(urlToCompare);
-        //                     localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
+                        if (urlToCompare && !openedUrls.includes(urlToCompare)) {
+                            openedUrls.push(urlToCompare);
+                            localStorage.setItem('openedUrls', JSON.stringify(openedUrls));
         
-        //                     if (frm.doc.pwd && r.message.base_url) {
-        //                         pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
-        //                     }
-        //                     window.open(pwd_njpulse_url, "_blank");
-        //                 }
+                            if (frm.doc.pwd && r.message.base_url) {
+                                pwd_njpulse_url = r.message.base_url + "api/authenticate?usr=" + frm.doc.created + "&pwd=" + frm.doc.pwd + "&encrypted_pwd=True&doctype_url=qi/" + r.message.qi_name;
+                            }
+                            window.open(pwd_njpulse_url, "_blank");
+                        }
     
-        //                 if (r.message.qi_name) {
-        //                     frm.set_value('qi_name', r.message.qi_name);
-        //                     frm.refresh_field('qi_name');
+                        if (r.message.qi_name) {
+                            frm.set_value('qi_name', r.message.qi_name);
+                            frm.refresh_field('qi_name');
     
-        //                     var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
-        //                     $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
+                            var $qiNameWrapper = frm.fields_dict['qi_name'].$wrapper;
+                            $qiNameWrapper.closest('.control-input-wrapper').css('border-color', 'rgba(173, 216, 230, 0.5)');
     
-        //                     $qiNameWrapper.css('cursor', 'pointer');
-        //                     $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
+                            $qiNameWrapper.css('cursor', 'pointer');
+                            $qiNameWrapper.attr('title', 'Click to open ' + frm.doc.qi_name);
     
-        //                     $qiNameWrapper.on('click', function() {
-        //                         window.open(pwd_njpulse_url, '_blank');
-        //                     });
+                            $qiNameWrapper.on('click', function() {
+                                window.open(pwd_njpulse_url, '_blank');
+                            });
     
-        //                     $qiNameWrapper.css({
-        //                         'user-select': 'none',
-        //                         'pointer-events': 'auto'
-        //                     });
-        //                 }
+                            $qiNameWrapper.css({
+                                'user-select': 'none',
+                                'pointer-events': 'auto'
+                            });
+                        }
     
-        //                 if (r.message.msg_pnt) {
-        //                     frappe.show_alert({
-        //                         message: r.message.msg_pnt,
-        //                         indicator: 'blue'
-        //                     }, 10);
-        //                 }
+                        if (r.message.msg_pnt) {
+                            frappe.show_alert({
+                                message: r.message.msg_pnt,
+                                indicator: 'blue'
+                            }, 10);
+                        }
     
-        //             } else {  console.error('QI name is not defined'); }
-        //         }
-        //     });
-        // }
+                    } else {  console.error('QI name is not defined'); }
+                }
+            });
+        }
     },
 
     rfq_id: function(frm) {
@@ -596,7 +596,7 @@ frappe.ui.form.on('NJQCA', {
             
             if (resp && resp.is_component == 0) {
                 
-                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_adaptor', 'njqca_display' ];
+                let tablesToCheck = [ 'njqca_laptop_ram', 'njqca_laptop_storage', 'njqca_display' ];
                 let mismatches = [];
                 let i = 0;
 
@@ -1137,7 +1137,7 @@ function processItemTemplate(frm) {
 
                     frm.clear_table("njqca_laptop_ram");
                     frm.clear_table("njqca_laptop_processors");
-                    frm.clear_table("njqca_laptop_storage")
+                    frm.clear_table("njqca_laptop_storage");
                     
                     partData.forEach(row => {
                         if (row.item_group === "Laptop RAM") {
@@ -1216,8 +1216,10 @@ function processItemTemplate(frm) {
                             let newRow;
 
                             if (item.item_group === "Display") {
+                                frm.clear_table("njqca_display");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_display");
                             } else if (item.item_group === "Laptop Adaptors") {
+                                frm.clear_table("njqca_adaptor");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
                             }
 
@@ -1373,7 +1375,7 @@ function generateAdaptorItemCode(frm, cdt, cdn, child) {
                         frappe.show_alert({
                             message:__("Item code not found: <b> " + r.message.error + "</b>"),
                             indicator:'red'
-                        }, 5);
+                        }, 10);
                     } else {
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
                     }
@@ -1423,7 +1425,7 @@ function generateStorageItemCode(frm, cdt, cdn, child){
                         frappe.show_alert({
                             message:__("Item code not found: <b> " + r.message.error + "</b>"),
                             indicator:'red'
-                        }, 5);
+                        }, 10);
                     } else {
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
                     }
@@ -1463,7 +1465,7 @@ function generateProcessorItemCode(frm, cdt, cdn, child) {
                         frappe.show_alert({
                             message:__("Item code not found: <b> " + r.message.error + "</b>"),
                             indicator:'red'
-                        }, 5);
+                        }, 10);
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', '');
                     } else {
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
@@ -1521,7 +1523,7 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
                         frappe.show_alert({
                             message:__("Item code not found: <b> " + r.message.error + "</b>"),
                             indicator:'red'
-                        }, 5);
+                        }, 10);
                     } else {
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
                     }
@@ -1565,7 +1567,7 @@ function generateRamItemCode(frm, cdt, cdn, child) {
                         frappe.show_alert({
                             message:__("Item code not found: <b> " + r.message.error + "</b>"),
                             indicator:'red'
-                        }, 5);
+                        }, 10);
                     } else {
                         frappe.model.set_value(cdt, cdn, 'calculated_item_code', r.message);
                     }
@@ -1595,14 +1597,14 @@ frappe.ui.form.on('NJQCA Display', {
         let d = new frappe.ui.Dialog({
             title: 'Edit Display Attributes',
             fields: [
-                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: child.model || '', reqd: 1 },
-                { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '', reqd: 1 },
-                { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '', reqd: 1 },
-                { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '', reqd: 1 },
-                { label: 'Resolution', fieldname: 'resolution', fieldtype: 'Select', options: ['Loading...'], default: child.resolution || '', reqd: 1 },
-                { label: 'Thickness', fieldname: 'thickness', fieldtype: 'Select', options: ['Loading...'], default: child.thickness || '', reqd: 1 },
-                { label: 'Display Bracket', fieldname: 'display_bracket', fieldtype: 'Select', options: ['Loading...'], default: child.display_bracket || '', reqd: 1 },
-                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '', reqd: 1 },
+                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: '' },
+                { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '' },
+                { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '' },
+                { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '' },
+                { label: 'Resolution', fieldname: 'resolution', fieldtype: 'Select', options: ['Loading...'], default: child.resolution || '' },
+                { label: 'Thickness', fieldname: 'thickness', fieldtype: 'Select', options: ['Loading...'], default: child.thickness || '' },
+                { label: 'Display Bracket', fieldname: 'display_bracket', fieldtype: 'Select', options: ['Loading...'], default: child.display_bracket || '' },
+                { label: 'Grade', fieldname: 'grade', fieldtype: 'Select', options: ['Loading...'], default: child.grade || '' },
             ],
             primary_action_label: 'Save',
             primary_action(values) {
@@ -1611,8 +1613,6 @@ frappe.ui.form.on('NJQCA Display', {
                         frm.set_df_property( grid.df.fieldname, 'options',
                             values[fieldname], frm.docname, fieldname, cdn
                         );
-
-                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
@@ -1645,7 +1645,7 @@ frappe.ui.form.on('NJQCA Display', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -1659,26 +1659,30 @@ frappe.ui.form.on('NJQCA Display', {
 
         d.show();
 
-        async function get_options(attributeName) {
-            return new Promise((resolve, reject) => {
-                frappe.call({
-                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
-                    callback: function(r) {
-                        
-                        if (r.message && Array.isArray(r.message)) {
-                            resolve(r.message);
-                        } else { resolve([]); }
-                    },
-                    error: function(err) {
-                        console.error("API Error:", err);
-                        reject(err);
-                    }
-                });
-            });
-        }
     }
 });
+
+async function get_options(attributeName, item_group) {
+    return new Promise((resolve, reject) => {
+        frappe.call({
+            method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+            args: { label: attributeName, item_template: cur_frm.doc.item_template, item_group: item_group },
+            callback: function(r) {
+                if (r.message && r.message.error) {
+                    frappe.show_alert({message: r.message.error, indicator: "red"}, 10);
+                    return;
+                }
+                if (r.message && Array.isArray(r.message)) {
+                    resolve(r.message);
+                } else { resolve([]); }
+            },
+            error: function(err) {
+                console.error("API Error:", err);
+                reject(err);
+            }
+        });
+    });
+}
 
 function fetch_item_template_disp_adp(frm, item_group, callback) {
     if (!frm.doc.serial_no) { frappe.msgprint("Please Scan the Serial No."); return; }
@@ -1721,8 +1725,6 @@ frappe.ui.form.on('NJQCA Adaptor', {
                         frm.set_df_property( grid.df.fieldname, 'options',
                             values[fieldname], frm.docname, fieldname, cdn
                         );
-
-                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
@@ -1751,7 +1753,7 @@ frappe.ui.form.on('NJQCA Adaptor', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -1764,24 +1766,6 @@ frappe.ui.form.on('NJQCA Adaptor', {
         });
 
         d.show();
-
-        async function get_options(attributeName) {
-            return new Promise((resolve, reject) => {
-                frappe.call({
-                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
-                    callback: function(r) {
-                        if (r.message && Array.isArray(r.message)) {
-                            resolve(r.message);
-                        } else { resolve([]); }
-                    },
-                    error: function(err) {
-                        console.error("API Error:", err);
-                        reject(err);
-                    }
-                });
-            });
-        }
     }
 });
 
@@ -1791,7 +1775,6 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         let item_group = child.item_group;
         let grid = frm.get_field(child.parentfield);
 
-        // Define the detailed relationships between interfaces and lengths
         const relationshipMap = {
             'interfaces': {
                 'SATA': ['2.5"'],
@@ -1808,7 +1791,6 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             }
         };
 
-        // Define the filtered options for both SSD and HDD with the relationships
         const storage_filters = {
             'SSD': {
                 interfaces: ['SATA', 'M.2 NVME', 'M.2 SATA', 'M.2 PCI' ,'M.SATA'],
@@ -1820,12 +1802,10 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             }
         };
 
-        // Helper function to update field options based on selections
         const updateFieldOptions = (sourceField, targetField) => {
             const sourceValue = d.get_value(sourceField);
             const storageType = d.get_value('storage_type');
             
-            // First apply storage type filter to get the base options
             let baseOptions = [];
             if (targetField === 'storage_interface') {
                 baseOptions = storage_filters[storageType]?.interfaces || [];
@@ -1833,27 +1813,22 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                 baseOptions = storage_filters[storageType]?.lengths || [];
             }
             
-            // Then apply the relationship filter if a source value is selected
             if (sourceValue) {
                 let relationshipKey = sourceField === 'storage_interface' ? 'interfaces' : 'lengths';
                 let allowedValues = relationshipMap[relationshipKey][sourceValue] || [];
                 
-                // Intersection of base options and relationship-allowed options
                 let filteredOptions = baseOptions.filter(option => allowedValues.includes(option));
                 d.set_df_property(targetField, 'options', filteredOptions);
                 
-                // Auto-select if only one option and field is empty
                 if (filteredOptions.length === 1 && !d.get_value(targetField)) {
                     d.set_value(targetField, filteredOptions[0]);
                 }
                 
-                // Clear value if not in filtered list
                 const currentValue = d.get_value(targetField);
                 if (currentValue && !filteredOptions.includes(currentValue)) {
                     d.set_value(targetField, '');
                 }
             } else {
-                // If no source value, just use the storage type filter
                 d.set_df_property(targetField, 'options', baseOptions);
             }
         };
@@ -1868,31 +1843,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                     options: ['Loading...'],
                     default: child.storage_type || '',
                     reqd: !child.storage_type,
-                    read_only: !!child.storage_type,
-                    change: function() {
-                        const storageType = d.get_value('storage_type');
-                        if (storageType) {
-                            // Reset both fields to apply new storage type filters
-                            const interfaceValue = d.get_value('storage_interface');
-                            const lengthValue = d.get_value('storage_length');
-                            
-                            // Set base options first
-                            if (storage_filters[storageType]) {
-                                d.set_df_property('storage_interface', 'options', 
-                                    storage_filters[storageType].interfaces);
-                                d.set_df_property('storage_length', 'options', 
-                                    storage_filters[storageType].lengths);
-                            }
-                            
-                            // Then apply relationship filters if values exist
-                            if (interfaceValue) {
-                                updateFieldOptions('storage_interface', 'storage_length');
-                            }
-                            if (lengthValue) {
-                                updateFieldOptions('storage_length', 'storage_interface');
-                            }
-                        }
-                    }
+                    read_only: !!child.storage_type
                 },
                 {
                     label: 'Storage Interface',
@@ -1901,10 +1852,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                     options: ['Loading...'],
                     default: child.storage_interface || '',
                     reqd: !child.storage_interface,
-                    read_only: !!child.storage_interface,
-                    change: function() {
-                        updateFieldOptions('storage_interface', 'storage_length');
-                    }
+                    read_only: !!child.storage_interface
                 },
                 {
                     label: 'Storage Capacity',
@@ -1922,10 +1870,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                     options: ['Loading...'],
                     default: child.storage_length || '',
                     reqd: !child.storage_length,
-                    read_only: !!child.storage_length,
-                    change: function() {
-                        updateFieldOptions('storage_length', 'storage_interface');
-                    }
+                    read_only: !!child.storage_length
                 },
                 {
                     label: 'Grade',
@@ -1959,16 +1904,13 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             'grade': 'Grade'
         };
 
-        // Load options for all fields
         for (const [fieldname, attributeName] of Object.entries(fieldToAttribute)) {
             try {
-                // For interface and length, we'll apply the filters later
                 if (fieldname !== 'storage_interface' && fieldname !== 'storage_length') {
-                    let options = await get_options(attributeName);
+                    let options = await get_options(attributeName, item_group);
                     d.set_df_property(fieldname, 'options', options);
                 }
                 
-                // Set existing values
                 if (child[fieldname]) {
                     d.set_value(fieldname, child[fieldname]);
                 }
@@ -1977,28 +1919,23 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             }
         }
 
-        // Initialize storage type options
         try {
-            let storageTypeOptions = await get_options('Storage Type');
+            let storageTypeOptions = await get_options('Storage Type', item_group);
             d.set_df_property('storage_type', 'options', storageTypeOptions);
             
-            // Apply storage type filters
             if (child.storage_type) {
                 d.set_value('storage_type', child.storage_type);
                 
                 if (storage_filters[child.storage_type]) {
-                    // Set interface options based on storage type
                     d.set_df_property('storage_interface', 'options', 
                         storage_filters[child.storage_type].interfaces);
                     
-                    // Set length options based on storage type
                     d.set_df_property('storage_length', 'options', 
                         storage_filters[child.storage_type].lengths);
                 }
             } else {
-                // If no storage type yet, just load all options
-                let interfaceOptions = await get_options('Storage Interface');
-                let lengthOptions = await get_options('Storage Length');
+                let interfaceOptions = await get_options('Storage Interface', item_group);
+                let lengthOptions = await get_options('Storage Length', item_group);
                 
                 d.set_df_property('storage_interface', 'options', interfaceOptions);
                 d.set_df_property('storage_length', 'options', lengthOptions);
@@ -2007,36 +1944,15 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             console.error('Error initializing storage type options:', error);
         }
 
-        // Apply bidirectional filtering based on existing values
         if (child.storage_interface) {
             d.set_value('storage_interface', child.storage_interface);
-            updateFieldOptions('storage_interface', 'storage_length');
         }
         
         if (child.storage_length) {
             d.set_value('storage_length', child.storage_length);
-            updateFieldOptions('storage_length', 'storage_interface');
         }
 
         d.show();
-    
-        async function get_options(attributeName) {
-            return new Promise((resolve, reject) => {
-                frappe.call({
-                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
-                    callback: function(r) {
-                        if (r.message && Array.isArray(r.message)) {
-                            resolve(r.message);
-                        } else { resolve([]); }
-                    },
-                    error: function(err) {
-                        console.error("API Error:", err);
-                        reject(err);
-                    }
-                });
-            });
-        }
     }
 });
 
@@ -2046,7 +1962,6 @@ function shouldBeRequired(child) {
             child.fetched_item_code !== child.calculated_item_code);
 }
 
-// Function to validate mandatory fields for the entire form
 function validate_mandatory_fields(frm) {
     if (!frm.doc.njqca_laptop_storage) return;
 
@@ -2127,7 +2042,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -2140,27 +2055,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
         });
 
         d.show();
-
-        async function get_options(attributeName) {
-            return new Promise((resolve, reject) => {
-                frappe.call({
-                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName ,
-                        template: frm.doc.item_template,
-                        item_group: item_group
-                    },
-                    callback: function(r) {
-                        if (r.message && Array.isArray(r.message)) {
-                            resolve(r.message);
-                        } else { resolve([]); }
-                    },
-                    error: function(err) {
-                        console.error("API Error:", err);
-                        reject(err);
-                    }
-                });
-            });
-        }
     }
 });
 
@@ -2209,14 +2103,12 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
             }
         });
     
-        const fieldToAttribute = {
-            'processor_type': 'Processor Type', 'grade': 'Grade'
-        };
+        const fieldToAttribute = { 'processor_type': 'Processor Type', 'grade': 'Grade' };
 
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -2229,24 +2121,6 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
         });
 
         d.show();
-
-        async function get_options(attributeName) {
-            return new Promise((resolve, reject) => {
-                frappe.call({
-                    method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-                    args: { label: attributeName,template: frm.doc.item_template,item_group: item_group },
-                    callback: function(r) {
-                        if (r.message && Array.isArray(r.message)) {
-                            resolve(r.message);
-                        } else {  resolve([]); }
-                    },
-                    error: function(err) {
-                        console.error("API Error:", err);
-                        reject(err);
-                    }
-                });
-            });
-        }
     }
 });
 
@@ -2345,13 +2219,13 @@ function handle_merge(frm, selected_rows, child_name) {
     const [row1, row2] = selected_rows;
 
     if (!row1.fetched_item_code && !row2.fetched_item_code) {
-        frappe.show_alert({message: "No Fetched Item Code(Serial No.) found in either row(s).", indicator: "red"}, 5);
+        frappe.show_alert({message: "No Fetched Item Code(Serial No.) found in either row(s).", indicator: "red"}, 10);
         return;
     }
 
     let source_row, target_row;
     if (row2.merged === 1 || row1.merged === 1) {
-        frappe.show_alert({message: "One of the rows has already been merged.", indicator: "red"}, 5);
+        frappe.show_alert({message: "One of the rows has already been merged.", indicator: "red"}, 10);
         return;
     } 
 

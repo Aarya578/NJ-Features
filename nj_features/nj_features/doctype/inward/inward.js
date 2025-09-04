@@ -80,7 +80,7 @@ frappe.ui.form.on('Inward', {
                         if (r.message.length == 1) {
                             frm.set_value('item_code', r.message[0].item_code)
                             frm.set_value('batch_no', r.message[0].batch_no)
-                            frm.set_value('base_rate', r.message[0].base_rate)
+                            frm.set_value('base_rate', r.message[0].rate)
                             frm.set_df_property('purchase_receipt_item', 'read_only', 1);
                         } else {
 

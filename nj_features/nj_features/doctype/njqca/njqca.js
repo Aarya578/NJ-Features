@@ -1131,7 +1131,7 @@ function processItemTemplate(frm) {
 
                     frm.clear_table("njqca_laptop_ram");
                     frm.clear_table("njqca_laptop_processors");
-                    frm.clear_table("njqca_laptop_storage")
+                    frm.clear_table("njqca_laptop_storage");
                     
                     partData.forEach(row => {
                         if (row.item_group === "Laptop RAM") {
@@ -1210,8 +1210,10 @@ function processItemTemplate(frm) {
                             let newRow;
 
                             if (item.item_group === "Display") {
+                                frm.clear_table("njqca_display");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_display");
                             } else if (item.item_group === "Laptop Adaptors") {
+                                frm.clear_table("njqca_adaptor");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
                             }
 
@@ -1589,7 +1591,7 @@ frappe.ui.form.on('NJQCA Display', {
         let d = new frappe.ui.Dialog({
             title: 'Edit Display Attributes',
             fields: [
-                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: child.model || '' },
+                { label: 'Model', fieldname: 'model', fieldtype: 'Select', options: ['Loading...'], default: '' },
                 { label: 'Display Tech', fieldname: 'display_tech', fieldtype: 'Select', options: ['Loading...'], default: child.display_tech || '' },
                 { label: 'Display PIN Type', fieldname: 'display_pin_type', fieldtype: 'Select', options: ['Loading...'], default: child.display_pin_type || '' },
                 { label: 'Display Size', fieldname: 'display_size', fieldtype: 'Select', options: ['Loading...'], default: child.display_size || '' },
@@ -1605,8 +1607,6 @@ frappe.ui.form.on('NJQCA Display', {
                         frm.set_df_property( grid.df.fieldname, 'options',
                             values[fieldname], frm.docname, fieldname, cdn
                         );
-
-                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 
@@ -1719,8 +1719,6 @@ frappe.ui.form.on('NJQCA Adaptor', {
                         frm.set_df_property( grid.df.fieldname, 'options',
                             values[fieldname], frm.docname, fieldname, cdn
                         );
-
-                        frappe.model.set_value(cdt, cdn, fieldname, values[fieldname]);
                     }
                 });
 

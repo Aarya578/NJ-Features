@@ -59,10 +59,10 @@ class CustomeAddress(Address):
 
 	def address_validations(self):
 
-		if self.address_line1 and len(self.address_line1) > 90:
+		if self.address_line1 and len(self.address_line1) > 100:
 			frappe.throw(_("Address Line 1 should not exceed 90 characters"))
 
-		if self.address_line2 and len(self.address_line2) > 90:
+		if self.address_line2 and len(self.address_line2) > 100:
 			frappe.throw(_("Address Line 2 should not exceed 90 characters"))
 
 

@@ -2018,9 +2018,25 @@ def get_result_parameter(name, item_group, parameter):
         return str(e)
     
 @frappe.whitelist()
-def get_options_for_label(label, item_template):
+def get_options_for_label(item_group, label, item_template):
+    options = None
     item_wizard = get_latest_item_wizard(item_template)
-    options = frappe.db.get_all('Items Attribute', filters={'parent': item_wizard, 'item_attribute': label}, fields=['attribute_value'], order_by='idx')
+    label_defined = frappe.db.exists('Items Attribute', {
+        'parent': item_wizard,
+        'item_attribute': label,
+        'item_group': item_group
+    })
+
+    if label_defined:
+        options = frappe.db.get_all('Items Attribute', filters={'parent': item_wizard, 'item_attribute': label, 'item_group': item_group}, fields=['attribute_value'], order_by='idx')
+    else:
+        options = frappe.db.get_all('Item Attribute Value', filters={'parent': label}, fields=['attribute_value'], order_by='idx')
+
+        if label.lower() == 'grade':
+            options = [
+                option for option in options
+                if option['attribute_value'].strip().lower() != 'unknown'
+            ]
     
     if not options:
         return {'error': f"Item attribute <b>{label}</b> is not defined in Item Wizard <b>{item_wizard}</b>. Contact NPD Team."}

@@ -1639,7 +1639,7 @@ frappe.ui.form.on('NJQCA Display', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -1656,11 +1656,11 @@ frappe.ui.form.on('NJQCA Display', {
     }
 });
 
-async function get_options(attributeName) {
+async function get_options(attributeName, item_group) {
     return new Promise((resolve, reject) => {
         frappe.call({
             method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
-            args: { label: attributeName, item_template: cur_frm.doc.item_template },
+            args: { label: attributeName, item_template: cur_frm.doc.item_template, item_group: item_group },
             callback: function(r) {
                 if (r.message && r.message.error) {
                     frappe.show_alert({message: r.message.error, indicator: "red"}, 10);
@@ -1749,7 +1749,7 @@ frappe.ui.form.on('NJQCA Adaptor', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -1903,7 +1903,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         for (const [fieldname, attributeName] of Object.entries(fieldToAttribute)) {
             try {
                 if (fieldname !== 'storage_interface' && fieldname !== 'storage_length') {
-                    let options = await get_options(attributeName);
+                    let options = await get_options(attributeName, item_group);
                     d.set_df_property(fieldname, 'options', options);
                 }
                 
@@ -1916,7 +1916,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         }
 
         try {
-            let storageTypeOptions = await get_options('Storage Type');
+            let storageTypeOptions = await get_options('Storage Type', item_group);
             d.set_df_property('storage_type', 'options', storageTypeOptions);
             
             if (child.storage_type) {
@@ -1930,8 +1930,8 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                         storage_filters[child.storage_type].lengths);
                 }
             } else {
-                let interfaceOptions = await get_options('Storage Interface');
-                let lengthOptions = await get_options('Storage Length');
+                let interfaceOptions = await get_options('Storage Interface', item_group);
+                let lengthOptions = await get_options('Storage Length', item_group);
                 
                 d.set_df_property('storage_interface', 'options', interfaceOptions);
                 d.set_df_property('storage_length', 'options', lengthOptions);
@@ -2038,7 +2038,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 
@@ -2099,14 +2099,12 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
             }
         });
     
-        const fieldToAttribute = {
-            'processor_type': 'Processor Type', 'grade': 'Grade'
-        };
+        const fieldToAttribute = { 'processor_type': 'Processor Type', 'grade': 'Grade' };
 
         Object.keys(fieldToAttribute).forEach(async (fieldname) => {
             try {
                 let attributeName = fieldToAttribute[fieldname];
-                let options = await get_options(attributeName);
+                let options = await get_options(attributeName, item_group);
 
                 d.set_df_property(fieldname, 'options', options);
 

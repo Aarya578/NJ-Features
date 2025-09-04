@@ -1,4 +1,5 @@
 import re
+import copy
 import json
 import time
 import frappe
@@ -619,7 +620,6 @@ class NJQCA(Document):
         serial_no_doc.save()
 
     def battery_readings(self):
-        # Check if NJQCA's item group is BATTERY
         if self.item_group != 'BATTERY':
             return
        
@@ -1153,6 +1153,11 @@ def get_info_from_component_serial_no(doc=None):
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     doc = frappe.get_doc("NJQCA", docname)
+
+    ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
+    if not ignore_part_validation:
+        update_part_item_code_from_child(doc)
+
     if doc.bios_serialno:
         if doc.power_on == 'Yes' and (qi_type==None or not qi_type):
             qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model)
@@ -1168,6 +1173,9 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
 
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+
+def update_part_item_code_from_child(doc):
+    pass
 
 def get_item_code_for_each_part(doc):
     item_group, item_template = '', ''
@@ -1244,8 +1252,6 @@ def get_item_code_for_each_part(doc):
                                     match = re.search(r'\d+', row.get(variant))
                                     if match:
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(f"{match.group()} GHZ", mapping.get('attribute_name'))
-                                    else:
-                                        attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp('UNKNOWN SPEED', mapping.get('attribute_name'))
                             
                             else:
                                 if variant == 'variant_6':
@@ -1254,7 +1260,7 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
-                        elif item_group.lower() == storage.lower() and (row.get('variant_10') or not row.get('variant_1')):
+                        elif item_group.lower() == storage.lower() and (not row.get('variant_10') or not row.get('variant_1')):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
@@ -1300,6 +1306,32 @@ def get_item_code_for_each_part(doc):
                 consolidated = consolidate_storage(consolidated)
                 item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
+
+                if repack_item_code and 'error' in repack_item_code:
+                    new_item = False
+                    new_consolidated = copy.deepcopy(consolidated)
+                    for arg in new_consolidated:
+                        for key, value in arg.items():
+                            if key.lower() == 'ram capacity':
+                                ddr = frappe.db.sql("""SELECT variant_7 FROM `tabNJQCA Child`
+                                    WHERE parent = '{0}' AND variant_6 IS NOT NULL and variant_7 IS NOT NULL and item_group = 'Laptop RAM' limit 1""".format(doc.get('name'),), as_dict=True)
+                                if ddr and ddr[0].variant_7.lower() in ("ddr4", "26"):
+                                    arg[key] = value + " DDR4"
+                                    new_item = True
+                            
+                    if new_item:
+                        repack_item_code = get_variant_from_value(item_template, new_consolidated)
+
+                if repack_item_code and 'error' in repack_item_code:
+                    old_commment = frappe.db.get_value("Comment", {'reference_doctype': doc.get('doctype'), 'reference_name': doc.get('name'), 'content': "Automated Item code not found: "+repack_item_code.get('error')}, "content")
+                    if not old_commment:
+                        frappe.get_doc({
+                            'doctype': 'Comment',
+                            'comment_type': 'Comment',
+                            'reference_doctype': doc.get('doctype'),
+                            'reference_name': doc.get('name'),
+                            'content':  "Automated Item code not found: "+repack_item_code.get('error'),
+                        }).insert(ignore_permissions=True)
 
                 result_part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
 
@@ -1420,7 +1452,7 @@ def get_part_mapping(doc):
             
         except Exception as e:
             log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
-            frappe.throw(f"An error occurred in get_part_mapping: {str(e)}")
+            frappe.throw(f"An error occurred in get_part_mapping: {traceback.format_exc()}")
 
 def consolidate_ram_capacities(data):
     consolidated_data,ram_consolidation = [], {}
@@ -1640,7 +1672,7 @@ def construct_item_code(item_template, args_list):
 
         query = """
             SELECT item_code FROM `tabItem`
-            WHERE item_code = %s and disabled = 0
+            WHERE item_code = %s and disabled = 0 AND end_of_life >= CURDATE()
         """
 
         item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
@@ -1973,7 +2005,7 @@ def get_fetched_item_code(serial_no, partData):
     partData = frappe.parse_json(partData)
 
     serial_no_components = frappe.db.sql(
-        """ SELECT item_group, item, reference_doctype_no FROM `tabSerial No Component`
+        """ SELECT item_group, item, reference_doctype_no, item_group_idx FROM `tabSerial No Component`
         WHERE parent = %s """, (serial_no,), as_dict=True
     )
 
@@ -2009,6 +2041,7 @@ def get_fetched_item_code(serial_no, partData):
                 if serial_no_attr_data != njqca_attr_data:
                     unmatched_item_code.append(row.get("item"))
                     data["reference_docname"] = row["reference_doctype_no"]
+                    data["item_group_idx"] = row["item_group_idx"]
                 else:
                     data["fetched_item_code"] = ""
 
@@ -2020,17 +2053,18 @@ def get_fetched_item_code(serial_no, partData):
     )
 
     partData_fetched_item = [item for item in partData_fetched_item if item]
-    serial_no_components_list = [(row.get("item"), row.get("item_group"), row.get("reference_doctype_no")) for row in serial_no_components]
+    serial_no_components_list = [(row.get("item"), row.get("item_group"), row.get("reference_doctype_no"), row.get("item_group_idx")) for row in serial_no_components]
     partData_item_groups = {data.get("item_group") for data in partData if data.get("item_group")}
 
-    for item, item_group, reference_docname in serial_no_components_list:
+    for item, item_group, reference_docname, item_group_idx in serial_no_components_list:
         if item not in partData_fetched_item and item_group in partData_item_groups:
             updated_part_data.append({
                 "fetched_item_code": item,
                 "attr_data": {},
                 "part_item_code": "",
                 "item_group": item_group,
-                "reference_docname": reference_docname
+                "reference_docname": reference_docname,
+                "item_group_idx": item_group_idx
             })
 
     return updated_part_data if updated_part_data else partData
@@ -2785,8 +2819,8 @@ def get_item_code_for_ram(item_code, njqca_name):
         sub_config=[]
         new_config=""
         item_code_query="""
-                select '1' from `tabItem` where item_group="Laptop RAM" and disabled=0 and name=%s;
-            """
+            select '1' from `tabItem` where item_group="Laptop RAM" and disabled=0 and name=%s;
+        """
         if item_code is not None and item_code:
             sub_config=item_code.split("-")
         if sub_config and len(sub_config)==6:
@@ -3001,3 +3035,32 @@ def validate_model(model,manufacturer_model):
     except Exception as e:
         frappe.throw("Error While validating Model: " + str(e))
         return None
+    
+@frappe.whitelist()
+def get_empty_param_in_child(item_code):
+    result = frappe.db.sql("""
+        SELECT attribute, attribute_value 
+        FROM `tabItem Variant Attribute` 
+        WHERE parent = %s
+    """, item_code, as_list=True)
+
+    data = {to_snake_case(attr): value for attr, value in result}
+    
+    return data
+
+def to_snake_case(s):
+    """Convert a string like 'RAM Type' to 'ram_type'."""
+    s = re.sub(r'[^a-zA-Z0-9 ]', '', s)
+    return '_'.join(word.lower() for word in s.strip().split())
+
+@frappe.whitelist()
+def get_disp_and_adp_data(serial_no):
+    disp_and_adp_data_query = """SELECT item as fetched_item_code, item_group, grade  FROM `tabSerial No Component` 
+    WHERE parent = %s AND item_group in ('Laptop Adaptors', 'Display')"""
+    disp_and_adp_data = frappe.db.sql(disp_and_adp_data_query, (serial_no), as_dict=1)
+
+    for data in disp_and_adp_data:
+        item_data = get_empty_param_in_child(data.get('fetched_item_code'))
+        data.update(item_data)
+
+    return disp_and_adp_data

@@ -74,7 +74,13 @@ frappe.ui.form.on('Laptop Box', {
         if (frm.doc.barcode) {
             frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.generate_and_save_qrcode',
-                args: { data: frm.doc.barcode }
+                args: { data: frm.doc.barcode },
+                callback: function(r) {
+                    console.log("saved qr code",r);
+                },
+                error: function(r) {
+                    frappe.msgprint("Error while generating QR Code.", r);
+                }
             });
             
             frappe.call({
@@ -85,6 +91,7 @@ frappe.ui.form.on('Laptop Box', {
                 },
                 callback: function(r) {
                     if (r.message) {
+                        $('.primary-action').show();
                         let serial_no_data = r.message;
 
                         frm.set_value("brand", serial_no_data.brand);  
@@ -141,6 +148,7 @@ frappe.ui.form.on('Laptop Box', {
                     }
                 },
                 error: function() {
+                    $('.primary-action').hide();
                     frappe.throw("Error fetching data for the barcode.");
                 }
             });

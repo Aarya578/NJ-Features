@@ -17,7 +17,8 @@
   "display_bracket",
   "grade",
   "item_template",
-  "check_button"
+  "check_button",
+  "item_group_idx"
  ],
  "fields": [
   {
@@ -107,11 +108,17 @@
    "fieldtype": "Button",
    "in_list_view": 1,
    "label": "Check Button"
+  },
+  {
+   "fieldname": "item_group_idx",
+   "fieldtype": "Int",
+   "label": "Item Group Idx",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-03 18:01:13.823449",
+ "modified": "2025-09-01 19:20:06.365874",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Display",

@@ -61,6 +61,7 @@ frappe.ui.form.on('Quality Review', {
                                             row.task = rowData.task;
                                             row.severity = rowData.severity;
                                             row.reviewee = frm.doc.reviewee;
+                                            row.compliance_type = 'Process Not Followed';
                                             row.step = li.innerText.trim();
                                         });
                                     } else {
@@ -70,6 +71,7 @@ frappe.ui.form.on('Quality Review', {
                                         row.task = rowData.task;
                                         row.severity = rowData.severity;
                                         row.reviewee = frm.doc.reviewee;
+                                        row.compliance_type = 'Process Not Followed';
                                         row.step = (rowData.step || "").trim();
                                     }
                                 }
@@ -168,7 +170,7 @@ function get_quality_procedure_name(frm) {
                         row.item_group = rowData.item_group;
                         row.step = rowData.quality_check;
                         row.reviewee = frm.doc.reviewee;
-
+                        row.compliance_type = 'Process Not Followed';
                         frappe.call({
                             method: 'nj_features.overrides.quality_review.get_kms_data',
                             args: {

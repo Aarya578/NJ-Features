@@ -10,8 +10,11 @@ class CustomQualityReview(QualityReview):
         # Call the parent class's validate
         super().validate()
     def on_submit(self):
-        # Call the parent class's on_submit
-        raise_nc_for_not_following_the_process(self)
+        # Call the parent class's on_submity
+        try:
+            raise_nc_for_not_following_the_process(self)
+        except Exception as e:
+            frappe.throw(str(e))
 
 
 @frappe.whitelist()

@@ -88,7 +88,7 @@ def get_repack_items(self):
 def get_item_list_from_pr(pr):
     batch_item_codes = frappe.db.get_list('Item', filters={'has_batch_no': 1}, pluck='item_code')
     pr_items = frappe.db.get_list('Purchase Receipt Item', filters={'parent': pr}, fields=['item_code', 'rate', 'batch_no'])
-
+    print("pr_items",pr_items)
     result = [
         {'item_code': item['item_code'], 'rate': item['rate'], 'batch_no': item['batch_no']}
         for item in pr_items if item['item_code'] in batch_item_codes

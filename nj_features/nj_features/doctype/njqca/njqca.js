@@ -1219,7 +1219,7 @@ function processItemTemplate(frm) {
 
                             if (newRow) {
                                 for (let key in item) {
-                                    if (item.hasOwnProperty(key)) {
+                                    if (item.hasOwnProperty(key) && key.toLowerCase() != "model") {
                                         frappe.model.set_value(newRow.doctype, newRow.name, key, item[key]);
                                     }
                                 }
@@ -1872,8 +1872,7 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
                     fieldtype: 'Select',
                     options: ['Loading...'],
                     default: child.grade || '',
-                    reqd: !child.grade,
-                    read_only: false
+                    reqd: !child.grade
                 }
             ],
             primary_action_label: 'Save',
@@ -2001,8 +2000,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.grade || '', 
-                    reqd: !child.grade, read_only: false // Grade is always editable
+                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade
                 },
             ],
             primary_action_label: 'Save',
@@ -2074,8 +2072,7 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.grade || '', 
-                    reqd: !child.grade, read_only: false 
+                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade,
                 },
             ],
             primary_action_label: 'Save',

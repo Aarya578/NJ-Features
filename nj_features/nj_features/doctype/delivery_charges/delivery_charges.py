@@ -688,7 +688,6 @@ def awb_number_tracking_status():
     }
 
 def update_status_in_shopify():
-    print("Updating status in Shopify...========================")
     token = "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"
     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 

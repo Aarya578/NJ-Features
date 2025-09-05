@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "rule_name",
+  "document_type",
   "enabled",
   "priority",
   "section_break_uqszl",
@@ -51,10 +52,16 @@
    "fieldtype": "Code",
    "label": "Python Action",
    "options": "PythonExpression"
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Link",
+   "label": "Document Type",
+   "options": "DocType"
   }
  ],
  "links": [],
- "modified": "2025-09-04 18:56:47.501895",
+ "modified": "2025-09-05 11:01:17.368360",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Recommendation Engine",

@@ -252,6 +252,7 @@ def validate_stock_movement_for_grade(doc):
         return {"success": "Validation passed without errors."}
 
 def validate_serial_no_and_department(row, error_messages):
+    print("======================= 255")
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
     if not has_serialized:
         return False
@@ -292,7 +293,7 @@ def validate_serial_no_and_department(row, error_messages):
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
             one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages)
-
+        
         if (
                 s_department and 
                 s_department != department and 
@@ -302,6 +303,8 @@ def validate_serial_no_and_department(row, error_messages):
                 s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
                 s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
             ):
+
+            print("coming inside ================== 306")
         
             check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
         else:

@@ -7,25 +7,48 @@ frappe.ui.form.on('Delivery Note', {
     //         frm.set_df_property("courier_service", "read_only", 1);
     //     }
     // },
-    onload: function(frm) {
-        if (!frm.doc.items || frm.doc.items.length === 0 || frm.doc.is_return === 1) return;
-
-        // Take the first SO reference from child table
-        let so_name = frm.doc.items[0].against_sales_order;
-        if (!so_name) return;
-
-        frappe.db.get_doc("Sales Order", so_name).then(so_doc => {
-            // Compare billing address
-
-            if (so_doc.customer_address && frm.doc.customer_address !== so_doc.customer_address) {
-                frm.set_value("customer_address", so_doc.customer_address);
+    onload: function(frm) {         
+        // console.log("Delivery Note onload==============================");
+          
+        // Run only if items exist and linked Sales Order is present
+        if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
+            let first_so = frm.doc.items[0].against_sales_order;
+            if (first_so) {
+                frappe.call({
+                    method: "nj_features.overrides.delivery_note.updating_new_address",
+                    args: {
+                        sales_order_name: first_so
+                    },
+                    callback: function(r) {
+                        if (r.message) {
+                            frm.set_value("shipping_address_name", r.message);
+                            frm.refresh_field("shipping_address_name");
+                        }
+                    }
+                });
             }
+        }
+    
+    
+        // if (!frm.doc.items || frm.doc.items.length === 0 || frm.doc.is_return === 1) return;
 
-            // Compare shipping address
-            if (so_doc.shipping_address_name && frm.doc.shipping_address_name !== so_doc.shipping_address_name) {
-                frm.set_value("shipping_address_name", so_doc.shipping_address_name);
-            }
-        });
+        // // Take the first SO reference from child table
+        // let so_name = frm.doc.items[0].against_sales_order;
+        // if (!so_name) return;
+
+        // frappe.db.get_doc("Sales Order", so_name).then(so_doc => {
+        //     // Compare billing address
+
+        //     if (so_doc.customer_address && frm.doc.customer_address !== so_doc.customer_address) {
+        //         frm.set_value("customer_address", so_doc.customer_address);
+        //     }
+
+        //     // Compare shipping address
+        //     if (so_doc.shipping_address_name && frm.doc.shipping_address_name !== so_doc.shipping_address_name) {
+        //         frm.set_value("shipping_address_name", so_doc.shipping_address_name);
+        //     }
+        // });
+
     },
 
     refresh: function(frm) {
@@ -167,6 +190,7 @@ frappe.ui.form.on('Delivery Note', {
             }
         });
 
+       
 
 
         frappe.call({
@@ -249,7 +273,21 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     after_save: function(frm) {
-         
+        // frappe.call({
+        //     method: "nj_features.overrides.delivery_note.updating_new_address",
+        //     args: {
+        //         delivery_note_name: frm.doc.name
+        //     },
+        //     callback: function(r) {
+        //         // console.log("Full response:========================", r);
+        //         if (r.message) {
+        //             console.log("Shipping Address:", r.message);
+        //             frm.set_value("shipping_address_name", r.message);
+        //             frm.refresh_field("shipping_address_name");
+        //         }
+        //     }
+        // });
+    
         // frappe.call({
         //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',
         //     args: {

@@ -1505,15 +1505,20 @@ def shiprocket_awb_number(doc):
             # Prepare order_items from child table - ShipRocket format
             order_items = []
             for row in delivery_note_doc.items:
+                item_code = row.item_code or ""
+                trimmed_code = item_code[-50:] if len(item_code) > 50 else item_code
+
                 order_items.append({
-                    "name": (row.item_code[:50] if row.item_code else "")[:50], 
-                    "sku": (row.item_code[:50] if row.item_code else "")[:50],   
-                    "units": int(row.qty),                      
-                    "selling_price": str(row.rate * 1.18),    
+                    "name": trimmed_code,
+                    "sku": trimmed_code,
+                    "units": int(row.qty),
+                    "selling_price": str(row.rate * 1.18),
                     "discount": "",
                     "tax": 18.0,
                     "hsn": ""
                 })
+                print("order item===============================", order_items)
+
             if against_sales_order:
                 sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
 
@@ -2151,59 +2156,6 @@ def fetch_shiprocket_details(doc):
         manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
         frappe.db.set_value("Delivery Note", dn_name, "shiprocket_manifests", manifest_pdf_b64, update_modified=False)
 
-        # # 5. Generate Manifest
-        # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
-        # manifest_response = requests.post(manifest_url, headers=headers, json={"order_ids": shipment_lists})
-        # manifest_response.raise_for_status()
-        # manifest_json = manifest_response.json()
-        # frappe.logger().info(f"Shiprocket manifest response: {manifest_json}")
-
-        # if "message" in manifest_json:
-        #     frappe.throw(f"Manifest Generation Error: {manifest_json.get('message')}")
-
-        # manifest_pdf_url = manifest_json.get("manifest_url")
-        # if not manifest_pdf_url:
-        #     frappe.throw(f"Manifest URL not found. Full response: {manifest_json}")
-
-        # manifest_file_response = requests.get(manifest_pdf_url)
-        # if manifest_file_response.status_code != 200:
-        #     frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
-
-        # manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
-        # frappe.db.set_value("Delivery Note", dn_name, "shiprocket_manifests", manifest_pdf_b64, update_modified=False)
-
-
-
-
-
-
-
-
-
-
-
-        # # 5. Generate Manifest
-        # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/print"
-        # manifest_response = requests.post(manifest_url, headers=headers, json={"order_ids": shipment_lists})
-        # manifest_response.raise_for_status()
-        # manifest_json = manifest_response.json()
-        # frappe.logger().info(f"Shiprocket manifest response: {manifest_json}")
-
-        # if "message" in manifest_json:
-        #     frappe.throw(f"Manifest Generation Error: {manifest_json.get('message')}")
-
-        # manifest_pdf_url = manifest_json.get("manifest_url")
-        # if not manifest_pdf_url:
-        #     frappe.throw(f"Manifest URL not found. Full response: {manifest_json}")
-
-        # manifest_file_response = requests.get(manifest_pdf_url)
-        # if manifest_file_response.status_code != 200:
-        #     frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
-
-        # manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
-        # frappe.db.set_value("Delivery Note", dn_name, "shiprocket_manifests", manifest_pdf_b64, update_modified=False)
-
-
         return {
             "status": "success",
             "order_id": invoice_order_id,
@@ -2364,3 +2316,32 @@ def setting_dispatch_address(doc):
                 break
 
     return dispatch_location
+
+@frappe.whitelist()
+def updating_new_address(sales_order_name=None):
+    
+    print("inside updating_new_address ======777777777777777777777777====================", sales_order_name)
+    """Fetch updated address from previously submitted Delivery Notes against the given Sales Order"""
+    if not sales_order_name:
+        return None
+
+    # Fetch all submitted DN Items linked to SO
+    delivery_notes = frappe.get_all(
+        "Delivery Note Item",
+        filters={"against_sales_order": sales_order_name, "docstatus": 1},
+        fields=["parent"]
+    )
+    print("delivery_notes ==========================", delivery_notes)  
+    if not delivery_notes:
+        return None
+
+    # Loop through linked Delivery Notes and return the first updated address
+    for dn in delivery_notes:
+        dn_doc = frappe.get_doc("Delivery Note", dn.parent)
+        if dn_doc.get("is_return") and dn_doc.get("updated_address"):
+            return dn_doc.get("updated_address")
+
+    return None
+
+
+    

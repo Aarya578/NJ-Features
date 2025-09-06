@@ -272,6 +272,10 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         njpulse_url = f"{base_url}qi/{new_qi.name}/0" if new_qi.name else base_url
         msg_pnt = f"NJ Quality readings updated successfully..!! for <strong>QI: {new_qi.name}</strong>" if new_qi.name else "Saved without name."
 
+        if new_qi.name:
+            frappe.db.set_value("NJQCA", self.name, "qi_name", new_qi.name)
+            frappe.db.commit()  # commit only if outside request cycle
+
         return {
             'qi_name': new_qi.name or '',
             'njpulse_url': njpulse_url,
@@ -459,10 +463,7 @@ class NJQCA(Document):
 
     def on_submit(self):
         try:
-            if not self.qi_name:
-                frappe.throw("NJ QI is not created.")
-                return None
-            
+        
             self.check_for_repack_access()
             self.laptop_reports_update()
             self.battery_reports_update()

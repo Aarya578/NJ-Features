@@ -1450,8 +1450,8 @@ def get_item_code_for_each_part(doc):
                 return {'error': f'Item Template not found'}
 
     except Exception as e:
-        frappe.throw("An error occurred: " + str(e))
-        return {"error": f"An error occurred: {str(e)}"}
+        frappe.throw("An error occurred: " + traceback.format_exc())
+        return {"error": f"An error occurred: {traceback.format_exc()}"}
     
 def get_attribute_from_erp(attribute_value, parent):
     erp_normalize_cpu_query = """SELECT attribute_value FROM `tabItem Attribute Value` WHERE attribute_value = %s AND parent = %s"""
@@ -1611,7 +1611,7 @@ def consolidate_storage(data):
     
     for obj in data:
         for key, value in obj.items():
-            if key.lower() == 'storage capacity':
+            if key.lower() == 'storage capacity' and value:
                 storage_found = True
                 if 'SSD' in value.upper():
                     if storage_type and storage_type != 'SSD':
@@ -2123,7 +2123,7 @@ def get_fetched_item_code(serial_no, partData):
                     WHERE parent = %s """, (row.get("item")), as_dict=True)
 
                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
-                njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
+                njqca_attr_data = {(key.lower() if key else ""): (value.lower() if isinstance(value, str) else "") for key, value in data.get("attr_data", {}).items()}
 
                 serial_no_grade = serial_no_attr_data.get("grade", "")
 
@@ -3172,15 +3172,25 @@ def get_disp_and_adp_data(serial_no):
         
         if item_wizards:
             for group in missing_groups:
-                component_query = """
-                    SELECT default_item_code as fetched_item_code, component_type as item_group
-                    FROM `tabComponent`
-                    WHERE parent = %s AND component_type = %s
+                bag_list_query = """
+                    SELECT item as fetched_item_code, item_group FROM `tabBag List`
+                    WHERE parent = %s AND item_group = %s AND is_available = 1 AND quantity > 0
                     LIMIT 1
                 """
-                component_data = frappe.db.sql(component_query, (item_wizards, group), as_dict=1)
-                if component_data:
-                    disp_and_adp_data.extend(component_data)
+                bag_list_data = frappe.db.sql(bag_list_query, (item_wizards, group), as_dict=1)
+                if bag_list_data:
+                    disp_and_adp_data.extend(bag_list_data)
+
+                else:
+                    component_query = """
+                        SELECT default_item_code as fetched_item_code, component_type as item_group
+                        FROM `tabComponent`
+                        WHERE parent = %s AND component_type = %s
+                        LIMIT 1
+                    """
+                    component_data = frappe.db.sql(component_query, (item_wizards, group), as_dict=1)
+                    if component_data:
+                        disp_and_adp_data.extend(component_data)
 
     for data in disp_and_adp_data:
         item_data = get_empty_param_in_child(data.get('fetched_item_code'))

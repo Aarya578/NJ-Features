@@ -1038,6 +1038,7 @@ function processItemTemplate(frm) {
                         message:__("<b>Error " + r.message.error + "</b>"),
                         indicator:'red'
                     }, 10);
+                    return;
                 } 
 
                 if (r.message) {
@@ -1151,39 +1152,45 @@ function processItemTemplate(frm) {
                     frm.refresh_field("njqca_laptop_processors");
                     frm.refresh_field("njqca_laptop_storage");
                 }
+            },
+            error: function(err) {
+                frappe.show_alert({
+                    message:__("<b>Error " + err.message),
+                    indicator:'red'
+                }, 10);
             }
         });
 
-        // if (frm.doc.serial_no) {
-        //     frappe.call({
-        //         method: 'nj_features.nj_features.doctype.njqca.njqca.get_disp_and_adp_data',
-        //         args: { 'serial_no': frm.doc.serial_no },
-        //         callback: function(r) {
-        //             if (r.message) {
-        //                 r.message.forEach(item => {
-        //                     let newRow;
+        if (frm.doc.serial_no) {
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.get_disp_and_adp_data',
+                args: { 'serial_no': frm.doc.serial_no },
+                callback: function(r) {
+                    if (r.message) {
+                        r.message.forEach(item => {
+                            let newRow;
 
-        //                     if (item.item_group === "Display") {
-        //                         frm.clear_table("njqca_display");
-        //                         newRow = frappe.model.add_child(frm.doc, "njqca_display");
-        //                     } else if (item.item_group === "Laptop Adaptors") {
-        //                         frm.clear_table("njqca_adaptor");
-        //                         newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
-        //                     }
+                            if (item.item_group === "Display") {
+                                frm.clear_table("njqca_display");
+                                newRow = frappe.model.add_child(frm.doc, "njqca_display");
+                            } else if (item.item_group === "Laptop Adaptors") {
+                                frm.clear_table("njqca_adaptor");
+                                newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
+                            }
 
-        //                     if (newRow) {
-        //                         for (let key in item) {
-        //                             if (item.hasOwnProperty(key) && key.toLowerCase() != "model") {
-        //                                 frappe.model.set_value(newRow.doctype, newRow.name, key, item[key]);
-        //                             }
-        //                         }
-        //                     }
-        //                 });
-        //                 frm.refresh_fields();
-        //             }
-        //         }
-        //     })
-        // }
+                            if (newRow) {
+                                for (let key in item) {
+                                    if (item.hasOwnProperty(key) && key.toLowerCase() != "model") {
+                                        frappe.model.set_value(newRow.doctype, newRow.name, key, item[key]);
+                                    }
+                                }
+                            }
+                        });
+                        frm.refresh_fields();
+                    }
+                }
+            })
+        }
     }
 }
 

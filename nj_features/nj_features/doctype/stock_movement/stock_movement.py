@@ -407,6 +407,9 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
                 f"Item groups present in the bag: {item_groups_str}. Please remove them before proceeding."
             )
 
+from datetime import datetime, timedelta
+import frappe
+
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_department):
     try:
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
@@ -424,6 +427,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                 FROM `tabStock Entry Detail` sed
                 JOIN `tabStock Entry` se ON sed.parent = se.name
                 WHERE se.stock_entry_type = "Material Transfer"
+                AND sed.source_department != sed.target_department
                 AND sed.serial_no = %s
                 AND se.docstatus = 1
                 ORDER BY se.creation DESC
@@ -434,7 +438,9 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
             if result and inspection_types:
                 creation_time = result[0]["creation"]
                 formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Convert current time to IST (UTC+5:30)
+                current_time = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
 
                 # Fetch QI created between transfer and now
                 qi_query = """
@@ -465,7 +471,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                         ]
 
                         if qi_doc.get("status") not in allowed_statuses:
-                            expected_status = ", ".join(allowed_statuses)
+                            expected_status = ",".join(allowed_statuses)
                             actual_status = qi_doc.get("status")
 
                             error_messages.append(
@@ -483,6 +489,7 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
         error_messages.append("An error occurred during Quality Inspection validation. Please check logs.")
+
 
 
 def check_warranty_expiry(serial_doc, error_messages):

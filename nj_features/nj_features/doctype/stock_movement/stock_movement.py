@@ -252,8 +252,9 @@ def validate_stock_movement_for_grade(doc):
         return {"success": "Validation passed without errors."}
 
 def validate_serial_no_and_department(row, error_messages):
-    print("======================= 255")
+
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
+
     if not has_serialized:
         return False
     
@@ -304,8 +305,6 @@ def validate_serial_no_and_department(row, error_messages):
                 s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
             ):
 
-            print("coming inside ================== 306")
-        
             check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
         else:
             return True
@@ -326,8 +325,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
         pluck="course"
     )
 
-    print("Enrolled courses via LMS Batch Membership:", enrolled_courses)
-
     if not enrolled_courses:
         return
 
@@ -338,8 +335,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
         course_models = [row.models for row in course_doc.model]  # assuming 'model' is the child table field
         if model in course_models:
             matched_courses.append(course_name)
-
-    print("Matched courses for model:", model, "->", matched_courses)
 
     if not matched_courses:
         return
@@ -353,8 +348,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     if not chapters:
         return
 
-    print("Chapters from matched courses:", chapters)
-
     # Step 4: Get lessons linked in chapter.lesson (child table: Lesson Reference)
     required_lessons = set()
     for chapter in chapters:
@@ -366,8 +359,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
             lesson_models = [row.models for row in lesson_doc.model]
             if model in lesson_models:
                 required_lessons.add(lesson_name)
-
-    print("Required lessons for model:", required_lessons)
 
     if not required_lessons:
         return
@@ -381,8 +372,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
         },
         pluck="lesson"
     )
-
-    print("Completed lessons by user:", completed_lessons)
 
     not_completed = list(required_lessons - set(completed_lessons))
 
@@ -465,9 +454,9 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                 if qi_result:
                     qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
 
-                    if qi_doc and t_inspection_type.get("quality_inspection_status_for_stock_movement"):
+                    if qi_doc and s_inspection_type.get("quality_inspection_status_for_stock_movement"):
                         allowed_statuses = [
-                            status.strip() for status in t_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+                            status.strip() for status in s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
                         ]
 
                         if qi_doc.get("status") not in allowed_statuses:
@@ -750,7 +739,6 @@ def get_grades_from_part_list(search_value):
     for row in query:
         item_group = row['item_group']
         aesthetic_issue = row['aesthetic_issue']
-        print
         functional_issue = row['functional_issue']
         damage_types = []
 
@@ -813,10 +801,7 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                     f"(Min: {min_qty}, Max: {max_qty})"
                 )
 
-
 def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages):
-    print("one_of_these_component_grades_must_be_true", department_doc.get('one_of_these_component_grades_must_be_true'))
-
     if not department_doc.get('one_of_these_component_grades_must_be_true'):
         return
 

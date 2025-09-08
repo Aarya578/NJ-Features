@@ -1374,9 +1374,21 @@ def get_item_code_for_each_part(doc):
                             (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())):
                                 variant_type = ' SSD'
 
-                            if variant == 'variant_10': 
+                            if variant == 'variant_10':
+                                final_value = row.get(variant)
+                                numeric_value = int(final_value.replace(' GB', '').strip())
+
+                                if numeric_value > 80:
+                                    if numeric_value >= 1024:
+                                        tb_value = numeric_value // 1024
+                                        formatted_value = f"{tb_value} TB"
+                                    else:
+                                        formatted_value = f"{numeric_value} GB"
+
+                                    final_value = formatted_value + variant_type
+                                
                                 if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant) + variant_type, mapping.get('attribute_name'))
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
                                     
                                 else:
                                     skip_memory = True

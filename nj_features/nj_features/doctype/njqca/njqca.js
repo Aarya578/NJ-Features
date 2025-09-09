@@ -239,7 +239,7 @@ frappe.ui.form.on('NJQCA', {
                 })
             }
 
-            if (!frm.doc.__islocal) { get_model(frm.doc.manufacturer_model); }
+            if (!frm.doc.__islocal) { njqca.get_model(frm.doc.manufacturer_model); }
 
             setup_merge_checkbox_handler(frm, 'njqca_laptop_processors');
             setup_merge_checkbox_handler(frm, 'njqca_laptop_ram');
@@ -739,7 +739,7 @@ frappe.ui.form.on('NJQCA', {
     },
 
     manufacturer_model: function(frm) {
-        if (frm.doc.manufacturer_model) { get_model(frm.doc.manufacturer_model); }
+        if (frm.doc.manufacturer_model) { njqca.get_model(frm.doc.manufacturer_model); }
     },
 
     inspection_type: function(frm) {
@@ -1265,8 +1265,9 @@ function get_item_template(model, brand, item_group) {
     });
 }
 
-function get_model(manufacturer_model) {
-    
+frappe.provide("njqca");
+njqca.get_model = function (manufacturer_model) {
+    console.log("njqca.get_model");
     frappe.call({
         method: 'nj_features.nj_features.doctype.njqca.njqca.get_model',
         args: { 'manufacturer_model': manufacturer_model },

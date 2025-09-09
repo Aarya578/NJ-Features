@@ -82,6 +82,7 @@
    "fieldname": "created",
    "fieldtype": "Link",
    "label": "Created",
+   "no_copy": 1,
    "options": "User",
    "read_only": 1
   },
@@ -89,6 +90,7 @@
    "fieldname": "item_code",
    "fieldtype": "Link",
    "label": "Item Code",
+   "no_copy": 1,
    "options": "Item",
    "read_only": 1
   },
@@ -112,6 +114,7 @@
    "fieldname": "serial_no",
    "fieldtype": "Link",
    "label": "Serial No",
+   "no_copy": 1,
    "options": "Serial No",
    "read_only": 1
   },
@@ -165,6 +168,7 @@
    "fieldname": "repack_item_code",
    "fieldtype": "Data",
    "label": "Automated Repack Item Code",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -222,12 +226,14 @@
    "fieldname": "manual_repack_item_code",
    "fieldtype": "Link",
    "label": "Manual Repack Item Code",
+   "no_copy": 1,
    "options": "Item"
   },
   {
    "fieldname": "inspection_type",
    "fieldtype": "Link",
    "label": "Inspection Type",
+   "no_copy": 1,
    "options": "Inspection Type"
   },
   {
@@ -341,6 +347,7 @@
    "fieldname": "department",
    "fieldtype": "Link",
    "label": "Department",
+   "no_copy": 1,
    "options": "Department",
    "read_only": 1
   },
@@ -361,6 +368,7 @@
    "fieldname": "qi_name",
    "fieldtype": "Data",
    "label": "QI Name",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -448,6 +456,7 @@
    "fieldname": "barcode",
    "fieldtype": "Data",
    "label": "Barcode",
+   "no_copy": 1,
    "options": "Barcode"
   },
   {
@@ -460,7 +469,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-03 20:30:36.486830",
+ "modified": "2025-09-09 15:13:42.295026",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

@@ -1378,6 +1378,21 @@ function popUpWorkInventory() {
         console.log('Dialog closed');
     };
 
+    // 🚫 Block ESC key close
+    $(document).on('keydown.restrictEsc', function (e) {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            frappe.msgprint(__('❌ You cannot close this popup with ESC.'));
+        }
+    });
+
+    // Remove ESC restriction when dialog is hidden (to avoid affecting other dialogs)
+    dialog.onhide = function() {
+        $(document).off('keydown.restrictEsc');
+        console.log('Dialog closed');
+    };
+
     dialog.show();
 }
 

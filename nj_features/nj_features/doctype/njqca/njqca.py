@@ -984,6 +984,12 @@ def get_repack_items(self):
 
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel, serial_no):
+    user = frappe.session.user
+    role_profile = frappe.db.get_value('Employee', {'user_id': user, 'status': 'Active'}, 'role_profile')
+    
+    if not frappe.db.get_value('Role Profile', {'name': role_profile}, 'restrict_repack'):
+        frappe.msgprint("You don't have access to change 'Model'.")
+        return {"status": "failed"}
 
     wizard_query = """Select name from `tabItem Wizards` where model = %s 
                     and part_list_status = 'Completed' order by modified desc"""
@@ -1005,14 +1011,14 @@ def model_change_for_serial_no(newmodel, serial_no):
         if new_item_wizard != [] or new_item_wizard is not None or new_item_wizard != '':
             item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
             if item_wizard_doc.part_list_status != 'Completed':
-                return { "status": 'failed' }
+                return { "status": "failed" }
             if newmodel:
                 serial_no_doc.serial_no_component = []
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
-                return { "status": 'success' }
+                return { "status": "success" }
         else:
             frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
-            return { "status": 'failed' }
+            return { "status": "failed" }
     else:
         new_item_wizard_query = """Select component_type,default_item_code from `tabComponent` where parent = %s"""
         new_item_wizard_data = frappe.db.sql(new_item_wizard_query, (new_item_wizard[0]['name']), as_dict=1)
@@ -1038,7 +1044,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
-                    return { "status": 'success' }
+                    return { "status": "success" }
                 
                 else:
                     mr_data_query ="""select distinct(item_group) from `tabMaterial Request Item` where serial_no = %s AND post_order_status !='Completed' AND docstatus = 1"""
@@ -1049,22 +1055,22 @@ def model_change_for_serial_no(newmodel, serial_no):
                         for group in past_part_list_data:
                             if group['item_group'] in not_matched_item_groups:
                                 frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> is in Past Part List.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
-                                return { "status": 'failed' }
+                                return { "status": "failed" }
                         for group in mr_item_group_data:
                             if group['item_group'] in not_matched_item_groups:
                                 frappe.msgprint(f'Item Group <b>{group["item_group"]}</b> MR is Raised.Cannot change Model and Part List. Please contact <b>NPD</b> Team.')
-                                return { "status": 'failed' }
+                                return { "status": "failed" }
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
-                    return { "status": 'success' }
+                    return { "status": "success" }
             else:
                 frappe.msprint(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
-                return { "status": 'failed' }
+                return { "status": "failed" }
         else:
             frappe.msgprint(f'Item Code {Item_code} not found in Serial No {serial_no}')
-            return { "status": 'failed' }
+            return { "status": "failed" }
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
@@ -1371,12 +1377,27 @@ def get_item_code_for_each_part(doc):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
-                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())):
+                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())) or \
+                            (row.get('variant_15') is not None and 'ssd' in row.get('variant_15', '').lower()):
                                 variant_type = ' SSD'
 
-                            if variant == 'variant_10': 
+                            if variant == 'variant_10':
+                                final_value = row.get(variant)
+                                numeric_value = 0
+                                if final_value and isinstance(final_value, str):
+                                    numeric_value = int(final_value.replace(' GB', ''))
+
+                                if numeric_value > 80:
+                                    if numeric_value >= 1024:
+                                        tb_value = numeric_value // 1024
+                                        formatted_value = f"{tb_value} TB"
+                                    else:
+                                        formatted_value = f"{numeric_value} GB"
+
+                                    final_value = formatted_value + variant_type
+                                
                                 if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant) + variant_type, mapping.get('attribute_name'))
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
                                     
                                 else:
                                     skip_memory = True
@@ -1450,8 +1471,8 @@ def get_item_code_for_each_part(doc):
                 return {'error': f'Item Template not found'}
 
     except Exception as e:
-        frappe.throw("An error occurred: " + str(e))
-        return {"error": f"An error occurred: {str(e)}"}
+        frappe.throw("An error occurred: " + traceback.format_exc())
+        return {"error": f"An error occurred: {traceback.format_exc()}"}
     
 def get_attribute_from_erp(attribute_value, parent):
     erp_normalize_cpu_query = """SELECT attribute_value FROM `tabItem Attribute Value` WHERE attribute_value = %s AND parent = %s"""
@@ -1611,7 +1632,7 @@ def consolidate_storage(data):
     
     for obj in data:
         for key, value in obj.items():
-            if key.lower() == 'storage capacity':
+            if key.lower() == 'storage capacity' and value:
                 storage_found = True
                 if 'SSD' in value.upper():
                     if storage_type and storage_type != 'SSD':
@@ -1775,7 +1796,9 @@ def construct_item_code(item_template, args_list):
 
         for condition_dict in args_list:
             for key, value in condition_dict.items():
-                concatenated_string += f"-{value}"
+                get_abbr_attribute = frappe.db.sql("SELECT abbr FROM `tabItem Attribute Value` WHERE parent = %s AND attribute_value = %s", (key, value))
+                if get_abbr_attribute:
+                    concatenated_string += f"-{get_abbr_attribute[0][0]}"
 
         query = """
             SELECT item_code FROM `tabItem`
@@ -1973,7 +1996,7 @@ def get_njqca_item_template(item_group=None, brand=None, model=None):
         return None
 
 @frappe.whitelist()
-def get_serial_no_attribute_data(serial_no, item_group):
+def get_serial_no_attribute_data(serial_no, item_group, item_template):
 
     if serial_no and item_group:
         adap_dis_item_code = frappe.db.get_all(
@@ -1990,8 +2013,14 @@ def get_serial_no_attribute_data(serial_no, item_group):
         if adap_dis_item_code:
             return adap_dis_item_code
         
+        get_item_wizard = get_latest_item_wizard(item_template)
+        if get_item_wizard:
+            comp_item_template = frappe.db.get_value('Component', {'parent': get_item_wizard, 'component_type': item_group}, 'reference_template', as_dict=True)
+        
+        if comp_item_template:
+            return [{'item_template': comp_item_template['reference_template']}]
+
     return None
-    
 
 @frappe.whitelist()
 def update_serial_no_component_for_njqca(doc):
@@ -2123,7 +2152,7 @@ def get_fetched_item_code(serial_no, partData):
                     WHERE parent = %s """, (row.get("item")), as_dict=True)
 
                 serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
-                njqca_attr_data = {key.lower(): value.lower() for key, value in data.get("attr_data", {}).items()}
+                njqca_attr_data = {(key.lower() if key else ""): (value.lower() if isinstance(value, str) else "") for key, value in data.get("attr_data", {}).items()}
 
                 serial_no_grade = serial_no_attr_data.get("grade", "")
 
@@ -3172,15 +3201,25 @@ def get_disp_and_adp_data(serial_no):
         
         if item_wizards:
             for group in missing_groups:
-                component_query = """
-                    SELECT default_item_code as fetched_item_code, component_type as item_group
-                    FROM `tabComponent`
-                    WHERE parent = %s AND component_type = %s
+                bag_list_query = """
+                    SELECT item as fetched_item_code, item_group FROM `tabBag List`
+                    WHERE parent = %s AND item_group = %s AND is_available = 1 AND quantity > 0
                     LIMIT 1
                 """
-                component_data = frappe.db.sql(component_query, (item_wizards, group), as_dict=1)
-                if component_data:
-                    disp_and_adp_data.extend(component_data)
+                bag_list_data = frappe.db.sql(bag_list_query, (item_wizards, group), as_dict=1)
+                if bag_list_data:
+                    disp_and_adp_data.extend(bag_list_data)
+
+                else:
+                    component_query = """
+                        SELECT default_item_code as fetched_item_code, component_type as item_group
+                        FROM `tabComponent`
+                        WHERE parent = %s AND component_type = %s
+                        LIMIT 1
+                    """
+                    component_data = frappe.db.sql(component_query, (item_wizards, group), as_dict=1)
+                    if component_data:
+                        disp_and_adp_data.extend(component_data)
 
     for data in disp_and_adp_data:
         item_data = get_empty_param_in_child(data.get('fetched_item_code'))

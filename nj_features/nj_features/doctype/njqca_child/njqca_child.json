@@ -23,7 +23,9 @@
   "variant_12",
   "variant_13",
   "variant_14",
-  "attr_data"
+  "variant_15",
+  "attr_data",
+  "update_variant"
  ],
  "fields": [
   {
@@ -164,11 +166,24 @@
    "fieldtype": "Int",
    "label": "Part Config ID",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "update_variant",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Update Variant"
+  },
+  {
+   "fieldname": "variant_15",
+   "fieldtype": "Data",
+   "label": "Variant 15",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-03 11:38:13.476322",
+ "modified": "2025-09-09 14:20:55.841835",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Child",

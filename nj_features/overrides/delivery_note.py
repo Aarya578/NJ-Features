@@ -1468,8 +1468,6 @@ def send_consignement_data(doc):
         frappe.throw(f"Failed to send data to Criticalog API. Error: {str(e)}")   
 @frappe.whitelist()
 def shiprocket_awb_number(doc):
-
-    # start_time = time.time()
     """Create a ShipRocket consignment, assign an AWB, and generate a manifest and invoice."""
     try:
         frappe.log_error(f"Starting shiprocket_awb_number for doc: {doc}", "Debug")
@@ -1480,9 +1478,7 @@ def shiprocket_awb_number(doc):
         if not auth_token:
             frappe.throw("Authentication token could not be retrieved from Shiprocket.")   
         try:
-            # Get the Delivery Note document
             delivery_note_doc = frappe.get_doc("Delivery Note", doc.name)
-
             total_qty = 0
             for item in delivery_note_doc.items:
                 is_stock_item = frappe.db.get_value("Item", item.item_code, "is_stock_item")
@@ -1496,7 +1492,6 @@ def shiprocket_awb_number(doc):
             against_sales_order = frappe.get_value(
                 "Delivery Note Item", {"parent": delivery_note_doc.name}, "against_sales_order"
             )       
-            # Fetch addresses
             shipping_address = frappe.get_doc("Address", delivery_note_doc.shipping_address_name) if delivery_note_doc.shipping_address_name else None    
             if not shipping_address:
                 frappe.throw("Shipping address is required")
@@ -1517,7 +1512,6 @@ def shiprocket_awb_number(doc):
                     "tax": 18.0,
                     "hsn": ""
                 })
-                print("order item===============================", order_items)
 
             if against_sales_order:
                 sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
@@ -1585,48 +1579,6 @@ def shiprocket_awb_number(doc):
             else:
                 frappe.throw("Sales Order not linked to this Delivery Note.")
 
-            # if against_sales_order:
-            #     sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-
-            #     if sales_order_doc.is_cod == 1:
-            #         print("sales_order_doc.is_cod=========1111111111111111111111111111==============", sales_order_doc.is_cod)
-            #         payment_method = "COD"
-            #         sub_total = float(sales_order_doc.total_outstanding or 0)
-            #     else:
-            #         payment_method = "Prepaid"
-            #         # sub_total = float(sales_order_doc.grand_total or 0)
-            #         if delivery_note_doc.grand_total:
-            #             sub_total = float(delivery_note_doc.grand_total)
-            #         else:
-            #             # If grand_total not found, fetch from item groups
-            #             total_default_charge = 0
-            #             found_charges = False                
-            #             # Loop through items in Sales Order
-            #             for item in delivery_note_doc.items:
-            #                 if item.item_code:
-            #                     # Get item document to fetch item_group
-            #                     item_doc = frappe.get_doc("Item", item.item_code)
-            #                     if item_doc.item_group:
-            #                         try:
-            #                             # Get item group document and fetch default_charge
-            #                             item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-            #                             if hasattr(item_group_doc, 'default_charge') and item_group_doc.default_charge:
-            #                                 total_default_charge += float(item_group_doc.default_charge)
-            #                                 found_charges = True
-            #                         except:
-            #                             # Continue if item group not found or error occurs
-            #                             continue
-                        
-            #             # Set consignment value based on what was found
-            #             if found_charges and total_default_charge > 0:
-            #                 sub_total = total_default_charge
-            #             else:
-            #                 # Fallback to Rs 1000 if no default charges found
-            #                 sub_total = 300.0
-            # else:
-            #     frappe.throw("Sales Order not linked to this Delivery Note.")
-
-            # ShipRocket API payload structure
             data = {
                 "order_id": delivery_note_doc.name,
                 "order_date": formatted_date,
@@ -1817,8 +1769,7 @@ def shiprocket_awb_number(doc):
         if against_sales_order:
             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
         # COD Validation - Check if is_cod is enabled
-        if is_cod == 1:  
-            
+        if is_cod == 1:            
             if best_courier:
                 # Calculate total cost with weight
                 freight_charge = best_courier.get('freight_charge', 0)
@@ -1876,17 +1827,13 @@ def shiprocket_awb_number(doc):
             "courier_id": best_courier.get("courier_company_id")
         })
         awb_json = awb_response.json()
-
-        # ✅ If there's an error message, show and stop
         if "message" in awb_json:
             frappe.throw(f"ShipRocket AWB Assignment Failed: {awb_json.get('message')}")
 
         response_data = awb_json.get("response", {})
         data = response_data.get("data", {})
-
         awb_code = None
         pickup_scheduled_date = None
-
         if isinstance(data, dict):
             awb_code = data.get("awb_code")
             invoice_no = data.get("invoice_no")
@@ -1904,7 +1851,6 @@ def shiprocket_awb_number(doc):
             "transporter_name": transporter_name
         } ,update_modified=False)
 
-        # ✅ Handle pickup scheduling
         if pickup_scheduled_date:
             frappe.db.set_value("Delivery Note", doc.name, "pickup_scheduled_date", pickup_scheduled_date,update_modified=False)
             frappe.msgprint(f"AWB: {awb_code} assigned successfully. Pickup scheduled for: {pickup_scheduled_date}")
@@ -1950,7 +1896,6 @@ def shiprocket_awb_number(doc):
         invoice_pdf_b64 = base64.b64encode(invoice_file_response.content).decode()
         frappe.db.set_value("Delivery Note", doc.name, "shiprocket_invoice", invoice_pdf_b64,update_modified=False)
 
-
         # 6. Label Generation
         # label_url = "https://apiv2.shiprocket.in/v1/external/courier/generate/label"
         label_url = frappe.db.get_single_value("Logistics Settings", "label_url")
@@ -1964,7 +1909,6 @@ def shiprocket_awb_number(doc):
             frappe.throw(f"Could not fetch label PDF: {label_file_response.status_code}")
         label_pdf_b64 = base64.b64encode(label_file_response.content).decode()
         frappe.db.set_value("Delivery Note", doc.name, "shiprocket_image", label_pdf_b64,update_modified=False) 
-
         
         # 4. Manifest Generation
         # manifest_url = "https://apiv2.shiprocket.in/v1/external/manifests/generate"
@@ -1975,13 +1919,11 @@ def shiprocket_awb_number(doc):
         # Check if there's an error message in the response
         if "message" in manifest_json:
             frappe.throw(f"Manifest Generation Error: {manifest_json.get('message')}")
-
         # Get manifest URL
         manifest_pdf_url = manifest_json.get("manifest_url")
         if not manifest_pdf_url:
             frappe.throw(f"Manifest URL not found. Full response: {manifest_json}")
-
-        # Fetch and save manifest PDF
+          # Fetch and save manifest PDF
         manifest_file_response = requests.get(manifest_pdf_url)
         if manifest_file_response.status_code != 200:
             frappe.throw(f"Could not fetch manifest PDF: {manifest_file_response.status_code}")
@@ -1989,7 +1931,6 @@ def shiprocket_awb_number(doc):
         manifest_pdf_b64 = base64.b64encode(manifest_file_response.content).decode()
         frappe.db.set_value("Delivery Note", doc.name, "shiprocket_manifests", manifest_pdf_b64,update_modified=False)
         frappe.db.commit()
-
 
         return {
             "awb_code": awb_code,
@@ -2013,8 +1954,6 @@ def shiprocket_awb_number(doc):
     except Exception as e:
         frappe.log_error(f"Error in shiprocket_awb_number: {str(e)}", frappe.get_traceback())
         raise
-
-
 
 @frappe.whitelist()
 def fetch_shiprocket_details(doc):
@@ -2318,9 +2257,7 @@ def setting_dispatch_address(doc):
     return dispatch_location
 
 @frappe.whitelist()
-def updating_new_address(sales_order_name=None):
-    
-    print("inside updating_new_address ======777777777777777777777777====================", sales_order_name)
+def updating_new_address(sales_order_name=None): 
     """Fetch updated address from previously submitted Delivery Notes against the given Sales Order"""
     if not sales_order_name:
         return None
@@ -2331,7 +2268,6 @@ def updating_new_address(sales_order_name=None):
         filters={"against_sales_order": sales_order_name, "docstatus": 1},
         fields=["parent"]
     )
-    print("delivery_notes ==========================", delivery_notes)  
     if not delivery_notes:
         return None
 

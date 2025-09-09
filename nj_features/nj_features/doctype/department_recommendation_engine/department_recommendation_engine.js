@@ -13,13 +13,7 @@ frappe.ui.form.on('Department Recommendation Engine', {
                 bulk_apply_rules(frm);
             });
         }
-        
-        // Set field descriptions
-        frm.set_df_property('python_condition', 'description', 
-            'Python condition using "doc" object. Example: doc.docstatus == 1 and doc.total > 1000');
-        
-        frm.set_df_property('python_action', 'description', 
-            'Python code to execute. Available functions: execute_query_and_update(), update_serial_no_warehouse(), update_document_field()');
+
     },
     
     document_type: function(frm) {
@@ -48,7 +42,7 @@ function test_recommendation_rule(frm) {
         }
     ], function(values) {
         frappe.call({
-            method: 'your_app.department_recommendation_engine.test_recommendation_rule',
+            method: 'nj_features.nj_features.doctype.department_recommendation_engine.test_recommendation_rule',
             args: {
                 rule_name: frm.doc.name,
                 doc_name: values.doc_name,

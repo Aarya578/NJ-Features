@@ -7,7 +7,7 @@ from frappe import _
 from frappe.model import log_types
 from frappe.model.document import Document
 
-
+logger = frappe.logger('DREngine', allow_site=True, file_count=1)
 class DepartmentRecommendationEngine(Document):
     def validate(self):
         print("================validate=======================")
@@ -28,18 +28,13 @@ class DepartmentRecommendationEngine(Document):
         print("================on trash=======================")
         clear_recommendation_rule_cache(self)
 
-    # def apply_recommendation(self, doc):
-    # 	print("==============aply recommendation=========================")
-    # 	"""Apply recommendation rule when condition is met"""
-    # 	if self.safe_eval("python_condition", doc):
-    # 		print("safe eval true==================",self.safe_eval("python_condition", doc))
-    # 		return self.execute_python_action(doc)
-    # 	return False
     def apply_recommendation(self, doc):
-        print("==============apply recommendation=========================")
+        logger.info("a==========pply recommendation================") 
+        # print("==============apply recommendation=========================")
         """Apply recommendation rule when condition is met"""
         if self.safe_eval("python_condition", doc):
-            print("safe eval true==================", self.safe_eval("python_condition", doc))
+            logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
+            # print("safe eval true==================", self.safe_eval("python_condition", doc))
             return self.execute_python_action(doc)
         return False
     def execute_python_action(self, doc):
@@ -51,18 +46,21 @@ class DepartmentRecommendationEngine(Document):
             # Create execution context
             context = self.get_execution_context(doc)
             python_action = self.python_action.strip()
-            print("python action====================", python_action)
+            logger.info("python action====================", python_action)
+            # print("python action====================", python_action)
 
             # ✅ Replace placeholder with submitted doc name
             if "{docname}" in python_action:
                 python_action = python_action.replace("{docname}", doc.name)
-                print("python action with docname====================", python_action)
+                logger.info("python action with docname====================", python_action)
+                # print("python action with docname====================", python_action)
 
             # ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
             if python_action.lower().startswith(("select", "update", "delete", "insert")):
                 # print("Executing SQL from python_action ====================")
                 result = eq(python_action)
-                print("Query Result ====================", result)
+                logger.info("Query Result ====================", result)
+                # print("Query Result ====================", result)
 
                 # ✅ If query returned warehouse + barcode, update Serial No
                 if result and isinstance(result, list) and "barcode" in result[0] and "warehouse" in result[0]:
@@ -70,7 +68,8 @@ class DepartmentRecommendationEngine(Document):
             else:
                 # ✅ Otherwise treat it as executable Python code
                 exec(python_action, {"__builtins__": {}}, context)
-                print("python action executed====================", python_action)
+                logger.info("python action executed====================", python_action)
+                # print("python action executed====================", python_action)
 
             frappe.db.commit()
             return True
@@ -82,62 +81,7 @@ class DepartmentRecommendationEngine(Document):
             )
             frappe.msgprint(_("Recommendation rule execution failed: {0}").format(str(e)), indicator="orange")
             return False
-    # def execute_python_action(self, doc):
-    # 	"""Execute the python action"""
-    # 	if not self.python_action:
-    # 		return False
 
-    # 	try:
-    # 		# Create execution context
-    # 		context = self.get_execution_context(doc)
-    # 		print("context====================", context)
-
-    # 		python_action = self.python_action.strip()
-
-    # 		# ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
-    # 		if python_action.lower().startswith(("select", "update", "delete", "insert")):
-    # 			print("Executing SQL from python_action ====================")
-    # 			result = eq(python_action)
-    # 			print("Query Result ====================", result)
-    # 		else:
-    # 			# ✅ Otherwise treat it as executable Python code
-    # 			exec(python_action, {"__builtins__": {}}, context)
-    # 			print("python action executed====================", python_action)
-
-    # 		frappe.db.commit()
-    # 		return True
-
-    # 	except Exception as e:
-    # 		frappe.log_error(
-    # 			message=f"Error executing Python Action for rule {self.name}: {str(e)}",
-    # 			title="Department Recommendation Engine Error"
-    # 		)
-    # 		frappe.msgprint(_("Recommendation rule execution failed: {0}").format(str(e)), indicator="orange")
-    # 		return False
-    # def execute_python_action(self, doc):
-    # 	"""Execute the python action"""
-    # 	if not self.python_action:
-    # 		return False
-            
-    # 	try:
-    # 		# Create execution context
-    # 		context = self.get_execution_context(doc)
-    # 		print("context====================", context)
-            
-    # 		# Execute the python action
-    # 		exec(self.python_action, {"__builtins__": {}}, context)
-    # 		print("python action executed====================",self.python_action)
-            
-    # 		frappe.db.commit()
-    # 		return True
-            
-    # 	except Exception as e:
-    # 		frappe.log_error(
-    # 			message=f"Error executing Python Action for rule {self.name}: {str(e)}",
-    # 			title="Department Recommendation Engine Error"
-    # 		)
-    # 		frappe.msgprint(_("Recommendation rule execution failed: {0}").format(str(e)), indicator="orange")
-    # 		return False
 
     def get_execution_context(self, doc):
         """Get execution context for python action"""
@@ -328,9 +272,7 @@ def suggest_warehouse_update(query):
         warehouse_map = {}
         for row in result:
             barcode = row.get("barcode")
-            print("Barcode ====================", barcode)
             warehouse = row.get("warehouse")
-            print("Warehouse ====================", warehouse)
 
             if barcode and warehouse:
                 if barcode not in warehouse_map:
@@ -344,7 +286,7 @@ def suggest_warehouse_update(query):
 
             frappe.db.set_value("Serial No", barcode, "suggested_warehouse", warehouse_str)
             updated.append({"barcode": barcode, "warehouses": warehouse_str})
-            print(f"Updated Serial No========================= {barcode} with warehouses {warehouse_str}")
+            print(f"Updated Serial No {barcode} with warehouses {warehouse_str}")
 
         frappe.db.commit()
         return {"status": "success", "updated": updated}

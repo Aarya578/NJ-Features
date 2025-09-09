@@ -15,6 +15,7 @@ class Inward(Document):
     def on_submit(self):
         self.make_stock_entry_using_nj_lib()
         generate_and_save_qrcode(self.serial_no)
+        self.update_features_table_in_serial_no() 
 
     def make_stock_entry_using_nj_lib(self):
         stock_data = {
@@ -63,6 +64,31 @@ class Inward(Document):
         else:
             frappe.throw(f"Serial No document not found for the given <b>Serial No. : {self.serial_no}</b>")
 
+    def update_features_table_in_serial_no(self):
+        if not self.serial_no or not self.model:
+            frappe.throw("Serial No and Model are required in Inward Doc")
+        serial_no_doc = frappe.get_doc("Serial No", self.serial_no)
+        item_wizard = frappe.get_value("Item Wizards", {"model": self.model}, "name")
+        if not item_wizard:
+            frappe.throw(f"No Item Wizards found for model {self.model}")
+
+        item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard)
+        serial_no_doc.set("features_override_table", [])
+
+        for row in item_wizard_doc.get("features_child_table"):
+            serial_no_doc.append("features_override_table", {
+                "features_name": row.features_name,
+                "availability": row.availability,
+                "values": row.values,
+                "values_list": row.values_list,
+                "features_attributes": row.features_attributes
+            })
+        serial_no_doc.save(ignore_permissions=True)
+        frappe.msgprint(f"Features updated in Serial No {self.serial_no} from Item Wizard {item_wizard}")
+
+
+        
+        
 def get_repack_items(self):
     get_repack_items_list = []
 

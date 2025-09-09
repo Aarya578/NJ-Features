@@ -105,6 +105,30 @@ frappe.ui.form.on('Serial No', {
         //         }
         //     }
         // });
+        let update_features_table = frm.add_custom_button(__('Fetch Features Table'), function() {
+            frappe.show_alert({
+                message: __('Generating AWB Number...'),
+                indicator: 'blue'
+            });
+
+            frappe.call({
+                method: 'nj_p1_features.overrides.serial_no.updating_features_table_from_item_wizard',
+                args: { serial_no: frm.doc.name },
+                callback: function(response) {
+                    if (response.message) {
+                        frm.reload_doc();
+                        frappe.show_alert({
+                            message: __('Courier Name Fetched successfully!'),
+                            indicator: 'green'
+                        });
+                    }
+                }
+            });
+
+        });
+
+        // Add styling to the button
+        update_features_table.addClass('btn-primary');
     },
     
     after_save: (frm)=>{

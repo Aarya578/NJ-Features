@@ -7,9 +7,7 @@ frappe.ui.form.on('Delivery Note', {
     //         frm.set_df_property("courier_service", "read_only", 1);
     //     }
     // },
-    onload: function(frm) {         
-        // console.log("Delivery Note onload==============================");
-          
+    onload: function(frm) {                   
         // Run only if items exist and linked Sales Order is present
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
             let first_so = frm.doc.items[0].against_sales_order;
@@ -52,7 +50,6 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     refresh: function(frm) {
-        // console.log("inside refresh=================================================");
         
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -273,22 +270,7 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // },
     after_save: function(frm) {
-        // frappe.call({
-        //     method: "nj_features.overrides.delivery_note.updating_new_address",
-        //     args: {
-        //         delivery_note_name: frm.doc.name
-        //     },
-        //     callback: function(r) {
-        //         // console.log("Full response:========================", r);
-        //         if (r.message) {
-        //             console.log("Shipping Address:", r.message);
-        //             frm.set_value("shipping_address_name", r.message);
-        //             frm.refresh_field("shipping_address_name");
-        //         }
-        //     }
-        // });
-    
-        // frappe.call({
+         // frappe.call({
         //     method: 'nj_features.overrides.delivery_note.total_item_group_sum',
         //     args: {
         //         doc: JSON.stringify(frm.doc)

@@ -1377,12 +1377,15 @@ def get_item_code_for_each_part(doc):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
-                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())):
+                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())) or \
+                            (row.get('variant_15') is not None and 'ssd' in row.get('variant_15', '').lower()):
                                 variant_type = ' SSD'
 
                             if variant == 'variant_10':
                                 final_value = row.get(variant)
-                                numeric_value = int(final_value.replace(' GB', '').strip())
+                                numeric_value = 0
+                                if final_value and isinstance(final_value, str):
+                                    numeric_value = int(final_value.replace(' GB', ''))
 
                                 if numeric_value > 80:
                                     if numeric_value >= 1024:
@@ -1793,7 +1796,9 @@ def construct_item_code(item_template, args_list):
 
         for condition_dict in args_list:
             for key, value in condition_dict.items():
-                concatenated_string += f"-{value}"
+                get_abbr_attribute = frappe.db.sql("SELECT abbr FROM `tabItem Attribute Value` WHERE parent = %s AND attribute_value = %s", (key, value))
+                if get_abbr_attribute:
+                    concatenated_string += f"-{get_abbr_attribute[0][0]}"
 
         query = """
             SELECT item_code FROM `tabItem`
@@ -1991,7 +1996,7 @@ def get_njqca_item_template(item_group=None, brand=None, model=None):
         return None
 
 @frappe.whitelist()
-def get_serial_no_attribute_data(serial_no, item_group):
+def get_serial_no_attribute_data(serial_no, item_group, item_template):
 
     if serial_no and item_group:
         adap_dis_item_code = frappe.db.get_all(
@@ -2008,8 +2013,14 @@ def get_serial_no_attribute_data(serial_no, item_group):
         if adap_dis_item_code:
             return adap_dis_item_code
         
+        get_item_wizard = get_latest_item_wizard(item_template)
+        if get_item_wizard:
+            comp_item_template = frappe.db.get_value('Component', {'parent': get_item_wizard, 'component_type': item_group}, 'reference_template', as_dict=True)
+        
+        if comp_item_template:
+            return [{'item_template': comp_item_template['reference_template']}]
+
     return None
-    
 
 @frappe.whitelist()
 def update_serial_no_component_for_njqca(doc):

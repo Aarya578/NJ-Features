@@ -311,7 +311,6 @@ frappe.ui.form.on('NJQCA', {
             let inspection_type_data=await frappe.db.get_value("NJ Settings", {'parameter': 'battry_unknown_grade_inspection_types'}, 'value');
             let inspection_type = inspection_type_data?.message?.value || "";
             let inspection_types = inspection_type.split(",").map(s => s.trim());
-            console.log("inspecction_type",inspection_type);
             frappe.call({
                 method: 'nj_features.nj_features.api.api_files.get_battery_status',
                 args: {
@@ -1141,6 +1140,10 @@ function processItemTemplate(frm) {
                         }else if(row.item_group === "LAPTOP STORAGE"){
                             
                             let newRow = frappe.model.add_child(frm.doc, "njqca_laptop_storage");
+                            if (row.name) {
+                                frappe.model.set_value(newRow.doctype, newRow.name, 'update_variant', row.name);
+                            }
+                            
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', row.item_group);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);
@@ -1188,9 +1191,11 @@ function processItemTemplate(frm) {
                             if (item.item_group === "Display") {
                                 frm.clear_table("njqca_display");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_display");
+                                show_checkbutton_for_field(frm, 'njqca_display')
                             } else if (item.item_group === "Laptop Adaptors") {
                                 frm.clear_table("njqca_adaptor");
                                 newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
+                                show_checkbutton_for_field(frm, 'njqca_adaptor')
                             }
 
                             if (newRow) {
@@ -1555,7 +1560,6 @@ function generateRamItemCode(frm, cdt, cdn, child) {
 
 frappe.ui.form.on('NJQCA Display', {
     njqca_display_add: function(frm, cdt, cdn) {
-        frm.fields_dict['njqca_display'].grid.refresh();
         setTimeout(() => show_checkbutton_for_field(frm, 'njqca_display'), 300);
     },
 
@@ -1659,7 +1663,7 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
     
     frappe.call({
         method: "nj_features.nj_features.doctype.njqca.njqca.get_serial_no_attribute_data",
-        args: { serial_no: frm.doc.serial_no, item_group: item_group },
+        args: { serial_no: frm.doc.serial_no, item_group: item_group, item_template: frm.doc.item_template },
         callback: function(r) {
             if (r.message && r.message.length > 0) {
                 callback(r.message[0].item_template);
@@ -1671,7 +1675,6 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
 
 frappe.ui.form.on('NJQCA Adaptor', {
     njqca_adaptor_add: function(frm, cdt, cdn) {
-        frm.fields_dict['njqca_adaptor'].grid.refresh();
         setTimeout(() => show_checkbutton_for_field(frm, 'njqca_adaptor'), 300);
     },
 
@@ -1922,6 +1925,17 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
         }
 
         d.show();
+    },
+
+    storage_type: function(frm, cdt, cdn) {
+        let child = locals[cdt][cdn];
+        
+        if (child.storage_type == 'SSD' && child.update_variant) {
+            frappe.model.set_value('NJQCA Child', child.update_variant, 'variant_15', 'SSD');
+            processItemTemplate(frm);
+        } else if (child.storage_type != 'SSD' && child.update_variant) {
+            frappe.model.set_value('NJQCA Child', child.update_variant, 'variant_15', '');
+        }
     }
 });
 
@@ -2027,11 +2041,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
 });
 
 frappe.ui.form.on('NJQCA PROCESSOR', {
-
-    njqca_laptop_processors_add: function(frm, cdt, cdn) {
-        frm.fields_dict['njqca_laptop_processors'].grid.refresh();
-        setTimeout(() => show_checkbutton_for_field(frm, 'njqca_laptop_processors'), 300);
-    },
 
     check_button: async function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];

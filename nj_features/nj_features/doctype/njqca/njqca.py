@@ -3232,16 +3232,20 @@ def get_disp_and_adp_data(serial_no):
 def duplicate_njqca(serial_no):
     """Fetch latest NJQCA by serial number and prepare a duplicate (unsaved)"""
 
-    inspection_type = frappe.db.get_value("NJ Settings", {"parameter": 'core-iqc-dismantle-inspection'}, "value")
-    if not inspection_type:
-        frappe.throw("Please set Core IQC Dismantle Inspection in NJ Settings") 
+    tech_inspection_type = frappe.db.get_value("NJ Settings", {"parameter": 'core-iqc-tech-inspection'}, "value")
+    dismantle_inspection_type = frappe.db.get_value("NJ Settings", {"parameter": 'core-iqc-dismantle-inspection'}, "value")
+
+    if not tech_inspection_type:
+        frappe.throw("Please set Core IQC Dismantle Inspection in NJ Settings")
+    if not dismantle_inspection_type:
+        frappe.throw("Please set Core IQC Dismantle Inspection in NJ Settings")
     record = frappe.db.sql("""
         SELECT name 
         FROM `tabNJQCA` 
         WHERE serial_no=%s and inspection_type=%s and docstatus = 1
         ORDER BY creation DESC 
         LIMIT 1
-    """, (serial_no,inspection_type), as_dict=True)
+    """, (serial_no,tech_inspection_type), as_dict=True)
 
     if not record:
         return None
@@ -3253,6 +3257,7 @@ def duplicate_njqca(serial_no):
 
     new_doc.set("name", None)  # make sure it's unsaved
     new_doc.set("created", frappe.session.user)
+    new_doc.set("inspection_type", dismantle_inspection_type)
 
     return new_doc.as_dict(no_nulls=True)
 

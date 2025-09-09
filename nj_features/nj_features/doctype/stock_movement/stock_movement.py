@@ -396,9 +396,6 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
                 f"Item groups present in the bag: {item_groups_str}. Please remove them before proceeding."
             )
 
-from datetime import datetime, timedelta
-import frappe
-
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_department):
     try:
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
@@ -478,8 +475,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
         error_messages.append("An error occurred during Quality Inspection validation. Please check logs.")
-
-
 
 def check_warranty_expiry(serial_doc, error_messages):
     try:

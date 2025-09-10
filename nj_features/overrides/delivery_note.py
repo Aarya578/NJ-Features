@@ -1,16 +1,10 @@
 # Copyright (c) 2023, NewJaisa - IT Team
 # For license information, please see license.txt
 
-import re
 import json
 import frappe
-import time
 import base64
-import json
 import requests
-import base64
-from datetime import datetime
-import logging
 import traceback
 from frappe import _
 from frappe.utils import now

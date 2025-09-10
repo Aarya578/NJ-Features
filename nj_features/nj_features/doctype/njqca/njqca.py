@@ -1606,8 +1606,7 @@ def consolidate_ram_capacities(data):
                             existing_type = existing_type or ''
                             
                             if existing_type.upper() == type_.upper():
-                                ram_type = existing_type.strip()
-                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB{f' {ram_type}' if ram_type else ''}"
+                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB"
                             else:
                                 frappe.msgprint(f"Different RAM Type is not allowed")
                                 return

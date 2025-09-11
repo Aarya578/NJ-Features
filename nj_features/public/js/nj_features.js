@@ -1036,29 +1036,120 @@ function popUpWorkInventory() {
         dialog.fields_dict.work_warehouse_inventory.grid.refresh();
     }
     
-    function makeCheckboxesReadOnly() {
-        // Wait for the grid to be rendered
-        setTimeout(() => {
-            const grid = dialog.fields_dict.work_warehouse_inventory.grid;
-            if (grid && grid.grid_rows) {
-                grid.grid_rows.forEach(row => {
-                    const checkbox = row.$wrapper ? row.$wrapper.find('input[data-fieldname="yes"]') : null;
-                    if (checkbox && checkbox.length) {
-                        // Make checkbox read-only and change cursor style
-                        checkbox.prop('disabled', true);
-                        checkbox.css('cursor', 'not-allowed');
+    // function makeCheckboxesReadOnly() {
+    //     // Wait for the grid to be rendered
+    //     setTimeout(() => {
+    //         const grid = dialog.fields_dict.work_warehouse_inventory.grid;
+    //         if (grid && grid.grid_rows) {
+    //             grid.grid_rows.forEach(row => {
+    //                 const checkbox = row.$wrapper ? row.$wrapper.find('input[data-fieldname="yes"]') : null;
+    //                 if (checkbox && checkbox.length) {
+    //                     // Make checkbox read-only and change cursor style
+    //                     checkbox.prop('disabled', true);
+    //                     checkbox.css('cursor', 'not-allowed');
                         
-                        // Also disable the label if it exists
-                        const label = row.$wrapper ? row.$wrapper.find('label[for="' + checkbox.attr('id') + '"]') : null;
-                        if (label && label.length) {
-                            label.css('cursor', 'not-allowed');
-                        }
+    //                     // Also disable the label if it exists
+    //                     const label = row.$wrapper ? row.$wrapper.find('label[for="' + checkbox.attr('id') + '"]') : null;
+    //                     if (label && label.length) {
+    //                         label.css('cursor', 'not-allowed');
+    //                     }
+    //                 }
+    //             });
+    //         }
+    //     }, 1000);
+    // }
+    function makeCheckboxesReadOnly() {
+        const grid = dialog.fields_dict.work_warehouse_inventory.grid;
+        if (grid && grid.grid_rows) {
+            grid.grid_rows.forEach((row, index) => {
+                const checkbox = row.$wrapper ? row.$wrapper.find('input[data-fieldname="yes"]') : null;
+                if (checkbox && checkbox.length) {
+                    // Method 1: Completely disable the checkbox
+                    checkbox.prop('disabled', true);
+                    checkbox.prop('readonly', true);
+                    
+                    // Method 2: Prevent all mouse interactions
+                    checkbox.css({
+                        'pointer-events': 'none',
+                        'cursor': 'not-allowed'
+                    });
+                    
+                    // Method 3: Remove all existing event handlers and add prevention
+                    checkbox.off('click change mousedown mouseup').on('click change mousedown mouseup', function(e) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        frappe.msgprint(__('❌ Manual checkbox selection is disabled. Use barcode scanner only.'));
+                        return false;
+                    });
+                    
+                    // Method 4: Disable the parent cell
+                    const parentCell = checkbox.closest('td, .form-cell, .grid-cell');
+                    if (parentCell && parentCell.length) {
+                        parentCell.css({
+                            'pointer-events': 'none',
+                            'cursor': 'not-allowed'
+                        });
+                        
+                        // Prevent all click events on parent cell
+                        parentCell.off('click mousedown').on('click mousedown', function(e) {
+                            if ($(e.target).is('input[data-fieldname="yes"]') || $(e.target).closest('input[data-fieldname="yes"]').length) {
+                                e.preventDefault();
+                                e.stopImmediatePropagation();
+                                frappe.msgprint(__('❌ Manual checkbox selection is disabled. Use barcode scanner only.'));
+                                return false;
+                            }
+                        });
+                    }
+                    
+                    // Method 5: Disable associated labels
+                    const label = checkbox.siblings('label').first();
+                    if (label.length) {
+                        label.css({
+                            'pointer-events': 'none',
+                            'cursor': 'not-allowed'
+                        });
+                        
+                        label.off('click').on('click', function(e) {
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                            frappe.msgprint(__('❌ Manual checkbox selection is disabled. Use barcode scanner only.'));
+                            return false;
+                        });
+                    }
+                }
+            });
+            
+            // Method 6: Grid-level event prevention
+            const gridWrapper = grid.wrapper;
+            if (gridWrapper) {
+                // Remove existing handlers and add new prevention
+                gridWrapper.off('click.checkbox-prevent change.checkbox-prevent').on('click.checkbox-prevent change.checkbox-prevent', function(e) {
+                    if ($(e.target).is('input[data-fieldname="yes"]') || 
+                        $(e.target).closest('input[data-fieldname="yes"]').length ||
+                        $(e.target).is('label[for*="yes"]') ||
+                        ($(e.target).closest('[data-fieldname="yes"]').length && 
+                         $(e.target).closest('[data-fieldname="yes"]').find('input[type="checkbox"]').length)) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        frappe.msgprint(__('❌ Manual checkbox selection is disabled. Use barcode scanner only.'));
+                        return false;
                     }
                 });
             }
-        }, 1000);
+        }
+        
+        // Method 7: Document-level event prevention as final safety net
+        $(document).off('click.checkbox-safety').on('click.checkbox-safety', function(e) {
+            if ($(e.target).closest('.frappe-dialog[data-title*="Work Warehouse Inventory"]').length &&
+                ($(e.target).is('input[data-fieldname="yes"]') || 
+                 $(e.target).closest('input[data-fieldname="yes"]').length)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                frappe.msgprint(__('❌ Manual checkbox selection is disabled. Use barcode scanner only.'));
+                return false;
+            }
+        });
     }
-
     // Load serial number data
     frappe.call({
         method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',

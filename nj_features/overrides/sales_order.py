@@ -2,6 +2,7 @@ import frappe , requests
 import requests
 import json
 import base64
+import re
 import frappe
 import time
 import datetime
@@ -39,6 +40,7 @@ class CustomSalesOrder(SalesOrder):
             #     trigger_fulfillment(order_id)
         self.payment_id_validation()
         self.maintenance_order_validation()
+        self.sale_type_validation()
 
     def total_item_group_sum(self):
         item_group_value = frappe.db.get_value(
@@ -108,7 +110,6 @@ class CustomSalesOrder(SalesOrder):
     #     self.save(ignore_permissions=True)
 
     def maintenance_order_validation(self):
-        print("inside the function=================")
         
         nj_setting = frappe.db.get_value(
             "NJ Settings", 
@@ -122,7 +123,23 @@ class CustomSalesOrder(SalesOrder):
         approve_value = 1 if self.grand_total < 500 else 0
         frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
         self.approve = approve_value
-    
+    def sale_type_validation(self):
+        nj_setting_value = frappe.db.get_value(
+            "NJ Settings", 
+            {"parameter": "sales_types"}, 
+            "value"
+        )
+
+        if not nj_setting_value:
+            return  
+        allowed_sale_types = [v.strip() for v in nj_setting_value.split(",")]
+
+        if self.sale_type in allowed_sale_types:
+            if not self.payment_id:
+                frappe.throw("Payment ID is mandatory for Sale Type: {0}".format(self.sale_type))
+
+        
+        
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -613,10 +630,6 @@ def setting_sales_channel_value(doc):
     return doc
 
 
-import re
-import frappe
-import requests
-import json
 
 @frappe.whitelist()
 def fetch_payment_id_from_shopify(doc):

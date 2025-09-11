@@ -770,304 +770,6 @@ function show_login_popup() {
         }
     });
 }
-// function popUpWorkInventory() {
-//     const dialog = new frappe.ui.Dialog({
-//         title: __('Work Warehouse Inventory'),
-//         fields: [
-//             {
-//                 label: __('Scan Barcode'),
-//                 fieldname: 'scan_barcode',
-//                 fieldtype: 'Data',
-//                 options: 'Barcode',
-//                 in_list_view: 1,
-//             },
-//             { fieldtype: 'Section Break' },
-//             {
-//                 fieldname: "work_warehouse_inventory",
-//                 fieldtype: "Table",
-//                 in_place_edit: true,
-//                 fields: [
-//                     {
-//                         label: __('Sr. No.'),
-//                         fieldname: 'sr_no',
-//                         fieldtype: 'Int',
-//                         read_only: 1,
-//                         in_list_view: 1,
-//                         columns: 1
-//                     },
-//                     {
-//                         label: __('Item Code'),
-//                         fieldname: 'item_code',
-//                         fieldtype: 'Link',
-//                         reqd: 1,
-//                         options: 'Item',
-//                         in_list_view: 1,
-//                         read_only: 1,
-//                         columns: 3
-//                     },
-//                     {
-//                         label: __('Serial No'),
-//                         fieldname: 'serial_no',
-//                         fieldtype: 'Link',
-//                         options: 'Serial No',
-//                         in_list_view: 1,
-//                         columns: 2
-//                     },
-//                     {
-//                         label: __('Warehouse'),
-//                         fieldname: 'warehouse',
-//                         fieldtype: 'Link',
-//                         options: 'Warehouse',
-//                         in_list_view: 1,
-//                         columns: 2
-//                     },
-//                     {
-//                         label: __('Yes'),
-//                         fieldname: 'yes',
-//                         fieldtype: 'Check',
-//                         default: 0,
-//                         in_list_view: 1,
-//                         columns: 1
-//                     },
-//                     {
-//                         label: __('User Activity'),
-//                         fieldname: 'user_activity',
-//                         fieldtype: 'Select',
-//                         options: '\nLog In\nLog Out',
-//                         default: 'Log In',
-//                         read_only: 1
-//                     }
-//                 ]
-//             }
-//         ],
-//         size: 'extra-large',
-//         primary_action_label: __('Submit'),
-//         static: true,
-//         primary_action: function () {
-//             const values = dialog.get_values();
-//             if (values && values.work_warehouse_inventory && values.work_warehouse_inventory.length > 0) {
-//                 frappe.call({
-//                     method: 'frappe.client.save',
-//                     args: {
-//                         doc: {
-//                             doctype: 'Daily Individual Report',
-//                             work_warehouse_inventory: values.work_warehouse_inventory,
-//                             created_by: frappe.session.user
-//                         }
-//                     },
-//                     callback: function (r) {
-//                         if (!r.exc) {
-//                             frappe.call({
-//                                 method: 'frappe.client.submit',
-//                                 args: { doc: r.message },
-//                                 callback: function (r) {
-//                                     if (!r.exc) {
-//                                         frappe.msgprint(__('Report submitted successfully.'));
-//                                         dialog.hide();
-//                                     }
-//                                 }
-//                             });
-//                         }
-//                     }
-//                 });
-//             } else {
-//                 frappe.msgprint(__('Please scan at least one item before submitting.'));
-//             }
-//         }
-//     });
-
-//     // Disable paste and manual typing helper
-//     function disablePaste(inputField) {
-//         // Disable right-click context menu
-//         inputField.on('contextmenu', function(event) {
-//             event.preventDefault();
-//         });
-
-//         // Disable Ctrl + V (paste) event
-//         inputField.on('keydown', function(event) {
-//             if (event.ctrlKey && (event.key === 'v' || event.key === 'V')) {
-//                 event.preventDefault();
-//                 frappe.msgprint(__('Paste is disabled. Please use barcode scanner.'));
-//             }
-//         });
-
-//         // Disable mouse middle-click paste
-//         inputField.on('mousedown', function(event) {
-//             if (event.button === 1) { // Middle mouse button
-//                 event.preventDefault();
-//             }
-//         });
-//     }
-
-//     // Restrict manual typing (already present logic)
-// function handleScannerInput(dialog, fieldname) {
-//     const field = dialog.get_field(fieldname);
-//     if (field && field.$input) {
-//         let keyPressCount = 0;
-//         let keyPressStartTime = 0;
-//         let scannerInputActive = false;
-
-//         field.$input.on('keydown', function (e) {
-//             // Allow only Enter key (scanner suffix)
-//             if (e.key === "Enter") {
-//                 scannerInputActive = false;
-//                 keyPressCount = 0;
-//                 return true;
-//             }
-
-//             const now = Date.now();
-
-//             // Reset session if too long between keys
-//             if (now - keyPressStartTime > 500) {
-//                 keyPressCount = 0;
-//                 keyPressStartTime = now;
-//                 scannerInputActive = false;
-//             }
-
-//             keyPressCount++;
-
-//             // First keystroke → assume scanner until proven otherwise
-//             if (keyPressCount === 1) {
-//                 keyPressStartTime = now;
-//                 this.lastKeyTime = now;
-//                 scannerInputActive = true;
-//                 return true;
-//             }
-
-//             const timeDiff = now - this.lastKeyTime;
-
-//             // If within scanner speed (≤ 50ms per char) → allow
-//             if (timeDiff <= 50 || scannerInputActive) {
-//                 this.lastKeyTime = now;
-//                 return true;
-//             }
-
-//             // Otherwise → BLOCK manual entry
-//             e.preventDefault();
-//             frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
-//             return false;
-//         });
-
-//         // Block paste again (safety)
-//         field.$input.on('paste', function (e) {
-//             e.preventDefault();
-//             frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
-//         });
-
-//         // Reset when field cleared
-//         field.$input.on('input', function () {
-//             if ($(this).val() === '') {
-//                 keyPressCount = 0;
-//                 scannerInputActive = false;
-//             }
-//         });
-
-//         // Extra: disable right-click & middle-click paste
-//         disablePaste(field.$input);
-//     }
-// }
-
-
-//     // Barcode scanning logic
-//     function handleBarcodeScanning(dialog) {
-//         const scanField = dialog.get_field('scan_barcode');
-//         if (scanField && scanField.$input) {
-//             scanField.$input.on('change keyup', function (e) {
-//                 if (e.keyCode && e.keyCode !== 13) return;
-                
-//                 const barcodeValue = $(this).val().trim();
-//                 if (!barcodeValue) return;
-
-//                 const tableData = dialog.fields_dict.work_warehouse_inventory.df.data;
-//                 let matchFound = false;
-//                 let matchedRowData = null;
-
-//                 for (let i = 0; i < tableData.length; i++) {
-//                     const row = tableData[i];
-//                     if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === barcodeValue.toLowerCase()) {
-//                         row.yes = 1;
-//                         matchFound = true;
-//                         matchedRowData = row;
-//                         break;
-//                     }
-//                 }
-
-//                 if (matchFound && matchedRowData) {
-//                     dialog.fields_dict.work_warehouse_inventory.grid.refresh();
-//                     frappe.msgprint({
-//                         title: __('✅ Serial No Matched'),
-//                         message: __(`<strong>Row #${matchedRowData.sr_no}</strong><br>
-//                                     Serial No: <strong>${barcodeValue}</strong><br>
-//                                     Item Code: ${matchedRowData.item_code}<br>
-//                                     Warehouse: ${matchedRowData.warehouse}<br>
-//                                     <span style="color: green;">✅ Yes Checked Successfully!</span>`),
-//                         indicator: 'green'
-//                     });
-//                 } else {
-//                     frappe.msgprint({
-//                         title: __('❌ No Match Found'),
-//                         message: __(`Serial No: <strong>${barcodeValue}</strong> not found in the table.<br>
-//                                     Please scan the next serial number.`),
-//                         indicator: 'red'
-//                     });
-//                 }
-
-//                 $(this).val('');
-//                 setTimeout(() => { $(this).focus(); }, 100);
-//             });
-
-//             scanField.$input.on('keydown', function (e) {
-//                 if (e.keyCode === 13) {
-//                     e.preventDefault();
-//                     $(this).trigger('keyup');
-//                     return false;
-//                 }
-//             });
-//         }
-//     }
-
-//     // Load data
-//     frappe.call({
-//         method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
-//         callback: function (r) {
-//             if (!r.exc && r.message) {
-//                 dialog.fields_dict.work_warehouse_inventory.df.data = [];
-//                 dialog.fields_dict.work_warehouse_inventory.refresh();
-
-//                 r.message.forEach(function (row, index) {
-//                     dialog.fields_dict.work_warehouse_inventory.df.data.push({
-//                         sr_no: index + 1,
-//                         item_code: row.item_code || '',
-//                         serial_no: row.serial_no || '',
-//                         warehouse: row.warehouse || '',
-//                         yes: 0,
-//                         user_activity: 'Log In'
-//                     });
-//                 });
-
-//                 dialog.fields_dict.work_warehouse_inventory.grid.refresh();
-
-//                 setTimeout(function () {
-//                     handleScannerInput(dialog, "scan_barcode");
-//                     handleBarcodeScanning(dialog);
-//                     dialog.get_field('scan_barcode').$input.focus();
-//                 }, 500);
-//             } else {
-//                 frappe.msgprint({
-//                     title: __('Error'),
-//                     message: __('Failed to load serial number data. Please try again.'),
-//                     indicator: 'red'
-//                 });
-//             }
-//         }
-//     });
-
-//     dialog.onhide = function() {
-//         console.log('Dialog closed');
-//     };
-
-//     dialog.show();
-// }
 
 function popUpWorkInventory() {
     const dialog = new frappe.ui.Dialog({
@@ -1209,111 +911,131 @@ function popUpWorkInventory() {
         });
     }
 
-    // Disable paste and manual typing helper
-    function disablePaste(inputField) {
-        inputField.on('contextmenu', e => e.preventDefault());
-        inputField.on('keydown', function (event) {
-            if (event.ctrlKey && (event.key === 'v' || event.key === 'V')) {
-                event.preventDefault();
-                frappe.msgprint(__('Paste is disabled. Please use barcode scanner.'));
-            }
-        });
-        inputField.on('mousedown', function (event) {
-            if (event.button === 1) event.preventDefault();
-        });
-    }
-
-    // Restrict manual typing
-    function handleScannerInput(dialog, fieldname) {
-        const field = dialog.get_field(fieldname);
-        if (field && field.$input) {
-            let keyPressCount = 0;
-            let keyPressStartTime = 0;
-            let scannerInputActive = false;
-
-            field.$input.on('keydown', function (e) {
-                if (e.key === "Enter") {
-                    scannerInputActive = false;
-                    keyPressCount = 0;
-                    return true;
-                }
-
-                const now = Date.now();
-                if (now - keyPressStartTime > 500) {
-                    keyPressCount = 0;
-                    keyPressStartTime = now;
-                    scannerInputActive = false;
-                }
-
-                keyPressCount++;
-                if (keyPressCount === 1) {
-                    keyPressStartTime = now;
-                    this.lastKeyTime = now;
-                    scannerInputActive = true;
-                    return true;
-                }
-
-                const timeDiff = now - this.lastKeyTime;
-                if (timeDiff <= 50 || scannerInputActive) {
-                    this.lastKeyTime = now;
-                    return true;
-                }
-
+    // Improved manual entry prevention - Only prevent paste, allow scanner input
+    function preventManualEntry(dialog) {
+        const scanField = dialog.get_field('scan_barcode');
+        if (scanField && scanField.$input) {
+            // Prevent paste
+            scanField.$input.on('paste', function (e) {
                 e.preventDefault();
-                frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
+                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
+                $(this).val('');
+            });
+
+            // Prevent context menu (right-click)
+            scanField.$input.on('contextmenu', function (e) {
+                e.preventDefault();
                 return false;
             });
 
-            field.$input.on('paste', function (e) {
-                e.preventDefault();
-                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
-            });
-
-            field.$input.on('input', function () {
-                if ($(this).val() === '') {
-                    keyPressCount = 0;
-                    scannerInputActive = false;
+            // Allow all keyboard input - scanner will work naturally
+            // Only show error if user tries to type slowly (manual entry)
+            let lastKeyTime = 0;
+            let manualEntryDetected = false;
+            
+            scanField.$input.on('keydown', function (e) {
+                // Allow Enter key (scanner termination)
+                if (e.key === "Enter") {
+                    manualEntryDetected = false;
+                    return true;
                 }
+                
+                // Allow navigation and control keys
+                if (e.ctrlKey || e.metaKey || 
+                    e.key === 'Tab' || e.key === 'ArrowLeft' || 
+                    e.key === 'ArrowRight' || e.key === 'ArrowUp' || 
+                    e.key === 'ArrowDown' || e.key === 'Delete' || 
+                    e.key === 'Backspace') {
+                    return true;
+                }
+                
+                const currentTime = new Date().getTime();
+                
+                // If time between keystrokes is more than 200ms, it's likely manual typing
+                if (currentTime - lastKeyTime > 200 && lastKeyTime !== 0) {
+                    manualEntryDetected = true;
+                }
+                
+                lastKeyTime = currentTime;
+                return true;
             });
 
-            disablePaste(field.$input);
+            scanField.$input.on('input', function () {
+                if (manualEntryDetected) {
+                    frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
+                    $(this).val('');
+                    manualEntryDetected = false;
+                }
+                
+                lastKeyTime = 0;
+            });
         }
     }
 
-    // Barcode scanning logic
+    // Barcode scanning logic - Improved to handle scanner input properly
     function handleBarcodeScanning(dialog) {
         const scanField = dialog.get_field('scan_barcode');
         if (scanField && scanField.$input) {
-            scanField.$input.on('change keyup', function (e) {
-                if (e.keyCode && e.keyCode !== 13) return;
-
-                const barcodeValue = $(this).val().trim();
-                if (!barcodeValue) return;
-
-                const tableData = dialog.fields_dict.work_warehouse_inventory.df.data;
-
-                for (let i = 0; i < tableData.length; i++) {
-                    const row = tableData[i];
-                    if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === barcodeValue.toLowerCase()) {
-                        row.yes = 1; 
-                        break;
-                    }
-                }
-
-                dialog.fields_dict.work_warehouse_inventory.grid.refresh();
-                $(this).val('');
-                setTimeout(() => { $(this).focus(); }, 100);
-            });
-
+            let barcodeBuffer = '';
+            let scannerTimeout;
+            
             scanField.$input.on('keydown', function (e) {
-                if (e.keyCode === 13) {
+                // Clear timeout on any key press
+                clearTimeout(scannerTimeout);
+                
+                // If Enter is pressed, process the barcode
+                if (e.key === "Enter") {
                     e.preventDefault();
-                    $(this).trigger('keyup');
+                    
+                    const barcodeValue = barcodeBuffer.trim();
+                    if (barcodeValue) {
+                        processBarcode(barcodeValue, dialog);
+                        barcodeBuffer = '';
+                    }
+                    
+                    $(this).val('');
                     return false;
                 }
+                
+                // Set timeout to detect manual entry (if typing is too slow)
+                scannerTimeout = setTimeout(() => {
+                    if (barcodeBuffer.length > 0) {
+                        frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
+                        $(this).val('');
+                        barcodeBuffer = '';
+                    }
+                }, 300);
+            });
+            
+            scanField.$input.on('input', function (e) {
+                // Build the barcode from input events
+                barcodeBuffer = $(this).val();
             });
         }
     }
+    
+    function processBarcode(barcodeValue, dialog) {
+        const tableData = dialog.fields_dict.work_warehouse_inventory.df.data;
+
+        // Find and mark the matching serial number
+        let found = false;
+        for (let i = 0; i < tableData.length; i++) {
+            const row = tableData[i];
+            if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === barcodeValue.toLowerCase()) {
+                row.yes = 1; 
+                found = true;
+                frappe.show_alert(__('Scanned: ') + barcodeValue, 3);
+                break;
+            }
+        }
+
+        if (!found) {
+            frappe.msgprint(__('Serial number not found in the inventory list: ') + barcodeValue);
+        }
+
+        dialog.fields_dict.work_warehouse_inventory.grid.refresh();
+    }
+    
     function makeCheckboxesReadOnly() {
         // Wait for the grid to be rendered
         setTimeout(() => {
@@ -1359,7 +1081,7 @@ function popUpWorkInventory() {
                 dialog.fields_dict.work_warehouse_inventory.grid.refresh();
 
                 setTimeout(function () {
-                    handleScannerInput(dialog, "scan_barcode");
+                    preventManualEntry(dialog);
                     handleBarcodeScanning(dialog);
                     dialog.get_field('scan_barcode').$input.focus();
                     makeCheckboxesReadOnly();
@@ -1375,21 +1097,6 @@ function popUpWorkInventory() {
     });
 
     dialog.onhide = function () {
-        console.log('Dialog closed');
-    };
-
-    // 🚫 Block ESC key close
-    $(document).on('keydown.restrictEsc', function (e) {
-        if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            frappe.msgprint(__('❌ You cannot close this popup with ESC.'));
-        }
-    });
-
-    // Remove ESC restriction when dialog is hidden (to avoid affecting other dialogs)
-    dialog.onhide = function() {
-        $(document).off('keydown.restrictEsc');
         console.log('Dialog closed');
     };
 

@@ -13,17 +13,45 @@ frappe.ui.form.on('Sales Order', {
                 });
             });
         }
-        frappe.call({
-            method: "nj_features.overrides.sales_order.setting_sales_channel_value",
-            args: { doc: cur_frm.doc },
-            callback: function(r) {
-                if (r.message) {                 
-                    cur_frm.set_value("sales_channel", r.message.sales_channel);
-                    frm.refresh_field("sales_channel");
+        // frappe.call({
+        //     method: "nj_features.overrides.sales_order.1",
+        //     args: { doc: cur_frm.doc },
+        //     callback: function(r) {
+        //         if (r.message) {                 
+        //             cur_frm.set_value("sales_channel", r.message.sales_channel);
+        //             frm.refresh_field("sales_channel");
 
+        //         }
+        //     }
+        // });
+
+        let update_features_table = frm.add_custom_button(__('Fetch Payment Id'), function() {
+            frappe.show_alert({
+                message: __('Fetching Payment Id...'),
+                indicator: 'blue'
+            });
+
+            frappe.call({
+                method: 'nj_features.overrides.sales_order.fetch_payment_id_from_shopify',
+                args: { doc: frm.doc },   // pass entire doc so we get sales_order
+                callback: function(response) {
+                    if (response.message && response.message.payment_id) {
+                        frm.reload_doc();
+                        frappe.show_alert({
+                            message: __('Payment Id fetched successfully: ' + response.message.payment_id),
+                            indicator: 'green'
+                        });
+                    }
+                },
+                error: function() {
+                    frappe.msgprint(__('Failed to fetch Payment Id. Please check the Shopify response.'));
                 }
-            }
+            });
         });
+
+        // Add styling to the button
+        update_features_table.addClass('btn-primary');
+
     },
 
    

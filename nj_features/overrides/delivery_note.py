@@ -1,16 +1,10 @@
 # Copyright (c) 2023, NewJaisa - IT Team
 # For license information, please see license.txt
 
-import re
 import json
 import frappe
-import time
 import base64
-import json
 import requests
-import base64
-from datetime import datetime
-import logging
 import traceback
 from frappe import _
 from frappe.utils import now
@@ -115,6 +109,21 @@ class CustomDeliveryNote(DeliveryNote):
 
     def _process_customer_details(self):
         try:
+            serial_nos = set()
+            dn_items = frappe.db.sql("""
+                SELECT serial_no FROM `tabDelivery Note Item` WHERE parent = %s
+                UNION
+                SELECT serial_no FROM `tabPacked Item` WHERE parent = %s
+            """, (self.name, self.name), as_dict=True)
+            for row in dn_items:
+                if row.serial_no:
+                    serial_nos.update([s.strip() for s in row.serial_no.split(',') if s.strip()])
+            for sn in serial_nos:
+                frappe.db.set_value("Serial No", sn, {
+                    "is_replace": 0,
+                    "return_reason": ""
+                })
+
             sales_order_info_map = {}
 
             for item in self.get('items', []):
@@ -311,6 +320,24 @@ class CustomDeliveryNote(DeliveryNote):
                 frappe.throw(f"Sales Order {against_sales_order} is not approved. Please approve it first.")
 
     def _process_serial_numbers(self):
+
+        sn_is_replace = 0
+        sn_update = self.cause_of_return
+        if self.replacement_serial_no:
+            sn_is_replace = 1
+        serial_nos = set()
+        dn_items = frappe.db.sql("""
+            SELECT serial_no FROM `tabDelivery Note Item` WHERE parent = %s
+            UNION
+            SELECT serial_no FROM `tabPacked Item` WHERE parent = %s
+        """, (self.name, self.name), as_dict=True)
+        for row in dn_items:
+            if row.serial_no:
+                serial_nos.update([s.strip() for s in row.serial_no.split(',') if s.strip()])
+        for sn in serial_nos:
+            frappe.db.set_value("Serial No", sn, "return_reason", sn_update)
+        if self.replacement_serial_no:
+            frappe.db.set_value("Serial No", self.replacement_serial_no, "is_replace", sn_is_replace)
 
         for item in self.items:
             if not self._should_process_item(item):

@@ -1408,8 +1408,8 @@ def get_item_code_for_each_part(doc):
                                     numeric_value = int(final_value.replace(' GB', ''))
 
                                 if numeric_value > 80:
-                                    if numeric_value >= 1024:
-                                        tb_value = numeric_value // 1024
+                                    if numeric_value >= 1000:
+                                        tb_value = numeric_value // 1000
                                         formatted_value = f"{tb_value} TB"
                                     else:
                                         formatted_value = f"{numeric_value} GB"
@@ -1626,8 +1626,7 @@ def consolidate_ram_capacities(data):
                             existing_type = existing_type or ''
                             
                             if existing_type.upper() == type_.upper():
-                                ram_type = existing_type.strip()
-                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB{f' {ram_type}' if ram_type else ''}"
+                                ram_consolidation[key] = f"{int(existing_amount) + total_amount} GB"
                             else:
                                 frappe.msgprint(f"Different RAM Type is not allowed")
                                 return
@@ -1772,13 +1771,13 @@ def get_variant_from_value(item_template=None, args=None):
         if item_template and args_list:
             conditions = []
 
-            get_attribute_name = frappe.db.sql("SELECT attribute FROM `tabItem Variant Attribute` WHERE parent = %s", (item_template,))
-            attribute_list = [row[0].strip().lower() for row in get_attribute_name]
-            args_attribute_list = [key.lower() for key in args[0]]
+            # get_attribute_name = frappe.db.sql("SELECT attribute FROM `tabItem Variant Attribute` WHERE parent = %s", (item_template,))
+            # attribute_list = [row[0].strip().lower() for row in get_attribute_name]
+            # args_attribute_list = [key.lower() for key in args[0]]
 
-            if len(set(attribute_list)) != len(set(args_attribute_list)):
-                item_code = construct_item_code(item_template, args_list)
-                return item_code
+            # if len(set(attribute_list)) != len(set(args_attribute_list)):
+            #     item_code = construct_item_code(item_template, args_list)
+            #     return item_code
                 
             conditions = []
             for condition_dict in args_list:
@@ -1829,8 +1828,8 @@ def construct_item_code(item_template, args_list):
 
         if item_code:
             return item_code[0]['item_code']
-        else:
-            return {'error': concatenated_string}
+        
+        return None
 
     except Exception:
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")

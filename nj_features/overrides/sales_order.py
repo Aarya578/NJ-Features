@@ -2,6 +2,7 @@ import frappe , requests
 import requests
 import json
 import base64
+import re
 import frappe
 import time
 import datetime
@@ -39,6 +40,7 @@ class CustomSalesOrder(SalesOrder):
             #     trigger_fulfillment(order_id)
         self.payment_id_validation()
         self.maintenance_order_validation()
+        self.sale_type_validation()
 
     def total_item_group_sum(self):
         item_group_value = frappe.db.get_value(
@@ -108,7 +110,6 @@ class CustomSalesOrder(SalesOrder):
     #     self.save(ignore_permissions=True)
 
     def maintenance_order_validation(self):
-        print("inside the function=================")
         
         nj_setting = frappe.db.get_value(
             "NJ Settings", 
@@ -122,7 +123,23 @@ class CustomSalesOrder(SalesOrder):
         approve_value = 1 if self.grand_total < 500 else 0
         frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
         self.approve = approve_value
-    
+    def sale_type_validation(self):
+        nj_setting_value = frappe.db.get_value(
+            "NJ Settings", 
+            {"parameter": "sales_types"}, 
+            "value"
+        )
+
+        if not nj_setting_value:
+            return  
+        allowed_sale_types = [v.strip() for v in nj_setting_value.split(",")]
+
+        if self.sale_type in allowed_sale_types:
+            if not self.payment_id:
+                frappe.throw("Payment ID is mandatory for Sale Type: {0}".format(self.sale_type))
+
+        
+        
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -611,3 +628,58 @@ def setting_sales_channel_value(doc):
     elif sales_type == "Amazon":
         doc["sales_channel"] = "Amazon"
     return doc
+
+
+
+@frappe.whitelist()
+def fetch_payment_id_from_shopify(doc):
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    token = "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"
+    base_url = "https://newjaisa.myshopify.com/admin/api/2025-01/orders"
+
+    shopify_order_number = doc.get("shopify_order_number")
+    if not shopify_order_number:
+        frappe.throw("Shopify Order Number not found in Sales Order")
+
+    order_url = f"{base_url}/{shopify_order_number}.json"
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(order_url, headers=headers)
+
+    if response.status_code != 200:
+        frappe.throw(f"Failed to fetch Shopify Order: {response.text}")
+
+    order_data = response.json()
+    order = order_data.get("order", {})
+
+    source_identifier = None
+
+    tags = order.get("tags", "")
+    match = re.search(r"snapmint_(\d+)", tags)
+    if match:
+        source_identifier = match.group(1)
+    else:
+        source_identifier = order.get("source_identifier")
+
+    if not source_identifier:
+        frappe.throw("No payment identifier found in Shopify order response")
+
+    frappe.db.set_value(
+        "Sales Order",
+        doc.get("name"),  
+        "payment_id",     
+        source_identifier,
+        update_modified=True
+    )
+    frappe.db.commit()
+
+    print("Final source_identifier set as payment_id:", source_identifier)
+    return {"payment_id": source_identifier}
+
+
+

@@ -1931,7 +1931,8 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
     storage_type: function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
         
-        if (child.storage_type == 'SSD' && child.update_variant) {
+        if (child.storage_type == 'SSD' && child.update_variant && (!frm.doc.repack_item_code ||
+            !frm.doc.repack_item_code.toLowerCase().includes('ssd'))) {
             frappe.model.set_value('NJQCA Child', child.update_variant, 'variant_15', 'SSD');
             processItemTemplate(frm);
         } else if (child.storage_type != 'SSD' && child.update_variant) {
@@ -1941,9 +1942,8 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
 });
 
 function shouldBeRequired(child) {
-    return !child.fetched_item_code || 
-           (child.fetched_item_code && child.calculated_item_code && 
-            child.fetched_item_code !== child.calculated_item_code);
+    return !child.fetched_item_code || (child.fetched_item_code && child.calculated_item_code && 
+        child.fetched_item_code !== child.calculated_item_code);
 }
 
 function validate_mandatory_fields(frm) {

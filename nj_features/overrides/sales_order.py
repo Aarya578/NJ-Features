@@ -633,7 +633,6 @@ def setting_sales_channel_value(doc):
 
 @frappe.whitelist()
 def fetch_payment_id_from_shopify(doc):
-    print("inside the function ===============================")
     if isinstance(doc, str):
         doc = json.loads(doc)
 
@@ -641,7 +640,6 @@ def fetch_payment_id_from_shopify(doc):
     base_url = "https://newjaisa.myshopify.com/admin/api/2025-01/orders"
 
     shopify_order_number = doc.get("shopify_order_number")
-    print("shopify_order_number===================", shopify_order_number)
     if not shopify_order_number:
         frappe.throw("Shopify Order Number not found in Sales Order")
 
@@ -661,26 +659,20 @@ def fetch_payment_id_from_shopify(doc):
 
     source_identifier = None
 
-    # 🔹 Step 1: Check tags for snapmint pattern
     tags = order.get("tags", "")
-    print("tags===================", tags)
     match = re.search(r"snapmint_(\d+)", tags)
     if match:
         source_identifier = match.group(1)
-        print("Found snapmint source_identifier:=======================", source_identifier)
     else:
-        # 🔹 Step 2: Fallback to order["source_identifier"]
         source_identifier = order.get("source_identifier")
-        print("Fallback source_identifier:====================", source_identifier)
 
     if not source_identifier:
         frappe.throw("No payment identifier found in Shopify order response")
 
-    # ✅ Update current Sales Order
     frappe.db.set_value(
         "Sales Order",
-        doc.get("name"),   # current SO name
-        "payment_id",      # custom field in Sales Order
+        doc.get("name"),  
+        "payment_id",     
         source_identifier,
         update_modified=True
     )

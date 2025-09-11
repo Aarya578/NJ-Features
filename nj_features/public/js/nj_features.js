@@ -1224,96 +1224,213 @@ function popUpWorkInventory() {
     }
 
     // Restrict manual typing
-    function handleScannerInput(dialog, fieldname) {
-        const field = dialog.get_field(fieldname);
-        if (field && field.$input) {
-            let keyPressCount = 0;
-            let keyPressStartTime = 0;
-            let scannerInputActive = false;
+    // Improved function to restrict manual typing in scan barcode field
+// Aggressive function to prevent manual typing in scan barcode field
+function handleScannerInput(dialog, fieldname) {
+    const field = dialog.get_field(fieldname);
+    if (field && field.$input) {
+        let keyPressCount = 0;
+        let keyPressStartTime = 0;
+        let lastKeyTime = 0;
+        let isScanning = false;
+        let scanTimeout = null;
+        
+        // Clear any existing event handlers
+        field.$input.off();
 
-            field.$input.on('keydown', function (e) {
-                if (e.key === "Enter") {
-                    scannerInputActive = false;
-                    keyPressCount = 0;
-                    return true;
-                }
+        // Main keydown handler for manual typing detection
+        field.$input.on('keydown', function (e) {
+            const now = Date.now();
+            
+            // Allow Enter key for processing scanned data
+            if (e.keyCode === 13 || e.key === "Enter") {
+                keyPressCount = 0;
+                isScanning = false;
+                if (scanTimeout) clearTimeout(scanTimeout);
+                return true;
+            }
+            
+            // Allow navigation and control keys
+            const allowedKeys = [8, 9, 16, 17, 18, 27, 33, 34, 35, 36, 37, 38, 39, 40, 46]; // Backspace, Tab, Shift, Ctrl, Alt, Esc, Page Up/Down, Home, End, Arrow keys, Delete
+            if (allowedKeys.includes(e.keyCode)) {
+                return true;
+            }
 
-                const now = Date.now();
-                if (now - keyPressStartTime > 500) {
-                    keyPressCount = 0;
-                    keyPressStartTime = now;
-                    scannerInputActive = false;
-                }
+            // Reset if too much time has passed (manual typing indicator)
+            if (now - lastKeyTime > 50) {
+                keyPressCount = 0;
+                keyPressStartTime = now;
+                isScanning = false;
+            }
 
-                keyPressCount++;
-                if (keyPressCount === 1) {
-                    keyPressStartTime = now;
-                    this.lastKeyTime = now;
-                    scannerInputActive = true;
-                    return true;
-                }
+            keyPressCount++;
+            lastKeyTime = now;
 
-                const timeDiff = now - this.lastKeyTime;
-                if (timeDiff <= 50 || scannerInputActive) {
-                    this.lastKeyTime = now;
-                    return true;
-                }
+            // First key - could be start of scan or manual typing
+            if (keyPressCount === 1) {
+                keyPressStartTime = now;
+                isScanning = true;
+                
+                // Set a timeout - if user is still typing after 200ms, it's manual
+                scanTimeout = setTimeout(() => {
+                    if (isScanning) {
+                        // Manual typing detected
+                        showManualTypingError();
+                        clearFieldAndReset();
+                    }
+                }, 200);
+                
+                return true;
+            }
 
+            // Calculate time between keystrokes
+            const timeBetweenKeys = now - (keyPressStartTime + (keyPressCount - 2) * 20); // Expected ~20ms between scanner keys
+            
+            // If time between keys is too long (>80ms), it's manual typing
+            if (timeBetweenKeys > 80) {
                 e.preventDefault();
-                frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
+                showManualTypingError();
+                clearFieldAndReset();
                 return false;
-            });
+            }
 
-            field.$input.on('paste', function (e) {
+            return true;
+        });
+
+        // Additional input event handler to catch any missed manual input
+        field.$input.on('input', function (e) {
+            const value = $(this).val();
+            
+            // If field has content and we're not in scanning mode, clear it
+            if (value && !isScanning) {
+                setTimeout(() => {
+                    showManualTypingError();
+                    clearFieldAndReset();
+                }, 10);
+            }
+        });
+
+        // Prevent paste completely
+        field.$input.on('paste', function (e) {
+            e.preventDefault();
+            frappe.msgprint({
+                title: __('Paste Disabled'),
+                message: __('❌ Paste is not allowed. Please use barcode scanner only.'),
+                indicator: 'red'
+            });
+            clearFieldAndReset();
+            return false;
+        });
+
+        // Prevent right-click context menu
+        field.$input.on('contextmenu', function (e) {
+            e.preventDefault();
+            return false;
+        });
+
+        // Prevent middle mouse click (paste on Linux)
+        field.$input.on('mousedown', function (e) {
+            if (e.button === 1) {
                 e.preventDefault();
-                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
-            });
+                frappe.msgprint({
+                    title: __('Mouse Paste Disabled'),
+                    message: __('❌ Mouse paste is disabled. Please use barcode scanner only.'),
+                    indicator: 'red'
+                });
+                return false;
+            }
+        });
 
-            field.$input.on('input', function () {
-                if ($(this).val() === '') {
-                    keyPressCount = 0;
-                    scannerInputActive = false;
-                }
-            });
+        // Prevent drag and drop
+        field.$input.on('dragover dragenter drop', function (e) {
+            e.preventDefault();
+            return false;
+        });
 
-            disablePaste(field.$input);
+        // Helper function to show manual typing error
+        function showManualTypingError() {
+            frappe.msgprint({
+                title: __('Manual Entry Not Allowed'),
+                message: __('❌ Manual typing detected! Please use barcode scanner only.'),
+                indicator: 'red'
+            });
         }
+
+        // Helper function to clear field and reset counters
+        function clearFieldAndReset() {
+            field.$input.val('');
+            keyPressCount = 0;
+            isScanning = false;
+            lastKeyTime = 0;
+            if (scanTimeout) {
+                clearTimeout(scanTimeout);
+                scanTimeout = null;
+            }
+            // Refocus the field after clearing
+            setTimeout(() => {
+                field.$input.focus();
+            }, 100);
+        }
+
+        // Monitor for very slow typing (additional safety net)
+        let typingTimer;
+        field.$input.on('keyup', function(e) {
+            if (e.keyCode !== 13) { // Not Enter key
+                clearTimeout(typingTimer);
+                typingTimer = setTimeout(() => {
+                    const value = $(this).val();
+                    if (value && value.length > 0) {
+                        // If there's still content after 300ms of no typing, it might be manual
+                        showManualTypingError();
+                        clearFieldAndReset();
+                    }
+                }, 300);
+            }
+        });
     }
+}
 
-    // Barcode scanning logic
-    function handleBarcodeScanning(dialog) {
-        const scanField = dialog.get_field('scan_barcode');
-        if (scanField && scanField.$input) {
-            scanField.$input.on('change keyup', function (e) {
-                if (e.keyCode && e.keyCode !== 13) return;
-
+// Also update your barcode scanning handler to work with this
+function handleBarcodeScanning(dialog) {
+    const scanField = dialog.get_field('scan_barcode');
+    if (scanField && scanField.$input) {
+        scanField.$input.on('change keyup', function (e) {
+            // Only process on Enter key or change event
+            if (e.type === 'change' || (e.keyCode && e.keyCode === 13)) {
                 const barcodeValue = $(this).val().trim();
                 if (!barcodeValue) return;
 
                 const tableData = dialog.fields_dict.work_warehouse_inventory.df.data;
+                let found = false;
 
                 for (let i = 0; i < tableData.length; i++) {
                     const row = tableData[i];
                     if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === barcodeValue.toLowerCase()) {
-                        row.yes = 1; 
+                        row.yes = 1;
+                        found = true;
                         break;
                     }
+                }
+
+                if (found) {
+                    frappe.show_alert({
+                        message: __('✅ Serial number found and marked'),
+                        indicator: 'green'
+                    });
+                } else {
+                    frappe.show_alert({
+                        message: __('❌ Serial number not found in list'),
+                        indicator: 'red'
+                    });
                 }
 
                 dialog.fields_dict.work_warehouse_inventory.grid.refresh();
                 $(this).val('');
                 setTimeout(() => { $(this).focus(); }, 100);
-            });
-
-            scanField.$input.on('keydown', function (e) {
-                if (e.keyCode === 13) {
-                    e.preventDefault();
-                    $(this).trigger('keyup');
-                    return false;
-                }
-            });
-        }
+            }
+        });
     }
+}
     function makeCheckboxesReadOnly() {
         // Wait for the grid to be rendered
         setTimeout(() => {

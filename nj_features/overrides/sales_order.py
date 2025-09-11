@@ -611,3 +611,70 @@ def setting_sales_channel_value(doc):
     elif sales_type == "Amazon":
         doc["sales_channel"] = "Amazon"
     return doc
+
+
+import re
+import frappe
+import requests
+import json
+
+@frappe.whitelist()
+def fetch_payment_id_from_shopify(doc):
+    print("inside the function ===============================")
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    token = "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"
+    base_url = "https://newjaisa.myshopify.com/admin/api/2025-01/orders"
+
+    shopify_order_number = doc.get("shopify_order_number")
+    print("shopify_order_number===================", shopify_order_number)
+    if not shopify_order_number:
+        frappe.throw("Shopify Order Number not found in Sales Order")
+
+    order_url = f"{base_url}/{shopify_order_number}.json"
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(order_url, headers=headers)
+
+    if response.status_code != 200:
+        frappe.throw(f"Failed to fetch Shopify Order: {response.text}")
+
+    order_data = response.json()
+    order = order_data.get("order", {})
+
+    source_identifier = None
+
+    # 🔹 Step 1: Check tags for snapmint pattern
+    tags = order.get("tags", "")
+    print("tags===================", tags)
+    match = re.search(r"snapmint_(\d+)", tags)
+    if match:
+        source_identifier = match.group(1)
+        print("Found snapmint source_identifier:=======================", source_identifier)
+    else:
+        # 🔹 Step 2: Fallback to order["source_identifier"]
+        source_identifier = order.get("source_identifier")
+        print("Fallback source_identifier:====================", source_identifier)
+
+    if not source_identifier:
+        frappe.throw("No payment identifier found in Shopify order response")
+
+    # ✅ Update current Sales Order
+    frappe.db.set_value(
+        "Sales Order",
+        doc.get("name"),   # current SO name
+        "payment_id",      # custom field in Sales Order
+        source_identifier,
+        update_modified=True
+    )
+    frappe.db.commit()
+
+    print("Final source_identifier set as payment_id:", source_identifier)
+    return {"payment_id": source_identifier}
+
+
+

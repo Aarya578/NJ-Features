@@ -594,7 +594,6 @@ def validate_employee_department_and_role(user, department, role_profile, depart
             work_warehouses = frappe.get_all(
                             "Warehouse",
                             filters={
-                                "department": employee_department,
                                 "disabled": 0,
                                 "warehouse_owner": user,
                             },

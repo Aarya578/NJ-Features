@@ -740,10 +740,10 @@ function show_login_popup() {
 
     console.log("🔍 Current path:", currentPath);
 
-    if (!isAppRoot) {
-        console.log("🔕 Not in /app route, skipping popup.");
-        return;
-    }
+    // if (!isAppRoot) {
+    //     console.log("🔕 Not in /app route, skipping popup.");
+    //     return;
+    // }
 
     const today = frappe.datetime.get_today();
 

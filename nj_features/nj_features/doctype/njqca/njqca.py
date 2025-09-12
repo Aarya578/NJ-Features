@@ -1023,23 +1023,25 @@ def model_change_for_serial_no(newmodel, serial_no):
         new_item_wizard_query = """Select component_type,default_item_code from `tabComponent` where parent = %s"""
         new_item_wizard_data = frappe.db.sql(new_item_wizard_query, (new_item_wizard[0]['name']), as_dict=1)
 
-        Item_code = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'item_code')
-        if Item_code:
-            item_template = frappe.db.get_value('Item', {'name':Item_code}, 'variant_of')
-            if item_template:
-                item_wizard = get_latest_item_wizard(item_template, Item_code)
+        Serial_no_model = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'model')
+        if Serial_no_model:
+            item_wizard = frappe.db.get_value('Item Wizards', {'model':Serial_no_model, 'part_list_status':'Completed'}, 'name')
+            if item_wizard:
                 old_item_wizard_query = """select component_type,default_item_code from `tabComponent` where parent = %s"""
                 old_item_wizard_data = frappe.db.sql(old_item_wizard_query, (item_wizard), as_dict=1)
                 not_matched_item_groups = []
-                
                 for old in old_item_wizard_data:
                     for new in new_item_wizard_data:
                         if old.get('component_type') == new.get('component_type'):
                             if old.get('default_item_code') == new.get('default_item_code'):
                                 continue
                             else:
-                                not_matched_item_groups.append(old.get('component_type'))
-                
+                                old_item_code = old.get('default_item_code')
+                                new_item_wizard_name = new_item_wizard[0]['name']
+                                item_group = old.get('component_type')
+                                result = check_atrribute_data_is_matching_or_not(old_item_code,item_group,new_item_wizard_name)
+                                if not result:
+                                    not_matched_item_groups.append(old.get('component_type'))
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
@@ -1066,11 +1068,29 @@ def model_change_for_serial_no(newmodel, serial_no):
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                     return { "status": "success" }
             else:
-                frappe.msprint(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
+                frappe.msprint(f'Item Wizard is not there for Model <b>{Serial_no_model}</b>. Please Contact NPD Team')
                 return { "status": "failed" }
         else:
-            frappe.msgprint(f'Item Code {Item_code} not found in Serial No {serial_no}')
+            frappe.msgprint(f'Model not found in Serial No {serial_no}')
             return { "status": "failed" }
+
+
+def check_atrribute_data_is_matching_or_not(old_item_code,item_group,new_item_wizard):
+    item_code_attribute_query = """select attribute,attribute_value from `tabItem Variant Attribute` where parent = %s"""
+    item_code_attribute_data = frappe.db.sql(item_code_attribute_query, (old_item_code), as_dict=1)
+
+    new_item_wizard_attribute_query = """select item_group,item_attribute,attribute_value from `tabItems Attribute` where parent = %s"""
+    new_item_wizard_attribute_data = frappe.db.sql(new_item_wizard_attribute_query, (new_item_wizard), as_dict=1)
+    for old in item_code_attribute_data:
+        same_attr_new = [new for new in new_item_wizard_attribute_data 
+                        if new.get('item_attribute') == old.get('attribute') and new.get('item_group') == item_group]
+        
+        if same_attr_new:  # attribute exists in new data
+            if not any(new.get('attribute_value') == old.get('attribute_value') 
+                    for new in same_attr_new):
+                return False
+    return True
+
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):

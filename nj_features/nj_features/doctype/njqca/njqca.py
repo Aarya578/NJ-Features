@@ -1764,7 +1764,6 @@ def normalize_gen(cpu_value):
 # def get_variant_from_value(item_template=None, args=None):
 #     try:
 #         missing_attribute = []
-#         print(item_template, args)
 #         args_list = []
 #         if args:
 #             args_list = frappe.parse_json(args)
@@ -1794,7 +1793,7 @@ def normalize_gen(cpu_value):
 #                     WHERE variant_of = %s GROUP BY parent HAVING {}
 #                 """.format(having_clause)
 
-#                 variants = frappe.db.sql(query, (item_template,), as_dict=True, debug=1)
+#                 variants = frappe.db.sql(query, (item_template,), as_dict=True)
 
 #                 if variants and variants[0]['parent']:
 #                     return variants[0]['parent']
@@ -1840,9 +1839,10 @@ def get_variant_from_value(item_template=None, args=None):
 
         query = f"""
             SELECT DISTINCT base.parent
-            FROM `tabItem Variant Attribute` base
+            FROM `tabItem Variant Attribute` base INNER JOIN 
+            `tabItem` i on i.name = base.parent 
             {" ".join(joins)}
-            WHERE base.variant_of = %s
+            WHERE base.variant_of = %s AND i.disabled = 0 AND i.end_of_life >= CURDATE()
             LIMIT 1
         """
 
@@ -3325,15 +3325,13 @@ def duplicate_njqca(serial_no):
 
     if not record:
         return None
-    print(record[0].name)
+
     doc = frappe.get_doc("NJQCA", record[0].name)
 
-    # Copy doc while respecting no_copy fields
     new_doc = frappe.copy_doc(doc, ignore_no_copy=False)
 
-    new_doc.set("name", None)  # make sure it's unsaved
+    new_doc.set("name", None)
     new_doc.set("created", frappe.session.user)
     new_doc.set("inspection_type", dismantle_inspection_type)
 
     return new_doc.as_dict(no_nulls=True)
-

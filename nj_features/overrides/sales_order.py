@@ -1,23 +1,21 @@
-import frappe , requests
-import requests
-import json
-import base64
 import re
-import frappe
+import json
 import time
-import datetime
+import uuid
+import base64
+import frappe , requests
 from datetime import datetime
 from frappe.utils import getdate
-import json
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
+
 logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
-import uuid
+
 class CustomSalesOrder(SalesOrder):
     
     def on_submit(self):
@@ -94,7 +92,6 @@ class CustomSalesOrder(SalesOrder):
                     self.save(ignore_permissions=True)
 
     # def maintenance_order_validation(self):
-    #     print("inside the function=================")
     #     nj_setting = frappe.db.get_value(
     #         "NJ Settings", 
     #         {"parameter": "order_type"}, 
@@ -123,6 +120,7 @@ class CustomSalesOrder(SalesOrder):
         approve_value = 1 if self.grand_total < 500 else 0
         frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
         self.approve = approve_value
+    
     def sale_type_validation(self):
         nj_setting_value = frappe.db.get_value(
             "NJ Settings", 
@@ -138,8 +136,7 @@ class CustomSalesOrder(SalesOrder):
             if not self.payment_id:
                 frappe.throw("Payment ID is mandatory for Sale Type: {0}".format(self.sale_type))
 
-        
-        
+
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):
     try:
@@ -208,6 +205,7 @@ def trigger_fulfillment(order_id):
             frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
+
 # @frappe.whitelist()
 # def total_item_group_sum(doc):
 #     doc = frappe._dict(json.loads(doc))  
@@ -567,32 +565,27 @@ def update_sales_order_etas(so_eta_map):
 
 # @frappe.whitelist()
 # def get_item_group_tax_and_hsn(items):
-#     print("inside the function==========================")
 #     items = json.loads(items)
 
 #     tax_result = {
 #         "hsn_map": {},    # Maps item_code to HSN
 #         "taxes": []       # Final taxes list
 #     }
-#     print("tax_result==========================",tax_result)
 
 #     added_item_groups = set()
 
 #     for row in items:
 #         item_code = row.get("item_code")
-#         print("item_code===========",item_code)
 #         if not item_code:
 #             continue
 
 #         # Fetch item group
 #         item_group = frappe.db.get_value("Item", item_code, "item_group")
-#         print("item_group===========",item_group)
 #         if not item_group:
 #             continue
 
 #         # Fetch HSN from Item Group
 #         gst_hsn_code = frappe.db.get_value("Item Group", item_group, "gst_hsn_code")
-#         print("gst_hsn_code===========",gst_hsn_code)
 #         if gst_hsn_code:
 #             tax_result["hsn_map"][item_code] = gst_hsn_code
 
@@ -605,7 +598,6 @@ def update_sales_order_etas(so_eta_map):
 #         #     filters={"parent": item_group, "parenttype": "Item Group"},
 #         #     fields=["charge_type", "account_head", "rate", "description", "cost_center"]
 #         # )
-#         # print("tax_rows===========",tax_rows)
 
 #         # tax_result["taxes"].extend(tax_rows)
 #         added_item_groups.add(item_group)
@@ -628,7 +620,6 @@ def setting_sales_channel_value(doc):
     elif sales_type == "Amazon":
         doc["sales_channel"] = "Amazon"
     return doc
-
 
 
 @frappe.whitelist()
@@ -678,8 +669,4 @@ def fetch_payment_id_from_shopify(doc):
     )
     frappe.db.commit()
 
-    print("Final source_identifier set as payment_id:", source_identifier)
     return {"payment_id": source_identifier}
-
-
-

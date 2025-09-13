@@ -1419,7 +1419,12 @@ def get_item_code_for_each_part(doc):
                                         formatted_value = f"{numeric_value} GB"
 
                                     final_value = formatted_value + variant_type
-                                
+
+                                elif numeric_value >= 60 and numeric_value <= 80 and doc.get('item_group') == 'Chromebooks':
+                                    formatted_value = f"64 GB"
+                                    final_value = formatted_value + variant_type
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
+
                                 if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
                                     
@@ -1817,43 +1822,30 @@ def get_variant_from_value(item_template=None, args=None):
             return None
 
         args_list = frappe.parse_json(args)
-        if not isinstance(args_list, list):
+        if not isinstance(args_list, list) or not args_list:
             return None
 
-        conditions = []
-        joins = []
-        i = 0
+        having_conditions = []
+        query_args = []
+        for cond in args_list:
+            for attr, val in cond.items():
+                attr = attr.strip().lower()
+                val = val.strip().lower()
+                having_conditions.append(f"SUM(attribute = %s AND attribute_value = %s) = 1")
+                query_args.extend([attr, val])
 
-        for condition_dict in args_list:
-            for key, value in condition_dict.items():
-                attribute = key.strip().lower()
-                attribute_value = value.strip().lower()
-                alias = f"a{i}"
-                joins.append(f"""
-                    JOIN `tabItem Variant Attribute` {alias}
-                    ON base.parent = {alias}.parent
-                    AND {alias}.attribute = %s
-                    AND {alias}.attribute_value = %s
-                """)
-                conditions.append((attribute, attribute_value))
-                i += 1
-
-        if not joins:
-            return None
+        num_attributes = len(args_list)
 
         query = f"""
-            SELECT DISTINCT base.parent
-            FROM `tabItem Variant Attribute` base INNER JOIN 
-            `tabItem` i on i.name = base.parent 
-            {" ".join(joins)}
-            WHERE base.variant_of = %s AND i.disabled = 0 AND i.end_of_life >= CURDATE()
+            SELECT parent
+            FROM `tabItem Variant Attribute`
+            WHERE variant_of = %s
+            GROUP BY parent
+            HAVING COUNT(*) = %s AND {" AND ".join(having_conditions)}
             LIMIT 1
         """
 
-        query_args = []
-        for attr, val in conditions:
-            query_args.extend([attr, val])
-        query_args.append(item_template)
+        query_args = [item_template, num_attributes] + query_args
 
         variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
 
@@ -1866,10 +1858,10 @@ def get_variant_from_value(item_template=None, args=None):
         frappe.log_error(frappe.get_traceback(), "get_variant_from_value error")
         return None
 
-
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
     try:
+        part_item_group = frappe.db.get_value('Item', {'name': item_template}, 'item_group')
         if isinstance(args_list, str):
             args_list = frappe.parse_json(args_list)
         concatenated_string = item_template
@@ -1884,6 +1876,42 @@ def construct_item_code(item_template, args_list):
             SELECT item_code FROM `tabItem`
             WHERE item_code = %s and disabled = 0 AND end_of_life >= CURDATE()
         """
+
+        item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
+
+        if item_code:
+            return item_code[0]['item_code']
+        
+        elif part_item_group == 'Chromebooks' and (item_code is None or item_code == []):
+            having_conditions = []
+            query_args = []
+            for cond in args_list:
+                for attr, val in cond.items():
+                    attr = attr.strip().lower()
+                    if attr == "storage capacity" and val.lower().endswith(" ssd"):
+                        val = val[:-4].strip()
+
+                    val = val.lower()
+                    having_conditions.append(f"SUM(attribute = %s AND attribute_value = %s) = 1")
+                    query_args.extend([attr, val])
+
+            num_attributes = len(args_list)
+
+            query = f"""
+                SELECT parent
+                FROM `tabItem Variant Attribute`
+                WHERE variant_of = %s
+                GROUP BY parent
+                HAVING COUNT(*) = %s AND {" AND ".join(having_conditions)}
+                LIMIT 1
+            """
+
+            query_args = [item_template, num_attributes] + query_args
+
+            variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
+
+            if variant and variant[0]['parent']:
+                return variant[0]['parent']
 
         item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
 

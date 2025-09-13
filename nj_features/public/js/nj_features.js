@@ -854,22 +854,20 @@ function popUpWorkInventory() {
         size: 'extra-large',
         primary_action_label: __('Submit'),
         static: true,
+
         primary_action: function () {
             const values = dialog.get_values();
+
             if (values && values.work_warehouse_inventory && values.work_warehouse_inventory.length > 0) {
-                // Check if all "Yes" are checked
                 const unchecked = values.work_warehouse_inventory.filter(row => !row.yes);
 
                 if (unchecked.length > 0) {
-                    // Show custom confirmation popup
                     frappe.confirm(
                         __("Some serial numbers are unchecked. Do you want to rescan or submit anyway?"),
                         function () {
-                            // ✅ Submit Anyway
                             submitReport(values, dialog);
                         },
                         function () {
-                            // ❌ Rescan → keep dialog open
                             frappe.msgprint(__('Please rescan the unchecked rows before submitting.'));
                         }
                     );
@@ -878,12 +876,13 @@ function popUpWorkInventory() {
                     submitReport(values, dialog);
                 }
             } else {
-                frappe.msgprint(__('Please scan at least one item before submitting.'));
+                // ✅ Allow submission even with empty table
+                submitReport(values, dialog);
             }
         }
+
     });
 
-    // helper: save + submit report
     function submitReport(values, dialog) {
         frappe.call({
             method: 'frappe.client.save',

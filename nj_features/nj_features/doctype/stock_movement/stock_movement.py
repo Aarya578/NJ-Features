@@ -11,6 +11,7 @@ logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 class StockMovement(Document):
     def on_submit(self):
         try:
+            check_warehouse_qty(self.name)
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
             else:
@@ -833,3 +834,41 @@ def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_war
 
     if not result:
         error_messages.append(f'This Serial No: <b>{serial_doc.name}</b> is not allowed to be moved to <b>{department_doc.name}</b> Department. Validate Item group , Grade and Work required for this Serial No to know the reason')
+
+@frappe.whitelist()
+def check_warehouse_qty(name):
+    error_msg = ""
+
+    warehouse_data_query = """
+        SELECT SUM(qty) AS total_qty, t_warehouse 
+        FROM `tabStock Movement Detail` 
+        WHERE parent = %s GROUP BY t_warehouse
+    """  
+    warehouse_data = frappe.db.sql(warehouse_data_query, (name,), as_dict=True)
+
+    if warehouse_data:
+        for row in warehouse_data:
+            warehouse = row.get('t_warehouse')
+            total_qty = row.get('total_qty') or 0
+            total_qty = float(total_qty)
+            query = """
+                SELECT 
+                    COALESCE(
+                        (SELECT available_capacity FROM `tabWarehouse Qty` WHERE warehouse = %(warehouse)s),
+                        (SELECT max_capacity FROM `tabWarehouse` WHERE name = %(warehouse)s)
+                    ) AS capacity
+            """
+            result = frappe.db.sql(query, {"warehouse": warehouse}, as_dict=True)
+
+            available_qty = float(result[0].capacity) if result and result[0].capacity is not None else 0.0
+
+            if total_qty > available_qty:
+                error_msg += (
+                    f"Total qty for warehouse <b>{warehouse}</b> is <b>{total_qty}</b>, "
+                    f"but available qty is <b>{available_qty}</b>.<br>"
+                )
+
+    if error_msg:
+        frappe.throw(error_msg)
+
+    return None

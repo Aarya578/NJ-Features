@@ -42,6 +42,7 @@ class CustomStockLedgerEntry(StockLedgerEntry):
 
         if existing:
             frappe.db.set_value("Warehouse Qty", existing, {
+                "max_capacity": max_capacity,
                 "available_capacity": available_capacity,
                 "qty_after_transaction": qty_after_transaction
             }, update_modified=False)

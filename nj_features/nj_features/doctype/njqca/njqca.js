@@ -1816,48 +1816,32 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             title: 'Laptop Storage Attributes',
             fields: [
                 {
-                    label: 'Storage Type',
-                    fieldname: 'storage_type',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
-                    default: child.storage_type || '',
-                    reqd: !child.storage_type,
-                    read_only: !!child.storage_type
+                    label: 'Storage Type', fieldname: 'storage_type',
+                    fieldtype: 'Select', options: ['Loading...'],
+                    default: child.storage_type || '', reqd: !child.storage_type
                 },
                 {
-                    label: 'Storage Interface',
-                    fieldname: 'storage_interface',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Interface', fieldname: 'storage_interface',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_interface || '',
-                    reqd: !child.storage_interface,
-                    read_only: !!child.storage_interface
+                    reqd: !child.storage_interface, read_only: !!child.storage_interface
                 },
                 {
-                    label: 'Storage Capacity',
-                    fieldname: 'storage_capacity',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Capacity', fieldname: 'storage_capacity',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_capacity || '',
-                    reqd: !child.storage_capacity,
-                    read_only: !!child.storage_capacity
+                    reqd: !child.storage_capacity, read_only: !!child.storage_capacity
                 },
                 {
-                    label: 'Storage Length',
-                    fieldname: 'storage_length',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Length', fieldname: 'storage_length',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_length || '',
-                    reqd: !child.storage_length,
-                    read_only: !!child.storage_length
+                    reqd: !child.storage_length, read_only: !!child.storage_length
                 },
                 {
-                    label: 'Grade',
-                    fieldname: 'grade',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
-                    default: child.grade || '',
-                    reqd: !child.grade
+                    label: 'Grade', fieldname: 'grade',
+                    fieldtype: 'Select', options: ['Loading...'],
+                    default: child.grade || '', reqd: !child.grade
                 }
             ],
             primary_action_label: 'Save',
@@ -2040,7 +2024,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                 console.error(`Error loading options for ${fieldname}:`, error);
             }
         });
-
         d.show();
     }
 });
@@ -2058,11 +2041,11 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
                 { 
                     label: 'Processor Type', fieldname: 'processor_type', fieldtype: 'Select', 
                     options: ['Loading...'], default: child.processor_type || '', 
-                    reqd: !child.processor_type, read_only: !!child.processor_type 
+                    reqd: !child.processor_type, read_only: !!child.processor_type
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade,
+                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade
                 },
             ],
             primary_action_label: 'Save',

@@ -53,6 +53,21 @@ frappe.ui.form.on('Employee', {
                 args:{ doc: frm.doc }
             })
         }
+         frappe.call({
+            method: "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
+            args: {
+                employee: frm.doc.name
+            },
+            callback: function(r) {
+                if (!r.exc && r.message === "Warehouse updated") {
+                    frappe.msgprint({
+                        message: __("Warehouse updated with Role Profile values"),
+                        indicator: "green"
+                    });
+                }
+            }
+        });
+
     },
 
     validate(frm) {
@@ -166,6 +181,7 @@ frappe.ui.form.on('Employee', {
     },
 
     before_save(frm) {
+
         frappe.call({
             method: "nj_features.overrides.employee.get_previous_department",
             args: { docname: frm.doc.name },
@@ -197,5 +213,6 @@ frappe.ui.form.on('Employee', {
                 }
             }
         });
+
     }        
 });

@@ -68,6 +68,7 @@ def get_work_warehouse():
 
 def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
     try:
+        check_warehouse_qty(t_warehouse)
         serial_doc = frappe.get_doc('Serial No', serial_no)
         s_department = frappe.db.get_value('Warehouse', {'name': serial_doc.get('warehouse')}, 'department')
         s_warehouse = serial_doc.get('warehouse')
@@ -78,10 +79,6 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
 
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
-        
-        logger.debug(department_doc.get('quality_inspection_status_for_stock_movement'))
-        logger.debug(s_department_doc.get('inspection_types'))
-        logger.debug(department_doc.get('inspection_types'))
 
         if s_department_doc.get('quality_inspection_status_for_stock_movement') and (s_department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
             check_qi_validation(serial_no, s_warehouse, s_department, department)
@@ -91,6 +88,28 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         frappe.log_error(frappe.get_traceback(), "Error in check_validation_for_auto_stock_entry")
         frappe.throw("An error occurred during validation. Please check logs.")
 
+def check_warehouse_qty(t_warehouse, required_qty=1):
+    query = """
+        SELECT 
+            COALESCE(
+                (SELECT available_capacity FROM `tabWarehouse Qty` WHERE warehouse = %(warehouse)s),
+                (SELECT max_capacity FROM `tabWarehouse` WHERE name = %(warehouse)s)
+            ) AS capacity
+    """
+    result = frappe.db.sql(query, {"warehouse": t_warehouse}, as_dict=True)
+
+    available_qty = float(result[0].capacity) if result and result[0].capacity is not None else 0.0
+
+    if required_qty > available_qty:
+        error_msg += (
+            f"Total qty for warehouse <b>{t_warehouse}</b> is <b>{required_qty}</b>, "
+            f"but available qty is <b>{available_qty}</b>.<br>"
+        )
+
+    if error_msg:
+        frappe.throw(error_msg)
+
+    return None
 
 def validate_grade_restriction(serial_doc, department_doc):
     try:
@@ -179,11 +198,6 @@ def get_item_code_and_warehouse(item_code):
         frappe.log_error(frappe.get_traceback(), "Error in get_item_code_and_warehouse")
         return
 
-from datetime import datetime, timedelta
-import frappe
-import logging
-
-logger = logging.getLogger(__name__)
 
 def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
@@ -208,10 +222,7 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                 ORDER BY se.creation DESC
                 LIMIT 1
             """
-            result = frappe.db.sql(query, (serial_no,), explain=True, debug=True, as_dict=True)
-
-            print("inspection_types", inspection_types)
-            print("result", result)
+            result = frappe.db.sql(query, (serial_no,), as_dict=True)
 
             if result and inspection_types:
                 creation_time = result[0]["creation"]
@@ -219,9 +230,6 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
 
                 # Convert current time to IST (UTC + 5:30)
                 current_time = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
-
-                logger.debug(f'formatted_time: {formatted_time}')
-                logger.debug(f'current_time (IST): {current_time}')
 
                 # QI must be created between transfer creation and now
                 qi_query = """
@@ -239,8 +247,6 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                     (tuple(inspection_types), serial_no, formatted_time, current_time), explain=True, debug=True,
                     as_dict=True
                 )
-
-                logger.debug(f'qi_result: {qi_result}')
 
                 if qi_result:
                     qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
@@ -262,7 +268,6 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                                 f"but target department <b>{t_department}</b> only allows status: <b>{expected_status}</b>."
                             )
                 else:
-                    logger.debug(f's_department: {s_department}, formatted_time: {formatted_time}, current_time: {current_time}')
                     frappe.throw(
                         f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in department <b>{s_department}</b> "
                         f"between <b>{formatted_time}</b> and <b>{current_time}</b>."

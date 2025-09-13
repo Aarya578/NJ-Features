@@ -2305,6 +2305,3 @@ def updating_new_address(sales_order_name=None):
             return dn_doc.get("updated_address")
 
     return None
-
-
-    

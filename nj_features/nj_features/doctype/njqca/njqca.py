@@ -1023,23 +1023,25 @@ def model_change_for_serial_no(newmodel, serial_no):
         new_item_wizard_query = """Select component_type,default_item_code from `tabComponent` where parent = %s"""
         new_item_wizard_data = frappe.db.sql(new_item_wizard_query, (new_item_wizard[0]['name']), as_dict=1)
 
-        Item_code = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'item_code')
-        if Item_code:
-            item_template = frappe.db.get_value('Item', {'name':Item_code}, 'variant_of')
-            if item_template:
-                item_wizard = get_latest_item_wizard(item_template, Item_code)
+        Serial_no_model = frappe.db.get_value('Serial No', {'serial_no':serial_no}, 'model')
+        if Serial_no_model:
+            item_wizard = frappe.db.get_value('Item Wizards', {'model':Serial_no_model, 'part_list_status':'Completed'}, 'name')
+            if item_wizard:
                 old_item_wizard_query = """select component_type,default_item_code from `tabComponent` where parent = %s"""
                 old_item_wizard_data = frappe.db.sql(old_item_wizard_query, (item_wizard), as_dict=1)
                 not_matched_item_groups = []
-                
                 for old in old_item_wizard_data:
                     for new in new_item_wizard_data:
                         if old.get('component_type') == new.get('component_type'):
                             if old.get('default_item_code') == new.get('default_item_code'):
                                 continue
                             else:
-                                not_matched_item_groups.append(old.get('component_type'))
-                
+                                old_item_code = old.get('default_item_code')
+                                new_item_wizard_name = new_item_wizard[0]['name']
+                                item_group = old.get('component_type')
+                                result = check_atrribute_data_is_matching_or_not(old_item_code,item_group,new_item_wizard_name)
+                                if not result:
+                                    not_matched_item_groups.append(old.get('component_type'))
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
@@ -1066,11 +1068,29 @@ def model_change_for_serial_no(newmodel, serial_no):
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
                     return { "status": "success" }
             else:
-                frappe.msprint(f'There is no template for Item Code: <b>{Item_code}</b>.<br>Please contact <b>NPD Team</b>.')
+                frappe.msprint(f'Item Wizard is not there for Model <b>{Serial_no_model}</b>. Please Contact NPD Team')
                 return { "status": "failed" }
         else:
-            frappe.msgprint(f'Item Code {Item_code} not found in Serial No {serial_no}')
+            frappe.msgprint(f'Model not found in Serial No {serial_no}')
             return { "status": "failed" }
+
+
+def check_atrribute_data_is_matching_or_not(old_item_code,item_group,new_item_wizard):
+    item_code_attribute_query = """select attribute,attribute_value from `tabItem Variant Attribute` where parent = %s"""
+    item_code_attribute_data = frappe.db.sql(item_code_attribute_query, (old_item_code), as_dict=1)
+
+    new_item_wizard_attribute_query = """select item_group,item_attribute,attribute_value from `tabItems Attribute` where parent = %s"""
+    new_item_wizard_attribute_data = frappe.db.sql(new_item_wizard_attribute_query, (new_item_wizard), as_dict=1)
+    for old in item_code_attribute_data:
+        same_attr_new = [new for new in new_item_wizard_attribute_data 
+                        if new.get('item_attribute') == old.get('attribute') and new.get('item_group') == item_group]
+        
+        if same_attr_new:  # attribute exists in new data
+            if not any(new.get('attribute_value') == old.get('attribute_value') 
+                    for new in same_attr_new):
+                return False
+    return True
+
 
 @frappe.whitelist()
 def get_info_from_serial_no(doc=None):
@@ -1395,7 +1415,12 @@ def get_item_code_for_each_part(doc):
                                         formatted_value = f"{numeric_value} GB"
 
                                     final_value = formatted_value + variant_type
-                                
+
+                                elif numeric_value >= 60 and numeric_value <= 80 and doc.get('item_group') == 'Chromebooks':
+                                    formatted_value = f"64 GB"
+                                    final_value = formatted_value + variant_type
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
+
                                 if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
                                     
@@ -1450,16 +1475,16 @@ def get_item_code_for_each_part(doc):
                     if new_item:
                         repack_item_code = get_variant_from_value(item_template, new_consolidated)
 
-                if repack_item_code and 'error' in repack_item_code:
-                    old_commment = frappe.db.get_value("Comment", {'reference_doctype': doc.get('doctype'), 'reference_name': doc.get('name'), 'content': "Automated Item code not found: "+repack_item_code.get('error')}, "content")
-                    if not old_commment:
-                        frappe.get_doc({
-                            'doctype': 'Comment',
-                            'comment_type': 'Comment',
-                            'reference_doctype': doc.get('doctype'),
-                            'reference_name': doc.get('name'),
-                            'content':  "Automated Item code not found: "+repack_item_code.get('error'),
-                        }).insert(ignore_permissions=True)
+                # if repack_item_code is None:
+                #     old_commment = frappe.db.get_value("Comment", {'reference_doctype': doc.get('doctype'), 'reference_name': doc.get('name'), 'content': "Automated Item code not found: "+consolidated}, "content")
+                #     if not old_commment:
+                #         frappe.get_doc({
+                #             'doctype': 'Comment',
+                #             'comment_type': 'Comment',
+                #             'reference_doctype': doc.get('doctype'),
+                #             'reference_name': doc.get('name'),
+                #             'content':  "Automated Item code not found: "+consolidated,
+                #         }).insert(ignore_permissions=True)
 
                 result_part_data = get_fetched_item_code(doc.get('serial_no'), part_data)
 
@@ -1683,15 +1708,15 @@ def consolidate_storage(data):
             tb_part = current_capacity // 1024
             gb_part = current_capacity % 1024
             if gb_part > 0:
-                consolidated_storage.append(f"{tb_part} TB - {gb_part} GB {storage_kind}")
+                consolidated_storage.append(f"{tb_part} TB-{gb_part} GB {storage_kind}".strip())
             else:
-                consolidated_storage.append(f"{tb_part} TB {storage_kind}")
+                consolidated_storage.append(f"{tb_part} TB {storage_kind}".strip())
         else:
-            consolidated_storage.append(f"{current_capacity} GB {storage_kind}")
+            consolidated_storage.append(f"{current_capacity} GB {storage_kind}".strip())
         
         if len(consolidated_storage) > 1:
             result_data = [item for item in result_data if 'Storage Capacity' not in item]
-            result_data.append({'Storage Capacity': ' - '.join(consolidated_storage)})
+            result_data.append({'Storage Capacity': '-'.join(consolidated_storage)})
         else:
             result_data = [item for item in result_data if 'Storage Capacity' not in item]
             result_data.append({'Storage Capacity': consolidated_storage[0]})
@@ -1740,55 +1765,99 @@ def normalize_gen(cpu_value):
 
     return []
     
+# @frappe.whitelist()
+# def get_variant_from_value(item_template=None, args=None):
+#     try:
+#         missing_attribute = []
+#         args_list = []
+#         if args:
+#             args_list = frappe.parse_json(args)
+
+#         if item_template and args_list:
+#             conditions = []
+
+#             # get_attribute_name = frappe.db.sql("SELECT attribute FROM `tabItem Variant Attribute` WHERE parent = %s", (item_template,))
+#             # attribute_list = [row[0].strip().lower() for row in get_attribute_name]
+#             # args_attribute_list = [key.lower() for key in args[0]]
+
+#             # if len(set(attribute_list)) != len(set(args_attribute_list)):
+#             #     item_code = construct_item_code(item_template, args_list)
+#             #     return item_code
+                
+#             conditions = []
+#             for condition_dict in args_list:
+#                 for key, value in condition_dict.items():
+#                     normalized_value = value.strip().lower()
+#                     conditions.append(f"MAX(attribute = '{key.strip().lower()}' AND attribute_value = '{normalized_value}') = 1")
+
+#             having_clause = " AND ".join(conditions)
+
+#             if having_clause:
+#                 query = """
+#                     SELECT parent FROM `tabItem Variant Attribute`
+#                     WHERE variant_of = %s GROUP BY parent HAVING {}
+#                 """.format(having_clause)
+
+#                 variants = frappe.db.sql(query, (item_template,), as_dict=True)
+
+#                 if variants and variants[0]['parent']:
+#                     return variants[0]['parent']
+#                 else:
+#                     item_code = construct_item_code(item_template, args_list)
+#                     return item_code
+
+#         return None
+
+#     except Exception as e:
+#         return None
+
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
     try:
-        missing_attribute = []
-        args_list = []
-        if args:
-            args_list = frappe.parse_json(args)
+        if not item_template or not args:
+            return None
 
-        if item_template and args_list:
-            conditions = []
+        args_list = frappe.parse_json(args)
+        if not isinstance(args_list, list) or not args_list:
+            return None
 
-            # get_attribute_name = frappe.db.sql("SELECT attribute FROM `tabItem Variant Attribute` WHERE parent = %s", (item_template,))
-            # attribute_list = [row[0].strip().lower() for row in get_attribute_name]
-            # args_attribute_list = [key.lower() for key in args[0]]
+        having_conditions = []
+        query_args = []
+        for cond in args_list:
+            for attr, val in cond.items():
+                attr = attr.strip().lower()
+                val = val.strip().lower()
+                having_conditions.append(f"SUM(attribute = %s AND attribute_value = %s) = 1")
+                query_args.extend([attr, val])
 
-            # if len(set(attribute_list)) != len(set(args_attribute_list)):
-            #     item_code = construct_item_code(item_template, args_list)
-            #     return item_code
-                
-            conditions = []
-            for condition_dict in args_list:
-                for key, value in condition_dict.items():
-                    normalized_value = value.strip().lower()
-                    conditions.append(f"MAX(attribute = '{key.strip().lower()}' AND attribute_value = '{normalized_value}') = 1")
+        num_attributes = len(args_list)
 
-            having_clause = " AND ".join(conditions)
+        query = f"""
+            SELECT parent
+            FROM `tabItem Variant Attribute`
+            WHERE variant_of = %s
+            GROUP BY parent
+            HAVING COUNT(*) = %s AND {" AND ".join(having_conditions)}
+            LIMIT 1
+        """
 
-            if having_clause:
-                query = """
-                    SELECT parent FROM `tabItem Variant Attribute`
-                    WHERE variant_of = %s GROUP BY parent HAVING {}
-                """.format(having_clause)
+        query_args = [item_template, num_attributes] + query_args
 
-                variants = frappe.db.sql(query, (item_template,), as_dict=True)
+        variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
 
-                if variants and variants[0]['parent']:
-                    return variants[0]['parent']
-                else:
-                    item_code = construct_item_code(item_template, args_list)
-                    return item_code
-
-        return None
+        if variant and variant[0]['parent']:
+            return variant[0]['parent']
+        else:
+            return construct_item_code(item_template, args_list)
 
     except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_variant_from_value error")
         return None
 
 @frappe.whitelist()
 def construct_item_code(item_template, args_list):
     try:
+        part_item_group = frappe.db.get_value('Item', {'name': item_template}, 'item_group')
         if isinstance(args_list, str):
             args_list = frappe.parse_json(args_list)
         concatenated_string = item_template
@@ -1803,6 +1872,42 @@ def construct_item_code(item_template, args_list):
             SELECT item_code FROM `tabItem`
             WHERE item_code = %s and disabled = 0 AND end_of_life >= CURDATE()
         """
+
+        item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
+
+        if item_code:
+            return item_code[0]['item_code']
+        
+        elif part_item_group == 'Chromebooks' and (item_code is None or item_code == []):
+            having_conditions = []
+            query_args = []
+            for cond in args_list:
+                for attr, val in cond.items():
+                    attr = attr.strip().lower()
+                    if attr == "storage capacity" and val.lower().endswith(" ssd"):
+                        val = val[:-4].strip()
+
+                    val = val.lower()
+                    having_conditions.append(f"SUM(attribute = %s AND attribute_value = %s) = 1")
+                    query_args.extend([attr, val])
+
+            num_attributes = len(args_list)
+
+            query = f"""
+                SELECT parent
+                FROM `tabItem Variant Attribute`
+                WHERE variant_of = %s
+                GROUP BY parent
+                HAVING COUNT(*) = %s AND {" AND ".join(having_conditions)}
+                LIMIT 1
+            """
+
+            query_args = [item_template, num_attributes] + query_args
+
+            variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
+
+            if variant and variant[0]['parent']:
+                return variant[0]['parent']
 
         item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
 
@@ -3026,80 +3131,80 @@ def get_avg_discharge_rate(njqca_name):
     except Exception as e:
         log_error(traceback.format_exc(), "An error occurred in get_avg_discharge_rate in NJQCA "+njqca_name)
 
-@frappe.whitelist()
-def generate_automated_repack_item_code(doc):
-    import json
-    import re
-    from collections import defaultdict
+# @frappe.whitelist()   - not used because returning item template instead of item code
+# def generate_automated_repack_item_code(doc):
+#     import json
+#     import re
+#     from collections import defaultdict
 
-    if isinstance(doc, str):
-        doc = json.loads(doc)
+#     if isinstance(doc, str):
+#         doc = json.loads(doc)
 
-    # ===== Processor =====
-    processor_data = [
-        {"processor_type": item.get("processor_type")}
-        for item in doc.get("njqca_laptop_processors", [])
-    ]
+#     # ===== Processor =====
+#     processor_data = [
+#         {"processor_type": item.get("processor_type")}
+#         for item in doc.get("njqca_laptop_processors", [])
+#     ]
 
-    # ===== RAM =====
-    total_ram_gb = sum(
-        int(re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper()).group(1))
-        for item in doc.get("njqca_laptop_ram", [])
-        if re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper())
-    )
-    merged_ram = [{"ram_capacity": f"{total_ram_gb} GB"}] if total_ram_gb else []
+#     # ===== RAM =====
+#     total_ram_gb = sum(
+#         int(re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper()).group(1))
+#         for item in doc.get("njqca_laptop_ram", [])
+#         if re.search(r'(\d+)\s*GB', item.get("ram_capacity", "").upper())
+#     )
+#     merged_ram = [{"ram_capacity": f"{total_ram_gb} GB"}] if total_ram_gb else []
 
-    # ===== Storage =====
-    storage_table = doc.get("njqca_laptop_storage", [])
-    storage_by_type = defaultdict(float)
+#     # ===== Storage =====
+#     storage_table = doc.get("njqca_laptop_storage", [])
+#     storage_by_type = defaultdict(float)
 
-    for item in storage_table:
-        raw_capacity = item.get("storage_capacity", "").upper()
-        storage_type = item.get("storage_type", "").upper()
+#     for item in storage_table:
+#         raw_capacity = item.get("storage_capacity", "").upper()
+#         storage_type = item.get("storage_type", "").upper()
 
-        match = re.search(r'(\d+(?:\.\d+)?)\s*(GB|TB)', raw_capacity)
-        if not match:
-            continue
+#         match = re.search(r'(\d+(?:\.\d+)?)\s*(GB|TB)', raw_capacity)
+#         if not match:
+#             continue
 
-        size = float(match.group(1))
-        unit = match.group(2)
-        size_in_gb = size * 1024 if unit == "TB" else size
+#         size = float(match.group(1))
+#         unit = match.group(2)
+#         size_in_gb = size * 1024 if unit == "TB" else size
 
-        # ✅ Only consider SSD or HDD
-        if storage_type in ["SSD", "HDD"]:
-            final_type = storage_type
-        elif "SSD" in raw_capacity:
-            final_type = "SSD"
-        elif "HDD" in raw_capacity:
-            final_type = "HDD"
-        else:
-            continue  # Ignore types like MSATA, EMMC, etc.
+#         # ✅ Only consider SSD or HDD
+#         if storage_type in ["SSD", "HDD"]:
+#             final_type = storage_type
+#         elif "SSD" in raw_capacity:
+#             final_type = "SSD"
+#         elif "HDD" in raw_capacity:
+#             final_type = "HDD"
+#         else:
+#             continue  # Ignore types like MSATA, EMMC, etc.
 
-        storage_by_type[final_type] += size_in_gb
+#         storage_by_type[final_type] += size_in_gb
 
-    # ===== Format storage (with GB ➜ TB conversion if ≥ 1000 GB) =====
-    merged_storage = []
-    for s_type, total_gb in storage_by_type.items():
-        if total_gb >= 1000:
-            tb_value = round(total_gb / 1024, 1)
-            # Optional: round to int if it's exact TB
-            size_str = f"{int(tb_value)} TB" if tb_value.is_integer() else f"{tb_value:.1f} TB"
-        else:
-            size_str = f"{int(total_gb)} GB"
-        merged_storage.append({"storage_capacity": f"{size_str} {s_type}"})
+#     # ===== Format storage (with GB ➜ TB conversion if ≥ 1000 GB) =====
+#     merged_storage = []
+#     for s_type, total_gb in storage_by_type.items():
+#         if total_gb >= 1000:
+#             tb_value = round(total_gb / 1024, 1)
+#             # Optional: round to int if it's exact TB
+#             size_str = f"{int(tb_value)} TB" if tb_value.is_integer() else f"{tb_value:.1f} TB"
+#         else:
+#             size_str = f"{int(total_gb)} GB"
+#         merged_storage.append({"storage_capacity": f"{size_str} {s_type}"})
 
-    # ===== Final Args =====
-    args = processor_data + merged_ram + merged_storage
+#     # ===== Final Args =====
+#     args = processor_data + merged_ram + merged_storage
 
-    variant_code = get_variant_from_value(doc.get("item_template"), args=args)
+#     variant_code = get_variant_from_value(doc.get("item_template"), args=args)
 
-    if not variant_code:
-        return {
-            "error": True,
-            "message": "❌ Automated item code not found. Please check the configuration."
-        }
+#     if not variant_code:
+#         return {
+#             "error": True,
+#             "message": "❌ Automated item code not found. Please check the configuration."
+#         }
 
-    return variant_code
+#     return variant_code
 
 
 @frappe.whitelist()
@@ -3248,15 +3353,13 @@ def duplicate_njqca(serial_no):
 
     if not record:
         return None
-    print(record[0].name)
+
     doc = frappe.get_doc("NJQCA", record[0].name)
 
-    # Copy doc while respecting no_copy fields
     new_doc = frappe.copy_doc(doc, ignore_no_copy=False)
 
-    new_doc.set("name", None)  # make sure it's unsaved
+    new_doc.set("name", None)
     new_doc.set("created", frappe.session.user)
     new_doc.set("inspection_type", dismantle_inspection_type)
 
     return new_doc.as_dict(no_nulls=True)
-

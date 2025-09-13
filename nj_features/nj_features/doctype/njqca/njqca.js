@@ -272,27 +272,6 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
-        
-        // Check automated repack item code
-        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
-            frappe.call({
-                method: 'nj_features.nj_features.doctype.njqca.njqca.generate_automated_repack_item_code',
-                args: { doc: frm.doc },
-                callback: function(r) {
-                    if (r.message.error) {
-                        frappe.show_alert({
-                            title: "Error",
-                            indicator: "red",
-                            message: "❌ Automated item code not found. Please check the configuration."
-                        }, 10);
-                    }
-                    else{
-                        frm.set_value('repack_item_code', r.message);
-                        frm.refresh_field('repack_item_code');
-                    }
-                }
-            });
-        }
 
         if(selectedItemGroup=="BATTERY"){
             frappe.call({
@@ -456,6 +435,11 @@ frappe.ui.form.on('NJQCA', {
     
         if ($(frm.layout.wrapper).find('.form-message.red').length > 1) {
             $(frm.layout.wrapper).find('.form-message.red').last().remove();
+        }
+
+        // Check automated repack item code
+        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
+            processItemTemplate(frm);
         }
     },
 
@@ -1048,10 +1032,11 @@ function processItemTemplate(frm) {
             args: { 'doc': frm.doc },
             callback: function (r) {
                 if (r.message.error) {
+                    
                     frappe.show_alert({
                         message:__("<b>Error " + r.message.error + "</b>"),
                         indicator:'red'
-                    }, 10);
+                    }, 15);
                     return;
                 } 
 
@@ -1064,23 +1049,43 @@ function processItemTemplate(frm) {
                     }
 
                     if (r.message.repack_item_code) {
-                        if (r.message.repack_item_code.error) {
-                            frappe.utils.play_sound("error");
-                            var errorMessageString = 'Repack Item code not found: ' + r.message.repack_item_code.error;
-                            var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
-                            $(frm.layout.wrapper).find('.form-message.red').remove();
-                            $(frm.layout.wrapper).prepend(errorDiv);
-                            
-                            frappe.show_alert({
-                                message: errorMessageString,
-                                indicator: 'red'
-                            }, 10)
+                        frm.set_value('repack_item_code', r.message.repack_item_code);
+                        frm.set_value('manual_repack_item_code', r.message.repack_item_code);
+                    } else {
+                        frappe.utils.play_sound("error");
+                        var errorMessageString = errorMessageString = 'Repack Item code not found for attributes: ' + 
+                            r.message.data_attr.map(obj => {
+                                const key = Object.keys(obj)[0];
+                                return `${key}: ${obj[key]}`;
+                            }).join(', ');
+                        var errorDiv = $('<div class="form-message red"></div>').html(errorMessageString);
+                        $(frm.layout.wrapper).find('.form-message.red').remove();
+                        $(frm.layout.wrapper).prepend(errorDiv);
 
-                        } else {
-                            frm.set_value('repack_item_code', r.message.repack_item_code);
-                            frm.set_value('manual_repack_item_code', r.message.repack_item_code);
+                        const existing = (frm.doc.comments || []).some(comment => {
+                            return comment.comment === errorMessageString;
+                        });
+
+                        if (!existing) {
+                            frappe.call({
+                                method: "frappe.desk.form.utils.add_comment",
+                                args: {
+                                    reference_doctype: frm.doctype,
+                                    reference_name: frm.docname,
+                                    content: errorMessageString,
+                                    comment_email: frappe.session.user,
+                                    comment_by: frappe.session.user_fullname
+                                },
+                                error: function(err) { console.error("API Error:", err); }
+                            });
                         }
+                        
+                        frappe.show_alert({
+                            message: errorMessageString,
+                            indicator: 'red'
+                        }, 20)
                     }
+
                     frm.refresh_fields(['repack_item_code', 'manual_repack_item_code', 'njqca_result_parameters']);
 
                     const partData = r.message.part_data;
@@ -1811,48 +1816,32 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
             title: 'Laptop Storage Attributes',
             fields: [
                 {
-                    label: 'Storage Type',
-                    fieldname: 'storage_type',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
-                    default: child.storage_type || '',
-                    reqd: !child.storage_type,
-                    read_only: !!child.storage_type
+                    label: 'Storage Type', fieldname: 'storage_type',
+                    fieldtype: 'Select', options: ['Loading...'],
+                    default: child.storage_type || '', reqd: !child.storage_type
                 },
                 {
-                    label: 'Storage Interface',
-                    fieldname: 'storage_interface',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Interface', fieldname: 'storage_interface',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_interface || '',
-                    reqd: !child.storage_interface,
-                    read_only: !!child.storage_interface
+                    reqd: !child.storage_interface, read_only: !!child.storage_interface
                 },
                 {
-                    label: 'Storage Capacity',
-                    fieldname: 'storage_capacity',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Capacity', fieldname: 'storage_capacity',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_capacity || '',
-                    reqd: !child.storage_capacity,
-                    read_only: !!child.storage_capacity
+                    reqd: !child.storage_capacity, read_only: !!child.storage_capacity
                 },
                 {
-                    label: 'Storage Length',
-                    fieldname: 'storage_length',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
+                    label: 'Storage Length', fieldname: 'storage_length',
+                    fieldtype: 'Select', options: ['Loading...'],
                     default: child.storage_length || '',
-                    reqd: !child.storage_length,
-                    read_only: !!child.storage_length
+                    reqd: !child.storage_length, read_only: !!child.storage_length
                 },
                 {
-                    label: 'Grade',
-                    fieldname: 'grade',
-                    fieldtype: 'Select',
-                    options: ['Loading...'],
-                    default: child.grade || '',
-                    reqd: !child.grade
+                    label: 'Grade', fieldname: 'grade',
+                    fieldtype: 'Select', options: ['Loading...'],
+                    default: child.grade || '', reqd: !child.grade
                 }
             ],
             primary_action_label: 'Save',
@@ -1930,12 +1919,11 @@ frappe.ui.form.on('NJQCA Laptop Storage', {
 
     storage_type: function(frm, cdt, cdn) {
         let child = locals[cdt][cdn];
-        
-        if (child.storage_type == 'SSD' && child.update_variant && (!frm.doc.repack_item_code ||
-            !frm.doc.repack_item_code.toLowerCase().includes('ssd'))) {
+        if (child.storage_type === 'SSD' && child.update_variant &&
+            (!frm.doc.repack_item_code || !frm.doc.repack_item_code.toLowerCase().includes('ssd') && child.variant_15 !== 'SSD')
+        ) {
             frappe.model.set_value('NJQCA Child', child.update_variant, 'variant_15', 'SSD');
-            processItemTemplate(frm);
-        } else if (child.storage_type != 'SSD' && child.update_variant) {
+        } else if (child.storage_type !== 'SSD' && child.update_variant) {
             frappe.model.set_value('NJQCA Child', child.update_variant, 'variant_15', '');
         }
     }
@@ -2036,7 +2024,6 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                 console.error(`Error loading options for ${fieldname}:`, error);
             }
         });
-
         d.show();
     }
 });
@@ -2054,11 +2041,11 @@ frappe.ui.form.on('NJQCA PROCESSOR', {
                 { 
                     label: 'Processor Type', fieldname: 'processor_type', fieldtype: 'Select', 
                     options: ['Loading...'], default: child.processor_type || '', 
-                    reqd: !child.processor_type, read_only: !!child.processor_type 
+                    reqd: !child.processor_type, read_only: !!child.processor_type
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 
-                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade,
+                    options: ['Loading...'], default: child.grade || '', reqd: !child.grade
                 },
             ],
             primary_action_label: 'Save',

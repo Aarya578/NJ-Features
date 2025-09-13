@@ -61,12 +61,8 @@ def get_serial_no_data():
                  ON d.name = wh.department 
                WHERE wh.name = s.warehouse
                  AND wh.warehouse_type = 'Operation Warehouse')
-    """
-
-    print("query======================", query)
+         """
     serial_no_data = frappe.db.sql(query, tuple(word_warehouse), as_dict=True)
-    print("serial_no_data======================", serial_no_data)
-
     return serial_no_data
 
 # @frappe.whitelist()

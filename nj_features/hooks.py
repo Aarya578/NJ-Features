@@ -208,6 +208,7 @@ doc_events = {
 override_whitelisted_methods = {
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
+    "ecommerce_integrations.shopify.order.sync_sales_order": "nj_features.overrides.order.sync_sales_order"
 }
 
 scheduler_events = {

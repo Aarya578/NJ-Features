@@ -1,14 +1,54 @@
 frappe.ui.form.on('Knowledge Base', {
-    refresh: function (frm) {
-        $('.col-lg-2.layout-side-section').hide();
-        addAttachmentButtons(frm);
-        frm.add_custom_button(__('Generate HTML Temp'), function() {
-            frappe.show_alert({
-                message: __('Generating HTML template...'),
-                indicator: 'blue'
-            }, 3);
+    // refresh: function (frm) {
+    //     $('.col-lg-2.layout-side-section').hide();
+    //     addAttachmentButtons(frm);
+    //     frm.add_custom_button(__('Generate HTML Temp'), function() {
+    //         frappe.show_alert({
+    //             message: __('Generating HTML template...'),
+    //             indicator: 'blue'
+    //         }, 3);
 
-            frappe.call({
+    //         frappe.call({
+    //             method: "nj_features.nj_features.doctype.knowledge_base.knowledge_base.render_html_content_from_field",
+    //             args: {
+    //                 doctype: frm.doc.doctype,
+    //                 docname: frm.doc.name
+    //             },
+    //             callback: function(r) {
+    //                 if (r.message && !r.message.startsWith("Template rendering failed")) {
+    //                     frm.set_value('html_content', r.message);
+    //                     frm.refresh_field('html_content');
+
+    //                     if (frm.preview_wrapper) {
+    //                         frm.preview_wrapper.find('#html-preview').html(r.message);
+    //                     }
+
+    //                     frappe.msgprint({
+    //                         title: __('Success'),
+    //                         message: __('HTML content has been regenerated from child table data.'),
+    //                         indicator: 'green'
+    //                     });
+    //                 } else {
+    //                     frappe.msgprint({
+    //                         title: __('Error'),
+    //                         message: r.message || __('Failed to render HTML content.'),
+    //                         indicator: 'red'
+    //                     });
+    //                 }
+    //             },
+    //             error: function(r) {
+    //                 console.error("Render Error:", r);
+    //                 frappe.msgprint({
+    //                     title: __('Error'),
+    //                     message: __('Server error occurred during HTML generation.'),
+    //                     indicator: 'red'
+    //                 });
+    //             }
+    //         });
+    //     });
+    // },
+    after_save: function (frm) {
+             frappe.call({
                 method: "nj_features.nj_features.doctype.knowledge_base.knowledge_base.render_html_content_from_field",
                 args: {
                     doctype: frm.doc.doctype,
@@ -44,8 +84,7 @@ frappe.ui.form.on('Knowledge Base', {
                         indicator: 'red'
                     });
                 }
-            });
-        });
+            });    
     },
     before_save: function (frm) {
         frappe.call({

@@ -36,31 +36,21 @@ def validate_links(doc):
             except requests.RequestException:
                 print(f"Failed to verify access for {field}.")
 
-
-
-
 @frappe.whitelist()
 def render_html_content_from_field(doctype, docname):
+    print("render_html_content_from_field===============================")
     try:
         doc = frappe.get_doc(doctype, docname)
-        print("Doc name:", doc.name)
-
         # Get the HTML template from NJ Settings
         html_template = frappe.db.get_value("NJ Settings", {"parameter": "html_template"}, "value")
-        # print("html_template===========",html_template)
-
         if not html_template:
             return "Template rendering failed: HTML template not found in NJ Settings"
-
         # Render the HTML content using Jinja
         rendered_html = render_template(html_template, {"doc": doc})
-        # print("rendered_html===========",rendered_html)
         # Save the rendered HTML to the html_content field
         doc.html_content = rendered_html
         doc.save(ignore_permissions=True)
-
         return rendered_html
-
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Render HTML Template Error")
         return f"Template rendering failed: {str(e)}"

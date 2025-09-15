@@ -1487,7 +1487,7 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
         "Grade": grade
     }];
 
-    if (model && display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
+    if (display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',

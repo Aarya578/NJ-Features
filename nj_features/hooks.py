@@ -123,6 +123,7 @@ override_doctype_class = {
     "Quality Review": "nj_features.overrides.quality_review.CustomQualityReview",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
+    "Order": "nj_features.overrides.order",
 }
 
 # Document Events

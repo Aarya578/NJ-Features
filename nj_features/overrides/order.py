@@ -6,11 +6,10 @@ from frappe.utils import getdate, nowdate, cstr
 
 # Import original modules if you still need them
 from ecommerce_integrations.shopify.utils import create_shopify_log
+from ecommerce_integrations.shopify.utils import sync_sales_order
 from ecommerce_integrations.shopify.product import create_items_if_not_exist
-# from ecommerce_integrations.utils.price_list import get_dummy_price_list
-# from ecommerce_integrations.utils.taxation import get_dummy_tax_category
+
 logger = frappe.logger('NewOrder', allow_site=True, file_count=1)
-# Your overridden sync_sales_order
 def sync_sales_order(payload, request_id=None):
     logger.info("hii inside sync submit from nj_fetures=============")
     order = payload
@@ -22,7 +21,6 @@ def sync_sales_order(payload, request_id=None):
         return
 
     try:
-        # ✅ your custom logic here
         create_items_if_not_exist(order)
 
         setting = frappe.get_doc("Shopify Settings")
@@ -34,7 +32,6 @@ def sync_sales_order(payload, request_id=None):
 
 
 def create_order(order, setting, company=None):
-    # import inside to avoid circular dependency
     from ecommerce_integrations.shopify.fulfillment import create_delivery_note
     from ecommerce_integrations.shopify.invoice import create_sales_invoice
 

@@ -295,6 +295,7 @@
   {
    "fieldname": "njqca_display",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Display"
   },
   {
@@ -308,6 +309,7 @@
   {
    "fieldname": "njqca_laptop_ram",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Laptop Ram"
   },
   {
@@ -321,16 +323,19 @@
   {
    "fieldname": "njqca_laptop_storage",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Laptop Storage"
   },
   {
    "fieldname": "njqca_adaptor",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Adaptor"
   },
   {
    "fieldname": "njqca_laptop_processors",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA PROCESSOR"
   },
   {
@@ -469,7 +474,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-09 15:13:42.295026",
+ "modified": "2025-09-17 17:26:16.644802",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

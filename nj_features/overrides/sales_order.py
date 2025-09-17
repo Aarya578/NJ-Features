@@ -313,7 +313,7 @@ def get_open_sales_orders():
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             ORDER BY 
-                sales_order DESC
+                sales_order ASC
     """, as_dict=True)
 
 def get_delivered_quantity(so_name, item_code):

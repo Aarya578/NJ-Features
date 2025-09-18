@@ -133,6 +133,8 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 new_qi.njqca_laptop_name = self.name
+                if is_defective=="1":
+                    new_qi.is_defective = 1
                 create_new_qi = False
 
         if create_new_qi:
@@ -144,6 +146,8 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             new_qi.inspected_by = new_qi.owner
             new_qi.brand = brand
             new_qi.model = model
+            if is_defective =="1":
+                new_qi.is_defective = 1
             new_qi.warehouse = self.warehouse
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code

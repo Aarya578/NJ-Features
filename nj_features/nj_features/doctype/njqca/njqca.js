@@ -1487,7 +1487,7 @@ function generateDisplayItemCode(frm, cdt, cdn, child) {
         "Grade": grade
     }];
 
-    if (model && display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
+    if (display_tech && display_pin_type && display_size && resolution && thickness && display_bracket && grade) {
 
         frappe.call({
             method: 'nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value',
@@ -2154,10 +2154,52 @@ function bind_checkbox_listener(grid, child_name) {
 
                 if (selected.length === 2) {
                     show_merge_button(grid, selected, child_name);
-                } else { remove_merge_button(grid); }
+                    remove_delete_button(grid);
+                } else if (selected.length === 1) {
+                    show_delete_button(grid, selected, child_name);
+                    remove_merge_button(grid);
+                } else {
+                    remove_merge_button(grid);
+                    remove_delete_button(grid);
+                }
             }, 100);
         });
     }
+}
+
+function show_delete_button(grid, selected_rows, child_name) {
+    remove_delete_button(grid);
+
+    const [row] = selected_rows;
+
+    if (!row) return;
+
+    const allowed_roles = ['Process Engineer', 'Ops Manager'];
+    const has_permission = frappe.user_roles.some(role => allowed_roles.includes(role));
+
+    if (!has_permission) return;
+    const isStorageCapacity = (row.storage_capacity == null || row.storage_capacity.trim() === '');
+    const isCalcItemCode = (row.fetched_item_code == null || row.fetched_item_code.trim() === '');
+
+    if (child_name = 'njqca_laptop_storage' && isStorageCapacity && row.merged == 0 && isCalcItemCode) {
+        const btn = $(`<button class="btn btn-xs btn-danger delete-btn" style="margin-right: 8px;">
+                Delete
+            </button>
+        `);
+
+        grid.wrapper.find('.grid-buttons').prepend(btn);
+
+        btn.on('click', function () {
+            cur_frm.fields_dict[child_name].grid.grid_rows_by_docname[row.name].remove();
+            cur_frm.refresh_field(child_name);
+
+            frappe.show_alert({ message: "Row deleted successfully.", indicator: "red" }, 5);
+        });
+    }
+}
+
+function remove_delete_button(grid) {
+    grid.wrapper.find('.delete-btn').remove();
 }
 
 function show_merge_button(grid, selected_rows, child_name) {

@@ -113,7 +113,9 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
+    "Order": "nj_features.overrides.order",
     "Issue": "nj_features.overrides.issue.CustomIssue",
+    "Warehouse": "nj_features.overrides.warehouse.CustomWarehouse",
     "Address": "nj_features.overrides.address.CustomeAddress",
     "Sales Order": "nj_features.overrides.sales_order.CustomSalesOrder",
     "Workstation": "nj_features.overrides.workstation.CustomeWorkstation",
@@ -123,7 +125,6 @@ override_doctype_class = {
     "Quality Review": "nj_features.overrides.quality_review.CustomQualityReview",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
-    "Order": "nj_features.overrides.order",
 }
 
 # Document Events

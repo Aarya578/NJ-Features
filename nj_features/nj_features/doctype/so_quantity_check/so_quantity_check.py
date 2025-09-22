@@ -5,7 +5,7 @@ import frappe
 import pymysql
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
-logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=100)
+logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 
 class SOQuantityCheck(Document):
 	pass
@@ -271,40 +271,28 @@ def update_so_quantity_check(settings):
         log_error(frappe.get_traceback(), "update_so_quantity_check")
         return False
 
-
-
-import frappe
-
 @frappe.whitelist()
 def updting_sla_department():
-    print("inside the function=============updting_sla_departmen================")
     try:
         # Fetch departments from settings
         departments = frappe.db.get_single_value("NJ Inventory Settings", "departments")
-        print("departments===========", departments)
         if not departments:
             frappe.throw("No departments found in NJ Inventory Settings.")
 
         departments_list = [d.strip() for d in departments.split(",") if d.strip()]
-        print("departments_list===========", departments_list)
 
         if not departments_list:
             frappe.throw("Departments list is empty after processing.")
 
         department_placeholders = ', '.join(['%s'] * len(departments_list))
-        print("department_placeholders===========", department_placeholders)
 
         # Fetch SO Quantity Check docs
         so_qc_list = frappe.get_all("SO Quantity Check", filters={"docstatus": 0}, fields=["name", "item_code"])
-        print("so_qc_list===========", so_qc_list)
 
         for row in so_qc_list:
             item_code = row.item_code
             if not item_code:
-                print(f"Item Code missing for {row.name}, skipping.")
                 continue
-
-            print(f"Processing SO QC: {row.name}, Item: {item_code}")
 
             query = f"""
                 SELECT SUM(sla) FROM `tabDepartment`
@@ -324,15 +312,11 @@ def updting_sla_department():
             """
 
             query_params = departments_list + [item_code]
-            print("query===========", query)
-            print("query_params===========", query_params)
 
             sla_result = frappe.db.sql(query, query_params)
             sla_value = sla_result[0][0] if sla_result and sla_result[0][0] else 0
-            print("sla_value===========", sla_value)
 
             frappe.db.set_value("SO Quantity Check", row.name, "sla", sla_value)
-            print(f"Updated SLA for {row.name}: {sla_value}")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "updting_sla_departmen")
@@ -341,36 +325,29 @@ def updting_sla_department():
 
 # @frappe.whitelist()
 # def updating_sla_department():
-#     print("inside the function=============updating_sla_department================")
 #     try:
 #         # Get NJ Inventory Settings document
 #         nj_settings = frappe.get_single("NJ Inventory Settings")
 
 #         departments_list = nj_settings.departments if nj_settings.departments else []
-#         print("departments_list===========================",departments_list)
         
 #         if not departments_list:
 #             frappe.throw("No departments found in NJ Inventory Settings.")
         
 #         # Extract department names from child table (assuming it's a table field)
 #         department_names = [dept.department if hasattr(dept, 'department') else dept.name for dept in departments_list]
-#         print("department_names===========================",department_names)
         
 #         # Get all SO Quantity Check documents that need SLA update
 #         so_quantity_checks = frappe.get_all("SO Quantity Check", 
 #                                           fields=["name", "item_code"],
 #                                           filters={"docstatus": ["!=", 2]})  # Not cancelled
-#         print("so_quantity_checks===========================",so_quantity_checks)
 #         updated_count = 0
         
 #         for so_check in so_quantity_checks:
 #             so_quantity_check_name = so_check.name
 #             item_code = so_check.item_code
             
-#             print(f"Processing SO Quantity Check=======================: {so_quantity_check_name}, Item Code: {item_code}")
-            
 #             if not item_code:
-#                 print(f"Item Code not found for SO Quantity Check: {so_quantity_check_name}")
 #                 continue
             
 #             # Create placeholders for departments
@@ -392,7 +369,6 @@ def updting_sla_department():
 #                     )
 #                 )
 #             """
-#             print("qry===========================",qry)
 #             # Combine department names and item_code for parameterized query
 #             query_params = department_names + [item_code]
             
@@ -400,19 +376,15 @@ def updting_sla_department():
 #             result = frappe.db.sql(qry, query_params, as_dict=True)
 #             sla_value = result[0].total_sla if result and result[0].total_sla else 0
             
-#             print(f"Calculated SLA value: {sla_value} for SO Quantity Check: {so_quantity_check_name}")
-            
 #             # Set the SLA value back into the SO Quantity Check document
 #             frappe.db.set_value("SO Quantity Check", so_quantity_check_name, "sla", sla_value)
 #             updated_count += 1
         
 #         frappe.db.commit()
-#         print(f"Successfully updated SLA for {updated_count} SO Quantity Check documents")
 #         return f"Updated {updated_count} records"
         
 #     except Exception as e:
 #         frappe.log_error(frappe.get_traceback(), "updating_sla_department")
-#         print(f"Error in updating_sla_department: {str(e)}")
 #         return False
 
 
@@ -538,7 +510,3 @@ def update_proportional_qty_and_updt_qty():
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
         return False
-    
-
-
-

@@ -36,73 +36,54 @@ def update_so_quantity_check(settings):
                     SELECT 
                         i.variant_of AS parent,
                         COUNT(b.serial_no) AS total_actual_qty_for_parent
-                    FROM 
-                        `tabItem` i
-                    LEFT JOIN 
-                        `tabSerial No` b ON i.item_code = b.item_code
-                    LEFT JOIN 
-                        `tabWarehouse` w ON b.warehouse = w.name
+                    FROM `tabItem` i
+                    LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                    LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (b.return_reason != 'Repair' OR b.is_replace = 0)
+                        AND (b.return_reason != 'Repair' or b.return_reason is null or b.return_reason='') AND b.is_replace = 0
                         {warehouse_clause}
-                    GROUP BY 
-                        i.variant_of
+                    GROUP BY i.variant_of
                 ),
 
                 Item_Stock AS (
                     SELECT 
                         s.item_code,
                         COUNT(s.serial_no) AS total_actual_qty_for_itemcode
-                    FROM
-                        `tabSerial No` s
-                    INNER JOIN
-                        `tabWarehouse` w ON w.name = s.warehouse
-                    INNER JOIN
-                        `tabItem` i ON s.item_code = i.item_code
+                    FROM `tabSerial No` s
+                    INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
+                    INNER JOIN `tabItem` i ON s.item_code = i.item_code
                     WHERE
                         i.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (s.return_reason != 'Repair' OR s.is_replace = 0)
+                        AND (s.return_reason != 'Repair' or s.return_reason is null or s.return_reason='') AND s.is_replace = 0
                         {warehouse_clause}
-                    GROUP BY 
-                        s.item_code
+                    GROUP BY s.item_code
                 ),
 
                 Main_Data AS (
                     SELECT DISTINCT
                         pb.shopify_variant_id,
-                        i.item_code,
-                        i.item_group,
+                        i.item_code, i.item_group,
                         i.variant_of AS parent,
                         ps.total_actual_qty_for_parent,
                         isq.total_actual_qty_for_itemcode
-                    FROM 
-                        `tabProduct Bundle` pb
-                    LEFT JOIN 
-                        `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                    LEFT JOIN 
-                        `tabItem` i ON pbi.item_code = i.item_code
-                    LEFT JOIN 
-                        Parent_Stock ps ON ps.parent = i.variant_of
-                    LEFT JOIN 
-                        Item_Stock isq ON isq.item_code = i.item_code
-                    WHERE 
-                        i.item_group IN ({item_group_placeholders})
+                    FROM `tabProduct Bundle` pb
+                    LEFT JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                    LEFT JOIN `tabItem` i ON pbi.item_code = i.item_code
+                    LEFT JOIN Parent_Stock ps ON ps.parent = i.variant_of
+                    LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
+                    WHERE i.item_group IN ({item_group_placeholders})
                 )
 
                 SELECT 
                     shopify_variant_id,
-                    item_code,
-                    item_group,
+                    item_code, item_group,
                     total_actual_qty_for_itemcode AS actual_qty,
-                    parent,
-                    total_actual_qty_for_parent
-                FROM 
-                    Main_Data
-                ORDER BY 
-                shopify_variant_id, item_code
+                    parent, total_actual_qty_for_parent
+                FROM Main_Data
+                ORDER BY shopify_variant_id, item_code
             """
 
         params = (
@@ -138,12 +119,9 @@ def update_so_quantity_check(settings):
         # Step 2: Get sales order pending quantities from second query
         pending_so_data = frappe.db.sql("""
            SELECT 
-                so_data.sales_order,
-                so_data.item_code,
-                so_data.pb_code,
-                so_data.item_group,
-                so_data.qty AS so_qty,
-                IFNULL(dn_data.qty, 0) AS dn_qty,
+                so_data.sales_order, so_data.item_code,
+                so_data.pb_code, so_data.item_group,
+                so_data.qty AS so_qty, IFNULL(dn_data.qty, 0) AS dn_qty,
                 LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS min_so_dn_qty,
                 so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty,
                 CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_processor,
@@ -156,13 +134,10 @@ def update_so_quantity_check(settings):
 
             FROM (
                 SELECT 
-                    soi.parent AS sales_order,
-                    soi.item_code,
+                    soi.parent AS sales_order, soi.item_code,
                     IFNULL(pb.item_code, soi.item_code) AS pb_code,
-                    soi.qty,
-                    soi.item_group,
-                    so.creation,
-                    soi.rate
+                    soi.qty, soi.item_group,
+                    so.creation, soi.rate
                 FROM `tabSales Order` so
                 INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
                 LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
@@ -182,14 +157,12 @@ def update_so_quantity_check(settings):
             LEFT JOIN (
                 SELECT 
                     dni.against_sales_order,
-                    dni.item_code,
-                    SUM(dni.qty) AS qty
+                    dni.item_code, SUM(dni.qty) AS qty
                 FROM `tabDelivery Note Item` dni
                 WHERE 
-                    dni.docstatus = 1
+                    dni.docstatus = 1 AND dni.qty > 0
                     AND dni.creation >= CURDATE() - INTERVAL 50 DAY
                     AND dni.item_group IN ('Laptops', 'Chromebooks')
-                    AND dni.qty > 0
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 
@@ -203,7 +176,6 @@ def update_so_quantity_check(settings):
                 AND proc.attribute LIKE '%Processor%'
 
             ORDER BY so_data.sales_order, so_data.item_code;
-
         """, as_dict=True)
 
         pending_qty_by_item = {}

@@ -1974,8 +1974,7 @@ frappe.ui.form.on('NJQCA Laptop Ram', {
                 { 
                     label: 'RAM Speed', fieldname: 'ram_speed', fieldtype: 'Select', 
                     options: ['Loading...'], default: child.ram_speed || '', 
-                    reqd: !child.ram_speed, 
-                    read_only: !!child.ram_speed && child.ram_speed.toUpperCase() !== "UNKNOWN SPEED" 
+                    reqd: !child.ram_speed //made always selectable
                 },
                 { 
                     label: 'Grade', fieldname: 'grade', fieldtype: 'Select', 

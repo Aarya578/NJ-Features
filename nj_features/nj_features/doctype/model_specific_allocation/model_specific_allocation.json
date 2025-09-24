@@ -1,0 +1,42 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-13 17:43:46.200856",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sequence_type",
+  "from",
+  "to"
+ ],
+ "fields": [
+  {
+   "fieldname": "sequence_type",
+   "fieldtype": "Select",
+   "label": "Sequence Type",
+   "options": "Department Sequence Range\nSLA Range"
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Int",
+   "label": "From"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Int",
+   "label": "To"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-09-13 17:51:03.978207",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Model Specific Allocation",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

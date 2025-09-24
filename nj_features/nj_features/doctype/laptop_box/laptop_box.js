@@ -120,7 +120,7 @@ frappe.ui.form.on('Laptop Box', {
                                         let storage_capacity = '';
 
                                         item.attributes.forEach(function(attr) {
-                                            if (attr.attribute == "Processor Type") {
+                                            if (attr.attribute == "Processor Type" || attr.attribute == "Processor Type1") {
                                                 processor_type = attr.attribute_value;
                                             }
                                             if (attr.attribute == "RAM Capacity" || attr.attribute == "RAM") {

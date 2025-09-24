@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_import": 1,
+ "allow_copy": 1,
  "autoname": "NJQCA-.brand.-.manufacturer_model.-.bios_serialno.-.##",
  "creation": "2023-11-28 16:31:07.020914",
  "doctype": "DocType",
@@ -295,6 +295,7 @@
   {
    "fieldname": "njqca_display",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Display"
   },
   {
@@ -308,6 +309,7 @@
   {
    "fieldname": "njqca_laptop_ram",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Laptop Ram"
   },
   {
@@ -321,16 +323,19 @@
   {
    "fieldname": "njqca_laptop_storage",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Laptop Storage"
   },
   {
    "fieldname": "njqca_adaptor",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA Adaptor"
   },
   {
    "fieldname": "njqca_laptop_processors",
    "fieldtype": "Table",
+   "no_copy": 1,
    "options": "NJQCA PROCESSOR"
   },
   {
@@ -469,7 +474,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-09 15:13:42.295026",
+ "modified": "2025-09-18 14:48:31.302566",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",
@@ -479,7 +484,6 @@
    "create": 1,
    "email": 1,
    "export": 1,
-   "import": 1,
    "print": 1,
    "read": 1,
    "report": 1,
@@ -516,7 +520,6 @@
    "write": 1
   }
  ],
- "show_name_in_global_search": 1,
  "sort_field": "modified",
  "sort_order": "DESC"
 }

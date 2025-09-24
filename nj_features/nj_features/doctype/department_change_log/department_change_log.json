@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "creation": "2024-11-22 19:18:53.065952",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -10,11 +11,14 @@
   "column_break_czjgg",
   "changed_on",
   "user_name",
+  "section_break_e118x",
   "current_department",
   "employee_id",
   "role_profile",
+  "column_break_quxnc",
   "ramp_level",
   "target",
+  "actual_productivity",
   "amended_from"
  ],
  "fields": [
@@ -22,13 +26,15 @@
    "fieldname": "previous_department",
    "fieldtype": "Link",
    "label": "Previous Department",
-   "options": "Department"
+   "options": "Department",
+   "read_only": 1
   },
   {
    "fieldname": "current_department",
    "fieldtype": "Link",
    "label": "Current Department",
-   "options": "Department"
+   "options": "Department",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_czjgg",
@@ -38,13 +44,15 @@
    "fieldname": "changed_by",
    "fieldtype": "Link",
    "label": "Changed By",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "changed_on",
    "fieldtype": "Link",
    "label": "Changed On",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -59,32 +67,52 @@
    "fieldname": "role_profile",
    "fieldtype": "Link",
    "label": "Role Profile",
-   "options": "Role Profile"
+   "options": "Role Profile",
+   "read_only": 1
   },
   {
    "fieldname": "ramp_level",
    "fieldtype": "Data",
-   "label": "Ramp Level"
+   "label": "Ramp Level",
+   "read_only": 1
   },
   {
    "fieldname": "target",
    "fieldtype": "Data",
-   "label": "Target"
+   "label": "Target",
+   "read_only": 1
   },
   {
    "fieldname": "employee_id",
    "fieldtype": "Data",
-   "label": "Employee ID"
+   "label": "Employee ID",
+   "read_only": 1
   },
   {
    "fieldname": "user_name",
    "fieldtype": "Data",
-   "label": "User Name"
+   "label": "User Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_e118x",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_quxnc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "actual_productivity",
+   "fieldtype": "Float",
+   "label": "Actual Productivity",
+   "read_only": 1
   }
  ],
+ "in_create": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-21 16:51:23.659921",
+ "modified": "2025-09-20 19:09:05.282874",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Change Log",
@@ -99,7 +127,9 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],

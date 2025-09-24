@@ -206,32 +206,8 @@ def trigger_fulfillment(order_id):
     except Exception as e:
         frappe.throw(str(e))
 
-# @frappe.whitelist()
-# def total_item_group_sum(doc):
-#     doc = frappe._dict(json.loads(doc))  
 
-#     # Fetch full document to access child table objects
-#     sales_order = frappe.get_doc("Sales Order", doc.name)
-
-#     # Step 1: Get item groups from NJ Settings
-#     item_group_value = frappe.db.get_value(
-#         "NJ Settings",
-#         {"parameter": "Item Group Validation"},
-#         "value"
-#     )
-#     if not item_group_value:
-#         return
-
-#     # Step 2: Convert to list
-#     allowed_item_groups = [group.strip() for group in item_group_value.split(",")]
-
-#     # Step 3: Calculate total qty for allowed groups
-#     total_qty = 0
-#     for item in sales_order.items:
-#         item_group = frappe.db.get_value("Item", item.item_code, "item_group")
-#         if item_group in allowed_item_groups:
-#             total_qty += item.qty
-#     return {"item_group_qty": total_qty}
+"""Laptop Allocations Functions"""
  
 def calculate_dispatch_eta_for_sales_order():
     """Main function to calculate dispatch ETA for all open sales orders"""
@@ -337,7 +313,7 @@ def get_open_sales_orders():
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             ORDER BY 
-                sales_order DESC
+                sales_order ASC
     """, as_dict=True)
 
 def get_delivered_quantity(so_name, item_code):
@@ -547,63 +523,7 @@ def update_sales_order_etas(so_eta_map):
         """, (eta, so_name))
     frappe.db.commit()
 
-# @frappe.whitelist()
-# def get_item_group_taxes(item_code):
-#     # Get the Item Group from the Item
-#     item_group = frappe.db.get_value("Item", item_code, "item_group")
-#     if not item_group:
-#         return []
-
-#     # Fetch taxes from Item Group's taxes table
-#     tax_rows = frappe.get_all("Item Group Tax",  # Doctype of the child table
-#         filters={"parent": item_group, "parenttype": "Item Group"},
-#         fields=["charge_type", "account_head", "rate", "description", "cost_center"]
-#     )
-
-#     return tax_rows
-
-
-# @frappe.whitelist()
-# def get_item_group_tax_and_hsn(items):
-#     items = json.loads(items)
-
-#     tax_result = {
-#         "hsn_map": {},    # Maps item_code to HSN
-#         "taxes": []       # Final taxes list
-#     }
-
-#     added_item_groups = set()
-
-#     for row in items:
-#         item_code = row.get("item_code")
-#         if not item_code:
-#             continue
-
-#         # Fetch item group
-#         item_group = frappe.db.get_value("Item", item_code, "item_group")
-#         if not item_group:
-#             continue
-
-#         # Fetch HSN from Item Group
-#         gst_hsn_code = frappe.db.get_value("Item Group", item_group, "gst_hsn_code")
-#         if gst_hsn_code:
-#             tax_result["hsn_map"][item_code] = gst_hsn_code
-
-#         # Avoid duplicating tax rows for same item group
-#         if item_group in added_item_groups:
-#             continue
-
-#         # ✅ Fetch taxes from the "Taxes" child table of Item Group
-#         # tax_rows = frappe.get_all("Item Group",  # <-- This must be the child table Doctype name
-#         #     filters={"parent": item_group, "parenttype": "Item Group"},
-#         #     fields=["charge_type", "account_head", "rate", "description", "cost_center"]
-#         # )
-
-#         # tax_result["taxes"].extend(tax_rows)
-#         added_item_groups.add(item_group)
-
-#     return tax_result@frappe.whitelist()
-
+"""Ending of Laptop Allocations Functions"""
 
 @frappe.whitelist()
 def setting_sales_channel_value(doc):

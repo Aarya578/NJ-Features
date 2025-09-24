@@ -133,6 +133,8 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             if time_diff < 1200:
                 new_qi = frappe.get_doc('NJ Quality Inspection', latest_qi.name)
                 new_qi.njqca_laptop_name = self.name
+                if is_defective=="1":
+                    new_qi.is_defective = 1
                 create_new_qi = False
 
         if create_new_qi:
@@ -144,6 +146,8 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             new_qi.inspected_by = new_qi.owner
             new_qi.brand = brand
             new_qi.model = model
+            if is_defective =="1":
+                new_qi.is_defective = 1
             new_qi.warehouse = self.warehouse
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
@@ -154,58 +158,58 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 re_check="1" if re_check else "0"
             )
 
-        config_data_2_qi = frappe.db.get_value("NJ Settings", {"doc_type": "NJQCA", "parameter": "config"}, "value")
-        config_data_2_qi = json.loads(config_data_2_qi) if config_data_2_qi else {}
+        # config_data_2_qi = frappe.db.get_value("NJ Settings", {"doc_type": "NJQCA", "parameter": "config"}, "value")
+        # config_data_2_qi = json.loads(config_data_2_qi) if config_data_2_qi else {}
 
-        item_group = tuple(config_data_2_qi.keys())
-        parameter = tuple(config_data_2_qi.values())
+        # item_group = tuple(config_data_2_qi.keys())
+        # parameter = tuple(config_data_2_qi.values())
 
-        sql_check = """
-            SELECT options.quality_check
-            FROM `tabNJ Quality Checks` qc
-            LEFT JOIN `tabNj QC Options` options ON qc.name = options.parent
-            INNER JOIN `tabNJ QC Check List` qc_check ON options.quality_check = qc_check.name
-            WHERE qc.item_group in %s AND qc.inspection_type = %s
-              AND qc_check.diagnostic_type = 'Automatic'
-              AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s
-        """
-        field_name_data_1 = frappe.db.sql(sql_check, (item_group, inspection_type, parameter), as_dict=True)
+        # sql_check = """
+        #     SELECT options.quality_check
+        #     FROM `tabNJ Quality Checks` qc
+        #     LEFT JOIN `tabNj QC Options` options ON qc.name = options.parent
+        #     INNER JOIN `tabNJ QC Check List` qc_check ON options.quality_check = qc_check.name
+        #     WHERE qc.item_group in %s AND qc.inspection_type = %s
+        #       AND qc_check.diagnostic_type = 'Automatic'
+        #       AND qc_check.njqca_parameter='Config' AND qc_check.parameter in %s
+        # """
+        # field_name_data_1 = frappe.db.sql(sql_check, (item_group, inspection_type, parameter), as_dict=True)
 
-        def extract_numeric_and_suffix(value):
-            if not value or not value.strip():
-                return None, ''
-            match = re.match(r'(\d+)\s*(.*)', value)
-            return (int(match.group(1)), match.group(2).strip()) if match else (None, '')
+        # def extract_numeric_and_suffix(value):
+        #     if not value or not value.strip():
+        #         return None, ''
+        #     match = re.match(r'(\d+)\s*(.*)', value)
+        #     return (int(match.group(1)), match.group(2).strip()) if match else (None, '')
 
-        check_mapping = {
-            0: {"query": "SELECT variant_9 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_9", "item_group": item_group[0]},
-            1: {"query": "SELECT variant_6 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_6", "item_group": item_group[1]},
-            2: {"query": "SELECT variant_10 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_10", "item_group": item_group[2]},
-        }
+        # check_mapping = {
+        #     0: {"query": "SELECT variant_9 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_9", "item_group": item_group[0]},
+        #     1: {"query": "SELECT variant_6 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_6", "item_group": item_group[1]},
+        #     2: {"query": "SELECT variant_10 FROM `tabNJQCA Child` WHERE item_group = %s AND parent = %s", "field": "variant_10", "item_group": item_group[2]},
+        # }
 
-        for idx, field in enumerate(field_name_data_1):
-            name_of_check = field['quality_check']
-            if any(child.item_group in config_data_2_qi and child.check_name == name_of_check for child in new_qi.get("nj_quality_checks", [])):
-                continue
+        # for idx, field in enumerate(field_name_data_1):
+        #     name_of_check = field['quality_check']
+        #     if any(child.item_group in config_data_2_qi and child.check_name == name_of_check for child in new_qi.get("nj_quality_checks", [])):
+        #         continue
 
-            if idx in check_mapping:
-                qdata = frappe.db.sql(check_mapping[idx]["query"], (check_mapping[idx]["item_group"], self.name), as_dict=True)
-                field = check_mapping[idx]["field"]
-                val = ''
-                if qdata and qdata[0].get(field):
-                    if idx in (1, 2):
-                        parts = [extract_numeric_and_suffix(x[field]) for x in qdata if extract_numeric_and_suffix(x[field])[0]]
-                        if parts:
-                            v, s = max(parts, key=lambda x: (x[0], x[1]))
-                            val = f"{v} {s}".strip()
-                    else:
-                        val = qdata[0][field]
-                if val:
-                    row = new_qi.append("nj_quality_checks", {})
-                    row.check_name = name_of_check
-                    row.options = val
-                    row.automated_check_name = val
-                    row.item_group = check_mapping[idx]["item_group"]
+        #     if idx in check_mapping:
+        #         qdata = frappe.db.sql(check_mapping[idx]["query"], (check_mapping[idx]["item_group"], self.name), as_dict=True)
+        #         field = check_mapping[idx]["field"]
+        #         val = ''
+        #         if qdata and qdata[0].get(field):
+        #             if idx in (1, 2):
+        #                 parts = [extract_numeric_and_suffix(x[field]) for x in qdata if extract_numeric_and_suffix(x[field])[0]]
+        #                 if parts:
+        #                     v, s = max(parts, key=lambda x: (x[0], x[1]))
+        #                     val = f"{v} {s}".strip()
+        #             else:
+        #                 val = qdata[0][field]
+        #         if val:
+        #             row = new_qi.append("nj_quality_checks", {})
+        #             row.check_name = name_of_check
+        #             row.options = val
+        #             row.automated_check_name = val
+        #             row.item_group = check_mapping[idx]["item_group"]
 
         # ✅ MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
         for data in self.njqca_result_parameters:
@@ -307,7 +311,7 @@ def get_itm_code_on_barcode(new_qi):
     try:
         barcode = new_qi.barcode
         if not barcode:
-            return {"error":"barcode not found"}
+            frappe.throw("barcode not found")
 
         serial_no_data = frappe.db.get_value("Serial No", {"name": barcode},
                         ["item_code", "bios_serial_no", "item_group", "item_name",
@@ -328,23 +332,6 @@ def get_itm_code_on_barcode(new_qi):
 
         for key,value in result.items():
             new_qi.set(key,value)
-        
-        if serial_no_data.rfq_id is None:
-            current_date = dt.date.today()
-            serial_item_date = serial_no_data.purchase_date
-            difference = (current_date - serial_item_date).days
-
-            if serial_no_data.item_group in ["laptops", "desktops", "chromebooks", "chromeboxes"] and difference < 0 and serial_no_data.purchase_date > dt.strptime("2024-03-20", "%Y-%m-%d"):
-                if serial_no_data.bios_serial_no and serial_no_data.bios_serial_no.startswith('nj') and serial_no_data.bios_serial_no == barcode:
-                    frappe.msgprint(_("Barcode and BIOS serial number should not both start with 'nj' and be identical. Please insert Dongle and run."))
-                    return {"disable_save": True}
-                
-                elif serial_no_data.bios_serial_no and serial_no_data.bios_serial_no != barcode:
-                    return {"enable_save": True}
-                
-                elif not serial_no_data.bios_serial_no or serial_no_data.bios_serial_no != barcode:
-                    frappe.msgprint(_("BIOS serial number not found for Serial No: <b>{0}</b>. Please insert Dongle and run.").format(barcode))
-                    return {"disable_save": True}
 
         if serial_no_data.warehouse and serial_no_data.rfq_id is None:
             emp_data = get_active_emp(frappe.session.user)
@@ -393,7 +380,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'previous_grade': nj_readings_data.get('previous_grade'),
                         'available_qty': nj_readings_data.get('available_qty'),
                         'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
-                        'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no')
+                        'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no'),
+                        'plan_time': nj_readings_data.get('plan_time')
                     })
             # Clear existing table entries and add new ones
             new_qi.set('nj_quality_readings', [])
@@ -1832,30 +1820,43 @@ def get_variant_from_value(item_template=None, args=None):
             return None
 
         args_list = frappe.parse_json(args)
-        if not isinstance(args_list, list) or not args_list:
+        if not isinstance(args_list, list):
             return None
 
-        having_conditions = []
-        query_args = []
-        for cond in args_list:
-            for attr, val in cond.items():
-                attr = attr.strip().lower()
-                val = val.strip().lower()
-                having_conditions.append(f"SUM(attribute = %s AND attribute_value = %s) = 1")
-                query_args.extend([attr, val])
+        conditions = []
+        joins = []
+        i = 0
 
-        num_attributes = len(args_list)
+        for condition_dict in args_list:
+            for key, value in condition_dict.items():
+                attribute = key.strip().lower()
+                attribute_value = value.strip().lower()
+                alias = f"a{i}"
+                joins.append(f"""
+                    JOIN `tabItem Variant Attribute` {alias}
+                    ON base.parent = {alias}.parent
+                    AND {alias}.attribute = %s
+                    AND {alias}.attribute_value = %s
+                """)
+                conditions.append((attribute, attribute_value))
+                i += 1
+
+        if not joins:
+            return None
 
         query = f"""
-            SELECT parent
-            FROM `tabItem Variant Attribute`
-            WHERE variant_of = %s
-            GROUP BY parent
-            HAVING COUNT(*) = %s AND {" AND ".join(having_conditions)}
+            SELECT DISTINCT base.parent
+            FROM `tabItem Variant Attribute` base INNER JOIN 
+            `tabItem` i on i.name = base.parent 
+            {" ".join(joins)}
+            WHERE base.variant_of = %s AND i.disabled = 0 AND i.end_of_life >= CURDATE()
             LIMIT 1
         """
 
-        query_args = [item_template, num_attributes] + query_args
+        query_args = []
+        for attr, val in conditions:
+            query_args.extend([attr, val])
+        query_args.append(item_template)
 
         variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
 

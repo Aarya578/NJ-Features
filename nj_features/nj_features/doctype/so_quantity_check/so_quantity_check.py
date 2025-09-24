@@ -5,7 +5,7 @@ import frappe
 import pymysql
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
-logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=100)
+logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 
 class SOQuantityCheck(Document):
 	pass
@@ -36,73 +36,54 @@ def update_so_quantity_check(settings):
                     SELECT 
                         i.variant_of AS parent,
                         COUNT(b.serial_no) AS total_actual_qty_for_parent
-                    FROM 
-                        `tabItem` i
-                    LEFT JOIN 
-                        `tabSerial No` b ON i.item_code = b.item_code
-                    LEFT JOIN 
-                        `tabWarehouse` w ON b.warehouse = w.name
+                    FROM `tabItem` i
+                    LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                    LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (b.return_reason != 'Repair' OR b.is_replace = 0)
+                        AND (b.return_reason != 'Repair' or b.return_reason is null or b.return_reason='') AND b.is_replace = 0
                         {warehouse_clause}
-                    GROUP BY 
-                        i.variant_of
+                    GROUP BY i.variant_of
                 ),
 
                 Item_Stock AS (
                     SELECT 
                         s.item_code,
                         COUNT(s.serial_no) AS total_actual_qty_for_itemcode
-                    FROM
-                        `tabSerial No` s
-                    INNER JOIN
-                        `tabWarehouse` w ON w.name = s.warehouse
-                    INNER JOIN
-                        `tabItem` i ON s.item_code = i.item_code
+                    FROM `tabSerial No` s
+                    INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
+                    INNER JOIN `tabItem` i ON s.item_code = i.item_code
                     WHERE
                         i.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (s.return_reason != 'Repair' OR s.is_replace = 0)
+                        AND (s.return_reason != 'Repair' or s.return_reason is null or s.return_reason='') AND s.is_replace = 0
                         {warehouse_clause}
-                    GROUP BY 
-                        s.item_code
+                    GROUP BY s.item_code
                 ),
 
                 Main_Data AS (
                     SELECT DISTINCT
                         pb.shopify_variant_id,
-                        i.item_code,
-                        i.item_group,
+                        i.item_code, i.item_group,
                         i.variant_of AS parent,
                         ps.total_actual_qty_for_parent,
                         isq.total_actual_qty_for_itemcode
-                    FROM 
-                        `tabProduct Bundle` pb
-                    LEFT JOIN 
-                        `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                    LEFT JOIN 
-                        `tabItem` i ON pbi.item_code = i.item_code
-                    LEFT JOIN 
-                        Parent_Stock ps ON ps.parent = i.variant_of
-                    LEFT JOIN 
-                        Item_Stock isq ON isq.item_code = i.item_code
-                    WHERE 
-                        i.item_group IN ({item_group_placeholders})
+                    FROM `tabProduct Bundle` pb
+                    LEFT JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                    LEFT JOIN `tabItem` i ON pbi.item_code = i.item_code
+                    LEFT JOIN Parent_Stock ps ON ps.parent = i.variant_of
+                    LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
+                    WHERE i.item_group IN ({item_group_placeholders})
                 )
 
                 SELECT 
                     shopify_variant_id,
-                    item_code,
-                    item_group,
+                    item_code, item_group,
                     total_actual_qty_for_itemcode AS actual_qty,
-                    parent,
-                    total_actual_qty_for_parent
-                FROM 
-                    Main_Data
-                ORDER BY 
-                shopify_variant_id, item_code
+                    parent, total_actual_qty_for_parent
+                FROM Main_Data
+                ORDER BY shopify_variant_id, item_code
             """
 
         params = (
@@ -138,12 +119,9 @@ def update_so_quantity_check(settings):
         # Step 2: Get sales order pending quantities from second query
         pending_so_data = frappe.db.sql("""
            SELECT 
-                so_data.sales_order,
-                so_data.item_code,
-                so_data.pb_code,
-                so_data.item_group,
-                so_data.qty AS so_qty,
-                IFNULL(dn_data.qty, 0) AS dn_qty,
+                so_data.sales_order, so_data.item_code,
+                so_data.pb_code, so_data.item_group,
+                so_data.qty AS so_qty, IFNULL(dn_data.qty, 0) AS dn_qty,
                 LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS min_so_dn_qty,
                 so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty,
                 CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_processor,
@@ -156,13 +134,10 @@ def update_so_quantity_check(settings):
 
             FROM (
                 SELECT 
-                    soi.parent AS sales_order,
-                    soi.item_code,
+                    soi.parent AS sales_order, soi.item_code,
                     IFNULL(pb.item_code, soi.item_code) AS pb_code,
-                    soi.qty,
-                    soi.item_group,
-                    so.creation,
-                    soi.rate
+                    soi.qty, soi.item_group,
+                    so.creation, soi.rate
                 FROM `tabSales Order` so
                 INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
                 LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
@@ -182,14 +157,12 @@ def update_so_quantity_check(settings):
             LEFT JOIN (
                 SELECT 
                     dni.against_sales_order,
-                    dni.item_code,
-                    SUM(dni.qty) AS qty
+                    dni.item_code, SUM(dni.qty) AS qty
                 FROM `tabDelivery Note Item` dni
                 WHERE 
-                    dni.docstatus = 1
+                    dni.docstatus = 1 AND dni.qty > 0
                     AND dni.creation >= CURDATE() - INTERVAL 50 DAY
                     AND dni.item_group IN ('Laptops', 'Chromebooks')
-                    AND dni.qty > 0
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 
@@ -203,7 +176,6 @@ def update_so_quantity_check(settings):
                 AND proc.attribute LIKE '%Processor%'
 
             ORDER BY so_data.sales_order, so_data.item_code;
-
         """, as_dict=True)
 
         pending_qty_by_item = {}
@@ -271,40 +243,28 @@ def update_so_quantity_check(settings):
         log_error(frappe.get_traceback(), "update_so_quantity_check")
         return False
 
-
-
-import frappe
-
 @frappe.whitelist()
 def updting_sla_department():
-    print("inside the function=============updting_sla_departmen================")
     try:
         # Fetch departments from settings
         departments = frappe.db.get_single_value("NJ Inventory Settings", "departments")
-        print("departments===========", departments)
         if not departments:
             frappe.throw("No departments found in NJ Inventory Settings.")
 
         departments_list = [d.strip() for d in departments.split(",") if d.strip()]
-        print("departments_list===========", departments_list)
 
         if not departments_list:
             frappe.throw("Departments list is empty after processing.")
 
         department_placeholders = ', '.join(['%s'] * len(departments_list))
-        print("department_placeholders===========", department_placeholders)
 
         # Fetch SO Quantity Check docs
         so_qc_list = frappe.get_all("SO Quantity Check", filters={"docstatus": 0}, fields=["name", "item_code"])
-        print("so_qc_list===========", so_qc_list)
 
         for row in so_qc_list:
             item_code = row.item_code
             if not item_code:
-                print(f"Item Code missing for {row.name}, skipping.")
                 continue
-
-            print(f"Processing SO QC: {row.name}, Item: {item_code}")
 
             query = f"""
                 SELECT SUM(sla) FROM `tabDepartment`
@@ -324,15 +284,11 @@ def updting_sla_department():
             """
 
             query_params = departments_list + [item_code]
-            print("query===========", query)
-            print("query_params===========", query_params)
 
             sla_result = frappe.db.sql(query, query_params)
             sla_value = sla_result[0][0] if sla_result and sla_result[0][0] else 0
-            print("sla_value===========", sla_value)
 
             frappe.db.set_value("SO Quantity Check", row.name, "sla", sla_value)
-            print(f"Updated SLA for {row.name}: {sla_value}")
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "updting_sla_departmen")
@@ -341,36 +297,29 @@ def updting_sla_department():
 
 # @frappe.whitelist()
 # def updating_sla_department():
-#     print("inside the function=============updating_sla_department================")
 #     try:
 #         # Get NJ Inventory Settings document
 #         nj_settings = frappe.get_single("NJ Inventory Settings")
 
 #         departments_list = nj_settings.departments if nj_settings.departments else []
-#         print("departments_list===========================",departments_list)
         
 #         if not departments_list:
 #             frappe.throw("No departments found in NJ Inventory Settings.")
         
 #         # Extract department names from child table (assuming it's a table field)
 #         department_names = [dept.department if hasattr(dept, 'department') else dept.name for dept in departments_list]
-#         print("department_names===========================",department_names)
         
 #         # Get all SO Quantity Check documents that need SLA update
 #         so_quantity_checks = frappe.get_all("SO Quantity Check", 
 #                                           fields=["name", "item_code"],
 #                                           filters={"docstatus": ["!=", 2]})  # Not cancelled
-#         print("so_quantity_checks===========================",so_quantity_checks)
 #         updated_count = 0
         
 #         for so_check in so_quantity_checks:
 #             so_quantity_check_name = so_check.name
 #             item_code = so_check.item_code
             
-#             print(f"Processing SO Quantity Check=======================: {so_quantity_check_name}, Item Code: {item_code}")
-            
 #             if not item_code:
-#                 print(f"Item Code not found for SO Quantity Check: {so_quantity_check_name}")
 #                 continue
             
 #             # Create placeholders for departments
@@ -392,7 +341,6 @@ def updting_sla_department():
 #                     )
 #                 )
 #             """
-#             print("qry===========================",qry)
 #             # Combine department names and item_code for parameterized query
 #             query_params = department_names + [item_code]
             
@@ -400,19 +348,15 @@ def updting_sla_department():
 #             result = frappe.db.sql(qry, query_params, as_dict=True)
 #             sla_value = result[0].total_sla if result and result[0].total_sla else 0
             
-#             print(f"Calculated SLA value: {sla_value} for SO Quantity Check: {so_quantity_check_name}")
-            
 #             # Set the SLA value back into the SO Quantity Check document
 #             frappe.db.set_value("SO Quantity Check", so_quantity_check_name, "sla", sla_value)
 #             updated_count += 1
         
 #         frappe.db.commit()
-#         print(f"Successfully updated SLA for {updated_count} SO Quantity Check documents")
 #         return f"Updated {updated_count} records"
         
 #     except Exception as e:
 #         frappe.log_error(frappe.get_traceback(), "updating_sla_department")
-#         print(f"Error in updating_sla_department: {str(e)}")
 #         return False
 
 
@@ -538,7 +482,3 @@ def update_proportional_qty_and_updt_qty():
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
         return False
-    
-
-
-

@@ -4,9 +4,11 @@ import frappe
 from frappe.utils import cstr
 from ecommerce_integrations.shopify.utils import create_shopify_log
 from frappe.utils import cint, cstr, flt, get_datetime, getdate, nowdate
-from ecommerce_integrations.shopify.product import create_items_if_not_exist
-from nj_features.overrides.product import get_item_code
-from ecommerce_integrations.shopify.product import create_items_if_not_exist
+# from ecommerce_integrations.shopify.product import create_items_if_not_exist
+
+# from ecommerce_integrations.shopify.product import create_items_if_not_exist
+from nj_features.overrides.product import create_items_if_not_exist,get_item_code
+# from ecommerce_integrations.shopify.product import create_items_if_not_exist
 from ecommerce_integrations.shopify.constants import (
     CUSTOMER_ID_FIELD,
     EVENT_MAPPER,
@@ -332,6 +334,56 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
 
     return items
 
+# def get_item_code(shopify_item):
+#     """
+#     Get item code using shopify_item dict.
+#     Check product bundles in order, find the one with highest quantity > 0.
+#     If all have quantity = 0, use the first product bundle.
+#     If no product bundles found, fallback to 'Item Not Found'.
+#     """
+#     variant_id = shopify_item.get("variant_id")
+    
+#     if variant_id:
+#         # Fetch product bundles (quantity is treated as string)
+#         product_bundles = frappe.db.sql("""
+#             SELECT DISTINCT pb.name, pb.quantity
+#             FROM `tabItem` AS i
+#             INNER JOIN `tabProduct Bundle` AS pb
+#             ON i.shopify_product_id = pb.shopify_variant_id
+#             WHERE i.shopify_product_id = %s
+#             ORDER BY pb.quantity DESC, pb.name
+#         """, variant_id, as_dict=1)
+
+#         logger.info(f"==========product_bundles=========={product_bundles}")
+        
+#         if product_bundles:
+#             # First check if any bundle has quantity > 0
+#             for pb in product_bundles:
+#                 quantity_str = str(pb.get("quantity") or "0").strip()
+#                 try:
+#                     quantity = int(quantity_str)
+#                     if quantity > 0:
+#                         return pb.name
+#                 except ValueError:
+#                     # Skip if quantity is not a valid integer (e.g., empty or non-numeric)
+#                     continue
+
+#             # If none have quantity > 0, return the first one
+#             return product_bundles[0].name
+
+#     # Fallback to "Item Not Found" if no match
+#     try:
+#         fallback = frappe.get_doc("Item", "Item Not Found")
+#         if fallback:
+#             fallback.description = f"Shopify Variant ID: {variant_id}"
+#             logger.info(f"==========fallback.description=========={fallback.description}")
+#             fallback.save(ignore_permissions=True)
+#             return fallback.item_code
+#     except frappe.DoesNotExistError:
+#         pass
+
+#     frappe.log_error("Fallback item 'Item Not Found' not present in database", "Product Bundle Lookup Error")
+#     return "Item Not Found"
 def get_order_taxes(shopify_order, setting, items):
     taxes = []
     line_items = shopify_order.get("line_items")

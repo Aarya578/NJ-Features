@@ -48,20 +48,13 @@ def boot_monkey_patches():
         import ecommerce_integrations.shopify.order as shopify_order
         from nj_features.overrides import order as nj_order
 
-
-        import ecommerce_integrations.shopify.product as shopify_product
-        from nj_features.overrides import product as nj_product 
-
         shopify_order.sync_sales_order = nj_order.sync_sales_order
         shopify_order.create_order = nj_order.create_order
         shopify_order.create_sales_order = nj_order.create_sales_order
-        shopify_product.get_item_code = nj_product.get_item_code
-
 
         frappe.whitelisted["ecommerce_integrations.shopify.order.sync_sales_order"] = nj_order.sync_sales_order
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_order"] = nj_order.create_order
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_sales_order"] = nj_order.create_sales_order
-        frappe.whitelisted["ecommerce_integrations.shopify.product.create_product"] = nj_product.get_item_code
 
         frappe.logger().info("✅ NJ Features successfully patched Shopify order methods")
     except Exception as e:

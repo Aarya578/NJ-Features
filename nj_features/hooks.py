@@ -113,6 +113,7 @@ doctype_list_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
+    "Product": "nj_features.overrides.product",
     "Order": "nj_features.overrides.order",
     "Issue": "nj_features.overrides.issue.CustomIssue",
     "Warehouse": "nj_features.overrides.warehouse.CustomWarehouse",
@@ -212,6 +213,7 @@ override_whitelisted_methods = {
     "ecommerce_integrations.shopify.order.create_order": "nj_features.overrides.order.create_order",
     "ecommerce_integrations.shopify.order.create_sales_order": "nj_features.overrides.order.create_sales_order",
     "ecommerce_integrations.shopify.product.get_item_code": "nj_features.overrides.product.get_item_code",
+    "ecommerce_integrations.shopify.product.create_items_if_not_exist": "nj_features.overrides.product.create_items_if_not_exist",
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
 }

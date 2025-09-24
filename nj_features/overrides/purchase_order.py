@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+import json
 import traceback
 from frappe.utils import flt
 from frappe.model.mapper import get_mapped_doc
@@ -236,3 +237,50 @@ def get_tax_without_holding(supplier):
     frappe.logger().info(f"Fetched Tax Withholding Category for {supplier}: {tax_category}")
     
     return tax_category
+
+
+
+
+
+@frappe.whitelist()
+def get_item_group_cost_centers(items):
+
+    """
+    Fetch cost centers for given item_groups in bulk.
+    items comes as JSON string, so parse it first.
+    """
+    try:
+        items = json.loads(items)
+    except Exception:
+        items = []
+
+    result = {}
+    for item in items:
+        if item.get("item_group"):
+            cost_center = frappe.db.get_value("Item Group", item["item_group"], "cost_center")
+            if cost_center:
+                result[item["idx"]] = cost_center
+    return result
+
+
+
+
+@frappe.whitelist()
+def get_item_group_cost_centers(items):
+    print("get_item_group_cost_centers========+++++++")
+    """
+    Fetch cost centers for given item_groups in bulk.
+    items comes as JSON string, so parse it first.
+    """
+    try:
+        items = json.loads(items)
+    except Exception:
+        items = []
+
+    result = {}
+    for item in items:
+        if item.get("item_group"):
+            cost_center = frappe.db.get_value("Item Group", item["item_group"], "cost_center")
+            if cost_center:
+                result[item["idx"]] = cost_center
+    return result

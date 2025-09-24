@@ -15,6 +15,19 @@ class DepartmentRecommendationEngine(Document):
                 _("Department Recommendation Engine is not allowed on {0} document type").format(frappe.bold("ToDo"))
             )
 
+    def safe_eval(self, fieldname, doc):
+        """Safely evaluate python condition"""
+        try:
+            if self.get(fieldname):
+                # Always use dict (like Assignment Rule)
+                context = doc.as_dict() if hasattr(doc, "as_dict") else doc
+                return frappe.safe_eval(self.get(fieldname), None, context)
+        except Exception as e:
+            frappe.msgprint(
+                frappe._("Recommendation rule evaluation failed: {0}").format(str(e)), 
+                indicator="orange"
+            )
+        return False
     def on_update(self):
         clear_recommendation_rule_cache(self)
 
@@ -268,7 +281,7 @@ def suggest_warehouse_update(query):
         warehouse_map = {}
         for row in result:
             barcode = row.get("barcode")
-            warehouse = row.get("warehouses")
+            warehouse = row.get("warehouse")
 
             if barcode and warehouse:
                 if barcode not in warehouse_map:

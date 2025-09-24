@@ -46,6 +46,29 @@ frappe.ui.form.on('Delivery Note', {
         //         frm.set_value("shipping_address_name", so_doc.shipping_address_name);
         //     }
         // });
+        let items = frm.doc.items.map(row => ({
+            idx: row.idx,
+            item_group: row.item_group
+        }));
+
+        frappe.call({
+            method: "nj_features.overrides.delivery_note.get_item_group_cost_centers",
+            args: { items: items },
+            callback: function(r) {
+                
+                if (r.message) {
+                    console.log("Cost centers:===", r.message);
+                    
+                    frm.doc.items.forEach(row => {
+                        if (r.message[row.idx]) {
+                            frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+
+                        }
+                         frm.refresh_field('cost_center');
+                    });
+                }
+            }
+        });
 
     },
 

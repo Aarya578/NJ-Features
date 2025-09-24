@@ -10,31 +10,27 @@ from frappe.model.document import Document
 logger = frappe.logger('DREngine', allow_site=True, file_count=1)
 class DepartmentRecommendationEngine(Document):
     def validate(self):
-        print("================validate=======================")
         if self.document_type == "ToDo":
             frappe.throw(
                 _("Department Recommendation Engine is not allowed on {0} document type").format(frappe.bold("ToDo"))
             )
 
     def on_update(self):
-        print("===============on update========================")
         clear_recommendation_rule_cache(self)
 
     def after_rename(self, old, new, merge):
-        print("================after rename=======================")
         clear_recommendation_rule_cache(self)
 
     def on_trash(self):
-        print("================on trash=======================")
         clear_recommendation_rule_cache(self)
 
     def apply_recommendation(self, doc):
-        logger.info("a==========pply recommendation================") 
-        # print("==============apply recommendation=========================")
+        # logger.info("a==========pply recommendation================") 
+        print("==============apply recommendation=========================")
         """Apply recommendation rule when condition is met"""
         if self.safe_eval("python_condition", doc):
-            logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
-            # print("safe eval true==================", self.safe_eval("python_condition", doc))
+            # logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
+            print("safe eval true==================", self.safe_eval("python_condition", doc))
             return self.execute_python_action(doc)
         return False
     def execute_python_action(self, doc):
@@ -46,21 +42,21 @@ class DepartmentRecommendationEngine(Document):
             # Create execution context
             context = self.get_execution_context(doc)
             python_action = self.python_action.strip()
-            logger.info("python action====================", python_action)
-            # print("python action====================", python_action)
+            # logger.info("python action====================", python_action)
+            print("python action====================", python_action)
 
             # ✅ Replace placeholder with submitted doc name
             if "{docname}" in python_action:
                 python_action = python_action.replace("{docname}", doc.name)
-                logger.info("python action with docname====================", python_action)
-                # print("python action with docname====================", python_action)
+                # logger.info("python action with docname====================", python_action)
+                print("python action with docname====================", python_action)
 
             # ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
             if python_action.lower().startswith(("select", "update", "delete", "insert")):
                 # print("Executing SQL from python_action ====================")
                 result = eq(python_action)
-                logger.info("Query Result ====================", result)
-                # print("Query Result ====================", result)
+                # logger.info("Query Result ====================", result)
+                print("Query Result ====================", result)
 
                 # ✅ If query returned warehouse + barcode, update Serial No
                 if result and isinstance(result, list) and "barcode" in result[0] and "warehouse" in result[0]:
@@ -68,8 +64,8 @@ class DepartmentRecommendationEngine(Document):
             else:
                 # ✅ Otherwise treat it as executable Python code
                 exec(python_action, {"__builtins__": {}}, context)
-                logger.info("python action executed====================", python_action)
-                # print("python action executed====================", python_action)
+                # logger.info("python action executed====================", python_action)
+                print("python action executed====================", python_action)
 
             frappe.db.commit()
             return True
@@ -272,7 +268,7 @@ def suggest_warehouse_update(query):
         warehouse_map = {}
         for row in result:
             barcode = row.get("barcode")
-            warehouse = row.get("warehouse")
+            warehouse = row.get("warehouses")
 
             if barcode and warehouse:
                 if barcode not in warehouse_map:

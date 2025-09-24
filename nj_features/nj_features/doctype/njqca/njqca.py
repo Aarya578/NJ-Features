@@ -210,12 +210,26 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         # ✅ MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
         for data in self.njqca_result_parameters:
 
+            # sql = """
+            #     SELECT options.quality_check
+            #     FROM `tabNJ Quality Checks` qc
+            #     LEFT JOIN `tabNj QC Options` options ON qc.name = options.parent
+            #     INNER JOIN `tabNJ QC Check List` qc_check ON options.quality_check = qc_check.name
+            #     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s AND qc_check.diagnostic_type = 'Automatic'
+            # """
             sql = """
                 SELECT options.quality_check
                 FROM `tabNJ Quality Checks` qc
-                LEFT JOIN `tabNj QC Options` options ON qc.name = options.parent
-                INNER JOIN `tabNJ QC Check List` qc_check ON options.quality_check = qc_check.name
-                WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s AND qc_check.diagnostic_type = 'Automatic'
+                LEFT JOIN `tabNj QC Options` options 
+                    ON qc.name = options.parent
+                INNER JOIN `tabNJ QC Check List` qc_check 
+                    ON options.quality_check = qc_check.name
+                WHERE qc.item_group = %s
+                AND qc.inspection_type = %s
+                AND qc_check.parameter = %s
+                AND qc_check.diagnostic_type = 'Automatic'
+                AND qc.docstatus = 1
+                AND qc_check.docstatus = 1;
             """
             field_name_data = frappe.db.sql(sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
 

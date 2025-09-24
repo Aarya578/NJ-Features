@@ -207,10 +207,14 @@ doc_events = {
 # }
 
 override_whitelisted_methods = {
+    "ecommerce_integrations.shopify.order.sync_sales_order": "nj_features.overrides.order.sync_sales_order",
+    "ecommerce_integrations.shopify.order.create_order": "nj_features.overrides.order.create_order",
+    "ecommerce_integrations.shopify.order.create_sales_order": "nj_features.overrides.order.create_sales_order",
+    "ecommerce_integrations.shopify.product.get_item_code": "nj_features.overrides.product.get_item_code",
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
-    "ecommerce_integrations.shopify.order.sync_sales_order": "nj_features.overrides.order.sync_sales_order"
 }
+
 
 scheduler_events = {
     "cron": {

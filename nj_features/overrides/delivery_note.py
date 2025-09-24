@@ -68,10 +68,10 @@ class CustomDeliveryNote(DeliveryNote):
                     SELECT so.order_type, so.sale_type
                     FROM `tabSales Order` so  
                     JOIN `tabDelivery Note Item` dni ON dni.against_sales_order = so.name 
-                    WHERE dni.parent = %s
+                    WHERE dni.parent = %s AND so.docstatus = 1
                     LIMIT 1
                 """, (self.name,), as_dict=True)
-                
+
                 if order_details:
                     order_type = order_details[0].get('order_type')
                     sale_type = order_details[0].get('sale_type')
@@ -85,7 +85,8 @@ class CustomDeliveryNote(DeliveryNote):
                     print(f"No Sales Order found for DN {self.name}")
 
             self.approve_unchecking_for_cod_orders()    
-            self.return_dn_validation()  
+            self.return_dn_validation() 
+            self.couse_of_return_validation()
             # self.payment_validattion()
             self.update_mail_from_address()
             self.rto_charges_update()
@@ -158,7 +159,7 @@ class CustomDeliveryNote(DeliveryNote):
                         FROM `tabSales Order` so
                         LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
                         LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                        WHERE so.name = %s LIMIT 1;
+                        WHERE so.name = %s AND so.docstatus = 1 LIMIT 1;
                     """, (item.against_sales_order,), as_dict=True)
 
                     if not sales_order_data:
@@ -242,10 +243,8 @@ class CustomDeliveryNote(DeliveryNote):
     
 
     def approve_unchecking_for_cod_orders(self):
-        # Step 1: Check Delivery Note store pickup
         if self.is_store_pick_up != 1:
             return
-        # Step 2: Fetch linked Sales Order
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": self.name}, "against_sales_order"
         )
@@ -256,7 +255,6 @@ class CustomDeliveryNote(DeliveryNote):
         if sales_order.is_cod != 1:
             return
 
-        # Step 3: Fetch linked Sales Invoice
         against_sales_invoice = frappe.get_value(
             "Delivery Note Item", {"parent": self.name}, "against_sales_invoice"
         )
@@ -264,7 +262,6 @@ class CustomDeliveryNote(DeliveryNote):
             return
 
         sales_invoice = frappe.get_doc("Sales Invoice", against_sales_invoice)
-        # Step 4: Uncheck approval if it is set
         if sales_invoice.approved == 1:
             sales_invoice.approved = 0
             sales_invoice.save(ignore_permissions=True)
@@ -295,7 +292,32 @@ class CustomDeliveryNote(DeliveryNote):
                     _(f"Return DN taxes {return_taxes} are greater than "
                     f"the forward DN taxes {forward_dn.total_taxes_and_charges}")
                 )
-          
+    def couse_of_return_validation(self):
+        if not self.is_return:
+            return
+
+        against_sales_order = frappe.db.get_value(
+            "Delivery Note Item", {"parent": self.name}, "against_sales_order"
+        )
+        if not against_sales_order:
+            frappe.throw("No sales order found for this Delivery Note.")
+
+        couse_of_return_values = frappe.db.get_value(
+            "NJ Settings", {"parameter": "couse_of_returns"}, "value"
+        )
+        if not couse_of_return_values:
+            return
+
+        allowed_item_groups = [group.strip() for group in couse_of_return_values.split(",")]
+
+        if self.cause_of_return and self.cause_of_return in allowed_item_groups:
+            so_doc = frappe.get_doc("Sales Order", against_sales_order)
+            if so_doc.is_cod and so_doc.payment_received:
+                so_doc.payment_received = 0
+                so_doc.save(ignore_permissions=True)
+                
+                frappe.msgprint(f"Payment Received unchecked in Sales Order {against_sales_order}.")
+
     def approve_validation(self):
         if self.is_return == 1:
             return
@@ -312,7 +334,7 @@ class CustomDeliveryNote(DeliveryNote):
                 ON dn.name = dni.parent 
             INNER JOIN `tabSales Order` so
                 ON dni.against_sales_order = so.name 
-            WHERE so.name = %s
+            WHERE so.name = %s AND so.docstatus = 1
         """
         results = frappe.db.sql(query, (against_sales_order,), as_dict=True)        
         for row in results:        
@@ -1099,7 +1121,7 @@ def qi_mandatory_checks_on_dn_submit(doc, method=None):
                                 )
                             )
                     )
-                    AND mandatory = 1
+                    AND mandatory = 1 AND docstatus = 1
                     """,
                     (serial_no,),
                     as_dict=True
@@ -2305,3 +2327,5 @@ def updating_new_address(sales_order_name=None):
             return dn_doc.get("updated_address")
 
     return None
+
+

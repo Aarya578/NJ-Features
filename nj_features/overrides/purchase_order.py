@@ -120,7 +120,6 @@ def validate_mandatory_links(doc, method=None):
 
 
 def validate_warranty_on_submit(doc, method=None):
-    print("validate_warranty_on_submit==================================")
     doc = frappe.get_doc(frappe.parse_json(doc))
     
     if not doc.get("part_warranty"):
@@ -151,13 +150,12 @@ def part_warrnty_days_after_save(docname):
     using latest values from the client (not DB).
     """
     doc = frappe.get_doc("Purchase Order", docname)
-    # print("inside the function ====================================")
     if not doc.get("part_warranty"):
         return {"status": "skipped", "message": "Part warranty not enabled"}
     
     # Collect item groups from items table
     current_item_groups = set()
-    item_group_map = {}  # map item_group to warranty_days from Item Group
+    item_group_map = {}  
     
     for row in doc.get("items", []):
         item_code = row.get("item_code")
@@ -175,7 +173,7 @@ def part_warrnty_days_after_save(docname):
     
     # Process child table - FIXED LOGIC
     existing_rows = {r.item_group: r for r in doc.get("purchase_order_warrenty_for_specific_parts", []) if r.item_group}
-    new_warranty_entries = []  # Fresh list to rebuild the child table
+    new_warranty_entries = [] 
     added_count = 0
     removed_count = len(existing_rows) - len(current_item_groups & set(existing_rows.keys()))
     
@@ -234,7 +232,6 @@ def get_tax_without_holding(supplier):
     Assumes 'tax_withholding_category' is a field in the Supplier doctype.
     """
     tax_category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
-    print("tax_category===============",tax_category)
     
     frappe.logger().info(f"Fetched Tax Withholding Category for {supplier}: {tax_category}")
     

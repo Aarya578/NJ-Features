@@ -15,19 +15,6 @@ class DepartmentRecommendationEngine(Document):
                 _("Department Recommendation Engine is not allowed on {0} document type").format(frappe.bold("ToDo"))
             )
 
-    def safe_eval(self, fieldname, doc):
-        """Safely evaluate python condition"""
-        try:
-            if self.get(fieldname):
-                # Always use dict (like Assignment Rule)
-                context = doc.as_dict() if hasattr(doc, "as_dict") else doc
-                return frappe.safe_eval(self.get(fieldname), None, context)
-        except Exception as e:
-            frappe.msgprint(
-                frappe._("Recommendation rule evaluation failed: {0}").format(str(e)), 
-                indicator="orange"
-            )
-        return False
     def on_update(self):
         clear_recommendation_rule_cache(self)
 
@@ -36,16 +23,39 @@ class DepartmentRecommendationEngine(Document):
 
     def on_trash(self):
         clear_recommendation_rule_cache(self)
-
     def apply_recommendation(self, doc):
-        # logger.info("a==========pply recommendation================") 
-        print("==============apply recommendation=========================")
         """Apply recommendation rule when condition is met"""
-        if self.safe_eval("python_condition", doc):
-            # logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
-            print("safe eval true==================", self.safe_eval("python_condition", doc))
-            return self.execute_python_action(doc)
+        print(f"==============apply recommendation=========================")
+        print(f"Docstatus: {doc.get('docstatus')}")
+        print(f"Python condition result: {self.safe_eval('python_condition', doc)}")
+        
+        # Check if document status is either Draft (0) or Submitted (1)
+        if doc.get('docstatus') in [0, 1]:
+            if self.safe_eval("python_condition", doc):
+                print("safe eval true==================")
+                return self.execute_python_action(doc)
+            else:
+                print("safe eval false=================")
+        else:
+            print(f"Skipping - invalid docstatus: {doc.get('docstatus')}")
+        
         return False
+    # def apply_recommendation(self, doc):
+    #     """Apply recommendation rule when condition is met"""
+    #     # Allow both docstatus 0 and 1 to trigger the rule
+    #     if doc.get('docstatus') in [0, 1] and self.safe_eval("python_condition", doc):
+    #         print("safe eval true==================", self.safe_eval("python_condition", doc))
+    #         return self.execute_python_action(doc)
+    #     return False
+    # def apply_recommendation(self, doc):
+    #     # logger.info("a==========pply recommendation================") 
+    #     print("==============apply recommendation=========================")
+    #     """Apply recommendation rule when condition is met"""
+    #     if self.safe_eval("python_condition", doc):
+    #         # logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
+    #         print("safe eval true==================", self.safe_eval("python_condition", doc))
+    #         return self.execute_python_action(doc)
+    #     return False
     def execute_python_action(self, doc):
         """Execute the python action"""
         if not self.python_action:

@@ -115,9 +115,9 @@ class CustomSalesInvoice(SalesInvoice):
                 ON si.name = sii.parent 
             INNER JOIN `tabSales Order` so
                 ON sii.sales_order = so.name 
-            WHERE so.name = %s
+            WHERE so.name = %s 
         """  
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True) 
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True,debug=True) 
         # print("results=======================",results)       
         for row in results:        
             if not row.approve or int(row.approve) != 1:
@@ -161,9 +161,10 @@ class CustomSalesInvoice(SalesInvoice):
                 ON si.name = sii.parent 
             INNER JOIN `tabSales Order` so
                 ON sii.sales_order = so.name 
-            WHERE so.name = %s
+            WHERE so.name = %s 
         """  
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)        
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True,debug=True)  
+        # print("results=======================",results)      
         for row in results:        
             if not row.approve or int(row.approve) != 1:
                 # self.approved = 1
@@ -339,26 +340,34 @@ def custom_validate_mandatory_fields(doc):
 
     # ✅ Use shipping address GSTIN instead of customer address
     shipping_gstin = (
-        frappe.db.get_value("Address", doc.customer_address, "gstin")
-        if doc.customer_address else None
+    frappe.db.get_value("Address", doc.customer_address, "gstin")
+    if doc.customer_address else None
     )
-    if (doc.get("billing_address_gstin") is None or doc.get("billing_address_gstin") == "undefined") and flt(doc.get("grand_total")) <= 50000:  
+
+    # Only skip GSTIN check if total is <= 50000
+    if flt(doc.get("grand_total")) <= 50000:
         return
 
-        # ✅ Only validate shipping GSTIN on SUBMIT
-    # if doc.docstatus == "save":
-    #     if flt(doc.get("grand_total")) >= 50000 and doc.gst_category != "Overseas" and not shipping_gstin:
-    #         frappe.throw(
-    #             _("GSTIN is not found in selected *Shipping Address*. Please Create 'E-Way Bill' Directly."),
-    #             title=_("Missing GSTIN in Shipping Address"),
-    #         )
-    # if frappe.flags.in_submit:
+    # Now for invoices above 50,000
     if doc.gst_category != "Overseas" and not shipping_gstin:
         frappe.throw(
-            _(
-            "GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
+            _("GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
             title=_("Missing GSTIN in Shipping Address"),
         )
+
+    # shipping_gstin = (
+    #     frappe.db.get_value("Address", doc.customer_address, "gstin")
+    #     if doc.customer_address else None
+    # )
+    # if (doc.get("billing_address_gstin") is None or doc.get("billing_address_gstin") == "undefined") and flt(doc.get("grand_total")) <= 50000:  
+    #     return
+
+    # if doc.gst_category != "Overseas" and not shipping_gstin:
+    #     frappe.throw(
+    #         _(
+    #         "GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
+    #         title=_("Missing GSTIN in Shipping Address"),
+    #     )
 
 def custom_make_einvoice(invoice):
     custom_validate_mandatory_fields(invoice)
@@ -747,3 +756,28 @@ einvoice_utils.validate_mandatory_fields = custom_validate_mandatory_fields
 
 import erpnext.regional.india.e_invoice.utils as einvoice_utils
 einvoice_utils.make_einvoice = custom_make_einvoice
+
+
+
+
+@frappe.whitelist()
+def get_item_group_cost_centers(items):
+    """
+    Fetch cost centers for given item_groups in bulk.
+    items comes as JSON string, so parse it first.
+    """
+    try:
+        items = json.loads(items)
+    except Exception:
+        items = []
+
+    result = {}
+    for item in items:
+        if item.get("item_group"):
+            cost_center = frappe.db.get_value("Item Group", item["item_group"], "cost_center")
+            if cost_center:
+                result[item["idx"]] = cost_center
+    return result
+
+
+

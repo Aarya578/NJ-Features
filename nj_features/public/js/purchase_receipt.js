@@ -29,6 +29,31 @@ frappe.ui.form.on('Purchase Receipt', {
             });
         }
         frm.refresh_field("items")
+
+
+        // let items = frm.doc.items.map(row => ({
+        //     idx: row.idx,
+        //     item_group: row.item_group
+        // }));
+
+        // frappe.call({
+        //     method: "nj_features.overrides.purchase_receipt.get_item_group_cost_centers",
+        //     args: { items: items },
+        //     callback: function(r) {
+                
+        //         if (r.message) {
+        //             console.log("Cost centers:===", r.message);
+                    
+        //             frm.doc.items.forEach(row => {
+        //                 if (r.message[row.idx]) {
+        //                     frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+
+        //                 }
+        //                  frm.refresh_field('cost_center');
+        //             });
+        //         }
+        //     }
+        // });
     },
 
     refresh: function(frm) {

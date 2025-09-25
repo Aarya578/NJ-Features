@@ -5,6 +5,8 @@ frappe.provide("erpnext.buying");
 frappe.ui.form.on('Purchase Order', {
     onload() { 
         $('.col-lg-2.layout-side-section').hide(); 
+
+
     },
 
     refresh: function(frm) {
@@ -71,10 +73,33 @@ frappe.ui.form.on('Purchase Order', {
                 frm.refresh_field('tax_withholding_category');
             }
         });
-    }
-,
+    },
 
     validate: function(frm) {
+        let items = frm.doc.items.map(row => ({
+            idx: row.idx,
+            item_group: row.item_group
+        }));
+
+        frappe.call({
+            method: "nj_features.overrides.purchase_order.get_item_group_cost_centers",
+            args: { items: items },
+            callback: function(r) {
+                
+                if (r.message) {
+                    console.log("Cost centers:===", r.message);
+                    
+                    frm.doc.items.forEach(row => {
+                        if (r.message[row.idx]) {
+                            frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+
+                        }
+                         frm.refresh_field('cost_center');
+                    });
+                }
+            }
+        });
+        
         var postingDate = frm.doc.transaction_date;
         var numberOfDays = frm.doc.warranty_days;
         var warrantyDate = frappe.datetime.add_days(postingDate, numberOfDays);
@@ -120,6 +145,7 @@ frappe.ui.form.on('Purchase Order', {
         //         });
         //     }
         // });
+
     }
     
     },

@@ -41,7 +41,8 @@
   "gstin",
   "eway_url",
   "section_break_reijd",
-  "coupon_codes"
+  "coupon_codes",
+  "scan_barcode"
  ],
  "fields": [
   {
@@ -232,11 +233,17 @@
   {
    "fieldname": "section_break_reijd",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "scan_barcode",
+   "fieldtype": "Data",
+   "label": "Scan barcode",
+   "options": "Barcode"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-08-14 13:03:25.813140",
+ "modified": "2025-09-08 14:59:16.756776",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

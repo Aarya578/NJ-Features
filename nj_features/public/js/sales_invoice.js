@@ -24,7 +24,31 @@ frappe.ui.form.on('Sales Invoice', {
     //     });
     
     // },
-    after_save: function(frm) {
+
+    onload: function(frm) {
+        let items = frm.doc.items.map(row => ({
+            idx: row.idx,
+            item_group: row.item_group
+        }));
+
+        frappe.call({
+            method: "nj_features.overrides.sales_invoice.get_item_group_cost_centers",
+            args: { items: items },
+            callback: function(r) {
+                
+                if (r.message) {
+                    frm.doc.items.forEach(row => {
+                        if (r.message[row.idx]) {
+                            frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+
+                        }
+                         frm.refresh_field('cost_center');
+                    });
+                }
+            }
+        });
+    },
+    after_save:  function(frm) {
         if (!frm.doc.allocate_advances_automatically) {
             frm.trigger('get_advances');
         }  

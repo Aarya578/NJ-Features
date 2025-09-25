@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_copy": 1,
  "autoname": "naming_series:",
  "creation": "2024-09-13 16:01:07.712246",
  "doctype": "DocType",
@@ -46,8 +47,7 @@
    "fieldname": "dispatch_security_child_table",
    "fieldtype": "Table",
    "label": "Dispatch Security Child Table",
-   "options": "Dispatch Security Child Table",
-   "read_only": 1
+   "options": "Dispatch Security Child Table"
   },
   {
    "fieldname": "amended_from",
@@ -141,7 +141,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-08 17:22:11.561349",
+ "modified": "2025-09-25 11:17:42.597863",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Dispatch Security Checkpoints",

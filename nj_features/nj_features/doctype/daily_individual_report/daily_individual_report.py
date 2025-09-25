@@ -65,55 +65,6 @@ def get_serial_no_data():
     serial_no_data = frappe.db.sql(query, tuple(word_warehouse), as_dict=True)
     return serial_no_data
 
-# @frappe.whitelist()
-# def get_serial_no_data():
-#     user = frappe.session.user
-
-#     get_work_warehouse_query = """
-#         SELECT DISTINCT name AS warehouse, warehouse_owner
-#         FROM `tabWarehouse` 
-#         WHERE warehouse_owner = %s AND disabled = 0 AND is_group = 0 
-#         AND warehouse_type IN ('Employee Personal Warehouse','Operation Warehouse')
-#     """
-
-#     work_warehouse = frappe.db.sql(get_work_warehouse_query, (user,), as_dict=True)
-    
-#     word_warehouse = [row.get("warehouse") for row in work_warehouse]
-
-#     if not word_warehouse:
-#         frappe.msgprint("No warehouse found for user: {0}".format(frappe.session.user))
-#         return []
-
-#     placeholders = ', '.join(['%s'] * len(word_warehouse))
-    
-
-#     query = f"""
-#         SELECT 
-#             item_code, 
-#             serial_no, 
-#             warehouse,
-#             DATEDIFF(CURDATE(), COALESCE(purchase_date, CURDATE())) AS Age
-#         FROM `tabSerial No`
-#         WHERE warehouse IS NOT NULL 
-#         AND warehouse IN ({placeholders})
-#         AND DATEDIFF(CURDATE(), COALESCE(purchase_date, CURDATE())) >
-#             (SELECT d.sla 
-#             FROM `tabWarehouse` wh 
-#             INNER JOIN `tabDepartment` d 
-#                 ON d.name = wh.department 
-#             WHERE wh.name = %s 
-#                 AND wh.warehouse_type = 'Operation Warehouse')
-#     """
-
-#     # Add params for IN (...) and subquery
-#     params = word_warehouse + [word_warehouse[0]]
-
-#     serial_no_data = frappe.db.sql(query, params, as_dict=True, debug=True)
-
-#     print("serial_no_data======================",serial_no_data)
-
-#     return serial_no_data
-
 @frappe.whitelist()
 def mail_button_data_for_not_scan_serial_no_report(data):
     data = json.loads(data)

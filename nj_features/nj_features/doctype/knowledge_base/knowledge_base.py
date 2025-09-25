@@ -38,7 +38,6 @@ def validate_links(doc):
 
 @frappe.whitelist()
 def render_html_content_from_field(doctype, docname):
-    print("render_html_content_from_field===============================")
     try:
         doc = frappe.get_doc(doctype, docname)
         # Get the HTML template from NJ Settings

@@ -35,6 +35,7 @@ def get_kms_data(item_group, serial_no, department, part=None):
 
     html_content = None
     if model and brand:
+        # added docstatus = 1
         query = """
             SELECT 
                 kn.html_content AS html_content
@@ -53,6 +54,7 @@ def get_kms_data(item_group, serial_no, department, part=None):
                 AND Knb.models = %s
                 AND Pm.part = %s
                 AND dp.department = %s
+                AND kn.docstatus = 1
             LIMIT 1
         """
         html_content = frappe.db.sql(

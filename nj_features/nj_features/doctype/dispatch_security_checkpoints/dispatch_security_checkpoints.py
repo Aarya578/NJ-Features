@@ -18,14 +18,13 @@ class DispatchSecurityCheckpoints(Document):
             for row in self.dispatch_security_child_table:
                 if row.delivery_note:
                     dn_doc = frappe.get_doc("Delivery Note", row.delivery_note)
-                    # print("dn_doc=======================", dn_doc)
                     dn_doc.send_email = 1
                     dn_doc.save(ignore_permissions=True)
-                    frappe.db.commit()
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_send_email_DN")
             frappe.throw(f"Error while updating Delivery Note send_email: {e}")
+
     def update_send_email_SI(self):
         try:
             for row in self.dispatch_security_child_table:
@@ -34,7 +33,6 @@ class DispatchSecurityCheckpoints(Document):
                     si_doc = frappe.get_doc("Sales Invoice", row.sales_invoice)
                     si_doc.send_email = 1
                     si_doc.save(ignore_permissions=True)
-                    frappe.db.commit()
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_send_email_SI")
@@ -45,18 +43,14 @@ class DispatchSecurityCheckpoints(Document):
             for row in self.dispatch_security_child_table:
                 if row.sales_order:
                     so_doc = frappe.get_doc("Sales Order", row.sales_order)
-                    # print("so_doc=======================", so_doc)
 
                     if so_doc.get("is_cod") and not so_doc.get("payment_received"):
-                        # print("so_doc=======================", so_doc.get("is_cod"))
                         so_doc.payment_received = 1
                         so_doc.save(ignore_permissions=True)
-                        frappe.db.commit()
 
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_payment_recived")
             frappe.throw(f"Error while updating Sales Order payment_received: {e}")
-
 
 @frappe.whitelist()
 def scan_serial_no_data_for_sales(serial_no):
@@ -227,15 +221,14 @@ def scan_serial_no_data_for_return(pr_name):
             frappe.throw(f"Serial No or Purchase Receipt: {pr_name} doesn't exist")
             return None
         if pr_name:
-            return_data = frappe.db.sql(f"""select Pr.name as PR, Pr.status as PR_Status , Pr.total as PR_Total, Pi.total as PI_Total,
-                                            Pi.name as PI, Pi.status as PI_Status from `tabPurchase Receipt` Pr
-                                            inner join `tabPurchase Invoice Item` PII 
-                                            inner join `tabPurchase Invoice` Pi
-                                            on PII.purchase_receipt = Pr.name and 
-                                            Pi.name = PII.parent
-                                            where Pr.name = 'PREC-RET-00222' and Pr.is_return = 1
-                                """, as_dict=True)
-        print(return_data)            
+            return_data = frappe.db.sql("""select Pr.name as PR, Pr.status as PR_Status , Pr.total as PR_Total, Pi.total as PI_Total,
+                    Pi.name as PI, Pi.status as PI_Status from `tabPurchase Receipt` Pr
+                    inner join `tabPurchase Invoice Item` PII 
+                    inner join `tabPurchase Invoice` Pi
+                    on PII.purchase_receipt = Pr.name and 
+                    Pi.name = PII.parent
+                    where Pr.name = %s and Pr.is_return = 1
+                """, pr_name, as_dict=True)
         if not return_data:
             frappe.msgprint(_("No PR or PI data found for <b>{}</b>").format(pr_name))
             return None
@@ -250,6 +243,7 @@ def scan_serial_no_data_for_return(pr_name):
         if not return_data[0].get('PR_Total') or return_data[0].get('PR_Total') >= 0 and return_data[0].get('PI_Total') != return_data[0].get('PR_Total'):
             frappe.msgprint(_("Please check the total amount of PR or PI found for<b>{}</b>").format(pr_name))
             return None
+        
         return {
             'purchase_receipt': return_data[0].get('PR'),
             'purchase_invoice': return_data[0].get('PI'),

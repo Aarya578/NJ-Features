@@ -19,7 +19,7 @@ from ecommerce_integrations.shopify.constants import (
     SETTING_DOCTYPE,
 )
 from ecommerce_integrations.utils.price_list import get_dummy_price_list
-from ecommerce_integrations.shopify.customer import ShopifyCustomer
+from nj_features.overrides.customer import ShopifyCustomer
 
 logger = frappe.logger('NewOrder', allow_site=True, file_count=1)
 def sync_sales_order(payload, request_id=None):

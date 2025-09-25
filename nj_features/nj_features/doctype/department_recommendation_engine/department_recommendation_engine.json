@@ -13,7 +13,8 @@
   "section_break_uqszl",
   "python_condition",
   "column_break_97mvu",
-  "python_action"
+  "python_action",
+  "sql_condition"
  ],
  "fields": [
   {
@@ -58,10 +59,15 @@
    "fieldtype": "Link",
    "label": "Document Type",
    "options": "DocType"
+  },
+  {
+   "fieldname": "sql_condition",
+   "fieldtype": "Small Text",
+   "label": "SQL Condition"
   }
  ],
  "links": [],
- "modified": "2025-09-06 12:41:32.402716",
+ "modified": "2025-09-25 11:07:56.260007",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Recommendation Engine",

@@ -23,39 +23,65 @@ class DepartmentRecommendationEngine(Document):
 
     def on_trash(self):
         clear_recommendation_rule_cache(self)
+
     def apply_recommendation(self, doc):
-        """Apply recommendation rule when condition is met"""
-        print(f"==============apply recommendation=========================")
-        print(f"Docstatus: {doc.get('docstatus')}")
-        print(f"Python condition result: {self.safe_eval('python_condition', doc)}")
-        
-        # Check if document status is either Draft (0) or Submitted (1)
+        """Apply recommendation rule when condition is met"""        
+        # ✅ Check if document status is either Draft (0) or Submitted (1)
         if doc.get('docstatus') in [0, 1]:
             if self.safe_eval("python_condition", doc):
                 print("safe eval true==================")
-                return self.execute_python_action(doc)
-            else:
-                print("safe eval false=================")
-        else:
-            print(f"Skipping - invalid docstatus: {doc.get('docstatus')}")
-        
+
+                # ✅ Step 1: Check SQL Condition
+                if self.sql_condition:
+                    try:
+                        sql_query = self.sql_condition.strip()
+
+                        # Replace {docname} with actual doc name
+                        if "{docname}" in sql_query:
+                            sql_query = sql_query.replace("{docname}", doc.name)
+
+                        print("sql condition query====================", sql_query)
+
+                        # Run the query
+                        sql_result = frappe.db.sql(sql_query, as_dict=True)
+                        print("sql condition result====================", sql_result)
+
+                        # Extract result (0 or 1)
+                        if sql_result and "result" in sql_result[0]:
+                            condition_value = int(sql_result[0]["result"])
+                        else:
+                            condition_value = 0
+
+                        print("sql condition result====================", condition_value)
+
+                        # ✅ Step 2: Only execute python_action if condition_value == 1
+                        if condition_value == 1:
+                            return self.execute_python_action(doc)
+                        else:
+                            print("sql_condition returned 0, skipping python_action")
+                            return False
+
+                    except Exception as e:
+                        frappe.log_error(
+                            message=f"Error executing SQL Condition for rule {self.name}: {str(e)}",
+                            title="Department Recommendation Engine SQL Error"
+                        )
+                        return False
+                else:
+                    # If no sql_condition provided → directly execute python_action
+                    return self.execute_python_action(doc)
+
         return False
+
     # def apply_recommendation(self, doc):
-    #     """Apply recommendation rule when condition is met"""
-    #     # Allow both docstatus 0 and 1 to trigger the rule
-    #     if doc.get('docstatus') in [0, 1] and self.safe_eval("python_condition", doc):
-    #         print("safe eval true==================", self.safe_eval("python_condition", doc))
-    #         return self.execute_python_action(doc)
+    #     """Apply recommendation rule when condition is met"""        
+    #     # Check if document status is either Draft (0) or Submitted (1)
+    #     if doc.get('docstatus') in [0, 1]:
+    #         if self.safe_eval("python_condition", doc):
+    #             print("safe eval true==================")
+    #             return self.execute_python_action(doc)
     #     return False
-    # def apply_recommendation(self, doc):
-    #     # logger.info("a==========pply recommendation================") 
-    #     print("==============apply recommendation=========================")
-    #     """Apply recommendation rule when condition is met"""
-    #     if self.safe_eval("python_condition", doc):
-    #         # logger.info("safe eval true==================",self.safe_eval("python_condition", doc))
-    #         print("safe eval true==================", self.safe_eval("python_condition", doc))
-    #         return self.execute_python_action(doc)
-    #     return False
+
     def execute_python_action(self, doc):
         """Execute the python action"""
         if not self.python_action:
@@ -65,20 +91,16 @@ class DepartmentRecommendationEngine(Document):
             # Create execution context
             context = self.get_execution_context(doc)
             python_action = self.python_action.strip()
-            # logger.info("python action====================", python_action)
             print("python action====================", python_action)
 
             # ✅ Replace placeholder with submitted doc name
             if "{docname}" in python_action:
                 python_action = python_action.replace("{docname}", doc.name)
-                # logger.info("python action with docname====================", python_action)
                 print("python action with docname====================", python_action)
 
             # ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
             if python_action.lower().startswith(("select", "update", "delete", "insert")):
-                # print("Executing SQL from python_action ====================")
                 result = eq(python_action)
-                # logger.info("Query Result ====================", result)
                 print("Query Result ====================", result)
 
                 # ✅ If query returned warehouse + barcode, update Serial No
@@ -87,7 +109,6 @@ class DepartmentRecommendationEngine(Document):
             else:
                 # ✅ Otherwise treat it as executable Python code
                 exec(python_action, {"__builtins__": {}}, context)
-                # logger.info("python action executed====================", python_action)
                 print("python action executed====================", python_action)
 
             frappe.db.commit()

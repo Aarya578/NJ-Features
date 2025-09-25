@@ -38,15 +38,15 @@ class CustomStockLedgerEntry(StockLedgerEntry):
         max_capacity = warehouse_doc.max_capacity or 0
         available_capacity = int(max_capacity) - int(qty_after_transaction or 0)
 
-        existing = frappe.get_value("Warehouse Qty", {"warehouse": warehouse_name}, "name")
+        existing = frappe.db.sql("""
+            SELECT name FROM `tabWarehouse Qty` WHERE warehouse = %s FOR UPDATE
+        """, (warehouse_name,), as_dict=True)
 
         if existing:
+            existing = existing[0].name
             frappe.db.sql("""
-                UPDATE `tabWarehouse Qty`
-                SET max_capacity = %s,
-                    available_capacity = %s,
-                    qty_after_transaction = %s
-                WHERE name = %s
+                UPDATE `tabWarehouse Qty` SET max_capacity = %s,
+                available_capacity = %s, qty_after_transaction = %s WHERE name = %s
             """, (max_capacity, available_capacity, qty_after_transaction, existing))
         else:
             frappe.get_doc({

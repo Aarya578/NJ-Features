@@ -1395,7 +1395,7 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
-                        elif item_group.lower() == storage.lower() and (not row.get('variant_10') or not row.get('variant_1')):
+                        elif item_group.lower() == storage.lower() and row.get('variant_10'):
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
@@ -2248,64 +2248,93 @@ def get_options_for_label(item_group, label, item_template):
 
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
-
     unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
     serial_no_components = frappe.db.sql(
-        """ SELECT item_group, item, reference_doctype_no, item_group_idx FROM `tabSerial No Component`
-        WHERE parent = %s """, (serial_no,), as_dict=True
+        """
+            SELECT name, item_group, item, reference_doctype_no, item_group_idx 
+            FROM `tabSerial No Component` WHERE parent = %s
+        """, (serial_no,), as_dict=True
     )
 
-    updated_part_data = []  
+    updated_part_data = []
+    used_serial_rows = set()
 
     for data in partData:
         matched = False
 
         for row in serial_no_components:
+            if row.get("name") in used_serial_rows:
+                continue
 
             if row.get("item_group") == data.get("item_group"):
                 query2 = frappe.db.sql("""
                     SELECT DISTINCT LOWER(attribute) AS item_attribute, LOWER(attribute_value) AS attribute_value
-                    FROM `tabItem Variant Attribute`
-                    WHERE parent = %s """, (row.get("item")), as_dict=True)
+                    FROM `tabItem Variant Attribute` WHERE parent = %s
+                """, (row.get("item")), as_dict=True)
 
-                serial_no_attr_data = {item["item_attribute"]: item["attribute_value"] for item in query2}
-                njqca_attr_data = {(key.lower() if key else ""): (value.lower() if isinstance(value, str) else "") for key, value in data.get("attr_data", {}).items()}
+                serial_no_attr_data = {
+                    item["item_attribute"]: item["attribute_value"]
+                    for item in query2
+                }
 
-                serial_no_grade = serial_no_attr_data.get("grade", "")
+                njqca_attr_data = {
+                    (key.lower() if key else ""): (value.lower() if isinstance(value, str) else "")
+                    for key, value in data.get("attr_data", {}).items()
+                }
 
-                serial_no_attr_data.pop("grade", None)
+                serial_no_grade = serial_no_attr_data.pop("grade", None)
                 njqca_attr_data.pop("grade", None)
 
-                if serial_no_attr_data == njqca_attr_data:
+                item_group = row.get("item_group", "").lower()
+
+                if item_group == "laptop ram":
+                    serial_filtered = {"ram capacity": serial_no_attr_data.get("ram capacity")}
+                    data_filtered = {"ram capacity": njqca_attr_data.get("ram capacity")}
+                elif item_group == "laptop storage":
+                    data_capacity = normalize_storage_capacity(njqca_attr_data.get("storage capacity"))
+                    serial_filtered = {"storage capacity": serial_no_attr_data.get("storage capacity")}
+                    data_filtered = {"storage capacity": data_capacity}
+                else:
+                    serial_filtered = serial_no_attr_data
+                    data_filtered = njqca_attr_data
+
+                if serial_filtered == data_filtered:
                     data["fetched_item_code"] = row["item"]
                     matched = True
+                    used_serial_rows.add(row["name"])
 
                     if serial_no_grade and serial_no_grade.upper() != "UNKNOWN":
-                        data["attr_data"]["Grade"] = get_attribute_from_erp(serial_no_grade, "Grade")  
-                    break 
-
-                if serial_no_attr_data != njqca_attr_data:
+                        data["attr_data"]["Grade"] = get_attribute_from_erp(serial_no_grade, "Grade")
+                    break
+                else:
                     unmatched_item_code.append(row.get("item"))
                     data["reference_docname"] = row["reference_doctype_no"]
                     data["item_group_idx"] = row["item_group_idx"]
-                else:
-                    data["fetched_item_code"] = ""
 
         updated_part_data.append(data)
-    
+
     partData_fetched_item = sum(
         [[data.get("part_item_code", ""), data.get("fetched_item_code", "")]
-        for data in partData], []
+         for data in partData], []
     )
-
     partData_fetched_item = [item for item in partData_fetched_item if item]
-    serial_no_components_list = [(row.get("item"), row.get("item_group"), row.get("reference_doctype_no"), row.get("item_group_idx")) for row in serial_no_components]
-    partData_item_groups = {data.get("item_group") for data in partData if data.get("item_group")}
 
-    for item, item_group, reference_docname, item_group_idx in serial_no_components_list:
-        if item not in partData_fetched_item and item_group in partData_item_groups:
+    serial_no_components_list = [
+        (row.get("name"), row.get("item"), row.get("item_group"),
+         row.get("reference_doctype_no"), row.get("item_group_idx"))
+        for row in serial_no_components
+    ]
+    partData_item_groups = {
+        data.get("item_group")
+        for data in partData if data.get("item_group")
+    }
+
+    for name, item, item_group, reference_docname, item_group_idx in serial_no_components_list:
+        if (item not in partData_fetched_item
+                and item_group in partData_item_groups
+                and name not in used_serial_rows):
             updated_part_data.append({
                 "fetched_item_code": item,
                 "attr_data": {},
@@ -2316,6 +2345,14 @@ def get_fetched_item_code(serial_no, partData):
             })
 
     return updated_part_data if updated_part_data else partData
+
+def normalize_storage_capacity(value):
+    if not value:
+        return ""
+    value = value.lower()
+    if value.endswith(" ssd"):
+        value = value[:-4]
+    return value.strip()
 
 @frappe.whitelist()
 def get_battery_auto_item_code(name,item_template,manufacturer_model):

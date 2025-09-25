@@ -24,6 +24,7 @@ frappe.ui.form.on('Sales Invoice', {
     //     });
     
     // },
+
     onload: function(frm) {
         let items = frm.doc.items.map(row => ({
             idx: row.idx,
@@ -47,11 +48,13 @@ frappe.ui.form.on('Sales Invoice', {
             }
         });
     },
-    validate:  function(frm) {
-        setup_custom_einvoice_actions(frm);
+    after_save:  function(frm) {
         if (!frm.doc.allocate_advances_automatically) {
             frm.trigger('get_advances');
-        }
+        }  
+    },
+    validate:  function(frm) {
+        setup_custom_einvoice_actions(frm);
         
     //     if (!frm.doc.invoice_no && !frm.doc.transporter_id && !frm.doc.transporter_names && !frm.doc.email) {
     //         frappe.call({

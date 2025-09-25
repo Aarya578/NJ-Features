@@ -875,9 +875,6 @@ function popUpWorkInventory() {
                     // All checked → submit directly
                     submitReport(values, dialog);
                 }
-            } else {
-                // ✅ Allow submission even with empty table
-                submitReport(values, dialog);
             }
         }
 

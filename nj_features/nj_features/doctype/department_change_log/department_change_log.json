@@ -32,6 +32,7 @@
   {
    "fieldname": "current_department",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Current Department",
    "options": "Department",
    "read_only": 1
@@ -85,7 +86,9 @@
   {
    "fieldname": "employee_id",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "Employee ID",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -105,6 +108,7 @@
   {
    "fieldname": "actual_productivity",
    "fieldtype": "Float",
+   "in_list_view": 1,
    "label": "Actual Productivity",
    "read_only": 1
   }
@@ -112,7 +116,7 @@
  "in_create": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-20 19:09:05.282874",
+ "modified": "2025-09-24 14:23:23.822724",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Change Log",

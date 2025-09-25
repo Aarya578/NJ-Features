@@ -1133,7 +1133,7 @@ function processItemTemplate(frm) {
                             frappe.model.set_value(newRow.doctype, newRow.name, 'calculated_item_code', row.part_item_code);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'fetched_item_code', row.fetched_item_code);                         
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_template', row.item_template);
-                            frappe.model.set_value(newRow.doctype, newRow.name, 'processor_type', row.attr_data["Processor Type"]);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'processor_type', row.attr_data["Processor Type"] || row.attr_data["Processor Type1"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'grade', row.attr_data["Grade"]);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'reference_row_name', row.name);
                             frappe.model.set_value(newRow.doctype, newRow.name, 'item_group_idx', row.item_group_idx);

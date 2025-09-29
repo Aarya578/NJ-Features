@@ -13,7 +13,7 @@ from ecommerce_integrations.shopify.constants import (
 	SETTING_DOCTYPE,
 )
 
-logger = frappe.logger('Shopif customer', allow_site=True, file_count=1)
+logger = frappe.logger('ShopifcustomerfromNJFeature', allow_site=True, file_count=1)
 class ShopifyCustomer(EcommerceCustomer):
 	def __init__(self, customer_id: str):
 		self.setting = frappe.get_doc(SETTING_DOCTYPE)
@@ -186,7 +186,7 @@ def _map_address_fields(shopify_address, customer_name, address_type, email):
         ]))
 
     address_fields = {
-        "address_title": customer_name,
+        "address_title":customer_name,
         "address_type": address_type,
         ADDRESS_ID_FIELD: shopify_address.get("id"),
         "address_line1": address1,

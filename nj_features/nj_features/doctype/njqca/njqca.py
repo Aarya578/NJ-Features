@@ -99,7 +99,10 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 'docstatus': 0,
                 'inspection_type': inspection_type,
                 'owner':self.created,
-                'sync_njqca': 1
+                'sync_njqca': 1,
+                'attribute_1': ['>', 0],
+                'attribute_2': ['>', 0],
+                'attribute_3': ['>', 0],
             },
             fields=['name', 'creation'],
             order_by='creation desc'
@@ -114,7 +117,10 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     'docstatus': 0,
                     'inspection_type': inspection_type,
                     'brand': brand,
-                    'model': model
+                    'model': model,
+                    'attribute_1': ['>', 0],
+                    'attribute_2': ['>', 0],
+                    'attribute_3': ['>', 0],
                 },
                 fields=['name', 'creation'],
                 order_by='creation desc'

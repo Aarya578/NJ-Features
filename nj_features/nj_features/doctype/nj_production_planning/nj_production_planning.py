@@ -1175,10 +1175,10 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
             "processor_type": (s.get("Processor Type") or "").strip().lower(),
             "ram_capacity": (s.get("RAM Capacity") or "").strip().lower(),
             "storage_capacity": (s.get("Storage Capacity") or "").strip().lower(),
-            "creation": s.get("creation")
+            "creation": s.get("creation"),
+            "reserved_sales_order": s.get("reserved_sales_order")  # ✅ keep this for later
         })
     
-    # print("Normalized serial_no_list:", normalized_serials)
     # Sort by multiple fields
     normalized_serials.sort(
         key=lambda x: (
@@ -1189,8 +1189,6 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
             -x.get("creation").timestamp()  # Sort by creation DESC
         )
     )
-
-    # print("Sorted normalized serial_no_list:", normalized_serials)
 
     for child in doc.get("final_config", []):
         if child.get("to_make", 0) > 0:
@@ -1235,16 +1233,49 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
                         needed -= 1
 
             for serial_no in matched_serials:
-                rank += 1
+                serial_dict = next((s for s in normalized_serials if s["name"] == serial_no), None)
+
+                final_item_code = child.get("item_code")
+                final_rank = rank + 1   # assume normal case
+                delivery_date = None    # default
+
+                if serial_dict and serial_dict.get("reserved_sales_order"):
+                    reserved_so = serial_dict.get("reserved_sales_order")
+                    so_item, so_date = frappe.db.get_value(
+                        "Sales Order",
+                        reserved_so,
+                        ["(SELECT item_code FROM `tabSales Order Item` WHERE parent=%s LIMIT 1)", "delivery_date"],
+                        as_dict=False,
+                        cache=True,
+                        debug=False
+                    )
+                    if so_item:
+                        final_item_code = so_item
+                    delivery_date = so_date
+                    final_rank = 0  # reserved ones always rank 0
+                else:
+                    rank += 1  # only increment global rank if not reserved
+
                 suggested_serial_no_data.append({
                     "model": child.get("model", "").strip().upper(),
                     "processor": child.get("processor", "").strip().upper(),
                     "ram": child.get("ram", "").strip().upper(),
                     "ssd": child.get("ssd", "").strip().upper(),
                     "suggested_serial_no": serial_no,
-                    "item_code": child.get("item_code"),
-                    "rank": rank
+                    "item_code": final_item_code,
+                    "rank": final_rank,
+                    "delivery_date": delivery_date
                 })
+
+    import datetime
+
+    suggested_serial_no_data.sort(
+        key=lambda x: (
+            x.get("delivery_date").date() if isinstance(x.get("delivery_date"), datetime.datetime)
+            else x.get("delivery_date")
+            or datetime.date.max
+        )
+    )
 
     doc.update({"suggested_serial_no": suggested_serial_no_data})
 
@@ -1261,6 +1292,7 @@ def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
     end_time = time.time()
     execution_time = end_time - start_time
     print(f"get_serial_no_data completed in {execution_time:.4f} seconds")
+
 
 def allocate_laptop_parts(doc):
     print("Started Part Allocation")

@@ -267,11 +267,14 @@ def get_departments():
 def get_open_sales_orders():
     """Get all open sales orders with pending items (serialized items only)"""
     return frappe.db.sql("""
-        -- 1. Direct stock items
+        SELECT *
+        FROM (
+            -- 1. Direct stock items
             SELECT 
                 so.name AS sales_order,
                 soi.item_code,
-                SUM(soi.qty) AS ordered_qty
+                SUM(soi.qty) AS ordered_qty,
+                so.delivery_date
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -285,14 +288,16 @@ def get_open_sales_orders():
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
             GROUP BY 
-                so.name, soi.item_code
+                so.name, soi.item_code, so.delivery_date
 
             UNION ALL
 
+            -- 2. Product bundle stock items
             SELECT 
                 so.name AS sales_order,
                 pbi.item_code,
-                pbi.qty * soi.qty AS ordered_qty
+                pbi.qty * soi.qty AS ordered_qty,
+                so.delivery_date
             FROM 
                 `tabSales Order` so
             INNER JOIN 
@@ -312,8 +317,8 @@ def get_open_sales_orders():
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
-            ORDER BY 
-                sales_order ASC
+        ) AS combined
+        ORDER BY combined.delivery_date ASC
     """, as_dict=True)
 
 def get_delivered_quantity(so_name, item_code):

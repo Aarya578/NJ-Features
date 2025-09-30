@@ -72,7 +72,7 @@ class CustomProductBundle(ProductBundle):
 				frappe.logger().debug(f"MATCH FOUND - Keeping: {debug_string(original_code)}")
 			else:
 				try:
-					frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1)
+					frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1, delete_permanently=True)
 					deleted_records.append(original_code)
 					frappe.logger().debug(f"NO MATCH - Deleting: {debug_string(original_code)}")
 				except Exception as e:
@@ -118,11 +118,10 @@ class CustomProductBundle(ProductBundle):
 #     deleted_records = []
 #     for sync_doc in sync_docs:
 #         sync_item_code = sync_doc.item_code
-#         print("sync_item_code===========================", sync_item_code)
         
 #         # Only delete if item_code NOT found in child table
 #         if sync_item_code not in child_item_codes:
-#             frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1)
+#             frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1, delete_permanently=True)
 #             deleted_records.append(sync_item_code)
     
 #     if deleted_records:

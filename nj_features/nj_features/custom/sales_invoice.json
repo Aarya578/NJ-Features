@@ -551,6 +551,30 @@
     }
   ],
   "doctype": "Sales Invoice",
-  "property_setters": [],
+  "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2025-10-06 14:56:57.764587",
+   "default_value": null,
+   "doc_type": "Sales Invoice",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "allocate_advances_automatically",
+   "idx": 0,
+   "modified": "2025-10-06 14:56:57.764587",
+   "modified_by": "postman@mail.com",
+   "name": "Sales Invoice-allocate_advances_automatically-default",
+   "owner": "postman@mail.com",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "default",
+   "property_type": "Text",
+   "row_name": null,
+   "value": "1"
+  }],
   "sync_on_migrate": 1
 }

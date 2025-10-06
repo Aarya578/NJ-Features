@@ -48,11 +48,6 @@ frappe.ui.form.on('Sales Invoice', {
             }
         });
     },
-    after_save:  function(frm) {
-        if (!frm.doc.allocate_advances_automatically) {
-            frm.trigger('get_advances');
-        }  
-    },
     validate:  function(frm) {
         setup_custom_einvoice_actions(frm);
         

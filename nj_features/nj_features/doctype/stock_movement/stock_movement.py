@@ -588,7 +588,14 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
+    """
+    Validate serial components of a laptop against allowed grades and defect types in a department.
 
+    Args:
+        serial_doc (dict): Serial document containing item_group, serial_no_component.
+        department_doc (dict): Department document containing allowed_item_group_grades, all flag.
+        error_messages (list): List to append error messages to.
+    """
     if serial_doc.get("item_group") != "Laptops":
         return
 
@@ -596,78 +603,126 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     allowed_table = department_doc.get("allowed_item_group_grades", [])
     all_must_match = department_doc.get("all", False)
 
-    # Build set of (item_group, grade) from serial components
+    # ----------------------------
+    # Build serial sets
+    # ----------------------------
+    # Grades
     serial_set = {
         (comp.get("item_group"), comp.get("grade"))
         for comp in serial_components
         if comp.get("item_group") and comp.get("grade")
     }
 
-    # Track what item_groups are actually present in the serial
-    serial_item_groups_present = {
-        comp.get("item_group") for comp in serial_components if comp.get("item_group")
-    }
+    # Defects
+    serial_defects_set = set()
+    for comp in serial_components:
+        ig = comp.get("item_group")
+        if not ig:
+            continue
+        if comp.get("aesthetic_issue"):
+            serial_defects_set.add((ig, "Aesthetic Issue"))
+        if comp.get("functional_issue"):
+            serial_defects_set.add((ig, "Functional Issue"))
+        if comp.get("defects_type"):
+            defects = [d.strip() for d in comp.get("defects_type", "").split(",") if d.strip()]
+            for d in defects:
+                serial_defects_set.add((ig, d))
+                
+    print("serial_defects_set ===============", serial_defects_set)
 
-    # Build allowed map for comparison
-    allowed_map = defaultdict(set)
+    # Track item groups present
+    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group")}
+
+    # ----------------------------
+    # Build allowed maps
+    # ----------------------------
+    allowed_map = defaultdict(set)  # For grades
+    allowed_defective_checks = defaultdict(set)  # For defects
+
     for entry in allowed_table:
-        item_group = entry.get("item_group")
+        ig = entry.get("item_group")
+        if not ig:
+            continue
+        # Grades
         if entry.get("restricted_grade"):
-            grades = entry.get("restricted_grade", "").split(",")
-            for grade in grades:
-                grade = grade.strip()
-                if item_group and grade:
-                    allowed_map[item_group].add(grade)
+            grades = [g.strip() for g in entry.get("restricted_grade", "").split(",") if g.strip()]
+            allowed_map[ig].update(grades)
+        # Defects
+        if entry.get("defects_type"):
+            defects = [d.strip() for d in entry.get("defects_type", "").split(",") if d.strip()]
+            allowed_defective_checks[ig].update(defects)
 
+    print("allowed_defective_checks ===============", dict(allowed_defective_checks))
+
+    # ----------------------------
+    # Grades validation
+    # ----------------------------
     if all_must_match:
-        for item_group, allowed_grades in allowed_map.items():
-            # 🔸 Skip item groups not present in serial components
-            if item_group not in serial_item_groups_present:
+        for ig, allowed_grades in allowed_map.items():
+            if ig not in serial_item_groups_present:
                 continue
-
-            matched = any(
-                (item_group, grade) in serial_set for grade in allowed_grades
-            )
+            matched = any((ig, grade) in serial_set for grade in allowed_grades)
+            print(f"Checking grades for {ig}: matched = {matched}")
             if not matched:
-                actual_grades = {
-                    grade for ig, grade in serial_set if ig == item_group
-                }
+                actual_grades = {grade for ig2, grade in serial_set if ig2 == ig}
                 actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
                 allowed_display = ', '.join(sorted(allowed_grades))
-                error_message = (
+                error_messages.append(
                     f"Serial No <b>{serial_doc.name}</b>: In department <b>{department_doc.name}</b>, "
-                    f"only grade(s) <b>{allowed_display}</b> are allowed for item group <b>{item_group}</b>, "
+                    f"only grade(s) <b>{allowed_display}</b> are allowed for item group <b>{ig}</b>, "
                     f"but found: <b>{actual_display}</b>."
                 )
-                error_messages.append(error_message)
-                break  # Stop at first mismatch
+                break
     else:
-        # At least one valid pair must match (among only present item groups)
         match_found = False
-        for item_group, allowed_grades in allowed_map.items():
-            if item_group not in serial_item_groups_present:
+        for ig, allowed_grades in allowed_map.items():
+            if ig not in serial_item_groups_present:
                 continue
-            if any((item_group, grade) in serial_set for grade in allowed_grades):
+            if any((ig, grade) in serial_set for grade in allowed_grades):
                 match_found = True
                 break
 
         if not match_found:
-            for item_group, allowed_grades in allowed_map.items():
-                if item_group not in serial_item_groups_present:
+            for ig, allowed_grades in allowed_map.items():
+                if ig not in serial_item_groups_present:
                     continue
-                actual_grades = {
-                    grade for ig, grade in serial_set if ig == item_group
-                }
+                actual_grades = {grade for ig2, grade in serial_set if ig2 == ig}
                 actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
                 allowed_display = ', '.join(sorted(allowed_grades))
-                error_message = (
+                error_messages.append(
                     f"Serial No <b>{serial_doc.name}</b>: In department <b>{department_doc.name}</b>, "
-                    f"for item group <b>{item_group}</b>, only grade(s) <b>{allowed_display}</b> are allowed, "
+                    f"for item group <b>{ig}</b>, only grade(s) <b>{allowed_display}</b> are allowed, "
                     f"but found: <b>{actual_display}</b>."
                 )
-                error_messages.append(error_message)
+
+    # ----------------------------
+    # Defects validation
+    # ----------------------------
+    for ig, allowed_defects in allowed_defective_checks.items():
+        # Skip item groups with no defects restriction
+        if not allowed_defects:
+            continue
+
+        if ig not in serial_item_groups_present:
+            continue
+
+        # Collect actual defects for this item group
+        actual_defects = {d for ig2, d in serial_defects_set if ig2 == ig}
+
+        # If NONE of the actual defects are allowed → error
+        if actual_defects and actual_defects.isdisjoint(allowed_defects):
+            actual_display = ', '.join(sorted(actual_defects))
+            allowed_display = ', '.join(sorted(allowed_defects))
+            error_messages.append(
+                f"Serial No <b>{serial_doc.name}</b>: In department <b>{department_doc.name}</b>, "
+                f"for item group <b>{ig}</b>, only defect type(s) <b>{allowed_display}</b> are allowed, "
+                f"but found: <b>{actual_display}</b>."
+            )
+
+        # ✅ If at least one defect is allowed, nothing is appended
 
     return error_messages
+
 
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])

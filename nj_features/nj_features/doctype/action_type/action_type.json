@@ -29,7 +29,7 @@
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-06-21 16:51:31.693135",
+ "modified": "2025-10-07 14:30:06.883744",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Action Type",
@@ -73,6 +73,5 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC",
- "track_changes": 1
+ "sort_order": "DESC"
 }

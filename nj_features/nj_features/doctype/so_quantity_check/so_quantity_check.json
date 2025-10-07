@@ -89,7 +89,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2025-08-07 11:50:10.262564",
+ "modified": "2025-10-07 14:30:05.849342",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "SO Quantity Check",
@@ -107,6 +107,5 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC",
- "track_changes": 1
+ "sort_order": "DESC"
 }

@@ -33,7 +33,7 @@ class CustomProductBundle(ProductBundle):
 			frappe.logger().debug(f"Found {len(sync_docs)} sync records")
 		except Exception as e:
 			frappe.log_error(f"Error fetching NJ Inventory Sync Main records: {str(e)}")
-			frappe.throw("Error fetching inventory records. Please check logs.")
+			frappe.throw(f"Error fetching inventory records. Please check logs. Error: {str(e)}")
 
 		if not sync_docs:
 			frappe.msgprint("No matching NJ Inventory Sync Main record found.")

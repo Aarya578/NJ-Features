@@ -258,7 +258,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                         for child in new_qi.get("nj_quality_checks", [])
                     }
 
-                    if check_options and data.get("score") is not None:
+                    if check_options and data.get("score") is not None and data.get("score") != '':
                         for opt in check_options:
                             if float(data.get("score")) == float(opt["score"] or 0):
                                 for m in matches:

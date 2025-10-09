@@ -420,6 +420,7 @@ def update_employee_experience_table():
             filters={"status": "Active"},
             fields=["name", "date_of_joining", "department", "role_profile"]
         )
+        print("employees:================", employees)
         
         stats = {
             "total": len(employees),
@@ -427,10 +428,12 @@ def update_employee_experience_table():
             "errors": 0,
             "start_time": datetime.now()
         }
+        print("stats:================", stats)
         
         for emp in employees:
             try:
                 doc = frappe.get_doc("Employee", emp.name)
+                print("doc:================", doc)
                 
                 # Find existing experience entry
                 existing_entry = next(
@@ -438,10 +441,12 @@ def update_employee_experience_table():
                      if entry.department == doc.department and entry.role_profile == doc.role_profile),
                     None
                 )
+                print("existing_entry:================", existing_entry)
                 
                 # Calculate days
                 if existing_entry:
                     no_of_days = int(existing_entry.no_of_days) + 1
+                    print("no_of_days:================", no_of_days)
                     doc.employee_experience_table.remove(existing_entry)
                 else:
                     if not doc.previous_department and not doc.previous_role_profile:
@@ -462,6 +467,7 @@ def update_employee_experience_table():
                 
                 # Get ramp data and update
                 ramp_data = get_ramp_level(role_profile=doc.role_profile, total_days=no_of_days)
+                print("ramp_data:================", ramp_data)
                 
                 # Add new experience entry
                 doc.append("employee_experience_table", {

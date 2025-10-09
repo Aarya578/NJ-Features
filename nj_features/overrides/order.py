@@ -197,8 +197,11 @@ def create_sales_order(shopify_order, setting, company=None):
             "shopify_order_number": str(shopify_order.get("id", "")),
             "sales_channel":"Shopify",
             "is_cod": is_cod,
+            # "taxes_and_charges": setting.default_taxes_and_charges
+            
         }
-        logger.info(f"so_data ========316======{so_data}")
+
+    
         # Set the latest addresses if available
         if latest_addresses['billing_address']:
             so_data["customer_address"] = latest_addresses['billing_address']
@@ -333,75 +336,40 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
             frappe.log_error(f"Coupon code processing failed: {frappe.get_traceback()}")
 
     return items
-
-# def get_item_code(shopify_item):
-#     """
-#     Get item code using shopify_item dict.
-#     Check product bundles in order, find the one with highest quantity > 0.
-#     If all have quantity = 0, use the first product bundle.
-#     If no product bundles found, fallback to 'Item Not Found'.
-#     """
-#     variant_id = shopify_item.get("variant_id")
-    
-#     if variant_id:
-#         # Fetch product bundles (quantity is treated as string)
-#         product_bundles = frappe.db.sql("""
-#             SELECT DISTINCT pb.name, pb.quantity
-#             FROM `tabItem` AS i
-#             INNER JOIN `tabProduct Bundle` AS pb
-#             ON i.shopify_product_id = pb.shopify_variant_id
-#             WHERE i.shopify_product_id = %s
-#             ORDER BY pb.quantity DESC, pb.name
-#         """, variant_id, as_dict=1)
-
-#         logger.info(f"==========product_bundles=========={product_bundles}")
-        
-#         if product_bundles:
-#             # First check if any bundle has quantity > 0
-#             for pb in product_bundles:
-#                 quantity_str = str(pb.get("quantity") or "0").strip()
-#                 try:
-#                     quantity = int(quantity_str)
-#                     if quantity > 0:
-#                         return pb.name
-#                 except ValueError:
-#                     # Skip if quantity is not a valid integer (e.g., empty or non-numeric)
-#                     continue
-
-#             # If none have quantity > 0, return the first one
-#             return product_bundles[0].name
-
-#     # Fallback to "Item Not Found" if no match
-#     try:
-#         fallback = frappe.get_doc("Item", "Item Not Found")
-#         if fallback:
-#             fallback.description = f"Shopify Variant ID: {variant_id}"
-#             logger.info(f"==========fallback.description=========={fallback.description}")
-#             fallback.save(ignore_permissions=True)
-#             return fallback.item_code
-#     except frappe.DoesNotExistError:
-#         pass
-
-#     frappe.log_error("Fallback item 'Item Not Found' not present in database", "Product Bundle Lookup Error")
-#     return "Item Not Found"
 def get_order_taxes(shopify_order, setting, items):
     taxes = []
     line_items = shopify_order.get("line_items")
 
+    # collect all item_codes from order items (including coupon/freebies)
+    all_item_codes = [it["item_code"] for it in items]
+
     for line_item in line_items:
         item_code = get_item_code(line_item)
         for tax in line_item.get("tax_lines"):
+            # Build full tax detail JSON with ALL items
+            tax_detail = {}
+            for ic in all_item_codes:
+                if ic == item_code:
+                    tax_detail[ic] = [
+                        flt(tax.get("rate")) * 100,
+                        flt(tax.get("price"))   
+                    ]
+                else:
+                    # ensure item present but zero if not taxed
+                    tax_detail[ic] = [0.0, 0.0]
+
             taxes.append(
                 {
                     "charge_type": "Actual",
                     "account_head": get_tax_account_head(tax),
                     "description": (
-                        get_tax_account_description(tax) or f"{tax.get('title')} - {tax.get('rate') * 100.0:.2f}%"
+                        get_tax_account_description(tax)
+                        or f"{tax.get('title')} - {tax.get('rate') * 100.0:.2f}%"
                     ),
                     "tax_amount": tax.get("price"),
                     "included_in_print_rate": 0,
                     "cost_center": setting.cost_center,
-                    "item_wise_tax_detail": {item_code: [flt(tax.get("rate")) * 100, flt(tax.get("price"))]},
+                    "item_wise_tax_detail": json.dumps(tax_detail),
                     "dont_recompute_tax": 1,
                 }
             )
@@ -417,12 +385,48 @@ def get_order_taxes(shopify_order, setting, items):
     if cint(setting.consolidate_taxes):
         taxes = consolidate_order_taxes(taxes)
 
-    for row in taxes:
-        tax_detail = row.get("item_wise_tax_detail")
-        if isinstance(tax_detail, dict):
-            row["item_wise_tax_detail"] = json.dumps(tax_detail)
-
     return taxes
+
+# def get_order_taxes(shopify_order, setting, items):
+#     taxes = []
+#     line_items = shopify_order.get("line_items")
+
+#     for line_item in line_items:
+#         item_code = get_item_code(line_item)
+#         for tax in line_item.get("tax_lines"):
+#             taxes.append(
+#                 {
+#                     "charge_type": "Actual",
+#                     "account_head": get_tax_account_head(tax),
+#                     "description": (
+#                         get_tax_account_description(tax) or f"{tax.get('title')} - {tax.get('rate') * 100.0:.2f}%"
+#                     ),
+#                     "tax_amount": tax.get("price"),
+#                     "included_in_print_rate": 0,
+#                     "cost_center": setting.cost_center,
+#                     "item_wise_tax_detail": {item_code: [flt(tax.get("rate")) * 100, flt(tax.get("price"))]},
+#                     "dont_recompute_tax": 1,
+#                 }
+#             )
+
+#     update_taxes_with_shipping_lines(
+#         taxes,
+#         shopify_order.get("shipping_lines"),
+#         setting,
+#         items,
+#         taxes_inclusive=shopify_order.get("taxes_included"),
+#     )
+
+#     if cint(setting.consolidate_taxes):
+#         taxes = consolidate_order_taxes(taxes)
+
+#     for row in taxes:
+#         tax_detail = row.get("item_wise_tax_detail")
+#         if isinstance(tax_detail, dict):
+#             row["item_wise_tax_detail"] = json.dumps(tax_detail)
+
+#     return taxes
+
 def get_tax_account_description(tax):
     tax_title = tax.get("title")
 

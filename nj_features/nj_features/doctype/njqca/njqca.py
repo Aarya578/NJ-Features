@@ -3419,5 +3419,8 @@ def duplicate_njqca(serial_no):
     new_doc.set("name", None)
     new_doc.set("created", frappe.session.user)
     new_doc.set("inspection_type", dismantle_inspection_type)
+    is_defective=frappe.db.get_value('Inspection Type', dismantle_inspection_type, 'check_only_defectives')
+    if is_defective:
+       new_doc.set('qi_type',"is_defective")
 
     return new_doc.as_dict(no_nulls=True)

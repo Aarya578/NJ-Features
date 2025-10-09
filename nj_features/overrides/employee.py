@@ -647,6 +647,17 @@ def validate_employee_department_and_role(user, department, role_profile, depart
             frappe.db.sql(query, (employee_doc.get("department"), employee_doc.get("previous_department"), employee_doc.get("work_warehouse")))
 
         return {"False": "Department has been changed Successfully"}
+    
+    frappe.get_doc(
+		{
+			"doctype": "Activity Log",
+			"user": user,
+			"status": "Success",
+			"operation": "Login",
+			"subject": "Inventory Login",
+			"reference_name": "Inventory Login",
+		}
+	).insert(ignore_permissions=True, ignore_links=True)
 
     return {"True": True}
 

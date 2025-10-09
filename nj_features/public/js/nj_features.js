@@ -755,13 +755,14 @@ function show_login_popup() {
             filters: {
                 user: user,
                 operation: "Login", status: "Success",
+                reference_name: "Inventory Login",
                 creation: [">=", today + " 00:00:00"]
             },
         },
         callback: (r) => {
             console.log("🔍 User login activity:", r.message);
 
-            if (!r.message || r.message.length <= 1) {
+            if (!r.message || r.message.length < 1) {
                 console.log("🚨 No login today — show popup.");
                 show_login_verification_popup(user);
             } else {

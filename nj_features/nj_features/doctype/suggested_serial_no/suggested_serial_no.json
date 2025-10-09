@@ -11,7 +11,8 @@
   "processor",
   "ram",
   "ssd",
-  "rank"
+  "rank",
+  "delivery_date"
  ],
  "fields": [
   {
@@ -67,11 +68,17 @@
    "fieldname": "rank",
    "fieldtype": "Int",
    "label": "Rank"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "label": "Delivery Date",
+   "read_only": 1
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-21 16:51:29.501686",
+ "modified": "2025-09-27 17:46:33.985199",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Suggested Serial No",

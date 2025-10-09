@@ -9,6 +9,7 @@
   "grade",
   "min_quantity",
   "max_quantity",
+  "defects_type",
   "restricted_grade"
  ],
  "fields": [
@@ -43,11 +44,17 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Max Quantity"
+  },
+  {
+   "fieldname": "defects_type",
+   "fieldtype": "Select",
+   "label": "Defects Type",
+   "options": "\nAesthetic Issue\nFunctional Issue"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-07-08 15:17:37.359692",
+ "modified": "2025-10-07 16:28:17.019470",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Allowed Item Group Grades",

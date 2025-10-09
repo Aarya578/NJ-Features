@@ -86,9 +86,10 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_validation_for_auto_stock_entry")
-        frappe.throw("An error occurred during validation. Please check logs.")
+        frappe.throw(f"An error occurred during validation. Please check logs. Error: {str(e)}")
 
 def check_warehouse_qty(t_warehouse, required_qty=1):
+    error_msg = ""
     query = """
         SELECT 
             COALESCE(
@@ -276,4 +277,4 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
         except Exception:
             frappe.db.rollback()
             frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
-            frappe.throw("An error occurred during Quality Inspection validation. Please check logs.")
+            frappe.throw(f"An error occurred during Quality Inspection validation. Please check logs. Error: {frappe.get_traceback()}")

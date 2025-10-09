@@ -74,7 +74,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-05-06 23:11:11.430465",
+ "modified": "2025-10-07 14:30:08.571650",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Settings",
@@ -93,6 +93,5 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC",
- "track_changes": 1
+ "sort_order": "DESC"
 }

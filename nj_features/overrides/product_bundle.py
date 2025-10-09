@@ -2,8 +2,6 @@
 
 import frappe
 from frappe import _
-from frappe.model.document import Document
-from frappe.utils import get_link_to_form
 from erpnext.selling.doctype.product_bundle.product_bundle import ProductBundle
 
 class CustomProductBundle(ProductBundle):
@@ -11,7 +9,6 @@ class CustomProductBundle(ProductBundle):
 		self.deleting_rerord__if_table_modified()
 
 	def deleting_rerord__if_table_modified(self):
-		import frappe
 		import re
 		
 		# Enhanced debug function
@@ -36,7 +33,7 @@ class CustomProductBundle(ProductBundle):
 			frappe.logger().debug(f"Found {len(sync_docs)} sync records")
 		except Exception as e:
 			frappe.log_error(f"Error fetching NJ Inventory Sync Main records: {str(e)}")
-			frappe.throw("Error fetching inventory records. Please check logs.")
+			frappe.throw(f"Error fetching inventory records. Please check logs. Error: {str(e)}")
 
 		if not sync_docs:
 			frappe.msgprint("No matching NJ Inventory Sync Main record found.")
@@ -75,7 +72,7 @@ class CustomProductBundle(ProductBundle):
 				frappe.logger().debug(f"MATCH FOUND - Keeping: {debug_string(original_code)}")
 			else:
 				try:
-					frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1)
+					frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1, delete_permanently=True)
 					deleted_records.append(original_code)
 					frappe.logger().debug(f"NO MATCH - Deleting: {debug_string(original_code)}")
 				except Exception as e:
@@ -99,7 +96,6 @@ class CustomProductBundle(ProductBundle):
 #     import frappe
 #     # Step 1: Get parent-level shopify_variant_id
 #     shopify_variant_id = self.shopify_variant_id
-#     print("shopify_variant_id===========================", shopify_variant_id)
 #     if not shopify_variant_id:
 #         frappe.msgprint("No Shopify Variant ID found in Product Bundle.")
 #         return
@@ -110,7 +106,6 @@ class CustomProductBundle(ProductBundle):
 #         filters={"shopify_variant_id": shopify_variant_id},
 #         fields=["name", "item_code"]
 #     )
-#     print("sync_docs===========================", sync_docs)
 #     if not sync_docs:
 #         frappe.msgprint("No matching NJ Inventory Sync Main record found.")
 #         return
@@ -123,11 +118,10 @@ class CustomProductBundle(ProductBundle):
 #     deleted_records = []
 #     for sync_doc in sync_docs:
 #         sync_item_code = sync_doc.item_code
-#         print("sync_item_code===========================", sync_item_code)
         
 #         # Only delete if item_code NOT found in child table
 #         if sync_item_code not in child_item_codes:
-#             frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1)
+#             frappe.delete_doc("NJ Inventory Sync Main", sync_doc.name, force=1, delete_permanently=True)
 #             deleted_records.append(sync_item_code)
     
 #     if deleted_records:
@@ -172,33 +166,24 @@ class CustomProductBundle(ProductBundle):
 #             d.item_code for d in pb_doc.items
 #             if d.item_code in item_code_count_map
 #         }
-#         print("matched_codes      =======",matched_codes)
 
 #         if not matched_codes:
 #             continue  # Skip if no matching item_code
 
 #         # Step 5: Sum the item_code_count for matched codes
 #         total_count = sum(item_code_count_map[code] for code in matched_codes)
-#         print("total_count      =======",total_count)
 
 #         if total_count:
 #             pb_doc.quantity = total_count
 #             pb_doc.save(ignore_permissions=True)
 #             frappe.db.commit()
-#             print(f"Updated {pb_doc.name}: Quantity = {total_count}")
-#         else:
-#             print(f"Skipped {pb_doc.name}: No valid item_code_count found.")
 
 
 @frappe.whitelist()
 def update_product_bundle_quantities():
 	# Step 1: Fetch item_code and update_qty2 from SO Quantity Check
 	data = frappe.db.sql("""
-		SELECT 
-			item_code, 
-			update_qty2 AS item_code_count 
-		FROM 
-			`tabSO Quantity Check`
+		SELECT item_code, update_qty2 AS item_code_count FROM `tabSO Quantity Check`
 	""", as_dict=True)
 
 	# Step 2: Convert item_code_count to int and create item_code → count map
@@ -218,17 +203,9 @@ def update_product_bundle_quantities():
 			d.item_code for d in pb_doc.items
 			if d.item_code in item_code_count_map
 		}
-		print("matched_codes =======", matched_codes)
 
 		# Step 5: Sum item_code_count values for all matched codes
 		total_count = sum(item_code_count_map[code] for code in matched_codes) if matched_codes else 0
-		print("total_count =======", total_count)
 
 		# Step 6: Update and save Product Bundle quantity
-		pb_doc.quantity = total_count
-		pb_doc.save(ignore_permissions=True)
-		frappe.db.commit()
-		print(f"Updated {pb_doc.name}: Quantity = {total_count}")
-
-
-
+		frappe.db.set_value("Product Bundle", pb.name, "quantity", total_count, update_modified=False)

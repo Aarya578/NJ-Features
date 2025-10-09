@@ -146,6 +146,14 @@ override_doctype_class = {
 # 	}
 # }
 doc_events = {
+    "Item": {
+    "after_insert": "nj_features.overrides.product.upload_erpnext_item",
+    "on_update": "nj_features.overrides.product.upload_erpnext_item",
+    # "validate": [
+    #     "ecommerce_integrations.utils.taxation.validate_tax_template",
+    #     "ecommerce_integrations.unicommerce.product.validate_item",
+    # ],
+	},
     "Purchase Receipt": {
         "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
         "on_submit": "nj_features.overrides.purchase_receipt.get_batch"
@@ -210,6 +218,7 @@ doc_events = {
 # }
 
 override_whitelisted_methods = {
+    "ecommerce_integrations.shopify.product.upload_erpnext_item": "nj_features.overrides.product.upload_erpnext_item",
     "ecommerce_integrations.shopify.order.sync_sales_order": "nj_features.overrides.order.sync_sales_order",
     "ecommerce_integrations.shopify.order.create_order": "nj_features.overrides.order.create_order",
     "ecommerce_integrations.shopify.order.create_sales_order": "nj_features.overrides.order.create_sales_order",
@@ -218,6 +227,7 @@ override_whitelisted_methods = {
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
 }
+
 
 
 scheduler_events = {

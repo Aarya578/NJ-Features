@@ -480,10 +480,10 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                         f"between <b>{formatted_time}</b> and <b>{current_time}</b>."
                     )
 
-    except Exception:
+    except Exception as e:
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
-        error_messages.append("An error occurred during Quality Inspection validation. Please check logs.")
+        error_messages.append(f"An error occurred during Quality Inspection validation. Please check logs. Error: {str(e)}")
 
 def check_warranty_expiry(serial_doc, error_messages):
     try:

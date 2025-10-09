@@ -299,18 +299,39 @@ def _match_sku_and_link_item(
         except Exception:
             return False
 
-
 def create_items_if_not_exist(order):
     """Using shopify order, sync all items that are not already synced."""
-    for item in order.get("line_items", []):
+    line_items = order.get("line_items", [])
+    
+    # flatten nested lists if any
+    if line_items and isinstance(line_items[0], list):
+        line_items = line_items[0]
 
-        product_id = item["product_id"]
+    for item in line_items:
+        if not isinstance(item, dict):
+            frappe.log_error(f"Unexpected line_item type: {type(item)}", "Shopify Order Sync Error")
+            continue
+
+        product_id = item.get("product_id")
         variant_id = item.get("variant_id")
         sku = item.get("sku")
         product = ShopifyProduct(product_id, variant_id=variant_id, sku=sku)
 
         if not product.is_synced():
             product.sync_product()
+
+
+# def create_items_if_not_exist(order):
+#     """Using shopify order, sync all items that are not already synced."""
+#     for item in order.get("line_items", []):
+
+#         product_id = item["product_id"]
+#         variant_id = item.get("variant_id")
+#         sku = item.get("sku")
+#         product = ShopifyProduct(product_id, variant_id=variant_id, sku=sku)
+
+#         if not product.is_synced():
+#             product.sync_product()
 
 
 # def get_item_code(shopify_item):
@@ -503,14 +524,20 @@ def get_item_code(shopify_item):
 #     # If fallback item not in DB
 #     frappe.log_error("Fallback item 'Item Not Found' not present in database", "Product Bundle Lookup Error")
 #     return "Item Not Found"
+
+
+
+@frappe.whitelist(allow_guest=True)
 @temp_shopify_session
-def upload_erpnext_item(doc, method=None):
+def upload_erpnext_item(doc=None, method=None):
+
     """This hook is called when inserting new or updating existing `Item`.
 
     New items are pushed to shopify and changes to existing items are
     updated depending on what is configured in "Shopify Setting" doctype.
     """
     template_item = item = doc  # alias for readability
+    item = frappe.get_doc("Item", doc.name)
     # a new item recieved from ecommerce_integrations is being inserted
     if item.flags.from_integration:
         return

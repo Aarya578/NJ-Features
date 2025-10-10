@@ -244,8 +244,7 @@ def check_qi_validation(serial_no, s_warehouse, s_department, t_department):
                     LIMIT 1
                 """
                 qi_result = frappe.db.sql(
-                    qi_query,
-                    (tuple(inspection_types), serial_no, formatted_time, current_time), explain=True, debug=True,
+                    qi_query, (tuple(inspection_types), serial_no, formatted_time, current_time),
                     as_dict=True
                 )
 

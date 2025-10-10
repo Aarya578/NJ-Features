@@ -386,7 +386,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
 
         remaining = int(to_allocate - allocated_count)
 
-        # Build SQL-safe string: 'Warehouse A','Warehouse B',...
+        # Build SQL-safe string
         warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
 
         query = f"""
@@ -411,14 +411,22 @@ def assign_serials(so_name, item_code, to_allocate, departments):
 
         for serial in available_serials:
             serial_name = serial.get("name")
-            frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", so_name)
+            serial_doc = frappe.get_doc("Serial No", serial_name)
+
+            # ⚙️ Determine which Sales Order ID to reserve
+            if serial_doc.is_replace or serial_doc.return_reason:
+                # Take the existing sales_order_id from the serial
+                sales_order_id = serial_doc.get("sales_order_id")
+                frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", sales_order_id)
+            else:
+                # Normal case — assign the given SO
+                frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", so_name)
 
             # Calculate aging days
             so_creation = frappe.get_value("Sales Order", so_name, "creation")
             aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
 
             # Append aging detail
-            serial_doc = frappe.get_doc("Serial No", serial_name)
             serial_doc.append("sales_order_details", {
                 "sales_order": so_name,
                 "aging_days": aging_days

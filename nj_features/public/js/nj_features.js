@@ -735,16 +735,6 @@ function show_login_popup() {
 
     if (!user || user === "Guest" || user === "Administrator") return;
 
-    const currentPath = window.location.pathname;
-    const isAppRoot = currentPath.endsWith("/app");
-
-    console.log("🔍 Current path:", currentPath);
-
-    // if (!isAppRoot) {
-    //     console.log("🔕 Not in /app route, skipping popup.");
-    //     return;
-    // }
-
     const today = frappe.datetime.get_today();
 
     frappe.call({
@@ -796,6 +786,19 @@ function checkPopUpWorkInventory() {
 }
 
 function popUpWorkInventory() {
+    const overlay = document.createElement("new-div");
+    overlay.id = "login-block-overlay";
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.4)";
+    overlay.style.zIndex = "1039"; // Must be below modal
+    overlay.style.pointerEvents = "auto";
+    overlay.style.backdropFilter = "blur(2px)";
+    document.body.appendChild(overlay);
+
     const dialog = new frappe.ui.Dialog({
         title: __('Work Warehouse Inventory'),
         fields: [
@@ -878,11 +881,9 @@ function popUpWorkInventory() {
                 ]
             }
         ],
-        
+        static: 1,
         size: 'extra-large',
         primary_action_label: __('Submit'),
-        static: true,
-
         primary_action: function () {
             const values = dialog.get_values();
 
@@ -904,8 +905,11 @@ function popUpWorkInventory() {
                     submitReport(values, dialog);
                 }
             }
-        }
-
+        },
+        no_cancel_button: true
+    }, {
+        backdrop: 'static',  // disable click-out close
+        keyboard: false      // disable ESC close
     });
 
     function submitReport(values, dialog) {

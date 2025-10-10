@@ -117,7 +117,7 @@ class CustomSalesInvoice(SalesInvoice):
                 ON sii.sales_order = so.name 
             WHERE so.name = %s 
         """  
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True,debug=True) 
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True) 
         # print("results=======================",results)       
         for row in results:        
             if not row.approve or int(row.approve) != 1:
@@ -163,8 +163,7 @@ class CustomSalesInvoice(SalesInvoice):
                 ON sii.sales_order = so.name 
             WHERE so.name = %s 
         """  
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True,debug=True)  
-        # print("results=======================",results)      
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)  
         for row in results:        
             if not row.approve or int(row.approve) != 1:
                 # self.approved = 1

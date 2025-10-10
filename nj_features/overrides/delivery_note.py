@@ -213,6 +213,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.email_id = sales_order_info.get("email_id", "")
                     serial_no_doc.address = sales_order_info.get("so_address", "")
                     serial_no_doc.warranty_start_date_ = self.get("posting_date")
+                    serial_no_doc.reserved_sales_order = ""
                     serial_no_doc.return_reason = ""
                     serial_no_doc.is_replace = 0
 
@@ -438,6 +439,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.sale_type = ''
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
+        serial_no_doc.reserved_sales_order = ''
         serial_no_doc.modified = now()
 
         if updated:
@@ -2253,7 +2255,11 @@ def allow_to_save(doc):
                     else:
                         repacked_serial_no=adapter_repacked_serial_no(nj_serial_no)
                         try:
-                          if repacked_serial_no!=str(adapter_serial_nos[serial_no_order-1]):
+                          respective_adapter_serial_no=adapter_serial_nos[serial_no_order-1]
+                          is_serial_no_encrypted=frappe.db.get_value("Serial No",respective_adapter_serial_no,"name")
+                          if not is_serial_no_encrypted:
+                              respective_adapter_serial_no=frappe.db.get_value("QR Code Mapping",{"doctype1":"Serial No","name":respective_adapter_serial_no},"serial_no")
+                          if repacked_serial_no!=respective_adapter_serial_no:
                             return "Repacked Adapter Serial No for Serial No: " +nj_serial_no+ " does not match with the scanned Serial No:"+ str(adapter_serial_nos[serial_no_order-1])
                         except IndexError:
                           return "NO Adapter Serial No Found for Serial No:" + nj_serial_no

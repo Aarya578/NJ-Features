@@ -735,16 +735,6 @@ function show_login_popup() {
 
     if (!user || user === "Guest" || user === "Administrator") return;
 
-    const currentPath = window.location.pathname;
-    const isAppRoot = currentPath.endsWith("/app");
-
-    console.log("🔍 Current path:", currentPath);
-
-    // if (!isAppRoot) {
-    //     console.log("🔕 Not in /app route, skipping popup.");
-    //     return;
-    // }
-
     const today = frappe.datetime.get_today();
 
     frappe.call({
@@ -767,12 +757,48 @@ function show_login_popup() {
                 show_login_verification_popup(user);
             } else {
                 console.log("✅ User already logged in today — no popup.");
+                checkPopUpWorkInventory();
             }
         }
     });
 }
 
+function checkPopUpWorkInventory() {
+    frappe.call({
+        method: "frappe.client.get_list",
+        args: {
+            doctype: "Daily Individual Report",
+            fields: ["name"],
+            filters: {
+                owner: frappe.session.user,
+                docstatus: 1,
+                creation: [">=", frappe.datetime.get_today() + " 00:00:00"]
+            },
+        },
+        callback: (r) => {
+            console.log("🔍 User DIR activity:", r.message);
+            if (r.message && r.message.length < 1) {
+                console.log("🚨 No DIR today — show popup.");
+                popUpWorkInventory();
+            }
+        }
+    })
+}
+
 function popUpWorkInventory() {
+    const overlay = document.createElement("new-div");
+    overlay.id = "login-block-overlay";
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100vw";
+    overlay.style.height = "100vh";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.4)";
+    overlay.style.zIndex = "1039"; // Must be below modal
+    overlay.style.pointerEvents = "auto";
+    overlay.style.backdropFilter = "blur(2px)";
+    document.body.appendChild(overlay);
+
     const dialog = new frappe.ui.Dialog({
         title: __('Work Warehouse Inventory'),
         fields: [
@@ -813,6 +839,7 @@ function popUpWorkInventory() {
                         fieldtype: 'Link',
                         options: 'Serial No',
                         in_list_view: 1,
+                        read_only: 1,
                         columns: 2
                     },
                     {
@@ -821,6 +848,7 @@ function popUpWorkInventory() {
                         fieldtype: 'Link',
                         options: 'Warehouse',
                         in_list_view: 1,
+                        read_only: 1,
                         columns: 2
                     },
                     {
@@ -828,6 +856,7 @@ function popUpWorkInventory() {
                         fieldname: 'age',
                         fieldtype: 'Int',
                         in_list_view: 1,
+                        read_only: 1,
                         columns: 1
                     },
                     {
@@ -846,16 +875,15 @@ function popUpWorkInventory() {
                         fieldtype: 'Select',
                         options: '\nLog In\nLog Out',
                         default: 'Log In',
+                        read_only: 1,
                         read_only: 1
                     }
                 ]
             }
         ],
-        
+        static: 1,
         size: 'extra-large',
         primary_action_label: __('Submit'),
-        static: true,
-
         primary_action: function () {
             const values = dialog.get_values();
 
@@ -877,8 +905,11 @@ function popUpWorkInventory() {
                     submitReport(values, dialog);
                 }
             }
-        }
-
+        },
+        no_cancel_button: true
+    }, {
+        backdrop: 'static',  // disable click-out close
+        keyboard: false      // disable ESC close
     });
 
     function submitReport(values, dialog) {
@@ -975,6 +1006,12 @@ function popUpWorkInventory() {
         if (scanField && scanField.$input) {
             let barcodeBuffer = '';
             let scannerTimeout;
+
+            scanField.$input.on('paste', function (e) {
+                e.preventDefault();
+                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
+                $(this).val('');
+            });
             
             scanField.$input.on('keydown', function (e) {
                 // Clear timeout on any key press
@@ -1013,42 +1050,41 @@ function popUpWorkInventory() {
     
     function processBarcode(barcodeValue, dialog) {
         const tableData = dialog.fields_dict.work_warehouse_inventory.df.data;
-        const ERPBarcode = barcodeValue;
+        let ERPBarcode = barcodeValue;
 
         frappe.call({
             method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
             args: {  search_value: barcodeValue },
             callback: function(r) {
                 if (r.message) {
-                    console.log("r.message:", r.message);
                     
                     if (r.message.serial_no) {
                         ERPBarcode = r.message.serial_no;
                     } else if (r.message.scan) {
                         frappe.msgprint("Please Scan the Serial No.");
                     }
+
+                    let found = false;
+                    for (let i = 0; i < tableData.length; i++) {
+                        const row = tableData[i];
+                        
+                        if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === ERPBarcode.toLowerCase()) {
+                            row.yes = 1; 
+                            found = true;
+                            frappe.show_alert(__('Scanned: ') + ERPBarcode, 3);
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        frappe.msgprint(__('Serial number not found in the inventory list: ') + ERPBarcode);
+                    }
+
+                    dialog.fields_dict.work_warehouse_inventory.grid.refresh();
                 }
             },
             error: function(r) { frappe.msgprint("Error while scanning Serial No."); }
         });
-
-        // Find and mark the matching serial number
-        let found = false;
-        for (let i = 0; i < tableData.length; i++) {
-            const row = tableData[i];
-            if (row.serial_no && row.serial_no.toString().trim().toLowerCase() === ERPBarcode.toLowerCase()) {
-                row.yes = 1; 
-                found = true;
-                frappe.show_alert(__('Scanned: ') + ERPBarcode, 3);
-                break;
-            }
-        }
-
-        if (!found) {
-            frappe.msgprint(__('Serial number not found in the inventory list: ') + ERPBarcode);
-        }
-
-        dialog.fields_dict.work_warehouse_inventory.grid.refresh();
     }
 
     function makeCheckboxesReadOnly() {
@@ -1084,8 +1120,8 @@ function popUpWorkInventory() {
                 });
             }
         }
-
     }
+
     // Load serial number data
     frappe.call({
         method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
@@ -1122,10 +1158,6 @@ function popUpWorkInventory() {
             }
         }
     });
-
-    dialog.onhide = function () {
-        console.log('Dialog closed');
-    };
 
     dialog.show();
 }

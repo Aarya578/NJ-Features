@@ -99,7 +99,7 @@ class DepartmentRecommendationEngine(Document):
                 print("python action with docname====================", python_action)
 
             # ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
-            if python_action.lower().startswith(("select", "update", "delete", "insert")):
+            if python_action.lower().startswith(("select", "update", "delete", "insert","with")):
                 result = eq(python_action)
                 print("Query Result ====================", result)
 

@@ -537,7 +537,11 @@ def upload_erpnext_item(doc=None, method=None):
     updated depending on what is configured in "Shopify Setting" doctype.
     """
     template_item = item = doc  # alias for readability
+    logger.info(f"==========doc=========={doc}")
+    logger.info(f"==========doc=========={template_item}")
+
     item = frappe.get_doc("Item", doc.name)
+    logger.info(f"==========item=========={item}")
     # a new item recieved from ecommerce_integrations is being inserted
     if item.flags.from_integration:
         return
@@ -569,6 +573,7 @@ def upload_erpnext_item(doc=None, method=None):
         {"erpnext_item_code": template_item.name, "integration": MODULE_NAME},
         "integration_item_code",
     )
+    logger.info(f"==========product_id=========={product_id}")
     is_new_product = not bool(product_id)
 
     if is_new_product:
@@ -673,6 +678,7 @@ def map_erpnext_variant_to_shopify_variant(
         {"erpnext_item_code": erpnext_item.name, "integration": MODULE_NAME},
         "integration_item_code",
     )
+    logger.info(f"==========variant_product_id=========={variant_product_id}")
     if not variant_product_id:
         for variant in shopify_product.variants:
             if (
@@ -681,6 +687,7 @@ def map_erpnext_variant_to_shopify_variant(
                 and variant.option3 == variant_attributes.get("option3")
             ):
                 variant_product_id = str(variant.id)
+                logger.info(f"==========variant_product_id=========={variant_product_id}")
                 if not frappe.flags.in_test:
                     frappe.get_doc(
                         {
@@ -700,22 +707,75 @@ def map_erpnext_variant_to_shopify_variant(
 
 
 def map_erpnext_item_to_shopify(shopify_product: Product, erpnext_item):
-    """Map erpnext fields to shopify, called both when updating and creating new products."""
+    """Map ERPNext fields to Shopify, pulling HTML content from Item Wizards where item_template matches the product title."""
 
+    # Step 1: Basic mappings
     shopify_product.title = erpnext_item.item_name
-    shopify_product.body_html = erpnext_item.description
+    logger.info(f"==========shopify_product.title=========={shopify_product.title}")
+
+    html_content = None
+
+    # Step 2: Use the product title to find matching Item Wizards record
+    item_template_name = shopify_product.title
+    logger.info(f"==========Searching Item Wizards for item_template=========={item_template_name}")
+
+    html_content = frappe.db.get_value(
+        "Item Wizards",
+        {"item_template": item_template_name},
+        "html_content"
+    )
+
+    # Step 3: Log and fallback if no match
+    if html_content:
+        logger.info(f"==========html_content (from Item Wizards)=========={html_content}")
+    else:
+        html_content = erpnext_item.description
+        logger.info(f"==========html_content (from Item description fallback)=========={html_content}")
+
+    # Step 4: Assign to Shopify product
+    shopify_product.body_html = html_content
+    logger.info(f"==========shopify_product.body_html=========={shopify_product.body_html}")
+
+    # Step 5: Other mappings
     shopify_product.product_type = erpnext_item.item_group
+    logger.info(f"==========shopify_product.product_type=========={shopify_product.product_type}")
 
     if erpnext_item.weight_uom in WEIGHT_TO_ERPNEXT_UOM_MAP.values():
-        # reverse lookup for key
         uom = get_shopify_weight_uom(erpnext_weight_uom=erpnext_item.weight_uom)
         shopify_product.weight = erpnext_item.weight_per_unit
         shopify_product.weight_unit = uom
-
+       
     if erpnext_item.disabled:
         shopify_product.status = "draft"
         shopify_product.published = False
         msgprint(_("Status of linked Shopify product is changed to Draft."))
+
+
+
+
+# def map_erpnext_item_to_shopify(shopify_product: Product, erpnext_item):
+#     """Map erpnext fields to shopify, called both when updating and creating new products."""
+
+#     shopify_product.title = erpnext_item.item_name
+#     logger.info(f"==========shopify_product.title=========={shopify_product.title}")
+#     shopify_product.body_html = erpnext_item.description
+#     logger.info(f"==========shopify_product.body_html=========={shopify_product.body_html}")
+#     shopify_product.product_type = erpnext_item.item_group
+#     logger.info(f"==========shopify_product.product_type=========={shopify_product.product_type}")
+
+#     if erpnext_item.weight_uom in WEIGHT_TO_ERPNEXT_UOM_MAP.values():
+#         # reverse lookup for key
+#         uom = get_shopify_weight_uom(erpnext_weight_uom=erpnext_item.weight_uom)
+#         logger.info(f"==========uom=========={uom}")
+#         shopify_product.weight = erpnext_item.weight_per_unit
+#         logger.info(f"==========shopify_product.weight=========={shopify_product.weight}")
+#         shopify_product.weight_unit = uom
+#         logger.info(f"==========shopify_product.weight_unit=========={shopify_product.weight_unit}")
+
+#     if erpnext_item.disabled:
+#         shopify_product.status = "draft"
+#         shopify_product.published = False
+#         msgprint(_("Status of linked Shopify product is changed to Draft."))
 
 
 def get_shopify_weight_uom(erpnext_weight_uom: str) -> str:
@@ -748,19 +808,47 @@ def update_default_variant_properties(
         default_variant.sku = sku
 
 
+# def write_upload_log(status: bool, product: Product, item, action="Created") -> None:
+#     if not status:
+#         msg = _("Failed to upload item to Shopify") + "<br>"
+#         msg += _("Shopify reported errors:") + " " + ", ".join(product.errors.full_messages())
+#         msgprint(msg, title="Note", indicator="orange")
+
+#         create_shopify_log(
+#             status="Error", request_data=product.to_dict(), message=msg, method="upload_erpnext_item",
+#         )
+#         logger.error(request_data)
+#     else:
+#         create_shopify_log(
+#             status="Success",
+#             request_data=product.to_dict(),
+#             message=f"{action} Item: {item.name}, shopify product: {product.id}",
+#             method="upload_erpnext_item",
+#         )
 def write_upload_log(status: bool, product: Product, item, action="Created") -> None:
+    response_data = product.to_dict()
+    logger.info(f"Shopify Response Data======================ss: {response_data}")
+    print(f"Shopify Response Data: {response_data}")
+
     if not status:
         msg = _("Failed to upload item to Shopify") + "<br>"
         msg += _("Shopify reported errors:") + " " + ", ".join(product.errors.full_messages())
         msgprint(msg, title="Note", indicator="orange")
 
         create_shopify_log(
-            status="Error", request_data=product.to_dict(), message=msg, method="upload_erpnext_item",
-        )
-    else:
-        create_shopify_log(
-            status="Success",
-            request_data=product.to_dict(),
-            message=f"{action} Item: {item.name}, shopify product: {product.id}",
+            status="Error",
+            request_data=response_data,
+            message=msg,
             method="upload_erpnext_item",
         )
+        logger.error(f"Upload failed for item {item.name}. Shopify errors: {product.errors.full_messages()}")
+    else:
+        success_msg = f"{action} Item: {item.name}, Shopify Product ID: {product.id}"
+        create_shopify_log(
+            status="Success",
+            request_data=response_data,
+            message=success_msg,
+            method="upload_erpnext_item",
+        )
+        logger.info(success_msg)
+        print(success_msg)

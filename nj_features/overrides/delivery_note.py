@@ -213,6 +213,7 @@ class CustomDeliveryNote(DeliveryNote):
                     serial_no_doc.email_id = sales_order_info.get("email_id", "")
                     serial_no_doc.address = sales_order_info.get("so_address", "")
                     serial_no_doc.warranty_start_date_ = self.get("posting_date")
+                    serial_no_doc.reserved_sales_order = ""
                     serial_no_doc.return_reason = ""
                     serial_no_doc.is_replace = 0
 
@@ -438,6 +439,7 @@ class CustomDeliveryNote(DeliveryNote):
         serial_no_doc.sale_type = ''
         serial_no_doc.sales_order_id = ''
         serial_no_doc.warranty_start_date_ = ''
+        serial_no_doc.reserved_sales_order = ''
         serial_no_doc.modified = now()
 
         if updated:

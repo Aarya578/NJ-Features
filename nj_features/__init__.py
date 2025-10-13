@@ -56,9 +56,10 @@ def boot_monkey_patches():
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_order"] = nj_order.create_order
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_sales_order"] = nj_order.create_sales_order
 
-        frappe.logger().info("✅ NJ Features successfully patched Shopify order methods")
+        #frappe.logger().info("✅ NJ Features successfully patched Shopify order methods")
     except Exception as e:
-        frappe.logger().error(f"❌ Failed to patch Shopify order methods: {e}")
+        pass
+        #frappe.logger().error(f"❌ Failed to patch Shopify order methods: {e}")
 
 boot_monkey_patches()
 

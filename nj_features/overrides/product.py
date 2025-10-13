@@ -711,13 +711,11 @@ def map_erpnext_item_to_shopify(shopify_product: Product, erpnext_item):
 
     # Step 1: Basic mappings
     shopify_product.title = erpnext_item.item_name
-    logger.info(f"==========shopify_product.title=========={shopify_product.title}")
 
     html_content = None
 
     # Step 2: Use the product title to find matching Item Wizards record
     item_template_name = shopify_product.title
-    logger.info(f"==========Searching Item Wizards for item_template=========={item_template_name}")
 
     html_content = frappe.db.get_value(
         "Item Wizards",
@@ -734,11 +732,9 @@ def map_erpnext_item_to_shopify(shopify_product: Product, erpnext_item):
 
     # Step 4: Assign to Shopify product
     shopify_product.body_html = html_content
-    logger.info(f"==========shopify_product.body_html=========={shopify_product.body_html}")
 
     # Step 5: Other mappings
     shopify_product.product_type = erpnext_item.item_group
-    logger.info(f"==========shopify_product.product_type=========={shopify_product.product_type}")
 
     if erpnext_item.weight_uom in WEIGHT_TO_ERPNEXT_UOM_MAP.values():
         uom = get_shopify_weight_uom(erpnext_weight_uom=erpnext_item.weight_uom)

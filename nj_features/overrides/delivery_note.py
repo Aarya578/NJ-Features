@@ -83,7 +83,7 @@ class CustomDeliveryNote(DeliveryNote):
                         print(f"Skipping fulfillment trigger for DN {self.name} - Order Type: {order_type}, Sale Type: {sale_type}")
                 else:
                     print(f"No Sales Order found for DN {self.name}")
-
+            self.delete_department_history()
             self.approve_unchecking_for_cod_orders()    
             self.return_dn_validation() 
             self.couse_of_return_validation()
@@ -341,7 +341,25 @@ class CustomDeliveryNote(DeliveryNote):
         for row in results:        
             if not row.approve or int(row.approve) != 1:
                 frappe.throw(f"Sales Order {against_sales_order} is not approved. Please approve it first.")
+    def delete_department_history(self):
+        if not self.is_return:
+            return
+        # Loop through each Delivery Note Item
+        for item in self.items:
+            if not item.serial_no:
+                continue
 
+            serial_nos = [s.strip() for s in item.serial_no.split("\n") if s.strip()]
+
+            for serial_no in serial_nos:
+                if frappe.db.exists("Serial No", serial_no):
+                    serial_doc = frappe.get_doc("Serial No", serial_no)
+
+                    # Delete all Department History rows
+                    if serial_doc.get("department_history"):
+                        serial_doc.department_history = []
+                        serial_doc.save(ignore_permissions=True)
+                        # frappe.db.commit()
     def _process_serial_numbers(self):
 
         sn_is_replace = 0

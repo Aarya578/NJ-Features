@@ -246,7 +246,8 @@ scheduler_events = {
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
         "10 * * * *": [
-            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details"
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",
+            "nj_features.overrides.sales_order.calculate_dispatch_eta_for_sales_order",
         ],
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync"

@@ -800,77 +800,65 @@ def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None,
 
     return updated_item_code_list
 
+from datetime import datetime, timedelta
+import frappe
+
 def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_factor=None):
     if not item_code_list:
         item_code_list = []
 
+    # Calculate weights for the days
     weights = {i: (i + 1) * weight_factor for i in range(days)}
     total_weight = sum(weights.values())
 
+    # Extract item codes from input
     item_codes = [item['item_code'] for item in item_code_list]
     item_codes_string = ', '.join([f"'{code}'" for code in item_codes]) if item_codes else "''"
 
-    inventory_warehouses = frappe.get_all(
-        "Warehouse", 
-        filters={"department": "Packing & Dispatch - NJ"}, 
-        fields=["name"]
-    )
-
+    # Get sales data for stock and bundled items
     sales_data = frappe.db.sql(f"""
         WITH SalesData AS (
-                -- Fetch data for stock items directly from Sales Order Item
-                SELECT
-                    soi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(soi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabSales Order Item` soi ON so.name = soi.parent
-                INNER JOIN
-                    `tabItem` i ON soi.item_code = i.item_code
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND i.is_stock_item = 1  -- Only take stock items
-                GROUP BY
-                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+            -- Stock items
+            SELECT
+                soi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(soi.qty) AS daily_sales
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            INNER JOIN `tabItem` i ON soi.item_code = i.item_code
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND i.is_stock_item = 1
+            GROUP BY soi.item_code, i.item_name, i.is_stock_item, sale_date
 
-                UNION ALL
+            UNION ALL
 
-                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
-                SELECT
-                    pi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(pi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabPacked Item` pi ON so.name = pi.parent
-                INNER JOIN
-                    `tabItem` i ON pi.item_code = i.item_code
-                INNER JOIN
-                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
-                    AND i.is_stock_item = 1
-                    -- Only take packed items from non-stock (bundle) items
-                GROUP BY
-                    pi.item_code, i.item_name, i.is_stock_item, sale_date
-            )
-            SELECT * FROM SalesData
-            ORDER BY sale_date DESC
+            -- Bundle items (packed from non-stock items)
+            SELECT
+                pi.item_code,
+                i.item_name,
+                i.is_stock_item,
+                DATE(so.creation) AS sale_date,
+                SUM(pi.qty) AS daily_sales
+            FROM `tabSales Order` so
+            INNER JOIN `tabPacked Item` pi ON so.name = pi.parent
+            INNER JOIN `tabItem` i ON pi.item_code = i.item_code
+            INNER JOIN `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
+            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+              AND so.docstatus = 1
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+              AND i.is_stock_item = 1
+            GROUP BY pi.item_code, i.item_name, i.is_stock_item, sale_date
+        )
+        SELECT * FROM SalesData
+        ORDER BY sale_date DESC
+    """, as_dict=True)
 
-    """, as_dict=True) 
-
+    # Map sales by item and date
     sales_map = {}
     for sale in sales_data:
         sale_date = sale['sale_date']
@@ -880,8 +868,15 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
         item_code = sale['item_code']
         sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
 
-        if item_code not in item_codes:
+    # Process each item in the list
+    updated_item_code_list = []
 
+    for item in item_code_list:
+        item_code = item['item_code']
+
+        # Fetch attributes if the item is not in sales_map
+        item_attrs = {}
+        if item_code not in sales_map:
             attribute_data = frappe.db.sql("""
                 SELECT 
                     LOWER(iva.attribute) AS item_attribute, 
@@ -896,50 +891,49 @@ def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_fa
                 WHERE iva.parent = %s
             """, (item_code,), as_dict=True)
 
-            attributes_map = {}
             for row in attribute_data:
-                item_code = row['item_code']
-                attribute = row['item_attribute'].replace(' ', '_')
-                attribute_value = row['attribute_value']
-                if item_code not in attributes_map:
-                    attributes_map[item_code] = {}
-                attributes_map[item_code][attribute] = attribute_value
-                attributes_map[item_code]['item_name'] = row['item_name']
-                attributes_map[item_code]['item_model'] = row['item_model']
-                attributes_map[item_code]['item_group'] = row['item_group']
-                attributes_map[item_code]['parent'] = row['parent']
-            
-            item_code_list.append({
-                "item_code": item_code,
-                "forwarded_qty": 0,
-                "inventory_qty": 0, 
-                "total_sales_qty": 0, 
-                "sales_rate": 0,
-                "item_model": attributes_map[item_code].get("item_model"),
-                "processor_type": attributes_map[item_code].get("processor_type"),
-                "storage_capacity": attributes_map[item_code].get("storage_capacity"), 
-                "ram_capacity": attributes_map[item_code].get("ram_capacity")
-                })
+                attr = row['item_attribute'].replace(' ', '_')
+                if item_code not in item_attrs:
+                    item_attrs = {
+                        "item_name": row['item_name'],
+                        "item_model": row['item_model'],
+                        "item_group": row['item_group'],
+                        "parent": row['parent']
+                    }
+                item_attrs[attr] = row['attribute_value']
 
-    updated_item_code_list = []
+            # Log missing attribute data
+            if not attribute_data:
+                frappe.log_error(f"No attribute data found for item_code: {item_code}", 
+                                 "calculate_sales_order_rate_with_weights")
 
-    for item in item_code_list:
-        item_code = item['item_code']
-
+        # Compute total sales and weighted sales
         if item_code in sales_map:
             total_sales_qty = sum(sales_map[item_code].values())
             total_weighted_sales = sum(
                 sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
                 for day_offset in range(days)
             )
-            item['total_sales_qty'] = total_sales_qty
-            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
-            updated_item_code_list.append(item)
+            sales_rate = total_weighted_sales / total_weight if total_weight else 0
         else:
-            item['total_sales_qty'] = 0
-            item['sales_rate'] = 0
+            total_sales_qty = 0
+            sales_rate = 0
+
+        # Append updated item data
+        updated_item_code_list.append({
+            "item_code": item_code,
+            "forwarded_qty": 0,
+            "inventory_qty": 0,
+            "total_sales_qty": total_sales_qty,
+            "sales_rate": sales_rate,
+            "item_model": item_attrs.get("item_model"),
+            "processor_type": item_attrs.get("processor_type"),
+            "storage_capacity": item_attrs.get("storage_capacity"),
+            "ram_capacity": item_attrs.get("ram_capacity"),
+        })
 
     return updated_item_code_list
+
 
 def safe_float(value):
     try:

@@ -353,8 +353,8 @@ def get_itm_code_on_barcode(new_qi):
         return new_qi
         
     except Exception as e:
-        frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}")
         log_error(traceback.format_exc(), "Error in get_itm_code_on_barcode in NJQCA")
+        frappe.throw(f"Error in get_itm_code_on_barcode {str(e)}")
         return None
 
 @frappe.whitelist()
@@ -684,7 +684,6 @@ class NJQCA(Document):
                 frappe.msgprint("Battery readings and averages updated successfully.")
                 
         except Exception as e:
-            logger.error(f"Error updating battery readings: {str(e)}")
             log_error(f"Failed to save Serial No: {str(e)}", "Error in battery_readings in NJQCA")
             frappe.msgprint(f"Error saving battery data: {str(e)}")
 
@@ -898,8 +897,6 @@ class NJQCA(Document):
 
         except Exception as e:
             frappe.log_error(f"Error updating Adaptor Reports: {str(e)}", "Adaptor Reports Update Error")
-
-
 
     def update_item_groups(self):
         if self.inspection_type != "Final QC" or frappe.db.get_value("Item Group", self.item_group, "is_component"):
@@ -1156,7 +1153,6 @@ def get_info_from_serial_no(doc=None):
                     if sle_entry.get('bios_serial_no') and sle_entry.get('bios_serial_no').upper() != bios_serial_no_in_ui.upper():
                         frappe.throw(f"BIOS Serial No is not matching for Serial No: <b>{serial_no}</b>.")
                     elif bios_serial_no_in_ui and not frappe.db.get_value('Item Group', doc_json.get('item_group'), 'is_component'):
-                        log_error(f"Updating Serial No: <b>{serial_no}</b> with BIO Serial No: <b>{bios_serial_no_in_ui}</b>", doc_json.get('name'))
                         frappe.db.sql(
                             """UPDATE `tabSerial No` SET bios_serial_no = %s WHERE serial_no = %s""",
                             (bios_serial_no_in_ui, serial_no)
@@ -1402,10 +1398,11 @@ def get_item_code_for_each_part(doc):
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
                         elif item_group.lower() == storage.lower() and row.get('variant_10'):
+                            print("variant_10", row.get('variant_10'), item_group)
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
-                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower() or 'ssd' in row.get('variant_5', '').lower())) or \
+                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower())) or ('ssd' in row.get('variant_5', '').lower()) or \
                             (row.get('variant_15') is not None and 'ssd' in row.get('variant_15', '').lower()):
                                 variant_type = ' SSD'
 
@@ -1572,6 +1569,15 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                     'part_item_code': part_item_code,
                     'item_group': part_item_group,
                     'item_template': new_item_template if new_item_template else item_template,
+                })
+            else:
+                part_data.append({
+                    'name': row.get('name'),
+                    'part_item_code': "",
+                    'attr_data': attribute_object,
+                    'item_group': part_item_group,
+                    'item_template': item_template,
+                    'response': 'error'
                 })
         else:
             # part_item_code = frappe.db.get_value('Serial No Component',

@@ -3,6 +3,7 @@ import math
 import random
 import frappe
 from frappe import _
+from typing import Dict, List
 from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
@@ -32,7 +33,7 @@ _ITEM_KEYS = {}     # item_code -> {"model_key":("MODEL", template), "config_key
 # Public API (batch run)
 # =========================
 @frappe.whitelist()
-def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
+def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     print("nj_run_unified_production_plan =========")
     """
     Batch-run unified production planning (single document for the whole run).
@@ -52,7 +53,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
         frappe.throw("No departments with SLA found.")
 
     # Group by sequence
-    depts_by_seq = defaultdict(list)
+    depts_by_seq = defaultdict(List)
     for d in depts:
         depts_by_seq[d["department_sequence"]].append(d)
 
@@ -79,7 +80,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
     # Prime item cache with order items
     _prime_item_cache([r["item_code"] for r in pending_orders])
 
-    # Demand is now: demand_by_seq[seq][key] = list of {"so_name":..., "delivery_date":...}
+    # Demand is now: demand_by_seq[seq][key] = List of {"so_name":..., "delivery_date":...}
     order_demand_by_seq = _allocate_orders_to_sequences_multi(
         pending_orders=pending_orders,
         sequences=sequences,
@@ -121,7 +122,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
     for s in sorted(sequences, reverse=True):
         seq_forward_grain = forward_grain_per_seq[s]
         forward_keys = forward_keys_per_seq[s]
-        seq_order_queues = order_demand_by_seq.get(s, defaultdict(list))  # key -> list[refs]
+        seq_order_queues = order_demand_by_seq.get(s, defaultdict(List))  # key -> List[refs]
 
         # Process departments at this sequence in deterministic order
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
@@ -138,7 +139,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
             order_allocs, remaining_serials = _match_inventory_to_order_queues_for_sequence(
                 seq=s,
                 serial_map=serial_map,
-                seq_order_queues=seq_order_queues,   # dict: key -> list of refs (so_name, delivery_date)
+                seq_order_queues=seq_order_queues,   # Dict: key -> List of refs (so_name, delivery_date)
                 allow_reconfig=allow_reconfig,
                 inward_grain=inward_grain,
                 forward_grain=forward_grain
@@ -214,7 +215,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> dict:
 # =========================
 # SLA helpers (multi-dept per seq)
 # =========================
-def _build_cumulative_sla_multi(depts_by_seq: dict, sequences: list[int]) -> dict:
+def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dict:
     """
     cum_sla[seq] = max_sla_at_seq(seq) + sum_{t>seq} max_sla_at_seq(t)
     This is conservative when multiple depts share the same sequence.
@@ -232,7 +233,7 @@ def _build_cumulative_sla_multi(depts_by_seq: dict, sequences: list[int]) -> dic
 # =========================
 # Sales Orders → demand placement
 # =========================
-def _get_pending_sales_orders(horizon_end) -> list[dict]:
+def _get_pending_sales_orders(horizon_end) -> List[Dict]:
     # Pull open items; include reasonable window; adjust if needed
     soi = frappe.db.sql(
         """
@@ -256,9 +257,9 @@ def _allocate_orders_to_sequences_multi(pending_orders, sequences, cum_sla, toda
     For each pending SO line:
       - If delivery_date is NULL → allocate to FG (max_seq).
       - Else, place at the furthest sequence s.t. cum_sla[s] <= days_to_due; else FG.
-    Demand structure: demand_by_seq[seq][key] = list of {so_name, delivery_date}
+    Demand structure: demand_by_seq[seq][key] = List of {so_name, delivery_date}
     """
-    demand_by_seq = {s: defaultdict(list) for s in sequences}
+    demand_by_seq = {s: defaultdict(List) for s in sequences}
     for row in pending_orders:
         ic = row["item_code"]
         qty = int(math.ceil(row["qty_pending"]))
@@ -287,7 +288,7 @@ def _allocate_orders_to_sequences_multi(pending_orders, sequences, cum_sla, toda
 # =========================
 # Sellable portfolio & sales-rate
 # =========================
-def _get_sellable_items() -> list[dict]:
+def _get_sellable_items() -> List[Dict]:
     rows = frappe.get_all(
         "Item",
         filters={"disabled": 0, "is_stock_item": 1},
@@ -301,7 +302,7 @@ def _get_sellable_items() -> list[dict]:
     _prime_item_cache([r["name"] for r in sellable])
     return sellable
 
-def _compute_recency_weighted_sales_rates(sellable_items: list[dict]) -> dict:
+def _compute_recency_weighted_sales_rates(sellable_items: List[Dict]) -> Dict:
     """
     Return {key: rate/day} for both MODEL and CONFIG keys.
     If no sales in window → 1/day.
@@ -366,9 +367,9 @@ def _compute_recency_weighted_sales_rates(sellable_items: list[dict]) -> dict:
 def _build_forward_keys(sellable_items, forward_grain, max_per_template, sales_rate):
     """
     Build forward key universe limited to Top-N configs per template (if config-grain),
-    or just the template list (if model-grain).
+    or just the template List (if model-grain).
     """
-    variants_by_template = defaultdict(list)
+    variants_by_template = defaultdict(List)
     templates = set()
 
     for it in sellable_items:
@@ -383,7 +384,7 @@ def _build_forward_keys(sellable_items, forward_grain, max_per_template, sales_r
             variants_by_template[km].append(kc)
 
     if forward_grain == "model":
-        return list(templates or variants_by_template.keys())
+        return List(templates or variants_by_template.keys())
 
     # config-grain → pick Top-N per template by sales-rate, tie-break random
     keys = []
@@ -416,16 +417,16 @@ def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_que
 
     # Build index by inward grain
     if inward_grain == "model":
-        idx = defaultdict(list)
+        idx = defaultdict(List)
         for s in serial_map:
             idx[s["forward_key_model"]].append(s)
     else:
-        idx = defaultdict(list)
+        idx = defaultdict(List)
         for s in serial_map:
             idx[s["forward_key_config"]].append(s)
 
     # Iterate keys by largest queue length first for better fill
-    # (note: seq_order_queues is dict: key -> list[refs])
+    # (note: seq_order_queues is Dict: key -> List[refs])
     for key, ref_list in sorted(seq_order_queues.items(), key=lambda kv: len(kv[1]), reverse=True):
         # keep allocating while we have pending refs and compatible serials
         while ref_list:
@@ -477,7 +478,7 @@ def _estimate_forward_inventory(forward_keys, serials, forward_grain):
         k = s["forward_key_config"] if forward_grain == "config" else s["forward_key_model"]
         if k in forward_keys:
             inv[k] += 1
-    return dict(inv)
+    return Dict(inv)
 
 def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_reconfig, forward_keys, sales_rate, current_doi):
     """
@@ -487,17 +488,17 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
 
     # Buckets for quick pick
     if forward_grain == "config":
-        buckets = defaultdict(list)
-        any_by_model = defaultdict(list)
+        buckets = defaultdict(List)
+        any_by_model = defaultdict(List)
         for s in remaining_serials:
             buckets[s["forward_key_config"]].append(s)
             any_by_model[s["forward_key_model"]].append(s)
     else:
-        buckets = defaultdict(list)
+        buckets = defaultdict(List)
         for s in remaining_serials:
             buckets[s["forward_key_model"]].append(s)
 
-    work = list(forward_keys)
+    work = List(forward_keys)
     for _ in range(len(remaining_serials)):
         if not work:
             break
@@ -545,7 +546,7 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
 # =========================
 # Departments / inventory helpers
 # =========================
-def _get_inward_warehouses_for_department(dept_doc) -> list[str]:
+def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
     whs = set()
     for row in getattr(dept_doc, "inventory_details", []) or []:
         raw = (row.get("inwarded_warehouse_list") or "").strip()
@@ -555,7 +556,7 @@ def _get_inward_warehouses_for_department(dept_doc) -> list[str]:
             whs.add(w)
     return sorted(whs)
 
-def _get_inward_serials_for_department(dept_doc) -> list[dict]:
+def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     warehouses = _get_inward_warehouses_for_department(dept_doc)
     if not warehouses:
         return []
@@ -576,7 +577,7 @@ def _get_inward_serials_for_department(dept_doc) -> list[dict]:
 # =========================
 # Item/Attribute machinery
 # =========================
-def _prime_item_cache(item_codes: list[str]):
+def _prime_item_cache(item_codes: List[str]):
     if not item_codes:
         return
     needed = [ic for ic in set(item_codes) if ic not in _ITEM_CORE]
@@ -657,7 +658,7 @@ def _target_item_for_key(key):
     })
     return variant or f"{template}::{proc}-{ram}-{sto}"
 
-def _find_variant_by_attributes(template_item: str, attr_map: dict) -> str | None:
+def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> str | None:
     if not template_item or not attr_map:
         return None
     variants = frappe.get_all("Item", filters={"variant_of": template_item}, pluck="name")
@@ -670,7 +671,7 @@ def _find_variant_by_attributes(template_item: str, attr_map: dict) -> str | Non
             return v
     return None
 
-def _enrich_serial_from_attrs(snrow: dict) -> dict:
+def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
     ic = snrow["item_code"]
     if ic not in _ITEM_KEYS:
         _prime_item_cache([ic])

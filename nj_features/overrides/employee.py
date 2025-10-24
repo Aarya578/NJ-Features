@@ -70,10 +70,10 @@ def update_department_in_work_warehouse(self):
 
     if get_dept_from_warehouse and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse] and qty_check == '0':
         query = """
-            SELECT SUM(Bin.actual_qty) AS total_qty
-            FROM `tabBin` Bin
-            INNER JOIN `tabWarehouse` WH ON Bin.warehouse = WH.name
-            WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name IN %s
+            SELECT count(sn.name) AS total_qty
+            FROM `tabSerial No` sn
+            INNER JOIN `tabWarehouse` WH ON sn.warehouse = WH.name
+            WHERE WH.disabled = 0 AND WH.name IN %s
         """
 
         data = frappe.db.sql(query, (tuple(work_ware),), as_dict=True)
@@ -604,10 +604,10 @@ def validate_employee_department_and_role(user, department, role_profile, depart
 
             if warehouse_names:
                 query = """
-                    SELECT SUM(Bin.actual_qty) AS total_qty
-                    FROM `tabBin` Bin
-                    INNER JOIN `tabWarehouse` WH ON Bin.warehouse = WH.name
-                    WHERE WH.disabled = 0 AND Bin.actual_qty > 0 AND WH.name IN %s
+                    SELECT count(sn.name) AS total_qty
+                    FROM `tabSerial No` sn
+                    INNER JOIN `tabWarehouse` WH ON sn.warehouse = WH.name
+                    WHERE WH.disabled = 0 AND WH.name IN %s
                 """
                 data = frappe.db.sql(query, (tuple(warehouse_names),), as_dict=True)
                 total_qty = sum((d.get("total_qty") or 0) for d in data)

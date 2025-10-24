@@ -416,13 +416,14 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
 
 def assign_serials(so_name, item_code, to_allocate, departments):
     """Assign serial numbers from given departments"""
+    print("\n\n⚙️ Assigning serial numbers for {}".format(so_name))
     allocated_count = 0
 
     for dept in departments:
         if allocated_count >= to_allocate:
             break
 
-        # Get warehouses in this department
+        # Get warehouses for this department
         warehouses = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse` WHERE department = %s
         """, dept.name)
@@ -455,23 +456,25 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         available_serials = frappe.db.sql(query, as_dict=1)
         count_in_dept = len(available_serials)
 
+        print(f"\n🔹 Department: {dept.name}, Found {count_in_dept} serials to allocate")
+
         for serial in available_serials:
             serial_name = serial.get("name")
             serial_doc = frappe.get_doc("Serial No", serial_name)
 
+            print("is_replace:", serial_doc.is_replace)
+            print("return_reason:", serial_doc.return_reason)
+
             # Determine which Sales Order ID to reserve
             if serial_doc.is_replace or serial_doc.return_reason:
-                # Take the existing sales_order_id from the serial
+                print("🧩 Updating (replacement case)")
                 sales_order_id = serial_doc.get("sales_order_id")
-                frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", sales_order_id)
+                serial_doc.reserved_sales_order = sales_order_id
             else:
-                frappe.db.sql("""
-                    UPDATE `tabSerial No`
-                    SET reserved_sales_order = %s
-                    WHERE name = %s
-                """, (so_name, serial_name))
-
-                frappe.db.commit()
+                print("⚙️ Updating (normal case)")
+                print("so_name:", so_name)
+                print("serial_name:", serial_name)
+                serial_doc.reserved_sales_order = so_name
 
             # Calculate aging days
             so_creation = frappe.get_value("Sales Order", so_name, "creation")
@@ -482,10 +485,18 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 "sales_order": so_name,
                 "aging_days": aging_days
             })
-            serial_doc.save()
-        
+
+            # Save changes properly
+            serial_doc.save(ignore_permissions=True)
+
+        # Commit once per department batch
+        frappe.db.commit()
+
         allocated_count += count_in_dept
+
+    print("✅ Successfully returned from assign_serials()")
     return allocated_count
+
 
 def unassign_serials(so_name, item_code, excess_qty):
     """Unassign excess serial numbers"""

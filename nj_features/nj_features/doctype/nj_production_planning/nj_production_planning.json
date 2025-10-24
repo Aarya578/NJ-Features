@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "department",
+  "plan_date",
   "nj_production_planning_child",
   "final_config",
   "suggested_serial_no",
@@ -53,11 +54,17 @@
    "fieldtype": "Table",
    "label": "Final Config",
    "options": "Final Config"
+  },
+  {
+   "fieldname": "plan_date",
+   "fieldtype": "Date",
+   "label": "Plan Date",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-21 16:50:51.030626",
+ "modified": "2025-10-22 10:31:20.641474",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

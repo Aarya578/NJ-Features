@@ -8,6 +8,8 @@
  "field_order": [
   "department",
   "plan_date",
+  "sales_order_prediction",
+  "lines",
   "nj_production_planning_child",
   "final_config",
   "suggested_serial_no",
@@ -25,6 +27,7 @@
   {
    "fieldname": "nj_production_planning_child",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "NJ Production Planning Child",
    "options": "NJ Production Planning Child"
   },
@@ -40,18 +43,21 @@
   {
    "fieldname": "suggested_serial_no",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Suggested Serial No",
    "options": "Suggested Serial No"
   },
   {
    "fieldname": "laptop_allocation",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Laptop Allocation",
    "options": "Laptop Allocation Child"
   },
   {
    "fieldname": "final_config",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Final Config",
    "options": "Final Config"
   },
@@ -60,11 +66,23 @@
    "fieldtype": "Date",
    "label": "Plan Date",
    "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Final Production Planning Data",
+   "options": "Final Production Planning Data"
+  },
+  {
+   "fieldname": "sales_order_prediction",
+   "fieldtype": "Table",
+   "label": "Sales Order Prediction",
+   "options": "Sales Order Prediction"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-10-22 10:31:20.641474",
+ "modified": "2025-10-23 15:42:46.609907",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

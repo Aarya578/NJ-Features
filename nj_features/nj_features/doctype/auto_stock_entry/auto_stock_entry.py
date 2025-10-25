@@ -77,6 +77,9 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         department_doc = frappe.get_doc('Department', department)
         s_department_doc = frappe.get_doc('Department', s_department)
 
+        if serial_doc.get("item_group") in ["Desktops"]:
+            return []
+
         if department_doc.get('stock_movement_restriction_table'):
             validate_grade_restriction(serial_doc, department_doc)
 

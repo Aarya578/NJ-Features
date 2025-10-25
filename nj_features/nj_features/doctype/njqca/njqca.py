@@ -1398,7 +1398,6 @@ def get_item_code_for_each_part(doc):
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
                         elif item_group.lower() == storage.lower() and row.get('variant_10'):
-                            print("variant_10", row.get('variant_10'), item_group)
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
@@ -1835,8 +1834,8 @@ def get_variant_from_value(item_template=None, args=None):
         if not isinstance(args_list, list):
             return None
 
-        conditions = []
         joins = []
+        conditions = []
         i = 0
 
         for condition_dict in args_list:
@@ -1856,12 +1855,23 @@ def get_variant_from_value(item_template=None, args=None):
         if not joins:
             return None
 
+        attr_count = len(conditions)
+
         query = f"""
-            SELECT DISTINCT base.parent
-            FROM `tabItem Variant Attribute` base INNER JOIN 
-            `tabItem` i on i.name = base.parent 
+            SELECT base.parent
+            FROM `tabItem Variant Attribute` base
+            INNER JOIN `tabItem` i ON i.name = base.parent
             {" ".join(joins)}
-            WHERE base.variant_of = %s AND i.disabled = 0 AND i.end_of_life >= CURDATE()
+            WHERE base.variant_of = %s 
+              AND i.disabled = 0 
+              AND (i.end_of_life IS NULL OR i.end_of_life >= CURDATE())
+            GROUP BY base.parent
+            HAVING COUNT(DISTINCT base.parent) = 1
+              AND (
+                  SELECT COUNT(*) 
+                  FROM `tabItem Variant Attribute` t
+                  WHERE t.parent = base.parent
+              ) = {attr_count}
             LIMIT 1
         """
 
@@ -1872,10 +1882,10 @@ def get_variant_from_value(item_template=None, args=None):
 
         variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
 
-        if variant and variant[0]['parent']:
-            return variant[0]['parent']
-        else:
-            return construct_item_code(item_template, args_list)
+        if variant and variant[0].get("parent"):
+            return variant[0]["parent"]
+
+        return construct_item_code(item_template, args_list)
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_variant_from_value error")

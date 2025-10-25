@@ -272,6 +272,28 @@ frappe.ui.form.on('NJQCA', {
                 }
             })
         }
+        if(frm.doc.item_group=="Laptop Adaptors" && frm.doc.serial_no){
+            frappe.call({
+                method: 'nj_features.nj_features.doctype.njqca.njqca.adaptor_charge_gain_status',
+                args: { 'njqca_name':frm.doc.name, 'serial_no':frm.doc.serial_no },
+                callback: function(r) {
+                    if (r.message) { 
+                        let newRow = frappe.model.add_child(frm.doc, "njqca_result_parameters");
+                        if(r.message == "Pass"){
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Adapterbattery_status");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "Laptop Adaptors");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "0");
+                        }else{
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'parameter', "Adapterbattery_status");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'value', r.message);
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'item_group', "Laptop Adaptors");
+                            frappe.model.set_value(newRow.doctype, newRow.name, 'score', "41");
+                        } 
+                    }
+                }
+            })
+        }
 
         if(selectedItemGroup=="BATTERY"){
             frappe.call({

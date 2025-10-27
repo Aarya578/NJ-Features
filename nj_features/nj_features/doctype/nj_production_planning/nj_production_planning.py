@@ -53,7 +53,7 @@ class NJProductionPlanning(Document):
 # Tunables / Constants
 # =========================
 # Portfolio filter (SO side still uses these for rate calculation filters)
-SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Desktops", "Chromeboxes"}
+SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes"}
 
 # ---- IMPORTANT toggles/fixes ----
 # Widen the lookback to make sales-rate robust (quiet periods used to yield nothing).
@@ -89,15 +89,14 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     # logger.info("\n\n\n\n New run of nj_run_unified_production_plan =========")
 
     """
-    Batch-run production planning and create ONE document per department.
+    Batch-run production planning and create ONE unified "NJ Production Planning"
+    document that aggregates ALL departments. Lines carry the current_department
+    so teams can filter within a single doc.
 
     Goals:
       a) Allocate existing sales orders first (respecting delivery dates & dept SLA sequencing).
       b) Then allocate forecast to equalize DOI across sellable configs (Top-4 per template)
          or at model level when department is model-grain.
-
-    We now persist *per-department* "NJ Production Planning" docs so that each department
-    can view its own document. Document name format: "{Department}-{YYYY-MM-DD}".
     """
 
     # -------- Load departments with SLA and group by sequence --------
@@ -142,7 +141,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     # Prime item cache with order items
     _prime_item_cache([r["item_code"] for r in pending_orders])
 
-    # Demand is now: demand_by_seq[seq][key] = List of {"so_name":..., "delivery_date":...}
+    # Demand is now: demand_by_seq[seq][key] = List of {"so_name":..., "delivery_date":..., "order_item_code": ...}
     order_demand_by_seq = _allocate_orders_to_sequences_multi(
         pending_orders=pending_orders,
         sequences=sequences,
@@ -168,42 +167,26 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         logger.warning("No sales_rate computed (no recent sales rows?). Predictions table will be minimal.")
     random.seed(42)
 
-    # -------- Create per-department plan docs --------
+    # -------- Create ONE unified plan doc --------
     plan_date = frappe.utils.nowdate()
     now_stamp = frappe.utils.now_datetime().strftime('%Y-%m-%d %H:%M:%S')
-    plan_docs: Dict[str, Document] = {}
 
-    for d in depts:
-        dept_name = d["name"]
-        run_prod_planning = d["run_production_planning"]
-        if not run_prod_planning:
-            continue
-        plan_doc = frappe.new_doc("NJ Production Planning")
-        plan_doc.plan_date = plan_date
-        plan_doc.department = dept_name
-        plan_doc.name = f"NJ Production Plan - {dept_name} - {now_stamp}"
-        plan_doc.flags.ignore_mandatory = True
-        plan_doc.set("lines", [])
-        try:
-            plan_doc.set("sales_order_prediction", [])
-        except Exception:
-            pass
+    plan_doc = frappe.new_doc("NJ Production Planning")
+    plan_doc.plan_date = plan_date
+    # Use a neutral/aggregated department label; lines will carry actual departments.
+    plan_doc.department = "All Departments"
+    plan_doc.name = f"NJ Production Plan - {now_stamp}"
+    plan_doc.flags.ignore_mandatory = True
+    plan_doc.set("lines", [])
 
-        # Use department name + plan_date for doc name (e.g., "Assembly-2025-10-23")
-        safe_dept = (dept_name or "").strip().replace(" ", "_")
-        desired_name = f"{safe_dept}-{plan_date}"
-        try:
-            # Set explicit name before insert; set_new_name respects autoname if any.
-            plan_doc.name = desired_name
-            plan_doc.set_new_name(desired_name)
-        except Exception as e:
-            logger.warning("Could not set custom name %s for dept %s: %s", desired_name, dept_name, e)
-
-        # Optionally append predictions:
-        # _append_sales_order_prediction(plan_doc, sales_rate)
-
-        plan_docs[dept_name] = plan_doc
-
+    # Use deterministic custom name (e.g., "Unified-YYYY-MM-DD")
+    desired_name = f"Unified-{plan_date}"
+    try:
+        plan_doc.name = desired_name
+        plan_doc.set_new_name(desired_name)
+    except Exception as e:
+        logger.warning("Could not set custom unified name %s: %s", desired_name, e)
+        
     # Per-sequence forward-key universe (limited to Top-4 per template when config-grain)
     forward_keys_per_seq: Dict[int, List] = {}
     for s in sequences:
@@ -218,10 +201,11 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         for d in depts_by_seq[s]:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
+            # NOTE: This pulls serials **only from the current department's inward warehouses**
             inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
 
     # -------- Run allocation FG->start; within each sequence iterate all depts --------
-    # Priority rank is local per department (so each doc has its own ranking)
+    # Priority rank is local per department (so sequencing is meaningful within the single doc)
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
     for s in sorted(sequences, reverse=True):
@@ -229,24 +213,21 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         forward_keys = forward_keys_per_seq[s]
         seq_order_queues = order_demand_by_seq.get(s, defaultdict(list))  # key -> List[refs]
 
-        print("seq_forward_grain ---------- ", seq_forward_grain)
-
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
-
-            # ---- guard: skip departments we didn't create a plan for ----
-            if dept_name not in plan_docs:
+            run_prod_planning = dept.get("run_production_planning")
+            if not run_prod_planning:
                 continue
 
             allow_reconfig = bool(dept.get("allow_reconfig"))
             inward_grain = "config" if dept.get("inwarded_config") else "model"
             forward_grain = seq_forward_grain
 
-            # Build serial map for THIS department’s inward warehouses
+            # Build serial map for THIS department’s inward warehouses (strictly scoped to current dept)
             serial_rows = inward_serials_per_dept.get(dept_name, [])
             serial_map = [_enrich_serial_from_attrs(sn) for sn in serial_rows]
 
-            # 1) Orders
+            # 1) Orders: choose serials; target item depends on allow_reconfig
             order_allocs, remaining_serials = _match_inventory_to_order_queues_for_sequence(
                 seq=s,
                 serial_map=serial_map,
@@ -256,18 +237,28 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 forward_grain=forward_grain
             )
 
-            print("forward_gain", forward_grain)
-            print("order_allocs", order_allocs)
+            # Compute DOI snapshot (inventory / sales_rate) **after** counting order allocations
+            fwd_inventory = _estimate_forward_inventory(forward_keys, remaining_serials, forward_grain)
+            for alloc in order_allocs:
+                k = alloc["forward_key"]
+                fwd_inventory[k] = fwd_inventory.get(k, 0) + 1
+
+            doi_snapshot = {
+                k: (float(fwd_inventory.get(k, 0)) / max(1.0, float(sales_rate.get(k, 1.0))))
+                for k in forward_keys
+            }
 
             for alloc in order_allocs:
                 k = alloc["forward_key"]
                 rate_display = float(sales_rate.get(k, 1.0))
+                doi_display = float(doi_snapshot.get(k, 0.0))
                 _append_plan_row(
-                    plan_docs[dept_name],
+                    plan_doc,
                     serial_no=alloc["serial_no"],
                     current_warehouse=alloc["warehouse"],
-                    current_department=dept_name,
+                    current_department=dept_name,  # preserve dept on each line
                     sales_rate=rate_display,
+                    doi=doi_display,               # NEW FIELD
                     sales_order_number=alloc.get("order_name"),
                     delivery_date=alloc.get("required_by"),
                     item_code_to_make=alloc["target_item_code"],
@@ -276,33 +267,28 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 )
                 priority_per_dept[dept_name] += 1
 
-            # 2) Forecast
-            fwd_inventory = _estimate_forward_inventory(forward_keys, remaining_serials, forward_grain)
-            for alloc in order_allocs:
-                fwd_inventory[alloc["forward_key"]] = fwd_inventory.get(alloc["forward_key"], 0) + 1
-
-            doi = {k: (float(fwd_inventory.get(k, 0)) / max(1.0, float(sales_rate.get(k, 1.0)))) for k in forward_keys}
-
+            # 2) Forecast (greedy DOI equalization). This returns DOI per allocation.
+            # Initialize DOI for allocator with the snapshot computed above.
             forecast_allocs = _allocate_forecast_to_balance_doi(
                 remaining_serials=remaining_serials,
                 forward_grain=forward_grain,
                 allow_reconfig=allow_reconfig,
                 forward_keys=forward_keys,
                 sales_rate=sales_rate,
-                current_doi=doi
+                current_doi=doi_snapshot
             )
-
-            print("forecast_allocs", forecast_allocs)
 
             for alloc in forecast_allocs:
                 k = alloc["forward_key"]
                 rate_display = float(sales_rate.get(k, 1.0))
+                doi_display = float(alloc.get("doi", 0.0))  # per-allocation DOI (after this allocation)
                 _append_plan_row(
-                    plan_docs[dept_name],
+                    plan_doc,
                     serial_no=alloc["serial_no"],
                     current_warehouse=alloc["warehouse"],
-                    current_department=dept_name,
+                    current_department=dept_name,  # preserve dept on each line
                     sales_rate=rate_display,
+                    doi=doi_display,               # NEW FIELD
                     sales_order_number=None,
                     delivery_date=None,
                     item_code_to_make=alloc["target_item_code"],
@@ -314,25 +300,20 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             consumed_serial_nos = {a["serial_no"] for a in order_allocs + forecast_allocs}
             inward_serials_per_dept[dept_name] = [sn for sn in inward_serials_per_dept[dept_name] if sn["name"] not in consumed_serial_nos]
 
-    # -------- Save all department-specific plan docs --------
-    created = []
-    total_rows = 0
-    for dept_name, doc in plan_docs.items():
-        doc.save(ignore_permissions=True)
-        created.append({
-            "department": dept_name,
-            "plan_name": doc.name,
-            "title": getattr(doc, "plan_title", doc.name),
-            "total_rows": len(doc.get("lines") or [])
-        })
-        total_rows += len(doc.get("lines") or [])
-
+    # -------- Save the single unified plan doc --------
+    plan_doc.save(ignore_permissions=True)
+    total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
 
     return {
-        "total_departments": len(plan_docs),
+        "total_departments": 1,
         "total_rows": total_rows,
-        "plans": created,
+        "plans": [{
+            "department": "All Departments",
+            "plan_name": plan_doc.name,
+            "title": getattr(plan_doc, "plan_title", plan_doc.name),
+            "total_rows": total_rows
+        }],
     }
 
 # =========================
@@ -373,7 +354,7 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
         WHERE so.docstatus = 1
           AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
           AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
-          AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+          AND soi.item_group IN ('Laptops', 'Chromebooks', 'Chromeboxes')
         """,
         (frappe.utils.add_days(frappe.utils.nowdate(), -60),),
         as_dict=True
@@ -386,6 +367,9 @@ def _allocate_orders_to_sequences_multi(pending_orders, sequences, cum_sla, toda
     For each pending SO line:
       - If delivery_date is NULL → allocate to FG (max_seq).
       - Else, place at the furthest sequence s.t. cum_sla[s] <= days_to_due; else FG.
+
+    We also carry forward the Sales Order's requested item_code (order_item_code)
+    to allow departments with allow_reconfig=False to honor the exact request.
     """
     demand_by_seq = {s: defaultdict(list) for s in sequences}
     for row in pending_orders:
@@ -404,7 +388,11 @@ def _allocate_orders_to_sequences_multi(pending_orders, sequences, cum_sla, toda
         fgrain = forward_grain_per_seq[place_seq]
         key = _key_for_grain(ic, fgrain)
 
-        ref = {"so_name": row["so_name"], "delivery_date": delivery_date}
+        ref = {
+            "so_name": row["so_name"],
+            "delivery_date": delivery_date,
+            "order_item_code": ic,  # carry the exact SO line item
+        }
         for _ in range(qty):
             demand_by_seq[place_seq][key].append(ref)
 
@@ -607,6 +595,9 @@ def _build_forward_keys(sellable_items, forward_grain, max_per_template, sales_r
 def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_queues, allow_reconfig, inward_grain, forward_grain):
     """
     Greedy match serials to order queues for this sequence.
+
+    NOTE: serial_map here is already restricted to the **current department's**
+    inward warehouses. We never pull serials from other departments.
     """
     allocations = []
     remaining = serial_map[:]
@@ -644,8 +635,14 @@ def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_que
                 break
 
             order_ref = ref_list.pop()
-            print("key ---------------- ", key)
-            target_item_code = _target_item_for_key(key)
+
+            # Crucial change:
+            # - allow_reconfig=True: suggest best-selling (forward key) target as before.
+            # - allow_reconfig=False: honor SO's requested item_code (no reconfiguration).
+            if allow_reconfig:
+                target_item_code = _target_item_for_key(key)
+            else:
+                target_item_code = order_ref.get("order_item_code") or _target_item_for_key(key)
 
             allocations.append({
                 "serial_no": chosen["serial_no"],
@@ -677,6 +674,9 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
     """
     Greedy equalization: send next unit to the key with the lowest DOI.
     DOI = forward_inventory / sales_rate
+
+    Returns a list of allocations where each allocation also carries the 'doi'
+    AFTER this unit is allocated (so lines show a per-allocation DOI).
     """
     allocations = []
 
@@ -719,16 +719,19 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
 
         target_item_code = _target_item_for_key(target)
 
+        # Update DOI as if this allocation will be forwarded to the target
+        rate = max(1.0, float(sales_rate.get(target, 1.0)))
+        inv_now = current_doi.get(target, 0.0) * rate
+        new_doi = (inv_now + 1.0) / rate
+        current_doi[target] = new_doi
+
         allocations.append({
             "serial_no": chosen["serial_no"],
             "warehouse": chosen["warehouse"],
             "target_item_code": target_item_code,
-            "forward_key": target
+            "forward_key": target,
+            "doi": new_doi,  # include DOI per allocation
         })
-
-        rate = max(1.0, float(sales_rate.get(target, 1.0)))
-        inv_now = current_doi.get(target, 0.0) * rate
-        current_doi[target] = (inv_now + 1.0) / rate
 
     return allocations
 
@@ -820,7 +823,7 @@ def _prime_item_cache(item_codes: List[str]):
     )
     for r in attr_rows:
         d = _ITEM_ATTRS.setdefault(r["item_code"], {})
-        d[r["attribute"]] = r["attribute_value"]
+        d[ r["attribute"] ] = r["attribute_value"]
 
     for ic in needed:
         core = _ITEM_CORE.get(ic) or {}
@@ -856,24 +859,17 @@ def _target_item_for_key(key):
     Resolve existing variant for CONFIG, else return a canonical hint string.
     MODEL returns the template item_code (variant_of).
     """
-    print("\n\ninside _target_item_for_key")
     if not key:
         return None
     if key[0] == "MODEL":
         return key[1]
     _, template, proc, ram, sto = key
 
-    print("template", template)
-    print("proc", proc)
-    print("ram", ram)
-    print("sto", sto)
-
     variant = _find_variant_by_attributes(template, {
         PROCESSOR_ATTR: proc,
         RAM_ATTR: ram,
         STORAGE_ATTR: sto
     })
-    print("variant", variant)
     return variant or f"{template}::{proc}-{ram}-{sto}"
 
 def _resolve_existing_item_for_key(key) -> Optional[str]:
@@ -926,6 +922,7 @@ def _append_plan_row(
     current_warehouse: str,
     current_department: str,
     sales_rate: float,
+    doi: float,                        # NEW PARAM
     sales_order_number: Optional[str],
     delivery_date,
     item_code_to_make: str,
@@ -935,7 +932,7 @@ def _append_plan_row(
     # logger.info("coming to append planning row")
     """
     Child table fields expected on NJ Production Planning (lines):
-      - serial_no, current_warehouse, current_department, sales_rate,
+      - serial_no, current_warehouse, current_department, sales_rate, doi,
         sales_order_number, delivery_date, item_code_to_make, reason, priority_rank
     """
     plan_doc.append("lines", {
@@ -943,73 +940,10 @@ def _append_plan_row(
         "current_warehouse": current_warehouse,
         "current_department": current_department,
         "sales_rate": sales_rate,
+        "doi": doi,                                  # NEW FIELD persisted to child row
         "sales_order_no": sales_order_number,
         "delivery_date": delivery_date,
         "item_code": item_code_to_make,
         "reason": reason,
         "priority_rank": int(priority_rank),
     })
-
-def _prediction_delivery_fieldname(plan_doc) -> str:
-    """
-    Be resilient to either 'delivery_rate' (as in screenshot) or 'delivery_date'.
-    """
-    try:
-        meta = frappe.get_meta(plan_doc.doctype)
-        # Find the child table fieldname
-        for df in meta.get("fields", []):
-            if df.get("fieldtype") == "Table" and df.get("fieldname") == "sales_order_prediction":
-                child_dt = df.get("options")
-                if not child_dt:
-                    break
-                child_meta = frappe.get_meta(child_dt)
-                # prefer 'delivery_rate' if present to match existing installs
-                if any(cdf.fieldname == "delivery_rate" for cdf in child_meta.get("fields", [])):
-                    return "delivery_rate"
-                if any(cdf.fieldname == "delivery_date" for cdf in child_meta.get("fields", [])):
-                    return "delivery_date"
-    except Exception as e:
-        logger.warning("Could not introspect prediction child table fieldnames: %s", e)
-    # safe default: original code used 'delivery_rate'
-    return "delivery_rate"
-
-@log_io
-def _append_sales_order_prediction(plan_doc, sales_rate: Dict):
-    """
-    Append computed sales rates into the 'Sales Order Prediction' child table of the
-    NJ Production Planning document.
-
-      - sales_order_no (Link/Sales Order)
-      - item_code      (Link/Item)
-      - quantity       (Int)
-      - delivery_rate  or delivery_date (Date)
-    """
-    if not sales_rate:
-        # logger.info("No sales_rate passed to _append_sales_order_prediction; skipping.")
-        return
-
-    delivery_field = _prediction_delivery_fieldname(plan_doc)
-    appended = 0
-
-    for key, rate in (sales_rate or {}).items():
-        if not isinstance(key, tuple) or len(key) < 2:
-            continue
-
-        # Resolve a *real* Item for the Link field (avoid canonical hint text)
-        item_to_make = _resolve_existing_item_for_key(key)
-
-        qty = max(1, int(math.ceil(float(rate or 0.0))))
-
-        row = {
-            "sales_order_no": None,
-            "item_code": item_to_make,
-            "quantity": qty,
-            delivery_field: None,
-        }
-        try:
-            plan_doc.append("sales_order_prediction", row)
-            appended += 1
-        except Exception as e:
-            logger.warning("Failed appending prediction row (%s): %s", row, e)
-
-    # logger.info("Appended %s prediction rows into sales_order_prediction", appended)

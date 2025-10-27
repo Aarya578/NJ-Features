@@ -1398,7 +1398,6 @@ def get_item_code_for_each_part(doc):
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
                         elif item_group.lower() == storage.lower() and row.get('variant_10'):
-                            print("variant_10", row.get('variant_10'), item_group)
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
@@ -1835,8 +1834,8 @@ def get_variant_from_value(item_template=None, args=None):
         if not isinstance(args_list, list):
             return None
 
-        conditions = []
         joins = []
+        conditions = []
         i = 0
 
         for condition_dict in args_list:
@@ -1856,12 +1855,23 @@ def get_variant_from_value(item_template=None, args=None):
         if not joins:
             return None
 
+        attr_count = len(conditions)
+
         query = f"""
-            SELECT DISTINCT base.parent
-            FROM `tabItem Variant Attribute` base INNER JOIN 
-            `tabItem` i on i.name = base.parent 
+            SELECT base.parent
+            FROM `tabItem Variant Attribute` base
+            INNER JOIN `tabItem` i ON i.name = base.parent
             {" ".join(joins)}
-            WHERE base.variant_of = %s AND i.disabled = 0 AND i.end_of_life >= CURDATE()
+            WHERE base.variant_of = %s 
+              AND i.disabled = 0 
+              AND (i.end_of_life IS NULL OR i.end_of_life >= CURDATE())
+            GROUP BY base.parent
+            HAVING COUNT(DISTINCT base.parent) = 1
+              AND (
+                  SELECT COUNT(*) 
+                  FROM `tabItem Variant Attribute` t
+                  WHERE t.parent = base.parent
+              ) = {attr_count}
             LIMIT 1
         """
 
@@ -1872,10 +1882,10 @@ def get_variant_from_value(item_template=None, args=None):
 
         variant = frappe.db.sql(query, tuple(query_args), as_dict=True)
 
-        if variant and variant[0]['parent']:
-            return variant[0]['parent']
-        else:
-            return construct_item_code(item_template, args_list)
+        if variant and variant[0].get("parent"):
+            return variant[0]["parent"]
+
+        return construct_item_code(item_template, args_list)
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_variant_from_value error")
@@ -3430,3 +3440,104 @@ def duplicate_njqca(serial_no):
        new_doc.set('qi_type',"is_defective")
 
     return new_doc.as_dict(no_nulls=True)
+
+@frappe.whitelist()
+def adaptor_charge_gain_status(njqca_name, serial_no):
+    if njqca_name and serial_no:
+        sr_no_item_group=frappe.db.get_value("Serial No", serial_no, "item_group")
+        if sr_no_item_group!="Laptop Adaptors":
+            frappe.throw("Serial No: <b>" + serial_no + "</b> is not a Laptop Adaptor.")
+        status=frappe.db.exists('NJQCA Result Parameters',{'parent':njqca_name,'parameter':'Adapterbattery_status'})
+        print(status)
+        if not status:
+            return ""
+        item_code=frappe.db.get_value("Serial No", serial_no, "item_code")
+        wattage=frappe.db.get_value("Item Variant Attribute",{'parent':item_code,'attribute':"Wattage Capacity"},"attribute_value")
+        wattage=''.join(str.isdigit(), wattage)
+        print(wattage)
+        query="""
+            select parameter, value from `tabNJQCA Result Parameters` where parent=%s and item_group="Laptop Adaptors" and 
+            (parameter="final_percentage" or parameter="initial_percentage");
+        """
+        percentage=frappe.db.sql(query,(njqca_name),as_dict=True)
+        final_percentage=None
+        initial_percentage=None
+        if percentage:
+            for p in percentage:
+                if p.parameter=="final_percentage":
+                    final_percentage=p.value
+                if p.parameter=="initial_percentage":
+                    initial_percentage=p.value
+        print(final_percentage)
+        print(initial_percentage)
+        if final_percentage and initial_percentage and wattage:
+            return check_charging_gain(int(wattage), int(initial_percentage), int(final_percentage))
+
+        
+                
+def check_charging_gain(wattage: int, initial_percentage: int, final_percentage: int) -> str:
+    gain = final_percentage - initial_percentage
+    min_gain = max_gain = 0
+
+    if initial_percentage < 20:
+        soc_range = "0-20"
+    elif initial_percentage < 40:
+        soc_range = "20-40"
+    elif initial_percentage < 70:
+        soc_range = "40-70"
+    elif initial_percentage < 80:
+        soc_range = "70-80"
+    elif initial_percentage < 95:
+        soc_range = "80-95"
+    else:
+        soc_range = "95-100"
+
+    if soc_range == "0-20":
+        if wattage == 45: min_gain, max_gain = 3, 3
+        elif wattage == 65: min_gain, max_gain = 4, 7
+        elif wattage == 90: min_gain, max_gain = 6, 9
+        elif wattage == 130: min_gain, max_gain = 7, 12
+        elif 150 <= wattage <= 170: min_gain, max_gain = 8, 14
+        elif wattage == 200: min_gain, max_gain = 9, 16
+
+    elif soc_range == "20-40":
+        if wattage == 45: min_gain, max_gain = 2, 4
+        elif wattage == 65: min_gain, max_gain = 3, 6
+        elif wattage == 90: min_gain, max_gain = 5, 8
+        elif wattage == 130: min_gain, max_gain = 6, 11
+        elif 150 <= wattage <= 170: min_gain, max_gain = 7, 13
+        elif wattage == 200: min_gain, max_gain = 8, 15
+
+    elif soc_range == "40-70":
+        if wattage == 45: min_gain, max_gain = 2, 3
+        elif wattage == 65: min_gain, max_gain = 4, 5
+        elif wattage == 90: min_gain, max_gain = 5, 8
+        elif wattage == 130: min_gain, max_gain = 6, 9
+        elif 150 <= wattage <= 170: min_gain, max_gain = 7, 11
+        elif wattage == 200: min_gain, max_gain = 8, 13
+
+    elif soc_range == "70-80":
+        if wattage == 45: min_gain, max_gain = 1, 2
+        elif wattage == 65: min_gain, max_gain = 2, 3
+        elif wattage == 90: min_gain, max_gain = 3, 5
+        elif wattage == 130: min_gain, max_gain = 4, 6
+        elif 150 <= wattage <= 170: min_gain, max_gain = 5, 7
+        elif wattage == 200: min_gain, max_gain = 6, 8
+
+    elif soc_range == "80-95":
+        if wattage == 45: min_gain, max_gain = 1, 1
+        elif wattage == 65: min_gain, max_gain = 1, 2
+        elif wattage == 90: min_gain, max_gain = 2, 3
+        elif wattage == 130: min_gain, max_gain = 2, 4
+        elif 150 <= wattage <= 170: min_gain, max_gain = 3, 4
+        elif wattage == 200: min_gain, max_gain = 3, 5
+
+    elif soc_range == "95-100":
+        if wattage == 45: min_gain, max_gain = 0, 0
+        elif wattage == 65: min_gain, max_gain = 0, 1
+        elif wattage == 90: min_gain, max_gain = 1, 1
+        elif wattage == 130: min_gain, max_gain = 1, 1
+        elif 150 <= wattage <= 170: min_gain, max_gain = 1, 2
+        elif wattage == 200: min_gain, max_gain = 1, 2
+
+    return "Pass" if gain >= min_gain else "Fail"

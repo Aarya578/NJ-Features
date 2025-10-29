@@ -62,26 +62,6 @@ ALLOWED_ITEM_MODELS = set()
 
 # =========================
 # Global caches
-
-
-def _oldest_first(lst: List[Dict]) -> List[Dict]:
-    return sorted(lst, key=lambda s: s.get("creation") or 0)
-
-def _same_config(serial: Dict, target_cfg: tuple) -> bool:
-    return (serial.get("template") == target_cfg[0]
-            and serial.get("ram") == target_cfg[1]
-            and serial.get("storage") == target_cfg[2])
-
-def _same_storage_diff_ram(serial: Dict, target_cfg: tuple) -> bool:
-    return (serial.get("template") == target_cfg[0]
-            and serial.get("storage") == target_cfg[2]
-            and serial.get("ram") != target_cfg[1])
-
-def _cfg_tuple_from_item(item_code: str) -> tuple:
-    if item_code not in _ITEM_KEYS:
-        _prime_item_cache([item_code])
-    _, template, _proc, ram, sto = _ITEM_KEYS[item_code]["config_key"]
-    return (template, ram, sto)
 # =========================
 _ITEM_CORE: Dict[str, Dict] = {}
 _ITEM_ATTRS: Dict[str, Dict] = {}
@@ -533,62 +513,53 @@ def _build_forward_keys(sellable_items, forward_grain, sales_rate):
 # Allocation helpers
 # =========================
 @log_io
-
-@log_io
 def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_queues, allow_reconfig, inward_grain, forward_grain):
+    """
+    Greedy match serials to order queues for this sequence.
+    serial_map is already restricted to THIS department's serials.
+    """
     allocations = []
     remaining = serial_map[:]
     if not seq_order_queues:
         return allocations, remaining
 
-    from collections import defaultdict
-    by_model  = defaultdict(list)
-    by_config = defaultdict(list)
-    for s in remaining:
-        by_model[s["forward_key_model"]].append(s)
-        by_config[s["forward_key_config"]].append(s)
+    if inward_grain == "model":
+        idx = defaultdict(list)
+        for s in serial_map:
+            idx[s["forward_key_model"]].append(s)
+    else:
+        idx = defaultdict(list)
+        for s in serial_map:
+            idx[s["forward_key_config"]].append(s)
 
-    for k in by_model:
-        by_model[k] = _oldest_first(by_model[k])
-    for k in by_config:
-        by_config[k] = _oldest_first(by_config[k])
-
-    # Sort queues by size descending for mild batching
-    for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
+    for key, ref_list in sorted(seq_order_queues.items(), key=lambda kv: len(kv[1]), reverse=True):
         while ref_list:
-            order_ref = ref_list.pop()
             chosen = None
-
-            target_cfg_tuple = None
-            if order_ref.get("order_item_code"):
-                target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
-
-            # Ensure we have the model key for the pool
-            model_key = ("MODEL", key[1]) if key and key[0] == "CONFIG" else key
-            model_pool = by_model.get(model_key, [])
-
-            # 1) Exact config first (even if forward_grain == 'model')
-            if target_cfg_tuple:
-                exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
-                exact = _oldest_first(exact)
-                if exact:
-                    chosen = exact.pop(0)
-
-            # 2) Same storage, different RAM
-            if not chosen and target_cfg_tuple:
-                near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
-                near = _oldest_first(near)
-                if near:
-                    chosen = near.pop(0)
-
-            # 3) Any same model (oldest first)
-            if not chosen and model_pool:
-                chosen = _oldest_first(model_pool)[0]
+            if inward_grain == "config":
+                pool = idx.get(key, [])
+                if pool:
+                    chosen = pool.pop()
+                elif allow_reconfig:
+                    model_key = ("MODEL", key[1])
+                    pool2 = idx.get(model_key, [])
+                    if pool2:
+                        chosen = pool2.pop()
+            else:
+                model_key = ("MODEL", key[1])
+                pool = idx.get(model_key, [])
+                if pool:
+                    chosen = pool.pop()
 
             if not chosen:
                 break
 
-            target_item_code = _target_item_for_key(key) if allow_reconfig else chosen["item_code"]
+            order_ref = ref_list.pop()
+
+            # When reconfig is NOT allowed, we must keep the serial's current item_code.
+            if allow_reconfig:
+                target_item_code = _target_item_for_key(key)
+            else:
+                target_item_code = chosen["item_code"]
 
             allocations.append({
                 "serial_no": chosen["serial_no"],
@@ -598,19 +569,15 @@ def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_que
                 "order_name": order_ref.get("so_name"),
                 "required_by": order_ref.get("delivery_date"),
             })
+            remaining.remove(chosen)
 
-            # Remove chosen from structures
-            remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-            by_model[chosen["forward_key_model"]] = [x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]]
-            by_config[chosen["forward_key_config"]] = [x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]]
-
-    # Cleanup emptied queues
-    for k in [k for k,v in list(seq_order_queues.items()) if not v]:
+    empty_keys = [k for k, lst in list(seq_order_queues.items()) if not lst]
+    for k in empty_keys:
         del seq_order_queues[k]
 
     return allocations, remaining
 
-
+@log_io
 def _estimate_forward_inventory(forward_keys, serials, forward_grain):
     inv = Counter()
     for s in serials:
@@ -620,62 +587,79 @@ def _estimate_forward_inventory(forward_keys, serials, forward_grain):
     return dict(inv)
 
 @log_io
-
-@log_io
 def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_reconfig, forward_keys, sales_rate, current_doi):
+    """
+    Greedy equalization: keep allocating while there is inventory available for any target.
+    - In CONFIG grain:
+        * try exact CONFIG pool first
+        * if allow_reconfig, fallback to MODEL-level pool
+    - In MODEL grain:
+        * only MODEL pools are used
+    Returns allocations with per-allocation 'doi'.
+    """
     allocations = []
 
-    from collections import defaultdict
+    # Build buckets once
     if forward_grain == "config":
-        buckets = defaultdict(list)
-        any_by_model = defaultdict(list)
+        buckets = defaultdict(list)        # ("CONFIG", template, proc, ram, sto) -> [serials]
+        any_by_model = defaultdict(list)   # ("MODEL", template) -> [serials]
         for s in remaining_serials:
             buckets[s["forward_key_config"]].append(s)
             any_by_model[s["forward_key_model"]].append(s)
-        for k in buckets:
-            buckets[k] = _oldest_first(buckets[k])
-        for k in any_by_model:
-            any_by_model[k] = _oldest_first(any_by_model[k])
     else:
-        buckets = defaultdict(list)
+        buckets = defaultdict(list)        # ("MODEL", template) -> [serials]
         for s in remaining_serials:
             buckets[s["forward_key_model"]].append(s)
-        for k in buckets:
-            buckets[k] = _oldest_first(buckets[k])
 
-    work = list(forward_keys)
-    while work and remaining_serials:
-        work.sort(key=lambda k: current_doi.get(k, 0.0))
+    # Helper: which targets are currently serviceable (have inventory now)
+    def available_targets():
+        avail = []
+        for k in forward_keys:
+            if forward_grain == "config":
+                if buckets.get(k):  # exact config pool has stock
+                    avail.append(k)
+                elif allow_reconfig:
+                    mk = ("MODEL", k[1])
+                    if any_by_model.get(mk):  # model fallback has stock
+                        avail.append(k)
+            else:
+                if buckets.get(k):  # model pool has stock
+                    avail.append(k)
+        return avail
+
+    # Main loop: run while any target has inventory (direct or fallback)
+    while True:
+        work = available_targets()
+        if not work:
+            break
+
+        # Lowest DOI wins (add small randomness to break ties fairly)
+        work.sort(key=lambda k: (current_doi.get(k, 0.0), random.random()))
         target = work[0]
 
         chosen = None
-        if forward_grain == "config":
-            pool = buckets.get(target, [])
-            if pool:
-                chosen = pool.pop(0)
-            elif allow_reconfig:
-                model_key = ("MODEL", target[1])
-                pool2 = any_by_model.get(model_key, [])
-                if pool2:
-                    _, template, _p, ram, sto = target
-                    target_cfg_tuple = (template, ram, sto)
-                    near = [s for s in pool2 if _same_storage_diff_ram(s, target_cfg_tuple)]
-                    near = _oldest_first(near)
-                    if near:
-                        chosen = near.pop(0)
-                    else:
-                        chosen = _oldest_first(pool2)[0] if pool2 else None
-        else:
-            pool = buckets.get(target, [])
-            if pool:
-                chosen = pool.pop(0)
+        # Pick from exact pool first
+        pool = buckets.get(target, [])
+        if pool:
+            chosen = pool.pop()
+        elif forward_grain == "config" and allow_reconfig:
+            # Fallback to model-level inventory
+            model_key = ("MODEL", target[1])
+            pool2 = any_by_model.get(model_key, [])
+            if pool2:
+                chosen = pool2.pop()
 
+        # If nothing was chosen (should be rare due to available_targets filtering), continue
         if not chosen:
-            work.pop(0)
+            # Recompute in next iteration
             continue
 
+        # Item to make:
+        # - allow_reconfig=True -> best-selling forward suggestion via _target_item_for_key(target)
+        # - allow_reconfig=False -> keep serial's own item_code
         target_item_code = _target_item_for_key(target) if allow_reconfig else chosen["item_code"]
 
+        # DOI update for the chosen target (sales_rate clamped to >= 1.0)
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
         inv_now = current_doi.get(target, 0.0) * rate
         new_doi = (inv_now + 1.0) / rate
@@ -689,23 +673,12 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
             "doi": new_doi,
         })
 
-        # Remove chosen from buckets
-        remaining_serials[:] = [x for x in remaining_serials if x["serial_no"] != chosen["serial_no"]]
-        if forward_grain == "config":
-            kcfg = chosen["forward_key_config"]
-            if kcfg in buckets:
-                buckets[kcfg] = [x for x in buckets[kcfg] if x["serial_no"] != chosen["serial_no"]]
-            mk = chosen["forward_key_model"]
-            if mk in any_by_model:
-                any_by_model[mk] = [x for x in any_by_model[mk] if x["serial_no"] != chosen["serial_no"]]
-        else:
-            mk = chosen["forward_key_model"]
-            if mk in buckets:
-                buckets[mk] = [x for x in buckets[mk] if x["serial_no"] != chosen["serial_no"]]
-
     return allocations
 
-
+# =========================
+# Departments / inventory helpers
+# =========================
+@log_io
 def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
     """
     Retained for reference; not used by _get_inward_serials_for_department anymore.
@@ -737,7 +710,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     """
     rows = frappe.db.sql(
         """
-        SELECT name, item_code, warehouse, department, creation
+        SELECT name, item_code, warehouse, department
         FROM `tabSerial No`
         WHERE department = %s
           AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))

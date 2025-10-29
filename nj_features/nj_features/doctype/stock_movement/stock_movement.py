@@ -273,6 +273,7 @@ def validate_serial_no_and_department(row, error_messages):
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+    
 
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
@@ -285,6 +286,9 @@ def validate_serial_no_and_department(row, error_messages):
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
+    
+    if serial_doc.get("item_group") in ["Desktops"]:
+            return False
 
     if not serial_doc.get("bypass"):
 

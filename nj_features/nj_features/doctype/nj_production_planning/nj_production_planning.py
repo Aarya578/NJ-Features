@@ -1,1586 +1,875 @@
-import json
+# nj_planning/plan_all.py
+
 import math
-import time
+import random
+import logging
+import functools
 import frappe
-import traceback
-from datetime import datetime
-from operator import itemgetter
-from collections import defaultdict
-from frappe.utils import getdate, flt
+from frappe import _
+from typing import Dict, List, Optional, Union
 from frappe.model.document import Document
-from datetime import datetime, timedelta, date
-logger = frappe.logger("production_planning", allow_site=True, file_count=1)
+from datetime import timedelta
+from collections import defaultdict, Counter
+
+# -------------------------
+# Logger setup
+# -------------------------
+logger = frappe.logger("nj_planning", allow_site=True, file_count=5, max_size=10_000_000)
+
+def _safe_repr(obj, maxlen: int = 4000):
+    try:
+        s = repr(obj)
+    except Exception:
+        try:
+            s = str(obj)
+        except Exception:
+            s = f"<unreprable {type(obj).__name__}>"
+    if s is None:
+        s = "None"
+    if len(s) > maxlen:
+        return s[:maxlen] + "... <truncated>"
+    return s
+
+def log_io(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            result = fn(*args, **kwargs)
+            return result
+        except Exception as e:
+            logger.exception("ERROR %s: %s", fn.__name__, e)
+            raise
+    return wrapper
 
 class NJProductionPlanning(Document):
     pass
 
+# =========================
+# Tunables / Constants
+# =========================
+SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes"}
+
+RECENCY_WINDOW_DAYS = 60
+RECENCY_MAX_WEIGHT = 30
+
+REQUIRE_SHOPIFY_IDS_FOR_SELLABLE = True
+
+PROCESSOR_ATTR = "Processor Type1"
+RAM_ATTR = "RAM Capacity"
+STORAGE_ATTR = "Storage Capacity"
+
+ALLOWED_ITEM_MODELS = set()
+
+# =========================
+# Global caches
+# =========================
+_ITEM_CORE: Dict[str, Dict] = {}
+_ITEM_ATTRS: Dict[str, Dict] = {}
+_ITEM_KEYS: Dict[str, Dict] = {}
+
+# =========================
+# Public API (batch run)
+# =========================
 @frappe.whitelist()
-def get_department_details():
-    all_dept = frappe.db.get_all("Department", ["name"])
+@log_io
+def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
+    # -------- Load departments with SLA and group by sequence --------
+    # CHANGE: Exclude departments where run_production_planning != 1
+    depts = frappe.get_all(
+        "Department",
+        filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],
+        fields=["name", "department_sequence", "sla", "allow_reconfig",
+                "inwarded_model", "forwarded_model", "inwarded_config", "forwarded_config", "run_production_planning"],
+        order_by="department_sequence asc, name asc"
+    )
+    if not depts:
+        frappe.throw("No departments with SLA found.")
 
-    for dept in all_dept:
-        dept_name = dept.get("name")
-        print(f"\nProcessing Department: {dept_name}")
+    depts_by_seq: Dict[int, List[Dict]] = defaultdict(list)
+    for d in depts:
+        depts_by_seq[d["department_sequence"]].append(d)
 
-        t0 = time.time()
-        dept_doc = get_department_document(dept_name)
-        t1 = time.time()
-        print(f"get_department_document: {t1 - t0:.2f} seconds")
+    sequences = sorted(depts_by_seq.keys())
+    max_seq = max(sequences)
 
-        in_model = dept_doc.get("inwarded_model") 
-        in_config = dept_doc.get("inwarded_config")
-        fw_model = dept_doc.get("forwarded_model") 
-        fw_config = dept_doc.get("forwarded_config")
+    cum_sla = _build_cumulative_sla_multi(depts_by_seq, sequences)
 
-        if str(in_model) == '1' and str(fw_model) == '1':
-            t2 = time.time()
-            data = process_model_configuration(dept_doc)
-            t3 = time.time()
-            print(f"process_model_configuration: {t3 - t2:.2f} seconds")
+    forward_grain_per_seq: Dict[int, str] = {}
+    for s in sequences:
+        forward_grain_per_seq[s] = "config" if any(bool(d.get("forwarded_config")) for d in depts_by_seq[s]) else "model"
 
-            new_doc = create_production_planning(data, dept_name)
-            t4 = time.time()
-            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+    # -------- Sales Orders → per-sequence order queues --------
+    today = frappe.utils.getdate(frappe.utils.nowdate())
+    horizon_end = today + timedelta(days=int(planning_horizon_days or 30))
+    pending_orders = _get_pending_sales_orders(horizon_end=horizon_end)
 
-            calculate_to_make(new_doc)
-            t5 = time.time()
-            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+    _prime_item_cache([r["item_code"] for r in pending_orders])
 
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept_name)
-            t6 = time.time()
-            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+    order_demand_by_seq = _allocate_orders_to_sequences_multi(
+        pending_orders=pending_orders,
+        sequences=sequences,
+        cum_sla=cum_sla,
+        today=today,
+        forward_grain_per_seq=forward_grain_per_seq,
+        max_seq=max_seq
+    )
 
-        elif str(in_model) == '1' and str(fw_config) == '1':
-            t2 = time.time()
-            data = process_merged_configuration(dept_doc)
-            t3 = time.time()
-            print(f"process_merged_configuration: {t3 - t2:.2f} seconds")
+    # -------- Sales-rate & portfolio --------
+    sellable_items = _get_sellable_items()
+    if not sellable_items:
+        logger.warning("SELLABLE portfolio is empty. Check REQUIRE_SHOPIFY_IDS_FOR_SELLABLE and item groups.")
 
-            new_doc = create_production_planning(data, dept_name)
-            t4 = time.time()
-            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+    sales_rate = _compute_recency_weighted_sales_rates_SO_union(sellable_items)
+    if not sales_rate:
+        logger.warning("No sales_rate computed.")
+    random.seed(42)
 
-            calculate_to_make(new_doc)
-            t5 = time.time()
-            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+    # -------- Create ONE unified plan doc --------
+    plan_date = frappe.utils.nowdate()
+    now_stamp = frappe.utils.now_datetime().strftime('%Y-%m-%d %H:%M:%S')
 
-            suggest_to_make_serial_no(new_doc.get("final_config"), new_doc, department=dept_name)
-            t6 = time.time()
-            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+    plan_doc = frappe.new_doc("NJ Production Planning")
+    plan_doc.plan_date = plan_date
+    plan_doc.department = "All Departments"
+    plan_doc.name = f"NJ Production Plan - {now_stamp}"
+    plan_doc.flags.ignore_mandatory = True
+    plan_doc.set("lines", [])
 
-        elif str(in_config) == '1' and str(fw_config) == '1':
-            t2 = time.time()
-            data = process_default_configuration(dept_doc)
-            t3 = time.time()
-            print(f"process_default_configuration: {t3 - t2:.2f} seconds")
+    desired_name = f"Unified-{plan_date}"
+    try:
+        plan_doc.name = desired_name
+        plan_doc.set_new_name(desired_name)
+    except Exception as e:
+        logger.warning("Could not set custom unified name %s: %s", desired_name, e)
+        
+    # Per-sequence forward-key universe
+    forward_keys_per_seq: Dict[int, List] = {}
+    for s in sequences:
+        fwd_grain = forward_grain_per_seq[s]
+        forward_keys_per_seq[s] = _build_forward_keys(
+            sellable_items, fwd_grain, sales_rate
+        )
 
-            new_doc = create_production_planning(data, dept_name)
-            t4 = time.time()
-            print(f"create_production_planning: {t4 - t3:.2f} seconds")
+    # -------- Build per-dept inward pools (STRICT to serial.department) --------
+    inward_serials_per_dept: Dict[str, List[Dict]] = {}
+    for s in sequences:
+        for d in depts_by_seq[s]:
+            dept_name = d["name"]
+            dept_doc = frappe.get_doc("Department", dept_name)
+            # CHANGE: fetch ALL serials that belong to this department (independent of warehouse)
+            inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
 
-            calculate_to_make(new_doc)
-            t5 = time.time()
-            print(f"calculate_to_make: {t5 - t4:.2f} seconds")
+    priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
-            suggest_to_make_serial_no(new_doc.get("nj_production_planning_child"), new_doc, department=dept_name)
-            t6 = time.time()
-            print(f"suggest_to_make_serial_no: {t6 - t5:.2f} seconds")
+    for s in sorted(sequences, reverse=True):
+        seq_forward_grain = forward_grain_per_seq[s]
+        forward_keys = forward_keys_per_seq[s]
+        seq_order_queues = order_demand_by_seq.get(s, defaultdict(list))
 
-        t_end = time.time()
-        print(f"Total time for {dept_name}: {t_end - t0:.2f} seconds")
+        for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
+            dept_name = dept["name"]
 
-@frappe.whitelist()
-def create_production_planning(data, department):
-    new_doc = frappe.new_doc("NJ Production Planning")
+            # Even though we filtered upstream, keep this guard (no-op if all are 1)
+            if not dept.get("run_production_planning"):
+                continue
 
-    for item in data:
-        new_doc.department = department
-        child = new_doc.append("nj_production_planning_child", {})
-        child.model = item.get("model", "").upper() if item.get("model", "") else ""
-        child.processor = item.get("processor_type", "").upper() if item.get("processor_type", "") else ""
-        child.ram = item.get("ram_capacity", "").upper() if item.get("ram_capacity", "") else ""
-        child.ssd = item.get("storage_capacity", "").upper() if item.get("storage_capacity", "") else ""
-        child.sales_rate = item.get("sales_rate", 0.0)
-        child.inward_inventory = item.get("inwarded_qty", 0.0)
-        child.forward_inventory = item.get("forwarded_qty", 0.0)
-        child.days_of_inventory = item.get("DOI", 0.0)
-        child.to_make = item.get("to_make", 0.0)
-        child.item_code = item.get("item_code", "")
+            allow_reconfig = bool(dept.get("allow_reconfig"))
+            inward_grain = "config" if dept.get("inwarded_config") else "model"
+            forward_grain = seq_forward_grain
 
-    new_doc.insert()
+            # serials strictly for THIS department (department-centric intake)
+            serial_rows = inward_serials_per_dept.get(dept_name, [])
+            serial_map = [_enrich_serial_from_attrs(sn) for sn in serial_rows]
+
+            # 1) Orders
+            order_allocs, remaining_serials = _match_inventory_to_order_queues_for_sequence(
+                seq=s,
+                serial_map=serial_map,
+                seq_order_queues=seq_order_queues,
+                allow_reconfig=allow_reconfig,
+                inward_grain=inward_grain,
+                forward_grain=forward_grain
+            )
+
+            # DOI snapshot after including order allocations
+            fwd_inventory = _estimate_forward_inventory(forward_keys, remaining_serials, forward_grain)
+            for alloc in order_allocs:
+                k = alloc["forward_key"]
+                fwd_inventory[k] = fwd_inventory.get(k, 0) + 1
+
+            doi_snapshot = {
+                k: (float(fwd_inventory.get(k, 0)) / max(1.0, float(sales_rate.get(k, 1.0))))
+                for k in forward_keys
+            }
+
+            for alloc in order_allocs:
+                k = alloc["forward_key"]
+                rate_display = float(sales_rate.get(k, 1.0))
+                doi_display = float(doi_snapshot.get(k, 0.0))
+                _append_plan_row(
+                    plan_doc,
+                    serial_no=alloc["serial_no"],
+                    current_warehouse=alloc["warehouse"],
+                    current_department=dept_name,
+                    sales_rate=rate_display,
+                    doi=doi_display,
+                    sales_order_number=alloc.get("order_name"),
+                    delivery_date=alloc.get("required_by"),
+                    item_code_to_make=alloc["target_item_code"],
+                    reason="Order",
+                    priority_rank=priority_per_dept[dept_name]
+                )
+                priority_per_dept[dept_name] += 1
+
+            # 2) Forecast
+            forecast_allocs = _allocate_forecast_to_balance_doi(
+                remaining_serials=remaining_serials,
+                forward_grain=forward_grain,
+                allow_reconfig=allow_reconfig,
+                forward_keys=forward_keys,
+                sales_rate=sales_rate,
+                current_doi=doi_snapshot
+            )
+
+            for alloc in forecast_allocs:
+                k = alloc["forward_key"]
+                rate_display = float(sales_rate.get(k, 1.0))
+                doi_display = float(alloc.get("doi", 0.0))
+                _append_plan_row(
+                    plan_doc,
+                    serial_no=alloc["serial_no"],
+                    current_warehouse=alloc["warehouse"],
+                    current_department=dept_name,
+                    sales_rate=rate_display,
+                    doi=doi_display,
+                    sales_order_number=None,
+                    delivery_date=None,
+                    item_code_to_make=alloc["target_item_code"],
+                    reason="Forecast",
+                    priority_rank=priority_per_dept[dept_name]
+                )
+                priority_per_dept[dept_name] += 1
+
+            consumed_serial_nos = {a["serial_no"] for a in order_allocs + forecast_allocs}
+            inward_serials_per_dept[dept_name] = [sn for sn in inward_serials_per_dept[dept_name] if sn["name"] not in consumed_serial_nos]
+
+    plan_doc.save(ignore_permissions=True)
+    total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
 
-    return new_doc
+    return {
+        "total_departments": 1,
+        "total_rows": total_rows,
+        "plans": [{
+            "department": "All Departments",
+            "plan_name": plan_doc.name,
+            "title": getattr(plan_doc, "plan_title", plan_doc.name),
+            "total_rows": total_rows
+        }],
+    }
 
-def parse_document(doc):
-    if isinstance(doc, str):
-        return json.loads(doc)
-    return doc
+# =========================
+# SLA helpers
+# =========================
+@log_io
+def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dict:
+    # NOTE: current behavior = MAX SLA per sequence (unchanged)
+    max_sla_per_seq = {}
+    for s in sequences:
+        max_sla_per_seq[s] = max(float(d.get("sla") or 0.0) for d in depts_by_seq[s]) if depts_by_seq[s] else 0.0
+    cum_sla = {}
+    for i, s in enumerate(sorted(sequences)):
+        tail = sum(max_sla_per_seq[t] for t in sequences if t >= s)
+        cum_sla[s] = tail
+    return cum_sla
 
-def get_department_document(department_name):
-    return frappe.get_doc("Department", {"name": department_name})
-
-def process_merged_configuration(dept_doc):
-    merged_data = process_inventory_rows(dept_doc)
-    days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
-    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
-    # merged_data = get_shopify_items(merged_data)
-    item_code_list = calculate_sales_order_rate_with_weights_for_model_config(merged_data, days=int(days), weight_factor=int(weight_factor))
-    return calculate_doi(item_code_list)
-
-def process_inventory_rows(dept_doc):
-    merged_data = {}
-    for row in dept_doc.get("inventory_details_child"):
-        process_inwarded_inventory_merged(row, merged_data)
-        process_forwarded_inventory_merged(row, merged_data, dept_doc)
-    return merged_data
-
-def process_inwarded_inventory_merged(row, merged_data):
-    if row.get("inwarded_inventory"):
-        if row.get("inwarded_warehouse_list"):
-            warehouses = row.get("inwarded_warehouse_list").split(",")
-        else:
-            warehouses = get_warehouses(row.get("inwarded_inventory"))
-        for warehouse in warehouses:
-            counts = get_inwarded_counts_merged(warehouse)
-            update_merged_counts(merged_data, counts, warehouse, "inwarded_count")
-
-def process_forwarded_inventory_merged(row, merged_data, dept_doc):
-    query = """
-        SELECT name FROM `tabWarehouse`
-        WHERE department IN (
-                SELECT name FROM `tabDepartment`
-                WHERE department_sequence > %s
-            )
-    """
-    warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
-    all_warehouse = [row.get("name") for row in warehouses]
-
-    for warehouse in all_warehouse:
-        counts = get_forwarded_counts_merged(warehouse)
-        update_merged_counts(merged_data, counts, warehouse, "forwarded_count")
-
-def get_warehouses(department):
-    return frappe.db.get_all(
-        "Warehouse",
-        filters={"department": department},
-        pluck="name"
-    )
-
-def get_inwarded_counts_merged(warehouse):
-    return frappe.db.sql("""
-        SELECT 
-            COUNT(sn.name) AS count,
-            sn.model,
-            COALESCE(LOWER(iva.attribute_value), 'unknown') AS processor
-        FROM `tabSerial No` sn
-        JOIN `tabItem Group` i ON sn.item_group = i.name
-        LEFT JOIN (
-            SELECT 
-                parent AS item_code,
-                LOWER(attribute_value) AS attribute_value
-            FROM `tabItem Variant Attribute`
-            WHERE LOWER(attribute) = 'processor type'
-        ) AS iva ON iva.item_code = sn.item_code
-        WHERE sn.warehouse = %s
-        AND i.parent_item_group = 'Products'
-        GROUP BY sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
-    """, (warehouse,), as_dict=True)
-
-def get_forwarded_counts_merged(warehouse):
-    return frappe.db.sql("""
-        SELECT 
-            sn.item_code, 
-            sn.model,
-            COALESCE(LOWER(iva.attribute_value), 'unknown') AS processor,
-            COUNT(sn.name) AS count
-        FROM `tabSerial No` sn
-        JOIN `tabItem Group` i ON sn.item_group = i.name
-        LEFT JOIN (
-            SELECT 
-                parent AS item_code,
-                LOWER(attribute_value) AS attribute_value
-            FROM `tabItem Variant Attribute`
-            WHERE LOWER(attribute) = 'processor type'
-        ) AS iva ON iva.item_code = sn.item_code
-        WHERE sn.warehouse = %s
-        AND i.parent_item_group = 'Products'
-        GROUP BY sn.item_code, sn.model, COALESCE(LOWER(iva.attribute_value), 'unknown')
-    """, (warehouse,), as_dict=True)
-
-def update_merged_counts(merged_data, counts, warehouse, count_type):
-    for item in counts:
-        model = item.get("model")
-        processor = item.get("processor") or "unknown"  # fallback if processor is None
-
-        if not model:
-            continue
-
-        # Key by both model and processor
-        key = (model, processor)
-
-        if key not in merged_data:
-            merged_data[key] = {
-                "model": model,
-                "processor": processor,
-                "inwarded_count": 0,
-                "forwarded_count": 0,
-                "item_codes": {}
-            }
-
-        merged_data[key][count_type] += item.get("count", 0)
-
-        if count_type == "forwarded_count":
-            item_code = item.get("item_code")
-            if item_code:
-                merged_data[key]["item_codes"][item_code] = (
-                    merged_data[key]["item_codes"].get(item_code, 0) + item.get("count", 0)
-                )
-
-def process_model_configuration(dept_doc):
-    inwarded_counts = get_model_counts(dept_doc, "inwarded_inventory")
-    print("inwarded_counts:", inwarded_counts)
-    forwarded_counts = get_model_counts(dept_doc, "forwarded_inventory")
-    print("forwarded_counts:", forwarded_counts)
-    item_code_list = merge_model_counts(inwarded_counts, forwarded_counts)
-    days = frappe.db.get_single_value("NJ Production Planning Settings", "days") or 30
-    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor") or 1.0
-    item_code_list = calculate_sales_order_rate_with_weights_for_model(item_code_list, days=int(days), weight_factor=int(weight_factor))
-    return calculate_doi(item_code_list)
-
-def get_model_counts(dept_doc, inventory_type):
-    counts = {}
-
-    for row in dept_doc.get("inventory_details_child"):
-        department = row.get(inventory_type)
-
-        # Determine warehouses based on inventory type
-        if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
-            warehouses = [w.strip() for w in row.get("inwarded_warehouse_list").split(",") if w.strip()]
-        elif inventory_type == "forwarded_inventory":
-            query = """
-                SELECT name FROM `tabWarehouse`
-                WHERE department IN (
-                    SELECT name FROM `tabDepartment`
-                    WHERE department_sequence > %s
-                )
-            """
-            forwarded_warehouses = frappe.db.sql(query, (dept_doc.get("department_sequence"),), as_dict=True)
-            warehouses = [w["name"] for w in forwarded_warehouses]
-        else:
-            warehouses = get_warehouses(department)
-
-        if not warehouses:
-            continue  # Skip if no warehouses found
-
-        # Prepare query using IN clause for multiple warehouses
-        placeholders = ", ".join(["%s"] * len(warehouses))
-        query = f"""
-            SELECT COUNT(sn.name) AS count, sn.model
-            FROM `tabSerial No` sn
-            JOIN `tabItem Group` i ON sn.item_group = i.name
-            WHERE sn.warehouse IN ({placeholders})
-            AND i.parent_item_group = "Products"
-            GROUP BY sn.model
+# =========================
+# Sales Orders → demand placement
+# =========================
+@log_io
+def _get_pending_sales_orders(horizon_end) -> List[Dict]:
+    # NOTE: Keep existing logic as per discussion (revisit later)
+    soi = frappe.db.sql(
         """
-        results = frappe.db.sql(query, tuple(warehouses), as_dict=True)
+        SELECT
+            so.name AS so_name, soi.name AS soi_name, so.customer, so.transaction_date,
+            soi.item_code, (soi.qty - IFNULL(soi.delivered_qty,0)) AS qty_pending,
+            soi.delivery_date
+        FROM `tabSales Order` so
+        JOIN `tabSales Order Item` soi ON soi.parent = so.name
+        WHERE so.docstatus = 1
+          AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
+          AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+          AND soi.item_group IN ('Laptops', 'Chromebooks', 'Chromeboxes')
+        """,
+        (frappe.utils.add_days(frappe.utils.nowdate(), -60),),
+        as_dict=True
+    )
+    return soi
 
-        # Update cumulative counts per model
-        for row in results:
-            model = row.get("model")
-            count = row.get("count", 0)
-            if model:
-                counts[model] = counts.get(model, 0) + count
+@log_io
+def _allocate_orders_to_sequences_multi(pending_orders, sequences, cum_sla, today, forward_grain_per_seq, max_seq):
+    demand_by_seq = {s: defaultdict(list) for s in sequences}
+    for row in pending_orders:
+        ic = row["item_code"]
+        qty = int(math.ceil(row["qty_pending"]))
+        delivery_date = row.get("delivery_date")
+        due = frappe.utils.getdate(delivery_date) if delivery_date else None
+        days_to_due = (due - today).days if due else None
 
-    return counts
-
-def merge_model_counts(inwarded, forwarded):
-    return [{
-        "model": model,
-        "inwarded_qty": inwarded.get(model, 0),
-        "forwarded_qty": forwarded.get(model, 0)
-    } for model in set(inwarded) | set(forwarded)]
-
-def process_default_configuration(dept_doc):
-    inwarded_counts = get_item_counts(dept_doc, "inwarded_inventory")
-    forwarded_counts = get_item_counts(dept_doc, "forwarded_inventory")
-    item_code_list = merge_item_counts(inwarded_counts, forwarded_counts)
-    item_code_list = fetch_item_attributes(item_code_list)
-    days = frappe.db.get_single_value("NJ Production Planning Settings", "days")
-    weight_factor = frappe.db.get_single_value("NJ Production Planning Settings", "weight_factor")
-    item_code_list = calculate_sales_order_rate_with_weights(item_code_list, days=int(days), weight_factor=int(weight_factor))
-    return calculate_doi(item_code_list)
-
-def get_item_counts(dept_doc, inventory_type):
-    counts = {}
-    for row in dept_doc.get("inventory_details_child"):
-        department = row.get(inventory_type)
-        if department:
-            if inventory_type == "inwarded_inventory" and row.get("inwarded_warehouse_list"):
-                warehouses = row.get("inwarded_warehouse_list").split(",")
-            else:
-                warehouses = get_warehouses(department)
-            for warehouse in warehouses:
-                query = """
-                    SELECT sn.item_code, COUNT(sn.name) AS count
-                    FROM `tabSerial No` sn
-                    JOIN `tabItem Group` i ON sn.item_group = i.name
-                    WHERE sn.warehouse = %s
-                    AND i.parent_item_group = "Products"
-                    GROUP BY sn.item_code
-                """
-                results = frappe.db.sql(query, (warehouse,), as_dict=True)
-                update_counts(counts, results)
-    return counts
-
-def merge_item_counts(inwarded, forwarded):
-    return [{
-        "item_code": code,
-        "inwarded_qty": inwarded.get(code, 0),
-        "forwarded_qty": forwarded.get(code, 0)
-    } for code in set(inwarded) | set(forwarded)]
-
-def fetch_item_attributes(item_list):
-    item_codes = [item["item_code"] for item in item_list if item.get("item_code")]
-    if not item_codes:
-        return item_list
-        
-    try:
-        placeholders = ", ".join(["%s"] * len(item_codes))
-        attributes = frappe.db.sql(f"""
-            SELECT 
-                LOWER(iva.attribute) AS attribute,
-                LOWER(iva.attribute_value) AS value,
-                iva.parent AS code,
-                i.item_name,
-                i.item_model,
-                i.item_group,
-                i.variant_of
-            FROM `tabItem Variant Attribute` iva
-            JOIN `tabItem` i ON iva.parent = i.name
-            WHERE iva.parent IN ({placeholders})
-        """, tuple(item_codes), as_dict=True)
-        
-        attr_map = {}
-        for attr in attributes:
-            code = attr["code"]
-            if code not in attr_map:
-                attr_map[code] = {
-                    "item_name": attr["item_name"],
-                    "model": attr["item_model"],
-                    "item_group": attr["item_group"],
-                    "parent": attr["variant_of"]
-                }
-            attr_map[code][attr["attribute"].replace(" ", "_")] = attr["value"]
-        
-        for item in item_list:
-            if item["item_code"] in attr_map:
-                item.update(attr_map[item["item_code"]])
-                
-    except Exception:
-        frappe.log_error(title="Attribute Fetch Error", message=traceback.format_exc())
-        
-    return item_list
-
-def update_counts(count_dict, results):
-    for item in results:
-        key = item.get("model") or item.get("item_code")
-        if key:
-            count_dict[key] = count_dict.get(key, 0) + item.get("count", 0)
-
-def calculate_doi(items):
-    for item in items:
-        forwarded_qty = item.get("forwarded_qty", 0)
-        sales_rate = item.get("sales_rate", 0)
-        
-        if forwarded_qty < 0 or sales_rate < 0:
-            item["DOI"] = 0  
-        elif sales_rate == 0:
-            item["DOI"] = float('inf')
+        if days_to_due is None or days_to_due < 0:
+            place_seq = max_seq
         else:
-            item["DOI"] = forwarded_qty / sales_rate
+            candidates = [s for s in sequences if cum_sla[s] <= days_to_due]
+            place_seq = min(candidates) if candidates else max_seq
 
-    items = sorted(items, key=lambda x: x['DOI'])
+        fgrain = forward_grain_per_seq[place_seq]
+        key = _key_for_grain(ic, fgrain)
 
-    return items
-
-def calculate_sales_order_rate_with_weights_for_model_config(item_code_list, days=None, weight_factor=None):
-    merged_data = item_code_list
-    print("merged_data:", merged_data)
-
-    if not item_code_list:
-        item_code_list = {}
-
-    weights = {i: (days - i) * weight_factor for i in range(days)}
-    total_weight = sum(weights.values())
-
-    # Fetch sales data (stock items + product bundle components)
-    sales_data = frappe.db.sql(f"""
-        WITH SalesData AS (
-            SELECT
-                soi.item_code,
-                i.item_name,
-                i.is_stock_item,
-                DATE(so.creation) AS sale_date,
-                SUM(soi.qty) AS daily_sales
-            FROM `tabSales Order` so
-            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN `tabItem` i ON soi.item_code = i.item_code
-            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-              AND so.docstatus = 1
-              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              AND i.is_stock_item = 1
-            GROUP BY soi.item_code, i.item_name, i.is_stock_item, sale_date
-
-            UNION ALL
-
-            SELECT
-                pbi.item_code,
-                i.item_name,
-                i.is_stock_item,
-                DATE(so.creation) AS sale_date,
-                SUM(pbi.qty * soi.qty) AS daily_sales
-            FROM `tabSales Order` so
-            INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN `tabItem` i ON pbi.item_code = i.item_code
-            WHERE so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-              AND so.docstatus = 1
-              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-              AND i.is_stock_item = 1
-            GROUP BY pbi.item_code, i.item_name, i.is_stock_item, sale_date
-        )
-        SELECT * FROM SalesData
-        ORDER BY sale_date DESC
-    """, as_dict=True)
-
-    # Build sales map
-    sales_map = {}
-    for sale in sales_data:
-        sale_date = sale['sale_date']
-        if isinstance(sale_date, str):
-            sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
-        item_code = sale['item_code']
-        sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
-
-    print("sales_map", sales_map)
-
-    updated_item_code_list = []
-
-    # Step 1: Process known item_code_list entries
-    for model_name, model_data in item_code_list.items():
-        inward_qty = model_data['inwarded_count']
-        for item_code in model_data['item_codes']:
-            if item_code not in sales_map:
-                continue
-            total_sales_qty = sum(sales_map[item_code].values())
-            total_weighted_sales = sum(
-                sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
-                for day_offset in range(days + 1)
-            )
-            sales_rate = total_weighted_sales / total_weight if total_weight else 0
-            forwarded_qty = model_data['item_codes'][item_code]
-            updated_item_code_list.append({
-                'model': model_name,
-                'item_code': item_code,
-                'inwarded_qty': inward_qty,
-                'forwarded_qty': forwarded_qty,
-                'total_sales_qty': total_sales_qty,
-                'sales_rate': sales_rate
-            })
-
-    # Step 2: Fetch item attributes
-    item_codes = list(sales_map.keys())
-    attributes_map = {}
-
-    if item_codes:
-        try:
-            placeholders = ', '.join(['%s'] * len(item_codes))
-            query = f"""
-                SELECT 
-                    LOWER(iva.attribute) AS item_attribute, 
-                    LOWER(iva.attribute_value) AS attribute_value,
-                    iva.parent AS item_code,
-                    i.item_name,
-                    i.item_model,
-                    i.item_group,
-                    i.variant_of as parent
-                FROM `tabItem Variant Attribute` iva
-                INNER JOIN `tabItem` i ON iva.parent = i.name
-                WHERE iva.parent IN ({placeholders})
-            """
-            attribute_data = frappe.db.sql(query, tuple(item_codes), as_dict=True)
-            for row in attribute_data:
-                code = row['item_code']
-                attr = row['item_attribute'].replace(' ', '_')
-                val = row['attribute_value']
-                if code not in attributes_map:
-                    attributes_map[code] = {
-                        'item_name': row['item_name'],
-                        'model': row['item_model'],
-                        'item_group': row['item_group'],
-                        'parent': row['parent']
-                    }
-                attributes_map[code][attr] = val
-        except Exception as e:
-            print("Error fetching attributes:", str(e))
-
-    # Step 3: Add missing items from sales_map using model+processor inference
-    existing_item_codes = {item['item_code'] for item in updated_item_code_list}
-    for item_code, date_sales_map in sales_map.items():
-        if item_code in existing_item_codes:
-            continue
-
-        total_sales_qty = sum(date_sales_map.values())
-        total_weighted_sales = sum(
-            date_sales_map.get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 0)
-            for day_offset in range(days + 1)
-        )
-        sales_rate = total_weighted_sales / total_weight if total_weight else 0
-
-        # Default values
-        model = None
-        inward_qty = 0
-        forwarded_qty = 0
-
-        attr = attributes_map.get(item_code)
-        processor = attr.get('processor_type') if attr else None
-        model_from_attr = attr.get('model') if attr else None
-
-        # Match against merged_data keys (model, processor)
-        if model_from_attr and processor:
-            for (mdl, proc), data in merged_data.items():
-                # print("data ------------- ", data)
-                if mdl == model_from_attr and proc == processor:
-                    model = mdl
-                    inward_qty = data.get('inwarded_count', 0)
-                    forwarded_qty = data['item_codes'].get(item_code, 0)
-                    break
-
-        item = {
-            'model': model,
-            'item_code': item_code,
-            'inwarded_qty': inward_qty,
-            'forwarded_qty': forwarded_qty,
-            'total_sales_qty': total_sales_qty,
-            'sales_rate': sales_rate
+        ref = {
+            "so_name": row["so_name"],
+            "delivery_date": delivery_date,
+            "order_item_code": ic,
         }
+        for _ in range(qty):
+            demand_by_seq[place_seq][key].append(ref)
 
-        if attr:
-            item.update(attr)
+    return demand_by_seq
 
-        updated_item_code_list.append(item)
-
-    # Final attribute enrich (in case missed before)
-    for item in updated_item_code_list:
-        code = item['item_code']
-        if code in attributes_map:
-            item.update(attributes_map[code])
-
-    print("updated_item_code_list", updated_item_code_list)
-
-    # Final: Add Shopify mapping if required
-    updated_item_code_list = get_shopify_variant_item_code(merged_data, updated_item_code_list)
-
-    return updated_item_code_list
-
-def get_shopify_variant_item_code(merged_data, updated_item_code_list):
-    # print("merged_data", merged_data)
-
-    # Extract unique model names from merged_data keys (model, processor)
-    model_list = list({key[0] for key in merged_data.keys()})
-    
-    if not model_list:
-        return updated_item_code_list
-
-    placeholders = ', '.join(['%s'] * len(model_list))
-
-    query = f"""
-        SELECT              
-            DISTINCT pbi.item_code AS item_code       
-        FROM
-            `tabItem` i                         
-        INNER JOIN
-            `tabProduct Bundle Item` pbi ON i.name = pbi.parent
-        INNER JOIN
-            `tabItem` ci ON pbi.item_code = ci.name  
-        WHERE
-            i.shopify_product_id IS NOT NULL
+# =========================
+# Sellable portfolio & sales-rate
+# =========================
+@log_io
+def _get_sellable_items() -> List[Dict]:
+    where_shopify = ""
+    if REQUIRE_SHOPIFY_IDS_FOR_SELLABLE:
+        where_shopify = """
+            AND i.shopify_product_id IS NOT NULL
             AND i.shopify_product_id != ''
-            AND i.item_model IN ({placeholders})
-            AND ci.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes');
-    """
-    bundle_items = frappe.db.sql(query, tuple(model_list), as_dict=True)
-
-    # Build a quick lookup for already updated items
-    updated_item_code_map = {item['item_code']: item for item in updated_item_code_list}
-
-    # Get new item codes that are not in the updated list
-    new_item_codes = [
-        item['item_code'] for item in bundle_items
-        if item['item_code'] not in updated_item_code_map
-    ]
-
-    config_map = {}
-
-    if new_item_codes:
-        placeholders_new = ', '.join(['%s'] * len(new_item_codes))
-        config_query = f"""
-            SELECT 
-                LOWER(iva.attribute) AS item_attribute, 
-                LOWER(iva.attribute_value) AS attribute_value,
-                iva.parent AS item_code,
-                i.item_name,
-                i.item_model,
-                i.item_group,
-                i.variant_of as parent
-            FROM `tabItem Variant Attribute` iva
-            INNER JOIN `tabItem` i ON iva.parent = i.name
-            WHERE iva.parent IN ({placeholders_new})
         """
-        item_configs = frappe.db.sql(config_query, tuple(new_item_codes), as_dict=True)
 
-        config_map = defaultdict(dict)
-        for item in item_configs:
-            item_code = item['item_code']
-            config_map[item_code]['item_model'] = item['item_model']
-            config_map[item_code]['item_name'] = item['item_name']
-            config_map[item_code]['item_group'] = item['item_group']
-            config_map[item_code]['parent'] = item['parent']
-            config_map[item_code][item['item_attribute']] = item['attribute_value']
-
-    for bundle in bundle_items:
-        code = bundle['item_code']
-
-        if code in updated_item_code_map:
-            if updated_item_code_map[code].get('sales_rate', 0) == 0:
-                updated_item_code_map[code]['sales_rate'] = 1
-        else:
-            config = config_map.get(code, {})
-            model = config.get('item_model')
-            processor = config.get('processor type')
-
-            # Find inwarded_qty from merged_data (match by model only)
-            inwarded_qty = 0
-            for key in merged_data:
-                print("key", key)
-                print("key --- ", key[0])
-                if key[0] == model and key[1] == processor:
-                    inwarded_qty = merged_data[key].get('inwarded_count', 0)
-                    break
-
-            new_row = {
-                'model': model,
-                'item_code': code,
-                'inwarded_qty': inwarded_qty,
-                'forwarded_qty': 0,
-                'total_sales_qty': 0.0,
-                'sales_rate': 1,
-                'item_name': config.get('item_name', code),
-                'item_group': config.get('item_group'),
-                'parent': config.get('parent'),
-                'storage_capacity': config.get('storage capacity'),
-                'processor_type': config.get('processor type'),
-                'ram_capacity': config.get('ram capacity')
-            }
-            updated_item_code_list.append(new_row)
-
-    return updated_item_code_list
-
-def calculate_sales_order_rate_with_weights_for_model(item_code_list, days=None, weight_factor=None):
-
-    print("item_code_list", item_code_list)
-    if not item_code_list:
-        item_code_list = []
-
-    weights = {i: (i + 1) * weight_factor for i in range(days)}
-    total_weight = sum(weights.values())
-
-    sales_data = frappe.db.sql(f"""
-        WITH SalesData AS (
-            -- 1. Direct stock items sold
-            SELECT
-                soi.item_code,
-                i.item_name,
-                i.is_stock_item,
-                DATE(so.creation) AS sale_date,
-                SUM(soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabItem` i ON soi.item_code = i.item_code
+    if ALLOWED_ITEM_MODELS:
+        placeholders_list = list(tuple(ALLOWED_ITEM_MODELS))
+        rows = frappe.db.sql(
+            f"""
+            SELECT DISTINCT pbi.item_code AS item_code
+            FROM `tabItem` i
+            INNER JOIN `tabProduct Bundle Item` pbi ON i.name = pbi.parent
+            INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
             WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND i.is_stock_item = 1
-            GROUP BY
-                soi.item_code, i.item_name, i.is_stock_item, sale_date
+                1=1
+                {where_shopify}
+                AND i.item_model IN ({",".join(["%s"] * len(placeholders_list))})
+                AND ci.item_group IN %s
+                AND i.has_variants = 0
+            """,
+            tuple(placeholders_list) + (tuple(SELLABLE_ITEM_GROUPS),),
+            as_dict=True
+        )
+    else:
+        rows = frappe.db.sql(
+            f"""
+            SELECT DISTINCT pbi.item_code AS item_code
+            FROM `tabItem` i
+            INNER JOIN `tabProduct Bundle Item` pbi ON i.name = pbi.parent
+            INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
+            WHERE
+                1=1
+                {where_shopify}
+                AND ci.item_group IN %(igroups)s
+                AND i.has_variants = 0
+            """,
+            {"igroups": tuple(SELLABLE_ITEM_GROUPS)},
+            as_dict=True
+        )
+
+    sellable = [{"name": r["item_code"]} for r in (rows or [])]
+    if not sellable:
+        logger.warning("No sellable Product Bundle components found with current filters.")
+    _prime_item_cache([r["name"] for r in sellable])
+    print("sellable ------------ ", sellable)
+    return sellable
+
+@log_io
+def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -> Dict:
+    rates: Dict = {}
+
+    start_date = frappe.utils.getdate(
+        frappe.utils.add_days(frappe.utils.nowdate(), -RECENCY_WINDOW_DAYS + 1)
+    )
+
+    rows = frappe.db.sql(
+        """
+        WITH SalesData AS (
+            SELECT
+                soi.item_code      AS item_code,
+                DATE(so.creation)  AS sale_date,
+                SUM(soi.qty)       AS daily_sales
+            FROM `tabSales Order` so
+            JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            JOIN `tabItem` i ON soi.item_code = i.name
+            WHERE so.docstatus = 1
+              AND DATE(so.creation) >= %(start)s
+              AND i.is_stock_item = 1
+              AND soi.item_group IN %(igroups)s
+            GROUP BY soi.item_code, DATE(so.creation)
 
             UNION ALL
 
-            -- 2. Stock components of non-stock Product Bundles
             SELECT
-                pbi.item_code,
-                i.item_name,
-                i.is_stock_item,
-                DATE(so.creation) AS sale_date,
+                pbi.item_code      AS item_code,
+                DATE(so.creation)  AS sale_date,
                 SUM(pbi.qty * soi.qty) AS daily_sales
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON so.name = soi.parent
-            INNER JOIN
-                `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            INNER JOIN
-                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN
-                `tabItem` i ON pbi.item_code = i.item_code
-            WHERE
-                so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                AND so.docstatus = 1
-                AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-                AND i.is_stock_item = 1
-            GROUP BY
-                pbi.item_code, i.item_name, i.is_stock_item, sale_date
+            FROM `tabSales Order` so
+            JOIN `tabSales Order Item` soi ON so.name = soi.parent
+            JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            JOIN `tabItem` i ON pbi.item_code = i.name
+            WHERE so.docstatus = 1
+              AND DATE(so.creation) >= %(start)s
+              AND soi.item_group IN %(igroups)s
+              AND soi.item_code IN (SELECT name FROM `tabItem` WHERE is_stock_item = 0)
+              AND i.is_stock_item = 1
+            GROUP BY pbi.item_code, DATE(so.creation)
         )
         SELECT * FROM SalesData
         ORDER BY sale_date DESC
-    """, as_dict=True)
-
-    updated_sales_data = []
-
-    for item in sales_data:
-
-        get_model = frappe.db.sql(f"""
-            SELECT item_model FROM `tabItem` WHERE name = '{item['item_code']}'
-        """, as_dict=True)
-
-        if get_model:
-            updated_sales_data.append({
-                "model": get_model[0]['item_model'],
-                "sale_date": item['sale_date'],
-                "daily_sales": item['daily_sales']
-            })
-    
-    sales_map = {}
-    for sale in updated_sales_data:
-        sale_date = sale['sale_date']
-        if isinstance(sale_date, str):
-            sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
-
-        model = sale['model']
-        sales_map.setdefault(model, {})[sale_date] = sale['daily_sales']
-
-    updated_item_code_list = []
-
-    for item in item_code_list:
-        
-        model = item['model']
-
-        if model in sales_map:
-            total_sales_qty = sum(sales_map[model].values())
-            total_weighted_sales = sum(
-                sales_map[model].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
-                for day_offset in range(days)
-            )
-            total_weight = sum(weights.get(day_offset, 1) for day_offset in range(days))
-            item['total_sales_qty'] = total_sales_qty
-            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
-            updated_item_code_list.append(item)
-
-        else:
-            item['total_sales_qty'] = 0
-            item['sales_rate'] = 0
-
-    return updated_item_code_list
-
-def calculate_sales_order_rate_with_weights(item_code_list, days=None, weight_factor=None):
-    if not item_code_list:
-        item_code_list = []
-
-    weights = {i: (i + 1) * weight_factor for i in range(days)}
-    total_weight = sum(weights.values())
-
-    item_codes = [item['item_code'] for item in item_code_list]
-    item_codes_string = ', '.join([f"'{code}'" for code in item_codes]) if item_codes else "''"
-
-    inventory_warehouses = frappe.get_all(
-        "Warehouse", 
-        filters={"department": "Packing & Dispatch - NJ"}, 
-        fields=["name"]
+        """,
+        {"start": start_date, "igroups": tuple(SELLABLE_ITEM_GROUPS)},
+        as_dict=True
     )
 
-    sales_data = frappe.db.sql(f"""
-        WITH SalesData AS (
-                -- Fetch data for stock items directly from Sales Order Item
-                SELECT
-                    soi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(soi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabSales Order Item` soi ON so.name = soi.parent
-                INNER JOIN
-                    `tabItem` i ON soi.item_code = i.item_code
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND i.is_stock_item = 1  -- Only take stock items
-                GROUP BY
-                    soi.item_code, i.item_name, i.is_stock_item, sale_date
+    if not rows:
+        logger.warning("SalesData query returned 0 rows in the last %s days.", RECENCY_WINDOW_DAYS)
 
-                UNION ALL
+    _prime_item_cache([r["item_code"] for r in rows])
 
-                -- Fetch data for bundle items (is_stock_item = 0) from Packed Item table
-                SELECT
-                    pi.item_code,
-                    i.item_name,
-                    i.is_stock_item,
-                    DATE(so.creation) AS sale_date,
-                    SUM(pi.qty) AS daily_sales
-                FROM
-                    `tabSales Order` so
-                INNER JOIN
-                    `tabPacked Item` pi ON so.name = pi.parent
-                INNER JOIN
-                    `tabItem` i ON pi.item_code = i.item_code
-                INNER JOIN
-                    `tabSales Order Item` soi ON pi.parent_detail_docname = soi.name
-                WHERE
-                    so.creation >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
-                    AND so.docstatus = 1
-                    AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                    AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)  
-                    AND i.is_stock_item = 1
-                    -- Only take packed items from non-stock (bundle) items
-                GROUP BY
-                    pi.item_code, i.item_name, i.is_stock_item, sale_date
-            )
-            SELECT * FROM SalesData
-            ORDER BY sale_date DESC
+    from collections import defaultdict as _dd
+    daily = _dd(lambda: _dd(float))
+    today = frappe.utils.getdate(frappe.utils.nowdate())
 
-    """, as_dict=True) 
+    for r in rows:
+        ic = r["item_code"]
+        km = _get_model_key(ic)
+        kc = _get_config_key(ic)
+        d = frappe.utils.getdate(r["sale_date"])
+        daily[km][d] += float(r["daily_sales"])
+        daily[kc][d] += float(r["daily_sales"])
 
-    sales_map = {}
-    for sale in sales_data:
-        sale_date = sale['sale_date']
-        if isinstance(sale_date, str):
-            sale_date = datetime.strptime(sale_date, "%Y-%m-%d").date()
+    for key in daily:
+        num = 0.0
+        den = 0.0
+        for dd in range(RECENCY_WINDOW_DAYS, 0, -1):
+            day = today - timedelta(days=(dd - 1))
+            w = max(1, min(RECENCY_MAX_WEIGHT, 31 - dd))  # 1..30
+            qty = daily[key].get(day, 0.0)
+            num += w * qty
+            den += w
+        rate = (num / den) if den else 0.0
+        rates[key] = (rate if rate > 0 else 1.0)
 
-        item_code = sale['item_code']
-        sales_map.setdefault(item_code, {})[sale_date] = sale['daily_sales']
+    for it in (sellable_items or []):
+        km = _get_model_key(it["name"])
+        kc = _get_config_key(it["name"])
+        rates.setdefault(km, 1.0)
+        rates.setdefault(kc, 1.0)
 
-        if item_code not in item_codes:
+    return rates
 
-            attribute_data = frappe.db.sql("""
-                SELECT 
-                    LOWER(iva.attribute) AS item_attribute, 
-                    LOWER(iva.attribute_value) AS attribute_value,
-                    iva.parent AS item_code,
-                    i.item_name,
-                    i.item_model,
-                    i.item_group,
-                    i.variant_of as parent
-                FROM `tabItem Variant Attribute` iva
-                INNER JOIN `tabItem` i ON iva.parent = i.name
-                WHERE iva.parent = %s
-            """, (item_code,), as_dict=True)
+@log_io
+def _build_forward_keys(sellable_items, forward_grain, sales_rate):
+    variants_by_template = defaultdict(list)
+    templates = set()
 
-            attributes_map = {}
-            for row in attribute_data:
-                item_code = row['item_code']
-                attribute = row['item_attribute'].replace(' ', '_')
-                attribute_value = row['attribute_value']
-                if item_code not in attributes_map:
-                    attributes_map[item_code] = {}
-                attributes_map[item_code][attribute] = attribute_value
-                attributes_map[item_code]['item_name'] = row['item_name']
-                attributes_map[item_code]['item_model'] = row['item_model']
-                attributes_map[item_code]['item_group'] = row['item_group']
-                attributes_map[item_code]['parent'] = row['parent']
-            
-            item_code_list.append({
-                "item_code": item_code,
-                "forwarded_qty": 0,
-                "inventory_qty": 0, 
-                "total_sales_qty": 0, 
-                "sales_rate": 0,
-                "item_model": attributes_map[item_code].get("item_model"),
-                "processor_type": attributes_map[item_code].get("processor_type"),
-                "storage_capacity": attributes_map[item_code].get("storage_capacity"), 
-                "ram_capacity": attributes_map[item_code].get("ram_capacity")
-                })
-
-    updated_item_code_list = []
-
-    for item in item_code_list:
-        item_code = item['item_code']
-
-        if item_code in sales_map:
-            total_sales_qty = sum(sales_map[item_code].values())
-            total_weighted_sales = sum(
-                sales_map[item_code].get(datetime.today().date() - timedelta(days=day_offset), 0) * weights.get(day_offset, 1)
-                for day_offset in range(days)
-            )
-            item['total_sales_qty'] = total_sales_qty
-            item['sales_rate'] = total_weighted_sales / total_weight if total_weight else 0  
-            updated_item_code_list.append(item)
+    for it in sellable_items or []:
+        ic = it["name"]
+        core = _ITEM_CORE.get(ic, {})
+        template = core.get("variant_of") or ic
+        km = _get_model_key(ic)
+        kc = _get_config_key(ic)
+        if template == ic:
+            templates.add(km)
         else:
-            item['total_sales_qty'] = 0
-            item['sales_rate'] = 0
+            variants_by_template[km].append(kc)
 
-    return updated_item_code_list
+    if forward_grain == "model":
+        return list(templates or variants_by_template.keys())
 
-def safe_float(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
+    keys = []
+    for model_key, configs in variants_by_template.items():
+        configs.sort(key=lambda ck: (-(sales_rate.get(ck, 1.0)), random.random()))
+        # Include ALL configs (no max variants per template)
+        keys.extend(configs)
 
-def sort_by_multiple_keys(configs, keys):
-    def sort_key(cfg):
-        key_values = []
-        for key in keys:
-            reverse = key.startswith("-")
-            actual_key = key.lstrip("-")
-            value = cfg.get(actual_key, 0)
-            key_values.append(-value if reverse else value)
-        return tuple(key_values)
-    return sorted(configs, key=sort_key)
+    seen, out = set(), []
+    for k in keys:
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
 
-def calculate_to_make(doc):
-    print("🔄 Started Executing Calculate To Make")
+# =========================
+# Allocation helpers
+# =========================
+@log_io
+def _match_inventory_to_order_queues_for_sequence(seq, serial_map, seq_order_queues, allow_reconfig, inward_grain, forward_grain):
+    """
+    Greedy match serials to order queues for this sequence.
+    serial_map is already restricted to THIS department's serials.
+    """
+    allocations = []
+    remaining = serial_map[:]
+    if not seq_order_queues:
+        return allocations, remaining
 
-    if isinstance(doc, dict):
-        doc = frappe.get_doc(doc)
+    if inward_grain == "model":
+        idx = defaultdict(list)
+        for s in serial_map:
+            idx[s["forward_key_model"]].append(s)
+    else:
+        idx = defaultdict(list)
+        for s in serial_map:
+            idx[s["forward_key_config"]].append(s)
 
-    # Prepare and print initial data
-    table_data = []
-    headers = ["Item Code", "Sales Rate", "Inward Inventory", "Forward Inventory", "Model", "Processor", "RAM", "SSD"]
+    for key, ref_list in sorted(seq_order_queues.items(), key=lambda kv: len(kv[1]), reverse=True):
+        while ref_list:
+            chosen = None
+            if inward_grain == "config":
+                pool = idx.get(key, [])
+                if pool:
+                    chosen = pool.pop()
+                elif allow_reconfig:
+                    model_key = ("MODEL", key[1])
+                    pool2 = idx.get(model_key, [])
+                    if pool2:
+                        chosen = pool2.pop()
+            else:
+                model_key = ("MODEL", key[1])
+                pool = idx.get(model_key, [])
+                if pool:
+                    chosen = pool.pop()
 
-    for child in doc.get("nj_production_planning_child", []):
-        table_data.append([
-            child.item_code,
-            child.sales_rate or 0,
-            child.inward_inventory or 0,
-            child.forward_inventory or 0,
-            child.model or "",
-            child.processor or "",
-            child.ram or "",
-            child.ssd or ""
-        ])
-        child.to_make = 0
+            if not chosen:
+                break
 
-    print("\n📋 Initial Input Data:")
-    # print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
+            order_ref = ref_list.pop()
 
-    doc.set("final_config", [])
-    temp_config = []
+            # When reconfig is NOT allowed, we must keep the serial's current item_code.
+            if allow_reconfig:
+                target_item_code = _target_item_for_key(key)
+            else:
+                target_item_code = chosen["item_code"]
 
-    for child in doc.get("nj_production_planning_child", []):
-        temp_config.append({
-            "item_code": child.item_code,
-            "sales_rate": child.sales_rate or 0,
-            "inward_inventory": child.inward_inventory or 0,
-            "forward_inventory": child.forward_inventory or 0,
-            "days_of_inventory": 0,
-            "to_make": 0,
-            "model": child.model or "",
-            "processor": child.processor or "",
-            "ram": child.ram or "",
-            "ssd": child.ssd or "",
-            "name": child.name
-        })
+            allocations.append({
+                "serial_no": chosen["serial_no"],
+                "warehouse": chosen["warehouse"],
+                "target_item_code": target_item_code,
+                "forward_key": key,
+                "order_name": order_ref.get("so_name"),
+                "required_by": order_ref.get("delivery_date"),
+            })
+            remaining.remove(chosen)
 
-    rank = 0
-    iteration = 1
-    loop_start_time = time.time()
-    print("\n🚀 Started Allocation Loop")
+    empty_keys = [k for k, lst in list(seq_order_queues.items()) if not lst]
+    for k in empty_keys:
+        del seq_order_queues[k]
 
+    return allocations, remaining
+
+@log_io
+def _estimate_forward_inventory(forward_keys, serials, forward_grain):
+    inv = Counter()
+    for s in serials:
+        k = s["forward_key_config"] if forward_grain == "config" else s["forward_key_model"]
+        if k in forward_keys:
+            inv[k] += 1
+    return dict(inv)
+
+@log_io
+def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_reconfig, forward_keys, sales_rate, current_doi):
+    """
+    Greedy equalization: keep allocating while there is inventory available for any target.
+    - In CONFIG grain:
+        * try exact CONFIG pool first
+        * if allow_reconfig, fallback to MODEL-level pool
+    - In MODEL grain:
+        * only MODEL pools are used
+    Returns allocations with per-allocation 'doi'.
+    """
+    allocations = []
+
+    # Build buckets once
+    if forward_grain == "config":
+        buckets = defaultdict(list)        # ("CONFIG", template, proc, ram, sto) -> [serials]
+        any_by_model = defaultdict(list)   # ("MODEL", template) -> [serials]
+        for s in remaining_serials:
+            buckets[s["forward_key_config"]].append(s)
+            any_by_model[s["forward_key_model"]].append(s)
+    else:
+        buckets = defaultdict(list)        # ("MODEL", template) -> [serials]
+        for s in remaining_serials:
+            buckets[s["forward_key_model"]].append(s)
+
+    # Helper: which targets are currently serviceable (have inventory now)
+    def available_targets():
+        avail = []
+        for k in forward_keys:
+            if forward_grain == "config":
+                if buckets.get(k):  # exact config pool has stock
+                    avail.append(k)
+                elif allow_reconfig:
+                    mk = ("MODEL", k[1])
+                    if any_by_model.get(mk):  # model fallback has stock
+                        avail.append(k)
+            else:
+                if buckets.get(k):  # model pool has stock
+                    avail.append(k)
+        return avail
+
+    # Main loop: run while any target has inventory (direct or fallback)
     while True:
-        print("\n\n")
-        print(f"\n🔁 Iteration {iteration}")
-
-        temp_config = [item for item in temp_config if item["inward_inventory"] > 0 and item["sales_rate"] > 0]
-        if len(temp_config) < 2:
+        work = available_targets()
+        if not work:
             break
 
-        temp_config.sort(key=lambda x: x["days_of_inventory"])
+        # Lowest DOI wins (add small randomness to break ties fairly)
+        work.sort(key=lambda k: (current_doi.get(k, 0.0), random.random()))
+        target = work[0]
 
-        current = temp_config[0]
-        next_cfg = temp_config[1]
+        chosen = None
+        # Pick from exact pool first
+        pool = buckets.get(target, [])
+        if pool:
+            chosen = pool.pop()
+        elif forward_grain == "config" and allow_reconfig:
+            # Fallback to model-level inventory
+            model_key = ("MODEL", target[1])
+            pool2 = any_by_model.get(model_key, [])
+            if pool2:
+                chosen = pool2.pop()
 
-        doi_gap = max(0, next_cfg["days_of_inventory"] - current["days_of_inventory"])
-        sales_rate = current["sales_rate"]
+        # If nothing was chosen (should be rare due to available_targets filtering), continue
+        if not chosen:
+            # Recompute in next iteration
+            continue
 
-        if not math.isfinite(doi_gap):
-            doi_gap = 0
-        if not math.isfinite(sales_rate):
-            sales_rate = 0
+        # Item to make:
+        # - allow_reconfig=True -> best-selling forward suggestion via _target_item_for_key(target)
+        # - allow_reconfig=False -> keep serial's own item_code
+        target_item_code = _target_item_for_key(target) if allow_reconfig else chosen["item_code"]
 
-        needed_units = math.ceil((doi_gap + 1) * sales_rate)
-        make_units = min(needed_units, current["inward_inventory"])
+        # DOI update for the chosen target (sales_rate clamped to >= 1.0)
+        rate = max(1.0, float(sales_rate.get(target, 1.0)))
+        inv_now = current_doi.get(target, 0.0) * rate
+        new_doi = (inv_now + 1.0) / rate
+        current_doi[target] = new_doi
 
-        current["to_make"] += make_units
-        current["inward_inventory"] -= make_units
-        current["forward_inventory"] += make_units
-        current["days_of_inventory"] = (
-            current["forward_inventory"] / sales_rate if sales_rate > 0 else 0
-        )
-
-        model_to_reduce = current["model"]
-        units_to_reduce = make_units
-        for item in temp_config:
-            if item.get("name") == current.get("name"):
-                continue
-            if item["model"] == model_to_reduce and item["inward_inventory"] > 0:
-                reduce_qty = min(units_to_reduce, item["inward_inventory"])
-                item["inward_inventory"] -= reduce_qty
-
-        # Append to final_config
-        row = doc.append("final_config", {})
-        row.item_code = current["item_code"]
-        row.sales_rate = sales_rate
-        row.date = datetime.now()
-        row.inward_inventory = current["inward_inventory"]
-        row.forward_inventory = current["forward_inventory"]
-        row.days_of_inventory = current["days_of_inventory"]
-        row.to_make = make_units
-        row.model = current["model"]
-        row.processor = current["processor"]
-        row.ram = current["ram"]
-        row.ssd = current["ssd"]
-        rank += 1
-        row.rank = rank
-
-        iteration += 1
-
-    loop_end_time = time.time()
-    print(f"\n⏱ Allocation loop completed in {loop_end_time - loop_start_time:.4f} seconds")
-
-    # Update child table
-    final_config_map = {}
-    for cfg in doc.get("final_config", []):
-        item_code = cfg.get("item_code")
-        if item_code:
-            final_config_map[item_code] = final_config_map.get(item_code, 0) + cfg.get("to_make", 0)
-
-    for child in doc.get("nj_production_planning_child", []):
-        if child.item_code in final_config_map:
-            child.to_make += final_config_map[child.item_code]
-
-    doc.save()
-    print("💾 Document saved successfully")
-    return doc.get("nj_production_planning_child", [])
-
-def suggest_to_make_serial_no(nj_pro_child, doc, department=None):
-    print("Started suggest_to_make_serial_no")
-    
-    start_time = time.time()  # ⏱ Start timing
-
-    if not nj_pro_child or not department:
-        return []
-
-    try:
-        dept_doc = frappe.get_doc("Department", department)
-    except frappe.DoesNotExistError:
-        return []
-
-    inw_inventory = []
-    for item in dept_doc.get("inventory_details_child", []):
-        inw_inventory_data = frappe.db.get_all(
-            "Warehouse",
-            filters={"department": item.get("inwarded_inventory")},
-            pluck="name"
-        )
-        inw_inventory.extend(inw_inventory_data)
-
-    if not inw_inventory:
-        return []
-    
-
-    raw_data = frappe.db.sql("""
-        SELECT 
-            Sr.name AS serial_no,
-            Sr.item_code,
-            Sr.warehouse,
-            Sr.Model,
-            IVA.Attribute,
-            IVA.attribute_value,
-            Sr.creation
-        FROM
-            `tabSerial No` Sr
-                INNER JOIN
-            `tabItem` I ON Sr.item_code = I.item_code
-                INNER JOIN
-            `tabItem Variant Attribute` IVA ON IVA.parent = I.name
-        WHERE
-            Sr.warehouse IN %s
-            AND Sr.item_group IN ('Laptops')
-        ORDER BY Sr.creation DESC
-    """, (tuple(inw_inventory),), as_dict=True)
-
-    grouped_data = {}
-
-    for row in raw_data:
-        key = row["serial_no"]
-        if key not in grouped_data:
-            grouped_data[key] = {
-                "name": row["serial_no"],
-                "item_code": row["item_code"],
-                "warehouse": row["warehouse"],
-                "Model": row["Model"],
-                "creation": row["creation"]
-            }
-        grouped_data[key][row["Attribute"]] = row["attribute_value"]
-
-    get_serial_no_config = list(grouped_data.values())
-
-    result = get_serial_no_data(nj_pro_child, get_serial_no_config, inw_inventory, doc)
-
-    end_time = time.time()  # ⏱ End timing
-    execution_time = end_time - start_time
-
-    print(f"suggest_to_make_serial_no completed in {execution_time:.4f} seconds")
-
-    return result
-
-def get_serial_no_data(nj_pro_child, serial_no_list, inw_inventory, doc):
-    print("Started Get Serial No Data")
-
-    start_time = time.time()  # ⏱ Start timing
-
-    suggested_serial_no_data = []
-    added_serial_no = set()
-    rank = 0 
-
-    # Normalize keys in serial_no_list for easier matching (case-insensitive keys)
-    normalized_serials = []
-    for s in serial_no_list:
-        normalized_serials.append({
-            "name": s.get("name"),
-            "item_code": s.get("item_code"),
-            "warehouse": s.get("warehouse"),
-            "model": (s.get("Model") or "").strip().lower(),
-            "processor_type": (s.get("Processor Type") or "").strip().lower(),
-            "ram_capacity": (s.get("RAM Capacity") or "").strip().lower(),
-            "storage_capacity": (s.get("Storage Capacity") or "").strip().lower(),
-            "creation": s.get("creation"),
-            "reserved_sales_order": s.get("reserved_sales_order")  # ✅ keep this for later
+        allocations.append({
+            "serial_no": chosen["serial_no"],
+            "warehouse": chosen["warehouse"],
+            "target_item_code": target_item_code,
+            "forward_key": target,
+            "doi": new_doi,
         })
-    
-    # Sort by multiple fields
-    normalized_serials.sort(
-        key=lambda x: (
-            x.get("model", "").lower(),
-            x.get("processor_type", "").lower(),
-            x.get("ram_capacity", "").lower(),
-            x.get("storage_capacity", "").lower(),
-            -x.get("creation").timestamp()  # Sort by creation DESC
-        )
-    )
 
-    for child in doc.get("final_config", []):
-        if child.get("to_make", 0) > 0:
-            needed = int(child.get("to_make"))
-            model = (child.get("model") or "").strip().lower()
-            processor = (child.get("processor") or "").strip().lower()
-            ram = (child.get("ram") or "").strip().lower()
-            ssd = (child.get("ssd") or "").strip().lower()
+    return allocations
 
-            matched_serials = []
+# =========================
+# Departments / inventory helpers
+# =========================
+@log_io
+def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
+    """
+    Retained for reference; not used by _get_inward_serials_for_department anymore.
+    """
+    whs: set = set()
 
-            # First pass: exact matches
-            for serial in normalized_serials:
-                if needed <= 0:
-                    break
-                if serial["name"] in added_serial_no:
-                    continue
-                if serial["warehouse"] not in inw_inventory:
-                    continue
-                if (serial["model"] == model and
-                    serial["processor_type"] == processor and
-                    serial["ram_capacity"] == ram and
-                    serial["storage_capacity"] == ssd):
-                    matched_serials.append(serial["name"])
-                    added_serial_no.add(serial["name"])
-                    needed -= 1
-
-            # Second pass: relaxed match
-            if needed > 0:
-                for serial in normalized_serials:
-                    if needed <= 0:
-                        break
-                    if serial["name"] in added_serial_no:
-                        continue
-                    if serial["warehouse"] not in inw_inventory:
-                        continue
-                    if (serial["model"] == model and
-                        serial["processor_type"] == processor and
-                        serial["item_code"] != child.get("item_code")):
-                        matched_serials.append(serial["name"])
-                        added_serial_no.add(serial["name"])
-                        needed -= 1
-
-            for serial_no in matched_serials:
-                serial_dict = next((s for s in normalized_serials if s["name"] == serial_no), None)
-
-                final_item_code = child.get("item_code")
-                final_rank = rank + 1   # assume normal case
-                delivery_date = None    # default
-
-                if serial_dict and serial_dict.get("reserved_sales_order"):
-                    reserved_so = serial_dict.get("reserved_sales_order")
-                    so_item, so_date = frappe.db.get_value(
-                        "Sales Order",
-                        reserved_so,
-                        ["(SELECT item_code FROM `tabSales Order Item` WHERE parent=%s LIMIT 1)", "delivery_date"],
-                        as_dict=False,
-                        cache=True,
-                        debug=False
-                    )
-                    if so_item:
-                        final_item_code = so_item
-                    delivery_date = so_date
-                    final_rank = 0  # reserved ones always rank 0
-                else:
-                    rank += 1  # only increment global rank if not reserved
-
-                suggested_serial_no_data.append({
-                    "model": child.get("model", "").strip().upper(),
-                    "processor": child.get("processor", "").strip().upper(),
-                    "ram": child.get("ram", "").strip().upper(),
-                    "ssd": child.get("ssd", "").strip().upper(),
-                    "suggested_serial_no": serial_no,
-                    "item_code": final_item_code,
-                    "rank": final_rank,
-                    "delivery_date": delivery_date
-                })
-
-    import datetime
-
-    suggested_serial_no_data.sort(
-        key=lambda x: (
-            x.get("delivery_date").date() if isinstance(x.get("delivery_date"), datetime.datetime)
-            else x.get("delivery_date")
-            or datetime.date.max
-        )
-    )
-
-    doc.update({"suggested_serial_no": suggested_serial_no_data})
-
-    print("calling allocate_laptop_parts")
-    if doc.get("allocate_parts"):
-        allocated_lap = allocate_laptop_parts(doc)
-        doc.update({"laptop_allocation": allocated_lap})
-
-    doc.save()
-    frappe.db.commit()
-    update_to_make_for_serial(doc)
-
-    # ⏱ End timing
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"get_serial_no_data completed in {execution_time:.4f} seconds")
-
-
-def allocate_laptop_parts(doc):
-    print("Started Part Allocation")
-    start_time = time.time()
-
-    serial_no_rank = {row.get("suggested_serial_no"): row.get("rank") for row in doc.get("suggested_serial_no", [])}
-    serial_list = [
-        s.strip() for row in doc.get("suggested_serial_no", [])
-        if row.suggested_serial_no
-        for s in row.suggested_serial_no.split(",") if s.strip()
-    ]
-
-    if not serial_list:
-        frappe.msgprint("No suggested serial numbers found in the latest production planning.")
-        return []
-
-    s1 = time.time()
-
-    # mr_items = frappe.db.sql("""
-    #     SELECT parent AS material_request, item_code, serial_no AS against_serial_no, 
-    #         stock_qty, qty AS mr_qty, item_group
-    #     FROM `tabMaterial Request Item` 
-    #     WHERE post_order_status IN ("Not Completed", " ") 
-    #     AND serial_no IN %(serial_list)s
-    #     ORDER BY serial_no
-    # """, {"serial_list": tuple(serial_list)}, as_dict=True)
-
-    mr_items = frappe.db.sql("""
-            SELECT 
-                MRI.parent AS material_request,
-                MRI.item_code,
-                Sr.serial_no AS against_serial_no,
-                MRI.stock_qty,
-                MRI.qty AS mr_qty,
-                Sr.item_group
-            FROM `tabMaterial Request Item` MRI
-            INNER JOIN `tabMaterial Request` MR 
-                ON MRI.parent = MR.name 
-                AND MR.docstatus = 1 
-                AND IFNULL(MR.post_order_status, '') != 'Completed'
-            INNER JOIN `tabSerial No` Sr 
-                ON Sr.serial_no = MRI.serial_no 
-                AND Sr.item_group = 'Laptops' 
-                AND Sr.status = 'Active'
-            INNER JOIN `tabWarehouse` WH 
-                ON Sr.warehouse = WH.name 
-                AND WH.department LIKE '%%Part%%'
-            WHERE Sr.serial_no IN %(serial_list)s
-            ORDER BY Sr.serial_no
-        """, {"serial_list": tuple(serial_list)}, as_dict=True)
-
-
-    s2 = time.time()
-    print(f"Query executed in {s2 - s1:.4f} seconds")
-
-    if not mr_items:
-        frappe.msgprint("No Material Requests found for the suggested serial numbers.")
-        return []
-
-    warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
-    if not warehouses:
-        frappe.msgprint("No warehouses found under 'Stores - NJ' department.")
-        return []
-
-    stock_results = frappe.db.sql("""
-        SELECT item_code, SUM(actual_qty) AS total_qty 
-        FROM `tabBin` 
-        WHERE warehouse IN %s 
-        GROUP BY item_code
-    """, (tuple(warehouses),), as_dict=True)
-
-    stock_data = {s["item_code"]: flt(s["total_qty"]) for s in stock_results}
-    virtual_stock = stock_data.copy()
-    planned_allocation = defaultdict(float)
-    grouped_by_serial = defaultdict(list)
-
-    for item in mr_items:
-        loop_start = time.time()  # ⏱ Start time for this item
-
-        serial_no = item["against_serial_no"]
-        item_code = item["item_code"]
-        mr_qty = flt(item["mr_qty"])
-        available = virtual_stock.get(item_code, 0) - planned_allocation[item_code]
-
-        if available >= mr_qty:
-            allocated_status = "Allocated"
-            planned_allocation[item_code] += mr_qty
-            resolved_item = {
-                "item_code": item_code,
-                "against_item_code": "",
-                "stock_qty": available
-            }
+    for row in (getattr(dept_doc, "inventory_details_child", None) or []):
+        raw = (row.get("inwarded_warehouse_list") or "").strip()
+        if not raw:
+            dept_for_wh = row.get("inwarded_inventory")
+            if dept_for_wh:
+                names = frappe.get_all(
+                    "Warehouse",
+                    filters={"department": dept_for_wh},
+                    pluck="name"
+                )
+                whs.update(names or [])
         else:
-            resolved_item = allocated_other_part(item) or {
-                "item_code": item_code,
-                "against_item_code": "",
-                "stock_qty": 0
-            }
-            available = resolved_item["stock_qty"] - planned_allocation[resolved_item["item_code"]]
-            allocated_status = "Allocated" if available >= mr_qty else "Not Allocated"
-            if allocated_status == "Allocated":
-                planned_allocation[resolved_item["item_code"]] += mr_qty
+            for w in [x.strip() for x in raw.split(",") if x.strip()]:
+                whs.add(w)
 
-        grouped_by_serial[serial_no].append({
-            "mreq_no": item["material_request"],
-            "item": resolved_item["item_code"],
-            "item_group": item["item_group"],
-            "serial_no": serial_no,
-            "mr_qty": mr_qty,
-            "sb_qty": available,
-            "status": "Available" if available > 0 else "Not Available",
-            "allocated_qty": mr_qty,
-            "allocated_status": allocated_status,
-            "against_item_code": resolved_item["against_item_code"],
-            "rank": serial_no_rank.get(serial_no, 0)
-        })
+    return sorted(whs)
 
-        loop_end = time.time()  # ⏱ End time for this item
-        print(f"Processed serial {serial_no} in {loop_end - loop_start:.4f} seconds")
+@log_io
+def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
+    """
+    CHANGE: Department-centric intake — fetch ALL active serials that belong to this department,
+    regardless of which warehouse they sit in. Active = not Delivered/Scrapped (or status is NULL).
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT name, item_code, warehouse, department
+        FROM `tabSerial No`
+        WHERE department = %s
+          AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+        """,
+        (dept_doc.name,),
+        as_dict=True
+    )
+    _prime_item_cache([r["item_code"] for r in rows])
+    return rows
 
+# =========================
+# Item/Attribute machinery
+# =========================
+@log_io
+def _prime_item_cache(item_codes: List[str]):
+    if not item_codes:
+        return
+    needed = [ic for ic in set(item_codes) if ic not in _ITEM_CORE]
+    if not needed:
+        return
 
-    final_result = []
-    for serial, items in grouped_by_serial.items():
-        if all(item["allocated_status"] == "Allocated" for item in items):
-            final_result.extend(sorted(items, key=itemgetter("rank")))
+    placeholders = ",".join(["%s"] * len(needed))
+    core_rows = frappe.db.sql(
+        f"""
+        SELECT name, item_group, shopify_product_id, variant_of
+        FROM `tabItem`
+        WHERE name IN ({placeholders})
+        """,
+        tuple(needed),
+        as_dict=True
+    )
+    for r in core_rows:
+        _ITEM_CORE[r["name"]] = {
+            "name": r["name"],
+            "item_group": r["item_group"],
+            "shopify_product_id": (r.get("shopify_product_id") or "").strip(),
+            "variant_of": r.get("variant_of") or None,
+        }
 
-    seen = set()
-    unique_result = []
-    for item in sorted(final_result, key=itemgetter("rank")):
-        key = (item["serial_no"], item["item"])
-        if key not in seen:
-            seen.add(key)
-            unique_result.append(item)
+    attr_rows = frappe.db.sql(
+        f"""
+        SELECT parent AS item_code, attribute, attribute_value
+        FROM `tabItem Variant Attribute`
+        WHERE parent IN ({placeholders})
+        """,
+        tuple(needed),
+        as_dict=True
+    )
+    for r in attr_rows:
+        d = _ITEM_ATTRS.setdefault(r["item_code"], {})
+        d[r["attribute"]] = r["attribute_value"]
 
-    # final_results = allocate_serial_no_for_battery(unique_result)
+    for ic in needed:
+        core = _ITEM_CORE.get(ic) or {}
+        template = core.get("variant_of") or ic
+        attrs = _ITEM_ATTRS.get(ic, {})
+        proc = attrs.get(PROCESSOR_ATTR)
+        ram = attrs.get(RAM_ATTR)
+        sto = attrs.get(STORAGE_ATTR)
+        _ITEM_KEYS[ic] = {
+            "model_key": ("MODEL", template),
+            "config_key": ("CONFIG", template, proc, ram, sto)
+        }
 
-    print(f"Laptop parts allocation took {time.time() - start_time:.4f} seconds")
-    return unique_result
+@log_io
+def _get_model_key(item_code: str):
+    if item_code not in _ITEM_KEYS:
+        _prime_item_cache([item_code])
+    return _ITEM_KEYS[item_code]["model_key"]
 
-def allocated_other_part(item):
-    start_time = time.time()
+@log_io
+def _get_config_key(item_code: str):
+    if item_code not in _ITEM_KEYS:
+        _prime_item_cache([item_code])
+    return _ITEM_KEYS[item_code]["config_key"]
 
-    item_code = item.get("item_code")
+@log_io
+def _key_for_grain(item_code: str, grain: str):
+    return _get_model_key(item_code) if grain == "model" else _get_config_key(item_code)
 
-    # Fetch original attributes
-    attr_rows = frappe.db.sql("""
-        SELECT 
-            LOWER(iva.attribute) AS attr, 
-            LOWER(iva.attribute_value) AS val,
-            iva.parent AS item_code,
-            i.item_group
-        FROM `tabItem Variant Attribute` iva
-        INNER JOIN `tabItem` i ON iva.parent = i.name
-        WHERE iva.parent = %s
-    """, item_code, as_dict=True)
+@log_io
+def _target_item_for_key(key):
+    if not key:
+        return None
+    if key[0] == "MODEL":
+        return key[1]
+    _, template, proc, ram, sto = key
+    variant = _find_variant_by_attributes(template, {
+        PROCESSOR_ATTR: proc,
+        RAM_ATTR: ram,
+        STORAGE_ATTR: sto
+    })
+    return variant or f"{template}::{proc}-{ram}-{sto}"
 
-    attr_map = {row["attr"]: row["val"] for row in attr_rows}
-    item_group = attr_rows[0]["item_group"] if attr_rows else ""
+def _resolve_existing_item_for_key(key) -> Optional[str]:
+    if not key:
+        return None
+    if key[0] == "MODEL":
+        return key[1]
+    _, template, proc, ram, sto = key
+    return _find_variant_by_attributes(template, {
+        PROCESSOR_ATTR: proc,
+        RAM_ATTR: ram,
+        STORAGE_ATTR: sto
+    })
 
-    # Get item wizard
-    iw_name = frappe.db.get_value("Serial No", item.get("against_serial_no"), "item_wizard")
-    if not iw_name:
-        frappe.msgprint(f"allocated_other_part completed in {time.time() - start_time:.4f} seconds")
-        return []
+@log_io
+def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> Union[str, None]:
+    if not template_item or not attr_map:
+        return None
+    variants = frappe.get_all("Item", filters={"variant_of": template_item}, pluck="name")
+    if not variants:
+        return None
+    _prime_item_cache(variants)
+    for v in variants:
+        attrs = _ITEM_ATTRS.get(v, {})
+        if all(attrs.get(k) == v2 for k, v2 in attr_map.items()):
+            return v
+    return None
 
-    iw_doc = frappe.get_doc("Item Wizards", iw_name)
+@log_io
+def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
+    ic = snrow["item_code"]
+    if ic not in _ITEM_KEYS:
+        _prime_item_cache([ic])
+    return {
+        "serial_no": snrow["name"],
+        "item_code": ic,
+        "warehouse": snrow["warehouse"],
+        "forward_key_model": _ITEM_KEYS[ic]["model_key"],
+        "forward_key_config": _ITEM_KEYS[ic]["config_key"],
+    }
 
-    # Prepare attributes to change
-    for row in iw_doc.get("items_attribute"):
-        attr = row.get("item_attribute", "").lower()
-        val = row.get("attribute_value", "").lower()
-        group = row.get("item_group", "").lower()
-
-        if attr != "grade" and group == item_group.lower() and attr in attr_map and attr_map[attr] != val:
-            test_attrs = attr_map.copy()
-            test_attrs[attr] = val
-
-            # Find exact item variant match
-            conditions = " OR ".join(
-                f"(LOWER(iva.attribute) = '{k}' AND LOWER(iva.attribute_value) = '{v}')"
-                for k, v in test_attrs.items()
-            )
-
-            match_items = frappe.db.sql(f"""
-                SELECT iva.parent AS item_code
-                FROM `tabItem Variant Attribute` iva
-                WHERE {conditions}
-                GROUP BY iva.parent
-                HAVING COUNT(*) = {len(test_attrs)}
-            """, as_dict=True)
-
-            if not match_items:
-                continue
-
-            # Warehouse stock check once
-            warehouses = frappe.db.get_all("Warehouse", filters={"department": "Stores - NJ"}, pluck="name")
-            for mi in match_items:
-                item_code_candidate = mi["item_code"]
-
-                stock = frappe.db.sql("""
-                    SELECT SUM(actual_qty) AS qty
-                    FROM `tabBin`
-                    WHERE item_code = %s AND warehouse IN %s
-                """, (item_code_candidate, tuple(warehouses)), as_dict=True)[0]["qty"] or 0
-
-                if stock > 0:
-                    item.update({
-                        "item_code": item_code_candidate,
-                        "against_item_code": item_code,
-                        "stock_qty": flt(stock)
-                    })
-                    frappe.msgprint(f"allocated_other_part completed in {time.time() - start_time:.4f} seconds")
-                    return item
-
-    return []
-
-def update_to_make_for_serial(doc):
-
-    for child in doc.get("suggested_serial_no", []):
-        if child.get("suggested_serial_no"):
-            serial_no_info = child.get("suggested_serial_no").split(", ")
-            for serial_no in serial_no_info:
-                serial_no_doc = frappe.get_doc("Serial No", serial_no)
-                serial_no_doc.to_make = child.get("item_code")
-                serial_no_doc.save()
-                frappe.db.commit()
-
-def allocate_serial_no_for_battery(final_result):
-
-    for row in final_result:
-        
-        if not row:
-            continue
-
-        if row.get("item_group", "") == None:
-            continue
-
-        if row.get("item_group", "").lower() == "battery":
-            item_code = row.get("item")
-            mreq_no = row.get("mreq_no")
-            item_group = row.get("item_group")
-
-            valid_serials = []
-
-            nj_warehouses = frappe.get_all(
-                "Warehouse", 
-                filters={"department": "Stores - NJ"},
-                pluck="name"
-            )
-
-            if not nj_warehouses:
-                continue
-
-            serials = frappe.get_all(
-                "Serial No", 
-                filters={
-                    "item_code": item_code,
-                    "warehouse": ["in", nj_warehouses]
-                },
-                fields=["name", "full_charge_capacity", "battery_average_discharge_rate"]
-            )
-
-            for serial in serials:
-                try:
-                    if not serial.get("full_charge_capacity") or not serial.get("battery_average_discharge_rate"):
-                        continue
-
-                    full = float(serial.get("full_charge_capacity") or 0)
-                    avg = float(serial.get("battery_average_discharge_rate") or 0)
-
-                    if avg != 0:
-                        battery_life = full / avg
-                        if battery_life > 2:
-                            valid_serials.append(serial.get("name"))
-                except Exception as e:
-                    print(f"Error calculating battery life for serial {serial.get('name')}: {e}")
-
-            if valid_serials:
-                try:
-                    frappe.db.set_value(
-                        "Material Request Item",
-                        {
-                            "parent": mreq_no,
-                            "item_code": item_code,
-                            "item_group": item_group
-                        },
-                        "allocated_serial_no",
-                        ", ".join(valid_serials)
-                    )
-                except Exception as e:
-                    print(f"Failed to set allocated_serial_no for {item_code}: {e}")
+# =========================
+# Plan persistence
+# =========================
+@log_io
+def _append_plan_row(
+    plan_doc,
+    serial_no: str,
+    current_warehouse: str,
+    current_department: str,
+    sales_rate: float,
+    doi: float,
+    sales_order_number: Optional[str],
+    delivery_date,
+    item_code_to_make: str,
+    reason: str,
+    priority_rank: int
+):
+    plan_doc.append("lines", {
+        "serial_no": serial_no,
+        "current_warehouse": current_warehouse,
+        "current_department": current_department,
+        "sales_rate": sales_rate,
+        "doi": doi,
+        "sales_order_no": sales_order_number,
+        "delivery_date": delivery_date,
+        "item_code": item_code_to_make,
+        "reason": reason,
+        "priority_rank": int(priority_rank),
+    })

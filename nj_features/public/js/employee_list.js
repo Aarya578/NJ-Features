@@ -1,6 +1,9 @@
 frappe.require("/assets/nj_features/js/nj_features.js", function () {
     extend_listview_settings('Employee', {
-        onload: function (listview) {
+        refresh: function (listview) {
+            $('span.sidebar-toggle-btn').hide();
+            $('.col-lg-2.layout-side-section').hide();
+
             if (frappe.user.has_role('Developer')) {
                 const label = __('Disable Qty Check');
 
@@ -29,8 +32,8 @@ frappe.require("/assets/nj_features/js/nj_features.js", function () {
                 });
 
                 frappe.db.get_value("NJ Settings", { parameter: "disable_qty_check" }, ["value"]).then((r) => {
-                    const value = r.message?.value;
-                    setButtonState(value === 1);
+                    let value = r.message?.value;
+                    setButtonState(value == "1");
                 });
 
                 function setButtonState(isDisabled) {
@@ -40,11 +43,6 @@ frappe.require("/assets/nj_features/js/nj_features.js", function () {
                     }
                 }
             }
-        },
-
-        refresh: function () {
-            $('span.sidebar-toggle-btn').hide();
-            $('.col-lg-2.layout-side-section').hide();
         }
     });
 });

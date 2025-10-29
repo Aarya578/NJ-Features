@@ -1084,23 +1084,23 @@ function processItemTemplate(frm) {
                         $(frm.layout.wrapper).find('.form-message.red').remove();
                         $(frm.layout.wrapper).prepend(errorDiv);
 
-                        const existing = (frm.doc.comments || []).some(comment => {
-                            return comment.comment === errorMessageString;
-                        });
+                        // const existing = (frm.doc.comments || []).some(comment => {
+                        //     return comment.comment === errorMessageString;
+                        // });
 
-                        if (!existing) {
-                            frappe.call({
-                                method: "frappe.desk.form.utils.add_comment",
-                                args: {
-                                    reference_doctype: frm.doctype,
-                                    reference_name: frm.docname,
-                                    content: errorMessageString,
-                                    comment_email: frappe.session.user,
-                                    comment_by: frappe.session.user_fullname
-                                },
-                                error: function(err) { console.error("API Error:", err); }
-                            });
-                        }
+                        // if (!existing) {
+                        //     frappe.call({
+                        //         method: "frappe.desk.form.utils.add_comment",
+                        //         args: {
+                        //             reference_doctype: frm.doctype,
+                        //             reference_name: frm.docname,
+                        //             content: errorMessageString,
+                        //             comment_email: frappe.session.user,
+                        //             comment_by: frappe.session.user_fullname
+                        //         },
+                        //         error: function(err) { console.error("API Error:", err); }
+                        //     });
+                        // }
                         
                         frappe.show_alert({
                             message: errorMessageString,

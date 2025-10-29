@@ -109,6 +109,7 @@ class CustomDeliveryNote(DeliveryNote):
             frappe.throw("Error in on_submit", str(e))
 
     def _process_customer_details(self):
+        print("inside the function============")
         try:
             serial_nos = set()
             dn_items = frappe.db.sql("""
@@ -147,21 +148,37 @@ class CustomDeliveryNote(DeliveryNote):
                     #     LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
                     #     WHERE so.name = %s LIMIT 1
                     # """, (item.against_sales_order,), as_dict=True)
+                    # sales_order_data = frappe.db.sql("""
+                    #     SELECT 
+                    #         so.customer_name, so.name, so.sale_type,
+                    #         COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
+                    #         so.transaction_date, so.delivery_date, 
+                    #         so.sales_channel, 
+                    #         COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
+                    #         COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
+                    #         IFNULL(so.shipping_address, so.address_display) AS so_address
+                    #     FROM `tabSales Order` so
+                    #     LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
+                    #     LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
+                    #     WHERE so.name = %s AND so.docstatus = 1 LIMIT 1;
+                    # """, (item.against_sales_order,), as_dict=True)
                     sales_order_data = frappe.db.sql("""
                         SELECT 
-                            so.customer_name, so.name, so.sale_type,
-                            COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                            so.transaction_date, so.delivery_date, 
-                            so.sales_channel, 
-                            COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
-                            COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
-                            IFNULL(so.shipping_address, so.address_display) AS so_address
+                            TRIM(so.customer_name) AS customer_name,
+                            TRIM(so.name) AS name,
+                            TRIM(so.sale_type) AS sale_type,
+                            TRIM(COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id)) AS order_id, 
+                            so.transaction_date, 
+                            so.delivery_date, 
+                            TRIM(so.sales_channel) AS sales_channel,
+                            TRIM(COALESCE(addr_ship.email_id, addr_cust.email_id, '')) AS email_id,
+                            TRIM(COALESCE(addr_ship.phone, addr_cust.phone, '')) AS phone,
+                            TRIM(IFNULL(so.shipping_address, so.address_display)) AS so_address
                         FROM `tabSales Order` so
                         LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
                         LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                        WHERE so.name = %s AND so.docstatus = 1 LIMIT 1;
+                        WHERE so.name = %s AND so.docstatus = 1 LIMIT 1
                     """, (item.against_sales_order,), as_dict=True)
-
                     if not sales_order_data:
                         frappe.throw(f"No Sales Order data found for {item.against_sales_order}")
 
@@ -1587,6 +1604,7 @@ def shiprocket_awb_number(doc):
 
                 # Case 1: COD checked but also payment received → run normal prepaid flow
                 if sales_order_doc.is_cod == 1 and sales_order_doc.payment_received == 1:
+                    print("Case 1: COD checked but also payment received → run normal prepaid flow")
                     payment_method = "Prepaid"
 
                     if delivery_note_doc.grand_total:
@@ -1616,35 +1634,83 @@ def shiprocket_awb_number(doc):
 
                 # Case 2: Only COD checked → COD flow
                 elif sales_order_doc.is_cod == 1:
+                    print("Case 2: Only COD checked → COD flow")
                     payment_method = "COD"
                     sub_total = float(sales_order_doc.total_outstanding or 0)
 
                 # Case 3: Normal Prepaid flow (non-COD orders)
                 else:
+                    # payment_method = "Prepaid"
+                    # sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+
+                    # print("thied case=========333")
+                    # if delivery_note_doc.grand_total:
+                    #     sub_total = float(delivery_note_doc.grand_total)
+                    #     print("sub_total==========================", sub_total)
+
+                    # else:
+                    #     total_default_charge = 0
+                    #     found_charges = False                
+
+                    #     for item in delivery_note_doc.items:
+                    #         if item.item_code:
+                    #             try:
+                    #                 item_doc = frappe.get_doc("Item", item.item_code)
+                    #                 print("item_doc==========================", item_doc)
+                    #                 if item_doc.item_group:
+                    #                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+                    #                     print("item_group_doc==========================", item_group_doc)
+                    #                     if getattr(item_group_doc, 'item_charge', None):
+                    #                         total_default_charge += float(item_group_doc.default_charge)
+                    #                         print("total_default_charge==========================", total_default_charge)
+                    #                         found_charges = True
+                    #             except:
+                    #                 continue
+
+                    #     if found_charges and total_default_charge > 0:
+                    #         sub_total = total_default_charge
+                    #         print("sub_total=====111111=====================", sub_total)
+                    #     else:
+                    #         sub_total = 300.0
+                    #         print("sub_total=====222222=====================", sub_total)
                     payment_method = "Prepaid"
-                    if delivery_note_doc.grand_total:
-                        sub_total = float(delivery_note_doc.grand_total)
+                    sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+
+                    # --- Check if sale_type is NJ_Website_B2C ---
+                    if getattr(sales_order_doc, "order_type", None) == "Maintenance":
+                        print("sale_type = Maintenance", sales_order_doc.order_type)
+
+                        dn_total = float(delivery_note_doc.grand_total or 0)
+                        print("Delivery Note grand_total:", dn_total)
+
+                        # Compare grand_total with 4000, take the maximum
+                        sub_total = max(dn_total, 4000)
+                        print("sub_total (max of grand_total or 4000):", sub_total)
+
                     else:
-                        total_default_charge = 0
-                        found_charges = False                
+                        if delivery_note_doc.grand_total:
+                            sub_total = float(delivery_note_doc.grand_total)
 
-                        for item in delivery_note_doc.items:
-                            if item.item_code:
-                                try:
-                                    item_doc = frappe.get_doc("Item", item.item_code)
-                                    if item_doc.item_group:
-                                        item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-                                        if getattr(item_group_doc, 'default_charge', None):
-                                            total_default_charge += float(item_group_doc.default_charge)
-                                            found_charges = True
-                                except:
-                                    continue
-
-                        if found_charges and total_default_charge > 0:
-                            sub_total = total_default_charge
                         else:
-                            sub_total = 300.0
+                            total_default_charge = 0
+                            found_charges = False                
 
+                            for item in delivery_note_doc.items:
+                                if item.item_code:
+                                    try:
+                                        item_doc = frappe.get_doc("Item", item.item_code)
+                                        if item_doc.item_group:
+                                            item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
+                                            if getattr(item_group_doc, 'default_charge', None):
+                                                total_default_charge += float(item_group_doc.default_charge)
+                                                found_charges = True
+                                    except:
+                                        continue
+
+                            if found_charges and total_default_charge > 0:
+                                sub_total = total_default_charge
+                            else:
+                                sub_total = 300.0
             else:
                 frappe.throw("Sales Order not linked to this Delivery Note.")
 
@@ -1674,6 +1740,7 @@ def shiprocket_awb_number(doc):
                 "height": str(delivery_note_doc.height),
                 "weight": str(delivery_note_doc.weight)
             }
+            print("data:--------159", data)
             # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
             url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
             headers = {
@@ -1681,10 +1748,12 @@ def shiprocket_awb_number(doc):
                 "Authorization": f"Bearer {auth_token.strip()}"
             }
             response = requests.post(url, headers=headers, json=data)
+            print("response:--------159", response.json())
             
             if response.status_code == 200:
                 try:
                     resp_json = response.json()
+                    print("response:--------159", response.json())
                     if resp_json.get('order_id'):
                         # Update document with ShipRocket IDs
 

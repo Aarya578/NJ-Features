@@ -51,12 +51,11 @@ SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes"}
 
 RECENCY_WINDOW_DAYS = 60
 RECENCY_MAX_WEIGHT = 30
-MAX_VARIANTS_PER_TEMPLATE = 4
 
 REQUIRE_SHOPIFY_IDS_FOR_SELLABLE = True
 
 PROCESSOR_ATTR = "Processor Type1"
-RAM_ATTR = "Ram Capacity"
+RAM_ATTR = "RAM Capacity"
 STORAGE_ATTR = "Storage Capacity"
 
 ALLOWED_ITEM_MODELS = set()
@@ -75,9 +74,10 @@ _ITEM_KEYS: Dict[str, Dict] = {}
 @log_io
 def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     # -------- Load departments with SLA and group by sequence --------
+    # CHANGE: Exclude departments where run_production_planning != 1
     depts = frappe.get_all(
         "Department",
-        filters=[["sla", ">", 0]],
+        filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],
         fields=["name", "department_sequence", "sla", "allow_reconfig",
                 "inwarded_model", "forwarded_model", "inwarded_config", "forwarded_config", "run_production_planning"],
         order_by="department_sequence asc, name asc"
@@ -147,7 +147,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     for s in sequences:
         fwd_grain = forward_grain_per_seq[s]
         forward_keys_per_seq[s] = _build_forward_keys(
-            sellable_items, fwd_grain, MAX_VARIANTS_PER_TEMPLATE, sales_rate
+            sellable_items, fwd_grain, sales_rate
         )
 
     # -------- Build per-dept inward pools (STRICT to serial.department) --------
@@ -156,6 +156,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         for d in depts_by_seq[s]:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
+            # CHANGE: fetch ALL serials that belong to this department (independent of warehouse)
             inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
 
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
@@ -167,6 +168,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
 
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
+
+            # Even though we filtered upstream, keep this guard (no-op if all are 1)
             if not dept.get("run_production_planning"):
                 continue
 
@@ -174,7 +177,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             inward_grain = "config" if dept.get("inwarded_config") else "model"
             forward_grain = seq_forward_grain
 
-            # serials strictly for THIS department
+            # serials strictly for THIS department (department-centric intake)
             serial_rows = inward_serials_per_dept.get(dept_name, [])
             serial_map = [_enrich_serial_from_attrs(sn) for sn in serial_rows]
 
@@ -270,6 +273,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
 # =========================
 @log_io
 def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dict:
+    # NOTE: current behavior = MAX SLA per sequence (unchanged)
     max_sla_per_seq = {}
     for s in sequences:
         max_sla_per_seq[s] = max(float(d.get("sla") or 0.0) for d in depts_by_seq[s]) if depts_by_seq[s] else 0.0
@@ -284,6 +288,7 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
 # =========================
 @log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
+    # NOTE: Keep existing logic as per discussion (revisit later)
     soi = frappe.db.sql(
         """
         SELECT
@@ -382,6 +387,7 @@ def _get_sellable_items() -> List[Dict]:
     if not sellable:
         logger.warning("No sellable Product Bundle components found with current filters.")
     _prime_item_cache([r["name"] for r in sellable])
+    print("sellable ------------ ", sellable)
     return sellable
 
 @log_io
@@ -471,7 +477,7 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
     return rates
 
 @log_io
-def _build_forward_keys(sellable_items, forward_grain, max_per_template, sales_rate):
+def _build_forward_keys(sellable_items, forward_grain, sales_rate):
     variants_by_template = defaultdict(list)
     templates = set()
 
@@ -492,7 +498,8 @@ def _build_forward_keys(sellable_items, forward_grain, max_per_template, sales_r
     keys = []
     for model_key, configs in variants_by_template.items():
         configs.sort(key=lambda ck: (-(sales_rate.get(ck, 1.0)), random.random()))
-        keys.extend(configs[:max_per_template or 4])
+        # Include ALL configs (no max variants per template)
+        keys.extend(configs)
 
     seen, out = set(), []
     for k in keys:
@@ -582,53 +589,77 @@ def _estimate_forward_inventory(forward_keys, serials, forward_grain):
 @log_io
 def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_reconfig, forward_keys, sales_rate, current_doi):
     """
-    Greedy equalization: send next unit to the key with the lowest DOI.
+    Greedy equalization: keep allocating while there is inventory available for any target.
+    - In CONFIG grain:
+        * try exact CONFIG pool first
+        * if allow_reconfig, fallback to MODEL-level pool
+    - In MODEL grain:
+        * only MODEL pools are used
     Returns allocations with per-allocation 'doi'.
     """
     allocations = []
 
+    # Build buckets once
     if forward_grain == "config":
-        buckets = defaultdict(list)
-        any_by_model = defaultdict(list)
+        buckets = defaultdict(list)        # ("CONFIG", template, proc, ram, sto) -> [serials]
+        any_by_model = defaultdict(list)   # ("MODEL", template) -> [serials]
         for s in remaining_serials:
             buckets[s["forward_key_config"]].append(s)
             any_by_model[s["forward_key_model"]].append(s)
     else:
-        buckets = defaultdict(list)
+        buckets = defaultdict(list)        # ("MODEL", template) -> [serials]
         for s in remaining_serials:
             buckets[s["forward_key_model"]].append(s)
 
-    work = list(forward_keys)
-    for _ in range(len(remaining_serials)):
+    # Helper: which targets are currently serviceable (have inventory now)
+    def available_targets():
+        avail = []
+        for k in forward_keys:
+            if forward_grain == "config":
+                if buckets.get(k):  # exact config pool has stock
+                    avail.append(k)
+                elif allow_reconfig:
+                    mk = ("MODEL", k[1])
+                    if any_by_model.get(mk):  # model fallback has stock
+                        avail.append(k)
+            else:
+                if buckets.get(k):  # model pool has stock
+                    avail.append(k)
+        return avail
+
+    # Main loop: run while any target has inventory (direct or fallback)
+    while True:
+        work = available_targets()
         if not work:
             break
-        work.sort(key=lambda k: current_doi.get(k, 0.0))
+
+        # Lowest DOI wins (add small randomness to break ties fairly)
+        work.sort(key=lambda k: (current_doi.get(k, 0.0), random.random()))
         target = work[0]
 
         chosen = None
-        if forward_grain == "config":
-            pool = buckets.get(target, [])
-            if pool:
-                chosen = pool.pop()
-            elif allow_reconfig:
-                model_key = ("MODEL", target[1])
-                pool2 = any_by_model.get(model_key, [])
-                if pool2:
-                    chosen = pool2.pop()
-        else:
-            pool = buckets.get(target, [])
-            if pool:
-                chosen = pool.pop()
+        # Pick from exact pool first
+        pool = buckets.get(target, [])
+        if pool:
+            chosen = pool.pop()
+        elif forward_grain == "config" and allow_reconfig:
+            # Fallback to model-level inventory
+            model_key = ("MODEL", target[1])
+            pool2 = any_by_model.get(model_key, [])
+            if pool2:
+                chosen = pool2.pop()
 
+        # If nothing was chosen (should be rare due to available_targets filtering), continue
         if not chosen:
-            work.pop(0)
+            # Recompute in next iteration
             continue
 
         # Item to make:
-        # - allow_reconfig=True -> best-selling forward suggestion
-        # - allow_reconfig=False -> serial's own item_code (no change)
+        # - allow_reconfig=True -> best-selling forward suggestion via _target_item_for_key(target)
+        # - allow_reconfig=False -> keep serial's own item_code
         target_item_code = _target_item_for_key(target) if allow_reconfig else chosen["item_code"]
 
+        # DOI update for the chosen target (sales_rate clamped to >= 1.0)
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
         inv_now = current_doi.get(target, 0.0) * rate
         new_doi = (inv_now + 1.0) / rate
@@ -649,6 +680,9 @@ def _allocate_forecast_to_balance_doi(remaining_serials, forward_grain, allow_re
 # =========================
 @log_io
 def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
+    """
+    Retained for reference; not used by _get_inward_serials_for_department anymore.
+    """
     whs: set = set()
 
     for row in (getattr(dept_doc, "inventory_details_child", None) or []):
@@ -670,19 +704,18 @@ def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
 
 @log_io
 def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
-    warehouses = _get_inward_warehouses_for_department(dept_doc)
-    if not warehouses:
-        return []
-    placeholders = ",".join(["%s"] * len(warehouses))
+    """
+    CHANGE: Department-centric intake — fetch ALL active serials that belong to this department,
+    regardless of which warehouse they sit in. Active = not Delivered/Scrapped (or status is NULL).
+    """
     rows = frappe.db.sql(
-        f"""
+        """
         SELECT name, item_code, warehouse, department
         FROM `tabSerial No`
-        WHERE warehouse IN ({placeholders})
-          AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped'))
-          AND department = %s
+        WHERE department = %s
+          AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
         """,
-        tuple(warehouses) + (dept_doc.name,),
+        (dept_doc.name,),
         as_dict=True
     )
     _prime_item_cache([r["item_code"] for r in rows])

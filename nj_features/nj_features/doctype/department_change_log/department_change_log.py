@@ -9,7 +9,7 @@ class DepartmentChangeLog(Document):
 
 def update_department_change_logs():
     """
-    This function creates new Department Change Log entries for each employee every 5 minutes.
+    This function creates new Department Change Log entries for each employee every day
     Each execution creates new records to track historical changes.
     """
     try:
@@ -20,35 +20,35 @@ def update_department_change_logs():
         )
 
         for employee in employees:
-            existing_log_name = frappe.db.get_value(
-                "Department Change Log",
-                filters={
-                    "user_name": employee.user_id,
-                    "current_department": employee.department,
-                    "employee_id": employee.emp_id,
-                    "role_profile": employee.role_profile
-                },
-                fieldname="name"
-            )
+            # existing_log_name = frappe.db.get_value(
+            #     "Department Change Log",
+            #     filters={
+            #         "user_name": employee.user_id,
+            #         "current_department": employee.department,
+            #         "employee_id": employee.emp_id,
+            #         "role_profile": employee.role_profile
+            #     },
+            #     fieldname="name"
+            # )
 
-            if existing_log_name:
-                doc = frappe.get_doc("Department Change Log", existing_log_name)
-                doc.ramp_level = employee.ramp_level
-                doc.target = employee.target
-                doc.log_datetime = frappe.utils.now()
-                doc.save(ignore_permissions=True)
-            else:
-                doc = frappe.get_doc({
-                    "doctype": "Department Change Log",
-                    "user_name": employee.user_id,
-                    "current_department": employee.department,
-                    "employee_id": employee.emp_id,
-                    "role_profile": employee.role_profile,
-                    "ramp_level": employee.ramp_level,
-                    "target": employee.target,
-                    "log_datetime": frappe.utils.now()
-                })
-                doc.insert(ignore_permissions=True)
-        
+            # if existing_log_name:
+            #     doc = frappe.get_doc("Department Change Log", existing_log_name)
+            #     doc.ramp_level = employee.ramp_level
+            #     doc.target = employee.target
+            #     doc.log_datetime = frappe.utils.now()
+            #     doc.save(ignore_permissions=True)
+            # else:
+            doc = frappe.get_doc({
+                "doctype": "Department Change Log",
+                "user_name": employee.user_id,
+                "current_department": employee.department,
+                "employee_id": employee.emp_id,
+                "role_profile": employee.role_profile,
+                "ramp_level": employee.ramp_level,
+                "target": employee.target,
+                "log_datetime": frappe.utils.now()
+            })
+            doc.insert(ignore_permissions=True)
+    
     except Exception:
         log_error(frappe.traceback(), "Department Change Log Update Error")

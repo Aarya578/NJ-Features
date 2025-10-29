@@ -6,7 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "code",
-  "item_code"
+  "item_code",
+  "apply_coupen_code"
  ],
  "fields": [
   {
@@ -21,12 +22,19 @@
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item"
+  },
+  {
+   "default": "0",
+   "fieldname": "apply_coupen_code",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Apply Coupen Code"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-08 14:58:36.939495",
+ "modified": "2025-10-29 11:09:39.069711",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Coupon Codes",

@@ -170,23 +170,12 @@ doc_events = {
     "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
     "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
     "on_update_after_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules"
-    }
+    }   
 }
 
-# doc_events = {
-#     "Sales Order": {
-#         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing_one"
-#         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.on_submit"
-#     },
-#     "Delivery Note": {
-#         # "after_save": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.tesing>
-#         "on_submit": "nj_features.doctypes.amazon_sales_order.amazon_sales_order.validate_delivery_note"
-#     },
-# }
 
 # Scheduled Tasks
 # ---------------
-
 # scheduler_events = {
 #	"all": [
 #		"nj_features.tasks.all"
@@ -254,13 +243,19 @@ scheduler_events = {
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync"
         ],
-         "0 */2 * * *": [
+        # "0 */2 * * *": [
+        #     "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
+        # ],
+        "*/58 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
         ],
          "0 */3 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
         ],
-         "0 */5 * * *": [
+        #  "0 */5 * * *": [
+        #     "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify"
+        # ],
+        "*/59 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify"
         ],
         "0 */2 * * *": [

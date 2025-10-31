@@ -16,8 +16,29 @@ class StockMovement(Document):
                 self.validate_supplier_return()
             else:
                 material_transfer_items = []
-                
                 for row in self.items:
+                    if row.s_warehouse and row.t_warehouse and row.serial_no and row.item_code and item_item_group(row.item_code) == "Laptops":
+                        source_dept=warehouse_dept(row.s_warehouse)
+                        logger.info(f"==========source_dept=========={source_dept}")
+                        if source_dept != warehouse_dept(row.t_warehouse):
+                            consumables=consumables_for_department(row.item_code, source_dept, row.serial_no)
+                            print('consumables',consumables) 
+                            logger.info(f"==========consumables=========={consumables}")
+                            repack_items=[]                               
+                            for consumable in consumables:
+                                qty=warehouse_qty(row.s_warehouse, consumable)
+                                if qty >0:
+                                    consumable_warehouse=get_consumables_warehouse(source_dept)
+                                    if not consumable_warehouse:
+                                        frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
+                                    repack_items.append({
+                                        'qty': 1,
+                                        'item_code': consumable,
+                                        's_warehouse':consumable_warehouse ,                                         
+                                    })
+                            logger.info(f"==========repack_items=========={repack_items}")
+                            if repack_items:
+                                make_repack(row.serial_no, repack_items, row.s_warehouse)                                                                      
                     material_transfer_items.append({
                         'qty': row.qty,
                         'item_code': row.item_code,
@@ -931,3 +952,59 @@ def check_warehouse_qty(name):
         frappe.throw(error_msg)
 
     return None
+
+def warehouse_dept(warehouse):
+    return frappe.db.get_value('Warehouse', warehouse, 'department')
+
+def warehouse_qty(warehouse, item):
+    return frappe.db.get_value('Bin', {'warehouse': warehouse, 'item_code': item}, 'actual_qty')
+
+def item_item_group(item):
+    return frappe.db.get_value('Item', item, 'item_group')
+
+def consumables_for_department(item, department, serial_no):
+    iw=frappe.db.get_value('Serial No', serial_no, 'item_wizard')
+    pattern=f"%{department}%"
+    query=""" 
+        Select item_code from `tabConsumables` where parent=%(item_wizard)s and (departments like %(pattern)s) ;
+       """
+    consubles_items=[]
+    if iw:
+        result=frappe.db.sql(query,{'item_wizard':iw,'pattern':pattern},as_dict=True)
+        if result:
+            for item in result:
+                consubles_items.append(item.get('item_code'))
+    return consubles_items
+
+def get_consumables_warehouse(department):
+    return frappe.db.get_value('Warehouse', {'department': department, 'used_for_consumables_stock':1}, 'name')
+    
+def make_repack(serial_no, repack_items,source_warehouse):
+    if serial_no and repack_items:
+        item_code=frappe.db.get_value('Serial No', serial_no, 'item_code')
+        qty=1
+        new_stock_entry=frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Repack",
+             
+        })
+        new_stock_entry.append("items",{
+            "item_code":item_code,
+            "qty":qty,
+            "serial_no":serial_no,
+            "s_warehouse":source_warehouse            
+        })
+        for item in repack_items:
+            new_stock_entry.append("items",{
+                "item_code":item.get('item_code'),
+                "qty":item.get('qty'),
+                "s_warehouse":item.get('s_warehouse')
+            })
+        new_stock_entry.append("items",{
+            "item_code":item_code,
+            "qty":qty,
+            "t_warehouse":source_warehouse,
+            "serial_no":serial_no
+        })
+        new_stock_entry.save()
+        new_stock_entry.submit()

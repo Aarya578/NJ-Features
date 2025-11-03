@@ -51,24 +51,24 @@ frappe.ui.form.on('Delivery Note', {
             item_group: row.item_group
         }));
 
-        frappe.call({
-            method: "nj_features.overrides.delivery_note.get_item_group_cost_centers",
-            args: { items: items },
-            callback: function(r) {
+        // frappe.call({
+        //     method: "nj_features.overrides.delivery_note.get_item_group_cost_centers",
+        //     args: { items: items },
+        //     callback: function(r) {
                 
-                if (r.message) {
-                    console.log("Cost centers:===", r.message);
+        //         if (r.message) {
+        //             console.log("Cost centers:===", r.message);
                     
-                    frm.doc.items.forEach(row => {
-                        if (r.message[row.idx]) {
-                            frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+        //             frm.doc.items.forEach(row => {
+        //                 if (r.message[row.idx]) {
+        //                     frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
 
-                        }
-                         frm.refresh_field('cost_center');
-                    });
-                }
-            }
-        });
+        //                 }
+        //                  frm.refresh_field('cost_center');
+        //             });
+        //         }
+        //     }
+        // });
 
     },
 
@@ -265,26 +265,26 @@ frappe.ui.form.on('Delivery Note', {
     },
 
 
-    before_submit: async function(frm) {
-        await frappe.call({
-            method:'nj_features.overrides.delivery_note.allow_to_save',
-            args: {
-                "doc": frm.doc
-            },
-            callback: function(r) {
-                if (r.message) {
-                    if(r.message!="pass") {
-                        frappe.validated=false
-                        frappe.throw(r.message);
+    // before_submit: async function(frm) {
+    //     await frappe.call({
+    //         method:'nj_features.overrides.delivery_note.allow_to_save',
+    //         args: {
+    //             "doc": frm.doc
+    //         },
+    //         callback: function(r) {
+    //             if (r.message) {
+    //                 if(r.message!="pass") {
+    //                     frappe.validated=false
+    //                     frappe.throw(r.message);
 
-                    }else{
-                        frappe.validated=true
-                    }
-                }
-            }
-        })
+    //                 }else{
+    //                     frappe.validated=true
+    //                 }
+    //             }
+    //         }
+    //     })
 
-    },
+    // },
   
     // after_save: function(frm) {
     //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {

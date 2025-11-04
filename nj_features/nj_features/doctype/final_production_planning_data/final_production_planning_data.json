@@ -1,0 +1,104 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-23 13:01:47.440762",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "serial_no",
+  "current_warehouse",
+  "current_department",
+  "sales_rate",
+  "sales_order_no",
+  "delivery_date",
+  "item_code",
+  "reason",
+  "priority_rank",
+  "doi",
+  "serial_age_days"
+ ],
+ "fields": [
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "current_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Current Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "current_department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Current Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "sales_rate",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Sales Rate"
+  },
+  {
+   "fieldname": "sales_order_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order No",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Delivery Date"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reason"
+  },
+  {
+   "fieldname": "priority_rank",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Priority Rank"
+  },
+  {
+   "fieldname": "doi",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "DOI"
+  },
+  {
+   "fieldname": "serial_age_days",
+   "fieldtype": "Data",
+   "label": "Serial Age Days"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-31 10:55:16.703685",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Final Production Planning Data",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

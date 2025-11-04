@@ -5,7 +5,7 @@ import uuid
 import base64
 import frappe , requests
 from datetime import datetime
-from frappe.utils import getdate
+from frappe.utils import getdate, nowdate
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
@@ -205,10 +205,10 @@ def trigger_fulfillment(order_id):
             frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
-
-
-"""Laptop Allocations Functions"""
  
+"""Laptop Allocations Functions - Modified with Delivery Date Logic"""
+
+frappe.whitelist(allow_guest=True)
 def calculate_dispatch_eta_for_sales_order():
     """Main function to calculate dispatch ETA for all open sales orders"""
     try:
@@ -226,6 +226,7 @@ def calculate_dispatch_eta_for_sales_order():
             so_name = order.sales_order
             item_code = order.item_code
             ordered_qty = order.ordered_qty
+            delivery_date = order.delivery_date
             
             # Get delivered quantity
             delivered_qty = get_delivered_quantity(so_name, item_code)
@@ -234,9 +235,17 @@ def calculate_dispatch_eta_for_sales_order():
             net_pending = ordered_qty - delivered_qty
             if net_pending <= 0:
                 continue
-                
+            
+            # Calculate days to deliver
+            days_to_deliver = (getdate(delivery_date) - getdate(nowdate())).days
+            
+            # Get eligible departments based on delivery date
+            eligible_depts, remaining_depts = get_eligible_departments(departments, days_to_deliver)
+            
             # Adjust serial allocations and get unallocated quantity
-            unallocated_qty = adjust_serial_allocations(so_name, item_code, net_pending, departments)
+            unallocated_qty = adjust_serial_allocations(
+                so_name, item_code, net_pending, eligible_depts, remaining_depts
+            )
             
             # Calculate ETA for this item (only if unallocated quantity exists)
             if unallocated_qty > 0:
@@ -263,6 +272,32 @@ def get_departments():
         WHERE department_sequence >= 1
         ORDER BY department_sequence DESC
     """, as_dict=True)
+
+def get_eligible_departments(departments, days_to_deliver):
+    """
+    Determine eligible departments based on delivery date SLA
+    Returns: (eligible_departments_reversed, remaining_departments)
+    """
+    eligible_depts = []
+    cumulative_days = 0
+    
+    # Loop through departments in DESC order (as retrieved)
+    for dept in departments:
+        cumulative_days += dept.min_aging_days
+        eligible_depts.append(dept)
+        
+        # Break when cumulative days >= days to deliver
+        if cumulative_days >= days_to_deliver:
+            break
+    
+    # Reverse the eligible departments for allocation (process in reverse order)
+    eligible_depts_reversed = list(reversed(eligible_depts))
+    
+    # Get remaining departments (those not in eligible list)
+    eligible_names = {d.name for d in eligible_depts}
+    remaining_depts = [d for d in departments if d.name not in eligible_names]
+    
+    return eligible_depts_reversed, remaining_depts
 
 def get_open_sales_orders():
     """Get all open sales orders with pending items (serialized items only)"""
@@ -334,7 +369,7 @@ def get_delivered_quantity(so_name, item_code):
 
     return result[0][0] if result and result[0][0] else 0
 
-def adjust_serial_allocations(so_name, item_code, net_pending, departments):
+def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, remaining_depts):
     """Adjust serial allocations and return unallocated quantity"""
     # Get already allocated count
     allocated_count = frappe.db.sql("""
@@ -361,8 +396,18 @@ def adjust_serial_allocations(so_name, item_code, net_pending, departments):
     
     # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
-        allocated_in_this_call = assign_serials(so_name, item_code, to_allocate, departments)
-        unallocated_qty = to_allocate - allocated_in_this_call
+        # First try eligible departments (in reverse order)
+        allocated_in_eligible = assign_serials(so_name, item_code, to_allocate, eligible_depts)
+
+        # If not fully allocated, try remaining departments
+        if allocated_in_eligible < to_allocate:
+            remaining_to_allocate = to_allocate - allocated_in_eligible
+            allocated_in_remaining = assign_serials(so_name, item_code, remaining_to_allocate, remaining_depts)
+            total_allocated = allocated_in_eligible + allocated_in_remaining
+        else:
+            total_allocated = allocated_in_eligible
+        
+        unallocated_qty = to_allocate - total_allocated
 
         if unallocated_qty > 0:
             create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
@@ -370,13 +415,15 @@ def adjust_serial_allocations(so_name, item_code, net_pending, departments):
     return unallocated_qty
 
 def assign_serials(so_name, item_code, to_allocate, departments):
+    """Assign serial numbers from given departments"""
+    print("\n\n⚙️ Assigning serial numbers for {}".format(so_name))
     allocated_count = 0
 
     for dept in departments:
         if allocated_count >= to_allocate:
             break
 
-        # Get warehouses in this department
+        # Get warehouses for this department
         warehouses = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse` WHERE department = %s
         """, dept.name)
@@ -409,18 +456,25 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         available_serials = frappe.db.sql(query, as_dict=1)
         count_in_dept = len(available_serials)
 
+        print(f"\n🔹 Department: {dept.name}, Found {count_in_dept} serials to allocate")
+
         for serial in available_serials:
             serial_name = serial.get("name")
             serial_doc = frappe.get_doc("Serial No", serial_name)
 
-            # ⚙️ Determine which Sales Order ID to reserve
+            print("is_replace:", serial_doc.is_replace)
+            print("return_reason:", serial_doc.return_reason)
+
+            # Determine which Sales Order ID to reserve
             if serial_doc.is_replace or serial_doc.return_reason:
-                # Take the existing sales_order_id from the serial
+                print("🧩 Updating (replacement case)")
                 sales_order_id = serial_doc.get("sales_order_id")
-                frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", sales_order_id)
+                serial_doc.reserved_sales_order = sales_order_id
             else:
-                # Normal case — assign the given SO
-                frappe.db.set_value("Serial No", serial_name, "reserved_sales_order", so_name)
+                print("⚙️ Updating (normal case)")
+                print("so_name:", so_name)
+                print("serial_name:", serial_name)
+                serial_doc.reserved_sales_order = so_name
 
             # Calculate aging days
             so_creation = frappe.get_value("Sales Order", so_name, "creation")
@@ -431,10 +485,16 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 "sales_order": so_name,
                 "aging_days": aging_days
             })
-            serial_doc.save()
+
+            # Save changes properly
+            serial_doc.save(ignore_permissions=True)
+
+        # Commit once per department batch
+        frappe.db.commit()
 
         allocated_count += count_in_dept
 
+    print("✅ Successfully returned from assign_serials()")
     return allocated_count
 
 
@@ -523,7 +583,6 @@ def calculate_item_eta(item_code, required_qty, departments):
             remaining_qty -= available_count
 
     # Return total accumulated days if not enough stock
-
     return accumulated_days
 
 def update_sales_order_etas(so_eta_map):

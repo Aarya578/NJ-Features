@@ -875,7 +875,6 @@ function popUpWorkInventory() {
                         fieldtype: 'Select',
                         options: '\nLog In\nLog Out',
                         default: 'Log In',
-                        read_only: 1,
                         read_only: 1
                     }
                 ]

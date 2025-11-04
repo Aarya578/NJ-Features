@@ -52,14 +52,19 @@
   "item_template",
   "laptop_processor_section",
   "njqca_laptop_processors",
+  "fetched_processor_item_code",
   "laptop_ram_section",
   "njqca_laptop_ram",
+  "merged_ram_item_code",
   "laptop_storage_section",
   "njqca_laptop_storage",
+  "merged_storage_item_code",
   "section_break_drfru",
   "njqca_display",
+  "fetched_display_item_code",
   "processor_section",
   "njqca_adaptor",
+  "fetched_adaptor_item_code",
   "section_break_56eed",
   "njqca_item_component",
   "section_break_yblqh",
@@ -470,11 +475,41 @@
    "fieldtype": "Long Text",
    "label": "Model Description",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "fetched_processor_item_code",
+   "fieldtype": "Check",
+   "label": "Fetched Processor Item Code"
+  },
+  {
+   "default": "0",
+   "fieldname": "merged_ram_item_code",
+   "fieldtype": "Check",
+   "label": "Merged Ram Item Code"
+  },
+  {
+   "default": "0",
+   "fieldname": "merged_storage_item_code",
+   "fieldtype": "Check",
+   "label": "Merged Storage Item Code"
+  },
+  {
+   "default": "0",
+   "fieldname": "fetched_display_item_code",
+   "fieldtype": "Check",
+   "label": "Fetched Display Item Code"
+  },
+  {
+   "default": "0",
+   "fieldname": "fetched_adaptor_item_code",
+   "fieldtype": "Check",
+   "label": "Fetched Adaptor Item Code"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-18 14:48:31.302566",
+ "modified": "2025-11-04 16:33:57.640533",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

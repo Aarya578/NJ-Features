@@ -1,0 +1,72 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-03 18:00:19.873615",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "model_no",
+  "total_price",
+  "item_price",
+  "total_price_component",
+  "data_n3u4k",
+  "item_child"
+ ],
+ "fields": [
+  {
+   "fieldname": "model_no",
+   "fieldtype": "Select",
+   "label": "Model No"
+  },
+  {
+   "fieldname": "item_child",
+   "fieldtype": "Table",
+   "label": "items",
+   "options": "Item Grade"
+  },
+  {
+   "fieldname": "total_price",
+   "fieldtype": "Float",
+   "label": "Total Price"
+  },
+  {
+   "fieldname": "item_price",
+   "fieldtype": "Table",
+   "label": "item Price",
+   "options": "Salvage Child"
+  },
+  {
+   "fieldname": "data_n3u4k",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "total_price_component",
+   "fieldtype": "Float",
+   "label": "Total Price of Component"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-11-04 14:24:50.814523",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Salvage Model",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

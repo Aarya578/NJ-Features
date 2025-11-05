@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_p1_features.nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
 class StockMovement(Document):

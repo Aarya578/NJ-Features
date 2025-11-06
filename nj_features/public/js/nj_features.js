@@ -779,7 +779,14 @@ function checkPopUpWorkInventory() {
             console.log("🔍 User DIR activity:", r.message);
             if (r.message && r.message.length < 1) {
                 console.log("🚨 No DIR today — show popup.");
-                popUpWorkInventory();
+                 frappe.call({
+                    method: 'nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.get_serial_no_data',
+                    callback: function (r) {
+                        if (r.message && r.message.length>1) {
+                            popUpWorkInventory();
+                        }
+                    }
+                 })
             }
         }
     })

@@ -1282,11 +1282,34 @@ def update_item_details(self):
         'breadth': breadth
     }
            
+# @frappe.whitelist()
+# def fetch_cod_amount(doc_name):
+#     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
+#     cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding") 
+#     return { 'cod_amount': cod_amt }
+
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
-    cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding") 
-    return { 'cod_amount': cod_amt }
+    
+    if against_sales_order:
+        sales_order = frappe.get_doc("Sales Order", against_sales_order)
+        print("sales_order", sales_order)
+        cod_amt = sales_order.total_outstanding
+        print("cod_amt", cod_amt)
+        is_cod = sales_order.is_cod
+        print("is_cod", is_cod)
+        
+        return {
+            'cod_amount': cod_amt,
+            'is_cod': is_cod
+        }
+    
+    return {
+        'cod_amount': 0,
+        'is_cod': 0
+    }
+
 
 @frappe.whitelist()
 def send_consignement_data(doc):
@@ -1352,32 +1375,33 @@ def send_consignement_data(doc):
             is_cod = frappe.db.get_value("Sales Order", against_sales_order, "is_cod") or 0
 
         # Calculate cost of delivery and run COD validation only for COD orders
-        if is_cod == 1:  # is_cod is typically stored as 1 for True, 0 for False
+        if is_cod == 1: 
+            print("is_cod==========enabled=============", is_cod) # is_cod is typically stored as 1 for True, 0 for False
             cost_of_delivery = (rate * weight) + cod_charge
-            # print("cost_of_delivery=======================", cost_of_delivery)     
+            print("cost_of_delivery=======================", cost_of_delivery)     
             # COD validation - only run for COD orders
             ship_rocket_settings = frappe.get_doc("Ship Rocket Settings")
-            # print("ship_rocket_settings=======================", ship_rocket_settings)        
+            print("ship_rocket_settings=======================", ship_rocket_settings)        
             cod_charges_table = ship_rocket_settings.get("cod_charges", [])
-            # print("cod_charges_table=======================", cod_charges_table)         
+            print("cod_charges_table=======================", cod_charges_table)         
             # Find the charges_value from COD Charges child table
             charges_value = None
             for cod_charge_row in cod_charges_table:
                 charges_value = cod_charge_row.charges_value  # Access as field attribute
-                # print("charges_value=======================", charges_value)
+                print("charges_value=======================", charges_value)
                 if charges_value:
                     break      
             if charges_value:
                 # Extract numeric value from percentage string (e.g., "8%" -> 8)
                 numeric_charges_value = float(charges_value.replace('%', '').strip())
-                # print("numeric_charges_value=======================", numeric_charges_value)       
+                print("numeric_charges_value=======================", numeric_charges_value)       
                 # Calculate percentage of grand_total
                 grand_total = float(doc.get("grand_total", 0) or 0)
-                # print("grand_total=======================", grand_total)
+                print("grand_total=======================", grand_total)
                 cod_percentage_amount = round((numeric_charges_value / 100) * grand_total, 2)
-                # print("cod_percentage_amount=======================", cod_percentage_amount)
+                print("cod_percentage_amount=======================", cod_percentage_amount)
                 cod_and_item_charges_total = total_item_charges + cod_percentage_amount
-                # print("cod_and_item_charges_total=======================", cod_and_item_charges_total)
+                print("cod_and_item_charges_total=======================", cod_and_item_charges_total)
                 # COD specific validation - throw error if COD charges are too high
                 if cod_and_item_charges_total < cost_of_delivery:
                     frappe.throw(f"COD validation failed: COD charges courier total cost ({cost_of_delivery:.2f}) is greater than ({numeric_charges_value:.2f}% of grand total = {cod_percentage_amount:.2f})")
@@ -1385,7 +1409,7 @@ def send_consignement_data(doc):
         else:
             # For prepaid orders, no COD charges
             cost_of_delivery = rate * weight
-            # print("cost_of_delivery=======================", cost_of_delivery)
+            print("cost_of_delivery=======================", cost_of_delivery)
             
             # Non-COD validation - check if cost exceeds item charges
             if cost_of_delivery > total_item_charges:
@@ -1462,8 +1486,10 @@ def send_consignement_data(doc):
         if not items:
             frappe.throw("No items found with allowed item groups for shipping.")
         transport = doc.mode_of_transfer
+        print("transport=======================", transport)
         if against_sales_order:
             sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
+            print("sales_order_doc=======================", sales_order_doc)
         # Function to determine ClientCode based on the fetched transport mode
         def get_client_code(transport_mode):
             if transport_mode == "Air":
@@ -1475,6 +1501,7 @@ def send_consignement_data(doc):
             elif transport_mode == "COD Surface":
                 return frappe.db.get_single_value("Logistics Settings", "cod_surface")
         client_code = get_client_code(transport)
+        print("client_code=======================", client_code)
         # Prepare header with correct total quantity
         header = {
             "ClientCode": client_code,
@@ -1507,7 +1534,7 @@ def send_consignement_data(doc):
             "Amount": consignmentValue,
             "Need_CitImage": "1"
         }
-        # print(f"Header:===================================== {header}")
+        print(f"Header:===================================== {header}")
         # Add validation to ensure quantities match
         calculated_total = sum(float(item["SplitPcs"]) for item in items)
         if abs(calculated_total - total_quantity) > 0.001:  # Allow for small floating point differences
@@ -1518,16 +1545,16 @@ def send_consignement_data(doc):
             "Header": [header],
             "ItemsDetails": items
         }
-        # print("Data:===============================================", data)
+        print("Data:===============================================", data)
         url = frappe.db.get_single_value("Logistics Settings", "url")
         # url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
         # print("headers=======================",headers)
         response = requests.post(url, headers=headers, json=data)
-        # print("response=======================",response)
+        print("response=======================",response)
         resp_json = response.json()
-        # print("resp_json=======================",resp_json)    
+        print("resp_json=======================",resp_json)    
         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')          

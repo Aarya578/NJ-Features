@@ -77,12 +77,12 @@ class ShopifyCustomer(EcommerceCustomer):
 		
 		# Get all existing addresses of this type for the customer
 		existing_addresses = self.get_all_customer_addresses(address_type)
-		logger.info(f"existing_addresses ===========90 {existing_addresses}")
+		# logger.info(f"existing_addresses ===========90 {existing_addresses}")
 
 		
 		# Map new address fields
 		new_address_fields = _map_address_fields(shopify_address, customer_name, address_type, email)
-		logger.info(f"new_address_fields ===========90 {new_address_fields}")
+		# logger.info(f"new_address_fields ===========90 {new_address_fields}")
 		
 		# Check if this address already exists
 		if self._address_already_exists(new_address_fields, existing_addresses):
@@ -97,7 +97,7 @@ class ShopifyCustomer(EcommerceCustomer):
 		try:
 			# Get customer document
 			customer_doc = frappe.get_doc("Customer", self.customer_id)
-			logger.info(f"customer_doc ===========90 {customer_doc}")
+			# logger.info(f"customer_doc ===========90 {customer_doc}")
 			
 			# Filter addresses by type
 			addresses = []

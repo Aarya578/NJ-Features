@@ -32,7 +32,7 @@ def criticalog_awb_number_tracking_status():
 
     url = "https://www.ecritica.co/eFreightLive/api/tracking.php"
     # url = "https://testing.ecritica.co/eFreightLive/api/tracking.php"
-    headers = {"Content-Type": "application/json"}
+    headers = {"    ": "application/json"}
 
     for doc in docs:
         # Only proceed if courier_service is CriticaLog
@@ -60,12 +60,14 @@ def criticalog_awb_number_tracking_status():
                 "Auth": auth,
                 "DocketNo": doc.delivery_note
             }
+            print(f"=====================   [{doc.name}] Payload==========: {payload}")
 
             response = requests.post(url, headers=headers, json=payload)
+            print("response===================", response)
 
             if response.status_code == 200:
                 data = response.json()
-                print(f"[{doc.name}] Response: {data}")
+                print("data===================", data)
 
                 docket_data = data.get("data", {})
                 docket_details = docket_data.get("docketDetails", {})

@@ -221,108 +221,122 @@ def make_security_inward_registry(po_number, registry_type):
     
     return po_data_dict
 
+
 @frappe.whitelist()
-def get_po_number_details(po_number):
+def get_po_number_details(po_number: str, subtract_sir: int = 0):
+    """
+    Returns remaining qty per item_group for a PO.
+
+    Default behavior:
+      remaining = (PO qty) - (submitted Purchase Receipt qty)
+      (SIR is ignored so you see the true outstanding against the PO.)
+
+    If subtract_sir=1 is passed, we also subtract submitted SIR qty
+    that are created directly against this PO (strict match on sir.po_number).
+    """
     try:
-        po_creation_date = frappe.db.get_value('Purchase Order', {'name': po_number}, ['creation'])
-        
+        # --- Guard: PO must exist
+        po_creation_date = frappe.db.get_value("Purchase Order", {"name": po_number}, "creation")
         if not po_creation_date:
-            return {'error': f'Purchase Order {po_number} does not exist.'}
+            return {"error": f"Purchase Order {po_number} does not exist."}
 
+        # --- Guard: restriction window
+        po_restriction_days = frappe.db.get_single_value("NewJaisa Configuration", "po_restriction_days") or 0
         current_date = now_datetime()
-        po_restriction_days = frappe.db.get_single_value('NewJaisa Configuration', 'po_restriction_days')
-
         days_difference = date_diff(current_date.date(), po_creation_date.date())
-        if days_difference > int(po_restriction_days):
-            return {'error': f'{po_restriction_days} days expired for this Purchase Order'}
-        
-        grouped_data = {}
+        if int(po_restriction_days) > 0 and days_difference > int(po_restriction_days):
+            return {"error": f"{po_restriction_days} days expired for this Purchase Order"}
 
-        row_res = get_item_code_details(po_number)
+        # --- Step 1: PO - PR per item_code, normalized to item_group
+        items = get_item_code_details(po_number)  # [{'item_group': ..., 'item_code': ..., 'available_qty': ...}, ...]
 
-        for item in row_res:
-            item_group = item['item_group']
-            total_qty = item['available_qty']
+        # --- Step 2: aggregate by item_group
+        grouped = {}
+        for row in items:
+            ig = row["item_group"]
+            grouped[ig] = grouped.get(ig, 0) + (row["available_qty"] or 0)
 
-            if item_group in grouped_data:
-                grouped_data[item_group] += total_qty
-            else:
-                grouped_data[item_group] = total_qty
+        result_rows = [{"item_group": ig, "available_qty": float(qty)} for ig, qty in grouped.items()]
 
-        purchase_inward_security_result = [
-            {'item_group': k, 'available_qty': v} for k, v in grouped_data.items()
-        ]
-        
-        purchase_inward_security_result = get_combined_inwarded_qty_data(po_number, purchase_inward_security_result)
+        # --- Step 3 (optional): subtract SIR that are *directly* for this PO
+        if int(subtract_sir) == 1:
+            sir_map = get_inwarded_qty_by_item_group(po_number)
+            for rec in result_rows:
+                ig = rec["item_group"]
+                sir_qty = sir_map.get(ig, 0.0)
+                rec["available_qty"] = max(0.0, (rec["available_qty"] or 0.0) - sir_qty)
 
-        return purchase_inward_security_result
+        return result_rows
 
     except Exception as e:
-        traceback_info = frappe.get_traceback()
-        frappe.throw(f"Error on get_po_number_details: {str(e)}\n{traceback_info}")
+        frappe.throw(f"Error on get_po_number_details: {frappe.get_traceback()}")
         return None
 
-def get_combined_inwarded_qty_data(po_number, purchase_inward_security_result):
-    query = """
-        SELECT irpc.item_group, 
-               SUM(CASE WHEN sir.po_number = %(po_number)s THEN irpc.actual_qty ELSE 0 END) AS security_available_qty
-        FROM `tabSecurity Inward Registry` sir
-        INNER JOIN `tabSecurity Inward Registry Purchase Child` irpc
-        ON irpc.parent = sir.name
-        WHERE (sir.po_number = %(po_number)s OR sir.reference_po_number = %(po_number)s)
-        AND sir.docstatus = 1 
-        AND sir.total_qty > 0
-        GROUP BY irpc.item_group
+
+def get_item_code_details(po_number: str):
     """
-    
-    result = frappe.db.sql(query, {'po_number': po_number}, as_dict=True)
-
-    for initial in purchase_inward_security_result:
-        item_group = initial['item_group']
-        initial_qty = initial['available_qty']
-
-
-        matched_row = next((r for r in result if r['item_group'] == item_group), None)
-        if matched_row:
-            security_available_qty = matched_row['security_available_qty'] or 0
-
-            initial['available_qty'] = max(0, initial_qty - security_available_qty)
-    
-    return purchase_inward_security_result
-
-
-def get_item_code_details(po_number):
+    For the given PO, returns rows:
+      item_group, item_code, available_qty = SUM(PO qty) - SUM(submitted PR qty)
+    Then normalizes non-'Products' groups to 'Others'.
+    """
     try:
-        available_qty_data = frappe.db.sql("""
-            SELECT 
-                poi.item_group, 
-                poi.item_code, 
-                SUM(poi.qty) - IFNULL(SUM(pri.qty), 0) AS available_qty
-            FROM 
-                `tabPurchase Order Item` poi
-            LEFT JOIN 
-                `tabPurchase Receipt Item` pri ON poi.item_code = pri.item_code 
-                AND pri.purchase_order = poi.parent AND pri.docstatus = 1
-                AND poi.name = pri.purchase_order_item
-            LEFT JOIN 
-                `tabPurchase Receipt` pr ON pri.parent = pr.name AND pr.docstatus = 1
-            WHERE 
-                poi.parent = %s
-            GROUP BY 
-                poi.item_group, poi.item_code
-        """, (po_number,), as_dict=1)
+        available_qty_data = frappe.db.sql(
+            """
+            SELECT
+                poi.item_group,
+                poi.item_code,
+                (COALESCE(SUM(poi.qty), 0) - COALESCE(SUM(pri.qty), 0)) AS available_qty
+            FROM `tabPurchase Order Item` poi
+            LEFT JOIN `tabPurchase Receipt Item` pri
+                ON pri.purchase_order = poi.parent
+               AND pri.purchase_order_item = poi.name
+               AND pri.item_code = poi.item_code
+               AND pri.docstatus = 1
+            LEFT JOIN `tabPurchase Receipt` pr
+                ON pr.name = pri.parent
+               AND pr.docstatus = 1
+            WHERE poi.parent = %(po)s
+            GROUP BY poi.item_group, poi.item_code
+            """,
+            {"po": po_number},
+            as_dict=True,
+        )
 
+        # Normalize item_group: anything not under 'Products' becomes 'Others'
         for row in available_qty_data:
-            parent_item_group = frappe.db.get_value('Item Group', row['item_group'], 'parent_item_group')
-            if parent_item_group != 'Products':
-                row['item_group'] = 'Others'
+            parent_group = frappe.db.get_value("Item Group", row["item_group"], "parent_item_group")
+            if parent_group != "Products":
+                row["item_group"] = "Others"
 
         return available_qty_data
 
-    except Exception as e:
-        traceback_info = frappe.get_traceback()
-        frappe.throw(f"Error on get_item_code_details: {str(e)}\n{traceback_info}")
-        return None
+    except Exception:
+        frappe.throw(f"Error on get_item_code_details: {frappe.get_traceback()}")
+        return []
+
+
+def get_inwarded_qty_by_item_group(po_number: str):
+    """
+    Returns a map {item_group: qty} of submitted SIR quantities
+    where the SIR is created *directly* against this PO.
+    (We intentionally ignore reference_po_number for subtraction.)
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT irpc.item_group,
+               COALESCE(SUM(irpc.actual_qty), 0) AS security_available_qty
+        FROM `tabSecurity Inward Registry` sir
+        INNER JOIN `tabSecurity Inward Registry Purchase Child` irpc
+            ON irpc.parent = sir.name
+        WHERE sir.docstatus = 1
+          AND sir.total_qty > 0
+          AND sir.po_number = %(po)s                -- strict match, ignore reference_po_number
+        GROUP BY irpc.item_group
+        """,
+        {"po": po_number},
+        as_dict=True,
+    )
+    return {r["item_group"]: float(r["security_available_qty"] or 0) for r in rows}
 
 @frappe.whitelist()
 def recieved_qty_details( received_qty, item_code, po_number, item_group, available_qty):

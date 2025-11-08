@@ -9,6 +9,7 @@ frappe.ui.form.on('Delivery Note', {
     // },
     onload: function(frm) {                   
         // Run only if items exist and linked Sales Order is present
+        
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
             let first_so = frm.doc.items[0].against_sales_order;
             if (first_so) {
@@ -26,6 +27,8 @@ frappe.ui.form.on('Delivery Note', {
                 });
             }
         }
+
+        
     
     
         // if (!frm.doc.items || frm.doc.items.length === 0 || frm.doc.is_return === 1) return;
@@ -265,26 +268,26 @@ frappe.ui.form.on('Delivery Note', {
     },
 
 
-    // before_submit: async function(frm) {
-    //     await frappe.call({
-    //         method:'nj_features.overrides.delivery_note.allow_to_save',
-    //         args: {
-    //             "doc": frm.doc
-    //         },
-    //         callback: function(r) {
-    //             if (r.message) {
-    //                 if(r.message!="pass") {
-    //                     frappe.validated=false
-    //                     frappe.throw(r.message);
+    before_submit: async function(frm) {
+        await frappe.call({
+            method:'nj_features.overrides.delivery_note.allow_to_save',
+            args: {
+                "doc": frm.doc
+            },
+            callback: function(r) {
+                if (r.message) {
+                    if(r.message!="pass") {
+                        frappe.validated=false
+                        frappe.throw(r.message);
 
-    //                 }else{
-    //                     frappe.validated=true
-    //                 }
-    //             }
-    //         }
-    //     })
+                    }else{
+                        frappe.validated=true
+                    }
+                }
+            }
+        })
 
-    // },
+    },
   
     // after_save: function(frm) {
     //     if (!frm.doc.supplier_address_name || frm.doc.supplier_address_name === '' || frm.doc.supplier_address_name === undefined) {
@@ -331,6 +334,7 @@ frappe.ui.form.on('Delivery Note', {
                     }
                 }
         });
+
         frappe.call({
             method: 'nj_features.overrides.delivery_note.fetch_cod_amount',
             args: {
@@ -338,15 +342,41 @@ frappe.ui.form.on('Delivery Note', {
             },
             callback: function(r) {
                 if (r.message) {
-                    const { cod_amount } = r.message;
-                    console.log("Fetched cod_amount:", cod_amount);
+                    const { cod_amount, is_cod } = r.message;
+                    // console.log("Fetched cod_amount:", cod_amount);
+                    // console.log("Fetched is_cod:", is_cod);
+                    
+                    // Set cod_amount
                     if (cod_amount !== undefined && cod_amount !== null) {
                         frm.set_value('cod_amount', cod_amount.toString());
                     }
+                    
+                    // Set mode_of_transfer based on is_cod
+                    if (is_cod) {
+                        frm.set_value('mode_of_transfer', 'COD Surface');
+                    } else {
+                        frm.set_value('mode_of_transfer', 'Surface');
+                    }
+                    
                     frm.refresh_field('cod_amount');
+                    frm.refresh_field('mode_of_transfer');
                 }
             }
         });
+        // frappe.call({
+        //     method: "nj_features.overrides.delivery_note.set_mode_of_transport_based_on_order",
+        //     args: { doc_name: frm.doc.name },
+        //     callback(r) {
+        //         console.log("measaeg========",r.message);
+                
+        //         if (!r.message || !r.message.mode_of_transfer) return;
+        //                         console.log("measaeg========",r.message);
+
+
+        //         frm.set_value("mode_of_transfer", r.message.mode_of_transfer);
+        //         // frm.refresh_field("mode_of_transfer");
+        //     }
+        // });
        
         if (!frm.doc.shipping_address_name && frm.doc.customer_address) {
             frm.set_value('shipping_address_name', frm.doc.customer_address);

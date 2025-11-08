@@ -49,6 +49,7 @@ doctype_js = {
     "Product Bundle": "public/js/product_bundle.js",
     "Address": "public/js/address.js",
     "Sales Order": "public/js/sales_order.js",
+    "Quotation": "public/js/quotation.js",
 }
 
 doctype_list_js = {
@@ -126,6 +127,7 @@ override_doctype_class = {
     "Quality Review": "nj_features.overrides.quality_review.CustomQualityReview",
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
+    "Quotation": "nj_features.overrides.quotation.CustomQuotation"
 }
 
 # Document Events

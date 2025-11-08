@@ -210,7 +210,7 @@ def create_sales_order(shopify_order, setting, company=None):
             so_data["shipping_address_name"] = latest_addresses['shipping_address']
         
         so = frappe.get_doc(so_data)
-        logger.info(f"so_data ========316======{so_data}")
+        # logger.info(f"so_data ========316======{so_data}")
            
         if company:
             so.update({"company": company, "status": "Draft"})
@@ -289,12 +289,11 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
             )
         else:
             items = []
-
-    if shopify_response and shopify_response.get("discount_codes") and all_product_exists:
+    if shopify_response and all_product_exists:
         try:
             logistics_settings = frappe.get_single("Logistics Settings")
             if logistics_settings and logistics_settings.coupon_codes:
-                # Build mapping of coupon_code -> list of (item_code, apply_coupen_code)
+
                 coupon_map = {}
                 for c in logistics_settings.coupon_codes:
                     if c.code:
@@ -304,13 +303,19 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
                             "apply_coupen_code": c.apply_coupen_code
                         })
 
-                # Take first discount code from discount_codes
-                discount_code = (shopify_response["discount_codes"][0].get("code") or "").strip()
+                # ✅ Get coupon code from discount_codes first
+                discount_code = ""
+                if shopify_response.get("discount_codes"):
+                    discount_code = (shopify_response["discount_codes"][0].get("code") or "").strip()
 
-                if discount_code in coupon_map:
-                    # Calculate total fulfillable qty from line_items
+                # ✅ If discount_codes empty, fallback to discount_applications.description
+                elif shopify_response.get("discount_applications"):
+                    discount_code = (shopify_response["discount_applications"][0].get("description") or "").strip()
+
+                # ✅ Continue only if discount_code exists in our mapping
+                if discount_code and discount_code in coupon_map:
                     total_qty = sum(
-                        li.get("fulfillable_quantity", 0) 
+                        li.get("fulfillable_quantity", 0)
                         for li in shopify_response.get("line_items", [])
                     )
 
@@ -318,22 +323,67 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
                         item_code = entry["item_code"]
                         apply_flag = entry.get("apply_coupen_code", 0)
 
-                        # qty depends on apply_coupen_code
                         qty = total_qty if apply_flag == 1 else 1
 
-                        items.append(
-                            {
-                                "item_code": item_code,
-                                "item_name": item_code,
-                                "rate": 0,
-                                "delivery_date": delivery_date,
-                                "qty": qty,
-                                "stock_uom": "Nos",
-                                "warehouse": setting.warehouse,
-                            }
-                        )
-        except Exception as e:
-            frappe.log_error(f"Coupon code processing failed: {frappe.get_traceback()}")
+                        items.append({
+                            "item_code": item_code,
+                            "item_name": item_code,
+                            "rate": 0,
+                            "delivery_date": delivery_date,
+                            "qty": qty,
+                            "stock_uom": "Nos",
+                            "warehouse": setting.warehouse,
+                        })
+
+        except Exception:
+            frappe.log_error(
+                f"Coupon code processing failed: {frappe.get_traceback()}"
+            )
+
+    # if shopify_response and shopify_response.get("discount_codes") and all_product_exists:
+    #     try:
+    #         logistics_settings = frappe.get_single("Logistics Settings")
+    #         if logistics_settings and logistics_settings.coupon_codes:
+    #             # Build mapping of coupon_code -> list of (item_code, apply_coupen_code)
+    #             coupon_map = {}
+    #             for c in logistics_settings.coupon_codes:
+    #                 if c.code:
+    #                     code = c.code.strip()
+    #                     coupon_map.setdefault(code, []).append({
+    #                         "item_code": c.item_code,
+    #                         "apply_coupen_code": c.apply_coupen_code
+    #                     })
+
+    #             # Take first discount code from discount_codes
+    #             discount_code = (shopify_response["discount_codes"][0].get("code") or "").strip()
+
+    #             if discount_code in coupon_map:
+    #                 # Calculate total fulfillable qty from line_items
+    #                 total_qty = sum(
+    #                     li.get("fulfillable_quantity", 0) 
+    #                     for li in shopify_response.get("line_items", [])
+    #                 )
+
+    #                 for entry in coupon_map[discount_code]:
+    #                     item_code = entry["item_code"]
+    #                     apply_flag = entry.get("apply_coupen_code", 0)
+
+    #                     # qty depends on apply_coupen_code
+    #                     qty = total_qty if apply_flag == 1 else 1
+
+    #                     items.append(
+    #                         {
+    #                             "item_code": item_code,
+    #                             "item_name": item_code,
+    #                             "rate": 0,
+    #                             "delivery_date": delivery_date,
+    #                             "qty": qty,
+    #                             "stock_uom": "Nos",
+    #                             "warehouse": setting.warehouse,
+    #                         }
+    #                     )
+    #     except Exception as e:
+    #         frappe.log_error(f"Coupon code processing failed: {frappe.get_traceback()}")
 
     return items
 def get_order_taxes(shopify_order, setting, items):

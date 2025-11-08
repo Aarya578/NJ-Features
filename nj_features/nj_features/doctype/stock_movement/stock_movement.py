@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
 class StockMovement(Document):
@@ -16,8 +17,32 @@ class StockMovement(Document):
                 self.validate_supplier_return()
             else:
                 material_transfer_items = []
-                
                 for row in self.items:
+                    if row.s_warehouse and row.t_warehouse and row.serial_no and row.item_code and item_item_group(row.item_code) == "Laptops":
+                        source_dept=warehouse_dept(row.s_warehouse)
+                        logger.info(f"==========source_dept=========={source_dept}")
+                        if source_dept != warehouse_dept(row.t_warehouse):
+                            consumables=consumables_for_department(row.item_code, source_dept, row.serial_no)
+                            print('consumables',consumables) 
+                            logger.info(f"==========consumables=========={consumables}")
+                            repack_items=[]                               
+                            for consumable in consumables:
+                                consumable_warehouse=get_consumables_warehouse(source_dept)
+                                if not consumable_warehouse:
+                                    frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
+                                qty=warehouse_qty(consumable_warehouse, consumable)
+                                logger.info(f"==========qty=========={qty}")
+                                if qty and qty >0:
+                                    if not consumable_warehouse:
+                                        frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
+                                    repack_items.append({
+                                        'qty': 1,
+                                        'item_code': consumable,
+                                        's_warehouse':consumable_warehouse ,                                         
+                                    })
+                            logger.info(f"==========repack_items=========={repack_items}")
+                            if repack_items:
+                                make_repack(row.serial_no, repack_items, row.s_warehouse,self.name,self.doctype)                                                                      
                     material_transfer_items.append({
                         'qty': row.qty,
                         'item_code': row.item_code,
@@ -931,3 +956,73 @@ def check_warehouse_qty(name):
         frappe.throw(error_msg)
 
     return None
+
+def warehouse_dept(warehouse):
+    return frappe.db.get_value('Warehouse', warehouse, 'department')
+
+def warehouse_qty(warehouse, item):
+    return frappe.db.get_value('Stock Ledger Entry', {'warehouse': warehouse, 'item_code': item, 'is_cancelled': 0}, 'qty_after_transaction',order_by='creation desc')
+
+
+def item_item_group(item):
+    return frappe.db.get_value('Item', item, 'item_group')
+
+def consumables_for_department(item, department, serial_no):
+    iw=frappe.db.get_value('Serial No', serial_no, 'item_wizard')
+    pattern=f"%{department}%"
+    query=""" 
+        Select item_code from `tabConsumables` where parent=%(item_wizard)s and (departments like %(pattern)s) ;
+       """
+    consubles_items=[]
+    if iw:
+        result=frappe.db.sql(query,{'item_wizard':iw,'pattern':pattern},as_dict=True)
+        if result:
+            for item in result:
+                consubles_items.append(item.get('item_code'))
+    return consubles_items
+
+def get_consumables_warehouse(department):
+    return frappe.db.get_value('Warehouse', {'department': department, 'used_for_consumables_stock':1}, 'name')
+    
+def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
+    if serial_no and repack_items:
+        item_code=frappe.db.get_value('Serial No', serial_no, 'item_code')
+        qty=1
+        part_rate=0.0
+        valuation_rate_parent_serial_no=get_part_ledger_entry(item_code,serial_no)
+        part_rate+=valuation_rate_parent_serial_no
+        new_stock_entry={
+            "doctype": doctype,
+            "name": name,
+            "stock_entry_type": "Repack",
+            "parent_serial_no":serial_no,
+            "repack_items":[]
+        }
+        new_stock_entry.append("repack_items",{
+            "repack_item_code":item_code,
+            "qty":qty,
+            "repack_serial_no":serial_no,
+            "repack_item_source_warehouse":source_warehouse,
+            "unpack_item_base_price":valuation_rate_parent_serial_no            
+        })
+        for item in repack_items:
+            valuation_rate=get_part_ledger_entry(item.get('item_code'))
+            if not valuation_rate:
+                part_rate+=valuation_rate_parent_serial_no
+            new_stock_entry.append("repack_items",{
+                "repack_item_code":item.get('item_code'),
+                "qty":item.get('qty'),
+                "repack_item_source_warehouse":item.get('s_warehouse'),
+                "repack_item_base_price":valuation_rate
+            })
+        new_stock_entry.append("repack_items",{
+            "unpack_item_code":item_code,
+            "qty":qty,
+            "unpack_item_target_warehouse":source_warehouse,
+            "unpack_serial_no":serial_no,
+            "unpack_item_base_price":part_rate
+        })
+        return stock_entry_using_nj_lib(new_stock_entry)
+
+def get_valuation_rate(warehouse, item_code):
+    return frappe.db.get_value('Stock Ledger Entry', {'warehouse': warehouse, 'item_code': item_code, 'is_cancelled': 0}, 'valuation_rate',order_by='creation desc')

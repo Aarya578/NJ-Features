@@ -1,0 +1,40 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-31 14:54:03.757767",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_name1",
+  "grade1",
+  "data_cvxzw"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_name1",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "options": "p"
+  },
+  {
+   "fieldname": "grade1",
+   "fieldtype": "Data",
+   "label": "Grade"
+  },
+  {
+   "fieldname": "data_cvxzw",
+   "fieldtype": "Data"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-31 16:06:54.932868",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Child Grade",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

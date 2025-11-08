@@ -1,0 +1,128 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-22 12:41:14.726411",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "serial_no",
+  "part",
+  "purchase",
+  "grade_table",
+  "repairable",
+  "part_cost",
+  "repair",
+  "sell_price",
+  "grade",
+  "cost_price",
+  "evaluation",
+  "calculate",
+  "parts",
+  "data_qrr7s"
+ ],
+ "fields": [
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "serial_no.item_name",
+   "fieldname": "part",
+   "fieldtype": "Data",
+   "label": "Part"
+  },
+  {
+   "fieldname": "evaluation",
+   "fieldtype": "Data",
+   "label": "Evaluation"
+  },
+  {
+   "fetch_from": "serial_no.serial_no_component",
+   "fieldname": "parts",
+   "fieldtype": "Table",
+   "label": "parts",
+   "options": "Parts"
+  },
+  {
+   "fetch_from": "serial_no.purchase_price",
+   "fieldname": "purchase",
+   "fieldtype": "Float",
+   "label": "Purchase Price"
+  },
+  {
+   "fieldname": "repairable",
+   "fieldtype": "Small Text",
+   "label": "Repairable Component"
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Link",
+   "label": "Grade",
+   "options": "Grade"
+  },
+  {
+   "fieldname": "cost_price",
+   "fieldtype": "Float",
+   "label": "Cost Price"
+  },
+  {
+   "fieldname": "sell_price",
+   "fieldtype": "Float",
+   "label": "Selling Price"
+  },
+  {
+   "fieldname": "calculate",
+   "fieldtype": "Button",
+   "label": "calculate"
+  },
+  {
+   "fetch_from": "repairable.default_item_group_price",
+   "fieldname": "part_cost",
+   "fieldtype": "Currency",
+   "label": "Part Cost"
+  },
+  {
+   "fieldname": "repair",
+   "fieldtype": "Data",
+   "label": "Repair cost"
+  },
+  {
+   "fieldname": "data_qrr7s",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "grade_table",
+   "fieldtype": "Table",
+   "label": "Grade Table",
+   "options": "Child Grade"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-31 16:32:51.466200",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Evaluation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

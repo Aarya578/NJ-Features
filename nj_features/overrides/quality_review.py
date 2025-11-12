@@ -16,17 +16,46 @@ class CustomQualityReview(QualityReview):
         except Exception as e:
             frappe.throw(str(e))
 
-
 @frappe.whitelist()
-def get_quality_procedure_details(quality_procedure_name,review_type,severity_level=None):
-    data = []
+def get_quality_procedure_details(quality_procedure_name, review_type, severity_level=None):
+    print("inside the function===================")
+    response = {"process_data": [], "tools_data": []}
+
+    # Fetch Quality Processes
     if review_type == 'Severity' and severity_level:
         query = """Select * from `tabQuality Processes` where parent = '{0}' and severity = '{1}' order by idx DESC""".format(quality_procedure_name,severity_level)
-        data = frappe.db.sql(query,as_dict=1)
-    if review_type == 'Full Review':
+        response["process_data"] =frappe.db.sql(query,as_dict=1)
+
+    elif review_type == 'Full Review':
         query = """Select * from `tabQuality Processes` where parent = '{0}' order by idx DESC""".format(quality_procedure_name)
-        data = frappe.db.sql(query,as_dict=1)
-    return data
+        response["process_data"] =frappe.db.sql(query,as_dict=1)
+
+    # Fetch Tools and Equipment
+    tools_query = """
+        SELECT * FROM `tabTools and Equipements`
+        WHERE parent = %s
+        ORDER BY idx DESC
+    """
+    response["tools_data"] = frappe.db.sql(tools_query, (quality_procedure_name,), as_dict=1)
+
+    print("response===================", response)
+    return response
+
+# @frappe.whitelist()
+# def get_quality_procedure_details(quality_procedure_name,review_type,severity_level=None):
+#     print("inside the function===================")
+#     data = []
+#     if review_type == 'Severity' and severity_level:
+#         query = """Select * from `tabQuality Processes` where parent = '{0}' and severity = '{1}' order by idx DESC""".format(quality_procedure_name,severity_level)
+#         print("query===================", query)
+#         data = frappe.db.sql(query,as_dict=1)
+#         print("data===================", data)
+#     if review_type == 'Full Review':
+#         query = """Select * from `tabQuality Processes` where parent = '{0}' order by idx DESC""".format(quality_procedure_name)
+#         print("query===================", query)
+#         data = frappe.db.sql(query,as_dict=1)
+#         print("data===================", data)
+#     return data
 
 @frappe.whitelist()
 def get_kms_data(item_group, serial_no, department, part=None):

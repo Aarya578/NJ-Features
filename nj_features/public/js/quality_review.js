@@ -15,46 +15,45 @@ frappe.ui.form.on('Quality Review', {
         });
     },
     sync_audit_checks: function(frm) {
-        if (frm.doc.review_type && frm.doc.quality_procedure_name) {
-            if (frm.doc.review_type != "Adhoc Review") {
-                if(frm.doc.review_type != "Adhoc Review" && !frm.doc.reviewee){
-                    frm.set_value('quality_procedure_name', '');
-                    frappe.throw(__("Please select a Reviewee"));
-                }
-                frappe.call({
-                    method: 'nj_features.overrides.quality_review.get_quality_procedure_details',
-                    args: {
-                        quality_procedure_name: frm.doc.quality_procedure_name,
-                        review_type: frm.doc.review_type,
-                        severity_level: frm.doc.severity_level
-                    },
-                    callback: async function(r) {
-                        if (r.message && r.message.length > 0) {
+    if (frm.doc.review_type && frm.doc.quality_procedure_name) {
+        if (frm.doc.review_type != "Adhoc Review") {
+            if (frm.doc.review_type != "Adhoc Review" && !frm.doc.reviewee) {
+                frm.set_value('quality_procedure_name', '');
+                frappe.throw(__("Please select a Reviewee"));
+            }
+
+            frappe.call({
+                method: 'nj_features.overrides.quality_review.get_quality_procedure_details',
+                args: {
+                    quality_procedure_name: frm.doc.quality_procedure_name,
+                    review_type: frm.doc.review_type,
+                    severity_level: frm.doc.severity_level
+                },
+                callback: async function(r) {
+                    if (r.message) {
+                        // --- 1️⃣ Handle Quality Processes ---
+                        if (r.message.process_data && r.message.process_data.length > 0) {
                             frm.clear_table('review_procedures_table');
-                            for (let idx = r.message.length - 1; idx >= 0; idx--) {
 
-                                let rowData = r.message[idx];
-                                if (rowData.procedure == 'NJ Quality Inspection') {
-                                    if(frm.doc.serial_no && frm.doc.inspection){
+                            for (let idx = r.message.process_data.length - 1; idx >= 0; idx--) {
+                                let rowData = r.message.process_data[idx];
+
+                                if (rowData.procedure === 'NJ Quality Inspection') {
+                                    if (frm.doc.serial_no && frm.doc.inspection) {
                                         await get_quality_procedure_name(frm);
-
-                                    }
-                                    else{
+                                    } else {
                                         frappe.throw({
                                             title: __('Info'),
                                             message: 'Please select a Serial No and Inspection Type',
                                             indicator: 'orange'
-                                        })
+                                        });
                                     }
-                                } 
-                                else{        
+                                } else {
                                     let tempDiv = document.createElement("div");
                                     tempDiv.innerHTML = rowData.step || "";
-
                                     let steps = tempDiv.querySelectorAll("li");
 
                                     if (steps.length > 0) {
-                                        // expand each <li> as separate row
                                         steps.forEach(function(li) {
                                             let row = frm.add_child('review_procedures_table');
                                             row.sub_procedure = rowData.procedure;
@@ -65,7 +64,6 @@ frappe.ui.form.on('Quality Review', {
                                             row.step = li.innerText.trim();
                                         });
                                     } else {
-                                        // plain text fallback
                                         let row = frm.add_child('review_procedures_table');
                                         row.sub_procedure = rowData.procedure;
                                         row.task = rowData.task;
@@ -76,29 +74,130 @@ frappe.ui.form.on('Quality Review', {
                                     }
                                 }
                             }
-
                             frm.refresh_field("review_procedures_table");
-                        }
-                        else{
+                        } else {
                             frappe.msgprint({
                                 title: __('Info'),
                                 message: 'No matching Data found for Quality Procedure: <b>' + frm.doc.quality_procedure_name + '</b>',
                                 indicator: 'orange'
                             });
                         }
+
+                        // --- 2️⃣ Handle Tools and Equipments ---
+                        if (r.message.tools_data && r.message.tools_data.length > 0) {
+                            frm.clear_table('review_tools');
+
+                            r.message.tools_data.forEach(function(tool) {
+                                let row = frm.add_child('review_tools');
+                                row.tool_name = tool.tool_name;
+                                row.qty = tool.qty;
+                                row.image = tool.image;
+                                row.specification = tool.specification;
+                                row.value = tool.value;
+                            });
+
+                            frm.refresh_field("review_tools");
+                        }
                     }
-                })
-            }
-            else{
-                frm.clear_table('review_procedures_table');
-                frm.refresh_field('review_procedures_table');
-            }
+                }
+            });
+        } else {
+            frm.clear_table('review_procedures_table');
+            frm.clear_table('review_tools');
+            frm.refresh_field('review_procedures_table');
+            frm.refresh_field('review_tools');
         }
-        else{
-            frm.set_value('quality_procedure_name', '');
-            frappe.msgprint(__("Please select a Review Type or Quality Procedure"));
-        }
-    },
+    } else {
+        frm.set_value('quality_procedure_name', '');
+        frappe.msgprint(__("Please select a Review Type or Quality Procedure"));
+    }
+},
+
+    // sync_audit_checks: function(frm) {
+    //     if (frm.doc.review_type && frm.doc.quality_procedure_name) {
+    //         if (frm.doc.review_type != "Adhoc Review") {
+    //             if(frm.doc.review_type != "Adhoc Review" && !frm.doc.reviewee){
+    //                 frm.set_value('quality_procedure_name', '');
+    //                 frappe.throw(__("Please select a Reviewee"));
+    //             }
+    //             frappe.call({
+    //                 method: 'nj_features.overrides.quality_review.get_quality_procedure_details',
+    //                 args: {
+    //                     quality_procedure_name: frm.doc.quality_procedure_name,
+    //                     review_type: frm.doc.review_type,
+    //                     severity_level: frm.doc.severity_level
+    //                 },
+    //                 callback: async function(r) {
+    //                     if (r.message && r.message.length > 0) {
+    //                         frm.clear_table('review_procedures_table');
+    //                         for (let idx = r.message.length - 1; idx >= 0; idx--) {
+
+    //                             let rowData = r.message[idx];
+    //                             if (rowData.procedure == 'NJ Quality Inspection') {
+    //                                 if(frm.doc.serial_no && frm.doc.inspection){
+    //                                     await get_quality_procedure_name(frm);
+
+    //                                 }
+    //                                 else{
+    //                                     frappe.throw({
+    //                                         title: __('Info'),
+    //                                         message: 'Please select a Serial No and Inspection Type',
+    //                                         indicator: 'orange'
+    //                                     })
+    //                                 }
+    //                             } 
+    //                             else{        
+    //                                 let tempDiv = document.createElement("div");
+    //                                 tempDiv.innerHTML = rowData.step || "";
+
+    //                                 let steps = tempDiv.querySelectorAll("li");
+
+    //                                 if (steps.length > 0) {
+    //                                     // expand each <li> as separate row
+    //                                     steps.forEach(function(li) {
+    //                                         let row = frm.add_child('review_procedures_table');
+    //                                         row.sub_procedure = rowData.procedure;
+    //                                         row.task = rowData.task;
+    //                                         row.severity = rowData.severity;
+    //                                         row.reviewee = frm.doc.reviewee;
+    //                                         row.compliance_type = 'Process Not Followed';
+    //                                         row.step = li.innerText.trim();
+    //                                     });
+    //                                 } else {
+    //                                     // plain text fallback
+    //                                     let row = frm.add_child('review_procedures_table');
+    //                                     row.sub_procedure = rowData.procedure;
+    //                                     row.task = rowData.task;
+    //                                     row.severity = rowData.severity;
+    //                                     row.reviewee = frm.doc.reviewee;
+    //                                     row.compliance_type = 'Process Not Followed';
+    //                                     row.step = (rowData.step || "").trim();
+    //                                 }
+    //                             }
+    //                         }
+
+    //                         frm.refresh_field("review_procedures_table");
+    //                     }
+    //                     else{
+    //                         frappe.msgprint({
+    //                             title: __('Info'),
+    //                             message: 'No matching Data found for Quality Procedure: <b>' + frm.doc.quality_procedure_name + '</b>',
+    //                             indicator: 'orange'
+    //                         });
+    //                     }
+    //                 }
+    //             })
+    //         }
+    //         else{
+    //             frm.clear_table('review_procedures_table');
+    //             frm.refresh_field('review_procedures_table');
+    //         }
+    //     }
+    //     else{
+    //         frm.set_value('quality_procedure_name', '');
+    //         frappe.msgprint(__("Please select a Review Type or Quality Procedure"));
+    //     }
+    // },
     reviewee: function(frm) {
         if (frm.doc.reviewee) {
             set_reviewee_data(frm);

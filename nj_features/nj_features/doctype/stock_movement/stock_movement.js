@@ -6,24 +6,32 @@ var item_code_init = "";
 var default_ware = "";
 
 frappe.ui.form.on('Stock Movement', {
-    onload() {
+    onload: function(frm) {
+        handleScannerInput(frm, 'scan_barcode');
         $('.col-lg-2.layout-side-section').hide();
-        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+        frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
     },
 
-    refresh() {
+    refresh: function(frm) {
+        handleScannerInput(frm, 'scan_barcode');
+
         $('[data-fieldname="scan_barcode"]').focus();
         $("button[data-original-title=Print]").hide();
     },
 
-    scan_barcode: function () {
+    scan_barcode: function (frm) {
+        handleScannerInput(frm, 'scan_barcode');
         cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
         if (cur_frm.doc.scan_barcode) {
+            console.log("barcode triggered=================================");
+            
             frappe.call({
                 method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
                 args: {  search_value: cur_frm.doc.scan_barcode, raise_exp: 1 },
                 callback: function(r) {
                     const data = r && r.message;
+                    console.log("r.message==========",r.message);
+                    
                     if (r.message.scan === 1) {
                         if(cur_frm.doc.transfer_status == "Stock Accept") {
                             cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);

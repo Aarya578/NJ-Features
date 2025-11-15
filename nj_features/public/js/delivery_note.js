@@ -7,7 +7,10 @@ frappe.ui.form.on('Delivery Note', {
     //         frm.set_df_property("courier_service", "read_only", 1);
     //     }
     // },
-    onload: function(frm) {                   
+    onload: function(frm) {   
+        handleScannerInput(frm, 'scan_barcode');
+        handleScannerInput(frm, 'scan_barcodes');
+                
         // Run only if items exist and linked Sales Order is present
         
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
@@ -76,6 +79,9 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     refresh: function(frm) {
+        handleScannerInput(frm, 'scan_barcode');
+        handleScannerInput(frm, 'scan_barcodes');
+
         
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -298,7 +304,8 @@ frappe.ui.form.on('Delivery Note', {
         });
 
     },
-    scan_barcodes: function () {
+    scan_barcodes: function (cur_frm) {
+        handleScannerInput(cur_frm, 'scan_barcodes');
         cur_frm.set_value('scan_barcodes', cur_frm.doc.scan_barcodes.trim());
         if (cur_frm.doc.scan_barcodes) {
             
@@ -334,7 +341,9 @@ frappe.ui.form.on('Delivery Note', {
         }
         return false;
     },
-    scan_barcode: function () {
+    scan_barcode: function (cur_frm) {
+        handleScannerInput(cur_frm, 'scan_barcode');
+
         cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
         if (cur_frm.doc.scan_barcode) {
             

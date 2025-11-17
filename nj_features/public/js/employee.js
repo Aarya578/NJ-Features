@@ -53,12 +53,20 @@ frappe.ui.form.on('Employee', {
                 args:{ doc: frm.doc }
             })
         }
-         frappe.call({
+
+
+    },
+
+    validate(frm) {
+        frappe.validated = false;
+        frappe.call({
             method: "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
             args: {
                 employee: frm.doc.name
             },
             callback: function(r) {
+                console.log("message ==============",r.message);
+                
                 if (!r.exc && r.message === "Warehouse updated") {
                     frappe.msgprint({
                         message: __("Warehouse updated with Role Profile values"),
@@ -67,12 +75,6 @@ frappe.ui.form.on('Employee', {
                 }
             }
         });
-
-    },
-
-    validate(frm) {
-        frappe.validated = false;
-
         frappe.call({
             method: 'nj_features.overrides.employee.create_user_and_warehouse',
             args: { 'self': frm.doc },

@@ -7,7 +7,10 @@ frappe.ui.form.on('Delivery Note', {
     //         frm.set_df_property("courier_service", "read_only", 1);
     //     }
     // },
-    onload: function(frm) {                   
+    onload: function(frm) {   
+        handleScannerInput(frm, 'scan_barcode');
+        handleScannerInput(frm, 'scan_barcodes');
+                
         // Run only if items exist and linked Sales Order is present
         
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
@@ -76,6 +79,9 @@ frappe.ui.form.on('Delivery Note', {
     },
 
     refresh: function(frm) {
+        handleScannerInput(frm, 'scan_barcode');
+        handleScannerInput(frm, 'scan_barcodes');
+
         
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
@@ -298,6 +304,81 @@ frappe.ui.form.on('Delivery Note', {
         });
 
     },
+    scan_barcodes: function (cur_frm) {
+        handleScannerInput(cur_frm, 'scan_barcodes');
+        cur_frm.set_value('scan_barcodes', cur_frm.doc.scan_barcodes.trim());
+        if (cur_frm.doc.scan_barcodes) {
+            
+            frappe.call({
+                method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+                args: {  search_value: cur_frm.doc.scan_barcodes, raise_exp: 1 },
+                callback: function(r) {
+                    const data = r && r.message;
+                    
+                    if (r.message.scan === 1) {
+                        if(cur_frm.doc.transfer_status == "Stock Accept") {
+                            cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                        } else if (cur_frm.doc.transfer_status == "Racking") {
+                            cur_frm.toggle_display(['scan_grade'], true);
+                        }
+
+                        $('[data-fieldname="scan_grade"]').focus();
+                    } else {
+                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+                    }
+    
+                    if(r.message.serial_no) {
+                        modify_table_after_scan(cur_frm, data)
+
+                        frappe.call({
+                            method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
+                            args: { search_value: r.message.serial_no },
+                    
+                        });
+                    }
+                }
+            });
+        }
+        return false;
+    },
+    scan_barcode: function (cur_frm) {
+        handleScannerInput(cur_frm, 'scan_barcode');
+
+        cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
+        if (cur_frm.doc.scan_barcode) {
+            
+            frappe.call({
+                method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+                args: {  search_value: cur_frm.doc.scan_barcode, raise_exp: 1 },
+                callback: function(r) {
+                    const data = r && r.message;
+                    
+                    if (r.message.scan === 1) {
+                        if(cur_frm.doc.transfer_status == "Stock Accept") {
+                            cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], true);
+                        } else if (cur_frm.doc.transfer_status == "Racking") {
+                            cur_frm.toggle_display(['scan_grade'], true);
+                        }
+
+                        $('[data-fieldname="scan_grade"]').focus();
+                    } else {
+                        cur_frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
+                    }
+    
+                    if(r.message.serial_no) {
+                        modify_table_after_scans(cur_frm, data)
+
+                        frappe.call({
+                            method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
+                            args: { search_value: r.message.serial_no },
+                    
+                        });
+                    }
+                }
+            });
+        }
+        return false;
+    },
 
 
     before_submit: async function(frm) {
@@ -467,155 +548,6 @@ frappe.ui.form.on('Packed Item', {
     }
 });
 
-
-// // Create the modal HTML and inject it into the body
-// $(document).ready(function() {
-//     var modalHTML = `
-//     <div id="cameraModal" class="modal" tabindex="-1" role="dialog">
-//         <div class="modal-dialog modal-lg" role="document">
-//             <div class="modal-content">
-//                 <div class="modal-header">
-//                     <h5 class="modal-title">Select Camera & Start Recording</h5>
-//                     <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-//                         <span aria-hidden="true">&times;</span>
-//                     </button>
-//                 </div>
-//                 <div class="modal-body">
-//                     <select id="cameraSelect" class="form-control mb-3"></select>
-//                     <video id="videoElement" width="100%" height="400" autoplay></video>
-//                     <button id="startRecording" class="btn btn-success">Start Recording</button>
-//                     <button id="stopRecording" class="btn btn-danger" style="display:none;">Stop Recording</button>
-//                 </div>
-//                 <div class="modal-footer">
-//                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-//                 </div>
-//             </div>
-//         </div>
-//     </div>`;
-    
-//     $('body').append(modalHTML);  // Append the modal to the page
-// });
-// // Frappe UI form script
-// frappe.ui.form.on('Delivery Note', {
-//     refresh: function(frm) {
-//         // Add 'Record' button for new documents (docstatus = 0)
-//         if (frm.doc.docstatus === 0) {
-//             frm.add_custom_button(__('Record'), function() {
-//                 // Trigger the modal with camera selection and recording options
-//                 showCameraModal(frm.doc.name);  // Pass DN number to modal function
-//             }).addClass('btn-warning');
-//         }
-//     }
-// });
-
-// // Function to display the camera modal
-// function showCameraModal(dn_number) {
-//     $('#cameraModal').modal('show');
-    
-//     // Get available video input devices (cameras)
-//     navigator.mediaDevices.enumerateDevices().then(function(devices) {
-//         const videoDevices = devices.filter(device => device.kind === 'videoinput');
-//         const cameraSelect = document.getElementById('cameraSelect');
-        
-//         cameraSelect.innerHTML = '';
-//         videoDevices.forEach((device, index) => {
-//             const option = document.createElement('option');
-//             option.value = device.deviceId;
-//             option.text = device.label || `Camera ${index + 1}`;
-//             cameraSelect.appendChild(option);
-//         });
-//     });
-
-//     let mediaRecorder;
-//     let recordedChunks = [];
-
-//     document.getElementById('startRecording').onclick = function() {
-//         const selectedCamera = document.getElementById('cameraSelect').value;
-//         startVideoRecording(selectedCamera);
-//     };
-
-//     function startVideoRecording(cameraDeviceId) {
-//         navigator.mediaDevices.getUserMedia({
-//             video: {
-//                 deviceId: { exact: cameraDeviceId }
-//             }
-//         }).then(function(stream) {
-//             const videoElement = document.getElementById('videoElement');
-//             videoElement.srcObject = stream;
-
-//             mediaRecorder = new MediaRecorder(stream);
-//             recordedChunks = [];
-
-//             mediaRecorder.ondataavailable = function(event) {
-//                 if (event.data.size > 0) {
-//                     recordedChunks.push(event.data);
-//                 }
-//             };
-
-//             mediaRecorder.onstop = function() {
-//                 const blob = new Blob(recordedChunks, {
-//                     type: 'video/webm'
-//                 });
-//                 uploadVideo(blob, dn_number);  // Pass DN number to upload function
-//             };
-
-//             mediaRecorder.start();
-
-//             // UI adjustments
-//             document.getElementById('startRecording').style.display = 'none';
-//             document.getElementById('stopRecording').style.display = 'inline-block';
-//         });
-//     }
-
-//     document.getElementById('stopRecording').onclick = function() {
-//         mediaRecorder.stop();
-//         document.getElementById('startRecording').style.display = 'inline-block';
-//         document.getElementById('stopRecording').style.display = 'none';
-//     };
-// }
-
-// function uploadVideo(blob, dn_number) {
-//     // Convert blob to base64
-//     let reader = new FileReader();
-//     reader.readAsDataURL(blob);
-//     reader.onloadend = function() {
-//         let base64data = reader.result;
-        
-//         frappe.call({
-//             method: 'nj_features.api_files.upload_video',
-//             args: {
-//                 file_content: base64data,
-//                 file_name: 'recorded_video.webm',
-//                 dn_number: dn_number  // Pass DN number to the backend
-//             },
-//             freeze: true,
-//             freeze_message: __("Uploading video..."),z
-//             callback: function(r) {
-//                 if (r.message === "success") {
-//                     frappe.msgprint(__('Video uploaded successfully!'));
-//                 } else {
-//                     frappe.msgprint(__('Failed to upload video. Error: ') + r.exc);
-//                 }
-//             },
-//             error: function(r) {
-//                 frappe.msgprint(__('Failed to upload video. Network error.'));
-//             }
-//         });
-//     }
-// }
-
-
-// Function to open the Django URL directly with the DN number
-function openDjangoUrl(doctype,dn_number) {
-    // Construct the URL by embedding the dn_number in it
-    // let url = `https://njpulse.newjaisa.com/upload/${dn_number}/`;
-    frappe.db.get_value("NJ Settings",{"parameter":"video_prefix"},"value").then((prefix)=>{
-        let url = `${prefix.message.value}${doctype}/${dn_number}/`;
-        window.open(url, '_blank');
-    })
-}
-
-
 function fetchAndDisplayLinks(frm, method, type) {
     frappe.call({
         method: method,
@@ -643,7 +575,7 @@ function fetchAndDisplayLinks(frm, method, type) {
                     });
                     contentContainer.appendChild(button);
                 }
-
+                
                 dialog.body.appendChild(contentContainer);
                 dialog.show();
             } else {
@@ -651,4 +583,194 @@ function fetchAndDisplayLinks(frm, method, type) {
             }
         }
     });
+}
+// for items
+function modify_table_after_scans(frm, data) {
+    let cur_grid = frm.fields_dict.items.grid;
+
+    if (!data.item_code) return;
+
+    // Check if matching item_code exists in items
+    let matching_item = frm.doc.items.find(d => d.item_code === data.item_code);
+
+    if (!matching_item) {
+        // No matching item_code → show error and stop
+        frappe.msgprint({
+            title: __('Item Code Mismatch'),
+            message: __('Scanned Serial No item code does not match with any Item Code in the table'),
+            indicator: 'red'
+        });
+        cur_frm.set_value('scan_barcode', '');
+        return;
+    }
+
+    // MATCH FOUND → update only this row
+    let row = matching_item;
+
+    // Duplicate serial number check
+    if (row.serial_no && row.serial_no.split('\n').includes(data.serial_no)) {
+        frappe.show_alert({
+            message: __('Serial Number already exists for this Item'),
+            indicator: 'orange'
+        });
+        cur_frm.set_value('scan_barcode', '');
+        return;
+    }
+
+    // Add serial_no in NEW LINE (no comma separation)
+    if (data.serial_no) {
+        if (row.serial_no) {
+            row.serial_no = row.serial_no + '\n' + data.serial_no;
+        } else {
+            row.serial_no = data.serial_no;
+        }
+    }
+
+    // DO NOT INCREASE QTY → remove qty logic completely
+    // Just update the row
+    frappe.model.set_value(row.doctype, row.name, {
+        serial_no: row.serial_no
+    });
+
+    show_scan_message(row.idx, row.item_code);
+    cur_frm.refresh_field('items');
+    cur_frm.set_value('scan_barcode', '');
+}
+
+// for packed items
+function modify_table_after_scan(frm, data) {
+    let cur_grid = frm.fields_dict.packed_items.grid;
+
+    if (!data.item_code) return;
+
+    // Check if matching item_code exists in packed_items
+    let matching_item = frm.doc.packed_items.find(d => d.item_code === data.item_code);
+
+    if (!matching_item) {
+        // No matching item_code → show error and stop
+        frappe.msgprint({
+            title: __('Item Code Mismatch'),
+            message: __('Scanned Serial No item code does not match with any Item Code in the table'),
+            indicator: 'red'
+        });
+        cur_frm.set_value('scan_barcodes', '');
+        return;
+    }
+    
+    // MATCH FOUND → update only this row
+    let row = matching_item;
+    
+    // Duplicate serial number check
+    if (row.serial_no && row.serial_no.split('\n').includes(data.serial_no)) {
+        frappe.show_alert({
+            message: __('Serial Number already exists for this Item'),
+            indicator: 'orange'
+        });
+        cur_frm.set_value('scan_barcodes', '');
+        return;
+    }
+
+    // Add serial_no in NEW LINE (no comma separation)
+    if (data.serial_no) {
+        if (row.serial_no) {
+            row.serial_no = row.serial_no + '\n' + data.serial_no;
+        } else {
+            row.serial_no = data.serial_no;
+        }
+    }
+
+    // DO NOT INCREASE QTY → remove qty logic completely
+    // Just update the row
+    frappe.model.set_value(row.doctype, row.name, {
+        serial_no: row.serial_no
+    });
+
+    show_scan_message(row.idx, row.item_code);
+    cur_frm.refresh_field('packed_items');
+    cur_frm.set_value('scan_barcodes', '');
+}
+// for items
+function set_scanned_values(row_to_modify, data) {
+    frappe.call({
+        method: 'frappe.client.get',
+        args: {
+            doctype: 'Item',
+            name: data.item_code
+        },
+        callback: function(response) {
+            let item_details = response.message;
+            let quantity = data.qty ? data.qty : 1;
+            
+            let values = {
+                item_code: data.item_code,
+                s_warehouse: data.warehouse,
+                qty: quantity,
+                transfer_qty: 1
+            };
+
+            if (data.serial_no) {
+                values.serial_no = data.serial_no;
+            }
+            
+            frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
+            cur_frm.refresh_field('items');
+            cur_frm.set_value('scan_barcode', '');
+        }
+    });
+}
+// for packed items
+function set_scanned_values(row_to_modify, data) {
+    frappe.call({
+        method: 'frappe.client.get',
+        args: {
+            doctype: 'Item',
+            name: data.item_code
+        },
+        callback: function(response) {
+            let item_details = response.message;
+            let quantity = data.qty ? data.qty : 1;
+            
+            let values = {
+                item_code: data.item_code,
+                s_warehouse: data.warehouse,
+                qty: quantity,
+                transfer_qty: 1
+            };
+            
+            if (data.serial_no) {
+                values.serial_no = data.serial_no;
+            }
+
+            frappe.model.set_value(row_to_modify.doctype, row_to_modify.name, values);
+            cur_frm.refresh_field('packed_items');
+            cur_frm.set_value('scan_barcodes', '');
+        }
+    });
+}
+function show_scan_message(idx, exist = null) {
+    if (!exist) {
+        frappe.show_alert({
+            message: __('Row #{0}: Item added', [idx]),
+            indicator: 'green'
+        });
+    }
+}
+
+function autofill_warehouse(child_table, warehouse_field, warehouse) {
+    if (warehouse && child_table && child_table.length) {
+        let doctype = child_table[0].doctype;
+        $.each(child_table || [], function(i, item) {
+            frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
+        });
+    }
+}
+
+// Function to open the Django URL directly with the DN number
+function openDjangoUrl(doctype,dn_number) {
+    // Construct the URL by embedding the dn_number in it
+    // let url = `https://njpulse.newjaisa.com/upload/${dn_number}/`;
+    frappe.db.get_value("NJ Settings",{"parameter":"video_prefix"},"value").then((prefix)=>{
+        let url = `${prefix.message.value}${doctype}/${dn_number}/`;
+        window.open(url, '_blank');
+    })
 }

@@ -683,17 +683,20 @@ def update_item_group_and_max_qty_in_warehouse(employee=None):
 
         # Get employee data
         emp_data = frappe.get_doc("Employee", employee)
+        print("emp_data===============",emp_data)
 
         if not emp_data.role_profile or not emp_data.work_warehouse:
             return {"success": False, "message": "Role profile or work warehouse not set"}
 
         role_profile = frappe.get_doc("Role Profile", emp_data.role_profile)
+        print("role_profile===============",role_profile)
         
         parts = frappe.get_all(
             "Part Multiselect",
             filters={"parent": emp_data.role_profile, "parenttype": "Role Profile"},
             fields=["part"]
         )
+        print("parts===============",parts)
         
         warehouse = frappe.get_doc("Warehouse", emp_data.work_warehouse)
         
@@ -730,7 +733,7 @@ def update_item_group_and_max_qty_in_warehouse(employee=None):
         # Save only if there are changes
         if updated:
             warehouse.save(ignore_permissions=True)
-            frappe.db.commit()
+            # frappe.db.commit()
             return {"success": True, "message": " | ".join(messages)}
         else:
             return {"success": True, "message": "No changes needed"}

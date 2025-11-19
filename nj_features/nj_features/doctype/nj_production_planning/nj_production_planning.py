@@ -345,12 +345,14 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
     return cum_sla
 
 
-# =========================
-# Sales Orders → demand placement
-# =========================
 @log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
-    # NOTE: Keep existing logic as per discussion (revisit later)
+    # NOTE: The WHERE clause has been updated to reflect new filtering rules:
+    # 1. Use explicit status checks instead of docstatus=1.
+    # 2. Filter orders created in the last 40 days.
+    # 3. Use the updated list of item groups (Laptops, Chromebooks, MacBooks).
+    # 4. Exclude 'Amazon' sales type and 'King Technologies' customer.
+    
     soi = frappe.db.sql(
         """
         SELECT
@@ -359,12 +361,24 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             soi.delivery_date
         FROM `tabSales Order` so
         JOIN `tabSales Order Item` soi ON soi.parent = so.name
-        WHERE so.docstatus = 1
-          AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
-          AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
-          AND soi.item_group IN ('Laptops', 'Chromebooks', 'Chromeboxes')
+        WHERE 
+            -- New Status Filter for Active Orders
+            so.status NOT IN ('Closed','Completed','Draft','Cancelled')
+            -- Critical: Only show items with pending quantity
+            AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
+            -- New Creation Date Filter (Last 40 Days)
+            AND so.creation > CURDATE() - INTERVAL 40 DAY
+            -- Original Delivery Date Filter (uses passed 'horizon_end')
+            AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+            -- Updated Item Group Filter
+            AND soi.item_group IN ('Laptops', 'Chromebooks', 'MacBooks')
+            -- New Exclusions
+            AND so.sale_type != 'Amazon'
+            AND so.customer != 'King Technologies'
+        ORDER BY
+            soi.parent, soi.item_code;
         """,
-        (frappe.utils.add_days(frappe.utils.nowdate(), -60),),
+        (horizon_end,), # Pass the delivery date floor as the parameter
         as_dict=True,
     )
     return soi
@@ -821,6 +835,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
         FROM `tabSerial No`
         WHERE department = %s
           AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND (item_wizard IS NOT NULL OR item_wizard != '')
         """,
         (dept_doc.name,),
         as_dict=True,

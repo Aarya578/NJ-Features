@@ -26,7 +26,7 @@ def get_quality_procedure_details(quality_procedure_name, review_type, severity_
         query = """Select * from `tabQuality Processes` where parent = '{0}' and severity = '{1}' order by idx DESC""".format(quality_procedure_name,severity_level)
         response["process_data"] =frappe.db.sql(query,as_dict=1)
 
-    elif review_type == 'Full Review':
+    if review_type == 'Full Review':
         query = """Select * from `tabQuality Processes` where parent = '{0}' order by idx DESC""".format(quality_procedure_name)
         response["process_data"] =frappe.db.sql(query,as_dict=1)
 

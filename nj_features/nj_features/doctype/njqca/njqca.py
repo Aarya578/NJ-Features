@@ -1020,6 +1020,7 @@ def model_change_for_serial_no(newmodel, serial_no):
             if newmodel:
                 serial_no_doc.serial_no_component = []
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
             frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
@@ -1051,6 +1052,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
                 
                 else:
@@ -1071,6 +1073,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
             else:
                 frappe.msprint(f'Item Wizard is not there for Model <b>{Serial_no_model}</b>. Please Contact NPD Team')

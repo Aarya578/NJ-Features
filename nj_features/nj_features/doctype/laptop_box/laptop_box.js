@@ -1,5 +1,12 @@
 frappe.ui.form.on('Laptop Box', {
-    onload: function() {
+    onload: function(frm) {
+        handleScannerInput(frm, 'nj_barcode');
+        handleScannerInput(frm, 'nj_adaptor_barcode');
+        $('[data-fieldname="nj_barcode"]').focus();
+    },
+    refresh: function(frm) {
+        handleScannerInput(frm, 'nj_barcode');
+        handleScannerInput(frm, 'nj_adaptor_barcode');
         $('[data-fieldname="nj_barcode"]').focus();
     },
 

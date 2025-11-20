@@ -398,14 +398,11 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             -- New Exclusions
             AND so.sale_type != 'Amazon'
             AND so.customer != 'King Technologies'
-        ORDER BY
-            soi.parent, soi.item_code;
         """,
         (horizon_end,),  # Pass the delivery date floor as the parameter
         as_dict=True,
     )
     return soi
-
 
 @log_io
 def _allocate_orders_to_sequences_multi(

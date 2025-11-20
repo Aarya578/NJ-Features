@@ -1140,6 +1140,10 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
             try:
                 if serial_doc is None:
                     serial_doc = frappe.get_doc("Serial No", serial_no)
+
+                # *** Remove existing rows in child table ***
+                serial_doc.set("production_planning_allocation", [])
+                
                 serial_doc.append(
                     "production_planning_allocation",
                     {
@@ -1185,6 +1189,9 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,  # NEW
 ):
+    # Default: assume row is allowed
+    allowed = True
+
     # NEW: Part allocation gate
     # If allocate_parts is enabled for this department:
     #   - If MR is missing or fully allocated -> row is appended.
@@ -1198,7 +1205,18 @@ def _append_plan_row(
     except Exception as e:
         # Fail safe: log and continue without blocking planning
         logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
+        allowed = True  # on error, don't block the plan
 
+    # NEW: push suggested to_make into Serial No
+    try:
+        sn_doc = frappe.get_doc("Serial No", serial_no)
+        sn_doc.to_make = item_code_to_make   # <-- your field on Serial No
+        sn_doc.flags.ignore_mandatory = True
+        sn_doc.save(ignore_permissions=True)
+    except Exception as e:
+        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+
+    # Append the plan row
     plan_doc.append(
         "lines",
         {
@@ -1214,6 +1232,7 @@ def _append_plan_row(
             "priority_rank": int(priority_rank),
             # add only if your Doctype has this field; else remove
             "serial_age_days": serial_age_days,
+            # will always be 1 for any row that survives the gate
             "allocate_parts": 1 if allowed else 0,
         },
     )

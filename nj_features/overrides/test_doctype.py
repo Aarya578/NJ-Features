@@ -9,7 +9,7 @@ class TestRegression(FrappeTestCase):
             log.write("=== ERP Doctype + Multiple Payloads Regression Test ===\n\n")
 
             # Example: test only one doctype
-            doctypes = frappe.get_all("DocType", filters={"name": "Sales Order"}, pluck="name")
+            doctypes = frappe.get_all("DocType", filters={"name": "NJ Quality Inspection"}, pluck="name")
             # doctypes = frappe.get_all("DocType", filters={"istable": 0}, pluck="name")  # to test all
 
             for doctype in doctypes:

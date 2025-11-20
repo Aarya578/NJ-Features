@@ -1111,8 +1111,6 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         as_dict=True,
     )
 
-    print("MR items", mr_items)
-
     # No MR at all -> free to plan
     if not mr_items:
         return True

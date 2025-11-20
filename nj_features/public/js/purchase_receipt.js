@@ -89,7 +89,9 @@ frappe.ui.form.on('Purchase Receipt Item', {
     //     }
     // },
     print: function(frm, cdt, cdn) {
+
         var child_doc = locals[cdt][cdn];
+        
         if(frm.doc.docstatus == 0){
             frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.print_barcode',
@@ -97,6 +99,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
                     doc: child_doc
                 },
                 callback: function(r) {
+                    
                     if (r.message.serial_no) {
                         frappe.model.set_value(cdt, cdn, 'serial_no', r.message.serial_no);
                     }

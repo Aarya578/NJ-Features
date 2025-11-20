@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Union
 from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
+from frappe.utils import flt  # NEW
+
 
 # -------------------------
 # Logger setup
@@ -73,6 +75,13 @@ _ITEM_CORE: Dict[str, Dict] = {}
 _ITEM_ATTRS: Dict[str, Dict] = {}
 _ITEM_KEYS: Dict[str, Dict] = {}
 
+# =========================
+# Part allocation global state (virtual stock)
+
+_PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ
+_PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
+_DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
+
 
 # =========================
 # Helpers for ordering serials
@@ -84,11 +93,13 @@ def _oldest_first(lst: List[Dict]) -> List[Dict]:
     - fallback to purchase_date
     - fallback to creation
     """
+
     def _key(s):
         if s.get("age_days") is not None:
             # older first -> negative age
             return (-int(s.get("age_days") or 0), s.get("purchase_date") or s.get("creation") or "")
         return (0, s.get("purchase_date") or s.get("creation") or "")
+
     return sorted(lst, key=_key)
 
 
@@ -136,6 +147,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             "inwarded_config",
             "forwarded_config",
             "run_production_planning",
+            "allocate_parts",  # NEW
         ],
         order_by="department_sequence asc, name asc",
     )
@@ -148,6 +160,17 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
 
     sequences = sorted(depts_by_seq.keys())
     max_seq = max(sequences)
+
+    # NEW: build lookup for allocate_parts per department
+    global _DEPT_ALLOCATE_PARTS, _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
+    _DEPT_ALLOCATE_PARTS = {d["name"]: bool(d.get("allocate_parts")) for d in depts}
+
+    # If any department uses allocate_parts, build initial virtual stock from Stores - NJ
+    if any(_DEPT_ALLOCATE_PARTS.values()):
+        _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION = _build_initial_part_stock()
+    else:
+        _PART_VIRTUAL_STOCK = {}
+        _PART_PLANNED_ALLOCATION = {}
 
     cum_sla = _build_cumulative_sla_multi(depts_by_seq, sequences)
 
@@ -272,7 +295,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                     item_code_to_make=alloc["target_item_code"],
                     reason="Order",
                     priority_rank=priority_per_dept[dept_name],
-                    serial_age_days=alloc.get("age_days"),  # NEW: show age on plan row
+                    serial_age_days=alloc.get("age_days"),  # show age on plan row
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -302,7 +325,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                     item_code_to_make=alloc["target_item_code"],
                     reason="Forecast",
                     priority_rank=priority_per_dept[dept_name],
-                    serial_age_days=alloc.get("age_days"),  # NEW: show age on plan row
+                    serial_age_days=alloc.get("age_days"),  # show age on plan row
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -345,12 +368,14 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
     return cum_sla
 
 
-# =========================
-# Sales Orders → demand placement
-# =========================
 @log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
-    # NOTE: Keep existing logic as per discussion (revisit later)
+    # NOTE: The WHERE clause has been updated to reflect new filtering rules:
+    # 1. Use explicit status checks instead of docstatus=1.
+    # 2. Filter orders created in the last 40 days.
+    # 3. Use the updated list of item groups (Laptops, Chromebooks, MacBooks).
+    # 4. Exclude 'Amazon' sales type and 'King Technologies' customer.
+
     soi = frappe.db.sql(
         """
         SELECT
@@ -359,12 +384,24 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             soi.delivery_date
         FROM `tabSales Order` so
         JOIN `tabSales Order Item` soi ON soi.parent = so.name
-        WHERE so.docstatus = 1
-          AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
-          AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
-          AND soi.item_group IN ('Laptops', 'Chromebooks', 'Chromeboxes')
+        WHERE 
+            -- New Status Filter for Active Orders
+            so.status NOT IN ('Closed','Completed','Draft','Cancelled')
+            -- Critical: Only show items with pending quantity
+            AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
+            -- New Creation Date Filter (Last 40 Days)
+            AND so.creation > CURDATE() - INTERVAL 40 DAY
+            -- Original Delivery Date Filter (uses passed 'horizon_end')
+            AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+            -- Updated Item Group Filter
+            AND soi.item_group IN ('Laptops', 'Chromebooks', 'MacBooks')
+            -- New Exclusions
+            AND so.sale_type != 'Amazon'
+            AND so.customer != 'King Technologies'
+        ORDER BY
+            soi.parent, soi.item_code;
         """,
-        (frappe.utils.add_days(frappe.utils.nowdate(), -60),),
+        (horizon_end,),  # Pass the delivery date floor as the parameter
         as_dict=True,
     )
     return soi
@@ -821,6 +858,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
         FROM `tabSerial No`
         WHERE department = %s
           AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND (item_wizard IS NOT NULL OR item_wizard != '')
         """,
         (dept_doc.name,),
         as_dict=True,
@@ -987,6 +1025,153 @@ def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
 
 
 # =========================
+# Part allocation helpers
+# =========================
+@log_io
+def _build_initial_part_stock():
+    """
+    Build initial virtual stock for parts from all warehouses under department 'Stores - NJ'.
+
+    Returns:
+        (virtual_stock_dict, planned_allocation_dict)
+    """
+    warehouses = frappe.get_all(
+        "Warehouse",
+        filters={"department": "Stores - NJ"},
+        pluck="name",
+    )
+
+    if not warehouses:
+        logger.warning("No warehouses found under 'Stores - NJ' department for part allocation.")
+        # No stock, but we still run with empty virtual stock
+        return {}, {}
+
+    stock_results = frappe.db.sql(
+        """
+        SELECT item_code, SUM(actual_qty) AS total_qty
+        FROM `tabBin`
+        WHERE warehouse IN %(warehouses)s
+        GROUP BY item_code
+        """,
+        {"warehouses": tuple(warehouses)},
+        as_dict=True,
+    )
+
+    stock_data = {row["item_code"]: flt(row["total_qty"] or 0) for row in stock_results}
+
+    # planned_allocation starts at 0 for every item
+    return stock_data, {}
+
+
+@log_io
+def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) -> bool:
+    """
+    Part allocation gate for a serial.
+
+    - If allocate_parts is NOT enabled for this department -> always True (no gating).
+    - If no open MR exists for this serial -> True (we can show it in plan).
+    - If open MR exists:
+        * Try to allocate from Stores - NJ virtual stock.
+        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION
+          and create a row in Serial No's production_planning_allocation child table (for reference).
+        * If ANY MR line remains unallocated (insufficient stock) -> return False (skip this serial in plan).
+        * If all MR lines are allocated -> return True (serial can appear in plan).
+
+    Returns:
+        True  -> caller should append the plan row.
+        False -> caller should SKIP appending the plan row.
+    """
+    # If this department doesn't use allocate_parts, nothing to do
+    if not _DEPT_ALLOCATE_PARTS.get(current_department):
+        return True
+
+    # Fetch open Material Requests for this serial
+    mr_items = frappe.db.sql(
+        """
+        SELECT 
+            MRI.parent AS material_request,
+            MRI.item_code,
+            Sr.serial_no AS against_serial_no,
+            MRI.stock_qty,
+            MRI.qty AS mr_qty,
+            Sr.item_group
+        FROM `tabMaterial Request Item` MRI
+        INNER JOIN `tabMaterial Request` MR 
+            ON MRI.parent = MR.name 
+            AND MR.docstatus = 1 
+            AND IFNULL(MR.post_order_status, '') != 'Completed'
+        INNER JOIN `tabSerial No` Sr 
+            ON Sr.serial_no = MRI.serial_no 
+            AND Sr.item_group = 'Laptops' 
+            AND Sr.status = 'Active'
+        WHERE Sr.serial_no IN %(serial_list)s
+        ORDER BY Sr.serial_no
+        """,
+        {"serial_list": (serial_no,)},
+        as_dict=True,
+    )
+
+    print("MR items", mr_items)
+
+    # No MR at all -> free to plan
+    if not mr_items:
+        return True
+
+    has_unallocated = False
+    serial_doc = None
+
+    global _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
+
+    for row in mr_items:
+        item_code = row["item_code"]
+        mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
+        if mr_qty <= 0:
+            continue
+
+        # Available = physical snapshot - already planned across all departments in this run
+        already_planned = _PART_PLANNED_ALLOCATION.get(item_code, 0.0)
+        available = float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - already_planned)
+
+        if available >= mr_qty:
+            # We can allocate this MR line
+            _PART_PLANNED_ALLOCATION[item_code] = already_planned + mr_qty
+
+            # Persist reference on Serial No -> production_planning_allocation child table
+            try:
+                if serial_doc is None:
+                    serial_doc = frappe.get_doc("Serial No", serial_no)
+
+                # *** Remove existing rows in child table ***
+                serial_doc.set("production_planning_allocation", [])
+                
+                serial_doc.append(
+                    "production_planning_allocation",
+                    {
+                        # TODO: adjust fieldnames to match your child doctype
+                        # Example:
+                        "material_request": row["material_request"],  # MR No
+                        "item_code": item_code,                       # Part code
+                        "allocated_qty": mr_qty,                      # Allocated qty
+                    },
+                )
+            except Exception as e:
+                logger.warning("Could not append production_planning_allocation for serial %s: %s", serial_no, e)
+        else:
+            # Not enough stock for this MR line -> serial should NOT appear in plan
+            has_unallocated = True
+
+    if serial_doc is not None:
+        try:
+            serial_doc.flags.ignore_mandatory = True
+            serial_doc.save(ignore_permissions=True)
+        except Exception as e:
+            logger.warning("Could not save Serial No %s for part allocation: %s", serial_no, e)
+
+    # If any MR line is still unallocated, this serial is blocked by parts
+    return not has_unallocated
+
+
+# =========================
 # Plan persistence
 # =========================
 @log_io
@@ -1004,6 +1189,34 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,  # NEW
 ):
+    # Default: assume row is allowed
+    allowed = True
+
+    # NEW: Part allocation gate
+    # If allocate_parts is enabled for this department:
+    #   - If MR is missing or fully allocated -> row is appended.
+    #   - If any MR remains unallocated -> row is SKIPPED.
+    try:
+        if _DEPT_ALLOCATE_PARTS and _DEPT_ALLOCATE_PARTS.get(current_department):
+            allowed = _maybe_allocate_parts_for_serial(serial_no, current_department)
+            if not allowed:
+                # Do NOT append this row; the serial is still waiting on parts.
+                return
+    except Exception as e:
+        # Fail safe: log and continue without blocking planning
+        logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
+        allowed = True  # on error, don't block the plan
+
+    # NEW: push suggested to_make into Serial No
+    try:
+        sn_doc = frappe.get_doc("Serial No", serial_no)
+        sn_doc.to_make = item_code_to_make   # <-- your field on Serial No
+        sn_doc.flags.ignore_mandatory = True
+        sn_doc.save(ignore_permissions=True)
+    except Exception as e:
+        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+
+    # Append the plan row
     plan_doc.append(
         "lines",
         {
@@ -1019,5 +1232,7 @@ def _append_plan_row(
             "priority_rank": int(priority_rank),
             # add only if your Doctype has this field; else remove
             "serial_age_days": serial_age_days,
+            # will always be 1 for any row that survives the gate
+            "allocate_parts": 1 if allowed else 0,
         },
     )

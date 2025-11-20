@@ -526,19 +526,19 @@ class NJQCA(Document):
                     update_serial_no_componont_for_grade(self)
                     logger.debug(f"Time after update_serial_no_componont_for_grade '{self.name}': {time.time() - s5:.2f} seconds")
                 
-                if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
-                    s4 = time.time()
-                    if self.qi_type is not None and self.qi_type=="is_defective":
-                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,is_defective="1")
-                    elif self.qi_type is not None and self.qi_type=="re_check":
-                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,re_check="1")
-                    else:
-                        qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model)
-                    logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
+                # if self.item_group == sn_item_group or self.item_group=='BATTERY' or  self.rfq_id!="":
+                #     s4 = time.time()
+                #     if self.qi_type is not None and self.qi_type=="is_defective":
+                #         qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,is_defective="1")
+                #     elif self.qi_type is not None and self.qi_type=="re_check":
+                #         qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model,re_check="1")
+                #     else:
+                #         qi_data = open_draft_qi(self,self.component_serial_no,self.brand,self.model)
+                #     logger.debug(f"Time after open_draft_qi '{self.name}': {time.time() - s4:.2f} seconds")
                 
-                if qi_data:
-                    if qi_data.get('msg_pnt'):
-                        frappe.msgprint(qi_data.get('msg_pnt'))
+                # if qi_data:
+                #     if qi_data.get('msg_pnt'):
+                #         frappe.msgprint(qi_data.get('msg_pnt'))
 
             except Exception as e:
                 frappe.db.rollback()
@@ -1020,6 +1020,7 @@ def model_change_for_serial_no(newmodel, serial_no):
             if newmodel:
                 serial_no_doc.serial_no_component = []
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
             frappe.msgprint(f'Item Wizard is not there for Model <b>{newmodel}</b>. Please Contact NPD Team')
@@ -1051,6 +1052,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
                 
                 else:
@@ -1071,6 +1073,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
             else:
                 frappe.msprint(f'Item Wizard is not there for Model <b>{Serial_no_model}</b>. Please Contact NPD Team')
@@ -2546,12 +2549,12 @@ def update_performance_criteria(doc):
     disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
     disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
 
-    if not disk_type:
-        return
+    # if not disk_type:
+    #     return
 
     if not item_wizard_list:
         frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
-        return
+        return 
 
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
@@ -2570,8 +2573,10 @@ def update_performance_criteria(doc):
         except json.JSONDecodeError as e:
             frappe.log_error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
             return {"error": "Invalid JSON format in NJ Settings."}
-
-        disk_criteria_list = criteria_doc.get(disk_type)
+        if disk_type:
+           disk_criteria_list = criteria_doc.get(disk_type)
+        else:
+           disk_criteria_list = criteria_doc.get("default")
 
         if not disk_criteria_list:
             return
@@ -2586,7 +2591,7 @@ def update_performance_criteria(doc):
 
             if njqca_param:
                 njqca_value=""
-                if(njqca_param.lower() == "average_restart_time"):
+                if(njqca_param.get("parameter").lower() == "average_restart_time"):
                     avg_time =convert_to_seconds(njqca_param.get("value"))
                     for parameter in njqca_results:
                         if parameter.get("parameter") == "Restart_1" or parameter.get("parameter") == "Restart_2" or parameter.get("parameter") == "Restart_3":

@@ -8,7 +8,6 @@
  "field_order": [
   "department",
   "plan_date",
-  "sales_order_prediction",
   "lines",
   "nj_production_planning_child",
   "final_config",
@@ -72,17 +71,11 @@
    "fieldtype": "Table",
    "label": "Final Production Planning Data",
    "options": "Final Production Planning Data"
-  },
-  {
-   "fieldname": "sales_order_prediction",
-   "fieldtype": "Table",
-   "label": "Sales Order Prediction",
-   "options": "Sales Order Prediction"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-10-23 15:42:46.609907",
+ "modified": "2025-11-20 10:49:13.224478",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

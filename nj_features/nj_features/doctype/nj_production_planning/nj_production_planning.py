@@ -371,35 +371,90 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
 @log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
     # NOTE: The WHERE clause has been updated to reflect new filtering rules:
-    # 1. Use explicit status checks instead of docstatus=1.
-    # 2. Filter orders created in the last 40 days.
-    # 3. Use the updated list of item groups (Laptops, Chromebooks, MacBooks).
+    # 1. Use explicit status checks instead of relying only on docstatus.
+    # 2. Filter orders created in the last 60 days.
+    # 3. Use the updated list of item groups (Laptops, Chromebooks, Desktops, Chromeboxes).
     # 4. Exclude 'Amazon' sales type and 'King Technologies' customer.
+    # 5. Include bundle components as separate stock items.
 
     soi = frappe.db.sql(
         """
+        WITH SalesData AS (
+
+            -- Direct stock items (normal SO lines)
+            SELECT
+                so.name AS so_name,
+                soi.name AS soi_name,
+                so.customer AS customer,
+                so.transaction_date AS transaction_date,
+                soi.item_code AS item_code,
+                (soi.qty - IFNULL(soi.delivered_qty, 0)) AS qty_pending,
+                soi.delivery_date AS delivery_date
+            FROM `tabSales Order` so
+            JOIN `tabSales Order Item` soi ON soi.parent = so.name
+            JOIN `tabItem` i ON soi.item_code = i.item_code
+            WHERE so.creation >= CURDATE() - INTERVAL 60 DAY
+              AND so.docstatus = 1
+              AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
+              -- Only pending quantity
+              AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
+              -- Delivery horizon filter
+              AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+              -- Item group filter
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              -- Only stock items
+              AND i.is_stock_item = 1
+              -- Exclusions
+              AND so.sale_type != 'Amazon'
+              AND so.customer != 'King Technologies'
+
+            UNION ALL
+
+            -- Product Bundle components (exploded to stock items)
+            SELECT
+                so.name AS so_name,
+                soi.name AS soi_name,
+                so.customer AS customer,
+                so.transaction_date AS transaction_date,
+                pbi.item_code AS item_code,
+                (pbi.qty * (soi.qty - IFNULL(soi.delivered_qty, 0))) AS qty_pending,
+                soi.delivery_date AS delivery_date
+            FROM `tabSales Order` so
+            JOIN `tabSales Order Item` soi ON soi.parent = so.name
+            JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            JOIN `tabItem` i ON pbi.item_code = i.item_code
+            WHERE so.creation >= CURDATE() - INTERVAL 60 DAY
+              AND so.docstatus = 1
+              AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
+              -- Only pending quantity (on the parent SO line)
+              AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
+              -- Delivery horizon filter
+              AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+              -- Item group filter (applied on the SO line item group)
+              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
+              -- SO line is a non-stock bundle item
+              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
+              -- Bundle component item is stock
+              AND i.is_stock_item = 1
+              -- Exclusions
+              AND so.sale_type != 'Amazon'
+              AND so.customer != 'King Technologies'
+        )
+
         SELECT
-            so.name AS so_name, soi.name AS soi_name, so.customer, so.transaction_date,
-            soi.item_code, (soi.qty - IFNULL(soi.delivered_qty,0)) AS qty_pending,
-            soi.delivery_date
-        FROM `tabSales Order` so
-        JOIN `tabSales Order Item` soi ON soi.parent = so.name
-        WHERE 
-            -- New Status Filter for Active Orders
-            so.status NOT IN ('Closed','Completed','Draft','Cancelled')
-            -- Critical: Only show items with pending quantity
-            AND (soi.qty - IFNULL(soi.delivered_qty,0)) > 0
-            -- New Creation Date Filter (Last 40 Days)
-            AND so.creation > CURDATE() - INTERVAL 40 DAY
-            -- Original Delivery Date Filter (uses passed 'horizon_end')
-            AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
-            -- Updated Item Group Filter
-            AND soi.item_group IN ('Laptops', 'Chromebooks', 'MacBooks')
-            -- New Exclusions
-            AND so.sale_type != 'Amazon'
-            AND so.customer != 'King Technologies'
+            so_name,
+            soi_name,
+            customer,
+            transaction_date,
+            item_code,
+            qty_pending,
+            delivery_date
+        FROM SalesData
+        ORDER BY transaction_date DESC
         """,
-        (horizon_end,),  # Pass the delivery date floor as the parameter
+        # horizon_end is used twice (once in each part of the UNION)
+        (horizon_end, horizon_end),
         as_dict=True,
     )
     return soi

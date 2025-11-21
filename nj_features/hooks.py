@@ -234,7 +234,7 @@ scheduler_events = {
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
-        "50 12 * * *": [
+        "59 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
         "10 * * * *": [
@@ -253,7 +253,7 @@ scheduler_events = {
         "*/58 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status"
         ],
-         "0 */3 * * *": [
+         "0 */2 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
         ],
         #  "0 */5 * * *": [

@@ -60,19 +60,40 @@ frappe.ui.form.on('Quotation', {
 });
 
 function check_and_hide_sales_order_button(frm) {
-    if (frm.doc.customer_reply === 'Dis Agree') {
-        setTimeout(() => {
-            $('span.menu-item-label:contains("Sales Order")').closest('li').hide();       
-            frm.remove_custom_button('Sales Order', 'Create');   
-            $('.inner-group-button .dropdown-menu li a:contains("Sales Order")').closest('li').hide();
-        }, 500);
-    } else if (frm.doc.customer_reply === 'Agree') {
+
+    // Case 1: Dis Agree
+    if (frm.doc.customer_replay === "Dis Agree") {
+
+        frappe.db.get_value("NJ Settings", { parameter: "quotation_value" }, "value")
+            .then(res => {
+                let setting_value = res?.message?.value || 0;
+                console.log("setting value =", setting_value);
+
+                // If value = 1 → skip hiding
+                if (setting_value == 1) {
+                    return;
+                }
+
+                // If value = 0 → hide Sales Order
+                setTimeout(() => {
+                    $('span.menu-item-label:contains("Sales Order")').closest('li').hide();
+                    frm.remove_custom_button('Sales Order', 'Create');
+                    $('.inner-group-button .dropdown-menu li a:contains("Sales Order")').closest('li').hide();
+                }, 500);
+            });
+
+    } 
+    // Case 2: Agree → always show
+    else if (frm.doc.customer_replay === "Agree") {
+
         setTimeout(() => {
             $('span.menu-item-label:contains("Sales Order")').closest('li').show();
             $('.inner-group-button .dropdown-menu li a:contains("Sales Order")').closest('li').show();
         }, 500);
     }
 }
+
+
 function fetch_email(frm) {
     if (!frm.doc.name || frm.is_new() || !frm.doc.customer_address) return;
 

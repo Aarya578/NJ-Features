@@ -943,18 +943,29 @@ def shopify_request(session, method, url, headers=None, json=None):
     while True:
         response = session.request(method, url, headers=headers, json=json)
 
-        # Shopify throttling
+        # --- FIX: Shopify may return Retry-After: "2.0" which breaks urllib3 ---
+        retry_after_header = response.headers.get("Retry-After")
+        if retry_after_header:
+            try:
+                # Convert float string → int string   "2.0" → "2"
+                retry_after_int = int(float(retry_after_header))
+                response.headers["Retry-After"] = str(retry_after_int)
+            except:
+                # If conversion fails, remove the header to avoid crash
+                response.headers.pop("Retry-After", None)
+
+        # Shopify throttling (429 error)
         if response.status_code == 429:
             retry_after = float(response.headers.get("Retry-After", 1))
             time.sleep(retry_after)
             continue
 
-        # Check bucket level
+        # API Call Limit headers
         call_limit = response.headers.get("X-Shopify-Shop-Api-Call-Limit")
         if call_limit:
             used, max_allowed = map(int, call_limit.split('/'))
-            if used >= max_allowed - 2:      
-                time.sleep(1.0)              
+            if used >= max_allowed - 2:
+                time.sleep(1.0)
 
         return response
 

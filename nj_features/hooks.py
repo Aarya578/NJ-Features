@@ -124,10 +124,7 @@ scheduler_events = {
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
-
-        # DAILY AT 12:50 PM
-        # Department change log updater
-        "50 12 * * *": [
+        "59 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
 
@@ -157,11 +154,9 @@ scheduler_events = {
         "*/58 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status",
         ],
+         "0 */2 * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
 
-        # EVERY 3 HOURS (AT MINUTE 0)
-        # Critical AWB tracking
-        "0 */3 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status",
         ],
 
         # EVERY 59 MINUTES

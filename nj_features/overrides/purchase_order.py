@@ -106,8 +106,8 @@ def validate_mandatory_links(doc, method=None):
     core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
     requires_links = False
     
-    # if doc.is_sample:
-    #     return
+    if doc.is_sample:
+        return
 
     for item in doc.items:
         item_group = frappe.db.get_value('Item', item.item_code, 'item_group')
@@ -284,3 +284,40 @@ def get_item_group_cost_centers(items):
             if cost_center:
                 result[item["idx"]] = cost_center
     return result
+
+
+
+@frappe.whitelist()
+def fetch_unique_records(doc):
+    doc = json.loads(doc)
+
+    items = doc.get("items", [])
+    summary = {}  
+
+    # Group and Sum
+    for row in items:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        qty = frappe.utils.flt(row.get("qty") or 0)
+        rate = frappe.utils.flt(row.get("rate") or 0)
+        amount = frappe.utils.flt(row.get("amount") or 0)
+
+        if item_code not in summary:
+            summary[item_code] = {
+                "item_code": item_code,
+                "qty": qty,
+                "rate": rate,
+                "amount": amount
+            }
+        else:
+            summary[item_code]["qty"] += qty
+            summary[item_code]["rate"] = rate
+            summary[item_code]["amount"] += amount
+
+    # Convert dict to list to return
+    unique_rows = list(summary.values())
+
+    return unique_rows
+

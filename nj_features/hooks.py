@@ -111,6 +111,7 @@ scheduler_events = {
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
+            "nj_features.nj_features.doctype.productivity.productivity.fetch_productivity_data",
         ],
 
         # DAILY AT 7:45 AM

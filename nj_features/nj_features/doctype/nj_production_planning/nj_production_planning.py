@@ -459,6 +459,7 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
     )
     return soi
 
+
 @log_io
 def _allocate_orders_to_sequences_multi(
     pending_orders, sequences, cum_sla, today, forward_grain_per_seq, max_seq
@@ -1124,10 +1125,11 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     - If no open MR exists for this serial -> True (we can show it in plan).
     - If open MR exists:
         * Try to allocate from Stores - NJ virtual stock.
-        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION
-          and create a row in Serial No's production_planning_allocation child table (for reference).
-        * If ANY MR line remains unallocated (insufficient stock) -> return False (skip this serial in plan).
-        * If all MR lines are allocated -> return True (serial can appear in plan).
+        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION.
+        * Only if ALL MR lines are allocatable do we write to the
+          Serial No's production_planning_allocation child table.
+        * If ANY MR line remains unallocated (insufficient stock) -> return False
+          (skip this serial in plan, and do not write the child table for it).
 
     Returns:
         True  -> caller should append the plan row.
@@ -1167,11 +1169,12 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     if not mr_items:
         return True
 
-    has_unallocated = False
-    serial_doc = None
-
     global _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
 
+    alloc_rows = []
+    has_unallocated = False
+
+    # 1) Decide allocations purely in memory
     for row in mr_items:
         item_code = row["item_code"]
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
@@ -1185,40 +1188,51 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         if available >= mr_qty:
             # We can allocate this MR line
             _PART_PLANNED_ALLOCATION[item_code] = already_planned + mr_qty
-
-            # Persist reference on Serial No -> production_planning_allocation child table
-            try:
-                if serial_doc is None:
-                    serial_doc = frappe.get_doc("Serial No", serial_no)
-
-                # *** Remove existing rows in child table ***
-                serial_doc.set("production_planning_allocation", [])
-                
-                serial_doc.append(
-                    "production_planning_allocation",
-                    {
-                        # TODO: adjust fieldnames to match your child doctype
-                        # Example:
-                        "material_request": row["material_request"],  # MR No
-                        "item_code": item_code,                       # Part code
-                        "allocated_qty": mr_qty,                      # Allocated qty
-                    },
-                )
-            except Exception as e:
-                logger.warning("Could not append production_planning_allocation for serial %s: %s", serial_no, e)
+            alloc_rows.append(
+                {
+                    "material_request": row["material_request"],
+                    "item_code": item_code,
+                    "allocated_qty": mr_qty,
+                }
+            )
         else:
             # Not enough stock for this MR line -> serial should NOT appear in plan
             has_unallocated = True
 
-    if serial_doc is not None:
-        try:
-            serial_doc.flags.ignore_mandatory = True
-            serial_doc.save(ignore_permissions=True)
-        except Exception as e:
-            logger.warning("Could not save Serial No %s for part allocation: %s", serial_no, e)
-
     # If any MR line is still unallocated, this serial is blocked by parts
-    return not has_unallocated
+    # and we do NOT touch the Serial No doc.
+    if has_unallocated:
+        return False
+
+    # 2) All lines allocatable -> persist child table ONCE
+    try:
+        serial_doc = frappe.get_doc("Serial No", serial_no)
+
+        # Clear existing rows once
+        serial_doc.set("production_planning_allocation", [])
+
+        # Append all allocated rows
+        for r in alloc_rows:
+            serial_doc.append(
+                "production_planning_allocation",
+                {
+                    # adjust fieldnames to match your child doctype
+                    "material_request": r["material_request"],  # MR No
+                    "item_code": r["item_code"],               # Part code
+                    "allocated_qty": r["allocated_qty"],       # Allocated qty
+                },
+            )
+
+        serial_doc.flags.ignore_mandatory = True
+        serial_doc.save(ignore_permissions=True)
+    except Exception as e:
+        logger.warning(
+            "Could not update production_planning_allocation for serial %s: %s",
+            serial_no,
+            e,
+        )
+
+    return True
 
 
 # =========================
@@ -1257,14 +1271,9 @@ def _append_plan_row(
         logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
         allowed = True  # on error, don't block the plan
 
-    # NEW: push suggested to_make into Serial No
-    try:
-        sn_doc = frappe.get_doc("Serial No", serial_no)
-        sn_doc.to_make = item_code_to_make   # <-- your field on Serial No
-        sn_doc.flags.ignore_mandatory = True
-        sn_doc.save(ignore_permissions=True)
-    except Exception as e:
-        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+    # IMPORTANT: we no longer write Serial No.to_make here, to reduce DB writes.
+    # If you still need that, consider a separate background job that
+    # reads the final plan and updates Serial No records in smaller batches.
 
     # Append the plan row
     plan_doc.append(

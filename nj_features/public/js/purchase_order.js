@@ -12,9 +12,36 @@ frappe.ui.form.on('Purchase Order', {
     refresh: function(frm) {
         // No warranty updates on refresh - only after save
     },
+    fetch_qnique_records: function (frm) {
+        
+        frappe.call({
+            method: "nj_features.overrides.purchase_order.fetch_unique_records",
+            args: {
+                doc: frm.doc
+            },
+            freeze: true,
+            freeze_message: "Fetching Unique Records...",
+            callback: function (r) {
+                if (!r.message) return;
+
+                // Clear old table
+                frm.clear_table("filtered_table");
+
+                // Add new aggregated rows
+                r.message.forEach(row => {
+                    let child = frm.add_child("filtered_table");
+                    child.item_code = row.item_code;
+                    child.qty = row.qty;
+                    child.rate = row.rate;
+                    child.amount = row.amount;
+                });
+
+                frm.refresh_field("filtered_table");
+            }
+        });
+    },
 
     fetch_warranty_days: function (frm) {
-        console.log("insid the button =======================");
         
         frappe.call({
 
@@ -192,6 +219,7 @@ frappe.ui.form.on('Purchase Order', {
 //             }
 //     });
 // }
+
 
 
 });

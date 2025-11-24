@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 import frappe
 from erpnext.quality_management.doctype.quality_review.quality_review import QualityReview
-from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_qi_non_compliance import raise_nc_for_not_following_the_process
+from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_qi_non_compliance import raise_nc_for_not_following_the_process,raise_nc_for_not_following_the_process_tool_table
 
 
 class CustomQualityReview(QualityReview):
@@ -13,6 +13,7 @@ class CustomQualityReview(QualityReview):
         # Call the parent class's on_submity
         try:
             raise_nc_for_not_following_the_process(self)
+            raise_nc_for_not_following_the_process_tool_table(self)
         except Exception as e:
             frappe.throw(str(e))
 

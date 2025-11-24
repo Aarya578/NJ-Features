@@ -14,7 +14,8 @@
   "reason",
   "qty",
   "suggested_warehouse",
-  "suggested_department"
+  "suggested_department",
+  "rank"
  ],
  "fields": [
   {
@@ -97,11 +98,16 @@
    "label": "Suggested Department",
    "options": "Department",
    "read_only": 1
+  },
+  {
+   "fieldname": "rank",
+   "fieldtype": "Data",
+   "label": "Rank"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-10-03 17:12:03.509773",
+ "modified": "2025-11-20 15:30:21.139084",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Stock Movement Detail",

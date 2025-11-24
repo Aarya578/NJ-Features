@@ -16,22 +16,19 @@ class StockMovement(Document):
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
             else:
+                do_stock_entry_for_consumables=frappe.db.get_value('NJ Settings', {'parameter': 'do_stock_entry_for_consumables'}, 'value')
                 material_transfer_items = []
                 for row in self.items:
-                    if row.s_warehouse and row.t_warehouse and row.serial_no and row.item_code and item_item_group(row.item_code) == "Laptops":
+                    if do_stock_entry_for_consumables=="1" and row.s_warehouse and row.t_warehouse and row.serial_no and row.item_code and item_item_group(row.item_code) == "Laptops":
                         source_dept=warehouse_dept(row.s_warehouse)
-                        logger.info(f"==========source_dept=========={source_dept}")
                         if source_dept != warehouse_dept(row.t_warehouse):
                             consumables=consumables_for_department(row.item_code, source_dept, row.serial_no)
-                            print('consumables',consumables) 
-                            logger.info(f"==========consumables=========={consumables}")
                             repack_items=[]                               
                             for consumable in consumables:
                                 consumable_warehouse=get_consumables_warehouse(source_dept)
                                 if not consumable_warehouse:
                                     frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
                                 qty=warehouse_qty(consumable_warehouse, consumable)
-                                logger.info(f"==========qty=========={qty}")
                                 if qty and qty >0:
                                     if not consumable_warehouse:
                                         frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
@@ -40,7 +37,6 @@ class StockMovement(Document):
                                         'item_code': consumable,
                                         's_warehouse':consumable_warehouse ,                                         
                                     })
-                            logger.info(f"==========repack_items=========={repack_items}")
                             if repack_items:
                                 make_repack(row.serial_no, repack_items, row.s_warehouse,self.name,self.doctype)                                                                      
                     material_transfer_items.append({

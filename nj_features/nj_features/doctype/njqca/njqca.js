@@ -412,17 +412,16 @@ frappe.ui.form.on('NJQCA', {
 
                     } else if (r.message) {
                         
-                        let existingRow = null;
-                        (frm.doc.njqca_result_parameters || []).forEach(row => {
-                            if (row.parameter === r.message.parameter) {
-                                existingRow = row;
-                            }
-                        });
+                        // let existingRow = null;
+                        // (frm.doc.njqca_result_parameters || []).forEach(row => {
+                        //     if (row.parameter === r.message.parameter) {
+                        //         existingRow = row;
+                        //     }
+                        // });
         
-                        if (existingRow) {
-                            frappe.model.clear_doc(existingRow.doctype, existingRow.name);
-                        }
-        
+                        // if (existingRow) {
+                        //     frappe.model.clear_doc(existingRow.doctype, existingRow.name);
+                        // }        
                         var child = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         frappe.model.set_value(child.doctype, child.name, 'parameter', r.message.parameter);
                         frappe.model.set_value(child.doctype, child.name, 'value', r.message.value);

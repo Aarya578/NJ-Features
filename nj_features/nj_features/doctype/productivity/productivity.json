@@ -1,21 +1,152 @@
 {
  "actions": [],
- "autoname": "department.-.YY.MM.DD.",
  "creation": "2025-01-22 11:08:26.802138",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "department",
-  "role_profile",
-  "column_break_kzqyd",
-  "from",
-  "to",
-  "section_break_yiyhs",
-  "productivity_child_table",
+  "serial_no",
+  "stock_entry",
+  "stock_entry_creation",
+  "item_code",
+  "item_group",
+  "qty",
+  "source_warehouse",
+  "target_warehouse",
+  "source_department",
+  "column_break_2zhym",
+  "target_department",
+  "source_role_profile",
+  "target_role_profile",
+  "itemgroup_weightage_value",
+  "wtd_qty",
+  "department_production",
+  "profile_production",
+  "match_production_flag",
+  "user",
   "amended_from"
  ],
  "fields": [
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Serial No",
+   "options": "Serial No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_entry_creation",
+   "fieldtype": "Datetime",
+   "label": "Stock Entry Creation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "item_code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "label": "Item Group",
+   "options": "Item Group",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Int",
+   "label": "Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "label": "Source warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_department",
+   "fieldtype": "Link",
+   "label": "Source Department",
+   "options": "Department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2zhym",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_department",
+   "fieldtype": "Link",
+   "label": "Target Department",
+   "options": "Department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_role_profile",
+   "fieldtype": "Link",
+   "label": "Source Role Profile",
+   "options": "Role Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_role_profile",
+   "fieldtype": "Link",
+   "label": "Target Role Profile",
+   "options": "Role Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "itemgroup_weightage_value",
+   "fieldtype": "Data",
+   "label": "Itemgroup weightage value",
+   "read_only": 1
+  },
+  {
+   "fieldname": "department_production",
+   "fieldtype": "Data",
+   "label": "Department Production",
+   "read_only": 1
+  },
+  {
+   "fieldname": "profile_production",
+   "fieldtype": "Data",
+   "label": "Profile Production",
+   "read_only": 1
+  },
+  {
+   "fieldname": "match_production_flag",
+   "fieldtype": "Data",
+   "label": "match production flag",
+   "read_only": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "read_only": 1
+  },
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
@@ -26,45 +157,14 @@
    "read_only": 1
   },
   {
-   "fieldname": "department",
-   "fieldtype": "Link",
-   "label": "Department ",
-   "options": "Department"
-  },
-  {
-   "fieldname": "productivity_child_table",
-   "fieldtype": "Table",
-   "label": "Productivity Child Table",
-   "options": "Productivity Child"
-  },
-  {
-   "fieldname": "section_break_yiyhs",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "role_profile",
-   "fieldtype": "Link",
-   "label": "Role Profile",
-   "options": "Role Profile"
-  },
-  {
-   "fieldname": "from",
-   "fieldtype": "Date",
-   "label": "From"
-  },
-  {
-   "fieldname": "to",
-   "fieldtype": "Date",
-   "label": "To"
-  },
-  {
-   "fieldname": "column_break_kzqyd",
-   "fieldtype": "Column Break"
+   "fieldname": "wtd_qty",
+   "fieldtype": "Data",
+   "label": "WTD Qty",
+   "read_only": 1
   }
  ],
- "is_submittable": 1,
  "links": [],
- "modified": "2025-10-07 14:30:07.089236",
+ "modified": "2025-11-21 17:58:04.529067",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Productivity",

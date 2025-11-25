@@ -2,7 +2,6 @@ import frappe
 from frappe import _
 import traceback
 from frappe.model.document import Document
-logger = frappe.logger("productivity", allow_site=True, file_count=1)
 
 class Productivity(Document):
     pass
@@ -160,6 +159,8 @@ def fetch_data_kpi_dashboard(user):
                         if target_result[j].role_profile == achived_result[i].role_profile:
                             achived_result[i]['target'] = target_result[j].target
                 return achived_result
+        else:
+            frappe.logger().error(f'NO DATA in fetch_data_kpi_dashboard for {user}')
                     
     except Exception as e:
         frappe.logger().error(f'Error in fetch_data_kpi_dashboard: {e}')

@@ -2571,7 +2571,7 @@ def update_performance_criteria(doc):
             else:
                 criteria_doc = criteria_doc_raw
         except json.JSONDecodeError as e:
-            frappe.log_error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
+            frappe.log_error().error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
             return {"error": "Invalid JSON format in NJ Settings."}
         if disk_type:
            disk_criteria_list = criteria_doc.get(disk_type)
@@ -2665,9 +2665,9 @@ def update_performance_criteria(doc):
                             "message": message
                         })
 
-                frappe.logger().info("\nEvaluation Results:")
-                for result in evaluation_results:
-                    frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+                # frappe.logger().info("\nEvaluation Results:")
+                # for result in evaluation_results:
+                #     frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
 
                 update_njqca_doc(doc.get("name"), evaluation_results)
 

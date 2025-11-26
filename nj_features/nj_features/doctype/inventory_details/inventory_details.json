@@ -8,6 +8,7 @@
   "inwarded_inventory",
   "inwarded_warehouse",
   "inwarded_warehouse_list",
+  "restricted_department_warehouse_list",
   "forwarded_inventory"
  ],
  "fields": [
@@ -39,11 +40,17 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Inwarded Warehouse List"
+  },
+  {
+   "fieldname": "restricted_department_warehouse_list",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Restricted Department Warehouse List"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-06-21 16:51:28.484705",
+ "modified": "2025-11-25 13:14:59.246423",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Inventory Details",

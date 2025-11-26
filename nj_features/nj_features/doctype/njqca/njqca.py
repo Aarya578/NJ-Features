@@ -387,7 +387,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'available_qty': nj_readings_data.get('available_qty'),
                         'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
                         'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no'),
-                        'plan_time': nj_readings_data.get('plan_time')
+                        'plan_time': nj_readings_data.get('plan_time'),
+                        'depends_on_linked_item_group': nj_readings_data.get('depends_on_linked_item_group'),
                     })
             # Clear existing table entries and add new ones
             new_qi.set('nj_quality_readings', [])

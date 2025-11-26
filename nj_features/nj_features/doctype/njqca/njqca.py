@@ -1423,7 +1423,7 @@ def get_item_code_for_each_part(doc):
 
                                     final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and doc.get('item_group') == 'Chromebooks':
+                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
@@ -1439,7 +1439,7 @@ def get_item_code_for_each_part(doc):
                                 continue
 
                             process_variant_status = False
-                            if variant == 'variant_1' and not skip_memory:
+                            if variant == 'variant_5' and not skip_memory:
                                 process_variant_status = process_variant(variant, row, mapping, attribute_object)
 
                             if not process_variant_status and not skip_memory:
@@ -1620,7 +1620,7 @@ def get_part_mapping(doc):
             return json.dumps(get_item_code_for_each_part(doc))
             
         except Exception as e:
-            log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
+            # log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
             frappe.throw(f"An error occurred in get_part_mapping: {traceback.format_exc()}")
 
 def consolidate_ram_capacities(data):

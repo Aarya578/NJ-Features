@@ -248,7 +248,9 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: async function(frm) {
-        
+        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
+            processItemTemplate(frm);
+        }
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
@@ -459,9 +461,6 @@ frappe.ui.form.on('NJQCA', {
         }
 
         // Check automated repack item code
-        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
-            processItemTemplate(frm);
-        }
     },
 
     rfq_id: function(frm) {

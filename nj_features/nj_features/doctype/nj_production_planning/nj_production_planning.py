@@ -68,6 +68,10 @@ STORAGE_ATTR = "Storage Capacity"
 
 ALLOWED_ITEM_MODELS = set()
 
+# NEW: control whether planner writes to Serial No.to_make
+UPDATE_SERIAL_TO_MAKE = False  # set to True if you really want to update Serial No in this run
+
+
 # =========================
 # Global caches
 
@@ -516,7 +520,7 @@ def _get_sellable_items() -> List[Dict]:
             SELECT DISTINCT pbi.item_code AS item_code
             FROM `tabItem` i
             INNER JOIN `tabProduct Bundle Item` pbi ON i.name = pbi.parent
-            INNER INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
+            INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
             WHERE
                 1=1
                 {where_shopify}
@@ -1182,29 +1186,30 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
     # Fetch open Material Requests for this serial
     mr_items = frappe.db.sql(
-        """
-        SELECT 
-            MRI.parent AS material_request,
-            MRI.item_code,
-            Sr.serial_no AS against_serial_no,
-            MRI.stock_qty,
-            MRI.qty AS mr_qty,
-            Sr.item_group
-        FROM `tabMaterial Request Item` MRI
-        INNER JOIN `tabMaterial Request` MR 
-            ON MRI.parent = MR.name 
-            AND MR.docstatus = 1 
-            AND IFNULL(MR.post_order_status, '') != 'Completed'
-        INNER JOIN `tabSerial No` Sr 
-            ON Sr.serial_no = MRI.serial_no 
-            AND Sr.item_group = 'Laptops' 
-            AND Sr.status = 'Active'
-        WHERE Sr.serial_no IN %(serial_list)s
-        ORDER BY Sr.serial_no
-        """,
-        {"serial_list": (serial_no,)},
-        as_dict=True,
-    )
+            """
+            SELECT 
+                MRI.item_code,
+                MRI.item_group,
+                MRI.creation,
+                MRI.parent AS material_request,
+                MRI.serial_no,
+                MRI.stock_qty,
+                MRI.qty AS mr_qty
+            FROM `tabMaterial Request Item` MRI
+            INNER JOIN `tabMaterial Request` MR
+                ON MR.name = MRI.parent
+                AND MR.status = 'Pending'
+                AND IFNULL(MR.post_order_status, '') != 'Completed'
+                AND MR.docstatus = 1
+            WHERE MRI.serial_no IN %(serial_list)s
+                AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
+                AND MRI.docstatus = 1
+                AND MRI.item_group IS NOT NULL
+            ORDER BY MRI.modified DESC
+            """,
+            {"serial_list": (serial_no,)},
+            as_dict=True,
+        )
 
     # No MR at all -> free to plan
     if not mr_items:
@@ -1283,14 +1288,19 @@ def _append_plan_row(
         logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
         allowed = True  # on error, don't block the plan
 
-    # NEW: push suggested to_make into Serial No
-    try:
-        sn_doc = frappe.get_doc("Serial No", serial_no)
-        sn_doc.to_make = item_code_to_make   # <-- your field on Serial No
-        sn_doc.flags.ignore_mandatory = True
-        sn_doc.save(ignore_permissions=True)
-    except Exception as e:
-        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+    # NEW: push suggested to_make into Serial No (optional & lightweight)
+    if UPDATE_SERIAL_TO_MAKE:
+        try:
+            # Use a direct DB update instead of full doc.save() to reduce write overhead
+            frappe.db.set_value(
+                "Serial No",
+                serial_no,
+                "to_make",
+                item_code_to_make,
+                update_modified=False,  # avoids extra write to modified_by/modified
+            )
+        except Exception as e:
+            logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
     # Append the plan row
     plan_doc.append(

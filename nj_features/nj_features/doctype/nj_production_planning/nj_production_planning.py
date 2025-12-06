@@ -68,6 +68,10 @@ STORAGE_ATTR = "Storage Capacity"
 
 ALLOWED_ITEM_MODELS = set()
 
+# NEW: control whether planner writes to Serial No.to_make
+UPDATE_SERIAL_TO_MAKE = False  # set to True if you really want to update Serial No in this run
+
+
 # =========================
 # Global caches
 
@@ -225,8 +229,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     # Per-sequence forward-key universe
     forward_keys_per_seq: Dict[int, List] = {}
     for s in sequences:
-        fwd_grain = forward_grain_per_seq[s]
-        forward_keys_per_seq[s] = _build_forward_keys(sellable_items, fwd_grain, sales_rate)
+        forward_grain = forward_grain_per_seq[s]
+        forward_keys_per_seq[s] = _build_forward_keys(sellable_items, forward_grain, sales_rate)
 
     # -------- Build per-dept inward pools (STRICT to serial.department) --------
     inward_serials_per_dept: Dict[str, List[Dict]] = {}
@@ -370,13 +374,13 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
 
 @log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
-    # NOTE: The WHERE clause has been updated to reflect new filtering rules:
-    # 1. Use explicit status checks instead of relying only on docstatus.
-    # 2. Filter orders created in the last 60 days.
-    # 3. Use the updated list of item groups (Laptops, Chromebooks, Desktops, Chromeboxes).
-    # 4. Exclude 'Amazon' sales type and 'King Technologies' customer.
-    # 5. Include bundle components as separate stock items.
-
+    """
+    Pending SO lines:
+    - SO created in last 60 days
+    - Delivery date from today up to horizon_end (or no delivery date)
+    - Only selected item groups & stock items / bundle components
+    - Exclude Amazon & King Technologies
+    """
     soi = frappe.db.sql(
         """
         WITH SalesData AS (
@@ -398,8 +402,11 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
               AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
               -- Only pending quantity
               AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              -- Delivery horizon filter
-              AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+              -- Delivery horizon filter: today .. horizon_end (or NULL)
+              AND (
+                    soi.delivery_date IS NULL
+                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
+                  )
               -- Item group filter
               AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
               -- Only stock items
@@ -424,13 +431,16 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
             JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
             JOIN `tabItem` i ON pbi.item_code = i.item_code
-            WHERE so.creation >= CURDATE() - INTERVAL 60 DAY
-              AND so.docstatus = 1
+            WHERE so.docstatus = 1
+              AND so.creation >= CURDATE() - INTERVAL 60 DAY
               AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
               -- Only pending quantity (on the parent SO line)
               AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              -- Delivery horizon filter
-              AND (soi.delivery_date IS NULL OR soi.delivery_date >= %s)
+              -- Delivery horizon filter: today .. horizon_end (or NULL)
+              AND (
+                    soi.delivery_date IS NULL
+                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
+                  )
               -- Item group filter (applied on the SO line item group)
               AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
               -- SO line is a non-stock bundle item
@@ -453,11 +463,11 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
         FROM SalesData
         ORDER BY transaction_date DESC
         """,
-        # horizon_end is used twice (once in each part of the UNION)
-        (horizon_end, horizon_end),
+        {"horizon_end": horizon_end},
         as_dict=True,
     )
     return soi
+
 
 @log_io
 def _allocate_orders_to_sequences_multi(
@@ -741,7 +751,13 @@ def _match_inventory_to_order_queues_for_sequence(
             if not chosen:
                 break
 
-            target_item_code = _target_item_for_key(key) if allow_reconfig else chosen["item_code"]
+            # ********** CHANGED BLOCK START **********
+            # Never use template for MODEL keys; only resolve via CONFIG keys
+            if allow_reconfig and key and key[0] == "CONFIG":
+                target_item_code = _target_item_for_key(key)
+            else:
+                target_item_code = chosen["item_code"]
+            # ********** CHANGED BLOCK END **********
 
             allocations.append(
                 {
@@ -836,7 +852,13 @@ def _allocate_forecast_to_balance_doi(
             work.pop(0)
             continue
 
-        target_item_code = _target_item_for_key(target) if allow_reconfig else chosen["item_code"]
+        # ********** CHANGED BLOCK START **********
+        # Only resolve via CONFIG keys; for MODEL keys keep serial's item_code
+        if allow_reconfig and target and target[0] == "CONFIG":
+            target_item_code = _target_item_for_key(target)
+        else:
+            target_item_code = chosen["item_code"]
+        # ********** CHANGED BLOCK END **********
 
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
         inv_now = current_doi.get(target, 0.0) * rate
@@ -894,12 +916,35 @@ def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
 @log_io
 def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     """
-    CHANGE: Department-centric intake — fetch ALL active serials that belong to this department,
-    regardless of which warehouse they sit in. Active = not Delivered/Scrapped (or status is NULL).
+    Department-centric intake — fetch ALL active serials that belong to this department,
+    optionally excluding restricted warehouses.
+
+    Active = not Delivered/Scrapped/Inactive (or status is NULL).
     ALSO: fetch purchase_date so we can compute age_days.
     """
+    restricted_warehouse: List[str] = []
+
+    print("dept_name", dept_doc.name)
+
+    # Collect restricted warehouses from child table
+    for row in dept_doc.get("inventory_details_child", []):
+        raw = (row.get("restricted_department_warehouse_list") or "").strip()
+        if raw:
+            for w in [x.strip() for x in raw.split(",") if x.strip()]:
+                restricted_warehouse.append(w)
+
+    print("restricted_warehouse", restricted_warehouse)
+
+    # Build dynamic extra WHERE clause
+    extra_where = ""
+    params = {"dept": dept_doc.name}
+
+    if restricted_warehouse:
+        extra_where = " AND warehouse NOT IN %(restricted_whs)s"
+        params["restricted_whs"] = tuple(restricted_warehouse)
+
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT
             name,
             item_code,
@@ -908,16 +953,17 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             creation,
             purchase_date
         FROM `tabSerial No`
-        WHERE department = %s
+        WHERE department = %(dept)s
           AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND (item_wizard IS NOT NULL OR item_wizard != '')
+          {extra_where}
         """,
-        (dept_doc.name,),
+        params,
         as_dict=True,
     )
+
     _prime_item_cache([r["item_code"] for r in rows])
     return rows
-
 
 # =========================
 # Item/Attribute machinery
@@ -1124,10 +1170,11 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     - If no open MR exists for this serial -> True (we can show it in plan).
     - If open MR exists:
         * Try to allocate from Stores - NJ virtual stock.
-        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION
-          and create a row in Serial No's production_planning_allocation child table (for reference).
-        * If ANY MR line remains unallocated (insufficient stock) -> return False (skip this serial in plan).
-        * If all MR lines are allocated -> return True (serial can appear in plan).
+        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION.
+        * Only if ALL MR lines are allocatable do we write to the
+          Serial No's production_planning_allocation child table.
+        * If ANY MR line remains unallocated (insufficient stock) -> return False
+          (skip this serial in plan, and do not write the child table for it).
 
     Returns:
         True  -> caller should append the plan row.
@@ -1139,39 +1186,41 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
     # Fetch open Material Requests for this serial
     mr_items = frappe.db.sql(
-        """
-        SELECT 
-            MRI.parent AS material_request,
-            MRI.item_code,
-            Sr.serial_no AS against_serial_no,
-            MRI.stock_qty,
-            MRI.qty AS mr_qty,
-            Sr.item_group
-        FROM `tabMaterial Request Item` MRI
-        INNER JOIN `tabMaterial Request` MR 
-            ON MRI.parent = MR.name 
-            AND MR.docstatus = 1 
-            AND IFNULL(MR.post_order_status, '') != 'Completed'
-        INNER JOIN `tabSerial No` Sr 
-            ON Sr.serial_no = MRI.serial_no 
-            AND Sr.item_group = 'Laptops' 
-            AND Sr.status = 'Active'
-        WHERE Sr.serial_no IN %(serial_list)s
-        ORDER BY Sr.serial_no
-        """,
-        {"serial_list": (serial_no,)},
-        as_dict=True,
-    )
+            """
+            SELECT 
+                MRI.item_code,
+                MRI.item_group,
+                MRI.creation,
+                MRI.parent AS material_request,
+                MRI.serial_no,
+                MRI.stock_qty,
+                MRI.qty AS mr_qty
+            FROM `tabMaterial Request Item` MRI
+            INNER JOIN `tabMaterial Request` MR
+                ON MR.name = MRI.parent
+                AND MR.status = 'Pending'
+                AND IFNULL(MR.post_order_status, '') != 'Completed'
+                AND MR.docstatus = 1
+            WHERE MRI.serial_no IN %(serial_list)s
+                AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
+                AND MRI.docstatus = 1
+                AND MRI.item_group IS NOT NULL
+            ORDER BY MRI.modified DESC
+            """,
+            {"serial_list": (serial_no,)},
+            as_dict=True,
+        )
 
     # No MR at all -> free to plan
     if not mr_items:
         return True
 
-    has_unallocated = False
-    serial_doc = None
-
     global _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
 
+    alloc_rows = []
+    has_unallocated = False
+
+    # 1) Decide allocations purely in memory
     for row in mr_items:
         item_code = row["item_code"]
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
@@ -1185,40 +1234,25 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         if available >= mr_qty:
             # We can allocate this MR line
             _PART_PLANNED_ALLOCATION[item_code] = already_planned + mr_qty
-
-            # Persist reference on Serial No -> production_planning_allocation child table
-            try:
-                if serial_doc is None:
-                    serial_doc = frappe.get_doc("Serial No", serial_no)
-
-                # *** Remove existing rows in child table ***
-                serial_doc.set("production_planning_allocation", [])
-                
-                serial_doc.append(
-                    "production_planning_allocation",
-                    {
-                        # TODO: adjust fieldnames to match your child doctype
-                        # Example:
-                        "material_request": row["material_request"],  # MR No
-                        "item_code": item_code,                       # Part code
-                        "allocated_qty": mr_qty,                      # Allocated qty
-                    },
-                )
-            except Exception as e:
-                logger.warning("Could not append production_planning_allocation for serial %s: %s", serial_no, e)
+            alloc_rows.append(
+                {
+                    "material_request": row["material_request"],
+                    "item_code": item_code,
+                    "allocated_qty": mr_qty,
+                }
+            )
         else:
             # Not enough stock for this MR line -> serial should NOT appear in plan
             has_unallocated = True
 
-    if serial_doc is not None:
-        try:
-            serial_doc.flags.ignore_mandatory = True
-            serial_doc.save(ignore_permissions=True)
-        except Exception as e:
-            logger.warning("Could not save Serial No %s for part allocation: %s", serial_no, e)
-
     # If any MR line is still unallocated, this serial is blocked by parts
-    return not has_unallocated
+    # and we do NOT touch the Serial No doc.
+    if has_unallocated:
+        return False
+
+    # (Persisting child table is commented out here)
+
+    return True
 
 
 # =========================
@@ -1243,9 +1277,6 @@ def _append_plan_row(
     allowed = True
 
     # NEW: Part allocation gate
-    # If allocate_parts is enabled for this department:
-    #   - If MR is missing or fully allocated -> row is appended.
-    #   - If any MR remains unallocated -> row is SKIPPED.
     try:
         if _DEPT_ALLOCATE_PARTS and _DEPT_ALLOCATE_PARTS.get(current_department):
             allowed = _maybe_allocate_parts_for_serial(serial_no, current_department)
@@ -1257,14 +1288,19 @@ def _append_plan_row(
         logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
         allowed = True  # on error, don't block the plan
 
-    # NEW: push suggested to_make into Serial No
-    try:
-        sn_doc = frappe.get_doc("Serial No", serial_no)
-        sn_doc.to_make = item_code_to_make   # <-- your field on Serial No
-        sn_doc.flags.ignore_mandatory = True
-        sn_doc.save(ignore_permissions=True)
-    except Exception as e:
-        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+    # NEW: push suggested to_make into Serial No (optional & lightweight)
+    if UPDATE_SERIAL_TO_MAKE:
+        try:
+            # Use a direct DB update instead of full doc.save() to reduce write overhead
+            frappe.db.set_value(
+                "Serial No",
+                serial_no,
+                "to_make",
+                item_code_to_make,
+                update_modified=False,  # avoids extra write to modified_by/modified
+            )
+        except Exception as e:
+            logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
     # Append the plan row
     plan_doc.append(
@@ -1280,9 +1316,7 @@ def _append_plan_row(
             "item_code": item_code_to_make,
             "reason": reason,
             "priority_rank": int(priority_rank),
-            # add only if your Doctype has this field; else remove
             "serial_age_days": serial_age_days,
-            # will always be 1 for any row that survives the gate
             "allocate_parts": 1 if allowed else 0,
         },
     )

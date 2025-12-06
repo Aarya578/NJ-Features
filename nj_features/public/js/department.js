@@ -13,13 +13,13 @@ frappe.ui.form.on('Stock Movement Restriction Child', {
             let child = locals[cdt][cdn];
         
             if (child.grade) {
-                let currentGrades = child.restricted_grade ? child.restricted_grade.split(', ') : [];
+                let currentGrades = child.restricted_grade ? child.restricted_grade.split(',') : [];
 
                 if (!currentGrades.includes(child.grade)) {
                     currentGrades.push(child.grade);
                 }
 
-                frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(', '));
+                frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(','));
                 frappe.model.set_value(cdt, cdn, 'grade', '');
             }
         }else{
@@ -37,13 +37,13 @@ frappe.ui.form.on('Allowed Item Group Grades', {
             let child = locals[cdt][cdn];
         
             if (child.grade) {
-                let currentGrades = child.restricted_grade ? child.restricted_grade.split(', ') : [];
+                let currentGrades = child.restricted_grade ? child.restricted_grade.split(',') : [];
 
                 if (!currentGrades.includes(child.grade)) {
                     currentGrades.push(child.grade);
                 }
 
-                frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(', '));
+                frappe.model.set_value(cdt, cdn, 'restricted_grade', currentGrades.join(','));
                 frappe.model.set_value(cdt, cdn, 'grade', '');
             }
         }else{

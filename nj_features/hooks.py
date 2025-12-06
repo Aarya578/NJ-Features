@@ -99,7 +99,6 @@ doc_events = {
         "before_save": "nj_features.overrides.sales_invoice.approve_validation"
     }
 
-
 }
 
 # ========== Override Whitelisted Methods ==========

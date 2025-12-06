@@ -141,7 +141,7 @@ def validate_non_component_grade(serial_doc, department_doc):
         lap_grade, lap_item_group = result
 
         for restriction in department_doc.get('stock_movement_restriction_table', []):
-            restricted_grades = restriction.get('restricted_grade', "").split(", ")
+            restricted_grades = restriction.get('restricted_grade', "").split(",")
             restricted_item_group = restriction.get('item_group')
 
             if lap_item_group == restricted_item_group and lap_grade in restricted_grades:
@@ -153,7 +153,7 @@ def validate_non_component_grade(serial_doc, department_doc):
 
         for component in serial_doc.get('serial_no_component', []):
             for restriction in department_doc.get('stock_movement_restriction_table', []):
-                restricted_grades = restriction.get('restricted_grade', "").split(", ")
+                restricted_grades = restriction.get('restricted_grade', "").split(",")
                 restricted_item_group = restriction.get('item_group')
 
                 if (
@@ -176,7 +176,7 @@ def validate_non_component_grade(serial_doc, department_doc):
 def validate_component_grade(serial_doc, department_doc):
     try:
         for restriction in department_doc.get('stock_movement_restriction_table', []):
-            restricted_grades = [grade.upper() for grade in restriction.get('restricted_grade', "").split(", ")]
+            restricted_grades = [grade.upper() for grade in restriction.get('restricted_grade', "").split(",")]
 
             if (
                 serial_doc.get('item_group') == restriction.get('item_group') and

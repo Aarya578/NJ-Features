@@ -761,7 +761,7 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
     lap_grade, lap_item_group = result
 
     for restriction in department_doc.get('stock_movement_restriction_table', []):
-        restricted_grades = restriction.get('restricted_grade', "").split(", ")
+        restricted_grades = restriction.get('restricted_grade', "").split(",")
         restricted_item_group = restriction.get('item_group')
 
         if lap_item_group == restricted_item_group and lap_grade in restricted_grades:
@@ -773,7 +773,7 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
     
     for component in serial_doc.get('serial_no_component', []):
         for restriction in department_doc.get('stock_movement_restriction_table', []):
-            restricted_grades = restriction.get('restricted_grade', "").split(", ")
+            restricted_grades = restriction.get('restricted_grade', "").split(",")
             restricted_item_group = restriction.get('item_group')
 
             if (component.get('item_group') == restricted_item_group and
@@ -786,7 +786,7 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):
-        restricted_grades = [grade.upper() for grade in restriction.get('restricted_grade', "").split(", ")]
+        restricted_grades = [grade.upper() for grade in restriction.get('restricted_grade', "").split(",")]
         if (serial_doc.get('item_group') == restriction.get('item_group') and
                 get_item_code_and_warehouse(serial_doc.get('item_code')).upper() in restricted_grades):
             error_messages.append(

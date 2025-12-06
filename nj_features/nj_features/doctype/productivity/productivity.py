@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
+import traceback
 from frappe.model.document import Document
-logger = frappe.logger("productivity", allow_site=True, file_count=1)
 
 class Productivity(Document):
     pass
@@ -83,7 +83,7 @@ def fetch_productivity_data():
                     b.target_role_profile AS Target_Profile
                 FROM `tabStock Entry` a
                 INNER JOIN `tabStock Entry Detail` b 
-                    ON a.creation >= (CURRENT_DATE() - INTERVAL 1 DAY)
+                    ON a.creation >= (CURRENT_DATE())
                     AND a.purpose = 'Material Transfer'
                     AND a.docstatus = 1
                     AND a.name = b.parent
@@ -119,7 +119,6 @@ def fetch_productivity_data():
 
 @frappe.whitelist()
 def fetch_data_kpi_dashboard(user):
-    
     try:
         target_query="""
             SELECT 
@@ -131,8 +130,8 @@ def fetch_data_kpi_dashboard(user):
                 `tabEmployee` as emp on emp.user_id=dcl.user_name 
                 left join `tabEmployee Checkin` as empc on empc.employee = concat("EMP-",emp.emp_id) AND DATE(empc.creation) = DATE(dcl.creation)
                 WHERE user_name = %s
-                AND dcl.owner = "Administrator"
-                AND dcl.creation >= DATE_FORMAT(CURDATE(), '%Y-%m-01') and dcl.creation < current_date()
+                AND dcl.owner = 'Administrator'
+                AND dcl.creation >= DATE_FORMAT(CURDATE(), '%%Y-%%m-01') and dcl.creation < current_date()
                 AND empc.name is not null
                 AND WEEKDAY(dcl.creation) != 6
                 GROUP BY DATE(dcl.creation)
@@ -140,20 +139,19 @@ def fetch_data_kpi_dashboard(user):
             GROUP BY t.role_profile;
         """
         achived_query="""
-            SELECT sum(wtd_qty) as achived, role_profile from `tabProductivity` where 
-                user=%s and stock_entry_creation>=DATE_FORMAT(CURDATE(), '%Y-%m-01') and stock_entry_creation < current_date()
+            SELECT sum(wtd_qty) as achieved, source_role_profile as role_profile from `tabProductivity` where 
+                user=%s and stock_entry_creation>=DATE_FORMAT(CURDATE(), '%%Y-%%m-01') and stock_entry_creation < current_date()
                 group by source_role_profile;
             """     
      
         target_result= frappe.db.sql(target_query, user, as_dict=1)
         achived_result= frappe.db.sql(achived_query, user, as_dict=1)
-        print(achived_result)
         if target_result and achived_result:
             if len(target_result) >= len(achived_result):
                 for i in range(len(target_result)):
                     for j in range(len(achived_result)):
                         if target_result[i].role_profile == achived_result[j].role_profile:
-                            target_result[i]['achived'] = achived_result[j].achived
+                            target_result[i]['achieved'] = achived_result[j].achieved
                 return target_result
             else:
                 for i in range(len(achived_result)):
@@ -161,6 +159,8 @@ def fetch_data_kpi_dashboard(user):
                         if target_result[j].role_profile == achived_result[i].role_profile:
                             achived_result[i]['target'] = target_result[j].target
                 return achived_result
+        else:
+            frappe.logger().error(f'NO DATA in fetch_data_kpi_dashboard for {user}')
                     
     except Exception as e:
         frappe.logger().error(f'Error in fetch_data_kpi_dashboard: {e}')

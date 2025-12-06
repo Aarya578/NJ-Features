@@ -25,31 +25,36 @@ frappe.ui.form.on('Sales Invoice', {
     
     // },
 
-    onload: function(frm) {
-        let items = frm.doc.items.map(row => ({
-            idx: row.idx,
-            item_group: row.item_group
-        }));
+    // onload: function(frm) {
+    //     let items = frm.doc.items.map(row => ({
+    //         idx: row.idx,
+    //         item_group: row.item_group
+    //     }));
 
-        frappe.call({
-            method: "nj_features.overrides.sales_invoice.get_item_group_cost_centers",
-            args: { items: items },
-            callback: function(r) {
+    //     frappe.call({
+    //         method: "nj_features.overrides.sales_invoice.get_item_group_cost_centers",
+    //         args: { items: items },
+    //         callback: function(r) {
                 
-                if (r.message) {
-                    frm.doc.items.forEach(row => {
-                        if (r.message[row.idx]) {
-                            frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
+    //             if (r.message) {
+    //                 frm.doc.items.forEach(row => {
+    //                     if (r.message[row.idx]) {
+    //                         frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
 
-                        }
-                         frm.refresh_field('cost_center');
-                    });
-                }
-            }
-        });
-    },
+    //                     }
+    //                      frm.refresh_field('cost_center');
+    //                 });
+    //             }
+    //         }
+    //     });
+    // },
     validate:  function(frm) {
+        //  frm.call({
+        //     method: "nj_features.overrides.sales_invoice.approve_validation",
+        //     doc: frm.doc,  // automatically sends doc
+        // });
         setup_custom_einvoice_actions(frm);
+
         
     //     if (!frm.doc.invoice_no && !frm.doc.transporter_id && !frm.doc.transporter_names && !frm.doc.email) {
     //         frappe.call({
@@ -86,6 +91,8 @@ frappe.ui.form.on('Sales Invoice', {
     //             }
     //         }
     //     });
+
+
     },
     
 });

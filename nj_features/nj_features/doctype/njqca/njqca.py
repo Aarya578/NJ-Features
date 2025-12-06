@@ -387,7 +387,8 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'available_qty': nj_readings_data.get('available_qty'),
                         'previous_reference_doctype': nj_readings_data.get('previous_reference_doctype'),
                         'previous_reference_doctype_no': nj_readings_data.get('previous_reference_doctype_no'),
-                        'plan_time': nj_readings_data.get('plan_time')
+                        'plan_time': nj_readings_data.get('plan_time'),
+                        'depends_on_linked_item_group': nj_readings_data.get('depends_on_linked_item_group'),
                     })
             # Clear existing table entries and add new ones
             new_qi.set('nj_quality_readings', [])
@@ -473,6 +474,7 @@ class NJQCA(Document):
         try:
         
             self.check_for_repack_access()
+            self.updating_njqca_child_in_serial_no()
             self.laptop_reports_update()
             self.battery_reports_update()
             self.adaptor_reports_update()
@@ -583,7 +585,69 @@ class NJQCA(Document):
         if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
             if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
                 frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+    def updating_njqca_child_in_serial_no(self):
+        # Only proceed for Core IQC and Laptops
+        if self.inspection_type != "Final QC" or self.item_group != "Laptops":
+            return
 
+        if not self.serial_no:
+            return
+
+        # Fetch Serial No doc
+        serial_doc = frappe.get_doc("Serial No", self.serial_no)
+
+        # --- Update serial_no_result_parameters ---
+        result_params = frappe.db.get_all(
+            "NJQCA Result Parameters",
+            filters={"parent": self.name},
+            fields=[
+                "part_config_id",
+                "item_group",
+                "parameter",
+                "value",
+                "score",
+                "cpu_load",
+                "discharge_rate"
+            ]
+        )
+        serial_doc.set("serial_no_result_parameters", [])
+        for row in result_params:
+            serial_doc.append("serial_no_result_parameters", row)
+
+        # --- Update serial_no_njqca_child ---
+        njqca_child_rows = frappe.db.get_all(
+            "NJQCA Child",
+            filters={"parent": self.name},
+            fields=[
+                "part_config_id",
+                "item_group",
+                "part_item_code",
+                "variant_1",
+                "variant_2",
+                "variant_3",
+                "variant_4",
+                "variant_5",
+                "variant_6",
+                "part_serial_no",
+                "variant_7",
+                "variant_8",
+                "variant_9",
+                "variant_10",
+                "variant_11",
+                "variant_12",
+                "variant_13",
+                "variant_14",
+                "variant_15",
+                "attr_data",
+                "update_variant"
+            ]
+        )
+        serial_doc.set("serial_no_njqca_child", [])
+        for row in njqca_child_rows:
+            serial_doc.append("serial_no_njqca_child", row)
+
+        # Save Serial No doc
+        serial_doc.save(ignore_permissions=True)
     def update_serial_no_readings(self):
 
         if self.rfq_id is not None:
@@ -1423,7 +1487,7 @@ def get_item_code_for_each_part(doc):
 
                                     final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and doc.get('item_group') == 'Chromebooks':
+                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
@@ -1439,7 +1503,7 @@ def get_item_code_for_each_part(doc):
                                 continue
 
                             process_variant_status = False
-                            if variant == 'variant_1' and not skip_memory:
+                            if variant == 'variant_5' and not skip_memory:
                                 process_variant_status = process_variant(variant, row, mapping, attribute_object)
 
                             if not process_variant_status and not skip_memory:
@@ -1620,7 +1684,7 @@ def get_part_mapping(doc):
             return json.dumps(get_item_code_for_each_part(doc))
             
         except Exception as e:
-            log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
+            # log_error(traceback.format_exc(), "An error occurred in get_part_mapping in NJQCA")
             frappe.throw(f"An error occurred in get_part_mapping: {traceback.format_exc()}")
 
 def consolidate_ram_capacities(data):
@@ -2571,7 +2635,7 @@ def update_performance_criteria(doc):
             else:
                 criteria_doc = criteria_doc_raw
         except json.JSONDecodeError as e:
-            frappe.log_error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
+            frappe.log_error().error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
             return {"error": "Invalid JSON format in NJ Settings."}
         if disk_type:
            disk_criteria_list = criteria_doc.get(disk_type)
@@ -2665,9 +2729,9 @@ def update_performance_criteria(doc):
                             "message": message
                         })
 
-                frappe.logger().info("\nEvaluation Results:")
-                for result in evaluation_results:
-                    frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
+                # frappe.logger().info("\nEvaluation Results:")
+                # for result in evaluation_results:
+                #     frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
 
                 update_njqca_doc(doc.get("name"), evaluation_results)
 

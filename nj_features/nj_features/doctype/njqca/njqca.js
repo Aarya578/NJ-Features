@@ -248,7 +248,9 @@ frappe.ui.form.on('NJQCA', {
 	},
     
     validate: async function(frm) {
-        
+        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
+            processItemTemplate(frm);
+        }
         var selectedModel = frm.doc.model;
         var selectedBrand = frm.doc.brand;
         var selectedItemGroup = frm.doc.item_group;
@@ -412,17 +414,16 @@ frappe.ui.form.on('NJQCA', {
 
                     } else if (r.message) {
                         
-                        let existingRow = null;
-                        (frm.doc.njqca_result_parameters || []).forEach(row => {
-                            if (row.parameter === r.message.parameter) {
-                                existingRow = row;
-                            }
-                        });
+                        // let existingRow = null;
+                        // (frm.doc.njqca_result_parameters || []).forEach(row => {
+                        //     if (row.parameter === r.message.parameter) {
+                        //         existingRow = row;
+                        //     }
+                        // });
         
-                        if (existingRow) {
-                            frappe.model.clear_doc(existingRow.doctype, existingRow.name);
-                        }
-        
+                        // if (existingRow) {
+                        //     frappe.model.clear_doc(existingRow.doctype, existingRow.name);
+                        // }        
                         var child = frappe.model.add_child(frm.doc, "njqca_result_parameters");
                         frappe.model.set_value(child.doctype, child.name, 'parameter', r.message.parameter);
                         frappe.model.set_value(child.doctype, child.name, 'value', r.message.value);
@@ -460,9 +461,6 @@ frappe.ui.form.on('NJQCA', {
         }
 
         // Check automated repack item code
-        if (frm.doc.manual_repack_item_code && frm.doc.manual_repack_item_code !== frm.doc.repack_item_code) {
-            processItemTemplate(frm);
-        }
     },
 
     rfq_id: function(frm) {

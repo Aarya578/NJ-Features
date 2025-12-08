@@ -524,7 +524,8 @@ def update_status_in_shopify():
             post_url = f"{base_url}/orders/{shopify_order_number}/fulfillments/{fulfillment_id}/events.json"
             post_body = {
                 "event": {
-                    "status": shopify_delivery_status
+                    "status": shopify_delivery_status.strip().lower().replace(" ", "_")
+
                 }
             }
 

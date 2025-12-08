@@ -17,6 +17,8 @@ from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.common_utils import get_latest_item_wizard
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
+from erpnext.controllers.status_updater import OverAllowanceError
+
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 
 logger = frappe.logger('DNLoggerssss', allow_site=True, file_count=1)
@@ -26,6 +28,14 @@ FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 
 class CustomDeliveryNote(DeliveryNote):
+    def validate(self):
+        super().validate()
+        self.apply_patch()
+
+    def apply_patch(self):
+        import erpnext.controllers.status_updater as status_updater
+        status_updater.StatusUpdater.limits_crossed_error = custome_limits_crossed_error
+        print("\n=== Monkey Patch Applied: =============================limits_crossed_error overridden ===\n")
     
     def on_submit(self):
         try:
@@ -83,7 +93,6 @@ class CustomDeliveryNote(DeliveryNote):
                     
                     # Only trigger fulfillment if conditions are met
                     if order_type == 'Sales' and sale_type == 'NJ-Website-B2C':
-                        print("funtion executed============")
                         trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
                     else:
                         print(f"Skipping fulfillment trigger for DN {self.name} - Order Type: {order_type}, Sale Type: {sale_type}")
@@ -138,35 +147,6 @@ class CustomDeliveryNote(DeliveryNote):
                     frappe.throw(f"Missing Sales Order reference for item: {item.item_code}")
 
                 if item.against_sales_order not in sales_order_info_map:
-                    # sales_order_data = frappe.db.sql("""
-                    #     SELECT 
-                    #         so.customer_name, so.name, so.sale_type,
-                    #         COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                    #         so.transaction_date, so.delivery_date,si.sales_channel, 
-                    #         COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
-                    #         COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
-                    #         IFNULL(so.shipping_address, so.address_display) AS so_address
-                    #     FROM `tabSales Order` so
-                    #     INNER JOIN `tabSales Invoice Item` sii ON sii.sales_order = so.name
-                    #     INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-                    #     LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
-                    #     LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                    #     WHERE so.name = %s LIMIT 1
-                    # """, (item.against_sales_order,), as_dict=True)
-                    # sales_order_data = frappe.db.sql("""
-                    #     SELECT 
-                    #         so.customer_name, so.name, so.sale_type,
-                    #         COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id) AS order_id, 
-                    #         so.transaction_date, so.delivery_date, 
-                    #         so.sales_channel, 
-                    #         COALESCE(addr_ship.email_id, addr_cust.email_id, '') AS email_id,
-                    #         COALESCE(addr_ship.phone, addr_cust.phone, '') AS phone,
-                    #         IFNULL(so.shipping_address, so.address_display) AS so_address
-                    #     FROM `tabSales Order` so
-                    #     LEFT JOIN `tabAddress` addr_ship ON addr_ship.name = so.shipping_address_name
-                    #     LEFT JOIN `tabAddress` addr_cust ON addr_cust.name = so.customer_address
-                    #     WHERE so.name = %s AND so.docstatus = 1 LIMIT 1;
-                    # """, (item.against_sales_order,), as_dict=True)
                     sales_order_data = frappe.db.sql("""
                         SELECT 
                             TRIM(so.customer_name) AS customer_name,
@@ -572,7 +552,7 @@ class CustomDeliveryNote(DeliveryNote):
         except Exception as e:
             frappe.msgprint(f"Failed to send data to Criticalog API. Error: {str(e)}")
 
-       
+
     def rto_charges_update(self):
         if not self.is_return:
             return
@@ -760,7 +740,129 @@ class CustomDeliveryNote(DeliveryNote):
         # 8. Throw all error messages at once
         if error_messages:
             unique_errors = list(set(error_messages))
+
             frappe.throw("<br>".join(unique_errors))
+import math
+@frappe.whitelist()
+def custome_limits_crossed_error(self, args, item, qty_or_amount):
+    print("\n\n=== CUSTOM limits_crossed_error CALLED ===\n")
+
+    # ---------------------------------------------------------
+    # 1. Fetch against sales order (Delivery Note Item → Sales Order)
+    # ---------------------------------------------------------
+    against_sales_order = frappe.get_value(
+        "Delivery Note Item",
+        {"parent": self.name},
+        "against_sales_order"
+    )
+
+    print("Against SO =", against_sales_order)
+
+    sale_type = None
+    if against_sales_order:
+        sale_type = frappe.get_value(
+            "Sales Order",
+            {"name": against_sales_order},
+            "sale_type"
+        )
+
+    print("SALE TYPE =", sale_type)
+    nj_setting_value = frappe.db.get_value("NJ Settings", {"parameter": "sale_type_name"}, "value")
+    print("NJ Setting Value ==========", nj_setting_value)
+
+    # ---------------------------------------------------------
+    # 2. SKIP FUNCTION COMPLETELY IF NJ Seeting Value is Matches
+    # ---------------------------------------------------------
+    if sale_type == nj_setting_value:
+        print("Skipping limits_crossed_error — Amazon order")
+        customer = frappe.db.get_value("Delivery Note", {"name": self.name}, "customer")
+        print("Customer ===============", customer)
+        customer_data = frappe.db.get_value(
+            "Customer",
+            {"name": customer},
+            ["allow_over_dn", "qty"],
+            as_dict=True
+        )
+        print("Customer Data ===============", customer_data)
+
+        if customer_data.allow_over_dn != 1:
+            frappe.throw("Allow Over DN is desabled for this Customer.")
+        if customer_data.qty == 0:
+            frappe.throw("Qty is 0 for this Customer. Please update the Qty.")
+
+        total_qty = frappe.db.get_value("Sales Order", against_sales_order, "total_qty")
+        print("Total Qty ===============", total_qty)
+
+        percentage = frappe.db.get_value("Customer", customer, "qty")
+        print("Customer Qty (Percentage) ===============", percentage)
+
+        customer_qty_raw = (percentage / 100) * total_qty
+        print("Customer Qty (Converted) ===============", customer_qty_raw)
+
+        customer_qty = math.ceil(customer_qty_raw)
+        print("Customer Qty (Converted & Rounded Up) ===============", customer_qty)
+        total_sum_qty = total_qty + customer_qty
+        print("Total Sum Qty ===============", total_sum_qty)
+
+        submitted_dn = frappe.db.sql(f"""
+            SELECT DISTINCT dn.name, dn.total_qty
+            FROM `tabDelivery Note` dn
+            INNER JOIN `tabDelivery Note Item` dni
+                ON dni.parent = dn.name
+            WHERE dn.docstatus = 1
+            AND dn.name != '{self.name}'
+            AND dni.against_sales_order = '{against_sales_order}'
+        """, as_dict=True)
+
+
+        print("Submitted DN ===============", submitted_dn)
+
+        submitted_dn_qty = sum((d.total_qty or 0) for d in submitted_dn)
+        print("Submitted DN Qty ===============", submitted_dn_qty)
+
+        # Fetch current DN qty
+        current_dn_qty = frappe.db.get_value("Delivery Note", self.name, "total_qty") 
+        print("Current DN Qty ===============", current_dn_qty)
+
+        # Total delivered including current
+        total_delivered = submitted_dn_qty + current_dn_qty
+        print("Total Delivered ===============", total_delivered)
+        if self.is_replacement !=1:
+            frappe.throw("Is replacement is not checked and its Mandatory.")
+        # Compare
+        if total_sum_qty < total_delivered:
+            frappe.throw("Over Delivery Note is not allowed. Please update the Qty.")
+        return 
+
+    # ---------------------------------------------------------
+    # 3. Continue normal custom error logic
+    # ---------------------------------------------------------
+    if qty_or_amount == "qty":
+        action_msg = _(
+            'To allow over receipt / delivery, update "Over Receipt/Delivery Allowance" in Stock Settings or the Item.'
+        )
+    else:
+        action_msg = _(
+            'To allow over billing, update "Over Billing Allowance" in Accounts Settings or the Item.'
+        )
+
+    # Throw custom error
+    frappe.throw(
+        _(
+            "Custom ERROR: This document is over limit by {0} {1} for item {4}. "
+            "Are you making another {3} against the same {2}?"
+        ).format(
+            frappe.bold(_(item["target_ref_field"].title())),
+            frappe.bold(item["reduce_by"]),
+            frappe.bold(_(args.get("target_dt"))),
+            frappe.bold(_(self.doctype)),
+            frappe.bold(item.get("item_code")),
+        )
+        + "<br><br>" + action_msg,
+        OverAllowanceError,
+        title=_("Limit Crossed"),
+    )
+
 
 @frappe.whitelist()
 def get_link_1(name):
@@ -943,31 +1045,30 @@ def shopify_request(session, method, url, headers=None, json=None):
     while True:
         response = session.request(method, url, headers=headers, json=json)
 
-        # --- FIX: Shopify may return Retry-After: "2.0" which breaks urllib3 ---
+        # --- FIX: Shopify may send Retry-After: "2.0" which breaks urllib3 ---
         retry_after_header = response.headers.get("Retry-After")
         if retry_after_header:
             try:
-                # Convert float string → int string   "2.0" → "2"
-                retry_after_int = int(float(retry_after_header))
+                retry_after_int = int(float(retry_after_header))  # "2.0" → 2
                 response.headers["Retry-After"] = str(retry_after_int)
             except:
-                # If conversion fails, remove the header to avoid crash
                 response.headers.pop("Retry-After", None)
 
-        # Shopify throttling (429 error)
+        # Shopify throttling (status 429)
         if response.status_code == 429:
             retry_after = float(response.headers.get("Retry-After", 1))
             time.sleep(retry_after)
             continue
 
-        # API Call Limit headers
+        # Shopify API call limit logic
         call_limit = response.headers.get("X-Shopify-Shop-Api-Call-Limit")
         if call_limit:
             used, max_allowed = map(int, call_limit.split('/'))
             if used >= max_allowed - 2:
-                time.sleep(1.0)
+                time.sleep(1)
 
         return response
+
 
 
 @frappe.whitelist(allow_guest=True)
@@ -975,11 +1076,10 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
 
     doc = frappe.get_doc("Delivery Note", dn_name)
 
-    # skip returns
     if doc.is_return:
         return
 
-    # prevent duplicate fulfillment for same order
+    # Prevent duplicate fulfillment for same sales order
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": dn_name}, "against_sales_order")
     if against_sales_order:
         exists = frappe.db.exists(
@@ -989,11 +1089,11 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
         if exists:
             return
 
-    # Shopify session
+    # ---------------- FIX: SAFE SHOPIFY SESSION ----------------
     session = requests.Session()
-    retry = Retry(total=3, backoff_factor=1)
-    adapter = HTTPAdapter(max_retries=retry)
+    adapter = HTTPAdapter(max_retries=False)  # <---- FIX HERE
     session.mount("https://", adapter)
+    session.mount("http://", adapter)
 
     headers = {
         "Content-Type": "application/json",
@@ -1003,6 +1103,7 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     # ---------------- GET ORDER DETAILS ----------------
     order_url = f"{SHOPIFY_URL}{order_id}"
     r = shopify_request(session, "GET", order_url, headers=headers)
+
     if r.status_code != 200:
         frappe.throw(f"Shopify Order Error: {r.text}")
 
@@ -1026,7 +1127,7 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     if not tracking_number:
         frappe.throw("Tracking ID not found")
 
-    # Build tracking link
+    # Build tracking URL
     tracking_link = None
     try:
         courier_doc = frappe.get_doc("Courier Service", courier_service)
@@ -1048,11 +1149,15 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
 
         f_json = r2.json()
         if "fulfillments" not in f_json or not f_json["fulfillments"]:
-            frappe.throw("No existing fulfillment found")
+            frappe.throw("No existing fulfillment found to update")
 
         f_id = f_json["fulfillments"][0]["id"]
 
-        update_url = f"https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments/{f_id}/update_tracking.json"
+        update_url = (
+            f"https://newjaisa.myshopify.com/admin/api/2025-01/"
+            f"fulfillments/{f_id}/update_tracking.json"
+        )
+
         payload = {
             "fulfillment": {
                 "tracking_info": {
@@ -1074,17 +1179,18 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     # CASE 2: Create NEW fulfillment
     # ===========================================================
 
-    # Get fulfillment order ID
+    # Fetch fulfillment order ID
     fulfillment_order_url = FULLFILMENT_ORDER_ID.format(shopify_order_id=shopify_order_id)
-    r4 = shopify_request(session, "GET", fulfillment_order_url, headers=headers)
 
+    r4 = shopify_request(session, "GET", fulfillment_order_url, headers=headers)
     fulfillment_data = r4.json().get("fulfillment_orders", [])
+
     if not fulfillment_data:
         frappe.throw("Fulfillment Order not found")
 
     fulfillment_order_id = fulfillment_data[0]["id"]
 
-    # Create fulfillment
+    # Create fulfillment payload
     fulfillment_payload = {
         "fulfillment": {
             "line_items_by_fulfillment_order": [
@@ -1103,189 +1209,6 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     if r5.status_code not in [200, 201]:
         frappe.throw(f"Fulfillment creation error: {r5.text}")
 
-# @frappe.whitelist(allow_guest=True)
-# def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None, dn_name=None):
-#     doc = frappe.get_doc("Delivery Note", dn_name)
-    
-#     # Skip return delivery note
-#     if doc.is_return:
-#         return
-
-#     # Skip if a return delivery already exists for the order
-#     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": dn_name}, "against_sales_order")
-#     if against_sales_order:
-#         return_dn_exists = frappe.db.sql("""
-#             SELECT 1 FROM `tabDelivery Note Item` dn_item
-#             JOIN `tabDelivery Note` dn ON dn.name = dn_item.parent
-#             WHERE dn.is_return = 1
-#             AND dn_item.against_sales_order = %s
-#             LIMIT 1
-#         """, (against_sales_order,), as_dict=True)
-
-#         if return_dn_exists:
-#             return
-
-#     # ✅ Shopify retry-safe Session
-#     session = requests.Session()
-#     retry_strategy = Retry(
-#         total=3,
-#         status_forcelist=[429, 500, 502, 503, 504],
-#         allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST"],
-#         backoff_factor=2,
-#         respect_retry_after_header=False  # ✅ Fix Retry-After float crash
-#     )
-#     adapter = HTTPAdapter(max_retries=retry_strategy)
-#     session.mount("https://", adapter)
-#     session.mount("http://", adapter)
-
-#     try:
-#         headers = {
-#             "Content-Type": "application/json",
-#             "X-Shopify-Access-Token": TOKEN
-#         }
-
-#         # ====== GET ORDER DETAILS FROM SHOPIFY ======
-#         url = f"{SHOPIFY_URL}{order_id}"
-#         response = session.get(url, headers=headers, timeout=30)
-
-#         if response.status_code == 429:
-#             retry_after_header = response.headers.get("Retry-After")
-#             try:
-#                 retry_after = float(retry_after_header) if retry_after_header else 10
-#             except ValueError:
-#                 retry_after = 10
-#             time.sleep(retry_after)
-#             response = session.get(url, headers=headers, timeout=30)
-
-#         if response.status_code != 200:
-#             frappe.throw(f"Shopify API error: {response.status_code} - {response.text}")
-
-#         data = response.json()
-
-#         if "orders" not in data or not data["orders"]:
-#             frappe.throw("Order not found in Shopify response.")
-
-#         order = data["orders"][0]
-#         order_id_shopify = order.get("id")
-#         if not order_id_shopify:
-#             frappe.throw("Shopify Order ID not found.")
-
-#         fulfillment_status = order.get("fulfillment_status")
-
-#         # ====== FETCH TRACKING DETAILS ======
-#         tracking_number, courier_service = frappe.db.get_value(
-#             "Delivery Note", {"name": dn_name},
-#             ["tracking_id", "courier_service"]
-#         ) or (None, None)
-
-#         if not tracking_number or not courier_service:
-#             frappe.throw("Tracking data not found in Delivery Note.")
-
-#         tracking_link = None
-#         courier_company = courier_service
-
-#         # Attempt to fetch from Courier Service doctype
-#         try:
-#             courier_doc = frappe.get_doc("Courier Service", courier_service)
-#             base_url = getattr(courier_doc, "tracking_url", None)
-#             if base_url:
-#                 tracking_link = f"{base_url.rstrip('/')}/{tracking_number}"
-
-#             courier_company = getattr(courier_doc, "courier_name", courier_service)
-
-#         except frappe.DoesNotExistError:
-#             pass
-
-#         time.sleep(0.4)  # ⚠️ Avoid Shopify throttling
-
-#         # ====== CASE 1 ✅ Already Fulfilled -> Update Tracking Only ======
-#         if fulfillment_status == "fulfilled":
-#             fulfillment_url = f"https://newjaisa.myshopify.com/admin/api/2025-01/orders/{order_id_shopify}/fulfillments.json"
-#             fulfillment_response = session.get(fulfillment_url, headers=headers, timeout=30)
-
-#             if fulfillment_response.status_code == 429:
-#                 time.sleep(2)
-#                 fulfillment_response = session.get(fulfillment_url, headers=headers, timeout=30)
-
-#             if fulfillment_response.status_code != 200:
-#                 frappe.throw(f"Failed to get fulfillments: {fulfillment_response.status_code}")
-
-#             fulfillment_json = fulfillment_response.json()
-
-#             if not fulfillment_json.get("fulfillments"):
-#                 frappe.throw("No fulfillment found to update.")
-
-#             existing_fulfillment_id = fulfillment_json["fulfillments"][0]["id"]
-
-#             update_payload = {
-#                 "fulfillment": {
-#                     "tracking_info": {
-#                         "number": tracking_number,
-#                         "company": courier_company,
-#                         "url": tracking_link
-#                     },
-#                     "notify_customer": True
-#                 }
-#             }
-
-#             update_url = f"https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments/{existing_fulfillment_id}/update_tracking.json"
-#             update_response = session.post(update_url, headers=headers, json=update_payload, timeout=30)
-
-#             if update_response.status_code == 429:
-#                 time.sleep(2)
-#                 update_response = session.post(update_url, headers=headers, json=update_payload, timeout=30)
-
-#             if update_response.status_code != 200:
-#                 frappe.throw(f"Failed to update tracking: {update_response.status_code}")
-
-#             frappe.msgprint("Shopify fulfillment tracking updated successfully ✅")
-#             return
-
-#         # ====== CASE 2 ✅ Create New Fulfillment ======
-#         fulfillment_order_url = FULLFILMENT_ORDER_ID.format(shopify_order_id=order_id_shopify)
-#         fulfillment_order_response = session.get(fulfillment_order_url, headers=headers, timeout=30)
-
-#         if fulfillment_order_response.status_code == 429:
-#             time.sleep(2)
-#             fulfillment_order_response = session.get(fulfillment_order_url, headers=headers, timeout=30)
-
-#         if fulfillment_order_response.status_code != 200:
-#             frappe.throw(f"Failed to get fulfillment orders: {fulfillment_order_response.status_code}")
-
-#         fulfillment_order_data = fulfillment_order_response.json()
-
-#         if not fulfillment_order_data.get("fulfillment_orders"):
-#             frappe.throw("Fulfillment Order not found.")
-
-#         fulfillment_order_id = fulfillment_order_data["fulfillment_orders"][0]["id"]
-
-#         fulfillment_payload = {
-#             "fulfillment": {
-#                 "line_items_by_fulfillment_order": [
-#                     {"fulfillment_order_id": fulfillment_order_id}
-#                 ],
-#                 "tracking_info": {
-#                     "number": tracking_number,
-#                     "company": courier_company,
-#                     "url": tracking_link
-#                 }
-#             }
-#         }
-
-#         fulfillment_response = session.post(MAKE_FULLFILMENT, headers=headers, json=fulfillment_payload, timeout=30)
-
-#         if fulfillment_response.status_code == 429:
-#             time.sleep(2)
-#             fulfillment_response = session.post(MAKE_FULLFILMENT, headers=headers, json=fulfillment_payload, timeout=30)
-
-#         if fulfillment_response.status_code != 201:
-#             frappe.throw(f"Failed to create fulfillment: {fulfillment_response.status_code} - {fulfillment_response.text}")
-
-
-#     except requests.exceptions.RequestException as e:
-#         frappe.throw(f"Network error while connecting to Shopify: {str(e)}")
-#     except Exception as e:
-#         frappe.throw(f"Unexpected error: {str(e)}")
 
        
 @frappe.whitelist()  
@@ -1457,13 +1380,6 @@ def update_item_details(self):
         'breadth': breadth
     }
            
-# @frappe.whitelist()
-# def fetch_cod_amount(doc_name):
-#     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
-#     cod_amt = frappe.get_value("Sales Order", {"name": against_sales_order}, "total_outstanding") 
-#     return { 'cod_amount': cod_amt }
-
-
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
@@ -1717,9 +1633,9 @@ def send_consignement_data(doc):
             "ReceiverPin": shipping_address.pincode or "",
             "ReceiverMobile": sanitize_phone(shipping_address.phone),
             "ConsignmentValue": str(doc.grand_total),
-            "NoQuantity": int(total_quantity),  # Fixed: Use total quantity of all items
+            "NoQuantity": int(total_quantity),  
             "consignmentValue": str(doc.grand_total),
-            "Weight": f"{weight:.2f}",  # Fixed: Use doc.weight instead of doc.length
+            "Weight": f"{weight:.2f}",  
             "TransitMode": doc.mode_of_transfer,
             "ProductMode": "Normal",
             "PaymentType": PaymentType,
@@ -1729,7 +1645,7 @@ def send_consignement_data(doc):
         print("header=======================",header)
         # Add validation to ensure quantities match
         calculated_total = sum(float(item["SplitPcs"]) for item in items)
-        if abs(calculated_total - total_quantity) > 0.001:  # Allow for small floating point differences
+        if abs(calculated_total - total_quantity) > 0.001: 
             frappe.throw(f"Quantity mismatch: Total quantity ({total_quantity}) doesn't match sum of split quantities ({calculated_total})")
         
         data = {
@@ -1858,39 +1774,6 @@ def shiprocket_awb_number(doc):
 
                 # Case 3: Normal Prepaid flow (non-COD orders)
                 else:
-                    # payment_method = "Prepaid"
-                    # sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
-
-                    # print("thied case=========333")
-                    # if delivery_note_doc.grand_total:
-                    #     sub_total = float(delivery_note_doc.grand_total)
-                    #     print("sub_total==========================", sub_total)
-
-                    # else:
-                    #     total_default_charge = 0
-                    #     found_charges = False                
-
-                    #     for item in delivery_note_doc.items:
-                    #         if item.item_code:
-                    #             try:
-                    #                 item_doc = frappe.get_doc("Item", item.item_code)
-                    #                 print("item_doc==========================", item_doc)
-                    #                 if item_doc.item_group:
-                    #                     item_group_doc = frappe.get_doc("Item Group", item_doc.item_group)
-                    #                     print("item_group_doc==========================", item_group_doc)
-                    #                     if getattr(item_group_doc, 'item_charge', None):
-                    #                         total_default_charge += float(item_group_doc.default_charge)
-                    #                         print("total_default_charge==========================", total_default_charge)
-                    #                         found_charges = True
-                    #             except:
-                    #                 continue
-
-                    #     if found_charges and total_default_charge > 0:
-                    #         sub_total = total_default_charge
-                    #         print("sub_total=====111111=====================", sub_total)
-                    #     else:
-                    #         sub_total = 300.0
-                    #         print("sub_total=====222222=====================", sub_total)
                     payment_method = "Prepaid"
                     sales_order_doc = frappe.get_doc("Sales Order", against_sales_order)
 
@@ -2356,12 +2239,6 @@ def fetch_shiprocket_details(doc):
         courier_name = shipment_data.get("courier")
         pickup_scheduled_date = shipment_data.get("pickup_scheduled_date")
         awb = shipment_data.get("awb")
-        # freight_charges = (
-        #     shipment_data.get("awb_data", {})
-        #     .get("charges", {})
-        #     .get("freight_charges")
-        # )
-
         # Save values in Delivery Note
         frappe.db.set_value("Delivery Note", dn_name, {
             "shiprocket_order_id": invoice_order_id,
@@ -2380,7 +2257,7 @@ def fetch_shiprocket_details(doc):
         if not shipments:
             frappe.throw("No shipments found for this order in Shiprocket")
 
-        shipment_id = shipments[0].get("id")  # take first shipment id
+        shipment_id = shipments[0].get("id") 
         shipment_list = [shipment_id]
 
         # 3. Generate Invoice
@@ -2501,7 +2378,6 @@ def adapter_repacked_serial_no(nj_serial_no):
     
 @frappe.whitelist()
 def sanitize_phone(phone):
-    # Remove all non-digit characters
     digits = ''.join(filter(str.isdigit, phone or ""))
     # If phone has more than 10 digits, take the last 10
     if len(digits) > 10:

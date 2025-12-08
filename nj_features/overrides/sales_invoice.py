@@ -139,37 +139,7 @@ class CustomSalesInvoice(SalesInvoice):
             frappe.throw(_("You must cancel IRN before cancelling the document."), title=_("Cancel Not Allowed"))
 
 
-    def approve_validation(self):
-        if self.is_return == 1:
-            return
-        # get first sales_order from child table
-        sales_order_name = None
-        for item in self.items:
-            if item.sales_order:
-                sales_order_name = item.sales_order
-                break
 
-        if not sales_order_name:
-            frappe.throw("No sales order found for this sales invoice.")
-
-        query = """
-            SELECT 
-                si.name AS sales_invoice, 
-                so.approve 
-            FROM `tabSales Invoice` si 
-            INNER JOIN `tabSales Invoice Item` sii     
-                ON si.name = sii.parent 
-            INNER JOIN `tabSales Order` so
-                ON sii.sales_order = so.name 
-            WHERE so.name = %s 
-        """  
-        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)  
-        for row in results:        
-            if not row.approve or int(row.approve) != 1:
-                # self.approved = 1
-                frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
-            else:
-                self.approved = 1
 
 # Hook this class to override default Sales Invoice behavior
 def override_sales_invoice():
@@ -728,7 +698,38 @@ def fetching_transporter_details(docname):
         "transporter_names": invoice.transporter_names,
         "email": invoice.email,
     }
+@frappe.whitelist()
+def approve_validation(doc,method=None):
+    if doc.is_return == 1:
+        return
+    # get first sales_order from child table
+    sales_order_name = None
+    for item in doc.items:
+        if item.sales_order:
+            sales_order_name = item.sales_order
+            break
 
+    if not sales_order_name:
+        frappe.throw("No sales order found for this sales invoice.")
+
+    query = """
+        SELECT 
+            si.name AS sales_invoice, 
+            so.approve 
+        FROM `tabSales Invoice` si 
+        INNER JOIN `tabSales Invoice Item` sii     
+            ON si.name = sii.parent 
+        INNER JOIN `tabSales Order` so
+            ON sii.sales_order = so.name 
+        WHERE so.name = %s 
+    """  
+    results = frappe.db.sql(query, (sales_order_name,), as_dict=True)  
+    for row in results:        
+        if not row.approve or int(row.approve) != 1:
+            # self.approved = 1
+            frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
+        else:
+            doc.approved = 1
 # @frappe.whitelist()
 # def due_date_validation(doc):
 #     if isinstance(doc, str):

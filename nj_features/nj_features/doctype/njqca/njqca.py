@@ -3426,7 +3426,7 @@ def duplicate_njqca(serial_no):
     record = frappe.db.sql("""
         SELECT name 
         FROM `tabNJQCA` 
-        WHERE serial_no=%s and inspection_type=%s and docstatus = 1
+        WHERE serial_no=%s and inspection_type=%s and docstatus = 1 and item_group='Laptops`
         ORDER BY creation DESC 
         LIMIT 1
     """, (serial_no,tech_inspection_type), as_dict=True)

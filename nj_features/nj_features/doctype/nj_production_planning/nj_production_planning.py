@@ -69,7 +69,7 @@ STORAGE_ATTR = "Storage Capacity"
 ALLOWED_ITEM_MODELS = set()
 
 # NEW: control whether planner writes to Serial No.to_make
-UPDATE_SERIAL_TO_MAKE = False  # set to True if you really want to update Serial No in this run
+UPDATE_SERIAL_TO_MAKE = True  # set to True if you really want to update Serial No in this run
 
 
 # =========================
@@ -82,7 +82,7 @@ _ITEM_KEYS: Dict[str, Dict] = {}
 # =========================
 # Part allocation global state (virtual stock)
 
-_PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ
+_PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ (virtual snapshot)
 _PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
 _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
 
@@ -916,54 +916,63 @@ def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
 @log_io
 def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     """
-    Department-centric intake — fetch ALL active serials that belong to this department,
-    optionally excluding restricted warehouses.
-
-    Active = not Delivered/Scrapped/Inactive (or status is NULL).
-    ALSO: fetch purchase_date so we can compute age_days.
+    Fetch valid serials for a department where:
+    - status NOT in ('Delivered', 'Scrapped', 'Inactive') OR NULL
+    - linked item_wizard exists AND its part_list_status = 'Completed'
+    - exclude restricted warehouses defined in the department config
     """
+
     restricted_warehouse: List[str] = []
 
+    # Debug output
     print("dept_name", dept_doc.name)
 
-    # Collect restricted warehouses from child table
+    # Extract restricted warehouses cleanly
     for row in dept_doc.get("inventory_details_child", []):
         raw = (row.get("restricted_department_warehouse_list") or "").strip()
         if raw:
-            for w in [x.strip() for x in raw.split(",") if x.strip()]:
-                restricted_warehouse.append(w)
+            restricted_warehouse.extend([w.strip() for w in raw.split(",") if w.strip()])
 
     print("restricted_warehouse", restricted_warehouse)
 
-    # Build dynamic extra WHERE clause
+    # Dynamic filter clause
     extra_where = ""
     params = {"dept": dept_doc.name}
 
     if restricted_warehouse:
-        extra_where = " AND warehouse NOT IN %(restricted_whs)s"
+        extra_where = " AND sn.warehouse NOT IN %(restricted_whs)s"
         params["restricted_whs"] = tuple(restricted_warehouse)
 
+    # Final SQL query with proper join + logic corrected
     rows = frappe.db.sql(
         f"""
         SELECT
-            name,
-            item_code,
-            warehouse,
-            department,
-            creation,
-            purchase_date
-        FROM `tabSerial No`
-        WHERE department = %(dept)s
-          AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-          AND (item_wizard IS NOT NULL OR item_wizard != '')
+            sn.name,
+            sn.item_code,
+            sn.warehouse,
+            sn.department,
+            sn.creation,
+            sn.purchase_date,
+            iw.part_list_status
+        FROM `tabSerial No` sn
+        INNER JOIN `tabItem Wizards` iw 
+            ON sn.item_wizard = iw.name
+        WHERE sn.department = %(dept)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND sn.item_wizard IS NOT NULL
+          AND sn.item_wizard != ''
+          AND iw.part_list_status = 'Completed'
           {extra_where}
         """,
         params,
         as_dict=True,
     )
 
+    # Prime cache for downstream performance
     _prime_item_cache([r["item_code"] for r in rows])
+
     return rows
+
 
 # =========================
 # Item/Attribute machinery
@@ -1130,35 +1139,92 @@ def _build_initial_part_stock():
     """
     Build initial virtual stock for parts from all warehouses under department 'Stores - NJ'.
 
+    NEW LOGIC (optimized):
+
+    - We no longer build huge IN (...) lists of item codes.
+    - For serialized items (Item.has_serial_no = 1):
+        quantity = COUNT(Serial No) in Stores - NJ warehouses.
+    - For non-serialized items (Item.has_serial_no = 0):
+        quantity = SUM(Bin.actual_qty) in Stores - NJ warehouses.
+
     Returns:
         (virtual_stock_dict, planned_allocation_dict)
     """
+
+    # 1) Get all warehouses under Stores - NJ that are NOT disabled
     warehouses = frappe.get_all(
         "Warehouse",
-        filters={"department": "Stores - NJ"},
+        filters=[["department", "=", "Stores - NJ"], ["disabled", "!=", 1]],
         pluck="name",
     )
 
     if not warehouses:
         logger.warning("No warehouses found under 'Stores - NJ' department for part allocation.")
-        # No stock, but we still run with empty virtual stock
         return {}, {}
 
-    stock_results = frappe.db.sql(
+    wh_tuple = tuple(warehouses)
+
+    # ---------------------------------------------------------
+    # 2) Serialized items: count Serial No rows
+    # ---------------------------------------------------------
+    serial_stock_rows = frappe.db.sql(
         """
-        SELECT item_code, SUM(actual_qty) AS total_qty
-        FROM `tabBin`
-        WHERE warehouse IN %(warehouses)s
-        GROUP BY item_code
+        SELECT
+            sn.item_code,
+            COUNT(*) AS qty
+        FROM `tabSerial No` sn
+        WHERE sn.warehouse IN %(warehouses)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered','Scrapped','Inactive'))
+        GROUP BY sn.item_code
         """,
-        {"warehouses": tuple(warehouses)},
+        {"warehouses": wh_tuple},
         as_dict=True,
     )
 
-    stock_data = {row["item_code"]: flt(row["total_qty"] or 0) for row in stock_results}
+    serial_stock = {row["item_code"]: flt(row["qty"] or 0) for row in (serial_stock_rows or [])}
 
-    # planned_allocation starts at 0 for every item
-    return stock_data, {}
+    # For safety, remember which item_codes we treat as serialized
+    serialized_set = set(serial_stock.keys())
+
+    # ---------------------------------------------------------
+    # 3) Non-serialized items: sum Bin.actual_qty joined to Item.has_serial_no = 0
+    # ---------------------------------------------------------
+    bin_rows = frappe.db.sql(
+        """
+        SELECT
+            b.item_code,
+            SUM(b.actual_qty) AS total_qty
+        FROM `tabBin` b
+        INNER JOIN `tabItem` i ON i.name = b.item_code
+        WHERE b.warehouse IN %(warehouses)s
+          AND IFNULL(i.has_serial_no, 0) = 0
+        GROUP BY b.item_code
+        """,
+        {"warehouses": wh_tuple},
+        as_dict=True,
+    )
+
+    bin_stock = {row["item_code"]: flt(row["total_qty"] or 0) for row in (bin_rows or [])}
+
+    # ---------------------------------------------------------
+    # 4) Merge BOTH stocks into one virtual stock map
+    # ---------------------------------------------------------
+    virtual_stock: Dict[str, float] = {}
+
+    # Serialized items → use Serial No count (ignore Bin for these)
+    for ic, qty in serial_stock.items():
+        virtual_stock[ic] = qty
+
+    # Non-serialized items → use Bin qty (skip serialized ones just in case)
+    for ic, qty in bin_stock.items():
+        if ic in serialized_set:
+            continue
+        virtual_stock[ic] = qty
+
+    # planned_allocation starts empty for every item
+    planned_alloc: Dict[str, float] = {}
+
+    return virtual_stock, planned_alloc
 
 
 @log_io
@@ -1186,30 +1252,30 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
     # Fetch open Material Requests for this serial
     mr_items = frappe.db.sql(
-            """
-            SELECT 
-                MRI.item_code,
-                MRI.item_group,
-                MRI.creation,
-                MRI.parent AS material_request,
-                MRI.serial_no,
-                MRI.stock_qty,
-                MRI.qty AS mr_qty
-            FROM `tabMaterial Request Item` MRI
-            INNER JOIN `tabMaterial Request` MR
-                ON MR.name = MRI.parent
-                AND MR.status = 'Pending'
-                AND IFNULL(MR.post_order_status, '') != 'Completed'
-                AND MR.docstatus = 1
-            WHERE MRI.serial_no IN %(serial_list)s
-                AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
-                AND MRI.docstatus = 1
-                AND MRI.item_group IS NOT NULL
-            ORDER BY MRI.modified DESC
-            """,
-            {"serial_list": (serial_no,)},
-            as_dict=True,
-        )
+        """
+        SELECT 
+            MRI.item_code,
+            MRI.item_group,
+            MRI.creation,
+            MRI.parent AS material_request,
+            MRI.serial_no,
+            MRI.stock_qty,
+            MRI.qty AS mr_qty
+        FROM `tabMaterial Request Item` MRI
+        INNER JOIN `tabMaterial Request` MR
+            ON MR.name = MRI.parent
+            AND MR.status = 'Pending'
+            AND IFNULL(MR.post_order_status, '') != 'Completed'
+            AND MR.docstatus = 1
+        WHERE MRI.serial_no IN %(serial_list)s
+            AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
+            AND MRI.docstatus = 1
+            AND MRI.item_group IS NOT NULL
+        ORDER BY MRI.modified DESC
+        """,
+        {"serial_list": (serial_no,)},
+        as_dict=True,
+    )
 
     # No MR at all -> free to plan
     if not mr_items:

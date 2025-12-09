@@ -44,6 +44,7 @@ doctype_list_js = {
     "Sales Invoice": "public/js/sales_invoice_list.js",
 }
 
+
 # ========== Override Doctype Classes ==========
 
 override_doctype_class = {
@@ -82,11 +83,22 @@ doc_events = {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
         "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
     },
-    # "*": {
-    #     # "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
-    #     # "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
-    #     "on_update_after_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
+    "*": {
+        "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
+        "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
+        "on_update_after_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
+    },
+    # "Quotation": {
+    #     "on_submit": "nj_features.nj_features.api.login.create_customer_response_token"
     # },
+    # "Customer Response": {
+    #     "before_save": "nj_features.nj_features.doctype.customer_response.customer_response.after_insert",
+             
+    # } ,    
+    "Sales Invoice": {
+        "before_save": "nj_features.overrides.sales_invoice.approve_validation"
+    }
+
 }
 
 # ========== Override Whitelisted Methods ==========

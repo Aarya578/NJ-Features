@@ -390,7 +390,6 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'plan_time': nj_readings_data.get('plan_time'),
                         'depends_on_linked_item_group': nj_readings_data.get('depends_on_linked_item_group'),
                     })
-            # Clear existing table entries and add new ones
             new_qi.set('nj_quality_readings', [])
             for reading in nj_quality_readings:
                 new_qi.append('nj_quality_readings', reading)
@@ -474,6 +473,7 @@ class NJQCA(Document):
         try:
         
             self.check_for_repack_access()
+            self.updating_njqca_child_in_serial_no()
             self.laptop_reports_update()
             self.battery_reports_update()
             self.adaptor_reports_update()
@@ -584,7 +584,69 @@ class NJQCA(Document):
         if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
             if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
                 frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+    def updating_njqca_child_in_serial_no(self):
+        # Only proceed for Core IQC and Laptops
+        if self.inspection_type != "Final QC" or self.item_group != "Laptops":
+            return
 
+        if not self.serial_no:
+            return
+
+        # Fetch Serial No doc
+        serial_doc = frappe.get_doc("Serial No", self.serial_no)
+
+        # --- Update serial_no_result_parameters ---
+        result_params = frappe.db.get_all(
+            "NJQCA Result Parameters",
+            filters={"parent": self.name},
+            fields=[
+                "part_config_id",
+                "item_group",
+                "parameter",
+                "value",
+                "score",
+                "cpu_load",
+                "discharge_rate"
+            ]
+        )
+        serial_doc.set("serial_no_result_parameters", [])
+        for row in result_params:
+            serial_doc.append("serial_no_result_parameters", row)
+
+        # --- Update serial_no_njqca_child ---
+        njqca_child_rows = frappe.db.get_all(
+            "NJQCA Child",
+            filters={"parent": self.name},
+            fields=[
+                "part_config_id",
+                "item_group",
+                "part_item_code",
+                "variant_1",
+                "variant_2",
+                "variant_3",
+                "variant_4",
+                "variant_5",
+                "variant_6",
+                "part_serial_no",
+                "variant_7",
+                "variant_8",
+                "variant_9",
+                "variant_10",
+                "variant_11",
+                "variant_12",
+                "variant_13",
+                "variant_14",
+                "variant_15",
+                "attr_data",
+                "update_variant"
+            ]
+        )
+        serial_doc.set("serial_no_njqca_child", [])
+        for row in njqca_child_rows:
+            serial_doc.append("serial_no_njqca_child", row)
+
+        # Save Serial No doc
+        serial_doc.save(ignore_permissions=True)
     def update_serial_no_readings(self):
 
         if self.rfq_id is not None:
@@ -3426,7 +3488,7 @@ def duplicate_njqca(serial_no):
     record = frappe.db.sql("""
         SELECT name 
         FROM `tabNJQCA` 
-        WHERE serial_no=%s and inspection_type=%s and docstatus = 1
+        WHERE serial_no=%s and inspection_type=%s and docstatus = 1 and item_group='Laptops`
         ORDER BY creation DESC 
         LIMIT 1
     """, (serial_no,tech_inspection_type), as_dict=True)

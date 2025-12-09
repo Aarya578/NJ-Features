@@ -227,7 +227,7 @@ def scan_serial_no_data_for_return(pr_name):
                     inner join `tabPurchase Invoice` Pi
                     on PII.purchase_receipt = Pr.name and 
                     Pi.name = PII.parent
-                    where Pr.name = %s and Pr.is_return = 1
+                    where Pr.name = %s and Pr.is_return = 1 and Pr.docstatus = 1
                 """, pr_name, as_dict=True)
         if not return_data:
             frappe.msgprint(_("No PR or PI data found for <b>{}</b>").format(pr_name))

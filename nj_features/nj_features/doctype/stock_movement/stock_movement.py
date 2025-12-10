@@ -308,7 +308,7 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
     
-    if serial_doc.get("item_group") in ["Desktops"]:
+    if serial_doc.get("item_group") not in ["Laptops"]:
             return False
 
     if not serial_doc.get("bypass"):
@@ -321,8 +321,10 @@ def validate_serial_no_and_department(row, error_messages):
 
         if not is_component and s_department != department:
             check_lesson_validation = frappe.db.get_value('NJ Settings', {'parameter': 'check_lesson_validation'} , 'value')
+            
             if check_lesson_validation and int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
+                
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
             check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
             validate_grade_restriction(serial_doc, department_doc, error_messages)

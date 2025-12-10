@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-09 17:31:36.497058",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "time",
+  "cpu",
+  "load__cpu_total",
+  "temperature__cpu_package",
+  "temperature_cpu_core__two",
+  "temperature__cpu_core_four"
+ ],
+ "fields": [
+  {
+   "fieldname": "time",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Time"
+  },
+  {
+   "fieldname": "cpu",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CPU"
+  },
+  {
+   "fieldname": "load__cpu_total",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Load  CPU Total"
+  },
+  {
+   "fieldname": "temperature__cpu_package",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Temperature  CPU Package"
+  },
+  {
+   "fieldname": "temperature_cpu_core__two",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Temperature CPU Core  Two"
+  },
+  {
+   "fieldname": "temperature__cpu_core_four",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Temperature  CPU Core Four"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-09 17:32:28.910700",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Performance Results",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

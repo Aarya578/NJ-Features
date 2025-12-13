@@ -1,16 +1,78 @@
 frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
-        applyReadOnlyStyling(frm)
+        applyReadOnlyStyling(frm);
 
-        // frappe.call({
-        //     method: 'nj_features.overrides.purchase_receipt.check_for_warranty_validity',
-        //     args: { doc: frm.doc },
-        //     callback: function(r) {
-        //         if (r.message) {
-        //             console.log("refresing warranty_valid_check", r.message.warranty_valid_check);
-        //         }
-        //     }
-        // });
+        // Get the current user id from the session
+        const current_user_id = frappe.session.user;
+
+        // Check if user has System Manager role
+        const allowed_roles = ['System Manager'];
+        const has_permission = frappe.user_roles.some(role => allowed_roles.includes(role));
+
+        if (!has_permission){
+            // Fetch the employee's work warehouse from the Employee doctype using the user_id
+            frappe.db.get_value('Employee', {user_id: current_user_id}, 'work_warehouse', function(data) {
+                const employee_work_warehouse = data && data.work_warehouse;
+                const serial_no_warehouse = frm.doc.warehouse;
+
+                console.log("serial_no_warehouse", serial_no_warehouse);
+                console.log("employee_work_warehouse", employee_work_warehouse);
+
+                // Function to hide/show print elements based on warehouse match
+                function togglePrintVisibility() {
+                    const shouldShow = serial_no_warehouse === employee_work_warehouse;
+                    
+                    // Get the print button using the data-original-title attribute
+                    let printButton = document.querySelector('button[data-original-title="Print"]');
+                    
+                    // Get the "Print" option in the dropdown menu - more specific selector
+                    let printDropdownOption = Array.from(document.querySelectorAll('a.grey-link.dropdown-item')).find(
+                        el => el.querySelector('[data-label="Print"]')
+                    );
+
+                    // Alternative: If the above doesn't work, try finding by text content
+                    if (!printDropdownOption) {
+                        printDropdownOption = Array.from(document.querySelectorAll('a.grey-link.dropdown-item')).find(
+                            el => el.textContent.trim() === 'Print'
+                        );
+                    }
+
+                    // Hide/show print button
+                    if (printButton) {
+                        printButton.style.display = shouldShow ? 'block' : 'none';
+                    }
+
+                    // Hide/show dropdown print option
+                    if (printDropdownOption) {
+                        printDropdownOption.style.display = shouldShow ? 'block' : 'none';
+                        // Also hide the parent li if it exists
+                        if (printDropdownOption.closest('li')) {
+                            printDropdownOption.closest('li').style.display = shouldShow ? 'block' : 'none';
+                        }
+                    }
+                }
+
+                // Initial toggle
+                togglePrintVisibility();
+
+                // Use MutationObserver to handle dynamically loaded dropdown
+                const observer = new MutationObserver(function(mutations) {
+                    togglePrintVisibility();
+                });
+
+                // Observe the menu container for changes
+                const menuContainer = document.querySelector('.dropdown-menu');
+                if (menuContainer) {
+                    observer.observe(menuContainer, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
+
+                // Also trigger when dropdown is shown
+                setTimeout(togglePrintVisibility, 500);
+            });
+        };
 
         let is_read_only = frm.doc.bypass ? 1 : 0;
         frm.set_df_property("bypass", "read_only", is_read_only);
@@ -21,16 +83,14 @@ frappe.ui.form.on('Serial No', {
         }
 
         $('.col-lg-2.layout-side-section').hide();
-        // frm.add_custom_button(__('Print QR Code'), function() {
-        //     printQRCode(frm);
-        // }).addClass('btn-primary');
+
         frm.add_custom_button(__('Generate Report'), function() {
             get_report_data(frm);
         }).addClass('btn-primary');
 
         if (frappe.user.has_role(["Item Wizard Manager"]) || frappe.user.has_role(["Item Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
-            frm.set_df_property('model','read_only',0);
+            frm.set_df_property('model', 'read_only', 0);
             frm.refresh_field('model');
             frm.refresh_field('serial_no_component');
         }
@@ -40,71 +100,6 @@ frappe.ui.form.on('Serial No', {
         frm.refresh_field('past_part_list');
         frm.refresh_field('bag_list');
 
-        // frappe.call({
-            
-        //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
-        //     args: {
-        //         search_value: cur_frm.doc.name
-        //     },
-        //     callback: function(gradesResponse) {
-        //         print("inside the functio============================================")
-        //         const gradesData = gradesResponse && gradesResponse.message;
-            
-        //         if (gradesData && gradesData.length > 0) {
-            
-        //             // Extract department names from the response
-        //             const departmentNames = gradesData.map(entry => entry.department);
-            
-        //             // Update the options of the 'suggested_warehouse' field
-        //             // cur_frm.set_df_property('suggested_warehouse', 'options', departmentNames.join('\n'));
-            
-        //             // Optionally, set the first department as the default value
-        //             cur_frm.set_value('suggested_warehouse', departmentNames.join(', '));
-        //         } else {
-        //             // Clear the options if no data is found
-        //             // cur_frm.set_df_property('suggested_warehouse', 'options', '');
-        //             cur_frm.set_value('suggested_warehouse', '');
-        //         }
-        //     }
-        // });
-        
-        // frappe.call({
-        //     method: "nj_features.nj_features.doctype.stock_movement.stock_movement.get_grades_from_part_list",
-        //     args: {
-        //         search_value: cur_frm.doc.name
-        //     },
-        //     callback: function(gradesResponse) {
-        //         const gradesData = gradesResponse && gradesResponse.message;
-
-        //         if (gradesData && gradesData.length > 0) {
-        //             // Remove duplicates
-        //             const uniqueDepartments = [...new Set(gradesData.map(entry => entry.department))];
-        //             const departmentsWithSequence = [];
-
-        //             let remaining = uniqueDepartments.length;
-
-        //             uniqueDepartments.forEach(dept => {
-        //                 frappe.db.get_doc('Department', dept).then(doc => {
-        //                     departmentsWithSequence.push({
-        //                         department: doc.name,
-        //                         department_sequence: doc.department_sequence || 0
-        //                     });
-
-        //                     remaining--;
-
-        //                     if (remaining === 0) {
-        //                         // All docs fetched
-        //                         departmentsWithSequence.sort((a, b) => a.department_sequence - b.department_sequence);
-        //                         const sortedNames = departmentsWithSequence.map(entry => entry.department);
-        //                         cur_frm.set_value('suggested_warehouse', sortedNames.join(', '));
-        //                     }
-        //                 });
-        //             });
-        //         } else {
-        //             cur_frm.set_value('suggested_warehouse', '');
-        //         }
-        //     }
-        // });
         let update_features_table = frm.add_custom_button(__('Fetch Features Table'), function() {
             frappe.show_alert({
                 message: __('Generating AWB Number...'),
@@ -124,7 +119,6 @@ frappe.ui.form.on('Serial No', {
                     }
                 }
             });
-
         });
 
         // Add styling to the button

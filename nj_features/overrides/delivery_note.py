@@ -106,177 +106,178 @@ class CustomDeliveryNote(DeliveryNote):
             # For non-Snapmint orders, proceed with normal flow
             #   - Fetch Shopify / order IDs
             # ------------------------------------------------------------------
-            with log_time("fetch shopify/order ids", self.name):
-                raw_order_id = frappe.get_value(
-                    "Sales Order",
-                    {"name": against_sales_order},
-                    "shopify_order_id",
-                )
-                shopify_order_no = frappe.get_value(
-                    "Sales Order",
-                    {"name": against_sales_order},
-                    "shopify_order_number",
-                )
-
-                order_id = None
-                if raw_order_id and len(raw_order_id.lstrip("#")) < 7:
-                    order_id = raw_order_id.lstrip("#")
-                else:
+            if self.tracking_id!="Deduction":
+                with log_time("fetch shopify/order ids", self.name):
                     raw_order_id = frappe.get_value(
                         "Sales Order",
                         {"name": against_sales_order},
-                        "order_id",
+                        "shopify_order_id",
                     )
-                    if raw_order_id:
+                    shopify_order_no = frappe.get_value(
+                        "Sales Order",
+                        {"name": against_sales_order},
+                        "shopify_order_number",
+                    )
+
+                    order_id = None
+                    if raw_order_id and len(raw_order_id.lstrip("#")) < 7:
                         order_id = raw_order_id.lstrip("#")
                     else:
                         raw_order_id = frappe.get_value(
                             "Sales Order",
                             {"name": against_sales_order},
-                            "shopify_order_number",
+                            "order_id",
                         )
                         if raw_order_id:
                             order_id = raw_order_id.lstrip("#")
+                        else:
+                            raw_order_id = frappe.get_value(
+                                "Sales Order",
+                                {"name": against_sales_order},
+                                "shopify_order_number",
+                            )
+                            if raw_order_id:
+                                order_id = raw_order_id.lstrip("#")
 
-                logger.debug(
-                    f"[DN: {self.name}] Resolved order_id={order_id}, "
-                    f"raw_order_id={raw_order_id}, shopify_order_no={shopify_order_no}"
-                )
+                    logger.debug(
+                        f"[DN: {self.name}] Resolved order_id={order_id}, "
+                        f"raw_order_id={raw_order_id}, shopify_order_no={shopify_order_no}"
+                    )
 
             # ------------------------------------------------------------------
             # Trigger fulfillment conditionally
             # ------------------------------------------------------------------
-            if order_id and self.is_return == 0:
-                with log_time("fetch Sales Order details (order_type, sale_type)", self.name):
-                    order_details = frappe.db.sql(
-                        """
-                        SELECT so.order_type, so.sale_type
-                        FROM `tabSales Order` so
-                        JOIN `tabDelivery Note Item` dni
-                            ON dni.against_sales_order = so.name
-                        WHERE dni.parent = %s AND so.docstatus = 1
-                        LIMIT 1
-                        """,
-                        (self.name,),
-                        as_dict=True,
-                    )
-
-                if order_details:
-                    order_type = order_details[0].get("order_type")
-                    sale_type = order_details[0].get("sale_type")
-                    logger.debug(
-                        f"[DN: {self.name}] Order Type: {order_type}, "
-                        f"Sale Type: {sale_type}"
-                    )
-                    order_type = order_details[0].get("order_type")
-                    print(f"Order Type: {order_type}")
-                    sale_type = order_details[0].get("sale_type")
-                    print(f"Sale Type: {sale_type}")
-
-                    # Only trigger fulfillment if conditions are met
-                    if order_type == "Sales" and sale_type == "NJ-Website-B2C":
-                        trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
-                    else:
-                        print(
-                            f"Skipping fulfillment trigger for DN {self.name} - "
-                            f"Order Type: {order_type}, Sale Type: {sale_type}"
+                if order_id and self.is_return == 0:
+                    with log_time("fetch Sales Order details (order_type, sale_type)", self.name):
+                        order_details = frappe.db.sql(
+                            """
+                            SELECT so.order_type, so.sale_type
+                            FROM `tabSales Order` so
+                            JOIN `tabDelivery Note Item` dni
+                                ON dni.against_sales_order = so.name
+                            WHERE dni.parent = %s AND so.docstatus = 1
+                            LIMIT 1
+                            """,
+                            (self.name,),
+                            as_dict=True,
                         )
 
-                    # Only trigger fulfillment if conditions are met
-                    if order_type == "Sales" and sale_type == "NJ-Website-B2C":
-                        with log_time("trigger_fulfillment", self.name):
-                            logger.debug(
-                                f"[DN: {self.name}] Triggering fulfillment "
-                                f"for order_id={order_id}"
-                            )
-                            trigger_fulfillment(
-                                order_id,
-                                raw_order_id,
-                                shopify_order_no,
-                                self.name,
-                            )
-                    else:
+                    if order_details:
+                        order_type = order_details[0].get("order_type")
+                        sale_type = order_details[0].get("sale_type")
                         logger.debug(
-                            f"[DN: {self.name}] Skipping fulfillment trigger - "
-                            f"Order Type: {order_type}, Sale Type: {sale_type}"
+                            f"[DN: {self.name}] Order Type: {order_type}, "
+                            f"Sale Type: {sale_type}"
                         )
+                        order_type = order_details[0].get("order_type")
+                        print(f"Order Type: {order_type}")
+                        sale_type = order_details[0].get("sale_type")
+                        print(f"Sale Type: {sale_type}")
+
+                        # Only trigger fulfillment if conditions are met
+                        if order_type == "Sales" and sale_type == "NJ-Website-B2C":
+                            trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
+                        else:
+                            print(
+                                f"Skipping fulfillment trigger for DN {self.name} - "
+                                f"Order Type: {order_type}, Sale Type: {sale_type}"
+                            )
+
+                        # Only trigger fulfillment if conditions are met
+                        if order_type == "Sales" and sale_type == "NJ-Website-B2C":
+                            with log_time("trigger_fulfillment", self.name):
+                                logger.debug(
+                                    f"[DN: {self.name}] Triggering fulfillment "
+                                    f"for order_id={order_id}"
+                                )
+                                trigger_fulfillment(
+                                    order_id,
+                                    raw_order_id,
+                                    shopify_order_no,
+                                    self.name,
+                                )
+                        else:
+                            logger.debug(
+                                f"[DN: {self.name}] Skipping fulfillment trigger - "
+                                f"Order Type: {order_type}, Sale Type: {sale_type}"
+                            )
+                    else:
+                        print(f"No Sales Order found for DN {self.name}")
+                        logger.debug(
+                            f"[DN: {self.name}] No Sales Order found for DN {self.name}"
+                        )
+
+                # self.delete_department_history()
+                # self.approve_unchecking_for_cod_orders()
+                # self.return_dn_validation()
+                # self.couse_of_return_validation()
+                # # self.payment_validattion()
+                # self.update_mail_from_address()
+                # self.rto_charges_update()
+                # self.approve_validation()
+                # self.set_cit_image_from_sales_order()
+                # self.fetching_tracking_details()
+
+                # ------------------------------------------------------------------
+                # Other operations (each timed)
+                # ------------------------------------------------------------------
+                with log_time("delete_department_history", self.name):
+                    self.delete_department_history()
+
+                with log_time("approve_unchecking_for_cod_orders", self.name):
+                    self.approve_unchecking_for_cod_orders()
+
+                with log_time("return_dn_validation", self.name):
+                    self.return_dn_validation()
+
+                with log_time("couse_of_return_validation", self.name):
+                    self.couse_of_return_validation()
+
+                # with log_time("payment_validattion", self.name):
+                #     self.payment_validattion()
+
+                with log_time("update_mail_from_address", self.name):
+                    self.update_mail_from_address()
+
+                with log_time("rto_charges_update", self.name):
+                    self.rto_charges_update()
+
+                with log_time("approve_validation", self.name):
+                    self.approve_validation()
+
+                # with log_time("set_cit_image_from_sales_order", self.name):
+                #     self.set_cit_image_from_sales_order()
+
+                # with log_time("fetching_tracking_details", self.name):
+                #     self.fetching_tracking_details()
+
+                with log_time("update_details_to_delivery_charege_doc", self.name):
+                    self.update_details_to_delivery_charege_doc()
+
+                # with log_time("qi_mandatory_checks_on_dn_submit", self.name):
+                #     qi_mandatory_checks_on_dn_submit(self, method=None)
+
+                # with log_time("qc_nj_of_days_checking", self.name):
+                #     self.qc_nj_of_days_checking()
+
+                # ------------------------------------------------------------------
+                # Post-processing based on return/non-return
+                # ------------------------------------------------------------------
+                if self.is_return == 0:
+                    with log_time("_process_customer_details", self.name):
+                        # send_sales_invoice_email_on_delivery_note(self, method=None)
+                        self._process_customer_details()
                 else:
-                    print(f"No Sales Order found for DN {self.name}")
-                    logger.debug(
-                        f"[DN: {self.name}] No Sales Order found for DN {self.name}"
-                    )
+                    with log_time("_process_serial_numbers", self.name):
+                        self._process_serial_numbers()
 
-            self.delete_department_history()
-            self.approve_unchecking_for_cod_orders()
-            self.return_dn_validation()
-            self.couse_of_return_validation()
-            # self.payment_validattion()
-            self.update_mail_from_address()
-            self.rto_charges_update()
-            self.approve_validation()
-            # self.set_cit_image_from_sales_order()
-            # self.fetching_tracking_details()
-
-            # ------------------------------------------------------------------
-            # Other operations (each timed)
-            # ------------------------------------------------------------------
-            with log_time("delete_department_history", self.name):
-                self.delete_department_history()
-
-            with log_time("approve_unchecking_for_cod_orders", self.name):
-                self.approve_unchecking_for_cod_orders()
-
-            with log_time("return_dn_validation", self.name):
-                self.return_dn_validation()
-
-            with log_time("couse_of_return_validation", self.name):
-                self.couse_of_return_validation()
-
-            # with log_time("payment_validattion", self.name):
-            #     self.payment_validattion()
-
-            with log_time("update_mail_from_address", self.name):
-                self.update_mail_from_address()
-
-            with log_time("rto_charges_update", self.name):
-                self.rto_charges_update()
-
-            with log_time("approve_validation", self.name):
-                self.approve_validation()
-
-            # with log_time("set_cit_image_from_sales_order", self.name):
-            #     self.set_cit_image_from_sales_order()
-
-            # with log_time("fetching_tracking_details", self.name):
-            #     self.fetching_tracking_details()
-
-            with log_time("update_details_to_delivery_charege_doc", self.name):
-                self.update_details_to_delivery_charege_doc()
-
-            # with log_time("qi_mandatory_checks_on_dn_submit", self.name):
-            #     qi_mandatory_checks_on_dn_submit(self, method=None)
-
-            # with log_time("qc_nj_of_days_checking", self.name):
-            #     self.qc_nj_of_days_checking()
-
-            # ------------------------------------------------------------------
-            # Post-processing based on return/non-return
-            # ------------------------------------------------------------------
-            if self.is_return == 0:
-                with log_time("_process_customer_details", self.name):
-                    # send_sales_invoice_email_on_delivery_note(self, method=None)
-                    self._process_customer_details()
-            else:
-                with log_time("_process_serial_numbers", self.name):
-                    self._process_serial_numbers()
-
-            # ------------------------------------------------------------------
-            # Total timing
-            # ------------------------------------------------------------------
-            total_duration = time.perf_counter() - total_start
-            logger.debug(
-                f"[DN: {self.name}] on_submit total time: {total_duration:.4f} seconds"
-            )
+                # ------------------------------------------------------------------
+                # Total timing
+                # ------------------------------------------------------------------
+                total_duration = time.perf_counter() - total_start
+                logger.debug(
+                    f"[DN: {self.name}] on_submit total time: {total_duration:.4f} seconds"
+                )
 
         except Exception as e:
             frappe.db.rollback()

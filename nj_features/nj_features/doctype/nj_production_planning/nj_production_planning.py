@@ -1,22 +1,22 @@
 # nj_planning/plan_all.py
 
 import math
+import frappe
 import random
 import logging
 import functools
-import frappe
 from frappe import _
+from frappe.utils import flt
 from typing import Dict, List, Optional, Union
 from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
-from frappe.utils import flt  # NEW
-
 
 # -------------------------
 # Logger setup
 # -------------------------
-logger = frappe.logger("nj_planning", allow_site=True, file_count=5, max_size=10_000_000)
+logger = frappe.logger("NJProductionPlanningAllocationLog", allow_site=True, file_count=5)
+part_logger = frappe.logger("part_allocation", allow_site=True, file_count=10)
 
 
 def _safe_repr(obj, maxlen: int = 4000):
@@ -68,23 +68,40 @@ STORAGE_ATTR = "Storage Capacity"
 
 ALLOWED_ITEM_MODELS = set()
 
-# NEW: control whether planner writes to Serial No.to_make
+# Control whether planner writes to Serial No.to_make
 UPDATE_SERIAL_TO_MAKE = True  # set to True if you really want to update Serial No in this run
 
 
 # =========================
 # Global caches
-
 _ITEM_CORE: Dict[str, Dict] = {}
 _ITEM_ATTRS: Dict[str, Dict] = {}
 _ITEM_KEYS: Dict[str, Dict] = {}
 
 # =========================
 # Part allocation global state (virtual stock)
-
 _PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ (virtual snapshot)
 _PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
 _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
+
+
+# =========================
+# Helpers
+# =========================
+def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
+    """Update Serial No.to_make (lightweight db write)."""
+    if not UPDATE_SERIAL_TO_MAKE:
+        return
+    try:
+        frappe.db.set_value(
+            "Serial No",
+            serial_no,
+            "to_make",
+            item_code_to_make,
+            update_modified=False,
+        )
+    except Exception as e:
+        logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
 
 # =========================
@@ -137,7 +154,7 @@ def _cfg_tuple_from_item(item_code: str) -> tuple:
 @log_io
 def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     # -------- Load departments with SLA and group by sequence --------
-    # CHANGE: Exclude departments where run_production_planning != 1
+    # Exclude departments where run_production_planning != 1
     depts = frappe.get_all(
         "Department",
         filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],
@@ -151,7 +168,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             "inwarded_config",
             "forwarded_config",
             "run_production_planning",
-            "allocate_parts",  # NEW
+            "allocate_parts",
         ],
         order_by="department_sequence asc, name asc",
     )
@@ -165,7 +182,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     sequences = sorted(depts_by_seq.keys())
     max_seq = max(sequences)
 
-    # NEW: build lookup for allocate_parts per department
+    # build lookup for allocate_parts per department
     global _DEPT_ALLOCATE_PARTS, _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
     _DEPT_ALLOCATE_PARTS = {d["name"]: bool(d.get("allocate_parts")) for d in depts}
 
@@ -238,7 +255,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         for d in depts_by_seq[s]:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
-            # CHANGE: fetch ALL serials that belong to this department (independent of warehouse)
             inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
 
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
@@ -251,7 +267,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
 
-            # Even though we filtered upstream, keep this guard (no-op if all are 1)
             if not dept.get("run_production_planning"):
                 continue
 
@@ -259,11 +274,10 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             inward_grain = "config" if dept.get("inwarded_config") else "model"
             forward_grain = seq_forward_grain
 
-            # serials strictly for THIS department (department-centric intake)
             serial_rows = inward_serials_per_dept.get(dept_name, [])
             serial_map = [_enrich_serial_from_attrs(sn) for sn in serial_rows]
 
-            # 1) Orders
+            # 1) Orders (parts-gate is enforced DURING selection now)
             order_allocs, remaining_serials = _match_inventory_to_order_queues_for_sequence(
                 seq=s,
                 serial_map=serial_map,
@@ -271,6 +285,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 allow_reconfig=allow_reconfig,
                 inward_grain=inward_grain,
                 forward_grain=forward_grain,
+                current_department=dept_name,
             )
 
             # DOI snapshot after including order allocations
@@ -299,11 +314,11 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                     item_code_to_make=alloc["target_item_code"],
                     reason="Order",
                     priority_rank=priority_per_dept[dept_name],
-                    serial_age_days=alloc.get("age_days"),  # show age on plan row
+                    serial_age_days=alloc.get("age_days"),
                 )
                 priority_per_dept[dept_name] += 1
 
-            # 2) Forecast
+            # 2) Forecast (parts-gate is enforced DURING selection now)
             forecast_allocs = _allocate_forecast_to_balance_doi(
                 remaining_serials=remaining_serials,
                 forward_grain=forward_grain,
@@ -311,6 +326,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 forward_keys=forward_keys,
                 sales_rate=sales_rate,
                 current_doi=doi_snapshot,
+                current_department=dept_name,
             )
 
             for alloc in forecast_allocs:
@@ -329,7 +345,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                     item_code_to_make=alloc["target_item_code"],
                     reason="Forecast",
                     priority_rank=priority_per_dept[dept_name],
-                    serial_age_days=alloc.get("age_days"),  # show age on plan row
+                    serial_age_days=alloc.get("age_days"),
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -361,12 +377,12 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
 # =========================
 @log_io
 def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dict:
-    # NOTE: current behavior = MAX SLA per sequence (unchanged)
+    # current behavior = MAX SLA per sequence
     max_sla_per_seq = {}
     for s in sequences:
         max_sla_per_seq[s] = max(float(d.get("sla") or 0.0) for d in depts_by_seq[s]) if depts_by_seq[s] else 0.0
     cum_sla = {}
-    for i, s in enumerate(sorted(sequences)):
+    for s in sorted(sequences):
         tail = sum(max_sla_per_seq[t] for t in sequences if t >= s)
         cum_sla[s] = tail
     return cum_sla
@@ -400,18 +416,13 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             WHERE so.creation >= CURDATE() - INTERVAL 60 DAY
               AND so.docstatus = 1
               AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
-              -- Only pending quantity
               AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              -- Delivery horizon filter: today .. horizon_end (or NULL)
               AND (
                     soi.delivery_date IS NULL
                     OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
                   )
-              -- Item group filter
               AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              -- Only stock items
               AND i.is_stock_item = 1
-              -- Exclusions
               AND so.sale_type != 'Amazon'
               AND so.customer != 'King Technologies'
 
@@ -434,20 +445,14 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             WHERE so.docstatus = 1
               AND so.creation >= CURDATE() - INTERVAL 60 DAY
               AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
-              -- Only pending quantity (on the parent SO line)
               AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              -- Delivery horizon filter: today .. horizon_end (or NULL)
               AND (
                     soi.delivery_date IS NULL
                     OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
                   )
-              -- Item group filter (applied on the SO line item group)
               AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              -- SO line is a non-stock bundle item
               AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-              -- Bundle component item is stock
               AND i.is_stock_item = 1
-              -- Exclusions
               AND so.sale_type != 'Amazon'
               AND so.customer != 'King Technologies'
         )
@@ -552,7 +557,6 @@ def _get_sellable_items() -> List[Dict]:
     if not sellable:
         logger.warning("No sellable Product Bundle components found with current filters.")
     _prime_item_cache([r["name"] for r in sellable])
-    print("sellable ------------ ", sellable)
     return sellable
 
 
@@ -626,11 +630,9 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
         kc = _get_config_key(ic)
         d = frappe.utils.getdate(r["sale_date"])
         qty = float(r["daily_sales"])
-        # accumulate raw daily sales; we'll ignore zero later
         daily[km][d] += qty
         daily[kc][d] += qty
 
-    # NEW LOGIC: 15-day window, skip zero-sales days (no weight contribution)
     for key in daily:
         num = 0.0
         den = 0.0
@@ -638,15 +640,13 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
             day = today - timedelta(days=(dd - 1))
             qty = float(daily[key].get(day, 0.0))
             if qty <= 0.0:
-                continue  # do NOT add weight for zero-sales days
-            # recency weight increases toward "today"; cap at RECENCY_MAX_WEIGHT
+                continue
             w = max(1, min(RECENCY_MAX_WEIGHT, RECENCY_WINDOW_DAYS - dd + 1))
             num += w * qty
             den += w
         rate = (num / den) if den else 0.0
         rates[key] = (rate if rate > 0 else 1.0)
 
-    # Ensure all sellable models/configs at least get a baseline of 1.0
     for it in (sellable_items or []):
         km = _get_model_key(it["name"])
         kc = _get_config_key(it["name"])
@@ -678,7 +678,6 @@ def _build_forward_keys(sellable_items, forward_grain, sales_rate):
     keys = []
     for model_key, configs in variants_by_template.items():
         configs.sort(key=lambda ck: (-(sales_rate.get(ck, 1.0)), random.random()))
-        # Include ALL configs (no max variants per template)
         keys.extend(configs)
 
     seen, out = set(), []
@@ -695,8 +694,24 @@ def _build_forward_keys(sellable_items, forward_grain, sales_rate):
 # =========================
 @log_io
 def _match_inventory_to_order_queues_for_sequence(
-    seq, serial_map, seq_order_queues, allow_reconfig, inward_grain, forward_grain
+    seq,
+    serial_map,
+    seq_order_queues,
+    allow_reconfig,
+    inward_grain,
+    forward_grain,
+    current_department: str,
 ):
+    """
+    UPDATED:
+    - Enforces parts allocation gate DURING selection.
+    - If a serial is blocked by parts:
+        - update Serial No.to_make
+        - do NOT add it to allocations
+        - remove it from pools
+        - try next serial for the same order_ref
+    """
+
     allocations = []
     remaining = serial_map[:]
     if not seq_order_queues:
@@ -710,54 +725,69 @@ def _match_inventory_to_order_queues_for_sequence(
         by_model[s["forward_key_model"]].append(s)
         by_config[s["forward_key_config"]].append(s)
 
-    # sort pools by AGE (via _oldest_first)
     for k in by_model:
         by_model[k] = _oldest_first(by_model[k])
     for k in by_config:
         by_config[k] = _oldest_first(by_config[k])
 
-    # Sort queues by size descending for mild batching
     for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
         while ref_list:
-            order_ref = ref_list.pop()
-            chosen = None
+            order_ref = ref_list[-1]  # PEEK (only pop when successfully fulfilled)
 
             target_cfg_tuple = None
             if order_ref.get("order_item_code"):
                 target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
 
-            # Ensure we have the model key for the pool
             model_key = ("MODEL", key[1]) if key and key[0] == "CONFIG" else key
             model_pool = by_model.get(model_key, [])
+            if not model_pool:
+                break
 
-            # 1) Exact config first (even if forward_grain == 'model')
+            # Pick candidate serial (oldest first, preference for exact/near config)
+            chosen = None
             if target_cfg_tuple:
                 exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
                 exact = _oldest_first(exact)
                 if exact:
-                    chosen = exact.pop(0)
+                    chosen = exact[0]
 
-            # 2) Same storage, different RAM
             if not chosen and target_cfg_tuple:
                 near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
                 near = _oldest_first(near)
                 if near:
-                    chosen = near.pop(0)
+                    chosen = near[0]
 
-            # 3) Any same model (oldest first)
             if not chosen and model_pool:
                 chosen = _oldest_first(model_pool)[0]
 
             if not chosen:
                 break
 
-            # ********** CHANGED BLOCK START **********
-            # Never use template for MODEL keys; only resolve via CONFIG keys
+            # Resolve target item to make
             if allow_reconfig and key and key[0] == "CONFIG":
                 target_item_code = _target_item_for_key(key)
             else:
                 target_item_code = chosen["item_code"]
-            # ********** CHANGED BLOCK END **********
+
+            # Parts gate (if enabled for dept)
+            if _DEPT_ALLOCATE_PARTS.get(current_department):
+                ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+                if not ok:
+                    # Required behavior: update to_make, but do NOT add to plan lines
+                    _update_serial_to_make(chosen["serial_no"], target_item_code)
+
+                    # Remove blocked serial from pools so we don't keep retrying it
+                    remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
+                    by_model[chosen["forward_key_model"]] = [
+                        x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
+                    ]
+                    by_config[chosen["forward_key_config"]] = [
+                        x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
+                    ]
+                    continue  # retry SAME order_ref with a different serial
+
+            # Success: consume the order ref and record allocation
+            ref_list.pop()
 
             allocations.append(
                 {
@@ -767,11 +797,10 @@ def _match_inventory_to_order_queues_for_sequence(
                     "forward_key": key,
                     "order_name": order_ref.get("so_name"),
                     "required_by": order_ref.get("delivery_date"),
-                    "age_days": chosen.get("age_days"),  # NEW
+                    "age_days": chosen.get("age_days"),
                 }
             )
 
-            # Remove chosen from structures
             remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
             by_model[chosen["forward_key_model"]] = [
                 x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
@@ -780,7 +809,6 @@ def _match_inventory_to_order_queues_for_sequence(
                 x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
             ]
 
-    # Cleanup emptied queues
     for k in [k for k, v in list(seq_order_queues.items()) if not v]:
         del seq_order_queues[k]
 
@@ -798,8 +826,23 @@ def _estimate_forward_inventory(forward_keys, serials, forward_grain):
 
 @log_io
 def _allocate_forecast_to_balance_doi(
-    remaining_serials, forward_grain, allow_reconfig, forward_keys, sales_rate, current_doi
+    remaining_serials,
+    forward_grain,
+    allow_reconfig,
+    forward_keys,
+    sales_rate,
+    current_doi,
+    current_department: str,
 ):
+    """
+    UPDATED:
+    - Enforces parts allocation gate DURING selection.
+    - If a serial is blocked by parts:
+        - update Serial No.to_make
+        - do NOT add to allocations
+        - remove it from pools
+        - continue
+    """
     allocations = []
 
     from collections import defaultdict
@@ -830,7 +873,7 @@ def _allocate_forecast_to_balance_doi(
         if forward_grain == "config":
             pool = buckets.get(target, [])
             if pool:
-                chosen = pool.pop(0)
+                chosen = pool[0]
             elif allow_reconfig:
                 model_key = ("MODEL", target[1])
                 pool2 = any_by_model.get(model_key, [])
@@ -840,26 +883,45 @@ def _allocate_forecast_to_balance_doi(
                     near = [s for s in pool2 if _same_storage_diff_ram(s, target_cfg_tuple)]
                     near = _oldest_first(near)
                     if near:
-                        chosen = near.pop(0)
+                        chosen = near[0]
                     else:
                         chosen = _oldest_first(pool2)[0] if pool2 else None
         else:
             pool = buckets.get(target, [])
             if pool:
-                chosen = pool.pop(0)
+                chosen = pool[0]
 
         if not chosen:
             work.pop(0)
             continue
 
-        # ********** CHANGED BLOCK START **********
-        # Only resolve via CONFIG keys; for MODEL keys keep serial's item_code
         if allow_reconfig and target and target[0] == "CONFIG":
             target_item_code = _target_item_for_key(target)
         else:
             target_item_code = chosen["item_code"]
-        # ********** CHANGED BLOCK END **********
 
+        # Parts gate (if enabled for dept)
+        if _DEPT_ALLOCATE_PARTS.get(current_department):
+            ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+            if not ok:
+                _update_serial_to_make(chosen["serial_no"], target_item_code)
+
+                # Remove blocked serial from pools/remaining
+                remaining_serials[:] = [x for x in remaining_serials if x["serial_no"] != chosen["serial_no"]]
+                if forward_grain == "config":
+                    kcfg = chosen["forward_key_config"]
+                    if kcfg in buckets:
+                        buckets[kcfg] = [x for x in buckets[kcfg] if x["serial_no"] != chosen["serial_no"]]
+                    mk = chosen["forward_key_model"]
+                    if mk in any_by_model:
+                        any_by_model[mk] = [x for x in any_by_model[mk] if x["serial_no"] != chosen["serial_no"]]
+                else:
+                    mk = chosen["forward_key_model"]
+                    if mk in buckets:
+                        buckets[mk] = [x for x in buckets[mk] if x["serial_no"] != chosen["serial_no"]]
+                continue  # do not change DOI, do not add allocation
+
+        # Update DOI for successful forecast allocation
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
         inv_now = current_doi.get(target, 0.0) * rate
         new_doi = (inv_now + 1.0) / rate
@@ -872,7 +934,7 @@ def _allocate_forecast_to_balance_doi(
                 "target_item_code": target_item_code,
                 "forward_key": target,
                 "doi": new_doi,
-                "age_days": chosen.get("age_days"),  # NEW
+                "age_days": chosen.get("age_days"),
             }
         )
 
@@ -893,26 +955,9 @@ def _allocate_forecast_to_balance_doi(
     return allocations
 
 
-def _get_inward_warehouses_for_department(dept_doc) -> List[str]:
-    """
-    Retained for reference; not used by _get_inward_serials_for_department anymore.
-    """
-    whs: set = set()
-
-    for row in (getattr(dept_doc, "inventory_details_child", None) or []):
-        raw = (row.get("inwarded_warehouse_list") or "").strip()
-        if not raw:
-            dept_for_wh = row.get("inwarded_inventory")
-            if dept_for_wh:
-                names = frappe.get_all("Warehouse", filters={"department": dept_for_wh}, pluck="name")
-                whs.update(names or [])
-        else:
-            for w in [x.strip() for x in raw.split(",") if x.strip()]:
-                whs.add(w)
-
-    return sorted(whs)
-
-
+# =========================
+# Inward serial fetch
+# =========================
 @log_io
 def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     """
@@ -921,21 +966,13 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
     - linked item_wizard exists AND its part_list_status = 'Completed'
     - exclude restricted warehouses defined in the department config
     """
-
     restricted_warehouse: List[str] = []
 
-    # Debug output
-    print("dept_name", dept_doc.name)
-
-    # Extract restricted warehouses cleanly
     for row in dept_doc.get("inventory_details_child", []):
         raw = (row.get("restricted_department_warehouse_list") or "").strip()
         if raw:
             restricted_warehouse.extend([w.strip() for w in raw.split(",") if w.strip()])
 
-    print("restricted_warehouse", restricted_warehouse)
-
-    # Dynamic filter clause
     extra_where = ""
     params = {"dept": dept_doc.name}
 
@@ -943,7 +980,6 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
         extra_where = " AND sn.warehouse NOT IN %(restricted_whs)s"
         params["restricted_whs"] = tuple(restricted_warehouse)
 
-    # Final SQL query with proper join + logic corrected
     rows = frappe.db.sql(
         f"""
         SELECT
@@ -955,7 +991,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             sn.purchase_date,
             iw.part_list_status
         FROM `tabSerial No` sn
-        INNER JOIN `tabItem Wizards` iw 
+        INNER JOIN `tabItem Wizards` iw
             ON sn.item_wizard = iw.name
         WHERE sn.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
@@ -968,9 +1004,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
         as_dict=True,
     )
 
-    # Prime cache for downstream performance
     _prime_item_cache([r["item_code"] for r in rows])
-
     return rows
 
 
@@ -1100,7 +1134,7 @@ def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> Union[str
 @log_io
 def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
     """
-    NEW: make every serial carry age_days so allocation can prefer older ones.
+    make every serial carry age_days so allocation can prefer older ones.
     """
     ic = snrow["item_code"]
     if ic not in _ITEM_KEYS:
@@ -1139,19 +1173,13 @@ def _build_initial_part_stock():
     """
     Build initial virtual stock for parts from all warehouses under department 'Stores - NJ'.
 
-    NEW LOGIC (optimized):
-
-    - We no longer build huge IN (...) lists of item codes.
-    - For serialized items (Item.has_serial_no = 1):
-        quantity = COUNT(Serial No) in Stores - NJ warehouses.
-    - For non-serialized items (Item.has_serial_no = 0):
-        quantity = SUM(Bin.actual_qty) in Stores - NJ warehouses.
+    - For serialized items: COUNT(Serial No)
+    - For non-serialized items: SUM(Bin.actual_qty)
 
     Returns:
         (virtual_stock_dict, planned_allocation_dict)
     """
 
-    # 1) Get all warehouses under Stores - NJ that are NOT disabled
     warehouses = frappe.get_all(
         "Warehouse",
         filters=[["department", "=", "Stores - NJ"], ["disabled", "!=", 1]],
@@ -1164,9 +1192,6 @@ def _build_initial_part_stock():
 
     wh_tuple = tuple(warehouses)
 
-    # ---------------------------------------------------------
-    # 2) Serialized items: count Serial No rows
-    # ---------------------------------------------------------
     serial_stock_rows = frappe.db.sql(
         """
         SELECT
@@ -1182,13 +1207,8 @@ def _build_initial_part_stock():
     )
 
     serial_stock = {row["item_code"]: flt(row["qty"] or 0) for row in (serial_stock_rows or [])}
-
-    # For safety, remember which item_codes we treat as serialized
     serialized_set = set(serial_stock.keys())
 
-    # ---------------------------------------------------------
-    # 3) Non-serialized items: sum Bin.actual_qty joined to Item.has_serial_no = 0
-    # ---------------------------------------------------------
     bin_rows = frappe.db.sql(
         """
         SELECT
@@ -1206,54 +1226,43 @@ def _build_initial_part_stock():
 
     bin_stock = {row["item_code"]: flt(row["total_qty"] or 0) for row in (bin_rows or [])}
 
-    # ---------------------------------------------------------
-    # 4) Merge BOTH stocks into one virtual stock map
-    # ---------------------------------------------------------
     virtual_stock: Dict[str, float] = {}
-
-    # Serialized items → use Serial No count (ignore Bin for these)
     for ic, qty in serial_stock.items():
         virtual_stock[ic] = qty
 
-    # Non-serialized items → use Bin qty (skip serialized ones just in case)
     for ic, qty in bin_stock.items():
         if ic in serialized_set:
             continue
         virtual_stock[ic] = qty
 
-    # planned_allocation starts empty for every item
     planned_alloc: Dict[str, float] = {}
-
     return virtual_stock, planned_alloc
 
 
 @log_io
 def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) -> bool:
     """
-    Part allocation gate for a serial.
-
-    - If allocate_parts is NOT enabled for this department -> always True (no gating).
-    - If no open MR exists for this serial -> True (we can show it in plan).
-    - If open MR exists:
-        * Try to allocate from Stores - NJ virtual stock.
-        * For each MR line we can fully satisfy, reserve stock in _PART_PLANNED_ALLOCATION.
-        * Only if ALL MR lines are allocatable do we write to the
-          Serial No's production_planning_allocation child table.
-        * If ANY MR line remains unallocated (insufficient stock) -> return False
-          (skip this serial in plan, and do not write the child table for it).
+    UPDATED (two-phase reservation):
+    - Phase 1: check all MR lines are feasible WITHOUT changing globals.
+    - Phase 2: only if feasible, commit reservation into _PART_PLANNED_ALLOCATION.
 
     Returns:
-        True  -> caller should append the plan row.
-        False -> caller should SKIP appending the plan row.
+        True  -> all MR lines allocatable (reserved)
+        False -> not allocatable (no reservation committed)
     """
-    # If this department doesn't use allocate_parts, nothing to do
+
+    part_logger.debug(f"\n\n\n[ALLOCATE_STARTED] serial_no={serial_no}, dept={current_department}")
+
     if not _DEPT_ALLOCATE_PARTS.get(current_department):
+        part_logger.debug(
+            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
+            f"result=ALLOCATED (bypassed, allocate_parts disabled for this dept)"
+        )
         return True
 
-    # Fetch open Material Requests for this serial
     mr_items = frappe.db.sql(
         """
-        SELECT 
+        SELECT
             MRI.item_code,
             MRI.item_group,
             MRI.creation,
@@ -1277,46 +1286,98 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         as_dict=True,
     )
 
-    # No MR at all -> free to plan
+    mr_names = sorted({row["material_request"] for row in mr_items}) if mr_items else []
+    part_logger.debug(
+        f"\n[MR_INFO] serial_no={serial_no}, dept={current_department}, "
+        f"mr_count={len(mr_items)}, mr_list={mr_names}"
+    )
+
     if not mr_items:
+        part_logger.debug(
+            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
+            f"result=ALLOCATED, reason='no pending Material Requests for this serial'"
+        )
         return True
 
     global _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
 
-    alloc_rows = []
-    has_unallocated = False
+    from collections import defaultdict as _dd
 
-    # 1) Decide allocations purely in memory
+    to_reserve = _dd(float)
+    unallocated_lines = []
+    involved_item_codes = set()
+
+    # Phase 1: feasibility check
+    for row in mr_items:
+        item_code = row["item_code"]
+        involved_item_codes.add(item_code)
+
+        mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
+        if mr_qty <= 0:
+            part_logger.debug(f"\n[MR_SKIP_ZERO_QTY] serial_no={serial_no}, item_code={item_code}, mr_qty={mr_qty}")
+            continue
+
+        already_planned = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0))
+        virtual_stock = flt(_PART_VIRTUAL_STOCK.get(item_code, 0.0))
+
+        available_before = float(virtual_stock - already_planned - to_reserve[item_code])
+
+        if available_before >= mr_qty:
+            to_reserve[item_code] += mr_qty
+            part_logger.debug(
+                f"\n[LINE_CHECK_OK] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
+                f"required={mr_qty}, available_before={available_before}, would_reserve_total={to_reserve[item_code]}"
+            )
+        else:
+            unallocated_lines.append(
+                {
+                    "material_request": row["material_request"],
+                    "item_code": item_code,
+                    "required": mr_qty,
+                    "available": available_before,
+                }
+            )
+            part_logger.debug(
+                f"\n[LINE_CHECK_BLOCKED] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
+                f"required={mr_qty}, available={available_before} (insufficient stock)"
+            )
+
+    remaining_virtual_stock = {
+        item_code: float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - _PART_PLANNED_ALLOCATION.get(item_code, 0.0))
+        for item_code in sorted(involved_item_codes)
+    }
+
+    if unallocated_lines:
+        part_logger.debug(
+            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
+            f"result=NOT_ALLOCATED, reason='insufficient stock for some MR lines', "
+            f"unallocated_lines={unallocated_lines}, remaining_virtual_stock={remaining_virtual_stock}"
+        )
+        return False
+
+    # Phase 2: commit reservation
+    alloc_rows = []
     for row in mr_items:
         item_code = row["item_code"]
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
         if mr_qty <= 0:
             continue
 
-        # Available = physical snapshot - already planned across all departments in this run
-        already_planned = _PART_PLANNED_ALLOCATION.get(item_code, 0.0)
-        available = float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - already_planned)
+        _PART_PLANNED_ALLOCATION[item_code] = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0)) + mr_qty
+        alloc_rows.append({"material_request": row["material_request"], "item_code": item_code, "allocated_qty": mr_qty})
 
-        if available >= mr_qty:
-            # We can allocate this MR line
-            _PART_PLANNED_ALLOCATION[item_code] = already_planned + mr_qty
-            alloc_rows.append(
-                {
-                    "material_request": row["material_request"],
-                    "item_code": item_code,
-                    "allocated_qty": mr_qty,
-                }
-            )
-        else:
-            # Not enough stock for this MR line -> serial should NOT appear in plan
-            has_unallocated = True
+    remaining_virtual_stock_after = {
+        item_code: float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - _PART_PLANNED_ALLOCATION.get(item_code, 0.0))
+        for item_code in sorted(involved_item_codes)
+    }
 
-    # If any MR line is still unallocated, this serial is blocked by parts
-    # and we do NOT touch the Serial No doc.
-    if has_unallocated:
-        return False
+    part_logger.debug(
+        f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
+        f"result=ALLOCATED, reason='all MR lines fully allocatable from virtual stock', "
+        f"allocated_lines={alloc_rows}, remaining_virtual_stock={remaining_virtual_stock_after}"
+    )
 
-    # (Persisting child table is commented out here)
+    # If you want to persist "part lines child table", do it here (ONLY when allocated).
 
     return True
 
@@ -1337,38 +1398,11 @@ def _append_plan_row(
     item_code_to_make: str,
     reason: str,
     priority_rank: int,
-    serial_age_days: Optional[int] = None,  # NEW
+    serial_age_days: Optional[int] = None,
 ):
-    # Default: assume row is allowed
-    allowed = True
+    # For included rows, update to_make as usual
+    _update_serial_to_make(serial_no, item_code_to_make)
 
-    # NEW: Part allocation gate
-    try:
-        if _DEPT_ALLOCATE_PARTS and _DEPT_ALLOCATE_PARTS.get(current_department):
-            allowed = _maybe_allocate_parts_for_serial(serial_no, current_department)
-            if not allowed:
-                # Do NOT append this row; the serial is still waiting on parts.
-                return
-    except Exception as e:
-        # Fail safe: log and continue without blocking planning
-        logger.exception("Part allocation check failed for serial %s: %s", serial_no, e)
-        allowed = True  # on error, don't block the plan
-
-    # NEW: push suggested to_make into Serial No (optional & lightweight)
-    if UPDATE_SERIAL_TO_MAKE:
-        try:
-            # Use a direct DB update instead of full doc.save() to reduce write overhead
-            frappe.db.set_value(
-                "Serial No",
-                serial_no,
-                "to_make",
-                item_code_to_make,
-                update_modified=False,  # avoids extra write to modified_by/modified
-            )
-        except Exception as e:
-            logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
-
-    # Append the plan row
     plan_doc.append(
         "lines",
         {
@@ -1383,6 +1417,6 @@ def _append_plan_row(
             "reason": reason,
             "priority_rank": int(priority_rank),
             "serial_age_days": serial_age_days,
-            "allocate_parts": 1 if allowed else 0,
+            "allocate_parts": 1,  # only rows that passed parts-gate get appended
         },
     )

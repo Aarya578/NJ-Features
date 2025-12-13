@@ -3,6 +3,8 @@ import copy
 import json
 import time
 import frappe
+import csv
+import os
 import traceback
 from frappe import _
 import datetime as dt
@@ -471,7 +473,7 @@ class NJQCA(Document):
 
     def on_submit(self):
         try:
-        
+            self.performance_reports_update()
             self.check_for_repack_access()
             self.updating_njqca_child_in_serial_no()
             self.laptop_reports_update()
@@ -802,7 +804,79 @@ class NJQCA(Document):
 
         except Exception as e:
             frappe.log_error(f"Error updating QC Reports: {str(e)}", "QC Reports Update Error")
-        
+
+
+    def performance_reports_update(self):
+        if self.inspection_type != "Core IQC" or self.item_group != "Laptops":
+            return
+
+        try:
+            # 1. Get file name from NJQCA Result Parameters
+            file_name = frappe.db.get_value(
+                "NJQCA Result Parameters",
+                {
+                    "parent": self.name,
+                    "parameter": "heavy_load_File_Updated_name"
+                },
+                "value"
+            )
+
+            if not file_name:
+                frappe.msgprint("CSV file name not found.")
+                return
+
+            # 2. Get file_url from File doctype
+            file_url = frappe.db.get_value("File", file_name, "file_url")
+            if not file_url:
+                frappe.msgprint("File URL not found.")
+                return
+
+            # 3. Build full file path
+            file_path = frappe.get_site_path("public" + file_url)
+
+            if not os.path.exists(file_path):
+                frappe.msgprint("CSV file does not exist on server.")
+                return
+
+            # 4. Load Serial No doc using BIOS serial
+            bios_serialno = self.bios_serialno
+            if not bios_serialno:
+                frappe.msgprint("BIOS Serial No not found.")
+                return
+
+            serial_no_name = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
+            if not serial_no_name:
+                frappe.msgprint("Serial No document not found.")
+                return
+
+            serial_doc = frappe.get_doc("Serial No", serial_no_name)
+            def clean(h):
+                return h.replace("\ufeff", "").replace("|", "").strip().lower()
+
+            with open(file_path, newline='', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+
+                # Build clean header map
+                header_map = {clean(h): h for h in reader.fieldnames}
+                serial_doc.set("performance_results", [])
+                for row in reader:
+                    serial_doc.append("performance_results", {
+                        "item_group": "Laptop Adaptors",
+
+                        "time": row.get(header_map.get("time")),
+                        "cpu": row.get(header_map.get("cpu %")),
+                        "load__cpu_total": row.get(header_map.get("load  cpu total")),
+
+                        "temperature__cpu_package": row.get(header_map.get("temperature  cpu package")),
+                        "temperature_cpu_core__two": row.get(header_map.get("temperature  cpu core #2")),
+                        "temperature__cpu_core_four": row.get(header_map.get("temperature  cpu core #4")),
+                    })
+
+            serial_doc.save(ignore_permissions=True)
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Performance Reports Update Error")
+  
     # def laptop_reports_update(self):
     #     # Only process Final QC for Laptops
     #     if self.inspection_type != "Final QC" or self.item_group != "Laptops":

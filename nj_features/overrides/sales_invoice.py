@@ -81,10 +81,10 @@ class CustomSalesInvoice(SalesInvoice):
             self.validate_einvoice_fields()
         else:
             return  # Skip validation if e-invoicing is not enabled
-    def before_submit(self):
-        """ Prevent stock update on submission, but retain packed items """
-        self.update_stock = False
-        self.approve_validation()
+    # def before_submit(self):
+    #     """ Prevent stock update on submission, but retain packed items """
+    #     self.update_stock = False
+    #     self.approve_validation()
 
     def update_packing_list(self):
         """ Override the default method to prevent clearing packed_items """

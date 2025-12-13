@@ -97,6 +97,9 @@ doc_events = {
     # } ,    
     "Sales Invoice": {
         "before_save": "nj_features.overrides.sales_invoice.approve_validation"
+    },
+    "Laptop Box": {
+        "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     }
 
 }

@@ -7,6 +7,7 @@ import base64
 import requests
 import traceback
 import time
+import math
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from frappe import _
@@ -910,10 +911,8 @@ class CustomDeliveryNote(DeliveryNote):
             unique_errors = list(set(error_messages))
 
             frappe.throw("<br>".join(unique_errors))
-import math
 @frappe.whitelist()
 def custome_limits_crossed_error(self, args, item, qty_or_amount):
-    print("\n\n=== CUSTOM limits_crossed_error CALLED ===\n")
 
     # ---------------------------------------------------------
     # 1. Fetch against sales order (Delivery Note Item → Sales Order)
@@ -936,7 +935,6 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
 
     print("SALE TYPE =", sale_type)
     nj_setting_value = frappe.db.get_value("NJ Settings", {"parameter": "sale_type_name"}, "value")
-    print("NJ Setting Value ==========", nj_setting_value)
 
     # ---------------------------------------------------------
     # 2. SKIP FUNCTION COMPLETELY IF NJ Seeting Value is Matches
@@ -944,14 +942,12 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
     if sale_type == nj_setting_value:
         print("Skipping limits_crossed_error — Amazon order")
         customer = frappe.db.get_value("Delivery Note", {"name": self.name}, "customer")
-        print("Customer ===============", customer)
         customer_data = frappe.db.get_value(
             "Customer",
             {"name": customer},
             ["allow_over_dn", "qty"],
             as_dict=True
         )
-        print("Customer Data ===============", customer_data)
 
         if customer_data.allow_over_dn != 1:
             frappe.throw("Allow Over DN is desabled for this Customer.")
@@ -959,18 +955,13 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
             frappe.throw("Qty is 0 for this Customer. Please update the Qty.")
 
         total_qty = frappe.db.get_value("Sales Order", against_sales_order, "total_qty")
-        print("Total Qty ===============", total_qty)
 
         percentage = frappe.db.get_value("Customer", customer, "qty")
-        print("Customer Qty (Percentage) ===============", percentage)
 
         customer_qty_raw = (percentage / 100) * total_qty
-        print("Customer Qty (Converted) ===============", customer_qty_raw)
 
         customer_qty = math.ceil(customer_qty_raw)
-        print("Customer Qty (Converted & Rounded Up) ===============", customer_qty)
         total_sum_qty = total_qty + customer_qty
-        print("Total Sum Qty ===============", total_sum_qty)
 
         submitted_dn = frappe.db.sql(f"""
             SELECT DISTINCT dn.name, dn.total_qty
@@ -983,18 +974,14 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
         """, as_dict=True)
 
 
-        print("Submitted DN ===============", submitted_dn)
 
         submitted_dn_qty = sum((d.total_qty or 0) for d in submitted_dn)
-        print("Submitted DN Qty ===============", submitted_dn_qty)
 
         # Fetch current DN qty
         current_dn_qty = frappe.db.get_value("Delivery Note", self.name, "total_qty") 
-        print("Current DN Qty ===============", current_dn_qty)
 
         # Total delivered including current
         total_delivered = submitted_dn_qty + current_dn_qty
-        print("Total Delivered ===============", total_delivered)
         if self.is_replacement !=1:
             frappe.throw("Is replacement is not checked and its Mandatory.")
         # Compare
@@ -1213,32 +1200,35 @@ def shopify_request(session, method, url, headers=None, json=None):
     while True:
         response = session.request(method, url, headers=headers, json=json)
 
-        # --- FIX: Shopify may send Retry-After: "2.0" which breaks urllib3 ---
-        retry_after_header = response.headers.get("Retry-After")
-        if retry_after_header:
+        # --- SAFE RETRY-AFTER PARSING ---
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
             try:
-                retry_after_int = int(float(retry_after_header))  # "2.0" → 2
-                response.headers["Retry-After"] = str(retry_after_int)
-            except:
-                response.headers.pop("Retry-After", None)
+                retry_after = float(retry_after)  # works for "2" or "2.0"
+            except ValueError:
+                retry_after = 1  # fallback to 1 second
+        else:
+            retry_after = 0
 
         # Shopify throttling (status 429)
         if response.status_code == 429:
-            retry_after = float(response.headers.get("Retry-After", 1))
-            time.sleep(retry_after)
+            time.sleep(max(retry_after, 1))
             continue
 
         # Shopify API call limit logic
         call_limit = response.headers.get("X-Shopify-Shop-Api-Call-Limit")
         if call_limit:
-            used, max_allowed = map(int, call_limit.split('/'))
-            if used >= max_allowed - 2:
-                time.sleep(1)
+            try:
+                used, max_allowed = map(int, call_limit.split('/'))
+                if used >= max_allowed - 2:
+                    time.sleep(1)
+            except:
+                pass
 
         return response
 
 
-
+# ---- FULFILLMENT FUNCTION ----
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None, dn_name=None):
 
@@ -1257,9 +1247,9 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
         if exists:
             return
 
-    # ---------------- FIX: SAFE SHOPIFY SESSION ----------------
+    # ---------------- SAFE SHOPIFY SESSION ----------------
     session = requests.Session()
-    adapter = HTTPAdapter(max_retries=False)  # <---- FIX HERE
+    adapter = HTTPAdapter(max_retries=False)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 
@@ -1281,7 +1271,6 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
 
     order = order_data[0]
     shopify_order_id = order.get("id")
-
     if not shopify_order_id:
         frappe.throw("Missing Shopify Order ID")
 
@@ -1295,14 +1284,12 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     if not tracking_number:
         frappe.throw("Tracking ID not found")
 
-    # Build tracking URL
     tracking_link = None
     try:
         courier_doc = frappe.get_doc("Courier Service", courier_service)
         base_url = getattr(courier_doc, "tracking_url", None)
         if base_url:
             tracking_link = f"{base_url.rstrip('/')}/{tracking_number}"
-
         courier_company = getattr(courier_doc, "courier_name", courier_service)
     except:
         courier_company = courier_service
@@ -1310,22 +1297,47 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     # ===========================================================
     # CASE 1: Already fulfilled → Update tracking only
     # ===========================================================
-
     if fulfillment_status == "fulfilled":
-        url_f = f"https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillments.json"
+        url_f = f"{SHOPIFY_URL}{shopify_order_id}/fulfillments.json"
         r2 = shopify_request(session, "GET", url_f, headers=headers)
 
+        # Better error handling for API response
+        if r2.status_code != 200:
+            frappe.log_error(
+                title="Shopify Fulfillment Fetch Error",
+                message=f"Order ID: {shopify_order_id}\nStatus Code: {r2.status_code}\nResponse: {r2.text}"
+            )
+            # frappe.msgprint(
+            #     "Order is already fulfilled in Shopify but tracking cannot be updated. "
+            #     "Please update tracking manually in Shopify admin.",
+            #     indicator="orange"
+            # )
+            return
+
         f_json = r2.json()
-        if "fulfillments" not in f_json or not f_json["fulfillments"]:
-            frappe.throw("No existing fulfillment found to update")
+        fulfillments = f_json.get("fulfillments", [])
+        
+        # Filter for non-cancelled fulfillments
+        active_fulfillments = [f for f in fulfillments if f.get("status") != "cancelled"]
+        
+        if not active_fulfillments:
+            # Order is marked as fulfilled but no active fulfillments found
+            # This can happen with legacy orders or manual fulfillments
+            frappe.log_error(
+                title="No Active Fulfillment Found",
+                message=f"Order ID: {shopify_order_id}\nFulfillment Status: {fulfillment_status}\nFulfillments Response: {f_json}"
+            )
+            # frappe.msgprint(
+            #     "Order is already fulfilled in Shopify but no fulfillment record found to update. "
+            #     "Tracking information must be updated manually in Shopify admin.",
+            #     indicator="orange"
+            # )
+            return
 
-        f_id = f_json["fulfillments"][0]["id"]
+        # Get the first active fulfillment
+        f_id = active_fulfillments[0]["id"]
 
-        update_url = (
-            f"https://newjaisa.myshopify.com/admin/api/2025-01/"
-            f"fulfillments/{f_id}/update_tracking.json"
-        )
-
+        update_url = f"{SHOPIFY_URL}fulfillments/{f_id}/update_tracking.json"
         payload = {
             "fulfillment": {
                 "tracking_info": {
@@ -1339,18 +1351,28 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
 
         r3 = shopify_request(session, "POST", update_url, headers=headers, json=payload)
         if r3.status_code != 200:
+            frappe.log_error(
+                title="Shopify Tracking Update Failed",
+                message=f"Fulfillment ID: {f_id}\nStatus Code: {r3.status_code}\nResponse: {r3.text}"
+            )
             frappe.throw(f"Tracking update failed: {r3.text}")
 
+        # frappe.msgprint("Tracking information updated successfully in Shopify", indicator="green")
         return
 
     # ===========================================================
     # CASE 2: Create NEW fulfillment
     # ===========================================================
-
-    # Fetch fulfillment order ID
     fulfillment_order_url = FULLFILMENT_ORDER_ID.format(shopify_order_id=shopify_order_id)
-
     r4 = shopify_request(session, "GET", fulfillment_order_url, headers=headers)
+    
+    if r4.status_code != 200:
+        frappe.log_error(
+            title="Shopify Fulfillment Order Fetch Error",
+            message=f"Order ID: {shopify_order_id}\nStatus Code: {r4.status_code}\nResponse: {r4.text}"
+        )
+        frappe.throw(f"Failed to fetch fulfillment order: {r4.text}")
+    
     fulfillment_data = r4.json().get("fulfillment_orders", [])
 
     if not fulfillment_data:
@@ -1373,9 +1395,15 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     }
 
     r5 = shopify_request(session, "POST", MAKE_FULLFILMENT, headers=headers, json=fulfillment_payload)
-
     if r5.status_code not in [200, 201]:
+        frappe.log_error(
+            title="Shopify Fulfillment Creation Error",
+            message=f"Order ID: {shopify_order_id}\nStatus Code: {r5.status_code}\nResponse: {r5.text}"
+        )
         frappe.throw(f"Fulfillment creation error: {r5.text}")
+    
+    # frappe.msgprint("Fulfillment created successfully in Shopify", indicator="green")
+
 
 
        

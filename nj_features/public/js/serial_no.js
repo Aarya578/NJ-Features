@@ -129,6 +129,58 @@ frappe.ui.form.on('Serial No', {
 
         // Add styling to the button
         update_features_table.addClass('btn-primary');
+
+
+        frm.add_custom_button(__('Generate HTML Temp'), function() {
+
+            frappe.show_alert({
+                message: __('Generating QR HTML template...'),
+                indicator: 'blue'
+            }, 3);
+
+            frappe.call({
+                method: "nj_p1_features.overrides.serial_no.render_html_content",
+                args: {
+                    doctype: frm.doc.doctype,
+                    docname: frm.doc.name
+                },
+                callback: function(r) {
+                    if (r.message && !r.message.startsWith("Template rendering failed")) {
+
+                        // Update QR field
+                        frm.set_value('qr', r.message);
+                        frm.refresh_field('qr');
+
+                        // Update preview wrapper if exists
+                        if (frm.preview_wrapper) {
+                            frm.preview_wrapper.find('#html-preview').html(r.message);
+                        }
+
+                        frappe.msgprint({
+                            title: __('Success'),
+                            message: __('QR HTML has been regenerated successfully.'),
+                            indicator: 'green'
+                        });
+
+                    } else {
+                        frappe.msgprint({
+                            title: __('Error'),
+                            message: r.message || __('Failed to render HTML content.'),
+                            indicator: 'red'
+                        });
+                    }
+                },
+                error: function(r) {
+                    console.error("Render Error:", r);
+                    frappe.msgprint({
+                        title: __('Error'),
+                        message: __('Server error during QR HTML generation.'),
+                        indicator: 'red'
+                    });
+                }
+            });
+        });
+
     },
     
     after_save: (frm)=>{

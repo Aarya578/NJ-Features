@@ -18,7 +18,8 @@
   "role",
   "user",
   "section_break_a91ou",
-  "table_atxpl"
+  "table_atxpl",
+  "value_rp"
  ],
  "fields": [
   {
@@ -107,10 +108,17 @@
    "fieldname": "table_atxpl",
    "fieldtype": "Table",
    "options": "Colour Bar"
+  },
+  {
+   "fieldname": "value_rp",
+   "fieldtype": "Long Text",
+   "ignore_xss_filter": 1,
+   "label": "Value RP",
+   "reqd": 1
   }
  ],
  "links": [],
- "modified": "2025-08-16 12:31:45.590180",
+ "modified": "2025-12-12 15:30:02.275791",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Settings",

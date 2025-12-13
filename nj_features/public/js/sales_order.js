@@ -51,7 +51,10 @@ frappe.ui.form.on('Sales Order', {
 
         // Add styling to the button
         update_features_table.addClass('btn-primary');
+        
 
+
+        
     },
 
    

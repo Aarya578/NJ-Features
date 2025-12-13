@@ -321,10 +321,8 @@ def validate_serial_no_and_department(row, error_messages):
 
         if not is_component and s_department != department:
             check_lesson_validation = frappe.db.get_value('NJ Settings', {'parameter': 'check_lesson_validation'} , 'value')
-            
             if check_lesson_validation and int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
-                
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
             check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
             validate_grade_restriction(serial_doc, department_doc, error_messages)
@@ -914,46 +912,68 @@ def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_war
         as_dict=True
     )
 
-    if not result:
-        error_messages.append(f'This Serial No: <b>{serial_doc.name}</b> is not allowed to be moved to <b>{department_doc.name}</b> Department. Validate Item group , Grade and Work required for this Serial No to know the reason')
+    # if not result:
+    #     error_messages.append(f'This Serial No: <b>{serial_doc.name}</b> is not allowed to be moved to <b>{department_doc.name}</b> Department. Validate Item group , Grade and Work required for this Serial No to know the reason')
 
 @frappe.whitelist()
 def check_warehouse_qty(name):
     error_msg = ""
 
+    # Get total qty per target warehouse from Stock Movement Detail
     warehouse_data_query = """
         SELECT SUM(qty) AS total_qty, t_warehouse 
         FROM `tabStock Movement Detail` 
-        WHERE parent = %s GROUP BY t_warehouse
+        WHERE parent = %s 
+        GROUP BY t_warehouse
     """  
     warehouse_data = frappe.db.sql(warehouse_data_query, (name,), as_dict=True)
 
-    if warehouse_data:
-        for row in warehouse_data:
-            warehouse = row.get('t_warehouse')
-            total_qty = row.get('total_qty') or 0
-            total_qty = float(total_qty)
-            query = """
-                SELECT 
-                    COALESCE(
-                        (SELECT available_capacity FROM `tabWarehouse Qty` WHERE warehouse = %(warehouse)s),
-                        (SELECT max_capacity FROM `tabWarehouse` WHERE name = %(warehouse)s)
-                    ) AS capacity
-            """
-            result = frappe.db.sql(query, {"warehouse": warehouse}, as_dict=True)
+    if not warehouse_data:
+        return None
 
-            available_qty = float(result[0].capacity) if result and result[0].capacity is not None else 0.0
+    for row in warehouse_data:
+        warehouse = row.get("t_warehouse")
+        total_qty = float(row.get("total_qty") or 0)
 
-            if total_qty > available_qty:
-                error_msg += (
-                    f"Total qty for warehouse <b>{warehouse}</b> is <b>{total_qty}</b>, "
-                    f"but available qty is <b>{available_qty}</b>.<br>"
-                )
+        # Get available capacity from Warehouse & Serial No
+        # available_capacity = max_capacity - current_occupied_qty_in_serial_no
+        capacity_query = """
+            SELECT
+                COALESCE(w.max_capacity, 0) 
+                - COALESCE(sn.current_qty, 0) AS available_capacity
+            FROM `tabWarehouse` w
+            LEFT JOIN (
+                SELECT warehouse, COUNT(*) AS current_qty
+                FROM `tabSerial No`
+                WHERE warehouse = %(warehouse)s
+                GROUP BY warehouse
+            ) AS sn
+                ON sn.warehouse = w.name
+            WHERE w.name = %(warehouse)s
+        """
+
+        result = frappe.db.sql(capacity_query, {"warehouse": warehouse}, as_dict=True)
+
+        available_qty = 0.0
+        if result and result[0].get("available_capacity") is not None:
+            available_qty = float(result[0].get("available_capacity") or 0)
+
+        # Optional: don't allow negative available qty
+        if available_qty < 0:
+            available_qty = 0.0
+
+        # Compare requested qty vs available capacity
+        if total_qty > available_qty:
+            error_msg += (
+                f"Total qty for warehouse <b>{warehouse}</b> is <b>{total_qty}</b>, "
+                f"but available capacity (based on Serial No) is <b>{available_qty}</b>.<br>"
+            )
 
     if error_msg:
         frappe.throw(error_msg)
 
     return None
+
 
 def warehouse_dept(warehouse):
     return frappe.db.get_value('Warehouse', warehouse, 'department')

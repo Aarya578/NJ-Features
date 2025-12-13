@@ -57,14 +57,14 @@ def submit_ste(t_warehouse, serial_no):
 
 @frappe.whitelist()
 def get_work_warehouse():
-	ase_data = frappe.db.get_value('Warehouse', {'ase_user': frappe.session.user, 'disabled': 0}, ['name'], as_dict=1)
+    ase_data = frappe.db.get_value('Warehouse', {'ase_user': frappe.session.user, 'disabled': 0}, ['name'], as_dict=1)
 
-	if ase_data is None:
-		frappe.throw("No warehouse found for ASE user: {0}".format(frappe.session.user))
-	if not ase_data.get('name'):
-		frappe.throw(f"Warehouse is missing for <b>User: {frappe.session.user}</b>. Fill ASE User")
+    if ase_data is None:
+        frappe.throw("No warehouse found for ASE user: {0}".format(frappe.session.user))
+    if not ase_data.get('name'):
+        frappe.throw(f"Warehouse is missing for <b>User: {frappe.session.user}</b>. Fill ASE User")
 
-	return {"work_warehouse": ase_data.get('name')}
+    return {"work_warehouse": ase_data.get('name')}
 
 def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
     try:
@@ -77,10 +77,13 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
         department_doc = frappe.get_doc('Department', department)
         s_department_doc = frappe.get_doc('Department', s_department)
 
-        if serial_doc.get("item_group") in ["Desktops"]:
+        if serial_doc.get("item_group") not in ["Laptops"]:
             return []
 
         if department_doc.get('stock_movement_restriction_table'):
+            logger.debug("\n\n\n\n\n\n")
+            logger.debug(f'serialno ------------ {serial_no}')
+            logger.debug(f"checking stock movement restriction for grades")
             validate_grade_restriction(serial_doc, department_doc)
 
         if s_department_doc.get('quality_inspection_status_for_stock_movement') and (s_department_doc.get('inspection_types') != [] or department_doc.get('inspection_types') is not None) and s_department != department:
@@ -93,33 +96,49 @@ def check_validation_for_auto_stock_entry(t_warehouse, serial_no):
 
 def check_warehouse_qty(t_warehouse, required_qty=1):
     error_msg = ""
-    query = """
-        SELECT 
-            COALESCE(
-                (SELECT available_capacity FROM `tabWarehouse Qty` WHERE warehouse = %(warehouse)s),
-                (SELECT max_capacity FROM `tabWarehouse` WHERE name = %(warehouse)s)
-            ) AS capacity
-    """
-    result = frappe.db.sql(query, {"warehouse": t_warehouse}, as_dict=True)
 
-    available_qty = float(result[0].capacity) if result and result[0].capacity is not None else 0.0
+    # available_capacity = max_capacity - current_qty_from_Serial_No
+    capacity_query = """
+        SELECT
+            COALESCE(w.max_capacity, 0) - COALESCE(sn.current_qty, 0) AS available_capacity
+        FROM `tabWarehouse` w
+        LEFT JOIN (
+            SELECT warehouse, COUNT(*) AS current_qty
+            FROM `tabSerial No`
+            WHERE warehouse = %(warehouse)s
+            GROUP BY warehouse
+        ) sn ON sn.warehouse = w.name
+        WHERE w.name = %(warehouse)s
+    """
+
+    result = frappe.db.sql(capacity_query, {"warehouse": t_warehouse}, as_dict=True)
+
+    available_qty = 0.0
+    if result and result[0].get("available_capacity") is not None:
+        available_qty = float(result[0].get("available_capacity") or 0)
+
+    # Safety: don't go below zero
+    if available_qty < 0:
+        available_qty = 0.0
 
     if required_qty > available_qty:
-        error_msg += (
+        error_msg = (
             f"Total qty for warehouse <b>{t_warehouse}</b> is <b>{required_qty}</b>, "
-            f"but available qty is <b>{available_qty}</b>.<br>"
+            f"but available qty (based on Serial No) is <b>{available_qty}</b>.<br>"
         )
-
-    if error_msg:
         frappe.throw(error_msg)
 
     return None
+
 
 def validate_grade_restriction(serial_doc, department_doc):
     try:
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
+        logger.debug(f"is_component ----- {is_component}")
+
         if not is_component:
+            logger.debug(f'going to check validate non component grade')
             validate_non_component_grade(serial_doc, department_doc)
         else:
             validate_component_grade(serial_doc, department_doc)
@@ -156,11 +175,15 @@ def validate_non_component_grade(serial_doc, department_doc):
                 restricted_grades = restriction.get('restricted_grade', "").split(",")
                 restricted_item_group = restriction.get('item_group')
 
+                logger.debug(f'restricted_grades ---------- {restricted_grades} -------------- component_grade ------ {component.get("grade")}')
+                logger.debug(f'restricted_item_group ---------------- {restricted_item_group} ------------ component_item_group --- { component.get("item_group")}')
+
                 if (
                     component.get('item_group') == restricted_item_group and
                     component.get('grade') in restricted_grades and
                     component.get('quantity') == 1
                 ):
+                    logger.debug("coming inside if condition --------------------")
                     frappe.throw(
                         f"Serial No.: <b>{serial_doc.name}</b> "
                         f"with Item Group: <b>{component.get('item_group')}</b> has Grade: <b>{component.get('grade')}</b> this is not allowed "

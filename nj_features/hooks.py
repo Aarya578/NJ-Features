@@ -96,10 +96,14 @@ doc_events = {
              
     # } ,    
     "Sales Invoice": {
-        "before_save": "nj_features.overrides.sales_invoice.approve_validation"
+        "before_save": "nj_features.overrides.sales_invoice.approve_validation",
+        "before_save": "nj_features.overrides.sales_invoice.deviding_tax_chargese",
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
+    },
+    "Delivery Note": {
+        "before_save": "nj_features.overrides.delivery_note.deviding_tax_chargese"
     }
 
 }

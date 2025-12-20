@@ -10,6 +10,18 @@ logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 class SOQuantityCheck(Document):
 	pass
 
+
+def _safe_int(v, default=0) -> int:
+    if v is None:
+        return default
+    s = str(v).strip()
+    if s == "" or s.lower() == "none":
+        return default
+    try:
+        return int(float(s))
+    except Exception:
+        return default
+
 @frappe.whitelist()
 def update_so_quantity_check(settings):
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
@@ -481,4 +493,154 @@ def update_proportional_qty_and_updt_qty():
         
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
+        return False
+
+
+def update_minimum_qty_after_proportional() -> bool:
+    """
+    Applies minimum qty on top of update_qty2 (post proportional removal) WITHOUT increasing total qty.
+
+    Rule:
+      - If is_minimum_qty_is_required == 1 and min_qty > 0 and update_qty2 < min_qty
+        => we try to raise that row to min_qty.
+      - The extra qty needed is taken by reducing other rows within SAME parent1 group.
+        * Non-required rows can be reduced down to 0
+        * Required rows can be reduced down to their min_qty (not below min)
+
+    Safety check (your manager’s point):
+      - We apply mins only if the group has enough reducible qty.
+      - If not enough => skip mins for that parent1 (do NOT create qty).
+    """
+
+    try:
+        # parents where min is required and current qty is below min
+        parents = frappe.db.sql(
+            """
+            SELECT parent1
+            FROM `tabSO Quantity Check`
+            WHERE
+                COALESCE(is_minimum_qty_is_required, 0) = 1
+                AND COALESCE(min_qty, 0) > 0
+                AND CAST(COALESCE(NULLIF(update_qty2, ''), '0') AS UNSIGNED) < COALESCE(min_qty, 0)
+            GROUP BY parent1
+            """,
+            as_dict=True,
+        )
+
+        if not parents:
+            return True
+
+        for pr in parents:
+            parent1 = pr.get("parent1")
+            if not parent1:
+                continue
+
+            rows = frappe.db.sql(
+                """
+                SELECT name, item_code, update_qty2, is_minimum_qty_is_required, min_qty
+                FROM `tabSO Quantity Check`
+                WHERE parent1 = %s
+                """,
+                (parent1,),
+                as_dict=True,
+            )
+
+            # Parse current quantities
+            items = []
+            for r in rows:
+                qty = _safe_int(r.get("update_qty2"), 0)
+                min_req = 1 if _safe_int(r.get("is_minimum_qty_is_required"), 0) == 1 else 0
+                min_qty = _safe_int(r.get("min_qty"), 0)
+                items.append({
+                    "name": r.get("name"),
+                    "item_code": r.get("item_code"),
+                    "qty": qty,
+                    "min_req": min_req,
+                    "min_qty": min_qty,
+                    "new_qty": qty,  # will update
+                })
+
+            # Required items and deficits
+            required = [x for x in items if x["min_req"] == 1 and x["min_qty"] > 0]
+            if not required:
+                continue
+
+            deficits = []
+            total_deficit = 0
+            for x in required:
+                if x["qty"] < x["min_qty"]:
+                    d = x["min_qty"] - x["qty"]
+                    deficits.append((x, d))
+                    total_deficit += d
+
+            if total_deficit <= 0:
+                continue
+
+            # Donors: where can we reduce qty from?
+            donors = []
+            reducible_total = 0
+
+            for x in items:
+                if x["min_req"] == 1 and x["min_qty"] > 0:
+                    # required can donate only above its min
+                    excess = max(x["qty"] - x["min_qty"], 0)
+                else:
+                    # non-required can donate down to 0
+                    excess = max(x["qty"], 0)
+
+                if excess > 0:
+                    donors.append((x, excess))
+                    reducible_total += excess
+
+            # ✅ Safety check (this is why manager told sum(update_qty) vs sum(min_qty_to_add))
+            # If we cannot "fund" the minimum deficits by reducing others, SKIP this parent
+            if reducible_total < total_deficit:
+                log_error(
+                    f"[MIN-QTY] Skipped parent={parent1}: need={total_deficit}, reducible={reducible_total}",
+                    "update_minimum_qty_after_proportional",
+                    "Warning",
+                )
+                continue
+
+            # Step A: raise required items to min (consume deficit)
+            for x, d in deficits:
+                x["new_qty"] = x["qty"] + d  # becomes min_qty exactly
+
+            # Step B: reduce donors to keep total constant
+            remaining = total_deficit
+
+            # reduce largest donors first
+            donors.sort(key=lambda t: t[1], reverse=True)
+
+            for x, excess in donors:
+                if remaining <= 0:
+                    break
+
+                take = min(excess, remaining)
+                x["new_qty"] = x["new_qty"] - take
+                remaining -= take
+
+            # Apply updates
+            for x in items:
+                if x["name"] and x["new_qty"] != x["qty"]:
+                    frappe.db.set_value(
+                        "SO Quantity Check",
+                        x["name"],
+                        "update_qty2",
+                        str(int(max(x["new_qty"], 0)))
+                    )
+
+            frappe.db.commit()
+
+        log_error("Minimum qty applied after proportional qty", "update_minimum_qty_after_proportional", "Info")
+        return True
+
+    except pymysql.err.OperationalError as e:
+        # mysql connection lost
+        if e.args and e.args[0] == 2013:
+            return False
+        return False
+
+    except Exception:
+        log_error(frappe.get_traceback(), "update_minimum_qty_after_proportional")
         return False

@@ -2737,14 +2737,34 @@ def deviding_tax_chargese(doc, method=None):
     # --------------------------------------------------
     # 1️⃣ Fetch Sales Orders from Delivery Note Items
     # --------------------------------------------------
-    sales_orders = set(
+    sales_orders = [
         item.against_sales_order
         for item in doc.items
         if item.against_sales_order
-    )
+    ]
+
     print("sales_orders========================", sales_orders)
 
     if not sales_orders:
+        return
+
+    # --------------------------------------------------
+    # 2️⃣ Pick FIRST Sales Order only
+    # --------------------------------------------------
+    first_so = sales_orders[0]
+
+    sale_type = frappe.db.get_value(
+        "Sales Order",
+        first_so,
+        "sale_type"
+    )
+
+    print("sale_type========================", sale_type)
+
+    # --------------------------------------------------
+    # 3️⃣ Run validation ONLY for NJ-Website-B2C
+    # --------------------------------------------------
+    if sale_type != "NJ-Website-B2C":
         return
 
     # --------------------------------------------------

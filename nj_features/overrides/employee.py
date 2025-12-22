@@ -675,69 +675,80 @@ def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filte
     """, (employee_level, filters.get("department"), page_len, start), explain=True)
 
 
+
 @frappe.whitelist()
-def update_item_group_and_max_qty_in_warehouse(employee=None):
+def update_item_group_and_max_qty_in_warehouse(doc, method=None):
     try:
+        employee = doc.name  # Employee ID
+
         if not employee:
             return {"success": False, "message": "No employee provided"}
 
-        # Get employee data
-        emp_data = frappe.get_doc("Employee", employee)
-        print("emp_data===============",emp_data)
+        emp_data = doc  # already fetched
+        print("emp_data===============", emp_data)
 
         if not emp_data.role_profile or not emp_data.work_warehouse:
             return {"success": False, "message": "Role profile or work warehouse not set"}
 
         role_profile = frappe.get_doc("Role Profile", emp_data.role_profile)
-        print("role_profile===============",role_profile)
-        
+        print("role_profile===============", role_profile)
+
         parts = frappe.get_all(
             "Part Multiselect",
-            filters={"parent": emp_data.role_profile, "parenttype": "Role Profile"},
+            filters={
+                "parent": emp_data.role_profile,
+                "parenttype": "Role Profile"
+            },
             fields=["part"]
         )
-        print("parts===============",parts)
-        
+        print("parts===============", parts)
+
         warehouse = frappe.get_doc("Warehouse", emp_data.work_warehouse)
-        
+
         updated = False
         messages = []
 
-        # Update item_group (child table) if it exists
-        if hasattr(warehouse, 'item_group') and isinstance(warehouse.item_group, list):
+        # -------------------------------
+        # Update item_group child table
+        # -------------------------------
+        if hasattr(warehouse, "item_group") and isinstance(warehouse.item_group, list):
             current_parts = [row.part for row in warehouse.item_group]
-            new_parts = [part["part"] for part in parts]
-            
-            # Check if update is needed for parts
+            new_parts = [p["part"] for p in parts]
+
             if set(current_parts) != set(new_parts):
                 warehouse.item_group = []
-                for part in parts:
-                    warehouse.append("item_group", {"part": part["part"]})
+                for p in new_parts:
+                    warehouse.append("item_group", {"part": p})
                 updated = True
-                messages.append(f"Updated {len(parts)} parts")
+                messages.append(f"Updated {len(new_parts)} parts")
         else:
             messages.append("Warehouse doesn't have item_group child table")
 
-        # Update max_capacity if it exists in both Role Profile and Warehouse
-        if hasattr(role_profile, 'max_capacity') and role_profile.max_capacity:
-            if hasattr(warehouse, 'max_capacity'):
+        # -------------------------------
+        # Update max_capacity
+        # -------------------------------
+        if getattr(role_profile, "max_capacity", None):
+            if hasattr(warehouse, "max_capacity"):
                 if warehouse.max_capacity != role_profile.max_capacity:
                     warehouse.max_capacity = role_profile.max_capacity
                     updated = True
-                    messages.append(f"Updated max capacity to {role_profile.max_capacity}")
+                    messages.append(
+                        f"Updated max capacity to {role_profile.max_capacity}"
+                    )
             else:
                 messages.append("Warehouse doesn't have max_capacity field")
         else:
             messages.append("Role Profile doesn't have max_capacity set")
 
-        # Save only if there are changes
         if updated:
             warehouse.save(ignore_permissions=True)
-            # frappe.db.commit()
             return {"success": True, "message": " | ".join(messages)}
-        else:
-            return {"success": True, "message": "No changes needed"}
+
+        return {"success": True, "message": "No changes needed"}
 
     except Exception as e:
-        frappe.log_error(f"Error in update_item_group_and_max_qty_in_warehouse: {str(e)}", "Warehouse Update Error")
-        return {"success": False, "message": f"Error: {str(e)}"}
+        frappe.log_error(
+            frappe.get_traceback(),
+            "update_item_group_and_max_qty_in_warehouse"
+        )
+        return {"success": False, "message": str(e)}

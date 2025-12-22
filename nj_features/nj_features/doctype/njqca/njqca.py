@@ -934,7 +934,8 @@ class NJQCA(Document):
     #         frappe.log_error(f"Error updating QC Reports: {str(e)}", "QC Reports Update Error")
 
     def battery_reports_update(self):
-        if self.inspection_type != "Final QC" or self.item_group != "BATTERY":
+        print("==========================battery_reports_update")
+        if self.item_group != "BATTERY":
             return
 
         bios_serialno = self.bios_serialno

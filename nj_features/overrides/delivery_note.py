@@ -52,7 +52,7 @@ class CustomDeliveryNote(DeliveryNote):
     def apply_patch(self):
         import erpnext.controllers.status_updater as status_updater
         status_updater.StatusUpdater.limits_crossed_error = custome_limits_crossed_error
-        print("\n=== Monkey Patch Applied: =============================limits_crossed_error overridden ===\n")
+        # print("\n=== Monkey Patch Applied: =============================limits_crossed_error overridden ===\n")
 
     def on_submit(self):
         total_start = time.perf_counter()
@@ -170,9 +170,9 @@ class CustomDeliveryNote(DeliveryNote):
                             f"Sale Type: {sale_type}"
                         )
                         order_type = order_details[0].get("order_type")
-                        print(f"Order Type: {order_type}")
+                        # print(f"Order Type: {order_type}")
                         sale_type = order_details[0].get("sale_type")
-                        print(f"Sale Type: {sale_type}")
+                        # print(f"Sale Type: {sale_type}")
 
                         # Only trigger fulfillment if conditions are met
                         if order_type == "Sales" and sale_type == "NJ-Website-B2C":
@@ -202,7 +202,7 @@ class CustomDeliveryNote(DeliveryNote):
                                 f"Order Type: {order_type}, Sale Type: {sale_type}"
                             )
                     else:
-                        print(f"No Sales Order found for DN {self.name}")
+                        # print(f"No Sales Order found for DN {self.name}")
                         logger.debug(
                             f"[DN: {self.name}] No Sales Order found for DN {self.name}"
                         )
@@ -924,7 +924,7 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
         "against_sales_order"
     )
 
-    print("Against SO =", against_sales_order)
+    # print("Against SO =", against_sales_order)
 
     sale_type = None
     if against_sales_order:
@@ -934,14 +934,14 @@ def custome_limits_crossed_error(self, args, item, qty_or_amount):
             "sale_type"
         )
 
-    print("SALE TYPE =", sale_type)
+    # print("SALE TYPE =", sale_type)
     nj_setting_value = frappe.db.get_value("NJ Settings", {"parameter": "sale_type_name"}, "value")
 
     # ---------------------------------------------------------
     # 2. SKIP FUNCTION COMPLETELY IF NJ Seeting Value is Matches
     # ---------------------------------------------------------
     if sale_type == nj_setting_value:
-        print("Skipping limits_crossed_error — Amazon order")
+        # print("Skipping limits_crossed_error — Amazon order")
         customer = frappe.db.get_value("Delivery Note", {"name": self.name}, "customer")
         customer_data = frappe.db.get_value(
             "Customer",
@@ -1839,7 +1839,7 @@ def send_consignement_data(doc):
             "Amount": consignmentValue,
             "Need_CitImage": "1"
         }
-        print("header=======================",header)
+        # print("header=======================",header)
         # Add validation to ensure quantities match
         calculated_total = sum(float(item["SplitPcs"]) for item in items)
         if abs(calculated_total - total_quantity) > 0.001: 
@@ -1854,11 +1854,11 @@ def send_consignement_data(doc):
         # url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
-        print("headers=======================",headers)
+        # print("headers=======================",headers)
         response = requests.post(url, headers=headers, json=data)
-        print("response=======================",response)
+        # print("response=======================",response)
         resp_json = response.json()
-        print("resp_json=======================",resp_json)
+        # print("resp_json=======================",resp_json)
         if resp_json.get('code') == 1 and resp_json.get('status') == 200:
             tracking_id = resp_json.get('data', {}).get('AWB Number') or resp_json.get('data', {}).get('AWBNumber')
             cit_data = resp_json.get('data', {}).get('CitImage') or resp_json.get('CitImage')          
@@ -1935,7 +1935,7 @@ def shiprocket_awb_number(doc):
 
                 # Case 1: COD checked but also payment received → run normal prepaid flow
                 if sales_order_doc.is_cod == 1 and sales_order_doc.payment_received == 1:
-                    print("Case 1: COD checked but also payment received → run normal prepaid flow")
+                    # print("Case 1: COD checked but also payment received → run normal prepaid flow")
                     payment_method = "Prepaid"
 
                     if delivery_note_doc.grand_total:
@@ -1965,7 +1965,7 @@ def shiprocket_awb_number(doc):
 
                 # Case 2: Only COD checked → COD flow
                 elif sales_order_doc.is_cod == 1:
-                    print("Case 2: Only COD checked → COD flow")
+                    # print("Case 2: Only COD checked → COD flow")
                     payment_method = "COD"
                     sub_total = float(sales_order_doc.total_outstanding or 0)
 
@@ -1976,14 +1976,14 @@ def shiprocket_awb_number(doc):
 
                     # --- Check if sale_type is NJ_Website_B2C ---
                     if getattr(sales_order_doc, "order_type", None) == "Maintenance":
-                        print("sale_type = Maintenance", sales_order_doc.order_type)
+                        # print("sale_type = Maintenance", sales_order_doc.order_type)
 
                         dn_total = float(delivery_note_doc.grand_total or 0)
-                        print("Delivery Note grand_total:", dn_total)
+                        # print("Delivery Note grand_total:", dn_total)
 
                         # Compare grand_total with 4000, take the maximum
                         sub_total = max(dn_total, 4000)
-                        print("sub_total (max of grand_total or 4000):", sub_total)
+                        # print("sub_total (max of grand_total or 4000):", sub_total)
 
                     else:
                         if delivery_note_doc.grand_total:
@@ -2038,7 +2038,6 @@ def shiprocket_awb_number(doc):
                 "height": str(delivery_note_doc.height),
                 "weight": str(delivery_note_doc.weight)
             }
-            print("data:--------159", data)
             # url = "https://apiv2.shiprocket.in/v1/external/orders/create/adhoc"
             url = frappe.db.get_single_value("Logistics Settings", "adhoc_url")
             headers = {
@@ -2046,12 +2045,11 @@ def shiprocket_awb_number(doc):
                 "Authorization": f"Bearer {auth_token.strip()}"
             }
             response = requests.post(url, headers=headers, json=data)
-            print("response:--------159", response.json())
             
             if response.status_code == 200:
                 try:
                     resp_json = response.json()
-                    print("response:--------159", response.json())
+                    # print("response:--------159", response.json())
                     if resp_json.get('order_id'):
                         # Update document with ShipRocket IDs
 
@@ -2236,7 +2234,7 @@ def shiprocket_awb_number(doc):
                 else:
                     frappe.throw("No COD charges value found in Ship Rocket Settings")
         else:
-            print("COD is not enabled, skipping COD validation...")
+            # print("COD is not enabled, skipping COD validation...")
             # Check if courier total cost exceeds item charges total for non-COD orders
             if best_courier and best_courier.get('total_cost', 0) > total_item_charges:
                 frappe.throw(f"Cannot generate AWB number because courier '{best_courier.get('courier_name')}' total cost ({best_courier.get('total_cost')}) is more than item charges total ({total_item_charges})")
@@ -2730,3 +2728,161 @@ def get_item_group_cost_centers(items):
             if cost_center:
                 result[item["idx"]] = cost_center
     return result
+
+
+
+@frappe.whitelist()
+def deviding_tax_chargese(doc, method=None):
+
+    # --------------------------------------------------
+    # 1️⃣ Fetch Sales Orders from Delivery Note Items
+    # --------------------------------------------------
+    sales_orders = [
+        item.against_sales_order
+        for item in doc.items
+        if item.against_sales_order
+    ]
+
+    print("sales_orders========================", sales_orders)
+
+    if not sales_orders:
+        return
+
+    # --------------------------------------------------
+    # 2️⃣ Pick FIRST Sales Order only
+    # --------------------------------------------------
+    first_so = sales_orders[0]
+
+    sale_type = frappe.db.get_value(
+        "Sales Order",
+        first_so,
+        "sale_type"
+    )
+
+    print("sale_type========================", sale_type)
+
+    # --------------------------------------------------
+    # 3️⃣ Run validation ONLY for NJ-Website-B2C
+    # --------------------------------------------------
+    if sale_type != "NJ-Website-B2C":
+        return
+
+    # --------------------------------------------------
+    # 2️⃣ Fetch SO TOTAL QTY (PARENT LEVEL)
+    # --------------------------------------------------
+    so_qty_data = frappe.db.sql("""
+        SELECT so.name, SUM(soi.qty) AS total_qty
+        FROM `tabSales Order` so
+        JOIN `tabSales Order Item` soi ON soi.parent = so.name
+        WHERE so.name IN %(sales_orders)s
+          AND so.docstatus = 1
+        GROUP BY so.name
+    """, {"sales_orders": tuple(sales_orders)}, as_dict=True, debug=1)
+
+    print("so_qty_data========================", so_qty_data)
+
+    so_qty_map = {r.name: r.total_qty for r in so_qty_data}
+    print("so_qty_map========================", so_qty_map)
+
+    # --------------------------------------------------
+    # 3️⃣ Fetch SUBMITTED DELIVERY NOTE QTY (PARENT LEVEL)
+    # --------------------------------------------------
+    submitted_dn_qty = frappe.db.sql("""
+        SELECT dni.against_sales_order, SUM(dni.qty) AS total_qty
+        FROM `tabDelivery Note` dn
+        JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+        WHERE dni.against_sales_order IN %(sales_orders)s
+          AND dn.docstatus = 1
+        GROUP BY dni.against_sales_order
+    """, {"sales_orders": tuple(sales_orders)}, as_dict=True, debug=1)
+
+    print("submitted_dn_qty=====================", submitted_dn_qty)
+
+    dn_qty_map = {
+        row.against_sales_order: row.total_qty
+        for row in submitted_dn_qty
+    }
+    print("dn_qty_map=====================", dn_qty_map)
+
+    # --------------------------------------------------
+    # 4️⃣ Fetch NJ Settings (Allowed tax accounts)
+    # --------------------------------------------------
+    nj_setting_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "taxe_account_heads"},
+        "value"
+    )
+    print("nj_setting_value=====================", nj_setting_value)
+
+    if not nj_setting_value:
+        return
+
+    try:
+        allowed_accounts = set(json.loads(nj_setting_value))
+    except Exception:
+        allowed_accounts = set(
+            acc.strip() for acc in nj_setting_value.split(",") if acc.strip()
+        )
+
+    print("allowed_accounts=====================", allowed_accounts)
+
+    # --------------------------------------------------
+    # 5️⃣ Fetch UNMATCHED TAXES FROM SALES ORDER
+    # --------------------------------------------------
+    so_unmatched_taxes = {}
+
+    for so_name in sales_orders:
+        so_taxes = frappe.get_all(
+            "Sales Taxes and Charges",
+            filters={
+                "parent": so_name,
+                "parenttype": "Sales Order"
+            },
+            fields=["account_head", "charge_type", "tax_amount"]
+        )
+        print("so_taxes=====================", so_taxes)
+
+        for tax in so_taxes:
+            if tax.account_head not in allowed_accounts:
+                so_unmatched_taxes[tax.account_head] = tax.tax_amount
+
+    print("so_unmatched_taxes=====================", so_unmatched_taxes)
+
+    if not so_unmatched_taxes:
+        return
+
+    # --------------------------------------------------
+    # 6️⃣ Fetch CURRENT DELIVERY NOTE TOTAL QTY (PARENT)
+    # --------------------------------------------------
+    current_dn_qty = sum(
+        item.qty for item in doc.items if item.against_sales_order
+    )
+    print("current_dn_qty=====================", current_dn_qty)
+
+    if not current_dn_qty:
+        return
+
+    # --------------------------------------------------
+    # 7️⃣ Divide SO TAX using CURRENT DN QTY
+    # --------------------------------------------------
+    for so_name in sales_orders:
+        so_total_qty = so_qty_map.get(so_name)
+        print("so_total_qty=====================", so_total_qty)
+
+        if not so_total_qty:
+            continue
+
+        for account_head, so_tax_amount in so_unmatched_taxes.items():
+            divided_amount = round(
+                (so_tax_amount / so_total_qty) * current_dn_qty, 2
+            )
+            print("divided_amount=====================", divided_amount)
+
+            # --------------------------------------------------
+            # 8️⃣ Update SAME tax row in Delivery Note
+            # --------------------------------------------------
+            for tax in doc.taxes:
+                if tax.account_head == account_head:
+                    tax.tax_amount = divided_amount
+                    tax.base_tax_amount = divided_amount
+                    break

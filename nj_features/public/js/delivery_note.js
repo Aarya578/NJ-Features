@@ -10,7 +10,7 @@ frappe.ui.form.on('Delivery Note', {
     onload: function(frm) {   
         handleScannerInput(frm, 'scan_barcode');
         handleScannerInput(frm, 'scan_barcodes');
-                
+        update_gst_tax_type_from_nj_settings(frm);
         // Run only if items exist and linked Sales Order is present
         
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {
@@ -532,7 +532,45 @@ frappe.ui.form.on('Delivery Note', {
     //     }
     // }
 });
+function update_gst_tax_type_from_nj_settings(frm) {
+    console.log("updating============================");
+    
+  if (!frm.doc.taxes || !frm.doc.taxes.length) return;
 
+    frappe.db.get_value(
+        "NJ Settings",
+        { parameter: "taxe_account_heads" },
+        "value"
+    ).then(r => {
+        const csv = r?.message?.value;
+        console.log("message=========",r.message);
+        
+        if (!csv) return;
+
+        const account_heads = csv
+            .split(',')
+            .map(v => v.trim());
+
+        frm.doc.taxes.forEach(tax => {
+            if (
+                tax.charge_type === "Actual" &&
+                tax.account_head &&
+                account_heads.includes(tax.account_head.trim())
+            ) {
+                // 🔥 THIS IS THE FIX
+                frappe.model.set_value(
+                    tax.doctype,
+                    tax.name,
+                    "charge_type",
+                    "On Net Total"
+                );
+            }
+        });
+
+        // Recalculate after updates
+        frm.cscript.calculate_taxes_and_totals();
+    });
+}
 
 frappe.ui.form.on('Packed Item', {
 

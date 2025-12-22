@@ -10,6 +10,10 @@ frappe.ui.form.on('Sales Invoice', {
         // Custom E-Invoicing functionality override
         // setup_custom_einvoice_actions(frm);
     },
+     onload(frm) {
+        update_gst_tax_type_from_nj_settings(frm);
+    }
+    ,
 
     // onload: function(frm) {   
     //     if (!frm.doc.__islocal) return;
@@ -96,6 +100,45 @@ frappe.ui.form.on('Sales Invoice', {
     },
     
 });
+function update_gst_tax_type_from_nj_settings(frm) {
+    console.log("updating============================");
+    
+  if (!frm.doc.taxes || !frm.doc.taxes.length) return;
+
+    frappe.db.get_value(
+        "NJ Settings",
+        { parameter: "taxe_account_heads" },
+        "value"
+    ).then(r => {
+        const csv = r?.message?.value;
+        console.log("message=========",r.message);
+        
+        if (!csv) return;
+
+        const account_heads = csv
+            .split(',')
+            .map(v => v.trim());
+
+        frm.doc.taxes.forEach(tax => {
+            if (
+                tax.charge_type === "Actual" &&
+                tax.account_head &&
+                account_heads.includes(tax.account_head.trim())
+            ) {
+                // 🔥 THIS IS THE FIX
+                frappe.model.set_value(
+                    tax.doctype,
+                    tax.name,
+                    "charge_type",
+                    "On Net Total"
+                );
+            }
+        });
+
+        // Recalculate after updates
+        frm.cscript.calculate_taxes_and_totals();
+    });
+}
 
 function setup_custom_einvoice_actions(frm) {
 

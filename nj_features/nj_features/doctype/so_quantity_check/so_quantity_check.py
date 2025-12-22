@@ -22,6 +22,18 @@ def _safe_int(v, default=0) -> int:
     except Exception:
         return default
 
+
+def _safe_int(v, default=0) -> int:
+    if v is None:
+        return default
+    s = str(v).strip()
+    if s == "" or s.lower() == "none":
+        return default
+    try:
+        return int(float(s))
+    except Exception:
+        return default
+
 @frappe.whitelist()
 def update_so_quantity_check(settings):
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""

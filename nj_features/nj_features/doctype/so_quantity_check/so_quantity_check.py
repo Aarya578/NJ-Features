@@ -8,7 +8,19 @@ from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 
 class SOQuantityCheck(Document):
-	pass
+        pass
+
+
+def _safe_int(v, default=0) -> int:
+    if v is None:
+        return default
+    s = str(v).strip()
+    if s == "" or s.lower() == "none":
+        return default
+    try:
+        return int(float(s))
+    except Exception:
+        return default
 
 
 def _safe_int(v, default=0) -> int:

@@ -807,7 +807,7 @@ class NJQCA(Document):
 
 
     def performance_reports_update(self):
-        if self.inspection_type != "Core IQC" or self.item_group != "Laptops":
+        if self.inspection_type != "Final QC" or self.item_group != "Laptops":
             return
 
         try:

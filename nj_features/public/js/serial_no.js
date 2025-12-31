@@ -143,7 +143,7 @@ frappe.ui.form.on('Serial No', {
 
                         frm.set_value('qr', r.message);
                         frm.refresh_field('qr');
-
+                   
                         frappe.msgprint({
                             title: __('Success'),
                             message: __('QR HTML and image generated successfully.'),
@@ -160,6 +160,27 @@ frappe.ui.form.on('Serial No', {
                 }
             });
         });
+
+
+                // Add styling to the button
+        frm.add_custom_button(__('Generate QC Report'), function () {
+
+            frappe.show_alert({
+                message: __('Generating Performance Report...'),
+                indicator: 'blue'
+            }, 3);
+
+            frappe.call({
+                method: "nj_p1_features.overrides.serial_no.generating_report",
+                args: {
+                    docname: frm.doc.name
+                },
+                callback: function () {
+                    frm.reload_doc(); // 🔄 render data in table
+                }
+            });
+        });
+
     
 
     },

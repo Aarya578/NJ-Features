@@ -321,3 +321,97 @@ def fetch_unique_records(doc):
 
     return unique_rows
 
+
+@frappe.whitelist()
+def create_pr_on_submit(doc, method):
+    """Create and submit a Purchase Receipt for a Purchase Order
+    when all items are non-stock items.
+
+    This function is intended to be used as a `doc_events` hook on
+    `Purchase Order` (e.g. `on_submit`). It enforces the following rules:
+
+    - If **any** item in the Purchase Order is a stock item
+      (`Item.is_stock_item = 1`), **no Purchase Receipt is created**.
+    - If **all** items in the Purchase Order are non-stock
+      (`Item.is_stock_item = 0`), a Purchase Receipt is created and
+      submitted automatically.
+    - Only non-stock items are added to the generated Purchase Receipt.
+
+    Args:
+        doc (frappe.model.document.Document):
+            The submitted Purchase Order document.
+        method (str):
+            The event method name (e.g. `"on_submit"`), passed by the
+            Frappe framework.
+
+    Returns:
+        None: The function performs database operations (creating and
+        submitting a Purchase Receipt) and returns early if the business
+        rules are not satisfied.
+    """
+    # --------- 1) Check stock / non-stock status of all items ----------
+    item_stock_map = {}
+    has_stock_item = False
+    has_non_stock_item = False
+
+    for po_item in doc.items:
+        if not po_item.item_code:
+            continue  # safety check
+
+        # cache to avoid multiple DB hits for same item_code
+        if po_item.item_code not in item_stock_map:
+            is_stock_item = frappe.db.get_value(
+                "Item", po_item.item_code, "is_stock_item"
+            )
+            item_stock_map[po_item.item_code] = is_stock_item
+
+        is_stock_item = item_stock_map[po_item.item_code]
+
+        if is_stock_item:      # 1 or True → stock item
+            has_stock_item = True
+        else:                  # 0 or False → non-stock item
+            has_non_stock_item = True
+
+    # --------- 2) Business rules you gave ----------
+    # Case A: If ANY item is stock → DO NOT create PR
+    if has_stock_item:
+        return
+
+    # Case B: If no non-stock items → nothing to do
+    if not has_non_stock_item:
+        return
+
+    # At this point:
+    # ✅ All items are non-stock → proceed to create PR
+
+    # --------- 3) Create Purchase Receipt ----------
+    pr = frappe.new_doc("Purchase Receipt")
+    pr.purchase_order = doc.name
+    pr.supplier = doc.supplier
+    pr.company = doc.company
+    pr.posting_date = doc.transaction_date
+    pr.set_warehouse = getattr(doc, "set_warehouse", None)
+
+    # --------- 4) Add only non-stock items to PR ----------
+    for po_item in doc.items:
+        is_stock_item = item_stock_map.get(po_item.item_code)
+
+        # should all be non-stock here, but we keep this for safety
+        if is_stock_item:
+            continue
+
+        pr.append("items", {
+            "item_code": po_item.item_code,
+            "item_name": po_item.item_name,
+            "description": po_item.description,
+            "qty": po_item.qty,
+            "rate": po_item.rate,
+            "uom": po_item.uom,
+            "conversion_factor": po_item.conversion_factor,
+            "warehouse": po_item.warehouse or pr.set_warehouse,
+            "purchase_order": doc.name,
+            "po_detail": po_item.name,
+        })
+
+    pr.insert(ignore_permissions=True)
+    pr.submit()

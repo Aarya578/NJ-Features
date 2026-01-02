@@ -77,7 +77,10 @@ doc_events = {
     },
     "Purchase Order": {
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
-        "on_submit": "nj_features.overrides.purchase_order.validate_warranty_on_submit",
+        "on_submit": [
+            "nj_features.overrides.purchase_order.validate_warranty_on_submit",
+            "nj_features.overrides.purchase_order.create_pr_on_submit",
+        ],
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",

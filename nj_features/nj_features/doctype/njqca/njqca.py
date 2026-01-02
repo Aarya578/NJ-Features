@@ -473,15 +473,15 @@ class NJQCA(Document):
 
     def on_submit(self):
         try:
-            self.performance_reports_update()
+            # self.performance_reports_update()
             self.check_for_repack_access()
-            self.updating_njqca_child_in_serial_no()
-            self.laptop_reports_update()
-            self.battery_reports_update()
-            self.adaptor_reports_update()
-            self.update_item_groups()
+            # self.updating_njqca_child_in_serial_no()
+            # self.laptop_reports_update()
+            # self.battery_reports_update()
+            # self.adaptor_reports_update()
+            # self.update_item_groups()
             self.validate_item_code_match()
-            self.battery_readings()
+            # self.battery_readings()
             self.update_serial_no_readings()
         except Exception as e:
             log_error(traceback.format_exc(), "Error in on_submit in NJQCA")

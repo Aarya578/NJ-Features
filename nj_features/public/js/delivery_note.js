@@ -270,38 +270,44 @@ frappe.ui.form.on('Delivery Note', {
                 }
             }
         });
-        frappe.call({
-            method: 'nj_features.overrides.delivery_note.fetch_cod_amount',
-            args: {
-                doc_name: frm.doc.name 
-            },
-            callback: function(r) {
-                if (r.message) {
-                    const { cod_amount, is_cod, payment_received } = r.message;
+        // frappe.call({
+        //     method: 'nj_features.overrides.delivery_note.fetch_cod_amount',
+        //     args: {
+        //         doc_name: frm.doc.name 
+        //     },
+        //     callback: function(r) {
+        //         if (r.message) {
+        //             const { cod_amount, is_cod, payment_received } = r.message;
+        //             console.log("meassage=======",r.message);
+                    
 
-                    // Set cod_amount field
-                    if (cod_amount !== undefined && cod_amount !== null) {
-                        frm.set_value('cod_amount', cod_amount.toString());
-                    }
+        //             // Set cod_amount field
+        //             if (cod_amount !== undefined && cod_amount !== null) {
+                        
+        //                 frm.set_value('cod_amount', cod_amount.toString());
+        //             }
 
-                    // ✅ Condition 1: COD checked & Payment received → Surface
-                    if (is_cod && payment_received) {
-                        frm.set_value('mode_of_transfer', 'Surface');
-                    }
-                    // ✅ Condition 2: Only COD checked → COD Surface
-                    else if (is_cod && !payment_received) {
-                        frm.set_value('mode_of_transfer', 'COD Surface');
-                    }
-                    // ✅ Condition 3: COD not checked → Surface
-                    else {
-                        frm.set_value('mode_of_transfer', 'Surface');
-                    }
-
-                    frm.refresh_field('cod_amount');
-                    frm.refresh_field('mode_of_transfer');
-                }
-            }
-        });
+        //             // ✅ Condition 1: COD checked & Payment received → Surface
+        //             if (is_cod && payment_received) {
+        //                 console.log("mode_of_transfer",frm.doc.mode_of_transfer);                    
+        //                 frm.set_value('mode_of_transfer', 'Surface');
+        //             }
+        //             // ✅ Condition 2: Only COD checked → COD Surface
+        //             else if (is_cod && !payment_received) {
+        //                 console.log("mode_of_transfer",frm.doc.mode_of_transfer);                        
+        //                 frm.set_value('mode_of_transfer', 'COD Surface');
+        //             }
+        //             // ✅ Condition 3: COD not checked → Surface
+        //             else {
+        //                 console.log("mode_of_transfer",frm.doc.mode_of_transfer);                         
+        //                 frm.set_value('mode_of_transfer', 'Surface');
+        //             }
+                    
+        //             frm.refresh_field('cod_amount');
+        //             frm.refresh_field('mode_of_transfer');
+        //         }
+        //     }
+        // });
 
     },
     scan_barcodes: function (cur_frm) {

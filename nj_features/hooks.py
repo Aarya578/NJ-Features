@@ -99,14 +99,21 @@ doc_events = {
              
     # } ,    
     "Sales Invoice": {
-        "before_save": "nj_features.overrides.sales_invoice.approve_validation",
-        "before_save": "nj_features.overrides.sales_invoice.deviding_tax_chargese",
+        "before_save":  [
+            "nj_features.overrides.sales_invoice.approve_validation",
+            "nj_features.overrides.sales_invoice.deviding_tax_chargese",
+        ]
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     },
     "Delivery Note": {
-        "before_save": "nj_features.overrides.delivery_note.deviding_tax_chargese"
+        "before_save":  [       
+            "nj_features.overrides.delivery_note.deviding_tax_chargese"
+        ],   
+        "on_update":  [
+            "nj_features.overrides.delivery_note.set_cod_details_critical"
+        ]   
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"

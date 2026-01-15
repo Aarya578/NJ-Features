@@ -2113,12 +2113,12 @@ def get_model(manufacturer_model=None):
 
     return model_list
 
-# @frappe.whitelist()
-# def get_part_item_code_filtered_data(item_group):
-#     get_part_item_code_query = """SELECT name FROM `tabItem` 
-#             WHERE item_group = %(item_group)s AND has_variants = 0 AND disabled = 0"""
+@frappe.whitelist()
+def get_part_item_code_filtered_data(item_group):
+    get_part_item_code_query = """SELECT name FROM `tabItem` 
+            WHERE item_group = %(item_group)s AND has_variants = 0 AND disabled = 0"""
     
-#     return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
+    return frappe.db.sql(get_part_item_code_query, {'item_group': item_group})
 
 @frappe.whitelist()
 def get_sudden_drop(parent_name, item_group, manufacturer_model):
@@ -3684,3 +3684,55 @@ def check_charging_gain(wattage: int, initial_percentage: int, final_percentage:
         elif wattage == 200: min_gain, max_gain = 1, 2
 
     return "Pass" if gain >= min_gain else "Fail"
+
+
+
+@frappe.whitelist()
+def get_last_quality_status_from_bios(njqca_name):
+    """
+    Fetch the last Quality Inspection status for a device based on BIOS serial number.
+
+    Returns:
+        - "Accepted"   → if last inspection was accepted
+        - "Rejected"   → if last inspection was rejected
+        - "Not Found"  → if no inspection exists
+    """
+    njqca = frappe.get_doc("NJQCA", njqca_name)
+
+    bios_serialno = njqca.bios_serialno
+
+    if not bios_serialno:
+        return "Not Found"
+    
+    print("bios_Serial ----------- ", bios_serialno)
+
+    # 🔹 Step 1: Get the device Serial No from BIOS
+    serial_no = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
+
+    print("serial_no --------- ", serial_no)
+
+    if not serial_no:
+        return "Not Found"
+
+     # 🔹 Step 3: Save the last inspection type in NJ Settings
+    inspection_type = frappe.db.get_value("NJ Settings", {'parameter': 'last_qc_inspection_type'}, 'value')
+    
+    print("inspection_type ----------- ", inspection_type)
+
+
+    qi = frappe.db.sql("""
+                SELECT name, status from `tabNJ Quality Inspection` WHERE barcode = %s and inspection_type = %s
+            """, (serial_no, inspection_type),explain=1, debug=1, as_dict=True)
+
+    if not qi:
+        return "Not Found"
+
+    status = qi[0].status  # Accepted / Rejected / something else
+
+    # 🔹 Step 4: Return QC result in Accepted / Rejected / Not Found
+    if status == "Accepted":
+        return "Accepted"
+    elif status == "Rejected":
+        return "Rejected"
+    else:
+        return "Not Found"

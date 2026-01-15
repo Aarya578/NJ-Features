@@ -81,10 +81,10 @@ class CustomSalesInvoice(SalesInvoice):
             self.validate_einvoice_fields()
         else:
             return  # Skip validation if e-invoicing is not enabled
-    # def before_submit(self):
-    #     """ Prevent stock update on submission, but retain packed items """
-    #     self.update_stock = False
-    #     self.approve_validation()
+    def before_submit(self):
+        """ Prevent stock update on submission, but retain packed items """
+        self.update_stock = False
+        self.approve_validation()
 
     def update_packing_list(self):
         """ Override the default method to prevent clearing packed_items """
@@ -138,7 +138,37 @@ class CustomSalesInvoice(SalesInvoice):
         elif self.irn and self.docstatus == 2 and self._action == "cancel" and not self.irn_cancelled:
             frappe.throw(_("You must cancel IRN before cancelling the document."), title=_("Cancel Not Allowed"))
 
+    def approve_validation(self):
+        if self.is_return == 1:
+            return
+        # get first sales_order from child table
+        sales_order_name = None
+        for item in self.items:
+            if item.sales_order:
+                sales_order_name = item.sales_order
+                break
 
+        if not sales_order_name:
+            frappe.throw("No sales order found for this sales invoice.")
+
+        query = """
+            SELECT 
+                si.name AS sales_invoice, 
+                so.approve 
+            FROM `tabSales Invoice` si 
+            INNER JOIN `tabSales Invoice Item` sii     
+                ON si.name = sii.parent 
+            INNER JOIN `tabSales Order` so
+                ON sii.sales_order = so.name 
+            WHERE so.name = %s 
+        """  
+        results = frappe.db.sql(query, (sales_order_name,), as_dict=True)  
+        for row in results:        
+            if not row.approve or int(row.approve) != 1:
+                # self.approved = 1
+                frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
+            else:
+                self.approved = 1
 
 
 # Hook this class to override default Sales Invoice behavior

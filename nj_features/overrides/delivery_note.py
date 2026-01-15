@@ -1580,13 +1580,18 @@ def update_item_details(self):
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
+    print("against_sales_order=======================", against_sales_order)
     
     if against_sales_order:
         sales_order = frappe.get_doc("Sales Order", against_sales_order)
+        print("sales_order=======================", sales_order )
         
         cod_amt = sales_order.total_outstanding
+        print("cod_amt=======================", cod_amt)
         is_cod = sales_order.is_cod
+        print("is_cod=======================", is_cod)
         payment_received = sales_order.payment_received  
+        print("payment_received=======================", payment_received)  
         
         return {
             'cod_amount': cod_amt,
@@ -1600,6 +1605,48 @@ def fetch_cod_amount(doc_name):
         'payment_received': 0
     }
 
+@frappe.whitelist()
+def set_cod_details_critical(doc, method=None):
+    print("345678------------------")
+    """
+    Automatically fetch COD amount and set mode_of_transfer
+    when Delivery Note is saved.
+    """
+
+    against_sales_order = frappe.get_value(
+        "Delivery Note Item",
+        {"parent": doc.name},
+        "against_sales_order"
+    )
+    frappe.logger().info(f"against_sales_order = {against_sales_order}")
+
+    if not against_sales_order:
+        doc.cod_amount = 0
+        doc.mode_of_transfer = "Surface"
+        return
+
+    sales_order = frappe.get_doc("Sales Order", against_sales_order)
+
+    cod_amt = sales_order.total_outstanding or 0
+    is_cod = sales_order.is_cod
+    payment_received = sales_order.payment_received
+
+    frappe.logger().info(
+        f"COD Amount: {cod_amt}, Is COD: {is_cod}, Payment Received: {payment_received}"
+    )
+
+    # ✅ Set COD Amount
+    doc.cod_amount = cod_amt
+
+    # ✅ Mode of Transfer logic
+    if is_cod and payment_received:
+        doc.mode_of_transfer = "Surface"
+    elif is_cod and not payment_received:
+        doc.mode_of_transfer = "COD Surface"
+    else:
+        doc.mode_of_transfer = "Surface"
+    # doc.save(ignore_permissions=True)
+    frappe.db.set_value("Delivery Note", doc.name, "mode_of_transfer", doc.mode_of_transfer,update_modified=False)
 
 @frappe.whitelist()
 def send_consignement_data(doc):
@@ -1807,6 +1854,7 @@ def send_consignement_data(doc):
             elif transport_mode == "COD Surface":
                 return frappe.db.get_single_value("Logistics Settings", "cod_surface")
         client_code = get_client_code(transport)
+        print("ClientCode:========================", client_code)
         # Prepare header with correct total quantity
         header = {
             "ClientCode": client_code,

@@ -3689,50 +3689,51 @@ def check_charging_gain(wattage: int, initial_percentage: int, final_percentage:
 
 @frappe.whitelist()
 def get_last_quality_status_from_bios(njqca_name):
-    """
-    Fetch the last Quality Inspection status for a device based on BIOS serial number.
+    # Validate NJQCA
+    if not njqca_name or not frappe.db.exists("NJQCA", njqca_name):
+        return "NOT FOUND"
 
-    Returns:
-        - "Accepted"   → if last inspection was accepted
-        - "Rejected"   → if last inspection was rejected
-        - "Not Found"  → if no inspection exists
-    """
     njqca = frappe.get_doc("NJQCA", njqca_name)
 
+    # Read BIOS serial number
     bios_serialno = njqca.bios_serialno
-
     if not bios_serialno:
-        return "Not Found"
-    
-    print("bios_Serial ----------- ", bios_serialno)
+        return "NOT FOUND"
 
-    # 🔹 Step 1: Get the device Serial No from BIOS
-    serial_no = frappe.db.get_value("Serial No", {"bios_serial_no": bios_serialno}, "name")
-
-    print("serial_no --------- ", serial_no)
-
+    # Fetch Serial No using BIOS serial
+    serial_no = frappe.db.get_value(
+        "Serial No",
+        {"bios_serial_no": bios_serialno},
+        "name"
+    )
     if not serial_no:
-        return "Not Found"
+        return "NOT FOUND"
 
-     # 🔹 Step 3: Save the last inspection type in NJ Settings
-    inspection_type = frappe.db.get_value("NJ Settings", {'parameter': 'last_qc_inspection_type'}, 'value')
-    
-    print("inspection_type ----------- ", inspection_type)
+    # Fetch inspection type from NJ Settings
+    inspection_type = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "last_qc_inspection_type"},
+        "value"
+    )
+    if not inspection_type:
+        return "NOT FOUND"
 
-
+    # Fetch latest Quality Inspection
     qi = frappe.db.sql("""
-                SELECT name, status from `tabNJ Quality Inspection` WHERE barcode = %s and inspection_type = %s
-            """, (serial_no, inspection_type),explain=1, debug=1, as_dict=True)
+        SELECT status
+        FROM `tabNJ Quality Inspection`
+        WHERE barcode = %s AND inspection_type = %s
+        ORDER BY modified DESC
+        LIMIT 1
+    """, (serial_no, inspection_type), as_dict=True)
 
     if not qi:
-        return "Not Found"
+        return "NOT FOUND"
 
-    status = qi[0].status  # Accepted / Rejected / something else
-
-    # 🔹 Step 4: Return QC result in Accepted / Rejected / Not Found
-    if status == "Accepted":
-        return "Accepted"
-    elif status == "Rejected":
-        return "Rejected"
+    # Status mapping
+    if qi[0].status == "Accepted":
+        return "PASS"
+    elif qi[0].status == "Rejected":
+        return "FAIL"
     else:
-        return "Not Found"
+        return "NOT FOUND"

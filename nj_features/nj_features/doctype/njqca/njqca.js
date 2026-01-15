@@ -517,28 +517,31 @@ frappe.ui.form.on("NJQCA", {
       });
     }
 
-    if (frm.doc.bios_serialno && frm.doc.item_group == "Laptops") {
+    // ================= LAST QUALITY INSPECTION =================
+    if (
+      frm.doc.item_group === "Laptops" &&
+      frm.doc.bios_serialno &&
+      frm.doc.name
+    ) {
       await frappe.call({
         method:
           "nj_features.nj_features.doctype.njqca.njqca.get_last_quality_status_from_bios",
         args: {
-          njqca_name: frm.doc,
+          njqca_name: frm.doc.name,
         },
         callback: function (r) {
-          if (!r.message)
-            return "No previous Quality Inspection found for this BIOS Serial No.";
+          if (!r.message) return;
 
-          let result = r.message; // "Accepted" / "Rejected" / "Not Found"
-          let foundRow = null;
+          let targetRow = null;
 
-          // Check if "Last_Quality_Inspection" row already exists
+          // Check if row already exists
           (frm.doc.njqca_result_parameters || []).forEach((row) => {
             if (row.parameter === "Last_Quality_Inspection") {
-              foundRow = row;
+              targetRow = row;
             }
           });
 
-          let targetRow = foundRow;
+          // Create row if not exists
           if (!targetRow) {
             targetRow = frappe.model.add_child(
               frm.doc,
@@ -546,19 +549,21 @@ frappe.ui.form.on("NJQCA", {
             );
           }
 
-          // 🔹 Set fixed parameter name and returned value
+          // Set common values
           frappe.model.set_value(
             targetRow.doctype,
             targetRow.name,
             "parameter",
             "Last_Quality_Inspection"
           );
+
           frappe.model.set_value(
             targetRow.doctype,
             targetRow.name,
             "value",
-            result
+            r.message // PASS / FAIL / NOT FOUND
           );
+
           frappe.model.set_value(
             targetRow.doctype,
             targetRow.name,
@@ -566,7 +571,15 @@ frappe.ui.form.on("NJQCA", {
             "Laptops"
           );
 
-          //  Refresh UI
+          // Optional score mapping
+          if (r.message === "PASS") {
+            frappe.model.set_value(targetRow.doctype, targetRow.name);
+          } else if (r.message === "FAIL") {
+            frappe.model.set_value(targetRow.doctype, targetRow.name);
+          } else {
+            frappe.model.set_value(targetRow.doctype, targetRow.name);
+          }
+
           frm.refresh_field("njqca_result_parameters");
         },
       });

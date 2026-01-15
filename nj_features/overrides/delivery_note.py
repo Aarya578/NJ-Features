@@ -2781,6 +2781,8 @@ def get_item_group_cost_centers(items):
 
 @frappe.whitelist()
 def deviding_tax_chargese(doc, method=None):
+    print("sales_orders=================34343434=======")
+
 
     # --------------------------------------------------
     # 1️⃣ Fetch Sales Orders from Delivery Note Items

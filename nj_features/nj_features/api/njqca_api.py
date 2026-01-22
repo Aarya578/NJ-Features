@@ -148,3 +148,110 @@ def process_njqca_data():
 
     return output
 
+
+
+@frappe.whitelist()
+def njqca_data():
+    try:
+        # ==================================================
+        # STEP 1: Read Request Body
+        # ==================================================
+        raw_data = frappe.request.get_data(as_text=True)
+        if not raw_data:
+            frappe.throw("Empty request body")
+
+        data = json.loads(raw_data)
+
+        # ==================================================
+        # STEP 2: Validate Required Fields
+        # ==================================================
+        required_fields = [
+            "njqca_name",
+            "email",
+            "serial_no",
+            "warehouse",
+            "item_group",
+            "brand",
+            "model",
+            "power_on",
+            "result_parameters"
+        ]
+
+        for field in required_fields:
+            if field not in data:
+                frappe.throw(f"{field} is required")
+
+        if not isinstance(data["result_parameters"], list):
+            frappe.throw("result_parameters must be a list")
+
+        # ==================================================
+        # STEP 3: Create NJQCA Document
+        # ==================================================
+        njqca_doc = frappe.new_doc("NJQCA")
+        njqca_doc.njqca_name = data["njqca_name"]
+        njqca_doc.email = data["email"]
+        njqca_doc.serial_no = data["serial_no"]
+        njqca_doc.warehouse = data["warehouse"]
+        njqca_doc.item_group = data["item_group"]
+        njqca_doc.brand = data["brand"]
+        njqca_doc.model = data["model"]
+        njqca_doc.power_on = data["power_on"]
+
+        # ==================================================
+        # STEP 4: Append Result Parameters (NO NULLS)
+        # Child table fieldname:
+        #   njqca_result_parameters
+        # ==================================================
+        valid_rows = 0
+
+        for row in data["result_parameters"]:
+            parameter = row.get("parameter")
+            value = row.get("value")
+
+            # Skip invalid rows
+            if not parameter:
+                continue
+
+            # Skip ONLY None or empty string
+            if value is None or value == "":
+                continue
+
+            njqca_doc.append("njqca_result_parameters", {
+                "part_config_id": row.get("part_config_id", 0),
+                "item_group": row.get("item_group"),
+                "parameter": parameter,
+                "value": value,
+                "cpu_load": row.get("cpu_load", ""),
+                "discharge_rate": row.get("discharge_rate", "")
+            })
+
+            valid_rows += 1
+
+        if valid_rows == 0:
+            frappe.throw("No valid result parameters to insert")
+
+        # ==================================================
+        # STEP 5: Insert Document
+        # ==================================================
+        njqca_doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        # ==================================================
+        # STEP 6: Reload & Return Response
+        # ==================================================
+        njqca_doc.reload()
+
+        return {
+            "status": "success",
+            "message": "NJQCA created successfully",
+            "njqca_name": njqca_doc.name,
+            "result_parameters_count": valid_rows,
+            "njqca_data": njqca_doc.as_dict()
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            title="NJQCA API Error",
+            message=frappe.get_traceback()
+        )
+        frappe.throw(str(e))

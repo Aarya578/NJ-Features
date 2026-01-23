@@ -30,8 +30,8 @@ class StockMovement(Document):
                                     frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
                                 qty=warehouse_qty(consumable_warehouse, consumable)
                                 if qty and qty >0:
-                                    if not consumable_warehouse:
-                                        frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
+                                    # if not consumable_warehouse:
+                                    #     frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
                                     repack_items.append({
                                         'qty': 1,
                                         'item_code': consumable,
@@ -1016,7 +1016,7 @@ def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
             "parent_serial_no":serial_no,
             "repack_items":[]
         }
-        new_stock_entry.append("repack_items",{
+        new_stock_entry["repack_items"].append({
             "repack_item_code":item_code,
             "qty":qty,
             "repack_serial_no":serial_no,
@@ -1027,13 +1027,13 @@ def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
             valuation_rate=get_part_ledger_entry(item.get('item_code'))
             if not valuation_rate:
                 part_rate+=valuation_rate_parent_serial_no
-            new_stock_entry.append("repack_items",{
+            new_stock_entry["repack_items"].append({
                 "repack_item_code":item.get('item_code'),
                 "qty":item.get('qty'),
                 "repack_item_source_warehouse":item.get('s_warehouse'),
                 "repack_item_base_price":valuation_rate
             })
-        new_stock_entry.append("repack_items",{
+        new_stock_entry["repack_items"].append({
             "unpack_item_code":item_code,
             "qty":qty,
             "unpack_item_target_warehouse":source_warehouse,

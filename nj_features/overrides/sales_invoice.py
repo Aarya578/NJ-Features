@@ -76,6 +76,9 @@ class CustomSalesInvoice(SalesInvoice):
 
     def validate(self):
         super(CustomSalesInvoice, self).validate()
+        if self.is_return==1 and frappe.db.get_value("Sales Invoice",self.return_against,"status")!="Paid":
+            frappe.throw(f"Sales Invoice:{self.return_against} is not paid")
+
         einvoice_settings = frappe.get_cached_doc("E Invoice Settings")
         if einvoice_settings.enable:
             self.validate_einvoice_fields()

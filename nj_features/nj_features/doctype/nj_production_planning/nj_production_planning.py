@@ -124,27 +124,50 @@ def _oldest_first(lst: List[Dict]) -> List[Dict]:
     return sorted(lst, key=_key)
 
 
+# -------------------------
+# ✅ NEW helpers: enforce processor lock
+# -------------------------
+def _serial_cfg(serial: Dict) -> tuple:
+    """
+    Extract (template, proc, ram, sto) from serial['forward_key_config'].
+
+    NOTE: serial dict does NOT have template/proc/ram/sto fields directly.
+    We must read them from forward_key_config = ("CONFIG", template, proc, ram, sto).
+    """
+    k = serial.get("forward_key_config")
+    if not k or k[0] != "CONFIG":
+        return (None, None, None, None)
+    _, template, proc, ram, sto = k
+    return (template, proc, ram, sto)
+
+
 def _same_config(serial: Dict, target_cfg: tuple) -> bool:
-    return (
-        serial.get("template") == target_cfg[0]
-        and serial.get("ram") == target_cfg[1]
-        and serial.get("storage") == target_cfg[2]
-    )
+    """
+    target_cfg = (template, proc, ram, sto)
+    """
+    st, sp, sr, ss = _serial_cfg(serial)
+    tt, tp, tr, ts = target_cfg
+    return (st == tt and sp == tp and sr == tr and ss == ts)
 
 
 def _same_storage_diff_ram(serial: Dict, target_cfg: tuple) -> bool:
-    return (
-        serial.get("template") == target_cfg[0]
-        and serial.get("storage") == target_cfg[2]
-        and serial.get("ram") != target_cfg[1]
-    )
+    """
+    Same template + SAME processor + SAME storage, only RAM differs.
+    """
+    st, sp, sr, ss = _serial_cfg(serial)
+    tt, tp, tr, ts = target_cfg
+    return (st == tt and sp == tp and ss == ts and sr != tr)
 
 
 def _cfg_tuple_from_item(item_code: str) -> tuple:
+    """
+    ✅ FIXED:
+    Return (template, processor, ram, storage) so we NEVER cross processor.
+    """
     if item_code not in _ITEM_KEYS:
         _prime_item_cache([item_code])
-    _, template, _proc, ram, sto = _ITEM_KEYS[item_code]["config_key"]
-    return (template, ram, sto)
+    _, template, proc, ram, sto = _ITEM_KEYS[item_code]["config_key"]
+    return (template, proc, ram, sto)
 
 
 # =========================
@@ -710,6 +733,10 @@ def _match_inventory_to_order_queues_for_sequence(
         - do NOT add it to allocations
         - remove it from pools
         - try next serial for the same order_ref
+
+    ✅ FIXED:
+    - NEVER change processor (CPU).
+    - allow_reconfig allows only RAM/storage changes within SAME template + SAME processor.
     """
 
     allocations = []
@@ -736,29 +763,69 @@ def _match_inventory_to_order_queues_for_sequence(
 
             target_cfg_tuple = None
             if order_ref.get("order_item_code"):
+                # (template, proc, ram, sto)
                 target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
 
-            model_key = ("MODEL", key[1]) if key and key[0] == "CONFIG" else key
-            model_pool = by_model.get(model_key, [])
-            if not model_pool:
-                break
-
-            # Pick candidate serial (oldest first, preference for exact/near config)
             chosen = None
-            if target_cfg_tuple:
-                exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
-                exact = _oldest_first(exact)
-                if exact:
-                    chosen = exact[0]
 
-            if not chosen and target_cfg_tuple:
-                near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
-                near = _oldest_first(near)
-                if near:
-                    chosen = near[0]
+            # ------------------------------
+            # If demand is CONFIG
+            # ------------------------------
+            if key and key[0] == "CONFIG":
+                if not allow_reconfig:
+                    # STRICT: must match exact config
+                    cfg_pool = by_config.get(key, [])
+                    if not cfg_pool:
+                        break
+                    chosen = _oldest_first(cfg_pool)[0] if cfg_pool else None
+                else:
+                    # Reconfig allowed: choose from same MODEL but MUST match processor
+                    model_key = ("MODEL", key[1])  # template
+                    model_pool = by_model.get(model_key, [])
+                    if not model_pool:
+                        break
 
-            if not chosen and model_pool:
-                chosen = _oldest_first(model_pool)[0]
+                    # 🔒 Enforce CPU match
+                    if target_cfg_tuple:
+                        _t_template, _t_proc, _t_ram, _t_sto = target_cfg_tuple
+                        model_pool = [s for s in model_pool if _serial_cfg(s)[1] == _t_proc]
+                        if not model_pool:
+                            break
+
+                    # Prefer exact config
+                    if target_cfg_tuple:
+                        exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
+                        exact = _oldest_first(exact)
+                        if exact:
+                            chosen = exact[0]
+
+                    # Else same storage diff ram
+                    if not chosen and target_cfg_tuple:
+                        near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
+                        near = _oldest_first(near)
+                        if near:
+                            chosen = near[0]
+
+                    # Else fallback oldest within SAME processor
+                    if not chosen and model_pool:
+                        chosen = _oldest_first(model_pool)[0]
+
+            # ------------------------------
+            # If demand is MODEL
+            # ------------------------------
+            else:
+                model_pool = by_model.get(key, [])
+                if not model_pool:
+                    break
+
+                # If order item known, still enforce CPU match (never cross CPU)
+                if target_cfg_tuple:
+                    _t_template, _t_proc, _t_ram, _t_sto = target_cfg_tuple
+                    model_pool = [s for s in model_pool if _serial_cfg(s)[1] == _t_proc]
+                    if not model_pool:
+                        break
+
+                chosen = _oldest_first(model_pool)[0] if model_pool else None
 
             if not chosen:
                 break
@@ -842,6 +909,10 @@ def _allocate_forecast_to_balance_doi(
         - do NOT add to allocations
         - remove it from pools
         - continue
+
+    ✅ FIXED:
+    - NEVER change processor (CPU).
+    - allow_reconfig allows only RAM/storage changes within SAME template + SAME processor.
     """
     allocations = []
 
@@ -878,14 +949,21 @@ def _allocate_forecast_to_balance_doi(
                 model_key = ("MODEL", target[1])
                 pool2 = any_by_model.get(model_key, [])
                 if pool2:
-                    _, template, _p, ram, sto = target
-                    target_cfg_tuple = (template, ram, sto)
-                    near = [s for s in pool2 if _same_storage_diff_ram(s, target_cfg_tuple)]
-                    near = _oldest_first(near)
-                    if near:
-                        chosen = near[0]
+                    _, template, proc, ram, sto = target
+
+                    # 🔒 DO NOT cross processor
+                    pool2 = [s for s in pool2 if _serial_cfg(s)[1] == proc]
+                    if not pool2:
+                        chosen = None
                     else:
-                        chosen = _oldest_first(pool2)[0] if pool2 else None
+                        target_cfg_tuple = (template, proc, ram, sto)
+
+                        near = [s for s in pool2 if _same_storage_diff_ram(s, target_cfg_tuple)]
+                        near = _oldest_first(near)
+                        if near:
+                            chosen = near[0]
+                        else:
+                            chosen = _oldest_first(pool2)[0] if pool2 else None
         else:
             pool = buckets.get(target, [])
             if pool:

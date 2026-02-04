@@ -11,7 +11,10 @@ frappe.ui.form.on('Sales Invoice', {
         // setup_custom_einvoice_actions(frm);
     },
      onload(frm) {
-        update_gst_tax_type_from_nj_settings(frm);
+        if(frm.docstatus==0 && frm.doc.is_debit_note==0){
+           update_gst_tax_type_from_nj_settings(frm);
+            
+        }
     }
     ,
 
@@ -24,7 +27,8 @@ frappe.ui.form.on('Sales Invoice', {
     //             if (r.message && r.message.due_date) {
     //                 frm.set_value("due_date", r.message.due_date);
     //             }
-    //         }
+    //         }        update_gst_tax_type_from_nj_settings(frm);
+
     //     });
     
     // },

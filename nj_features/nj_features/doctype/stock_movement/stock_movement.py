@@ -30,8 +30,8 @@ class StockMovement(Document):
                                     frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
                                 qty=warehouse_qty(consumable_warehouse, consumable)
                                 if qty and qty >0:
-                                    # if not consumable_warehouse:
-                                    #     frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
+                                    if not consumable_warehouse:
+                                        frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
                                     repack_items.append({
                                         'qty': 1,
                                         'item_code': consumable,
@@ -308,8 +308,13 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
     
-    if serial_doc.get("item_group") not in ["Laptops"]:
-            return False
+    restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
+
+    restriction_item = [r.get("name") for r in restriction_item]
+
+    if serial_doc.get("item_group") not in restriction_item:
+        return False
+    
 
     if not serial_doc.get("bypass"):
 

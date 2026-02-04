@@ -338,213 +338,215 @@ def create_pr_on_submit(doc, method):
     - Proper error handling
     - Idempotent (won't create duplicate PRs)
     """
+
+    return
     
     # --------------------------------------------------
     # 0) Check if PR already exists (prevent duplicates)
     # --------------------------------------------------
-    existing_pr = frappe.db.exists(
-        "Purchase Receipt",
-        {
-            "purchase_order": doc.name,
-            "docstatus": ["!=", 2]  # Not cancelled
-        }
-    )
+    # existing_pr = frappe.db.exists(
+    #     "Purchase Receipt",
+    #     {
+    #         "purchase_order": doc.name,
+    #         "docstatus": ["!=", 2]  # Not cancelled
+    #     }
+    # )
     
-    if existing_pr:
-        frappe.msgprint(f"Purchase Receipt already exists for this PO: {existing_pr}")
-        return
+    # if existing_pr:
+    #     frappe.msgprint(f"Purchase Receipt already exists for this PO: {existing_pr}")
+    #     return
 
-    # --------------------------------------------------
-    # 1) Check stock / non-stock items
-    # --------------------------------------------------
-    item_stock_map = {}
-    has_stock_item = False
-    has_non_stock_item = False
+    # # --------------------------------------------------
+    # # 1) Check stock / non-stock items
+    # # --------------------------------------------------
+    # item_stock_map = {}
+    # has_stock_item = False
+    # has_non_stock_item = False
 
-    for po_item in doc.items:
-        if not po_item.item_code:
-            continue
+    # for po_item in doc.items:
+    #     if not po_item.item_code:
+    #         continue
 
-        if po_item.item_code not in item_stock_map:
-            item_stock_map[po_item.item_code] = frappe.db.get_value(
-                "Item", po_item.item_code, "is_stock_item"
-            )
+    #     if po_item.item_code not in item_stock_map:
+    #         item_stock_map[po_item.item_code] = frappe.db.get_value(
+    #             "Item", po_item.item_code, "is_stock_item"
+    #         )
 
-        if item_stock_map[po_item.item_code]:
-            has_stock_item = True
-        else:
-            has_non_stock_item = True
+    #     if item_stock_map[po_item.item_code]:
+    #         has_stock_item = True
+    #     else:
+    #         has_non_stock_item = True
 
-    # ❌ Stop if any stock item exists
-    if has_stock_item:
-        return
+    # # ❌ Stop if any stock item exists
+    # if has_stock_item:
+    #     return
 
-    # ❌ Stop if no non-stock items
-    if not has_non_stock_item:
-        return
+    # # ❌ Stop if no non-stock items
+    # if not has_non_stock_item:
+    #     return
 
-    # --------------------------------------------------
-    # 2) Create Purchase Receipt
-    # --------------------------------------------------
-    pr = frappe.new_doc("Purchase Receipt")
+    # # --------------------------------------------------
+    # # 2) Create Purchase Receipt
+    # # --------------------------------------------------
+    # pr = frappe.new_doc("Purchase Receipt")
 
-    pr.supplier = doc.supplier
-    pr.company = doc.company
-    pr.posting_date = doc.transaction_date
-    pr.posting_time = frappe.utils.nowtime()
-    pr.set_warehouse = getattr(doc, "set_warehouse", None)
+    # pr.supplier = doc.supplier
+    # pr.company = doc.company
+    # pr.posting_date = doc.transaction_date
+    # pr.posting_time = frappe.utils.nowtime()
+    # pr.set_warehouse = getattr(doc, "set_warehouse", None)
     
-    # Copy additional fields
-    pr.supplier_address = doc.supplier_address
-    pr.supplier_gstin = doc.supplier_gstin
-    pr.address_display = doc.address_display
-    pr.shipping_address = doc.shipping_address
-    pr.shipping_address_display = doc.shipping_address_display
-    pr.billing_address = doc.billing_address
-    pr.billing_address_display = doc.billing_address_display
-    pr.place_of_supply = doc.place_of_supply
+    # # Copy additional fields
+    # pr.supplier_address = doc.supplier_address
+    # pr.supplier_gstin = doc.supplier_gstin
+    # pr.address_display = doc.address_display
+    # pr.shipping_address = doc.shipping_address
+    # pr.shipping_address_display = doc.shipping_address_display
+    # pr.billing_address = doc.billing_address
+    # pr.billing_address_display = doc.billing_address_display
+    # pr.place_of_supply = doc.place_of_supply
     
-    pr.currency = doc.currency
-    pr.conversion_rate = doc.conversion_rate
-    pr.buying_price_list = doc.buying_price_list
+    # pr.currency = doc.currency
+    # pr.conversion_rate = doc.conversion_rate
+    # pr.buying_price_list = doc.buying_price_list
     
-    pr.tax_category = doc.tax_category
-    pr.taxes_and_charges = doc.taxes_and_charges
+    # pr.tax_category = doc.tax_category
+    # pr.taxes_and_charges = doc.taxes_and_charges
     
-    # Link to PO
-    pr.purchase_order = doc.name
+    # # Link to PO
+    # pr.purchase_order = doc.name
     
-    # Apply TDS if applicable
-    if getattr(doc, "apply_tds", None):
-        pr.apply_tds = doc.apply_tds
-        pr.tax_withholding_category = doc.tax_withholding_category
+    # # Apply TDS if applicable
+    # if getattr(doc, "apply_tds", None):
+    #     pr.apply_tds = doc.apply_tds
+    #     pr.tax_withholding_category = doc.tax_withholding_category
 
-    # --------------------------------------------------
-    # 3) Add ONLY non-stock items
-    # --------------------------------------------------
-    for po_item in doc.items:
-        if item_stock_map.get(po_item.item_code):
-            continue
+    # # --------------------------------------------------
+    # # 3) Add ONLY non-stock items
+    # # --------------------------------------------------
+    # for po_item in doc.items:
+    #     if item_stock_map.get(po_item.item_code):
+    #         continue
 
-        pr_item = pr.append("items", {
-            "item_code": po_item.item_code,
-            "item_name": po_item.item_name,
-            "description": po_item.description,
-            "qty": po_item.qty,
-            "rate": po_item.rate,
-            "amount": po_item.amount,
-            "uom": po_item.uom,
-            "stock_uom": po_item.stock_uom,
-            "conversion_factor": po_item.conversion_factor,
-            "warehouse": po_item.warehouse or pr.set_warehouse,
-            "cost_center": po_item.cost_center,
-            "expense_account": po_item.expense_account,
-            "purchase_order": doc.name,
-            "purchase_order_item": po_item.name,  # 🔥 CRITICAL - This links PR item to PO item
-        })
+    #     pr_item = pr.append("items", {
+    #         "item_code": po_item.item_code,
+    #         "item_name": po_item.item_name,
+    #         "description": po_item.description,
+    #         "qty": po_item.qty,
+    #         "rate": po_item.rate,
+    #         "amount": po_item.amount,
+    #         "uom": po_item.uom,
+    #         "stock_uom": po_item.stock_uom,
+    #         "conversion_factor": po_item.conversion_factor,
+    #         "warehouse": po_item.warehouse or pr.set_warehouse,
+    #         "cost_center": po_item.cost_center,
+    #         "expense_account": po_item.expense_account,
+    #         "purchase_order": doc.name,
+    #         "purchase_order_item": po_item.name,  # 🔥 CRITICAL - This links PR item to PO item
+    #     })
         
-        # Copy item tax template if exists
-        if hasattr(po_item, "item_tax_template") and po_item.item_tax_template:
-            pr_item.item_tax_template = po_item.item_tax_template
+    #     # Copy item tax template if exists
+    #     if hasattr(po_item, "item_tax_template") and po_item.item_tax_template:
+    #         pr_item.item_tax_template = po_item.item_tax_template
         
-        # Copy item tax rate if exists
-        if hasattr(po_item, "item_tax_rate") and po_item.item_tax_rate:
-            pr_item.item_tax_rate = po_item.item_tax_rate
+    #     # Copy item tax rate if exists
+    #     if hasattr(po_item, "item_tax_rate") and po_item.item_tax_rate:
+    #         pr_item.item_tax_rate = po_item.item_tax_rate
 
-    # --------------------------------------------------
-    # 4) Copy taxes correctly (GST + TDS)
-    # --------------------------------------------------
-    if doc.taxes:
-        for tax in doc.taxes:
-            tax_row = {
-                "charge_type": tax.charge_type,
-                "account_head": tax.account_head,
-                "description": tax.description,
-                "rate": tax.rate,
-                "cost_center": tax.cost_center,
-                "included_in_print_rate": tax.included_in_print_rate,
-                "add_deduct_tax": tax.add_deduct_tax,  # 🔥 CRITICAL
-            }
+    # # --------------------------------------------------
+    # # 4) Copy taxes correctly (GST + TDS)
+    # # --------------------------------------------------
+    # if doc.taxes:
+    #     for tax in doc.taxes:
+    #         tax_row = {
+    #             "charge_type": tax.charge_type,
+    #             "account_head": tax.account_head,
+    #             "description": tax.description,
+    #             "rate": tax.rate,
+    #             "cost_center": tax.cost_center,
+    #             "included_in_print_rate": tax.included_in_print_rate,
+    #             "add_deduct_tax": tax.add_deduct_tax,  # 🔥 CRITICAL
+    #         }
 
-            # 🔥 Preserve ACTUAL (TDS) values
-            if tax.charge_type == "Actual":
-                tax_row.update({
-                    "tax_amount": tax.tax_amount,
-                    "base_tax_amount": tax.base_tax_amount,
-                })
+    #         # 🔥 Preserve ACTUAL (TDS) values
+    #         if tax.charge_type == "Actual":
+    #             tax_row.update({
+    #                 "tax_amount": tax.tax_amount,
+    #                 "base_tax_amount": tax.base_tax_amount,
+    #             })
 
-            pr.append("taxes", tax_row)
+    #         pr.append("taxes", tax_row)
 
-    # --------------------------------------------------
-    # 5) Recalculate totals
-    # --------------------------------------------------
-    pr.set_missing_values()
-    pr.calculate_taxes_and_totals()
+    # # --------------------------------------------------
+    # # 5) Recalculate totals
+    # # --------------------------------------------------
+    # pr.set_missing_values()
+    # pr.calculate_taxes_and_totals()
 
-    # --------------------------------------------------
-    # 6) Safety check for TDS
-    # --------------------------------------------------
-    for t in pr.taxes:
-        if t.charge_type == "Actual" and t.add_deduct_tax != "Deduct":
-            frappe.throw(
-                "TDS must be Deduct type in auto-created Purchase Receipt"
-            )
+    # # --------------------------------------------------
+    # # 6) Safety check for TDS
+    # # --------------------------------------------------
+    # for t in pr.taxes:
+    #     if t.charge_type == "Actual" and t.add_deduct_tax != "Deduct":
+    #         frappe.throw(
+    #             "TDS must be Deduct type in auto-created Purchase Receipt"
+    #         )
 
-    # --------------------------------------------------
-    # 7) Insert & Submit Purchase Receipt
-    # --------------------------------------------------
-    try:
-        pr.insert(ignore_permissions=True)
-        pr.submit()
+    # # --------------------------------------------------
+    # # 7) Insert & Submit Purchase Receipt
+    # # --------------------------------------------------
+    # try:
+    #     pr.insert(ignore_permissions=True)
+    #     pr.submit()
         
-        frappe.msgprint(
-            f"Purchase Receipt {pr.name} created and submitted successfully",
-            alert=True,
-            indicator="green"
-        )
+    #     frappe.msgprint(
+    #         f"Purchase Receipt {pr.name} created and submitted successfully",
+    #         alert=True,
+    #         indicator="green"
+    #     )
         
-    except Exception as e:
-        frappe.log_error(
-            title=f"Auto PR Creation Failed for {doc.name}",
-            message=frappe.get_traceback()
-        )
-        frappe.throw(f"Failed to create Purchase Receipt: {str(e)}")
+    # except Exception as e:
+    #     frappe.log_error(
+    #         title=f"Auto PR Creation Failed for {doc.name}",
+    #         message=frappe.get_traceback()
+    #     )
+    #     frappe.throw(f"Failed to create Purchase Receipt: {str(e)}")
 
-    # --------------------------------------------------
-    # 8) 🔥 UPDATE PURCHASE ORDER - RECEIVED QTY & % RECEIVED
-    # --------------------------------------------------
-    # The key issue: ERPNext doesn't auto-update PO's received_qty
-    # when PR is created programmatically. We must do it manually.
+    # # --------------------------------------------------
+    # # 8) 🔥 UPDATE PURCHASE ORDER - RECEIVED QTY & % RECEIVED
+    # # --------------------------------------------------
+    # # The key issue: ERPNext doesn't auto-update PO's received_qty
+    # # when PR is created programmatically. We must do it manually.
     
-    try:
-        # Commit PR changes to database first
-        frappe.db.commit()
+    # try:
+    #     # Commit PR changes to database first
+    #     frappe.db.commit()
         
-        # Reload PO to get fresh data after PR submission
-        doc.reload()
+    #     # Reload PO to get fresh data after PR submission
+    #     doc.reload()
         
-        # Update billing and receiving percentages
-        # These methods recalculate per_billed and per_received
-        doc.update_billing_percentage()
-        doc.update_receiving_percentage() 
+    #     # Update billing and receiving percentages
+    #     # These methods recalculate per_billed and per_received
+    #     doc.update_billing_percentage()
+    #     doc.update_receiving_percentage() 
         
-        # Set correct status based on percentages
-        doc.set_status(update=True)
+    #     # Set correct status based on percentages
+    #     doc.set_status(update=True)
         
-        # Save to database without triggering validations again
-        doc.db_update()
+    #     # Save to database without triggering validations again
+    #     doc.db_update()
         
-        # Commit final PO updates
-        frappe.db.commit()
+    #     # Commit final PO updates
+    #     frappe.db.commit()
         
-    except Exception as e:
-        frappe.log_error(
-            title=f"PO Status Update Failed for {doc.name}",
-            message=frappe.get_traceback()
-        )
-        # Don't throw error here - PR is already created successfully
-        frappe.msgprint(
-            f"Purchase Receipt created but PO status update failed: {str(e)}",
-            alert=True,
-            indicator="orange"
-        )
+    # except Exception as e:
+    #     frappe.log_error(
+    #         title=f"PO Status Update Failed for {doc.name}",
+    #         message=frappe.get_traceback()
+    #     )
+    #     # Don't throw error here - PR is already created successfully
+    #     frappe.msgprint(
+    #         f"Purchase Receipt created but PO status update failed: {str(e)}",
+    #         alert=True,
+    #         indicator="orange"
+    #     )

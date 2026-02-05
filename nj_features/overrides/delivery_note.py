@@ -254,8 +254,8 @@ class CustomDeliveryNote(DeliveryNote):
                 with log_time("update_details_to_delivery_charege_doc", self.name):
                     self.update_details_to_delivery_charege_doc()
 
-                # with log_time("qi_mandatory_checks_on_dn_submit", self.name):
-                #     qi_mandatory_checks_on_dn_submit(self, method=None)
+                with log_time("qi_mandatory_checks_on_dn_submit", self.name):
+                    qi_mandatory_checks_on_dn_submit(self, method=None)
 
                 # with log_time("qc_nj_of_days_checking", self.name):
                 #     self.qc_nj_of_days_checking()

@@ -30,10 +30,6 @@ frappe.ui.form.on('Delivery Note', {
                 });
             }
         }
-
-        
-    
-    
         // if (!frm.doc.items || frm.doc.items.length === 0 || frm.doc.is_return === 1) return;
 
         // // Take the first SO reference from child table
@@ -75,14 +71,11 @@ frappe.ui.form.on('Delivery Note', {
         //         }
         //     }
         // });
-
     },
 
     refresh: function(frm) {
         handleScannerInput(frm, 'scan_barcode');
         handleScannerInput(frm, 'scan_barcodes');
-
-        
         if (frm.doc.docstatus === 0) {
             frm.add_custom_button(__('View'), function() {
                 fetchAndDisplayLinks(frm, 'nj_features.overrides.delivery_note.get_link_1', 'Video');
@@ -92,11 +85,9 @@ frappe.ui.form.on('Delivery Note', {
                 openDjangoUrl(frm.doc.doctype, frm.doc.name);
             }).addClass('btn-primary');
         }
-
         if (frm.doc.__islocal) {
             frm.set_value("posting_time", frappe.datetime.now_time());
         }
-
         frm.remove_custom_button(__('Print QR Code'));
 
         if (frm.doc.docstatus === 1) {
@@ -218,9 +209,6 @@ frappe.ui.form.on('Delivery Note', {
                 } else { frappe.validated = true; }
             }
         });
-
-       
-
 
         frappe.call({
             method: 'nj_features.overrides.delivery_note.update_item_details',
@@ -540,8 +528,13 @@ frappe.ui.form.on('Delivery Note', {
 });
 function update_gst_tax_type_from_nj_settings(frm) {
     console.log("updating============================");
-    
-  if (!frm.doc.taxes || !frm.doc.taxes.length) return;
+
+    // 🔒 Skip if document is submitted
+    if (frm.doc.docstatus === 1) {
+        return;
+    }
+
+    if (!frm.doc.taxes || !frm.doc.taxes.length) return;
 
     frappe.db.get_value(
         "NJ Settings",
@@ -549,8 +542,8 @@ function update_gst_tax_type_from_nj_settings(frm) {
         "value"
     ).then(r => {
         const csv = r?.message?.value;
-        console.log("message=========",r.message);
-        
+        console.log("message=========", r.message);
+
         if (!csv) return;
 
         const account_heads = csv
@@ -563,7 +556,6 @@ function update_gst_tax_type_from_nj_settings(frm) {
                 tax.account_head &&
                 account_heads.includes(tax.account_head.trim())
             ) {
-                // 🔥 THIS IS THE FIX
                 frappe.model.set_value(
                     tax.doctype,
                     tax.name,

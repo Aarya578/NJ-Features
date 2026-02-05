@@ -308,8 +308,13 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
     
-    if serial_doc.get("item_group") not in ["Laptops"]:
-            return False
+    restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
+
+    restriction_item = [r.get("name") for r in restriction_item]
+
+    if serial_doc.get("item_group") not in restriction_item:
+        return False
+    
 
     if not serial_doc.get("bypass"):
 
@@ -1016,7 +1021,7 @@ def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
             "parent_serial_no":serial_no,
             "repack_items":[]
         }
-        new_stock_entry.append("repack_items",{
+        new_stock_entry["repack_items"].append({
             "repack_item_code":item_code,
             "qty":qty,
             "repack_serial_no":serial_no,
@@ -1027,13 +1032,13 @@ def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
             valuation_rate=get_part_ledger_entry(item.get('item_code'))
             if not valuation_rate:
                 part_rate+=valuation_rate_parent_serial_no
-            new_stock_entry.append("repack_items",{
+            new_stock_entry["repack_items"].append({
                 "repack_item_code":item.get('item_code'),
                 "qty":item.get('qty'),
                 "repack_item_source_warehouse":item.get('s_warehouse'),
                 "repack_item_base_price":valuation_rate
             })
-        new_stock_entry.append("repack_items",{
+        new_stock_entry["repack_items"].append({
             "unpack_item_code":item_code,
             "qty":qty,
             "unpack_item_target_warehouse":source_warehouse,

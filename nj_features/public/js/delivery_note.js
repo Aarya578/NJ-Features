@@ -10,7 +10,7 @@ frappe.ui.form.on('Delivery Note', {
     onload: function(frm) {   
         handleScannerInput(frm, 'scan_barcode');
         handleScannerInput(frm, 'scan_barcodes');
-        update_gst_tax_type_from_nj_settings(frm);
+        // update_gst_tax_type_from_nj_settings(frm);
         // Run only if items exist and linked Sales Order is present
         
         if (frm.doc.docstatus !== 1 && frm.doc.docstatus !== 2 && frm.doc.items && frm.doc.items.length > 0) {

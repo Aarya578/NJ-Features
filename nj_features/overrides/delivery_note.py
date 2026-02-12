@@ -319,7 +319,7 @@ class CustomDeliveryNote(DeliveryNote):
                 if item.against_sales_order not in sales_order_info_map:
                     sales_order_data = frappe.db.sql("""
                         SELECT 
-                            TRIM(so.customer_name) AS customer_name,
+                            TRIM(so.customer_name) AS customer,
                             TRIM(so.name) AS name,
                             TRIM(so.sale_type) AS sale_type,
                             TRIM(COALESCE(so.amazon_order_id, so.order_id, so.shopify_order_id)) AS order_id, 

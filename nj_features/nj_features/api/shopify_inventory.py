@@ -63,174 +63,148 @@ def create_rq_doc():
         if update_parent_quantity_status:
             update_proportional_qty_and_updt_qty_status = update_proportional_qty_and_updt_qty()
             if update_proportional_qty_and_updt_qty_status:
-                update_minimum_qty_after_proportional_status = update_minimum_qty_after_proportional()
-                if update_minimum_qty_after_proportional_status:
-                    try:
-                        query = """
-                            SELECT 
-                                pb.shopify_variant_id,
-                                GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-                                GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
-                            FROM 
-                                `tabProduct Bundle` pb
-                            JOIN 
-                                `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                            JOIN 
-                                `tabItem` i ON pbi.item_code = i.item_code
-                            JOIN 
-                                `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
-                            GROUP BY 
-                                pb.shopify_variant_id
-                            ORDER BY 
-                                total_actual_qty DESC
-                        """
-                        results = frappe.db.sql(query, as_dict=True)
+                try:
+                    query = """
+                        SELECT 
+                            pb.shopify_variant_id,
+                            GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
+                            GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
+                            CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
+                        FROM 
+                            `tabProduct Bundle` pb
+                        JOIN 
+                            `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                        JOIN 
+                            `tabItem` i ON pbi.item_code = i.item_code
+                        JOIN 
+                            `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
+                        GROUP BY 
+                            pb.shopify_variant_id
+                        ORDER BY 
+                            total_actual_qty DESC
+                    """
+                    results = frappe.db.sql(query, as_dict=True)
 
-                        updated_doc_names = set()
+                    updated_doc_names = set()
+                    
+                    product_ids = [row.shopify_variant_id for row in results]
 
-                        product_ids = [row.shopify_variant_id for row in results]
+                    for row in results:
+                        update_status = ''
+                        row.total_actual_qty = safe_float(row.total_actual_qty)
 
-                        for row in results:
-                            update_status = ''
-                            row.total_actual_qty = safe_float(row.total_actual_qty)
+                        if row.total_actual_qty is None:
+                            continue
 
-                            if row.total_actual_qty is None:
-                                continue
-
-                            if 0 <= row.total_actual_qty <= 3:
-                                add_item_code_available_query = """
-                                    SELECT item_code
-                                    FROM `tabProduct Bundle Item` 
-                                    WHERE parent in (SELECT pdi.parent
-                                    FROM `tabProduct Bundle` pd
-                                    LEFT JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
-                                    WHERE pd.shopify_variant_id = %s
-                                    group by pdi.parent having count(pdi.parent) > 0) and item_code like '%%additional%%';
-                                """
-                                add_item_code_available = frappe.db.sql(
-                                    add_item_code_available_query,
-                                    (row.shopify_variant_id),
-                                    as_dict=True
-                                )
-
-                                if add_item_code_available:
-                                    row.total_actual_qty = 0
-                                    update_status = "0 <= row.total_actual_qty <= 3 & additional warranty available"
-
-                            item_code_like_clauses = []
-                            params = [row.shopify_variant_id]
-                            for code in row.item_codes.split(', '):
-                                item_code_like_clauses.append("item_code LIKE %s")
-                                params.append(f"%{code.strip()}%")
-
-                            query = f"""
-                                SELECT name, actual_qty, status, is_active, inventory_item_id
-                                FROM `tabNJ Inventory Sync Main`
-                                WHERE shopify_variant_id = %s AND ({' OR '.join(item_code_like_clauses)})
-                                ORDER BY modified DESC
+                        if 0 <= row.total_actual_qty <= 3:
+                            add_item_code_available_query = """
+                                SELECT item_code
+                                FROM `tabProduct Bundle Item` 
+                                WHERE parent in (SELECT pdi.parent
+                                FROM `tabProduct Bundle` pd
+                                LEFT JOIN `tabProduct Bundle Item` pdi on pdi.parent = pd.name
+                                WHERE pd.shopify_variant_id = %s
+                                group by pdi.parent having count(pdi.parent) > 0) and item_code like '%%additional%%';
                             """
-                            existing = frappe.db.sql(query, tuple(params), as_dict=True)
+                            add_item_code_available = frappe.db.sql(add_item_code_available_query, (row.shopify_variant_id), as_dict=True)
+                            
+                            if add_item_code_available:
+                                row.total_actual_qty = 0
+                                update_status = "0 <= row.total_actual_qty <= 3 & additional warranty available"
+                        
+                        item_code_like_clauses = []
+                        params = [row.shopify_variant_id]
+                        for code in row.item_codes.split(', '):
+                            item_code_like_clauses.append("item_code LIKE %s")
+                            params.append(f"%{code.strip()}%")
 
-                            if existing:
-                                existing_doc = existing[0]
-                                updated_doc_names.add(existing_doc.name)
-                                existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
+                        query = f"""
+                            SELECT name, actual_qty, status, is_active, inventory_item_id
+                            FROM `tabNJ Inventory Sync Main`
+                            WHERE shopify_variant_id = %s AND ({' OR '.join(item_code_like_clauses)})
+                            ORDER BY modified DESC
+                        """
+                        existing = frappe.db.sql(query, tuple(params), as_dict=True)
 
-                                if float(row.total_actual_qty) != existing_doc_actual_qty:
-                                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                                        "is_active": 1,
-                                        "sync_error": update_status,
-                                        "status": "Queued",
-                                        "actual_qty": row.total_actual_qty,
-                                        "updated_qty": row.total_actual_qty,
-                                        "modified": frappe.utils.now(),
-                                    })
+                        if existing:
+                            existing_doc = existing[0]
+                            updated_doc_names.add(existing_doc.name)
+                            existing_doc_actual_qty = safe_float(existing_doc.actual_qty) or 0
 
-                            else:
-                                doc = frappe.new_doc("NJ Inventory Sync Main")
-                                qty = safe_float(row.total_actual_qty)
-
-                                doc.is_active = 1
-                                doc.actual_qty = qty
-                                doc.status = "Queued"
-                                doc.updated_qty = qty
-                                doc.item_code = row.item_codes
-                                doc.item_group = row.item_groups
-                                doc.shopify_variant_id = row.shopify_variant_id
-                                doc.sync_error = update_status
-
-                                try:
-                                    doc.insert()
-                                    updated_doc_names.add(doc.name)
-                                except Exception:
-                                    log_error(
-                                        f"Error inserting document: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id} - Error: {frappe.get_traceback()}",
-                                        "fetch_and_stage_inventory_sync"
-                                    )
-
-                        get_shopify_variant_data = get_shopify_variants(
-                            product_ids,
-                            settings["shop"],
-                            settings["token"]
-                        )
-                        for data in get_shopify_variant_data:
-                            frappe.db.sql(
-                                """UPDATE `tabNJ Inventory Sync Main` SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW() WHERE shopify_variant_id = %s""",
-                                (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"])
-                            )
-
-                        all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
-                        all_doc_names = set(doc["name"] for doc in all_docs)
-
-                        not_updated_doc_names = all_doc_names - updated_doc_names
-
-                        log_error(
-                            f"Total Docs: {len(all_doc_names)}, Updated Docs: {len(updated_doc_names)}, Not Updated Docs: {len(not_updated_doc_names)}",
-                            "Total Updates",
-                            "Info"
-                        )
-
-                        for name in not_updated_doc_names:
-                            frappe.db.set_value("NJ Inventory Sync Main", name, {
-                                "sync_error": "",
-                                "actual_qty": "0",
-                                "updated_qty": "0",
-                                "status": "Queued",
-                                "modified": frappe.utils.now()
-                            })
-
-                        all_active_docs = frappe.get_all(
-                            "NJ Inventory Sync Main",
-                            fields=["name", "actual_qty", "shopify_quantity", "status", "item_group", "is_active"],
-                            filters={"inventory_item_id": ["!=", None]}
-                        )
-
-                        for doc in all_active_docs:
-                            actual_qty = safe_float(doc.actual_qty) or 0
-                            shopify_quantity = safe_float(doc.shopify_quantity) or 0
-
-                            if actual_qty == shopify_quantity or doc.item_group not in settings["item_groups"]:
-                                frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
-                            else:
-                                frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
+                            if float(row.total_actual_qty) != existing_doc_actual_qty:
+                                frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                                     "is_active": 1,
-                                    "status": "Queued"
+                                    "sync_error": update_status,
+                                    "status": "Queued",
+                                    "actual_qty": row.total_actual_qty,
+                                    "updated_qty": row.total_actual_qty,
+                                    "modified": frappe.utils.now(),
                                 })
 
-                    except pymysql.err.OperationalError as e:
-                        if e.args[0] == 2013:
-                            return False
                         else:
-                            return False
+                            doc = frappe.new_doc("NJ Inventory Sync Main")
+                            qty = safe_float(row.total_actual_qty)
 
-                    except Exception:
-                        log_error(
-                            f"Error in fetching & staging inventory sync: {frappe.get_traceback()}",
-                            "fetch_and_stage_inventory_sync"
-                        )
-                        return str(traceback.format_exc())
+                            doc.is_active = 1
+                            doc.actual_qty = qty
+                            doc.status = "Queued"
+                            doc.updated_qty = qty
+                            doc.item_code = row.item_codes
+                            doc.item_group = row.item_groups
+                            doc.shopify_variant_id = row.shopify_variant_id
+                            doc.sync_error = update_status
 
+                            try:
+                                doc.insert()
+                                updated_doc_names.add(doc.name)
+                            except Exception:
+                                log_error(f"Error inserting document: {row.item_codes}, shopify_variant_id: {row.shopify_variant_id} - Error: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
+
+                    get_shopify_variant_data = get_shopify_variants(product_ids, settings["shop"], settings["token"])
+                    for data in get_shopify_variant_data:
+                        frappe.db.sql("""UPDATE `tabNJ Inventory Sync Main` SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW() WHERE shopify_variant_id = %s""", (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
+
+                    all_docs = frappe.get_all("NJ Inventory Sync Main", fields=["name"])
+                    all_doc_names = set(doc["name"] for doc in all_docs)
+
+                    not_updated_doc_names = all_doc_names - updated_doc_names
+
+                    log_error(f"Total Docs: {len(all_doc_names)}, Updated Docs: {len(updated_doc_names)}, Not Updated Docs: {len(not_updated_doc_names)}", "Total Updates", "Info")
+
+                    for name in not_updated_doc_names:
+                        frappe.db.set_value("NJ Inventory Sync Main", name, {
+                            "sync_error": "",
+                            "actual_qty": "0",
+                            "updated_qty": "0",
+                            "status": "Queued",
+                            "modified": frappe.utils.now()
+                        })
+
+                    all_active_docs = frappe.get_all("NJ Inventory Sync Main", 
+                                        fields=["name", "actual_qty", "shopify_quantity", "status", "item_group", "is_active"],
+                                        filters={"inventory_item_id": ["!=", None]})
+                    
+                    for doc in all_active_docs:
+                        actual_qty = safe_float(doc.actual_qty) or 0
+                        shopify_quantity = safe_float(doc.shopify_quantity) or 0
+                        
+                        if actual_qty == shopify_quantity or doc.item_group not in settings["item_groups"]:
+                            frappe.db.set_value("NJ Inventory Sync Main", doc.name, "is_active", 0)
+                        else:
+                            frappe.db.set_value("NJ Inventory Sync Main", doc.name, {
+                                "is_active": 1,
+                                "status": "Queued"
+                            })
+
+                except pymysql.err.OperationalError as e:
+                    if e.args[0] == 2013:
+                        return False
+                    else:
+                        return False
+
+                except Exception:
+                    log_error(f"Error in fetching & staging inventory sync: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
+                    return str(traceback.format_exc())
 
 @frappe.whitelist()
 @nj_temp_shopify_session

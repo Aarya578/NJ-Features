@@ -106,8 +106,13 @@ frappe.ui.form.on('Sales Invoice', {
 });
 function update_gst_tax_type_from_nj_settings(frm) {
     console.log("updating============================");
-    
-  if (!frm.doc.taxes || !frm.doc.taxes.length) return;
+
+    // 🔒 Skip if document is submitted
+    if (frm.doc.docstatus === 1) {
+        return;
+    }
+
+    if (!frm.doc.taxes || !frm.doc.taxes.length) return;
 
     frappe.db.get_value(
         "NJ Settings",
@@ -115,8 +120,8 @@ function update_gst_tax_type_from_nj_settings(frm) {
         "value"
     ).then(r => {
         const csv = r?.message?.value;
-        console.log("message=========",r.message);
-        
+        console.log("message=========", r.message);
+
         if (!csv) return;
 
         const account_heads = csv
@@ -129,7 +134,6 @@ function update_gst_tax_type_from_nj_settings(frm) {
                 tax.account_head &&
                 account_heads.includes(tax.account_head.trim())
             ) {
-                // 🔥 THIS IS THE FIX
                 frappe.model.set_value(
                     tax.doctype,
                     tax.name,
@@ -143,6 +147,7 @@ function update_gst_tax_type_from_nj_settings(frm) {
         frm.cscript.calculate_taxes_and_totals();
     });
 }
+
 
 function setup_custom_einvoice_actions(frm) {
 

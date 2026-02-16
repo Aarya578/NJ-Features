@@ -412,89 +412,171 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
 
 
 @log_io
+@log_io
 def _get_pending_sales_orders(horizon_end) -> List[Dict]:
     """
-    Pending SO lines:
-    - SO created in last 60 days
-    - Delivery date from today up to horizon_end (or no delivery date)
-    - Only selected item groups & stock items / bundle components
-    - Exclude Amazon & King Technologies
+    Pending SO lines computed using Delivery Note Item quantities (SO vs DN).
+    Expands Product Bundles into stock-item components (pbi.qty * soi.qty).
+    Returns keys REQUIRED by planner:
+      - so_name
+      - item_code
+      - qty_pending
+      - delivery_date
+    Also returns extra debug columns (pb_code, variant_processor, totals...).
     """
-    soi = frappe.db.sql(
+
+    LOOKBACK_DAYS = 50  # as per your new query
+
+    rows = frappe.db.sql(
         """
-        WITH SalesData AS (
-
-            -- Direct stock items (normal SO lines)
-            SELECT
-                so.name AS so_name,
-                soi.name AS soi_name,
-                so.customer AS customer,
-                so.transaction_date AS transaction_date,
-                soi.item_code AS item_code,
-                (soi.qty - IFNULL(soi.delivered_qty, 0)) AS qty_pending,
-                soi.delivery_date AS delivery_date
-            FROM `tabSales Order` so
-            JOIN `tabSales Order Item` soi ON soi.parent = so.name
-            JOIN `tabItem` i ON soi.item_code = i.item_code
-            WHERE so.creation >= CURDATE() - INTERVAL 60 DAY
-              AND so.docstatus = 1
-              AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
-              AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              AND (
-                    soi.delivery_date IS NULL
-                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
-                  )
-              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              AND i.is_stock_item = 1
-              AND so.sale_type != 'Amazon'
-              AND so.customer != 'King Technologies'
-
-            UNION ALL
-
-            -- Product Bundle components (exploded to stock items)
-            SELECT
-                so.name AS so_name,
-                soi.name AS soi_name,
-                so.customer AS customer,
-                so.transaction_date AS transaction_date,
-                pbi.item_code AS item_code,
-                (pbi.qty * (soi.qty - IFNULL(soi.delivered_qty, 0))) AS qty_pending,
-                soi.delivery_date AS delivery_date
-            FROM `tabSales Order` so
-            JOIN `tabSales Order Item` soi ON soi.parent = so.name
-            JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            JOIN `tabItem` i ON pbi.item_code = i.item_code
-            WHERE so.docstatus = 1
-              AND so.creation >= CURDATE() - INTERVAL 60 DAY
-              AND so.status NOT IN ('Closed','Completed','Draft','Cancelled')
-              AND (soi.qty - IFNULL(soi.delivered_qty, 0)) > 0
-              AND (
-                    soi.delivery_date IS NULL
-                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
-                  )
-              AND soi.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-              AND soi.item_code IN (SELECT item_code FROM `tabItem` WHERE is_stock_item = 0)
-              AND i.is_stock_item = 1
-              AND so.sale_type != 'Amazon'
-              AND so.customer != 'King Technologies'
-        )
-
         SELECT
-            so_name,
-            soi_name,
-            customer,
-            transaction_date,
-            item_code,
-            qty_pending,
-            delivery_date
-        FROM SalesData
-        ORDER BY transaction_date DESC
+            so_data.sales_order                                   AS so_name,
+            so_data.soi_name                                      AS soi_name,
+            so_data.customer                                      AS customer,
+            so_data.transaction_date                              AS transaction_date,
+            so_data.delivery_date                                 AS delivery_date,
+
+            so_data.item_code                                     AS item_code,   -- stock item (component / or direct stock line)
+            so_data.pb_code                                       AS pb_code,     -- original SO line item (bundle parent OR same as item_code)
+            so_data.item_group                                    AS item_group,
+
+            so_data.qty                                           AS so_qty,
+            IFNULL(dn_data.dn_qty, 0)                             AS dn_qty,
+
+            LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0))         AS min_so_dn_qty,
+
+            (so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+                                                                AS qty_pending,
+
+            CONCAT(COALESCE(it2.variant_of, it2.name), ' ', COALESCE(proc.attribute_value, ''))
+                                                                AS variant_processor,
+
+            SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+                OVER (
+                    PARTITION BY CONCAT(COALESCE(it2.variant_of, it2.name), ' ', COALESCE(proc.attribute_value, ''))
+                )                                               AS total_pending_by_variant,
+
+            SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+                OVER (PARTITION BY so_data.pb_code)              AS total_pending_by_pb_code
+
+        FROM (
+            /* -------- SO expanded to STOCK ITEMS (bundle -> components) -------- */
+            SELECT
+                so.name                        AS sales_order,
+                soi.name                       AS soi_name,
+                so.customer                    AS customer,
+                so.transaction_date            AS transaction_date,
+                so.creation                    AS so_creation,
+                soi.delivery_date              AS delivery_date,
+
+                /* pb_code = original SO line item (bundle parent OR stock item itself) */
+                soi.item_code                  AS pb_code,
+
+                /* item_code = stock item actually to be made/fulfilled */
+                CASE
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END                            AS item_code,
+
+                CASE
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_group
+                    ELSE it_comp.item_group
+                END                            AS item_group,
+
+                /* qty = stock qty demand (bundle component qty * bundle qty) */
+                CASE
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty
+                    ELSE (IFNULL(pbi.qty, 0) * soi.qty)
+                END                            AS qty
+
+            FROM `tabSales Order` so
+            INNER JOIN `tabSales Order Item` soi
+                ON soi.parent = so.name
+            INNER JOIN `tabItem` it_so
+                ON it_so.name = soi.item_code
+
+            /* Bundle expansion (only used when SO line is non-stock) */
+            LEFT JOIN `tabProduct Bundle` pb
+                ON pb.new_item_code = soi.item_code
+            LEFT JOIN `tabProduct Bundle Item` pbi
+                ON pbi.parent = pb.name
+            LEFT JOIN `tabItem` it_comp
+                ON it_comp.name = pbi.item_code
+
+            WHERE
+                so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
+                AND so.docstatus = 1
+                AND so.creation > CURDATE() - INTERVAL %(lookback)s DAY
+
+                /* keep your scope */
+                AND soi.item_group IN ('Laptops','Chromebooks')
+                AND so.sale_type != 'Amazon'
+                AND so.customer != 'King Technologies'
+
+                /* delivery window used by planner for sequence placement */
+                AND (
+                    soi.delivery_date IS NULL
+                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
+                )
+
+                /* ensure we only keep valid lines:
+                   - direct stock item, OR
+                   - bundle with at least one component stock item
+                */
+                AND (
+                    IFNULL(it_so.is_stock_item, 0) = 1
+                    OR pbi.item_code IS NOT NULL
+                )
+
+                /* for bundle components, restrict component groups */
+                AND (
+                    IFNULL(it_so.is_stock_item, 0) = 1
+                    OR it_comp.item_group IN ('Laptops','Chromebooks')
+                )
+        ) AS so_data
+
+        /* -------- Delivered quantities (DN items) -------- */
+        LEFT JOIN (
+            SELECT
+                dni.against_sales_order       AS against_sales_order,
+                dni.item_code                 AS item_code,
+                SUM(dni.qty)                  AS dn_qty
+            FROM `tabDelivery Note Item` dni
+            WHERE
+                dni.docstatus = 1
+                AND dni.qty > 0
+                AND dni.creation >= CURDATE() - INTERVAL %(lookback)s DAY
+                AND dni.item_group IN ('Laptops', 'Chromebooks')
+            GROUP BY dni.against_sales_order, dni.item_code
+        ) AS dn_data
+            ON so_data.sales_order = dn_data.against_sales_order
+           AND so_data.item_code   = dn_data.item_code
+
+        /* -------- Variant + processor attribute (deduped) -------- */
+        LEFT JOIN `tabItem` it2
+            ON it2.name = so_data.item_code
+
+        LEFT JOIN (
+            SELECT
+                parent,
+                MAX(attribute_value) AS attribute_value
+            FROM `tabItem Variant Attribute`
+            WHERE attribute LIKE '%Processor%'
+            GROUP BY parent
+        ) proc
+            ON proc.parent = it2.name
+
+        /* keep only pending > 0 */
+        WHERE (so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0))) > 0
+
+        ORDER BY so_data.so_creation DESC, so_data.sales_order, so_data.item_code
         """,
-        {"horizon_end": horizon_end},
+        {"horizon_end": horizon_end, "lookback": LOOKBACK_DAYS},
         as_dict=True,
     )
-    return soi
+
+    return rows
+
 
 
 @log_io

@@ -285,7 +285,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     for s in sorted(sequences, reverse=True):
         seq_forward_grain = forward_grain_per_seq[s]
         forward_keys = forward_keys_per_seq[s]
-        seq_order_queues = order_demand_by_seq.get(s, defaultdict(list))
+        # ✅ Shared queue: same object for all sequences (and all depts)
+        seq_order_queues = order_demand_by_seq[s]
+
 
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
@@ -564,31 +566,42 @@ def _allocate_orders_to_sequences_multi(
     pending_orders, sequences, cum_sla, today, forward_grain_per_seq, max_seq
 ):
     """
-    ✅ DELIVERY DATE / DUE DATE LOGIC REMOVED:
-    - No days_to_due calculation
-    - All order demand is placed into max_seq
+    UPDATED:
+    - Build ONE shared order queue for ALL sequences (global pool).
+    - Orders are queued at CONFIG grain (exact item requirement).
+    - Every sequence receives the SAME dict reference, so consuming an order in any
+      department/sequence removes it for everyone (prevents double-allocation).
+    - Reverse loop order in nj_run_unified_production_plan ensures higher sequence depts pick first.
     """
-    demand_by_seq = {s: defaultdict(list) for s in sequences}
+    from collections import defaultdict
+
+    # ✅ One shared pool across all sequences
+    shared_queue = defaultdict(list)
+
+    # Optional: unique id for debugging/tracing
+    uid = 0
 
     for row in pending_orders:
         ic = row["item_code"]
         qty = int(math.ceil(row["qty_pending"]))
 
-        # Always place orders into last sequence (no due-date based sequencing)
-        place_seq = max_seq
+        # ✅ Always use CONFIG key for order fulfillment (orders are specific SKUs)
+        key = _key_for_grain(ic, "config")
 
-        fgrain = forward_grain_per_seq[place_seq]
-        key = _key_for_grain(ic, fgrain)
-
-        ref = {
+        base_ref = {
             "so_name": row["so_name"],
             "delivery_date": row.get("delivery_date"),  # kept only for display/debug
             "order_item_code": ic,
         }
 
         for _ in range(qty):
-            demand_by_seq[place_seq][key].append(ref)
+            uid += 1
+            ref = dict(base_ref)
+            ref["_uid"] = uid  # debug only
+            shared_queue[key].append(ref)
 
+    # ✅ Every sequence points to the same shared queue object
+    demand_by_seq = {s: shared_queue for s in sequences}
     return demand_by_seq
 
 

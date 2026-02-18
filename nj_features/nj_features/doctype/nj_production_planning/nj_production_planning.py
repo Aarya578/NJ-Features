@@ -103,6 +103,27 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
     except Exception as e:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
+# Control whether planner writes to Serial No.reserved_sales_order
+UPDATE_SERIAL_RESERVED_SO = True
+
+def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> None:
+    """Update Serial No.reserved_sales_order (lightweight db write)."""
+    if not UPDATE_SERIAL_RESERVED_SO:
+        return
+
+    # Only set when SO exists; otherwise clear (you can change this behavior if you prefer)
+    so_val = (sales_order_no or "").strip()
+    try:
+        frappe.db.set_value(
+            "Serial No",
+            serial_no,
+            "reserved_sales_order",
+            so_val if so_val else None,
+            update_modified=False,
+        )
+    except Exception as e:
+        logger.warning("Could not update Serial No.reserved_sales_order for %s: %s", serial_no, e)
+
 
 # =========================
 # Helpers for ordering serials
@@ -907,12 +928,7 @@ def _match_inventory_to_order_queues_for_sequence(
                 break
 
             # Resolve target item to make
-            # ✅ Orders: ALWAYS honor the ordered component SKU (after PB expansion)
-            if order_ref.get("order_item_code"):
-                target_item_code = order_ref["order_item_code"]
-
-            # Forecast / non-specific demand: decide based on reconfig
-            elif allow_reconfig and key and key[0] == "CONFIG":
+            if allow_reconfig and key and key[0] == "CONFIG":
                 target_item_code = _target_item_for_key(key)
             else:
                 target_item_code = chosen["item_code"]
@@ -1561,6 +1577,13 @@ def _append_plan_row(
 ):
     # For included rows, update to_make as usual
     _update_serial_to_make(serial_no, item_code_to_make)
+
+    # ✅ Reserve SO on the serial (only meaningful for Order lines)
+    if reason == "Order" and sales_order_number:
+        _update_serial_reserved_sales_order(serial_no, sales_order_number)
+    else:
+        # optional: clear reservation for Forecast rows
+        _update_serial_reserved_sales_order(serial_no, None)
 
     plan_doc.append(
         "lines",

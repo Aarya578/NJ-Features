@@ -907,7 +907,12 @@ def _match_inventory_to_order_queues_for_sequence(
                 break
 
             # Resolve target item to make
-            if allow_reconfig and key and key[0] == "CONFIG":
+            # ✅ Orders: ALWAYS honor the ordered component SKU (after PB expansion)
+            if order_ref.get("order_item_code"):
+                target_item_code = order_ref["order_item_code"]
+
+            # Forecast / non-specific demand: decide based on reconfig
+            elif allow_reconfig and key and key[0] == "CONFIG":
                 target_item_code = _target_item_for_key(key)
             else:
                 target_item_code = chosen["item_code"]

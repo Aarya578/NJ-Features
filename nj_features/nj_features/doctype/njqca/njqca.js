@@ -739,6 +739,23 @@ frappe.ui.form.on("NJQCA", {
       $(frm.layout.wrapper).find(".form-message.red").last().remove();
     }
 
+
+    // Reliability Test
+    if (frm.doc.inspection_type == "Reliability Test" && frm.doc.serial_no && frm.doc.inspection_type) {
+      return frappe.call({
+        method: "nj_features.nj_features.doctype.njqca.njqca.get_reliability_test_status",
+        args: { doc: frm.doc },
+        freeze: true,
+        callback: function (r) {
+          if (r.message && r.message.updated_result_parameters) {
+            frm.doc.njqca_result_parameters = r.message.updated_result_parameters;
+            frm.refresh_field("njqca_result_parameters");
+          }
+        },
+      });
+    }
+
+
     // Check automated repack item code
   },
 

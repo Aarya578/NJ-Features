@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import re
 import copy
 import json
@@ -3737,3 +3740,275 @@ def get_last_quality_status_from_bios(njqca_name):
         return "FAIL"
     else:
         return "NOT FOUND"
+
+import csv
+import io
+import json
+import os
+import re
+
+import frappe
+from frappe.utils import get_url
+from frappe.model.document import Document
+
+
+HEAVYLOAD_REF_ITEM_GROUP = "LAPTOP STORAGE"
+HEAVYLOAD_REF_PARAM = "heavy_load_File_Updated_name"
+
+TEMP_TARGET_ITEM_GROUP = "LAPTOP PROCESSORS"   # change if needed
+TEMP_UNIT = "°C"
+
+TEMP_SENSORS = [
+    "CPU Core #1",
+    "CPU Core #2",
+    "CPU Core #3",
+    "CPU Core #4",
+    "CPU Package",
+]
+
+
+# ----------------------------
+# Helpers
+# ----------------------------
+def _extract_float(val):
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except Exception:
+        return None
+
+
+def _display_sensor_name(sensor: str) -> str:
+    # "CPU Core #1" -> "CPU Core 1"
+    return sensor.replace("#", "").replace("  ", " ").strip()
+
+
+def _norm_header(h: str) -> str:
+    # " | Temperature | CPU Core #1" -> "temperature cpu core 1"
+    h = (h or "")
+    h = h.replace("|", " ")
+    h = h.replace("#", " ")
+    h = re.sub(r"\s+", " ", h).strip().lower()
+    return h
+
+
+def _get_child_meta(doc: Document):
+    child_dt = doc.meta.get_field("njqca_result_parameters").options
+    return frappe.get_meta(child_dt)
+
+
+def _detect_value_and_unit_fields(doc: Document):
+    meta = _get_child_meta(doc)
+
+    value_field = None
+    for f in ("value", "parameter_value", "param_value", "parameter_val"):
+        if meta.has_field(f):
+            value_field = f
+            break
+
+    unit_field = None
+    for f in ("units", "unit"):
+        if meta.has_field(f):
+            unit_field = f
+            break
+
+    return value_field, unit_field
+
+
+def _get_row_value(row, value_field: str):
+    if not value_field:
+        return None
+    return row.get(value_field)
+
+
+# ----------------------------
+# File read
+# ----------------------------
+def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
+    """
+    Prefer reading from local site files.
+    Fallback to HTTP GET if file not present locally.
+    """
+    file_url = (getattr(file_doc, "file_url", None) or "").strip()
+    if not file_url:
+        frappe.throw("File URL is missing for HeavyLoad file.")
+
+    # Local path attempt (correct path build)
+    local_path = None
+    filename = file_url.split("/")[-1].strip()
+
+    if file_url.startswith("/private/files/"):
+        local_path = frappe.get_site_path("private", "files", filename)
+    elif file_url.startswith("/files/"):
+        local_path = frappe.get_site_path("public", "files", filename)
+
+    if local_path and os.path.exists(local_path):
+        with open(local_path, "rb") as f:
+            return f.read()
+
+    # HTTP fallback
+    full_url = file_url if file_url.startswith("http") else (get_url().rstrip("/") + file_url)
+    sess = frappe.utils.get_request_session()
+    resp = sess.get(full_url, timeout=30)
+    resp.raise_for_status()
+    return resp.content
+
+
+# ----------------------------
+# CSV parsing (Temperature averages)
+# ----------------------------
+def _parse_temp_averages(csv_bytes: bytes) -> dict:
+    """
+    Your HeavyLoad CSV is column-based like:
+      Time, ..., | Temperature | CPU Core #1, | Temperature | CPU Package, ...
+    We compute average values for:
+      CPU Core #1..#4, CPU Package
+    """
+    text = csv_bytes.decode("utf-8-sig", errors="ignore")
+    if not text.strip():
+        return {}
+
+    # HeavyLoad is comma-separated; keep it simple & stable
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return {}
+
+    header = rows[0]
+    header_norm = [_norm_header(h) for h in header]
+
+    # Map each sensor -> the correct Temperature column index ONLY
+    col_idx = {}
+    for sensor in TEMP_SENSORS:
+        s_norm = _norm_header(sensor)  # "cpu core 1" / "cpu package"
+        for i, h in enumerate(header_norm):
+            # MUST contain "temperature" + sensor
+            if ("temperature" in h) and (s_norm in h):
+                col_idx[sensor] = i
+                break
+
+    if not col_idx:
+        return {}
+
+    result = {}
+    for sensor, idx in col_idx.items():
+        vals = []
+        for r in rows[1:]:
+            if idx < len(r):
+                f = _extract_float(r[idx])
+                if f is not None:
+                    vals.append(f)
+        if vals:
+            result[sensor] = sum(vals) / len(vals)
+
+    return result
+
+
+# ----------------------------
+# Upsert into result parameters (no duplicates)
+# ----------------------------
+def _upsert_result_param(doc: Document, item_group: str, parameter: str, value, unit: str):
+    value_field, unit_field = _detect_value_and_unit_fields(doc)
+
+    # Update existing row
+    for row in doc.get("njqca_result_parameters") or []:
+        if (row.get("item_group") or "").strip() == item_group and (row.get("parameter") or "").strip() == parameter:
+            if value_field:
+                row.set(value_field, value)
+            if unit_field:
+                row.set(unit_field, unit)
+            return
+
+    # Append new row
+    payload = {
+        "item_group": item_group,
+        "parameter": parameter,
+    }
+    if value_field:
+        payload[value_field] = value
+    if unit_field:
+        payload[unit_field] = unit
+
+    doc.append("njqca_result_parameters", payload)
+
+
+# ----------------------------
+# Main apply function
+# ----------------------------
+def _apply_heavyload_avg_temps(doc: Document) -> dict:
+    """
+    1) Find heavyload File docname from result parameters:
+         item_group == LAPTOP STORAGE
+         parameter  == heavy_load_File_Updated_name
+         value      == <File.name>
+    2) Load CSV
+    3) Compute avg temps
+    4) Upsert temp rows
+    """
+
+    value_field, _ = _detect_value_and_unit_fields(doc)
+
+    file_docname = None
+    for row in doc.get("njqca_result_parameters") or []:
+        ig = (row.get("item_group") or "").strip()
+        p = (row.get("parameter") or "").strip()
+        if ig == HEAVYLOAD_REF_ITEM_GROUP and p == HEAVYLOAD_REF_PARAM:
+            val = _get_row_value(row, value_field)
+            if val:
+                file_docname = str(val).strip()
+            break
+
+    if not file_docname:
+        return {"status": "skip", "reason": "HeavyLoad file reference not found / empty value"}
+
+    file_doc = frappe.get_doc("File", file_docname)
+    csv_bytes = _read_file_bytes_from_filedoctype(file_doc)
+
+    temps = _parse_temp_averages(csv_bytes)
+    if not temps:
+        return {"status": "skip", "reason": "No temperature columns found in CSV"}
+
+    for sensor, avg in temps.items():
+        disp = _display_sensor_name(sensor)             # CPU Core 1 / CPU Package
+        param_name = f"Temperature({disp})"            # your requested format
+        _upsert_result_param(
+            doc,
+            TEMP_TARGET_ITEM_GROUP,
+            param_name,
+            round(float(avg), 2),
+            TEMP_UNIT,
+        )
+
+    return {"status": "ok", "temps": {k: round(float(v), 2) for k, v in temps.items()}}
+
+
+# ----------------------------
+# Whitelisted endpoint
+# ----------------------------
+@frappe.whitelist()
+def get_reliability_test_status(doc):
+    """
+    Called from JS validate. Mutates doc (in-memory) and returns updated child table
+    so the client saves it without duplicates.
+    """
+    if isinstance(doc, str):
+        doc = json.loads(doc)
+
+    d = frappe.get_doc(doc)
+
+    if (d.inspection_type or "").strip() == "Reliability Test":
+        info = _apply_heavyload_avg_temps(d)
+    else:
+        info = {"status": "skip", "reason": "Not Reliability Test"}
+
+    updated_rows = [row.as_dict() for row in (d.get("njqca_result_parameters") or [])]
+    return {
+        "info": info,
+        "updated_result_parameters": updated_rows,
+    }

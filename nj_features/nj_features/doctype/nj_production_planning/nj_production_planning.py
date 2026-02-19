@@ -103,6 +103,27 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
     except Exception as e:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
+# Control whether planner writes to Serial No.reserved_sales_order
+UPDATE_SERIAL_RESERVED_SO = True
+
+def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> None:
+    """Update Serial No.reserved_sales_order (lightweight db write)."""
+    if not UPDATE_SERIAL_RESERVED_SO:
+        return
+
+    # Only set when SO exists; otherwise clear (you can change this behavior if you prefer)
+    so_val = (sales_order_no or "").strip()
+    try:
+        frappe.db.set_value(
+            "Serial No",
+            serial_no,
+            "reserved_sales_order",
+            so_val if so_val else None,
+            update_modified=False,
+        )
+    except Exception as e:
+        logger.warning("Could not update Serial No.reserved_sales_order for %s: %s", serial_no, e)
+
 
 # =========================
 # Helpers for ordering serials
@@ -285,7 +306,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     for s in sorted(sequences, reverse=True):
         seq_forward_grain = forward_grain_per_seq[s]
         forward_keys = forward_keys_per_seq[s]
-        seq_order_queues = order_demand_by_seq.get(s, defaultdict(list))
+        # ✅ Shared queue: same object for all sequences (and all depts)
+        seq_order_queues = order_demand_by_seq[s]
+
 
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
@@ -410,23 +433,25 @@ def _build_cumulative_sla_multi(depts_by_seq: Dict, sequences: List[int]) -> Dic
         cum_sla[s] = tail
     return cum_sla
 
+import frappe
+from typing import List, Dict
+
+# Assuming @log_io is a custom decorator defined in your app
+# from nj_features.utils import log_io 
 
 @log_io
-@log_io
-def _get_pending_sales_orders(horizon_end) -> List[Dict]:
+def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
     """
     Pending SO lines computed using Delivery Note Item quantities (SO vs DN).
     Expands Product Bundles into stock-item components (pbi.qty * soi.qty).
-    Returns keys REQUIRED by planner:
-      - so_name
-      - item_code
-      - qty_pending
-      - delivery_date
-    Also returns extra debug columns (pb_code, variant_processor, totals...).
+
+    ✅ DELIVERY DATE LOGIC REMOVED:
+    - No filtering on soi.delivery_date (overdue + future + any date included).
     """
 
-    LOOKBACK_DAYS = 50  # as per your new query
+    LOOKBACK_DAYS = 50
 
+    # Note: Use %% for SQL LIKE patterns to escape the Python % formatter
     rows = frappe.db.sql(
         """
         SELECT
@@ -436,8 +461,8 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             so_data.transaction_date                              AS transaction_date,
             so_data.delivery_date                                 AS delivery_date,
 
-            so_data.item_code                                     AS item_code,   -- stock item (component / or direct stock line)
-            so_data.pb_code                                       AS pb_code,     -- original SO line item (bundle parent OR same as item_code)
+            so_data.item_code                                     AS item_code,
+            so_data.pb_code                                       AS pb_code,
             so_data.item_group                                    AS item_group,
 
             so_data.qty                                           AS so_qty,
@@ -460,7 +485,6 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
                 OVER (PARTITION BY so_data.pb_code)              AS total_pending_by_pb_code
 
         FROM (
-            /* -------- SO expanded to STOCK ITEMS (bundle -> components) -------- */
             SELECT
                 so.name                        AS sales_order,
                 soi.name                       AS soi_name,
@@ -469,10 +493,8 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
                 so.creation                    AS so_creation,
                 soi.delivery_date              AS delivery_date,
 
-                /* pb_code = original SO line item (bundle parent OR stock item itself) */
                 soi.item_code                  AS pb_code,
 
-                /* item_code = stock item actually to be made/fulfilled */
                 CASE
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                     ELSE pbi.item_code
@@ -483,7 +505,6 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
                     ELSE it_comp.item_group
                 END                            AS item_group,
 
-                /* qty = stock qty demand (bundle component qty * bundle qty) */
                 CASE
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty
                     ELSE (IFNULL(pbi.qty, 0) * soi.qty)
@@ -495,7 +516,6 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             INNER JOIN `tabItem` it_so
                 ON it_so.name = soi.item_code
 
-            /* Bundle expansion (only used when SO line is non-stock) */
             LEFT JOIN `tabProduct Bundle` pb
                 ON pb.new_item_code = soi.item_code
             LEFT JOIN `tabProduct Bundle Item` pbi
@@ -508,34 +528,21 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
                 AND so.docstatus = 1
                 AND so.creation > CURDATE() - INTERVAL %(lookback)s DAY
 
-                /* keep your scope */
                 AND soi.item_group IN ('Laptops','Chromebooks')
                 AND so.sale_type != 'Amazon'
                 AND so.customer != 'King Technologies'
 
-                /* delivery window used by planner for sequence placement */
-                AND (
-                    soi.delivery_date IS NULL
-                    OR (soi.delivery_date BETWEEN CURDATE() AND %(horizon_end)s)
-                )
-
-                /* ensure we only keep valid lines:
-                   - direct stock item, OR
-                   - bundle with at least one component stock item
-                */
                 AND (
                     IFNULL(it_so.is_stock_item, 0) = 1
                     OR pbi.item_code IS NOT NULL
                 )
 
-                /* for bundle components, restrict component groups */
                 AND (
                     IFNULL(it_so.is_stock_item, 0) = 1
                     OR it_comp.item_group IN ('Laptops','Chromebooks')
                 )
         ) AS so_data
 
-        /* -------- Delivered quantities (DN items) -------- */
         LEFT JOIN (
             SELECT
                 dni.against_sales_order       AS against_sales_order,
@@ -552,7 +559,6 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
             ON so_data.sales_order = dn_data.against_sales_order
            AND so_data.item_code   = dn_data.item_code
 
-        /* -------- Variant + processor attribute (deduped) -------- */
         LEFT JOIN `tabItem` it2
             ON it2.name = so_data.item_code
 
@@ -561,53 +567,62 @@ def _get_pending_sales_orders(horizon_end) -> List[Dict]:
                 parent,
                 MAX(attribute_value) AS attribute_value
             FROM `tabItem Variant Attribute`
-            WHERE attribute LIKE '%Processor%'
+            WHERE attribute LIKE '%%Processor%%'
             GROUP BY parent
         ) proc
             ON proc.parent = it2.name
 
-        /* keep only pending > 0 */
         WHERE (so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0))) > 0
-
         ORDER BY so_data.so_creation DESC, so_data.sales_order, so_data.item_code
         """,
-        {"horizon_end": horizon_end, "lookback": LOOKBACK_DAYS},
+        {"lookback": LOOKBACK_DAYS},
         as_dict=True,
     )
 
     return rows
 
 
-
 @log_io
 def _allocate_orders_to_sequences_multi(
     pending_orders, sequences, cum_sla, today, forward_grain_per_seq, max_seq
 ):
-    demand_by_seq = {s: defaultdict(list) for s in sequences}
+    """
+    UPDATED:
+    - Build ONE shared order queue for ALL sequences (global pool).
+    - Orders are queued at CONFIG grain (exact item requirement).
+    - Every sequence receives the SAME dict reference, so consuming an order in any
+      department/sequence removes it for everyone (prevents double-allocation).
+    - Reverse loop order in nj_run_unified_production_plan ensures higher sequence depts pick first.
+    """
+    from collections import defaultdict
+
+    # ✅ One shared pool across all sequences
+    shared_queue = defaultdict(list)
+
+    # Optional: unique id for debugging/tracing
+    uid = 0
+
     for row in pending_orders:
         ic = row["item_code"]
         qty = int(math.ceil(row["qty_pending"]))
-        delivery_date = row.get("delivery_date")
-        due = frappe.utils.getdate(delivery_date) if delivery_date else None
-        days_to_due = (due - today).days if due else None
 
-        if days_to_due is None or days_to_due < 0:
-            place_seq = max_seq
-        else:
-            candidates = [s for s in sequences if cum_sla[s] <= days_to_due]
-            place_seq = min(candidates) if candidates else max_seq
+        # ✅ Always use CONFIG key for order fulfillment (orders are specific SKUs)
+        key = _key_for_grain(ic, "config")
 
-        fgrain = forward_grain_per_seq[place_seq]
-        key = _key_for_grain(ic, fgrain)
-
-        ref = {
+        base_ref = {
             "so_name": row["so_name"],
-            "delivery_date": delivery_date,
+            "delivery_date": row.get("delivery_date"),  # kept only for display/debug
             "order_item_code": ic,
         }
-        for _ in range(qty):
-            demand_by_seq[place_seq][key].append(ref)
 
+        for _ in range(qty):
+            uid += 1
+            ref = dict(base_ref)
+            ref["_uid"] = uid  # debug only
+            shared_queue[key].append(ref)
+
+    # ✅ Every sequence points to the same shared queue object
+    demand_by_seq = {s: shared_queue for s in sequences}
     return demand_by_seq
 
 
@@ -1562,6 +1577,13 @@ def _append_plan_row(
 ):
     # For included rows, update to_make as usual
     _update_serial_to_make(serial_no, item_code_to_make)
+
+    # ✅ Reserve SO on the serial (only meaningful for Order lines)
+    if reason == "Order" and sales_order_number:
+        _update_serial_reserved_sales_order(serial_no, sales_order_number)
+    else:
+        # optional: clear reservation for Forecast rows
+        _update_serial_reserved_sales_order(serial_no, None)
 
     plan_doc.append(
         "lines",

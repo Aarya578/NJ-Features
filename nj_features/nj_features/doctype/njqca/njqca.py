@@ -3741,6 +3741,9 @@ def get_last_quality_status_from_bios(njqca_name):
     else:
         return "NOT FOUND"
 
+        
+# -*- RELIABILITY TESTING RESULT -*-
+
 import csv
 import io
 import json
@@ -3755,7 +3758,8 @@ from frappe.model.document import Document
 HEAVYLOAD_REF_ITEM_GROUP = "LAPTOP STORAGE"
 HEAVYLOAD_REF_PARAM = "heavy_load_File_Updated_name"
 
-TEMP_TARGET_ITEM_GROUP = "LAPTOP PROCESSORS"   # change if needed
+# IMPORTANT: set this to your actual Item Group docname if it's "Laptop Processors"
+TEMP_TARGET_ITEM_GROUP = "Laptop Processors"
 TEMP_UNIT = "°C"
 
 TEMP_SENSORS = [
@@ -3828,6 +3832,11 @@ def _get_row_value(row, value_field: str):
     return row.get(value_field)
 
 
+def _key(s) -> str:
+    # stable key for comparisons (case/space-insensitive)
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+
 # ----------------------------
 # File read
 # ----------------------------
@@ -3840,7 +3849,6 @@ def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
     if not file_url:
         frappe.throw("File URL is missing for HeavyLoad file.")
 
-    # Local path attempt (correct path build)
     local_path = None
     filename = file_url.split("/")[-1].strip()
 
@@ -3853,7 +3861,6 @@ def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
         with open(local_path, "rb") as f:
             return f.read()
 
-    # HTTP fallback
     full_url = file_url if file_url.startswith("http") else (get_url().rstrip("/") + file_url)
     sess = frappe.utils.get_request_session()
     resp = sess.get(full_url, timeout=30)
@@ -3862,20 +3869,23 @@ def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
 
 
 # ----------------------------
-# CSV parsing (Temperature averages)
+# CSV parsing (Avg + Max Temperature)
 # ----------------------------
-def _parse_temp_averages(csv_bytes: bytes) -> dict:
+def _parse_temp_stats(csv_bytes: bytes) -> dict:
     """
-    Your HeavyLoad CSV is column-based like:
+    HeavyLoad CSV columns look like:
       Time, ..., | Temperature | CPU Core #1, | Temperature | CPU Package, ...
-    We compute average values for:
-      CPU Core #1..#4, CPU Package
+
+    Returns:
+      {
+        "CPU Core #1": {"avg": 62.3, "max": 78.0},
+        ...
+      }
     """
     text = csv_bytes.decode("utf-8-sig", errors="ignore")
     if not text.strip():
         return {}
 
-    # HeavyLoad is comma-separated; keep it simple & stable
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return {}
@@ -3883,12 +3893,11 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
     header = rows[0]
     header_norm = [_norm_header(h) for h in header]
 
-    # Map each sensor -> the correct Temperature column index ONLY
+    # Map each sensor -> correct Temperature column index ONLY
     col_idx = {}
     for sensor in TEMP_SENSORS:
         s_norm = _norm_header(sensor)  # "cpu core 1" / "cpu package"
         for i, h in enumerate(header_norm):
-            # MUST contain "temperature" + sensor
             if ("temperature" in h) and (s_norm in h):
                 col_idx[sensor] = i
                 break
@@ -3896,7 +3905,7 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
     if not col_idx:
         return {}
 
-    result = {}
+    stats = {}
     for sensor, idx in col_idx.items():
         vals = []
         for r in rows[1:]:
@@ -3904,25 +3913,41 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
                 f = _extract_float(r[idx])
                 if f is not None:
                     vals.append(f)
-        if vals:
-            result[sensor] = sum(vals) / len(vals)
 
-    return result
+        if vals:
+            stats[sensor] = {
+                "avg": (sum(vals) / len(vals)),
+                "max": max(vals),
+            }
+
+    return stats
 
 
 # ----------------------------
-# Upsert into result parameters (no duplicates)
+# Upsert into result parameters (NO DUPLICATES)
 # ----------------------------
 def _upsert_result_param(doc: Document, item_group: str, parameter: str, value, unit: str):
+    """
+    Case/space-insensitive match on (item_group, parameter).
+    If found -> update value/unit
+    Else -> append new row
+    """
     value_field, unit_field = _detect_value_and_unit_fields(doc)
+
+    target_ig = _key(item_group)
+    target_param = _key(parameter)
 
     # Update existing row
     for row in doc.get("njqca_result_parameters") or []:
-        if (row.get("item_group") or "").strip() == item_group and (row.get("parameter") or "").strip() == parameter:
+        if _key(row.get("item_group")) == target_ig and _key(row.get("parameter")) == target_param:
             if value_field:
                 row.set(value_field, value)
             if unit_field:
                 row.set(unit_field, unit)
+
+            # Normalize stored values (optional but helps future matches)
+            row.set("item_group", item_group)
+            row.set("parameter", parameter)
             return
 
     # Append new row
@@ -3939,26 +3964,56 @@ def _upsert_result_param(doc: Document, item_group: str, parameter: str, value, 
 
 
 # ----------------------------
+# Optional: de-dupe existing duplicates already present
+# ----------------------------
+def _dedupe_result_params_inplace(doc: Document):
+    """
+    Keeps the LAST occurrence per (item_group, parameter) (after updates),
+    removes earlier duplicates in-memory.
+    """
+    rows = list(doc.get("njqca_result_parameters") or [])
+    if not rows:
+        return
+
+    seen = set()
+    kept = []
+
+    # walk backwards to keep last
+    for row in reversed(rows):
+        k = (_key(row.get("item_group")), _key(row.get("parameter")))
+        if k in seen:
+            continue
+        seen.add(k)
+        kept.append(row)
+
+    kept.reverse()
+    doc.set("njqca_result_parameters", kept)
+
+
+# ----------------------------
 # Main apply function
 # ----------------------------
-def _apply_heavyload_avg_temps(doc: Document) -> dict:
+def _apply_heavyload_avg_max_temps(doc: Document) -> dict:
     """
     1) Find heavyload File docname from result parameters:
          item_group == LAPTOP STORAGE
          parameter  == heavy_load_File_Updated_name
          value      == <File.name>
     2) Load CSV
-    3) Compute avg temps
-    4) Upsert temp rows
+    3) Compute avg + max temps for the 5 sensors
+    4) Upsert rows with parameters:
+         Avg Temperature(CPU Core 1)
+         Max Temperature(CPU Core 1)
+         ...
+    5) De-dupe existing duplicates (optional but recommended)
     """
-
     value_field, _ = _detect_value_and_unit_fields(doc)
 
     file_docname = None
     for row in doc.get("njqca_result_parameters") or []:
         ig = (row.get("item_group") or "").strip()
         p = (row.get("parameter") or "").strip()
-        if ig == HEAVYLOAD_REF_ITEM_GROUP and p == HEAVYLOAD_REF_PARAM:
+        if _key(ig) == _key(HEAVYLOAD_REF_ITEM_GROUP) and _key(p) == _key(HEAVYLOAD_REF_PARAM):
             val = _get_row_value(row, value_field)
             if val:
                 file_docname = str(val).strip()
@@ -3970,22 +4025,29 @@ def _apply_heavyload_avg_temps(doc: Document) -> dict:
     file_doc = frappe.get_doc("File", file_docname)
     csv_bytes = _read_file_bytes_from_filedoctype(file_doc)
 
-    temps = _parse_temp_averages(csv_bytes)
-    if not temps:
+    stats = _parse_temp_stats(csv_bytes)
+    if not stats:
         return {"status": "skip", "reason": "No temperature columns found in CSV"}
 
-    for sensor, avg in temps.items():
-        disp = _display_sensor_name(sensor)             # CPU Core 1 / CPU Package
-        param_name = f"Temperature({disp})"            # your requested format
-        _upsert_result_param(
-            doc,
-            TEMP_TARGET_ITEM_GROUP,
-            param_name,
-            round(float(avg), 2),
-            TEMP_UNIT,
-        )
+    out = {}
+    for sensor, s in stats.items():
+        disp = _display_sensor_name(sensor)  # CPU Core 1 / CPU Package
 
-    return {"status": "ok", "temps": {k: round(float(v), 2) for k, v in temps.items()}}
+        avg_param = f"Avg Temperature({disp})"
+        max_param = f"Max Temperature({disp})"
+
+        avg_val = round(float(s["avg"]), 2)
+        max_val = round(float(s["max"]), 2)
+
+        _upsert_result_param(doc, TEMP_TARGET_ITEM_GROUP, avg_param, avg_val, TEMP_UNIT)
+        _upsert_result_param(doc, TEMP_TARGET_ITEM_GROUP, max_param, max_val, TEMP_UNIT)
+
+        out[disp] = {"avg": avg_val, "max": max_val}
+
+    # This will remove duplicates that already existed (your screenshot case)
+    _dedupe_result_params_inplace(doc)
+
+    return {"status": "ok", "temps": out}
 
 
 # ----------------------------
@@ -4003,7 +4065,7 @@ def get_reliability_test_status(doc):
     d = frappe.get_doc(doc)
 
     if (d.inspection_type or "").strip() == "Reliability Test":
-        info = _apply_heavyload_avg_temps(d)
+        info = _apply_heavyload_avg_max_temps(d)
     else:
         info = {"status": "skip", "reason": "Not Reliability Test"}
 

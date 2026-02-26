@@ -740,21 +740,20 @@ frappe.ui.form.on("NJQCA", {
     }
 
 
-    // Reliability Test
-    if (frm.doc.inspection_type == "Reliability Test" && frm.doc.serial_no && frm.doc.inspection_type) {
+    // Get Reliability && Heavy Load && y_cruncher && gaming && performance
+    if (frm.doc.serial_no && frm.doc.inspection_type) {
       return frappe.call({
         method: "nj_features.nj_features.doctype.njqca.njqca.get_reliability_test_status",
         args: { doc: frm.doc },
         freeze: true,
         callback: function (r) {
-          if (r.message && r.message.updated_result_parameters) {
-            frm.doc.njqca_result_parameters = r.message.updated_result_parameters;
+          if (r.message && Array.isArray(r.message.changes)) {
+            applyChangesNoDuplicates(frm, r.message.changes);
             frm.refresh_field("njqca_result_parameters");
           }
         },
       });
     }
-
 
     // Check automated repack item code
   },
@@ -3424,4 +3423,102 @@ function update_empty_param_in_child(frm, source_row, target_row) {
       }
     },
   });
+}
+
+
+// Reliability JS
+
+function _key(s) {
+  return (s || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getChildDoctype(frm) {
+  return frm.fields_dict.njqca_result_parameters.df.options;
+}
+
+function getChildValueField(frm) {
+  const childDoctype = getChildDoctype(frm);
+  const candidates = ["value", "parameter_value", "param_value", "parameter_val"];
+  for (const f of candidates) {
+    if (frappe.meta.has_field(childDoctype, f)) return f;
+  }
+  return "value";
+}
+
+function getChildUnitField(frm) {
+  const childDoctype = getChildDoctype(frm);
+  const candidates = ["units", "unit"];
+  for (const f of candidates) {
+    if (frappe.meta.has_field(childDoctype, f)) return f;
+  }
+  return "units";
+}
+
+function upsertResultParam(frm, change) {
+  const valueField = getChildValueField(frm);
+  const unitField = getChildUnitField(frm);
+
+  const igKey = _key(change.item_group);
+  const pKey = _key(change.parameter);
+
+  const rows = frm.doc.njqca_result_parameters || [];
+
+  let existing = rows.find(
+    (r) => _key(r.item_group) === igKey && _key(r.parameter) === pKey
+  );
+
+  if (existing) {
+    // ✅ update existing row
+    existing.item_group = change.item_group;
+    existing.parameter = change.parameter;
+    existing[valueField] = change.value;
+    existing[unitField] = change.units;
+  } else {
+    // ✅ add new row
+    const child = frm.add_child("njqca_result_parameters");
+    child.item_group = change.item_group;
+    child.parameter = change.parameter;
+    child[valueField] = change.value;
+    child[unitField] = change.units;
+  }
+}
+
+function applyChangesNoDuplicates(frm, changes) {
+  if (!Array.isArray(changes) || !changes.length) return;
+
+  // extra safety: last-write-wins if python sent same key twice
+  const map = {};
+  for (const c of changes) {
+    const k = _key(c.item_group) + "||" + _key(c.parameter);
+    map[k] = c;
+  }
+
+  Object.values(map).forEach((c) => upsertResultParam(frm, c));
+}
+
+/**
+ * Optional cleanup: removes duplicates already present.
+ * Keeps the LAST occurrence (latest stays).
+ */
+function dedupeChildTable(frm) {
+  const rows = frm.doc.njqca_result_parameters || [];
+  if (!rows.length) return;
+
+  const seen = new Set();
+  const kept = [];
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    const k = _key(r.item_group) + "||" + _key(r.parameter);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    kept.push(r);
+  }
+
+  kept.reverse();
+  frm.doc.njqca_result_parameters = kept;
 }

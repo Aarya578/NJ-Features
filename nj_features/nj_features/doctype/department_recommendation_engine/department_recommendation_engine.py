@@ -229,7 +229,7 @@ def update_document_field(doctype, docname, field_name, value):
 # Main execution functions (similar to assignment_rule.py)
 def apply_recommendation_rules(doc, method=None, doctype=None, name=None):
     """Main function to apply recommendation rules"""
-    
+    print("apply recommendation rules=======23456=============")
     if not doctype:
         doctype = doc.doctype
 
@@ -288,7 +288,7 @@ def bulk_apply(doctype, docnames):
     for name in docnames:
         if background:
             frappe.enqueue(
-                "your_app.department_recommendation_engine.apply_recommendation_rules",
+                "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
                 doc=None,
                 doctype=doctype,
                 name=name,

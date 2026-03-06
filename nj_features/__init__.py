@@ -1,9 +1,14 @@
-
 __version__ = '0.0.1'
 
 import socket
-import requests
-import frappe
+
+try:
+    import requests
+    import frappe
+except ImportError:
+    pass
+
+
 @frappe.whitelist()
 def verify_domain_matches_server_ip(domain: str, debug: bool = False):
     try:
@@ -15,7 +20,6 @@ def verify_domain_matches_server_ip(domain: str, debug: bool = False):
                 "error": f"Could not resolve domain: {domain}",
                 "match": False
             }
-
         return False
 
     try:
@@ -56,11 +60,8 @@ def boot_monkey_patches():
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_order"] = nj_order.create_order
         frappe.whitelisted["ecommerce_integrations.shopify.order.create_sales_order"] = nj_order.create_sales_order
 
-        #frappe.logger().info("✅ NJ Features successfully patched Shopify order methods")
-    except Exception as e:
+    except Exception:
         pass
-        #frappe.logger().error(f"❌ Failed to patch Shopify order methods: {e}")
+
 
 boot_monkey_patches()
-
-

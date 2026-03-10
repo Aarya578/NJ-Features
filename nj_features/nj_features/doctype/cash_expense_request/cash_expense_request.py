@@ -131,46 +131,47 @@ class CashExpenseRequest(Document):
 
         # Get company
         company = frappe.defaults.get_user_default("Company")
+        if not company:
+            frappe.throw("Default Company is not set")
 
-        # =============================
-        # FIND CREDIT ACCOUNT
-        # =============================
+        company_doc = frappe.get_doc("Company", company)
+
+        # Find credit account
+        credit_account = None
 
         if self.mode == "Cash":
+            credit_account = company_doc.default_cash_account
 
-            credit_account = frappe.db.get_value(
-                "Account",
-                {
-                    "company": company,
-                    "account_type": "Cash",
-                    "is_group": 0
-                },
-                "name"
-            )
-
+            if not credit_account:
+                credit_account = frappe.db.get_value(
+                    "Account",
+                    {
+                        "company": company,
+                        "account_type": "Cash",
+                        "is_group": 0
+                    },
+                    "name"
+                )
         else:
+            credit_account = company_doc.default_payable_account
 
-            credit_account = frappe.db.get_value(
-                "Account",
-                {
-                    "company": company,
-                    "root_type": "Liability",
-                    "is_group": 0,
-                    "account_type": ["!=", "Receivable"]
-                },
-                "name"
-            )
+            if not credit_account:
+                credit_account = frappe.db.get_value(
+                    "Account",
+                    {
+                        "company": company,
+                        "root_type": "Liability",
+                        "is_group": 0,
+                        "account_type": ["!=", "Receivable"]
+                    },
+                    "name"
+                )
 
         if not credit_account:
             frappe.throw("No valid Cash / Payable ledger account found")
 
-        # Ensure credit account is not group
         if frappe.db.get_value("Account", credit_account, "is_group"):
             frappe.throw(f"{credit_account} is a Group Account. Select a Ledger Account.")
-
-        # =============================
-        # CREATE JOURNAL ENTRY
-        # =============================
 
         je = frappe.get_doc({
             "doctype": "Journal Entry",
@@ -249,7 +250,5 @@ def reset_employee_expenses():
 
         doc.current_month_expense = 0
         doc.save(ignore_permissions=True)
-
-    frappe.db.commit()
 
     return "All employee expense usage reset successfully"

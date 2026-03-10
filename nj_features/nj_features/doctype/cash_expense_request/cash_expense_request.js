@@ -31,7 +31,19 @@ frappe.ui.form.on('Cash Expense Request', {
         .then(r => {
 
             if (r.message && r.message.department) {
+
                 frm.set_value("department", r.message.department);
+
+                // Fetch Cost Center from Department
+                frappe.db.get_value("Department", r.message.department, "cost_center")
+                .then(res => {
+
+                    if(res.message && res.message.cost_center){
+                        frm.set_value("cost_center", res.message.cost_center);
+                    }
+
+                });
+
             }
 
         });
@@ -58,7 +70,6 @@ frappe.ui.form.on('Cash Expense Request', {
             indicator: "green"
         });
 
-        // Reload to reflect updated backend values
         setTimeout(() => {
             frm.reload_doc();
         }, 800);

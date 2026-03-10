@@ -9,11 +9,9 @@ class CashExpenseRequest(Document):
     # =============================
 
     def validate(self):
-
         self.fetch_department()
         self.validate_receipt()
         self.check_employee_limit()
-
 
     # =============================
     # AUTO FETCH DEPARTMENT
@@ -32,7 +30,6 @@ class CashExpenseRequest(Document):
             if department:
                 self.department = department
 
-
     # =============================
     # RECEIPT VALIDATION
     # =============================
@@ -43,7 +40,6 @@ class CashExpenseRequest(Document):
 
             if not self.receipt_upload and not self.multiple_receipts:
                 frappe.throw("Receipt is mandatory for expenses above ₹1000")
-
 
     # =============================
     # BUDGET VALIDATION
@@ -74,7 +70,6 @@ class CashExpenseRequest(Document):
             frappe.throw(
                 f"Expense exceeds monthly limit. Remaining balance: ₹{remaining}"
             )
-
 
     # =============================
     # UPDATE LIMIT AFTER SUBMIT
@@ -109,7 +104,6 @@ class CashExpenseRequest(Document):
 
         frappe.db.commit()
 
-
     # =============================
     # CREATE JOURNAL ENTRY
     # =============================
@@ -121,7 +115,7 @@ class CashExpenseRequest(Document):
             return
 
         if not self.expense_category:
-            frappe.throw("Expense Category is required to create Journal Entry")
+            frappe.throw("Expense Category is required")
 
         category = frappe.get_doc(
             "Expense Category",
@@ -131,13 +125,52 @@ class CashExpenseRequest(Document):
         if not category.expense_account:
             frappe.throw("Expense Account not defined in Expense Category")
 
+        # Ensure expense account is NOT group
+        if frappe.db.get_value("Account", category.expense_account, "is_group"):
+            frappe.throw(f"{category.expense_account} is a Group Account. Select a Ledger Account.")
+
+        # Get company
         company = frappe.defaults.get_user_default("Company")
 
-        # Decide credit account
+        # =============================
+        # FIND CREDIT ACCOUNT
+        # =============================
+
         if self.mode == "Cash":
-            credit_account = "Cash - NJ"
+
+            credit_account = frappe.db.get_value(
+                "Account",
+                {
+                    "company": company,
+                    "account_type": "Cash",
+                    "is_group": 0
+                },
+                "name"
+            )
+
         else:
-            credit_account = "Employee Payable - NJ"
+
+            credit_account = frappe.db.get_value(
+                "Account",
+                {
+                    "company": company,
+                    "root_type": "Liability",
+                    "is_group": 0,
+                    "account_type": ["!=", "Receivable"]
+                },
+                "name"
+            )
+
+        if not credit_account:
+            frappe.throw("No valid Cash / Payable ledger account found")
+
+        # Ensure credit account is not group
+        if frappe.db.get_value("Account", credit_account, "is_group"):
+            frappe.throw(f"{credit_account} is a Group Account. Select a Ledger Account.")
+
+        # =============================
+        # CREATE JOURNAL ENTRY
+        # =============================
 
         je = frappe.get_doc({
             "doctype": "Journal Entry",
@@ -160,9 +193,7 @@ class CashExpenseRequest(Document):
         je.insert(ignore_permissions=True)
         je.submit()
 
-        # link JE back to request
         self.accounts_entry = je.name
-
 
 
 # ======================================

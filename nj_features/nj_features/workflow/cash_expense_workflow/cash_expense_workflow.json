@@ -1,0 +1,112 @@
+{
+ "creation": "2026-03-07 10:43:24.091549",
+ "docstatus": 0,
+ "doctype": "Workflow",
+ "document_type": "Cash Expense Request",
+ "idx": 0,
+ "is_active": 1,
+ "modified": "2026-03-07 12:50:02.454539",
+ "modified_by": "postman@mail.com",
+ "name": "Cash Expense Workflow",
+ "override_status": 0,
+ "owner": "postman@mail.com",
+ "send_email_alert": 0,
+ "states": [
+  {
+   "allow_edit": "Employee",
+   "doc_status": "0",
+   "is_optional_state": 0,
+   "state": "Draft"
+  },
+  {
+   "allow_edit": "Reporting Manager",
+   "doc_status": "0",
+   "is_optional_state": 0,
+   "state": "Submitted"
+  },
+  {
+   "allow_edit": "Accounts User",
+   "doc_status": "0",
+   "is_optional_state": 0,
+   "state": "Manager Approved"
+  },
+  {
+   "allow_edit": "Accounts Manager",
+   "doc_status": "0",
+   "is_optional_state": 0,
+   "state": "Accounts Approved"
+  },
+  {
+   "allow_edit": "Employee",
+   "doc_status": "0",
+   "is_optional_state": 0,
+   "state": "Rejected"
+  },
+  {
+   "allow_edit": "Accounts Manager",
+   "doc_status": "1",
+   "is_optional_state": 0,
+   "state": "Posted"
+  }
+ ],
+ "transitions": [
+  {
+   "action": "Submit",
+   "allow_self_approval": 0,
+   "allowed": "Employee",
+   "next_state": "Submitted",
+   "state": "Draft"
+  },
+  {
+   "action": "Approve",
+   "allow_self_approval": 0,
+   "allowed": "Reporting Manager",
+   "next_state": "Manager Approved",
+   "state": "Submitted"
+  },
+  {
+   "action": "Approve",
+   "allow_self_approval": 0,
+   "allowed": "Accounts User",
+   "next_state": "Accounts Approved",
+   "state": "Manager Approved"
+  },
+  {
+   "action": "Post",
+   "allow_self_approval": 0,
+   "allowed": "Accounts Manager",
+   "next_state": "Posted",
+   "state": "Accounts Approved"
+  },
+  {
+   "action": "Reject",
+   "allow_self_approval": 1,
+   "allowed": "Reporting Manager",
+   "next_state": "Rejected",
+   "state": "Submitted"
+  },
+  {
+   "action": "Reject",
+   "allow_self_approval": 1,
+   "allowed": "Accounts User",
+   "next_state": "Rejected",
+   "state": "Manager Approved"
+  },
+  {
+   "action": "Reject",
+   "allow_self_approval": 1,
+   "allowed": "Accounts Manager",
+   "next_state": "Rejected",
+   "state": "Accounts Approved"
+  },
+  {
+   "action": "Resubmit",
+   "allow_self_approval": 1,
+   "allowed": "Employee",
+   "next_state": "Submitted",
+   "state": "Rejected"
+  }
+ ],
+ "workflow_name": "Cash Expense Workflow",
+ "workflow_state_field": "workflow_state"
+}

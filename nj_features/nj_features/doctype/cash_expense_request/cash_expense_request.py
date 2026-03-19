@@ -136,7 +136,14 @@ class CashExpenseRequest(Document):
 
         company_doc = frappe.get_doc("Company", company)
 
+<<<<<<< HEAD
         # Find credit account
+=======
+        # =============================
+        # FIND CREDIT ACCOUNT
+        # =============================
+
+>>>>>>> 234f341e (solved merge issue)
         credit_account = None
 
         if self.mode == "Cash":
@@ -170,6 +177,10 @@ class CashExpenseRequest(Document):
         if not credit_account:
             frappe.throw("No valid Cash / Payable ledger account found")
 
+<<<<<<< HEAD
+=======
+        # Ensure credit account is not group
+>>>>>>> 234f341e (solved merge issue)
         if frappe.db.get_value("Account", credit_account, "is_group"):
             frappe.throw(f"{credit_account} is a Group Account. Select a Ledger Account.")
 

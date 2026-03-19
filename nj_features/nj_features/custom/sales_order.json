@@ -2582,7 +2582,7 @@
    "unique": 0,
    "width": null
   },
-   {
+  {
    "_assign": null,
    "_comments": null,
    "_liked_by": null,
@@ -2636,7 +2636,7 @@
    "read_only": 0,
    "read_only_depends_on": null,
    "report_hide": 0,
-   "reqd": 0,
+   "reqd": 1,
    "search_index": 0,
    "translatable": 0,
    "unique": 0,

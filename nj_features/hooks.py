@@ -35,6 +35,8 @@ doctype_js = {
     "Address": "public/js/address.js",
     "Sales Order": "public/js/sales_order.js",
     "Quotation": "public/js/quotation.js",
+    "Purchase Invoice": "public/js/purchase_invoice_override.js",
+    "Purchase Receipt":  "public/js/purchase_receipt_override.js",
 }
 
 doctype_list_js = {
@@ -189,13 +191,13 @@ scheduler_events = {
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status",
         ],
          "0 */2 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status",
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
 
         ],
 
-        # EVER 5 hours
+        # EVERY 59 MINUTES
         # Update Shopify status
-        "0 */5 * * *": [
+        "*/59 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
         ],
 

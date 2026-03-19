@@ -445,99 +445,402 @@ def awb_number_tracking_status():
         "total": len(docs)
     }
 
+# def update_status_in_shopify():
+#     token = "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"
+#     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
+
+#     # Fetch all Delivery Charges
+#     delivery_charges = frappe.get_all("Delivery Charges", fields=["name", "sales_order", "remark_status"])
+
+#     for dc in delivery_charges:
+#         shopify_order_number = frappe.db.get_value("Sales Order", dc.sales_order, "shopify_order_number")
+#         if not shopify_order_number:
+#             continue
+
+#         fulfillment_url = f"{base_url}/orders/{shopify_order_number}/fulfillments.json"
+#         headers = {
+#             "X-Shopify-Access-Token": token,
+#             "Content-Type": "application/json"
+#         }
+
+#         try:
+#             get_response = requests.get(fulfillment_url, headers=headers)
+
+#             # Check if the response is valid JSON
+#             if get_response.status_code != 200:
+#                 frappe.logger().error(f"[{dc.name}] Shopify response status: {get_response.status_code}, body: {get_response.text}")
+#                 continue
+
+#             if "application/json" not in get_response.headers.get("Content-Type", ""):
+#                 frappe.logger().error(f"[{dc.name}] Invalid Content-Type. Response: {get_response.text}")
+#                 continue
+
+#             try:
+#                 fulfillments = get_response.json().get("fulfillments", [])
+#                 # print("fulfillments===================================",fulfillments)
+#             except json.JSONDecodeError:
+#                 frappe.logger().error(f"[{dc.name}] Failed to parse JSON. Raw Response: {get_response.text}")
+#                 continue
+
+#             if not fulfillments:
+#                 continue
+
+#             fulfillment = fulfillments[0]
+#             fulfillment_id = fulfillment.get("id")
+#             if not fulfillment_id:
+#                 continue
+
+#             shipment_status_raw = fulfillment.get("shipment_status")
+#             shipment_status = shipment_status_raw.lower() if shipment_status_raw else ""
+
+#             if shipment_status == "delivered":
+#                 continue
+
+#             shopify_delivery_status = frappe.db.get_value(
+#                 "Shopify Status Update",
+#                 {
+#                     "parent": "Logistics Settings",
+#                     "shiprocket_status": dc.remark_status
+#                 },
+#                 "shopify_delivery_status"
+#             )
+#             print("shopify_delivery_status=================================",shopify_delivery_status)
+
+#             if not shopify_delivery_status:
+#                 logistics_settings = frappe.get_doc("Logistics Settings")
+#                 for row in logistics_settings.shopify_status_update:
+#                     if (
+#                         row.shiprocket_status and
+#                         dc.remark_status and
+#                         row.shiprocket_status.strip().lower() == dc.remark_status.strip().lower()
+#                     ):
+#                         shopify_delivery_status = row.shopify_delivery_status
+#                         break
+
+#             if not shopify_delivery_status:
+#                 frappe.logger().warning(f"[{dc.name}] No Shopify delivery status mapped for remark_status: '{dc.remark_status}'")
+#                 continue
+
+#             post_url = f"{base_url}/orders/{shopify_order_number}/fulfillments/{fulfillment_id}/events.json"
+#             post_body = {
+#                 "event": {
+#                     "status": shopify_delivery_status.strip().lower().replace(" ", "_")
+
+#                 }
+#             }
+
+#             post_response = requests.post(post_url, headers=headers, json=post_body)
+#             if post_response.status_code != 201:
+#                 frappe.logger().error(f"[{dc.name}] Failed to post fulfillment event. Status: {post_response.status_code}, Response: {post_response.text}")
+#                 continue
+
+#             post_result = post_response.json()
+#             print("post second api data==========================================", post_result)
+
+#         except requests.exceptions.RequestException as e:
+#             frappe.logger().error(f"[{dc.name}] Shopify API connection error: {str(e)}")
+#             continue
+
+
+# def update_status_in_shopify():
+#     """
+#     Scheduler entry point.
+#     Fetch limited Delivery Charges and enqueue each separately.
+#     """
+
+#     delivery_charges = frappe.get_all(
+#         "Delivery Charges",
+#         filters={
+#             "remark_status": ["is", "set"],
+#             "shopify_status_synced": 0   # Add this custom checkbox field (recommended)
+#         },
+#         fields=["name"],
+#         limit_page_length=20  # Process only 20 per run
+#     )
+
+#     for dc in delivery_charges:
+#         frappe.enqueue(
+#             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.process_single_delivery_charge",
+#             queue="short",
+#             timeout=180,
+#             dc_name=dc.name
+#         )
+
+# import frappe
+# import requests
+
+
+# def process_single_delivery_charge(dc_name):
+#     try:
+#         print(f"\n===== Processing Delivery Charge: {dc_name} =====")
+#         frappe.logger().info(f"Processing Delivery Charge: {dc_name}")
+
+#         dc = frappe.get_doc("Delivery Charges", dc_name)
+
+#         # 🔴 Hardcoded token (testing only)
+#         token = "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"
+
+#         base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
+
+#         shopify_order_number = frappe.db.get_value(
+#             "Sales Order",
+#             dc.sales_order,
+#             "shopify_order_number"
+#         )
+
+#         if not shopify_order_number:
+#             print(f"[{dc.name}] No Shopify order number found")
+#             frappe.logger().error(f"[{dc.name}] No Shopify order number found")
+#             return
+
+#         print(f"[{dc.name}] Shopify Order Number: {shopify_order_number}")
+#         frappe.logger().info(f"[{dc.name}] Shopify Order Number: {shopify_order_number}")
+
+#         fulfillment_url = f"{base_url}/orders/{shopify_order_number}/fulfillments.json"
+
+#         headers = {
+#             "X-Shopify-Access-Token": token,
+#             "Content-Type": "application/json"
+#         }
+
+#         # ✅ GET Fulfillments
+#         print(f"[{dc.name}] Calling Shopify GET API")
+#         frappe.logger().info(f"[{dc.name}] Calling Shopify GET API")
+
+#         get_response = requests.get(
+#             fulfillment_url,
+#             headers=headers,
+#             timeout=15
+#         )
+
+#         print(f"[{dc.name}] GET Status Code: {get_response.status_code}")
+#         frappe.logger().info(f"[{dc.name}] GET Status Code: {get_response.status_code}")
+
+#         if get_response.status_code != 200:
+#             print(f"[{dc.name}] Shopify GET failed: {get_response.text}")
+#             frappe.logger().error(f"[{dc.name}] Shopify GET failed: {get_response.text}")
+#             return
+
+#         fulfillments = get_response.json().get("fulfillments", [])
+
+#         if not fulfillments:
+#             print(f"[{dc.name}] No fulfillments found")
+#             frappe.logger().warning(f"[{dc.name}] No fulfillments found")
+#             return
+
+#         fulfillment = fulfillments[0]
+#         fulfillment_id = fulfillment.get("id")
+
+#         print(f"[{dc.name}] Fulfillment ID: {fulfillment_id}")
+#         frappe.logger().info(f"[{dc.name}] Fulfillment ID: {fulfillment_id}")
+
+#         shipment_status_raw = fulfillment.get("shipment_status")
+#         shipment_status = shipment_status_raw.lower() if shipment_status_raw else ""
+
+#         print(f"[{dc.name}] Shipment Status: {shipment_status}")
+#         frappe.logger().info(f"[{dc.name}] Shipment Status: {shipment_status}")
+
+#         # Skip delivered
+#         if shipment_status == "delivered":
+#             print(f"[{dc.name}] Already delivered. Marking synced.")
+#             frappe.logger().info(f"[{dc.name}] Already delivered. Marking synced.")
+#             frappe.db.set_value("Delivery Charges", dc.name, "shopify_status_synced", 1)
+#             return
+
+#         # 🔎 Mapping status
+#         shopify_delivery_status = frappe.db.get_value(
+#             "Shopify Status Update",
+#             {
+#                 "parent": "Logistics Settings",
+#                 "shiprocket_status": dc.remark_status
+#             },
+#             "shopify_delivery_status"
+#         )
+
+#         if not shopify_delivery_status:
+#             print(f"[{dc.name}] No mapping found for remark_status: {dc.remark_status}")
+#             frappe.logger().warning(
+#                 f"[{dc.name}] No mapping found for remark_status: {dc.remark_status}"
+#             )
+#             return
+
+#         print(f"[{dc.name}] Mapped Shopify Status: {shopify_delivery_status}")
+#         frappe.logger().info(f"[{dc.name}] Mapped Shopify Status: {shopify_delivery_status}")
+
+#         post_url = f"{base_url}/orders/{shopify_order_number}/fulfillments/{fulfillment_id}/events.json"
+
+#         post_body = {
+#             "event": {
+#                 "status": shopify_delivery_status.strip().lower().replace(" ", "_")
+#             }
+#         }
+
+#         # ✅ POST Fulfillment Event
+#         print(f"[{dc.name}] Calling Shopify POST API")
+#         frappe.logger().info(f"[{dc.name}] Calling Shopify POST API")
+
+#         post_response = requests.post(
+#             post_url,
+#             headers=headers,
+#             json=post_body,
+#             timeout=15
+#         )
+
+#         print(f"[{dc.name}] POST Status Code: {post_response.status_code}")
+#         frappe.logger().info(f"[{dc.name}] POST Status Code: {post_response.status_code}")
+
+#         if post_response.status_code != 201:
+#             print(f"[{dc.name}] Shopify POST failed: {post_response.text}")
+#             frappe.logger().error(
+#                 f"[{dc.name}] Shopify POST failed: {post_response.text}"
+#             )
+#             return
+
+#         frappe.db.set_value("Delivery Charges", dc.name, "shopify_status_synced", 1)
+
+#         print(f"[{dc.name}] ✅ Shopify status updated successfully")
+#         frappe.logger().info(f"[{dc.name}] Shopify status updated successfully")
+
+#     except requests.exceptions.Timeout:
+#         print(f"[{dc_name}] Shopify request timed out")
+#         frappe.logger().error(f"[{dc_name}] Shopify request timed out")
+
+#     except requests.exceptions.RequestException as e:
+#         print(f"[{dc_name}] Shopify connection error: {str(e)}")
+#         frappe.logger().error(f"[{dc_name}] Shopify connection error: {str(e)}")
+
+#     except Exception as e:
+#         print(f"[{dc_name}] Unexpected error: {str(e)}")
+#         frappe.logger().error(f"[{dc_name}] Unexpected error: {str(e)}")
 def update_status_in_shopify():
     token = "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"
     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 
-    # Fetch all Delivery Charges
-    delivery_charges = frappe.get_all("Delivery Charges", fields=["name", "sales_order", "remark_status"])
+    BATCH_SIZE = 50
+    ALREADY_DONE_STATUSES = {"delivered"}
+
+    delivery_charges = frappe.get_all(
+        "Delivery Charges",
+        filters={"remark_status": ["!=", ""], "shopify_status_synced": 0},
+        fields=["name", "sales_order", "remark_status"],
+        limit=BATCH_SIZE,
+        order_by="modified asc"
+    )
+
+    print(f"Total Delivery Charges to process: {len(delivery_charges)}")
+
+    # Pre-fetch all Shopify status mappings ONCE
+    logistics_settings = frappe.get_doc("Logistics Settings")
+    status_map = {
+        row.shiprocket_status.strip().lower(): row.shopify_delivery_status
+        for row in logistics_settings.shopify_status_update
+        if row.shiprocket_status
+    }
+
+    print(f"Status Map Loaded: {status_map}")
+
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+
+    session = requests.Session()
 
     for dc in delivery_charges:
+        print(f"\n--- Processing: {dc.name} | Sales Order: {dc.sales_order} | Remark Status: {dc.remark_status} ---")
+
         shopify_order_number = frappe.db.get_value("Sales Order", dc.sales_order, "shopify_order_number")
+        print(f"[{dc.name}] Shopify Order Number: {shopify_order_number}")
+
         if not shopify_order_number:
+            print(f"[{dc.name}] Skipping — no Shopify order number found")
             continue
 
-        fulfillment_url = f"{base_url}/orders/{shopify_order_number}/fulfillments.json"
-        headers = {
-            "X-Shopify-Access-Token": token,
-            "Content-Type": "application/json"
-        }
+        shopify_delivery_status = status_map.get(
+            dc.remark_status.strip().lower() if dc.remark_status else ""
+        )
+        print(f"[{dc.name}] Mapped Shopify Delivery Status: {shopify_delivery_status}")
+
+        if not shopify_delivery_status:
+            print(f"[{dc.name}] Skipping — no status mapped for remark_status: '{dc.remark_status}'")
+            frappe.logger().warning(f"[{dc.name}] No status mapped for: '{dc.remark_status}'")
+            continue
 
         try:
-            get_response = requests.get(fulfillment_url, headers=headers)
+            # GET fulfillments
+            fulfillment_url = f"{base_url}/orders/{shopify_order_number}/fulfillments.json"
+            print(f"[{dc.name}] GET Request URL: {fulfillment_url}")
+            get_response = session.get(fulfillment_url, headers=headers, timeout=15)
+            print(f"[{dc.name}] GET Response Status: {get_response.status_code}")
 
-            # Check if the response is valid JSON
             if get_response.status_code != 200:
-                frappe.logger().error(f"[{dc.name}] Shopify response status: {get_response.status_code}, body: {get_response.text}")
-                continue
-
-            if "application/json" not in get_response.headers.get("Content-Type", ""):
-                frappe.logger().error(f"[{dc.name}] Invalid Content-Type. Response: {get_response.text}")
+                print(f"[{dc.name}] GET failed — Status: {get_response.status_code}, Body: {get_response.text}")
+                frappe.logger().error(f"[{dc.name}] GET failed: {get_response.status_code}")
                 continue
 
             try:
                 fulfillments = get_response.json().get("fulfillments", [])
-                # print("fulfillments===================================",fulfillments)
+                print(f"[{dc.name}] Fulfillments found: {len(fulfillments)}")
             except json.JSONDecodeError:
+                print(f"[{dc.name}] Failed to parse JSON. Raw Response: {get_response.text}")
                 frappe.logger().error(f"[{dc.name}] Failed to parse JSON. Raw Response: {get_response.text}")
                 continue
 
             if not fulfillments:
+                print(f"[{dc.name}] Skipping — no fulfillments found")
                 continue
 
             fulfillment = fulfillments[0]
             fulfillment_id = fulfillment.get("id")
+            print(f"[{dc.name}] Fulfillment ID: {fulfillment_id}")
+
             if not fulfillment_id:
+                print(f"[{dc.name}] Skipping — no fulfillment ID")
                 continue
 
-            shipment_status_raw = fulfillment.get("shipment_status")
-            shipment_status = shipment_status_raw.lower() if shipment_status_raw else ""
+            shipment_status = (fulfillment.get("shipment_status") or "").lower()
+            print(f"[{dc.name}] Current Shipment Status: {shipment_status}")
 
-            if shipment_status == "delivered":
+            if shipment_status in ALREADY_DONE_STATUSES:
+                print(f"[{dc.name}] Already delivered — marking as synced and skipping")
+                frappe.db.set_value("Delivery Charges", dc.name, "shopify_status_synced", 1)
+                frappe.db.commit()
                 continue
 
-            shopify_delivery_status = frappe.db.get_value(
-                "Shopify Status Update",
-                {
-                    "parent": "Logistics Settings",
-                    "shiprocket_status": dc.remark_status
-                },
-                "shopify_delivery_status"
-            )
-            print("shopify_delivery_status=================================",shopify_delivery_status)
-
-            if not shopify_delivery_status:
-                logistics_settings = frappe.get_doc("Logistics Settings")
-                for row in logistics_settings.shopify_status_update:
-                    if (
-                        row.shiprocket_status and
-                        dc.remark_status and
-                        row.shiprocket_status.strip().lower() == dc.remark_status.strip().lower()
-                    ):
-                        shopify_delivery_status = row.shopify_delivery_status
-                        break
-
-            if not shopify_delivery_status:
-                frappe.logger().warning(f"[{dc.name}] No Shopify delivery status mapped for remark_status: '{dc.remark_status}'")
-                continue
-
+            # POST fulfillment event
             post_url = f"{base_url}/orders/{shopify_order_number}/fulfillments/{fulfillment_id}/events.json"
             post_body = {
                 "event": {
                     "status": shopify_delivery_status.strip().lower().replace(" ", "_")
-
                 }
             }
+            print(f"[{dc.name}] POST Request URL: {post_url}")
+            print(f"[{dc.name}] POST Request Body: {post_body}")
 
-            post_response = requests.post(post_url, headers=headers, json=post_body)
+            post_response = session.post(post_url, headers=headers, json=post_body, timeout=15)
+            print(f"[{dc.name}] POST Response Status: {post_response.status_code}")
+            print(f"[{dc.name}] POST Response Body: {post_response.text}")
+
             if post_response.status_code != 201:
-                frappe.logger().error(f"[{dc.name}] Failed to post fulfillment event. Status: {post_response.status_code}, Response: {post_response.text}")
+                print(f"[{dc.name}] POST failed — Status: {post_response.status_code}, Body: {post_response.text}")
+                frappe.logger().error(f"[{dc.name}] POST failed: {post_response.status_code} — {post_response.text}")
                 continue
 
-            post_result = post_response.json()
-            print("post second api data==========================================", post_result)
+            print(f"[{dc.name}] Successfully synced to Shopify with status: {shopify_delivery_status}")
+            frappe.logger().info(f"[{dc.name}] Successfully synced to Shopify with status: {shopify_delivery_status}")
 
+            # Mark as synced
+            frappe.db.set_value("Delivery Charges", dc.name, "shopify_status_synced", 1)
+            frappe.db.commit()
+            print(f"[{dc.name}] Marked as shopify_status_synced = 1")
+
+        except requests.exceptions.Timeout:
+            print(f"[{dc.name}] Timeout on Shopify API")
+            frappe.logger().error(f"[{dc.name}] Timeout on Shopify API")
+            continue
         except requests.exceptions.RequestException as e:
-            frappe.logger().error(f"[{dc.name}] Shopify API connection error: {str(e)}")
+            print(f"[{dc.name}] Request error: {str(e)}")
+            frappe.logger().error(f"[{dc.name}] Request error: {str(e)}")
             continue
 
+    print(f"\n=== update_status_in_shopify completed ===")

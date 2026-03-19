@@ -189,13 +189,13 @@ scheduler_events = {
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status",
         ],
          "0 */2 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status",
 
         ],
 
-        # EVERY 59 MINUTES
+        # EVER 5 hours
         # Update Shopify status
-        "*/59 * * * *": [
+        "0 */5 * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
         ],
 

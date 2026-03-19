@@ -21,7 +21,7 @@ from ecommerce_integrations.shopify.constants import (
 from ecommerce_integrations.utils.price_list import get_dummy_price_list
 from nj_features.overrides.customer import ShopifyCustomer
 
-logger = frappe.logger('NewOrder', allow_site=True, file_count=1)
+logger = frappe.logger('SHopifyNJOrder', allow_site=True, file_count=1)
 def sync_sales_order(payload, request_id=None):
     order = payload
     frappe.set_user("Administrator")
@@ -109,155 +109,306 @@ def get_latest_customer_addresses(customer_name):
         'billing_address': billing_address[0].name if billing_address else None,
         'shipping_address': shipping_address[0].name if shipping_address else None
     }
-def create_sales_order(shopify_order, setting, company=None):   
-    logger.info(f"shopify_order ====from njfeatures====316======{shopify_order}")      
+# def create_sales_order(shopify_order, setting, company=None):   
+#     logger.info(f"shopify_order ====from njfeatures====316======{shopify_order}")      
+#     customer = setting.default_customer
+#     if customer_id := shopify_order.get("customer", {}).get("id"):
+#         customer = frappe.db.get_value("Customer", {CUSTOMER_ID_FIELD: customer_id}, "name")
+    
+#     so = frappe.db.get_value("Sales Order", {ORDER_ID_FIELD: shopify_order.get("id")}, "name")
+#     if not so:
+#         # Determine naming series based on tags
+#         naming_series = setting.sales_order_series or "SO-Shopify-"
+        
+#         # Check for specific tags in the order
+#         tags = shopify_order.get("tags", "")
+#         is_snapmint = False
+#         snapmint_id = None
+        
+#         if tags:
+#             tags_list = [tag.strip().lower() for tag in tags.split(",")]
+#             # Check for any of the specified tags
+#             special_tags = ["snapmint_emi_str"]
+#             if all(tag in tags_list for tag in special_tags):
+#                 naming_series = "SO-Snapmint-"
+#                 is_snapmint = True
+                
+#                 # Extract Snapmint ID from tags (format: snapmint_XXXXXXXX)
+#                 for tag in tags_list:
+#                     if tag.startswith("snapmint_") and tag != "snapmint_emi_str":
+#                         snapmint_id = tag.replace("snapmint_", "")
+#                         break
+        
+#         # FIXED: Pass shipping_lines to get_order_items
+#         # items = get_order_items(
+#         #     shopify_order.get("line_items"),
+#         #     setting,
+#         #     getdate(shopify_order.get("created_at")),
+#         #     taxes_inclusive=shopify_order.get("taxes_included"),
+#         # )
+#         items = get_order_items(
+#             shopify_order.get("line_items"),
+#             setting,
+#             getdate(shopify_order.get("created_at")),
+#             taxes_inclusive=shopify_order.get("taxes_included"),
+#             shopify_response=shopify_order  # Pass the full order so we can check coupons
+#         )
+
+#         if not items:
+#             message = (
+#                 "Following items exist in the Shopify order but relevant records were "
+#                 "not found in the Shopify Product Master"
+#             )
+#             product_not_exists = [] # TODO: Fix missing items
+#             message += "\n" + ", ".join(product_not_exists)
+#             create_shopify_log(status="Error", exception=message, rollback=True)
+#             return ""
+            
+#         # taxes = get_order_taxes(shopify_order, setting, items)
+#         taxes = get_order_taxes(shopify_order, setting, items)
+
+#         # Determine if the order should be marked as COD
+#         is_cod = 1 if shopify_order.get("financial_status") == "partially_paid" else 0     
+#         payment_id = shopify_order.get("source_identifier")
+#         if is_snapmint and snapmint_id:
+#             payment_id = snapmint_id
+        
+#         # Get the latest addresses for the customer
+#         latest_addresses = get_latest_customer_addresses(customer)
+#         logger.info(f"latest_addresses ========316======{latest_addresses}")
+        
+#         so_data = {
+#             "doctype": "Sales Order",
+#             "naming_series": naming_series,
+#             ORDER_ID_FIELD: str(shopify_order.get("id")),
+#             ORDER_NUMBER_FIELD: shopify_order.get("name"),
+#             "customer": customer,
+#             "transaction_date": getdate(shopify_order.get("created_at")) or nowdate(),
+#             "delivery_date": getdate(shopify_order.get("created_at")) or nowdate(),
+#             "company": setting.company,
+#             "selling_price_list": get_dummy_price_list(),
+#             "ignore_pricing_rule": 1,
+#             "items": items,
+#             "taxes": taxes,
+#             "payment_id": payment_id,
+#             "sale_type": shopify_order.get("sale_type") or "NJ-Website-B2C",
+#             "shopify_order_id": str(shopify_order.get("order_number", "")),
+#             "total_outstanding": str(shopify_order.get("total_outstanding", "")),
+#             "shopify_order_number": str(shopify_order.get("id", "")),
+#             "sales_channel":"Shopify",
+#             "is_cod": is_cod,
+#             # "taxes_and_charges": setting.default_taxes_and_charges
+            
+#         }
+
+    
+#         # Set the latest addresses if available
+#         if latest_addresses['billing_address']:
+#             so_data["customer_address"] = latest_addresses['billing_address']
+        
+#         if latest_addresses['shipping_address']:
+#             so_data["shipping_address_name"] = latest_addresses['shipping_address']
+        
+#         so = frappe.get_doc(so_data)
+#         # logger.info(f"so_data ========316======{so_data}")
+           
+#         if company:
+#             so.update({"company": company, "status": "Draft"})
+        
+#         nj_setting_value = frappe.db.get_value(
+#             "NJ Settings", 
+#             {"parameter": "sale_type"}, 
+#             "value"
+#         )
+#         # Skip if sale_type doesn't match NJ setting
+#         if so.sale_type != nj_setting_value:
+#             return
+#         logger.info(f"so_data ========316======{so_data.payment_id}")
+#         if so.payment_id:
+#             existing_so = frappe.db.get_value(
+#                 "Sales Order",
+#                 {
+#                     "payment_id": so.payment_id,
+#                     "docstatus": 1,
+#                     "name": ["!=", so.name]  # exclude self
+#                 },
+#                 "name"
+#             )
+#             logger.info(f"existing_so ========316======{existing_so}")
+
+#             if existing_so:
+#                 frappe.throw(
+#                     f"Payment ID '{so.payment_id}' is already used in Sales Order: {existing_so}"
+#                 )
+#             else:
+#                 so.approve = 1
+        
+#         so.flags.ignore_mandatory = True
+#         so.flags.shopify_order_json = json.dumps(shopify_order)
+        
+#         # Fetch submission setting from NJ Settings
+#         so_submission_rqd = frappe.db.get_value("NJ Settings", {"parameter": "so_shopify_submission"}, "value")
+#         if int(so_submission_rqd or 0) == 1:
+#             so.save(ignore_permissions=True)
+#             so.submit()
+        
+#         if shopify_order.get("note"):
+#             so.add_comment(text=f"Order Note: {shopify_order.get('note')}")
+#     else:
+#         so = frappe.get_doc("Sales Order", so)
+    
+#     return so
+def create_sales_order(shopify_order, setting, company=None):
+
+    logger.info(f"shopify_order ====from njfeatures====316======{shopify_order}")
+
     customer = setting.default_customer
+
     if customer_id := shopify_order.get("customer", {}).get("id"):
         customer = frappe.db.get_value("Customer", {CUSTOMER_ID_FIELD: customer_id}, "name")
-    
-    so = frappe.db.get_value("Sales Order", {ORDER_ID_FIELD: shopify_order.get("id")}, "name")
-    if not so:
-        # Determine naming series based on tags
-        naming_series = setting.sales_order_series or "SO-Shopify-"
-        
-        # Check for specific tags in the order
-        tags = shopify_order.get("tags", "")
-        is_snapmint = False
-        snapmint_id = None
-        
-        if tags:
-            tags_list = [tag.strip().lower() for tag in tags.split(",")]
-            # Check for any of the specified tags
-            special_tags = ["snapmint_emi_str"]
-            if all(tag in tags_list for tag in special_tags):
-                naming_series = "SO-Snapmint-"
-                is_snapmint = True
-                
-                # Extract Snapmint ID from tags (format: snapmint_XXXXXXXX)
-                for tag in tags_list:
-                    if tag.startswith("snapmint_") and tag != "snapmint_emi_str":
-                        snapmint_id = tag.replace("snapmint_", "")
-                        break
-        
-        # FIXED: Pass shipping_lines to get_order_items
-        # items = get_order_items(
-        #     shopify_order.get("line_items"),
-        #     setting,
-        #     getdate(shopify_order.get("created_at")),
-        #     taxes_inclusive=shopify_order.get("taxes_included"),
-        # )
-        items = get_order_items(
-            shopify_order.get("line_items"),
-            setting,
-            getdate(shopify_order.get("created_at")),
-            taxes_inclusive=shopify_order.get("taxes_included"),
-            shopify_response=shopify_order  # Pass the full order so we can check coupons
+
+    # Check if Shopify order already exists
+    existing_so = frappe.db.get_value(
+        "Sales Order",
+        {ORDER_ID_FIELD: str(shopify_order.get("id"))},
+        "name"
+    )
+
+    if existing_so:
+        return frappe.get_doc("Sales Order", existing_so)
+
+    naming_series = setting.sales_order_series or "SO-Shopify-"
+
+    tags = shopify_order.get("tags", "")
+    tags_list = [tag.strip().lower() for tag in tags.split(",")] if tags else []
+
+    is_snapmint = False
+    snapmint_id = None
+
+    # Detect Snapmint order
+    if "snapmint_emi_str" in tags_list:
+        naming_series = "SO-Snapmint-"
+        is_snapmint = True
+
+        for tag in tags_list:
+            if tag.startswith("snapmint_") and tag not in ["snapmint", "snapmint_emi_str"]:
+                snapmint_id = tag.replace("snapmint_", "")
+                break
+
+    # Get order items
+    items = get_order_items(
+        shopify_order.get("line_items"),
+        setting,
+        getdate(shopify_order.get("created_at")),
+        taxes_inclusive=shopify_order.get("taxes_included"),
+        shopify_response=shopify_order
+    )
+
+    if not items:
+        message = (
+            "Following items exist in the Shopify order but relevant records were "
+            "not found in the Shopify Product Master"
+        )
+        create_shopify_log(status="Error", exception=message, rollback=True)
+        return ""
+
+    taxes = get_order_taxes(shopify_order, setting, items)
+
+    # COD detection
+    is_cod = 1 if shopify_order.get("financial_status") == "partially_paid" else 0
+
+    payment_id = shopify_order.get("source_identifier")
+
+    if is_snapmint and snapmint_id:
+        payment_id = snapmint_id
+
+    logger.info(f"Payment ID used for Sales Order: {payment_id}")
+
+    # Check duplicate payment_id only for submitted documents
+    if payment_id:
+
+        existing_payment_so = frappe.db.exists(
+            "Sales Order",
+            {
+                "payment_id": payment_id,
+                "docstatus": 1
+            }
         )
 
-        if not items:
-            message = (
-                "Following items exist in the Shopify order but relevant records were "
-                "not found in the Shopify Product Master"
-            )
-            product_not_exists = [] # TODO: Fix missing items
-            message += "\n" + ", ".join(product_not_exists)
-            create_shopify_log(status="Error", exception=message, rollback=True)
-            return ""
-            
-        # taxes = get_order_taxes(shopify_order, setting, items)
-        taxes = get_order_taxes(shopify_order, setting, items)
-
-        # Determine if the order should be marked as COD
-        is_cod = 1 if shopify_order.get("financial_status") == "partially_paid" else 0     
-        payment_id = shopify_order.get("source_identifier")
-        if is_snapmint and snapmint_id:
-            payment_id = snapmint_id
-        
-        # Get the latest addresses for the customer
-        latest_addresses = get_latest_customer_addresses(customer)
-        logger.info(f"latest_addresses ========316======{latest_addresses}")
-        
-        so_data = {
-            "doctype": "Sales Order",
-            "naming_series": naming_series,
-            ORDER_ID_FIELD: str(shopify_order.get("id")),
-            ORDER_NUMBER_FIELD: shopify_order.get("name"),
-            "customer": customer,
-            "transaction_date": getdate(shopify_order.get("created_at")) or nowdate(),
-            "delivery_date": getdate(shopify_order.get("created_at")) or nowdate(),
-            "company": setting.company,
-            "selling_price_list": get_dummy_price_list(),
-            "ignore_pricing_rule": 1,
-            "items": items,
-            "taxes": taxes,
-            "payment_id": payment_id,
-            "sale_type": shopify_order.get("sale_type") or "NJ-Website-B2C",
-            "shopify_order_id": str(shopify_order.get("order_number", "")),
-            "total_outstanding": str(shopify_order.get("total_outstanding", "")),
-            "shopify_order_number": str(shopify_order.get("id", "")),
-            "sales_channel":"Shopify",
-            "is_cod": is_cod,
-            # "taxes_and_charges": setting.default_taxes_and_charges
-            
-        }
-
-    
-        # Set the latest addresses if available
-        if latest_addresses['billing_address']:
-            so_data["customer_address"] = latest_addresses['billing_address']
-        
-        if latest_addresses['shipping_address']:
-            so_data["shipping_address_name"] = latest_addresses['shipping_address']
-        
-        so = frappe.get_doc(so_data)
-        # logger.info(f"so_data ========316======{so_data}")
-           
-        if company:
-            so.update({"company": company, "status": "Draft"})
-        
-        nj_setting_value = frappe.db.get_value(
-            "NJ Settings", 
-            {"parameter": "sale_type"}, 
-            "value"
-        )
-        # Skip if sale_type doesn't match NJ setting
-        if so.sale_type != nj_setting_value:
-            return
-
-        if so.payment_id:
-            existing_so = frappe.db.get_value(
-                "Sales Order",
-                {
-                    "payment_id": so.payment_id,
-                    "docstatus": 1,
-                    "name": ["!=", so.name]  # exclude self
-                },
-                "name"
+        if existing_payment_so:
+            frappe.throw(
+                f"Payment ID '{payment_id}' already used in Submitted Sales Order: {existing_payment_so}"
             )
 
-            if existing_so:
-                frappe.throw(
-                    f"Payment ID '{so.payment_id}' is already used in Sales Order: {existing_so}"
-                )
-            else:
-                so.approve = 1
-        
-        so.flags.ignore_mandatory = True
-        so.flags.shopify_order_json = json.dumps(shopify_order)
-        
-        # Fetch submission setting from NJ Settings
-        so_submission_rqd = frappe.db.get_value("NJ Settings", {"parameter": "so_shopify_submission"}, "value")
-        if int(so_submission_rqd or 0) == 1:
-            so.save(ignore_permissions=True)
-            so.submit()
-        
-        if shopify_order.get("note"):
-            so.add_comment(text=f"Order Note: {shopify_order.get('note')}")
+    latest_addresses = get_latest_customer_addresses(customer)
+
+    so_data = {
+        "doctype": "Sales Order",
+        "naming_series": naming_series,
+        ORDER_ID_FIELD: str(shopify_order.get("id")),
+        ORDER_NUMBER_FIELD: shopify_order.get("name"),
+        "customer": customer,
+        "transaction_date": getdate(shopify_order.get("created_at")) or nowdate(),
+        "delivery_date": getdate(shopify_order.get("created_at")) or nowdate(),
+        "company": setting.company,
+        "selling_price_list": get_dummy_price_list(),
+        "ignore_pricing_rule": 1,
+        "items": items,
+        "taxes": taxes,
+        "payment_id": payment_id,
+        "sale_type": shopify_order.get("sale_type") or "NJ-Website-B2C",
+        "shopify_order_id": str(shopify_order.get("order_number", "")),
+        "total_outstanding": str(shopify_order.get("total_outstanding", "")),
+        "shopify_order_number": str(shopify_order.get("id", "")),
+        "sales_channel": "Shopify",
+        "is_cod": is_cod
+    }
+
+    if latest_addresses.get("billing_address"):
+        so_data["customer_address"] = latest_addresses.get("billing_address")
+
+    if latest_addresses.get("shipping_address"):
+        so_data["shipping_address_name"] = latest_addresses.get("shipping_address")
+
+    so = frappe.get_doc(so_data)
+
+    if company:
+        so.update({
+            "company": company,
+            "status": "Draft"
+        })
+
+    nj_setting_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "sale_type"},
+        "value"
+    )
+
+    if so.sale_type != nj_setting_value:
+        return
+
+    if so.payment_id:
+        so.approve = 1
+
+    so.flags.ignore_mandatory = True
+    so.flags.shopify_order_json = json.dumps(shopify_order)
+
+    so_submission_rqd = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "so_shopify_submission"},
+        "value"
+    )
+
+    if int(so_submission_rqd or 0) == 1:
+        so.save(ignore_permissions=True)
+        so.submit()
     else:
-        so = frappe.get_doc("Sales Order", so)
-    
-    return so
+        so.save(ignore_permissions=True)
 
+    if shopify_order.get("note"):
+        so.add_comment(text=f"Order Note: {shopify_order.get('note')}")
+
+    return so
 def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopify_response=None):
     items = []
     all_product_exists = True

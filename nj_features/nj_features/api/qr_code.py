@@ -26,23 +26,44 @@ def generate_and_save_qrcode(data, format='png'):
                 encoded_data = qr_code_mapping_doc.name
             else:
                 encoded_data = qr_code_item_name
-        elif not qr_code_serial_name:
+        # elif not qr_code_serial_name:
+
+        #     sn_creation = frappe.db.get_value('Serial No', encoded_data, 'creation')
+        #     if sn_creation:
+        #         threshold_date = datetime(2025, 7, 24, 0, 0, 0)
+        #         if sn_creation < threshold_date:
+        #             return encoded_data
+            
+        #     qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
+        #     qr_code_mapping_doc.serial_no = encoded_data
+        #     qr_code_mapping_doc.doctype1 = 'Serial No'
+        #     qr_code_mapping_doc.save(ignore_permissions=True)
+
+        #     frappe.db.set_value('Serial No', encoded_data, 
+        #         {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name}, update_modified=False)
+        #     encoded_data = qr_code_mapping_doc.name
+        elif frappe.db.exists("Serial No", encoded_data):
 
             sn_creation = frappe.db.get_value('Serial No', encoded_data, 'creation')
-            if sn_creation:
-                threshold_date = datetime(2025, 7, 24, 0, 0, 0)
-                if sn_creation < threshold_date:
-                    return encoded_data
-            
+
+            threshold_date = datetime(2025, 7, 24, 0, 0, 0)
+
+            if sn_creation and sn_creation < threshold_date:
+                return encoded_data
+
             qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
             qr_code_mapping_doc.serial_no = encoded_data
             qr_code_mapping_doc.doctype1 = 'Serial No'
             qr_code_mapping_doc.save(ignore_permissions=True)
 
-            frappe.db.set_value('Serial No', encoded_data, 
-                {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name}, update_modified=False)
-            encoded_data = qr_code_mapping_doc.name
-            
+            frappe.db.set_value(
+                'Serial No',
+                encoded_data,
+                {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name},
+                update_modified=False
+            )
+
+            encoded_data = qr_code_mapping_doc.name  
         elif qr_code_serial_name:
             encoded_data = qr_code_serial_name
         

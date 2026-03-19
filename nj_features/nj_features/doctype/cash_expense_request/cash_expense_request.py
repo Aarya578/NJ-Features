@@ -14,7 +14,7 @@ class CashExpenseRequest(Document):
         self.check_employee_limit()
 
     # =============================
-    # AUTO FETCH DEPARTMENT + COST CENTER
+    # AUTO FETCH DEPARTMENT
     # =============================
 
     def fetch_department(self):
@@ -27,11 +27,6 @@ class CashExpenseRequest(Document):
 
             if department:
                 self.department = department
-                self.cost_center = frappe.db.get_value(
-                    "Department",
-                    department,
-                    "cost_center"
-                )
 
     # =============================
     # RECEIPT VALIDATION
@@ -57,9 +52,8 @@ class CashExpenseRequest(Document):
             as_dict=True
         )
 
-        # If no limit is configured, allow request creation
         if not limit_doc:
-            return
+            frappe.throw("Expense limit not set for this employee")
 
         used = limit_doc.current_month_expense or 0
         monthly_limit = limit_doc.monthly_limit or 0
@@ -75,34 +69,34 @@ class CashExpenseRequest(Document):
     # =============================
 
     def on_submit(self):
-        if self.employee:
-            limit_name = frappe.db.get_value(
-                "Employee Expense Limit",
-                {"employee": self.employee}
-            )
+        if not self.employee:
+            return
 
-            # Update only if limit record exists
-            if limit_name:
-                limit_doc = frappe.get_doc(
-                    "Employee Expense Limit",
-                    limit_name
-                )
+        limit_name = frappe.db.get_value(
+            "Employee Expense Limit",
+            {"employee": self.employee}
+        )
 
-                current_usage = limit_doc.current_month_expense or 0
-                limit_doc.current_month_expense = current_usage + (self.amount or 0)
-                limit_doc.save(ignore_permissions=True)
+        if not limit_name:
+            frappe.throw("Employee Expense Limit record missing")
+
+        limit_doc = frappe.get_doc(
+            "Employee Expense Limit",
+            limit_name
+        )
+
+        current_usage = limit_doc.current_month_expense or 0
+        limit_doc.current_month_expense = current_usage + (self.amount or 0)
+        limit_doc.save(ignore_permissions=True)
 
         # CREATE ACCOUNTING ENTRY
         self.create_journal_entry()
-
-        frappe.db.commit()
 
     # =============================
     # CREATE JOURNAL ENTRY
     # =============================
 
     def create_journal_entry(self):
-
         # prevent duplicate entries
         if self.accounts_entry:
             return
@@ -120,50 +114,59 @@ class CashExpenseRequest(Document):
 
         # Ensure expense account is NOT group
         if frappe.db.get_value("Account", category.expense_account, "is_group"):
-            frappe.throw(f"{category.expense_account} is a Group Account. Select a Ledger Account.")
+            frappe.throw(
+                f"{category.expense_account} is a Group Account. Select a Ledger Account."
+            )
 
         # Get company
-        company = self.company or frappe.defaults.get_user_default("Company")
-
+        company = frappe.defaults.get_user_default("Company")
         if not company:
-            frappe.throw("Company is required")
+            frappe.throw("Default Company is not set")
+
+        company_doc = frappe.get_doc("Company", company)
 
         # =============================
         # FIND CREDIT ACCOUNT
         # =============================
 
+        credit_account = None
+
         if self.mode == "Cash":
-            credit_account = frappe.db.get_value(
-                "Account",
-                {
-                    "company": company,
-                    "account_type": "Cash",
-                    "is_group": 0
-                },
-                "name"
-            )
+            credit_account = company_doc.default_cash_account
+
+            if not credit_account:
+                credit_account = frappe.db.get_value(
+                    "Account",
+                    {
+                        "company": company,
+                        "account_type": "Cash",
+                        "is_group": 0
+                    },
+                    "name"
+                )
         else:
-            credit_account = frappe.db.get_value(
-                "Account",
-                {
-                    "company": company,
-                    "root_type": "Liability",
-                    "is_group": 0,
-                    "account_type": ["!=", "Receivable"]
-                },
-                "name"
-            )
+            credit_account = company_doc.default_payable_account
+
+            if not credit_account:
+                credit_account = frappe.db.get_value(
+                    "Account",
+                    {
+                        "company": company,
+                        "root_type": "Liability",
+                        "is_group": 0,
+                        "account_type": ["!=", "Receivable"]
+                    },
+                    "name"
+                )
 
         if not credit_account:
             frappe.throw("No valid Cash / Payable ledger account found")
 
         # Ensure credit account is not group
         if frappe.db.get_value("Account", credit_account, "is_group"):
-            frappe.throw(f"{credit_account} is a Group Account. Select a Ledger Account.")
-
-        # =============================
-        # CREATE JOURNAL ENTRY
-        # =============================
+            frappe.throw(
+                f"{credit_account} is a Group Account. Select a Ledger Account."
+            )
 
         je = frappe.get_doc({
             "doctype": "Journal Entry",
@@ -186,8 +189,8 @@ class CashExpenseRequest(Document):
         je.insert(ignore_permissions=True)
         je.submit()
 
-        self.accounts_entry = je.name
-
+        # Persist link back to this document
+        self.db_set("accounts_entry", je.name)
 
 # ======================================
 # API → FETCH LIVE BUDGET FOR UI
@@ -195,7 +198,6 @@ class CashExpenseRequest(Document):
 
 @frappe.whitelist()
 def get_employee_budget(employee):
-
     if not employee:
         return {}
 
@@ -221,37 +223,11 @@ def get_employee_budget(employee):
 
 
 # ======================================
-# API → FETCH DEPARTMENT + COST CENTER
-# ======================================
-
-@frappe.whitelist()
-def get_employee_department_and_cost_center(employee):
-    if not employee:
-        return {}
-
-    department = frappe.db.get_value("Employee", employee, "department")
-
-    if not department:
-        return {
-            "department": None,
-            "cost_center": None
-        }
-
-    cost_center = frappe.db.get_value("Department", department, "cost_center")
-
-    return {
-        "department": department,
-        "cost_center": cost_center
-    }
-
-
-# ======================================
 # MONTHLY RESET FUNCTION
 # ======================================
 
 @frappe.whitelist()
 def reset_employee_expenses():
-
     employees = frappe.get_all(
         "Employee Expense Limit",
         fields=["name"]
@@ -262,9 +238,8 @@ def reset_employee_expenses():
             "Employee Expense Limit",
             emp.name
         )
+
         doc.current_month_expense = 0
         doc.save(ignore_permissions=True)
-
-    frappe.db.commit()
 
     return "All employee expense usage reset successfully"

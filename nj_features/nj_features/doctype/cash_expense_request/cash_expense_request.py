@@ -18,9 +18,7 @@ class CashExpenseRequest(Document):
     # =============================
 
     def fetch_department(self):
-
         if self.employee:
-
             department = frappe.db.get_value(
                 "Employee",
                 self.employee,
@@ -35,9 +33,7 @@ class CashExpenseRequest(Document):
     # =============================
 
     def validate_receipt(self):
-
         if self.amount and self.amount > 1000:
-
             if not self.receipt_upload and not self.multiple_receipts:
                 frappe.throw("Receipt is mandatory for expenses above ₹1000")
 
@@ -46,7 +42,6 @@ class CashExpenseRequest(Document):
     # =============================
 
     def check_employee_limit(self):
-
         if not self.employee:
             frappe.throw("Employee is required")
 
@@ -62,11 +57,9 @@ class CashExpenseRequest(Document):
 
         used = limit_doc.current_month_expense or 0
         monthly_limit = limit_doc.monthly_limit or 0
-
         remaining = monthly_limit - used
 
         if self.amount and self.amount > remaining:
-
             frappe.throw(
                 f"Expense exceeds monthly limit. Remaining balance: ₹{remaining}"
             )
@@ -76,7 +69,6 @@ class CashExpenseRequest(Document):
     # =============================
 
     def on_submit(self):
-
         if not self.employee:
             return
 
@@ -94,22 +86,17 @@ class CashExpenseRequest(Document):
         )
 
         current_usage = limit_doc.current_month_expense or 0
-
         limit_doc.current_month_expense = current_usage + (self.amount or 0)
-
         limit_doc.save(ignore_permissions=True)
 
         # CREATE ACCOUNTING ENTRY
         self.create_journal_entry()
-
-        frappe.db.commit()
 
     # =============================
     # CREATE JOURNAL ENTRY
     # =============================
 
     def create_journal_entry(self):
-
         # prevent duplicate entries
         if self.accounts_entry:
             return
@@ -127,7 +114,9 @@ class CashExpenseRequest(Document):
 
         # Ensure expense account is NOT group
         if frappe.db.get_value("Account", category.expense_account, "is_group"):
-            frappe.throw(f"{category.expense_account} is a Group Account. Select a Ledger Account.")
+            frappe.throw(
+                f"{category.expense_account} is a Group Account. Select a Ledger Account."
+            )
 
         # Get company
         company = frappe.defaults.get_user_default("Company")
@@ -136,14 +125,10 @@ class CashExpenseRequest(Document):
 
         company_doc = frappe.get_doc("Company", company)
 
-<<<<<<< HEAD
-        # Find credit account
-=======
         # =============================
         # FIND CREDIT ACCOUNT
         # =============================
 
->>>>>>> 234f341e (solved merge issue)
         credit_account = None
 
         if self.mode == "Cash":
@@ -177,12 +162,11 @@ class CashExpenseRequest(Document):
         if not credit_account:
             frappe.throw("No valid Cash / Payable ledger account found")
 
-<<<<<<< HEAD
-=======
         # Ensure credit account is not group
->>>>>>> 234f341e (solved merge issue)
         if frappe.db.get_value("Account", credit_account, "is_group"):
-            frappe.throw(f"{credit_account} is a Group Account. Select a Ledger Account.")
+            frappe.throw(
+                f"{credit_account} is a Group Account. Select a Ledger Account."
+            )
 
         je = frappe.get_doc({
             "doctype": "Journal Entry",
@@ -205,8 +189,8 @@ class CashExpenseRequest(Document):
         je.insert(ignore_permissions=True)
         je.submit()
 
-        self.accounts_entry = je.name
-
+        # Persist link back to this document
+        self.db_set("accounts_entry", je.name)
 
 # ======================================
 # API → FETCH LIVE BUDGET FOR UI
@@ -214,7 +198,6 @@ class CashExpenseRequest(Document):
 
 @frappe.whitelist()
 def get_employee_budget(employee):
-
     if not employee:
         return {}
 
@@ -230,7 +213,6 @@ def get_employee_budget(employee):
 
     monthly = limit.monthly_limit or 0
     used = limit.current_month_expense or 0
-
     remaining = monthly - used
 
     return {
@@ -246,14 +228,12 @@ def get_employee_budget(employee):
 
 @frappe.whitelist()
 def reset_employee_expenses():
-
     employees = frappe.get_all(
         "Employee Expense Limit",
         fields=["name"]
     )
 
     for emp in employees:
-
         doc = frappe.get_doc(
             "Employee Expense Limit",
             emp.name

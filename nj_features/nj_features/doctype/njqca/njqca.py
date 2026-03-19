@@ -2210,7 +2210,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     avg_rate,
                     count_gt_2x as count,
                     CASE
-                        WHEN (max_rate > 3 * avg_rate OR count_gt_2x >= 3 )or (Select 1 from RateValues where delta_seconds>300) THEN "Yes"
+                        WHEN (max_rate > 3 * avg_rate OR count_gt_2x >= 3 )THEN "Yes"
                         ELSE "NO"
                     END AS condition_met
                 
@@ -3770,6 +3770,9 @@ PERFORMANCE_REF_PARAM = "performance_File_Updated_name"
 TEMP_TARGET_ITEM_GROUP = "Laptop Processors"
 GAMING_TARGET_ITEM_GROUP = "Laptop RAM"
 PERFORMANCE_TARGET_ITEM_GROUP = "Laptop RAM"
+BATTERY_ITEM_GROUP = "BATTERY"
+BATTERY_BDT_PARAM = "backup_duration_cycle_1"
+BATTERY_BDT_INSPECTION_TYPE = "L2 Battery BDT"
 
 TEMP_UNIT = "°C"
 TEMP_SENSORS = [
@@ -3842,6 +3845,31 @@ PERFORMANCE_METRIC_UNITS = {
 # Helpers
 # ==========================================================
 
+def _get_doc_serial_no(doc: Document) -> str:
+    """Best-effort get serial no from NJQCA/NJ Quality Inspection doc."""
+    # try common fieldnames
+    for fn in ("serial_no", "serial", "serial_number", "serialno", "serial_no_id", "serial_no_name"):
+        try:
+            v = getattr(doc, fn, None) if hasattr(doc, fn) else (doc.get(fn) if isinstance(doc, dict) else None)
+            if v:
+                return str(v).strip()
+        except Exception:
+            continue
+
+    # fallback: sometimes serial is in meta.serial inside json, but here doc is a Frappe doc, so ignore
+    return ""
+
+
+def _has_col(doctype: str, fieldname: str) -> bool:
+    try:
+        return bool(frappe.db.has_column(f"tab{doctype}", fieldname))
+    except Exception:
+        # fallback to meta check
+        try:
+            return frappe.get_meta(doctype).has_field(fieldname)
+        except Exception:
+            return False
+
 def _key(s) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
@@ -3895,6 +3923,94 @@ def _get_row_value(row, value_field: str):
         return None
     return row.get(value_field)
 
+def _get_bios_serialno_from_serial(serial_no: str) -> str:
+    """Fetch BIOS serial number from Serial No doctype (best-effort fieldnames)."""
+    serial_no = (serial_no or "").strip()
+    if not serial_no:
+        return ""
+
+    for fn in ("bios_serial_no", "bios_serialno", "bios_serial", "bios_serial_number"):
+        try:
+            v = frappe.db.get_value("Serial No", serial_no, fn)
+            if v:
+                return str(v).strip()
+        except Exception:
+            continue
+
+    return ""
+
+
+def _get_backup_duration_cycle_1_from_bdt(bios_serialno: str):
+    """
+    Fetch latest approved L2 Battery BDT -> backup_duration_cycle_1
+    using BIOS serial match.
+    """
+    bios_serialno = (bios_serialno or "").strip()
+    if not bios_serialno:
+        return None
+
+    bios_field = None
+    if _has_col("NJQCA", "bios_serialno"):
+        bios_field = "bios_serialno"
+    elif _has_col("NJQCA", "bios_serial_no"):
+        bios_field = "bios_serial_no"
+
+    if not bios_field:
+        return None
+
+    q = f"""
+        SELECT backup_duration_cycle_1
+        FROM `tabNJQCA`
+        WHERE docstatus = 1
+          AND inspection_type = %(it)s
+          AND {bios_field} = %(bios)s
+        ORDER BY creation DESC
+        LIMIT 1
+    """
+    row = frappe.db.sql(q, {"bios": bios_serialno, "it": BATTERY_BDT_INSPECTION_TYPE}, as_dict=True)
+    if not row:
+        return None
+
+    v = row[0].get("backup_duration_cycle_1")
+    if v is None or str(v).strip() == "":
+        return None
+    return v  # keep original type (float/int/str)
+
+def _collect_battery_bdt_change(doc: Document, add_change) -> dict:
+    """
+    NO mutation. Collects last L2 Battery BDT backup_duration_cycle_1 into:
+    item_group=BATTERY, parameter=backup_duration_cycle_1
+    """
+    try:
+        serial_no = _get_doc_serial_no(doc)
+        if not serial_no:
+            return {"status": "skip", "reason": "serial_no not found on document"}
+
+        bios_sn = _get_bios_serialno_from_serial(serial_no)
+        if not bios_sn:
+            return {"status": "skip", "reason": f"BIOS serial not found for Serial No {serial_no}"}
+
+        bdt_val = _get_backup_duration_cycle_1_from_bdt(bios_sn)
+        if bdt_val is None or str(bdt_val).strip() == "":
+            return {"status": "skip", "reason": f"no backup_duration_cycle_1 found for BIOS {bios_sn}"}
+
+        # Optional: numeric normalize if you want
+        # num = _extract_float(bdt_val)
+        # value_to_write = round(num, 2) if num is not None else str(bdt_val).strip()
+
+        value_to_write = str(bdt_val).strip()
+
+        add_change(
+            BATTERY_ITEM_GROUP,
+            BATTERY_BDT_PARAM,
+            value_to_write,
+            "",  # unit (set "min" or "sec" if your field is standardized)
+        )
+
+        return {"status": "ok", "serial_no": serial_no, "bios_serial": bios_sn, "value": value_to_write}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 # ==========================================================
 # File read
@@ -4548,12 +4664,14 @@ def _collect_connectivity_changes(doc: Document, add_change) -> dict:
 # ==========================================================
 
 def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
+
     info = {
         "heavyload": {"status": "skip"},
         "y_cruncher": {"status": "skip"},
         "gaming_fps": {"status": "skip"},
         "performance": {"status": "skip"},
         "connectivity": {"status": "skip"},
+        "battery_bdt": {"status": "skip"},
     }
 
     add_change, flush_changes = _collect_upserts()
@@ -4699,13 +4817,16 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
         except Exception as e:
             info["performance"] = {"status": "error", "error": str(e)}
 
-    # -------------------------
     # CONNECTIVITY (from components)
-    # -------------------------
     try:
         info["connectivity"] = _collect_connectivity_changes(doc, add_change)
     except Exception as e:
         info["connectivity"] = {"status": "error", "error": str(e)}
+
+    print('_collect_battery_bdt_change(doc, add_change)', _collect_battery_bdt_change(doc, add_change))
+
+    # BATTERY BDT (latest backup_duration_cycle_1)
+    info["battery_bdt"] = _collect_battery_bdt_change(doc, add_change)
 
     return {"info": info, "changes": flush_changes()}
 

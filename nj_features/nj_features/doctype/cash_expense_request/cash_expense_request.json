@@ -1,0 +1,273 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-07 10:24:12.769948",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "department",
+  "expense_date",
+  "expense_category",
+  "project",
+  "cost_center",
+  "mode",
+  "amount",
+  "gst_included",
+  "vendor_name",
+  "description_section",
+  "reason",
+  "business_justification",
+  "attachments_section",
+  "receipt_upload",
+  "multiple_receipts",
+  "budget_control_section",
+  "monthly_budget",
+  "used_this_month",
+  "remaining_budget",
+  "budget_exceeded",
+  "system_fields_section",
+  "status",
+  "accounts_entry",
+  "approved_by",
+  "approval_date",
+  "current_status",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "expense_date",
+   "fieldtype": "Date",
+   "label": "Expense Date"
+  },
+  {
+   "fieldname": "expense_category",
+   "fieldtype": "Link",
+   "label": "Expense Category",
+   "options": "Expense Category"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "mode",
+   "fieldtype": "Select",
+   "label": "Mode",
+   "options": "Cash\nReimbursement"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount"
+  },
+  {
+   "default": "0",
+   "fieldname": "gst_included",
+   "fieldtype": "Check",
+   "label": "GST Included"
+  },
+  {
+   "fieldname": "vendor_name",
+   "fieldtype": "Data",
+   "label": "Vendor Name"
+  },
+  {
+   "fieldname": "description_section",
+   "fieldtype": "Section Break",
+   "label": "Description"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "business_justification",
+   "fieldtype": "Text Editor",
+   "label": "Business Justification"
+  },
+  {
+   "fieldname": "attachments_section",
+   "fieldtype": "Section Break",
+   "label": "Attachments"
+  },
+  {
+   "fieldname": "receipt_upload",
+   "fieldtype": "Attach",
+   "label": "Receipt Upload"
+  },
+  {
+   "fieldname": "multiple_receipts",
+   "fieldtype": "Attach",
+   "label": "Multiple Receipts"
+  },
+  {
+   "fieldname": "budget_control_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Control"
+  },
+  {
+   "fieldname": "monthly_budget",
+   "fieldtype": "Currency",
+   "label": "Monthly Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "used_this_month",
+   "fieldtype": "Currency",
+   "label": "Used This Month",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remaining_budget",
+   "fieldtype": "Currency",
+   "label": "Remaining Budget",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "budget_exceeded",
+   "fieldtype": "Check",
+   "label": "Budget Exceeded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "system_fields_section",
+   "fieldtype": "Section Break",
+   "label": "System Fields"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status"
+  },
+  {
+   "fieldname": "accounts_entry",
+   "fieldtype": "Link",
+   "label": "Accounts Entry",
+   "options": "Journal Entry"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User"
+  },
+  {
+   "fieldname": "approval_date",
+   "fieldtype": "Datetime",
+   "label": "Approval Date"
+  },
+  {
+   "fieldname": "current_status",
+   "fieldtype": "Select",
+   "label": "Current Status ",
+   "options": "Draft\nSubmitted\nManager Approved\nAccounts Approved\nRejected\nPosted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Cash Expense Request",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-07 12:09:03.420223",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Cash Expense Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Reporting Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

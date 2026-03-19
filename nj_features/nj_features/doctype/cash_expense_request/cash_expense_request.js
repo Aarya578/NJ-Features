@@ -23,29 +23,22 @@ frappe.ui.form.on('Cash Expense Request', {
     employee: function(frm) {
 
         if (!frm.doc.employee) {
+            frm.set_value("department", null);
+            frm.set_value("cost_center", null);
             return;
         }
 
-        // Fetch Department automatically
-        frappe.db.get_value("Employee", frm.doc.employee, "department")
-        .then(r => {
-
-            if (r.message && r.message.department) {
-
-                frm.set_value("department", r.message.department);
-
-                // Fetch Cost Center from Department
-                frappe.db.get_value("Department", r.message.department, "cost_center")
-                .then(res => {
-
-                    if(res.message && res.message.cost_center){
-                        frm.set_value("cost_center", res.message.cost_center);
-                    }
-
-                });
-
+        frappe.call({
+            method: "nj_features.nj_features.doctype.cash_expense_request.cash_expense_request.get_employee_department_and_cost_center",
+            args: {
+                employee: frm.doc.employee
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frm.set_value("department", r.message.department || null);
+                    frm.set_value("cost_center", r.message.cost_center || null);
+                }
             }
-
         });
 
         fetch_budget(frm);
@@ -76,7 +69,6 @@ frappe.ui.form.on('Cash Expense Request', {
     }
 
 });
-
 
 
 function fetch_budget(frm){

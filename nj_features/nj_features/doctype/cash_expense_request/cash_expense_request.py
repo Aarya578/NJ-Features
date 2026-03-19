@@ -14,7 +14,7 @@ class CashExpenseRequest(Document):
         self.check_employee_limit()
 
     # =============================
-    # AUTO FETCH DEPARTMENT
+    # AUTO FETCH DEPARTMENT + COST CENTER
     # =============================
 
     def fetch_department(self):
@@ -27,6 +27,11 @@ class CashExpenseRequest(Document):
 
             if department:
                 self.department = department
+                self.cost_center = frappe.db.get_value(
+                    "Department",
+                    department,
+                    "cost_center"
+                )
 
     # =============================
     # RECEIPT VALIDATION
@@ -212,6 +217,31 @@ def get_employee_budget(employee):
         "monthly_limit": monthly,
         "used": used,
         "remaining": remaining
+    }
+
+
+# ======================================
+# API → FETCH DEPARTMENT + COST CENTER
+# ======================================
+
+@frappe.whitelist()
+def get_employee_department_and_cost_center(employee):
+    if not employee:
+        return {}
+
+    department = frappe.db.get_value("Employee", employee, "department")
+
+    if not department:
+        return {
+            "department": None,
+            "cost_center": None
+        }
+
+    cost_center = frappe.db.get_value("Department", department, "cost_center")
+
+    return {
+        "department": department,
+        "cost_center": cost_center
     }
 
 

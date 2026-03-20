@@ -7,7 +7,7 @@ frappe.ui.form.on("Purchase Invoice", {
         if (!frm.doc.proof_image) return;
 
         frappe.call({
-            method: "nj_features.nj_features.nj_features.api.invoice_ocr.extract_invoice_data",
+            method: "nj_features.nj_features.api.invoice_ocr.extract_invoice_data",
             args: {
                 file_url: frm.doc.proof_image
             },

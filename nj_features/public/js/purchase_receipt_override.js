@@ -81,6 +81,8 @@ function _run_pr_invoice_scan(frm) {
 
             // Build result HTML
             let html = "<div>";
+            let hasNewPI = false;
+
             if (res.pi_list && res.pi_list.length) {
                 res.pi_list.forEach(row => {
                     const piLink = row.pi
@@ -102,6 +104,15 @@ function _run_pr_invoice_scan(frm) {
                     }
 
                     html += "</p><hr>";
+
+                    // Open each newly created PI in a new tab
+                    // (skip if PI already existed)
+                    if (row.pi && row.status !== "exists") {
+                        hasNewPI = true;
+                        setTimeout(() => {
+                            window.open(`/app/purchase-invoice/${row.pi}`, "_blank");
+                        }, 800); // slight delay so popup shows first
+                    }
                 });
             } else {
                 html += "<p>No Purchase Invoices were created.</p>";

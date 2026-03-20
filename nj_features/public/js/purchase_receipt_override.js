@@ -4,8 +4,16 @@ frappe.ui.form.on("Purchase Receipt", {
     after_save: function(frm) {
         console.log("PR after_save triggered", frm.doc.name, frm.doc.proof_image);
 
-        if (!frm.doc.proof_image) return;
-        if (frm.__pr_invoice_scan_running) return;
+        // Check if proof_image exists or the scan is already running
+        if (!frm.doc.proof_image) {
+            console.log("No proof image uploaded.");
+            return;
+        }
+        
+        if (frm.__pr_invoice_scan_running) {
+            console.log("PR invoice scan is already running.");
+            return;
+        }
 
         frm.__pr_invoice_scan_running = true;
 
@@ -19,15 +27,21 @@ frappe.ui.form.on("Purchase Receipt", {
             freeze_message: __("Reading invoice and creating Purchase Invoice..."),
             callback: function(r) {
                 console.log("PR OCR success", r);
+
+                // Reset running flag
                 frm.__pr_invoice_scan_running = false;
 
+                // Check if there was any response from the server
                 const res = r.message;
                 if (!res) {
+                    console.log("No response received from server.");
                     frappe.msgprint(__("No response received from server."));
                     return;
                 }
 
+                // Handle failure in OCR/PI creation process
                 if (!res.success) {
+                    console.log("OCR / PI creation failed", res.error);
                     frappe.msgprint({
                         title: __("OCR / PI Creation Failed"),
                         message: res.error || __("Could not process invoice automatically."),
@@ -38,6 +52,7 @@ frappe.ui.form.on("Purchase Receipt", {
 
                 let html = "";
 
+                // Display the results for the PI list
                 if (res.pi_list && res.pi_list.length) {
                     html += "<div>";
                     res.pi_list.forEach(row => {
@@ -46,6 +61,7 @@ frappe.ui.form.on("Purchase Receipt", {
                         html += `<b>Status:</b> ${row.status || "-"}<br>`;
                         html += `<b>Message:</b> ${row.message || "-"}<br>`;
 
+                        // Show warnings if there are any
                         if (row.warnings && row.warnings.length) {
                             html += "<b>Warnings:</b><ul>";
                             row.warnings.forEach(w => {
@@ -59,6 +75,7 @@ frappe.ui.form.on("Purchase Receipt", {
                     html += "</div>";
                 }
 
+                // Display the processing result in a popup
                 frappe.msgprint({
                     title: __("Purchase Invoice Processing Result"),
                     message: html || __("Processing completed."),
@@ -69,6 +86,7 @@ frappe.ui.form.on("Purchase Receipt", {
                 console.log("PR OCR error", r);
                 frm.__pr_invoice_scan_running = false;
 
+                // Handle failure in API call
                 frappe.msgprint({
                     title: __("OCR / PI Creation Failed"),
                     message: __("Could not process invoice automatically. Please create PI manually."),

@@ -10,7 +10,7 @@ frappe.ui.form.on("Purchase Receipt", {
         frm.__pr_invoice_scan_running = true;
 
         frappe.call({
-            method: "nj_features.nj_features.nj_features.api.invoice_ocr.process_pr_invoice_scan",
+            method: "nj_features.nj_features.api.invoice_ocr.process_pr_invoice_scan",
             args: {
                 pr_name: frm.doc.name,
                 file_url: frm.doc.proof_image

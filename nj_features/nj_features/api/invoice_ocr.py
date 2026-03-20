@@ -550,6 +550,27 @@ def _normalize_gst_category(value):
     return "Registered Regular"
 
 
+
+def _normalize_invoice_copy(value):
+    """
+    Map whatever OCR returns to a valid ERPNext Invoice Copy option.
+    Valid: "Original for Recipient", "Duplicate for Transporter",
+           "Duplicate for Supplier", "Triplicate for Supplier"
+    """
+    if not value:
+        return "Original for Recipient"
+    v = value.strip().lower()
+    if "original" in v:
+        return "Original for Recipient"
+    if "transporter" in v:
+        return "Duplicate for Transporter"
+    if "duplicate" in v and "supplier" in v:
+        return "Duplicate for Supplier"
+    if "triplicate" in v:
+        return "Triplicate for Supplier"
+    return "Original for Recipient"
+
+
 def _create_pi(pr, ocr_data, pi_items, po_name, file_url):
     """Create a new Purchase Invoice from PR data + OCR data"""
 
@@ -566,7 +587,7 @@ def _create_pi(pr, ocr_data, pi_items, po_name, file_url):
     pi.supplier_gst_no   = ocr_data.get("supplier_gstin") or ""
     pi.supplier_gstin    = ocr_data.get("supplier_gstin") or ""
     pi.gst_category      = _normalize_gst_category(ocr_data.get("gst_category"))
-    pi.invoice_copy      = ocr_data.get("invoice_copy") or "Original for Recipient"
+    pi.invoice_copy      = _normalize_invoice_copy(ocr_data.get("invoice_copy"))
     pi.proof_image       = file_url
 
     if pr.taxes_and_charges:

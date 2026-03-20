@@ -1660,6 +1660,8 @@ function processItemTemplate(frm) {
         if (r.message.part_data) {
           const partData = r.message.part_data;
 
+          console.log("Part Data:", partData);
+
           frm.clear_table("njqca_laptop_ram");
           frm.clear_table("njqca_laptop_processors");
           frm.clear_table("njqca_laptop_storage");

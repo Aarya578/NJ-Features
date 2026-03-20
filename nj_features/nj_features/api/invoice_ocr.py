@@ -8,6 +8,214 @@ import requests as http_requests
 from frappe.utils import today, flt
 
 # ─────────────────────────────────────────
+# FILE RESOLUTION HELPERS
+# ─────────────────────────────────────────
+
+def _resolve_file_path(file_url):
+    """
+    Convert an ERPNext file URL to an absolute disk path.
+    Handles:
+      /files/abc.png          → site/public/files/abc.png
+      /private/files/abc.png  → site/private/files/abc.png
+    Falls back to File doctype lookup.
+    """
+    if not file_url:
+        raise ValueError("No file URL provided")
+
+    site_path = frappe.get_site_path()
+
+    # Public files: /files/...
+    if file_url.startswith("/files/"):
+        candidate = os.path.join(site_path, "public", file_url.lstrip("/"))
+        if os.path.exists(candidate):
+            return candidate
+
+    # Private files: /private/files/...
+    if file_url.startswith("/private/files/"):
+        candidate = os.path.join(site_path, file_url.lstrip("/"))
+        if os.path.exists(candidate):
+            return candidate
+
+    # Fallback: look up via File doctype
+    file_docs = frappe.get_all(
+        "File",
+        filters={"file_url": file_url},
+        fields=["name"],
+        limit=1
+    )
+    if file_docs:
+        f = frappe.get_doc("File", file_docs[0].name)
+        full_path = f.get_full_path()
+        if os.path.exists(full_path):
+            return full_path
+
+    raise ValueError(f"Cannot resolve file path for URL: {file_url}")
+
+
+def _prepare_image(file_path, file_url):
+    """
+    Read image bytes from disk and determine MIME type.
+    Converts PDFs (first page) to JPEG using pdf2image if available.
+    Returns (image_bytes, mime_type)
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+
+    mime_map = {
+        ".jpg":  "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png":  "image/png",
+        ".gif":  "image/gif",
+        ".webp": "image/webp",
+    }
+
+    if ext in mime_map:
+        with open(file_path, "rb") as f:
+            return f.read(), mime_map[ext]
+
+    if ext == ".pdf":
+        try:
+            from pdf2image import convert_from_path
+            pages = convert_from_path(file_path, first_page=1, last_page=1, dpi=200)
+            if pages:
+                buf = io.BytesIO()
+                pages[0].save(buf, format="JPEG")
+                return buf.getvalue(), "image/jpeg"
+        except Exception as e:
+            frappe.log_error(title="Invoice OCR: PDF conversion failed", message=str(e))
+        raise ValueError("PDF conversion failed and no fallback available")
+
+    # Last resort: read raw bytes and guess jpeg
+    with open(file_path, "rb") as f:
+        return f.read(), "image/jpeg"
+
+
+# ─────────────────────────────────────────
+# OCR BACKENDS
+# ─────────────────────────────────────────
+
+def _extract_with_openai(image_bytes, mime_type, openai_key):
+    """
+    Send image to OpenAI GPT-4o vision and extract invoice fields.
+    Returns a dict with invoice fields.
+    """
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    prompt = """You are an invoice data extraction assistant.
+Extract the following fields from this invoice image and return ONLY valid JSON with these exact keys:
+{
+  "supplier_invoice_no": "string or null",
+  "supplier_invoice_date": "YYYY-MM-DD or null",
+  "supplier_gstin": "string or null",
+  "grand_total": number or null,
+  "total_taxes_and_charges": number or null,
+  "purchase_order_no": "string or null",
+  "gst_category": "string or null",
+  "invoice_copy": "string or null"
+}
+Return ONLY the JSON object, no explanation, no markdown."""
+
+    payload = {
+        "model": "gpt-4o",
+        "max_tokens": 500,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{b64}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    }
+
+    response = http_requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {openai_key}",
+            "Content-Type": "application/json"
+        },
+        json=payload,
+        timeout=30
+    )
+
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"].strip()
+
+    # Strip markdown code fences if present
+    content = re.sub(r"^```[a-z]*\n?", "", content)
+    content = re.sub(r"\n?```$", "", content)
+
+    return json.loads(content)
+
+
+def _extract_with_tesseract(image_bytes):
+    """
+    Fallback OCR using pytesseract.
+    Does basic regex extraction of common invoice fields.
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+
+        image = Image.open(io.BytesIO(image_bytes))
+        text = pytesseract.image_to_string(image)
+
+        result = {
+            "supplier_invoice_no": None,
+            "supplier_invoice_date": None,
+            "supplier_gstin": None,
+            "grand_total": None,
+            "total_taxes_and_charges": None,
+            "purchase_order_no": None,
+            "gst_category": None,
+            "invoice_copy": None,
+        }
+
+        # GSTIN: 15-char alphanumeric
+        gstin_match = re.search(r'\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', text)
+        if gstin_match:
+            result["supplier_gstin"] = gstin_match.group()
+
+        # Invoice number
+        inv_match = re.search(r'(?:invoice\s*(?:no|number|#)[:\s]*)([\w\-\/]+)', text, re.IGNORECASE)
+        if inv_match:
+            result["supplier_invoice_no"] = inv_match.group(1).strip()
+
+        # Date: DD/MM/YYYY or YYYY-MM-DD
+        date_match = re.search(r'\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b', text)
+        if date_match:
+            d, m, y = date_match.group(1), date_match.group(2), date_match.group(3)
+            result["supplier_invoice_date"] = f"{y}-{m}-{d}"
+
+        # Grand total
+        total_match = re.search(r'(?:grand\s*total|total\s*amount)[:\s₹]*([\d,]+\.?\d*)', text, re.IGNORECASE)
+        if total_match:
+            result["grand_total"] = float(total_match.group(1).replace(",", ""))
+
+        return result
+
+    except Exception as e:
+        frappe.log_error(title="Invoice OCR: Tesseract error", message=str(e))
+        return {}
+
+
+def _is_valid_result(result):
+    """Check if OCR result has at least one meaningful field"""
+    if not result:
+        return False
+    meaningful = ["supplier_invoice_no", "supplier_invoice_date", "supplier_gstin", "grand_total"]
+    return any(result.get(k) for k in meaningful)
+
+
+# ─────────────────────────────────────────
 # PURCHASE INVOICE AUTO-FILL (existing flow)
 # ─────────────────────────────────────────
 
@@ -88,7 +296,6 @@ def process_pr_invoice_scan(pr_name, file_url):
     5. Return list of created PIs with any warnings
     """
 
-    # Validate PR exists and is saved
     if not frappe.db.exists("Purchase Receipt", pr_name):
         frappe.throw(f"Purchase Receipt {pr_name} not found")
 
@@ -133,10 +340,7 @@ def process_pr_invoice_scan(pr_name, file_url):
     # Step 2 — Group PR items by PO
     po_groups = {}
     for item in pr.items:
-        po_name = item.purchase_order
-        if not po_name:
-            # Items without PO go into a default group
-            po_name = "__no_po__"
+        po_name = item.purchase_order or "__no_po__"
         if po_name not in po_groups:
             po_groups[po_name] = []
         po_groups[po_name].append(item)
@@ -145,7 +349,6 @@ def process_pr_invoice_scan(pr_name, file_url):
     results = []
     for po_name, pr_items in po_groups.items():
 
-        # Check if PI already exists for this PR + PO combination
         existing_pi = _check_existing_pi(pr_name, po_name)
         if existing_pi:
             results.append({
@@ -157,7 +360,6 @@ def process_pr_invoice_scan(pr_name, file_url):
             })
             continue
 
-        # Build PI items with smart qty/rate comparison
         pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name)
 
         if not pi_items:
@@ -170,12 +372,10 @@ def process_pr_invoice_scan(pr_name, file_url):
             })
             continue
 
-        # Create the PI
         try:
             pi = _create_pi(pr, ocr_data, pi_items, po_name, file_url)
             has_mismatches = len(warnings) > 0
 
-            # Auto-submit if no mismatches
             if not has_mismatches:
                 try:
                     pi.submit()
@@ -216,6 +416,10 @@ def process_pr_invoice_scan(pr_name, file_url):
         "pi_list": results
     }
 
+
+# ─────────────────────────────────────────
+# SHARED HELPERS
+# ─────────────────────────────────────────
 
 def _check_existing_pi(pr_name, po_name):
     """Check if a PI already exists for this PR"""
@@ -260,73 +464,60 @@ def _build_pi_items(pr_items, po_name, pr_name):
         pr_qty  = flt(pr_item.qty)
         pr_rate = flt(pr_item.rate)
 
-        # Fetch PO item for comparison
         if pr_item.purchase_order_item:
             try:
-                po_item = frappe.get_doc(
-                    "Purchase Order Item",
-                    pr_item.purchase_order_item
-                )
+                po_item = frappe.get_doc("Purchase Order Item", pr_item.purchase_order_item)
                 po_qty  = flt(po_item.qty)
                 po_rate = flt(po_item.rate)
 
-                # Qty comparison
                 if pr_qty < po_qty:
                     warnings.append(
                         f"{pr_item.item_code}: Short delivery — "
                         f"received {pr_qty} of {po_qty} ordered. "
                         f"Remaining {po_qty - pr_qty} units still on PO."
                     )
-                    pi_item["qty"] = pr_qty  # Bill only received qty
-
+                    pi_item["qty"] = pr_qty
                 elif pr_qty > po_qty:
                     warnings.append(
                         f"{pr_item.item_code}: Excess received — "
                         f"received {pr_qty} but PO qty is {po_qty}. "
                         f"PI created for PO qty {po_qty}."
                     )
-                    pi_item["qty"] = po_qty  # Cap at PO qty
-
+                    pi_item["qty"] = po_qty
                 else:
-                    pi_item["qty"] = pr_qty  # Exact match
+                    pi_item["qty"] = pr_qty
 
-                # Rate comparison
                 if po_rate > 0 and abs(pr_rate - po_rate) > 0.01:
                     warnings.append(
                         f"{pr_item.item_code}: Rate mismatch — "
                         f"PR rate ₹{pr_rate} vs PO rate ₹{po_rate}. "
                         f"PI created with PO rate."
                     )
-                    pi_item["rate"] = po_rate  # Always use PO rate
+                    pi_item["rate"] = po_rate
                 else:
                     pi_item["rate"] = po_rate if po_rate > 0 else pr_rate
 
             except Exception as e:
-                # PO item not found — use PR values
                 pi_item["qty"]  = pr_qty
                 pi_item["rate"] = pr_rate
-                warnings.append(
-                    f"{pr_item.item_code}: Could not fetch PO item — "
-                    f"using PR values."
-                )
+                warnings.append(f"{pr_item.item_code}: Could not fetch PO item — using PR values.")
         else:
             pi_item["qty"]  = pr_qty
             pi_item["rate"] = pr_rate
 
-        # Calculate amounts
         qty  = flt(pi_item["qty"])
         rate = flt(pi_item["rate"])
         amt  = qty * rate
         conv = flt(pi_item["conversion_factor"])
 
-        pi_item["received_qty"]  = qty
-        pi_item["stock_qty"]     = qty * conv
-        pi_item["amount"]        = amt
-        pi_item["base_rate"]     = rate
-        pi_item["base_amount"]   = amt
-        pi_item["net_rate"]      = rate
-        pi_item["net_amount"]    = amt
-        pi_item["base_net_rate"] = rate
+        pi_item["received_qty"]    = qty
+        pi_item["stock_qty"]       = qty * conv
+        pi_item["amount"]          = amt
+        pi_item["base_rate"]       = rate
+        pi_item["base_amount"]     = amt
+        pi_item["net_rate"]        = rate
+        pi_item["net_amount"]      = amt
+        pi_item["base_net_rate"]   = rate
         pi_item["base_net_amount"] = amt
 
         pi_items.append(pi_item)
@@ -339,14 +530,12 @@ def _create_pi(pr, ocr_data, pi_items, po_name, file_url):
 
     pi = frappe.new_doc("Purchase Invoice")
 
-    # Header from PR
     pi.supplier          = pr.supplier
     pi.company           = pr.company
     pi.currency          = pr.currency
     pi.buying_price_list = pr.buying_price_list
     pi.posting_date      = today()
 
-    # Header from OCR
     pi.bill_no           = ocr_data.get("supplier_invoice_no") or ""
     pi.bill_date         = ocr_data.get("supplier_invoice_date") or today()
     pi.supplier_gst_no   = ocr_data.get("supplier_gstin") or ""
@@ -355,11 +544,9 @@ def _create_pi(pr, ocr_data, pi_items, po_name, file_url):
     pi.invoice_copy      = ocr_data.get("invoice_copy") or "Original for Recipient"
     pi.proof_image       = file_url
 
-    # Tax settings from PR
     if pr.taxes_and_charges:
         pi.taxes_and_charges = pr.taxes_and_charges
 
-    # Add items
     for item_data in pi_items:
         pi.append("items", item_data)
 

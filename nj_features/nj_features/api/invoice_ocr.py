@@ -360,7 +360,7 @@ def process_pr_invoice_scan(pr_name, file_url):
             })
             continue
 
-        pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name)
+        pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name, pr.docstatus)
 
         if not pi_items:
             results.append({
@@ -436,7 +436,7 @@ def _check_existing_pi(pr_name, po_name):
     return existing[0].parent if existing else None
 
 
-def _build_pi_items(pr_items, po_name, pr_name):
+def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):
     """
     Build PI items from PR items with smart qty/rate comparison.
     Returns (items_list, warnings_list)
@@ -457,9 +457,11 @@ def _build_pi_items(pr_items, po_name, pr_name):
             "expense_account":    pr_item.expense_account,
             "purchase_order":     pr_item.purchase_order,
             "po_detail":          pr_item.purchase_order_item,
-            "purchase_receipt":   pr_name,
-            "pr_detail":          pr_item.name,
         }
+        # Only link PR if it is submitted — ERPNext validates PR must be submitted
+        if pr_docstatus == 1:
+            pi_item["purchase_receipt"] = pr_name
+            pi_item["pr_detail"]        = pr_item.name
 
         pr_qty  = flt(pr_item.qty)
         pr_rate = flt(pr_item.rate)

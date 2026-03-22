@@ -8,12 +8,15 @@ from frappe.utils import getdate, nowdate
 from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
+from frappe import _
+from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 
 class CustomPurchaseReceipt(PurchaseReceipt):
 
     def on_submit(self):
         super(CustomPurchaseReceipt, self).on_submit()
         self.set_registry_no_on_submit()
+        self.auto_create_debit_note()
     
     def on_cancel(self):
         super(CustomPurchaseReceipt, self).on_cancel()
@@ -154,7 +157,136 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                 
                                 if int(updated_qty) + int(resulting_val) == int(item.qty): 
                                     break
+    # def auto_create_debit_note(self):
+    #     print("inside auto_create_debit_note==============")
+    #     if not self.is_return:
+    #         return
 
+    #     # Prevent duplicate
+    #     existing = frappe.db.exists(
+    #         "Purchase Invoice",
+    #         {
+    #             "is_return": 1,
+    #             "return_against": self.name
+    #         }
+    #     )
+    #     print("existing========", existing)
+
+    #     if existing:
+    #         return
+
+    #     try:
+    #         # This already creates saved Purchase Invoice
+    #         debit_note = make_purchase_invoice(self.name)
+    #         print("Debit Note Created:===========", debit_note.name)
+
+    #         # Just submit it
+    #         debit_note.flags.ignore_permissions = True
+    #         debit_note.submit()
+
+    #         frappe.msgprint(
+    #             _("Debit Note {0} created and submitted automatically.").format(debit_note.name),
+    #             alert=True
+    #         )
+
+    #     except Exception:
+    #         frappe.log_error(
+    #             frappe.get_traceback(),
+    #             "Auto Debit Note Creation Failed"
+    #         )
+    def auto_create_debit_note(self):
+
+        print("inside auto_create_debit_note==============")
+
+        if not self.is_return:
+            return
+
+        existing = frappe.db.exists(
+            "Purchase Invoice",
+            {
+                "is_return": 1,
+                "return_against": self.name
+            }
+        )
+
+        if existing:
+            return
+
+        try:
+            # =============================
+            # STEP 1: FIND PI (FOR GST + BILL)
+            # =============================
+            pr_name = self.return_against
+
+            pi_name = frappe.db.get_value(
+                "Purchase Invoice Item",
+                {
+                    "purchase_receipt": pr_name,
+                    "docstatus": 1
+                },
+                "parent"
+            )
+
+            if not pi_name:
+                # fallback via PO
+                po_name = frappe.db.get_value(
+                    "Purchase Receipt Item",
+                    {"parent": pr_name},
+                    "purchase_order"
+                )
+
+                if po_name:
+                    pi_name = frappe.db.get_value(
+                        "Purchase Invoice Item",
+                        {
+                            "purchase_order": po_name,
+                            "docstatus": 1
+                        },
+                        "parent"
+                    )
+
+            if not pi_name:
+                frappe.throw("Purchase Invoice not found for this PR")
+
+            print("Using PI:", pi_name)
+
+            source_pi = frappe.get_doc("Purchase Invoice", pi_name)
+
+            supplier_gst_no = source_pi.get("supplier_gst_no")
+            bill_no = source_pi.get("bill_no")
+
+            print("GST:", supplier_gst_no, "| Bill No:", bill_no)
+
+            # =============================
+            # STEP 2: CREATE DEBIT NOTE (FROM PR)
+            # =============================
+            debit_note = make_purchase_invoice(self.name)
+
+            if not debit_note:
+                frappe.throw("Debit Note creation failed")
+
+            # =============================
+            # 🔥 STEP 3: SET MANDATORY FIELDS BEFORE SUBMIT
+            # =============================
+            debit_note.supplier_gst_no = supplier_gst_no or "N/A"
+            debit_note.bill_no = bill_no or "AUTO"
+
+            print("Debit Note Created:", debit_note.name)
+
+            debit_note.flags.ignore_permissions = True
+            debit_note.submit()
+
+            frappe.msgprint(
+                _("Debit Note {0} created and submitted automatically.").format(debit_note.name),
+                alert=True
+            )
+
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "Auto Debit Note Creation Failed"
+            )
+            raise
 def generate_batch_no(doc, method=None):
     for item in doc.items:
         set_registry_no(item)

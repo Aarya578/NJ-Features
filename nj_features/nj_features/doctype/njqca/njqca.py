@@ -40,7 +40,7 @@ def update_serial_no_componont_for_grade(self):
         if item_template:
             item_wizard = get_latest_item_wizard(item_template, serial_no_doc.item_code)
             item_wizard_doc = frappe.get_doc("Item Wizards", {"name": item_wizard})
-            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model,db_insert=False)
+            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model,db_insert=True)
         serial_no_doc.save()
 
     except Exception as e:
@@ -1160,7 +1160,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                 return { "status": "failed" }
             if newmodel:
                 serial_no_doc.serial_no_component = []
-                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                 serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
@@ -1192,7 +1192,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
                 
@@ -1213,7 +1213,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
             else:
@@ -1405,11 +1405,8 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
 
 def update_part_item_code_from_child(doc):
     child_table_map = {
-        "njqca_laptop_processors": "NJQCA PROCESSOR",
         "njqca_laptop_ram": "NJQCA Laptop Ram",
-        "njqca_laptop_storage": "NJQCA Laptop Storage",
-        "njqca_display": "NJQCA Display",
-        "njqca_adaptor": "NJQCA Adaptor"
+        "njqca_laptop_storage": "NJQCA Laptop Storage"
     }
 
     serial_no_doc = frappe.get_doc('Serial No', doc.serial_no)
@@ -1425,7 +1422,7 @@ def update_part_item_code_from_child(doc):
             item_group = child.get("item_group")
             item_group_idx = child.get("item_group_idx")
 
-            if not (calculated_item_code and item_group and item_group_idx is not None):
+            if not (calculated_item_code and item_group):
                 continue
 
             found = False
@@ -1440,6 +1437,10 @@ def update_part_item_code_from_child(doc):
                         sn.reference_doctype_no = doc.name
                         updated = True
                     break
+                # If no match and no component_serial_no, remove the row
+                elif sn.item_group == item_group and sn.item_group_idx != item_group_idx and sn.item != calculated_item_code and not sn.component_serial_no:
+                    serial_no_doc.serial_no_component.remove(sn)
+                    updated = True
 
             if not found:
                 row = serial_no_doc.append("serial_no_component", {})
@@ -2210,7 +2211,7 @@ def get_sudden_drop(parent_name, item_group, manufacturer_model):
                     avg_rate,
                     count_gt_2x as count,
                     CASE
-                        WHEN (max_rate > 3 * avg_rate OR count_gt_2x >= 3 )or (Select 1 from RateValues where delta_seconds>300) THEN "Yes"
+                        WHEN (max_rate > 3 * avg_rate OR count_gt_2x >= 3 )THEN "Yes"
                         ELSE "NO"
                     END AS condition_met
                 
@@ -3741,23 +3742,40 @@ def get_last_quality_status_from_bios(njqca_name):
     else:
         return "NOT FOUND"
 
+
 import csv
 import io
 import json
 import os
 import re
+import statistics
+from typing import Any, Dict, Optional, List, Tuple
 
 import frappe
 from frappe.utils import get_url
 from frappe.model.document import Document
 
 
+# ==========================================================
+# CONFIG
+# ==========================================================
+
 HEAVYLOAD_REF_ITEM_GROUP = "LAPTOP STORAGE"
 HEAVYLOAD_REF_PARAM = "heavy_load_File_Updated_name"
 
-TEMP_TARGET_ITEM_GROUP = "LAPTOP PROCESSORS"   # change if needed
-TEMP_UNIT = "°C"
+YCRUNCHER_REF_PARAM = "y_cruncher_status"
+GAMING_FPS_REF_PARAM = "gaming_fps_file_uploaded"
+PERFORMANCE_REF_PARAM = "performance_File_Updated_name"
 
+# Where to write derived parameters (JS will upsert to these item_groups)
+TEMP_TARGET_ITEM_GROUP = "Laptop Processors"
+GAMING_TARGET_ITEM_GROUP = "Laptop RAM"
+PERFORMANCE_TARGET_ITEM_GROUP = "Laptop RAM"
+BATTERY_ITEM_GROUP = "BATTERY"
+BATTERY_BDT_PARAM = "backup_duration_cycle_1"
+BATTERY_BDT_INSPECTION_TYPE = "L2 Battery BDT"
+
+TEMP_UNIT = "°C"
 TEMP_SENSORS = [
     "CPU Core #1",
     "CPU Core #2",
@@ -3766,10 +3784,96 @@ TEMP_SENSORS = [
     "CPU Package",
 ]
 
+HEAVYLOAD_METRIC_UNITS = {
+    "cpu_load_avg_pct": "%",
+    "cpu_load_last_window_avg_pct": "%",
+    "cpu_samples_ge_threshold_pct": "%",
+    "cpu_core_peak_temp_last_20min_c": "°C",
+    "clock_under_load_avg_ghz": "GHz",
+    "clock_drop_detected": "",
+    "clock_drop_pct": "%",
+    "cpu_package_power_max_w": "W",
+    "cpu_package_power_min_post5min_w": "W",
+}
 
-# ----------------------------
+YCRUNCHER_KEEP_KEYS_ORDERED = [
+    "Spot Check",
+    "Timer Sanity Check",
+    "ECC Recovered Errors",
+    "Decimal Digits",
+    "Hexadecimal Digits",
+    "Algorithm",
+    "Computation Mode",
+    "Working Memory",
+    "Total Computation Time",
+    "Start-to-End Wall Time",
+    "CPU Utilization",
+    "Multi-core Efficiency",
+    "Threading Mode",
+    "Logical Cores",
+    "Physical Cores",
+    "Base Frequency",
+    "Est. Frequency",
+    "Start Date",
+    "End Date",
+]
+
+GAMING_METRIC_UNITS = {
+    "avg_fps": "FPS",
+    "fps_1pct_low": "FPS",
+    "fps_01pct_low": "FPS",
+    "frame_drop_pct": "%",
+    "gpu_load_pct": "%",
+    "frame_time_avg_ms": "ms",
+    "frame_time_stdev_ms": "ms",
+}
+
+PERFORMANCE_METRIC_UNITS = {
+    "CPU Cores": "",
+    "CPU Max Frequency": "MHz",
+    "Blender total time taken": "s",
+    "PPT loading time (launch + open file)": "s",
+    "VS Code open": "s",
+    "VS Code close": "s",
+    "Django server start": "s",
+    "Browser close": "s",
+    "Static server stop": "s",
+    "URL load time": "s",
+}
+
+
+# ==========================================================
 # Helpers
-# ----------------------------
+# ==========================================================
+
+def _get_doc_serial_no(doc: Document) -> str:
+    """Best-effort get serial no from NJQCA/NJ Quality Inspection doc."""
+    # try common fieldnames
+    for fn in ("serial_no", "serial", "serial_number", "serialno", "serial_no_id", "serial_no_name"):
+        try:
+            v = getattr(doc, fn, None) if hasattr(doc, fn) else (doc.get(fn) if isinstance(doc, dict) else None)
+            if v:
+                return str(v).strip()
+        except Exception:
+            continue
+
+    # fallback: sometimes serial is in meta.serial inside json, but here doc is a Frappe doc, so ignore
+    return ""
+
+
+def _has_col(doctype: str, fieldname: str) -> bool:
+    try:
+        return bool(frappe.db.has_column(f"tab{doctype}", fieldname))
+    except Exception:
+        # fallback to meta check
+        try:
+            return frappe.get_meta(doctype).has_field(fieldname)
+        except Exception:
+            return False
+
+def _key(s) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
 def _extract_float(val):
     if val is None:
         return None
@@ -3784,25 +3888,19 @@ def _extract_float(val):
     except Exception:
         return None
 
-
 def _display_sensor_name(sensor: str) -> str:
-    # "CPU Core #1" -> "CPU Core 1"
     return sensor.replace("#", "").replace("  ", " ").strip()
 
-
 def _norm_header(h: str) -> str:
-    # " | Temperature | CPU Core #1" -> "temperature cpu core 1"
     h = (h or "")
     h = h.replace("|", " ")
     h = h.replace("#", " ")
     h = re.sub(r"\s+", " ", h).strip().lower()
     return h
 
-
 def _get_child_meta(doc: Document):
     child_dt = doc.meta.get_field("njqca_result_parameters").options
     return frappe.get_meta(child_dt)
-
 
 def _detect_value_and_unit_fields(doc: Document):
     meta = _get_child_meta(doc)
@@ -3821,26 +3919,109 @@ def _detect_value_and_unit_fields(doc: Document):
 
     return value_field, unit_field
 
-
 def _get_row_value(row, value_field: str):
     if not value_field:
         return None
     return row.get(value_field)
 
+def _get_bios_serialno_from_serial(serial_no: str) -> str:
+    """Fetch BIOS serial number from Serial No doctype (best-effort fieldnames)."""
+    serial_no = (serial_no or "").strip()
+    if not serial_no:
+        return ""
 
-# ----------------------------
+    for fn in ("bios_serial_no", "bios_serialno", "bios_serial", "bios_serial_number"):
+        try:
+            v = frappe.db.get_value("Serial No", serial_no, fn)
+            if v:
+                return str(v).strip()
+        except Exception:
+            continue
+
+    return ""
+
+
+def _get_backup_duration_cycle_1_from_bdt(bios_serialno: str):
+    """
+    Fetch latest approved L2 Battery BDT -> backup_duration_cycle_1
+    using BIOS serial match.
+    """
+    bios_serialno = (bios_serialno or "").strip()
+    if not bios_serialno:
+        return None
+
+    bios_field = None
+    if _has_col("NJQCA", "bios_serialno"):
+        bios_field = "bios_serialno"
+    elif _has_col("NJQCA", "bios_serial_no"):
+        bios_field = "bios_serial_no"
+
+    if not bios_field:
+        return None
+
+    q = f"""
+        SELECT backup_duration_cycle_1
+        FROM `tabNJQCA`
+        WHERE docstatus = 1
+          AND inspection_type = %(it)s
+          AND {bios_field} = %(bios)s
+        ORDER BY creation DESC
+        LIMIT 1
+    """
+    row = frappe.db.sql(q, {"bios": bios_serialno, "it": BATTERY_BDT_INSPECTION_TYPE}, as_dict=True)
+    if not row:
+        return None
+
+    v = row[0].get("backup_duration_cycle_1")
+    if v is None or str(v).strip() == "":
+        return None
+    return v  # keep original type (float/int/str)
+
+def _collect_battery_bdt_change(doc: Document, add_change) -> dict:
+    """
+    NO mutation. Collects last L2 Battery BDT backup_duration_cycle_1 into:
+    item_group=BATTERY, parameter=backup_duration_cycle_1
+    """
+    try:
+        serial_no = _get_doc_serial_no(doc)
+        if not serial_no:
+            return {"status": "skip", "reason": "serial_no not found on document"}
+
+        bios_sn = _get_bios_serialno_from_serial(serial_no)
+        if not bios_sn:
+            return {"status": "skip", "reason": f"BIOS serial not found for Serial No {serial_no}"}
+
+        bdt_val = _get_backup_duration_cycle_1_from_bdt(bios_sn)
+        if bdt_val is None or str(bdt_val).strip() == "":
+            return {"status": "skip", "reason": f"no backup_duration_cycle_1 found for BIOS {bios_sn}"}
+
+        # Optional: numeric normalize if you want
+        # num = _extract_float(bdt_val)
+        # value_to_write = round(num, 2) if num is not None else str(bdt_val).strip()
+
+        value_to_write = str(bdt_val).strip()
+
+        add_change(
+            BATTERY_ITEM_GROUP,
+            BATTERY_BDT_PARAM,
+            value_to_write,
+            "",  # unit (set "min" or "sec" if your field is standardized)
+        )
+
+        return {"status": "ok", "serial_no": serial_no, "bios_serial": bios_sn, "value": value_to_write}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+# ==========================================================
 # File read
-# ----------------------------
+# ==========================================================
+
 def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
-    """
-    Prefer reading from local site files.
-    Fallback to HTTP GET if file not present locally.
-    """
     file_url = (getattr(file_doc, "file_url", None) or "").strip()
     if not file_url:
-        frappe.throw("File URL is missing for HeavyLoad file.")
+        frappe.throw("File URL is missing for file.")
 
-    # Local path attempt (correct path build)
     local_path = None
     filename = file_url.split("/")[-1].strip()
 
@@ -3853,7 +4034,6 @@ def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
         with open(local_path, "rb") as f:
             return f.read()
 
-    # HTTP fallback
     full_url = file_url if file_url.startswith("http") else (get_url().rstrip("/") + file_url)
     sess = frappe.utils.get_request_session()
     resp = sess.get(full_url, timeout=30)
@@ -3861,21 +4041,40 @@ def _read_file_bytes_from_filedoctype(file_doc) -> bytes:
     return resp.content
 
 
-# ----------------------------
-# CSV parsing (Temperature averages)
-# ----------------------------
-def _parse_temp_averages(csv_bytes: bytes) -> dict:
+# ==========================================================
+# Change Collector (NO doc mutation)
+# ==========================================================
+
+def _collect_upserts():
     """
-    Your HeavyLoad CSV is column-based like:
-      Time, ..., | Temperature | CPU Core #1, | Temperature | CPU Package, ...
-    We compute average values for:
-      CPU Core #1..#4, CPU Package
+    Collect upsert changes: last write wins per (item_group, parameter).
     """
+    changes_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def add_change(item_group: str, parameter: str, value: Any, unit: str):
+        k = (_key(item_group), _key(parameter))
+        changes_map[k] = {
+            "item_group": item_group,
+            "parameter": parameter,
+            "value": value,
+            "units": unit,
+        }
+
+    def flush_changes() -> List[Dict[str, Any]]:
+        return list(changes_map.values())
+
+    return add_change, flush_changes
+
+
+# ==========================================================
+# CSV parsing: Avg + Max Temperature
+# ==========================================================
+
+def _parse_temp_stats(csv_bytes: bytes) -> dict:
     text = csv_bytes.decode("utf-8-sig", errors="ignore")
     if not text.strip():
         return {}
 
-    # HeavyLoad is comma-separated; keep it simple & stable
     rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         return {}
@@ -3883,12 +4082,10 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
     header = rows[0]
     header_norm = [_norm_header(h) for h in header]
 
-    # Map each sensor -> the correct Temperature column index ONLY
     col_idx = {}
     for sensor in TEMP_SENSORS:
-        s_norm = _norm_header(sensor)  # "cpu core 1" / "cpu package"
+        s_norm = _norm_header(sensor)
         for i, h in enumerate(header_norm):
-            # MUST contain "temperature" + sensor
             if ("temperature" in h) and (s_norm in h):
                 col_idx[sensor] = i
                 break
@@ -3896,7 +4093,7 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
     if not col_idx:
         return {}
 
-    result = {}
+    stats = {}
     for sensor, idx in col_idx.items():
         vals = []
         for r in rows[1:]:
@@ -3904,111 +4101,754 @@ def _parse_temp_averages(csv_bytes: bytes) -> dict:
                 f = _extract_float(r[idx])
                 if f is not None:
                     vals.append(f)
+
         if vals:
-            result[sensor] = sum(vals) / len(vals)
+            stats[sensor] = {"avg": (sum(vals) / len(vals)), "max": max(vals)}
 
-    return result
+    return stats
 
 
-# ----------------------------
-# Upsert into result parameters (no duplicates)
-# ----------------------------
-def _upsert_result_param(doc: Document, item_group: str, parameter: str, value, unit: str):
-    value_field, unit_field = _detect_value_and_unit_fields(doc)
+# ==========================================================
+# HeavyLoad: 9-metric summary from CSV
+# ==========================================================
 
-    # Update existing row
-    for row in doc.get("njqca_result_parameters") or []:
-        if (row.get("item_group") or "").strip() == item_group and (row.get("parameter") or "").strip() == parameter:
-            if value_field:
-                row.set(value_field, value)
-            if unit_field:
-                row.set(unit_field, unit)
-            return
+def _parse_heavyload_summary_from_csv_bytes(
+    csv_bytes: bytes,
+    last_minutes_for_temp: int = 20,
+    load_threshold: float = 95.0,
+    clock_drop_pct: float = 15.0,
+    min_after_minutes: int = 5,
+) -> dict:
+    text = csv_bytes.decode("utf-8-sig", errors="ignore")
+    if not text.strip():
+        return {}
 
-    # Append new row
-    payload = {
-        "item_group": item_group,
-        "parameter": parameter,
+    def _to_float(x):
+        if x is None:
+            return None
+        if isinstance(x, (int, float)):
+            return float(x)
+        s = str(x).strip()
+        if not s:
+            return None
+        s = s.replace(",", ".")
+        m = re.search(r"-?\d+(?:\.\d+)?", s)
+        if not m:
+            return None
+        try:
+            return float(m.group(0))
+        except Exception:
+            return None
+
+    def _find_col(fieldnames, must_have_words):
+        for c in (fieldnames or []):
+            cl = c.lower()
+            ok = True
+            for w in must_have_words:
+                if w.lower() not in cl:
+                    ok = False
+                    break
+            if ok:
+                return c
+        return None
+
+    def _t_to_sec(t):
+        parts = str(t).strip().split(":")
+        if len(parts) != 3:
+            return None
+        h, m, s = parts
+        try:
+            return int(h) * 3600 + int(m) * 60 + int(s)
+        except Exception:
+            return None
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return {}
+
+    fieldnames = reader.fieldnames or []
+
+    time_col = "Time" if "Time" in fieldnames else (_find_col(fieldnames, ["time"]) or "")
+    if not time_col:
+        return {"heavy_load_error": f"Missing Time column. Found: {fieldnames[:25]}"}
+
+    cpu_col = _find_col(fieldnames, ["cpu", "%"]) or _find_col(fieldnames, ["cpu", "usage"]) or _find_col(fieldnames, ["cpu"])
+    if not cpu_col:
+        return {"heavy_load_error": f"CPU column not found. Found: {fieldnames[:25]}"}
+
+    pwr_col = (
+        _find_col(fieldnames, ["power", "cpu", "package"])
+        or _find_col(fieldnames, ["power", "package"])
+        or _find_col(fieldnames, ["cpu", "package", "power"])
+    )
+    if not pwr_col:
+        return {"heavy_load_error": f"CPU package power column not found. Found: {fieldnames[:25]}"}
+
+    temp_cols = [c for c in fieldnames if ("temperature" in c.lower() and "cpu core" in c.lower())]
+    if not temp_cols:
+        return {"heavy_load_error": "No temperature columns like 'Temperature | CPU Core #x' found."}
+
+    clock_cols = [c for c in fieldnames if ("clock" in c.lower() and "cpu core" in c.lower())]
+    if not clock_cols:
+        return {"heavy_load_error": "No clock columns like 'Clock | CPU Core #x' found."}
+
+    t0 = _t_to_sec(rows[0].get(time_col))
+    if t0 is None:
+        return {"heavy_load_error": f"Time parse failed. First={rows[0].get(time_col)}"}
+
+    for rr in rows:
+        ts = _t_to_sec(rr.get(time_col))
+        rr["_elapsed_s"] = (ts - t0) if ts is not None else None
+
+    cpu_all = [_to_float(rr.get(cpu_col)) for rr in rows]
+    cpu_all_num = [x for x in cpu_all if x is not None]
+    if not cpu_all_num:
+        return {"heavy_load_error": "CPU column has no numeric values."}
+
+    max_elapsed = max([rr["_elapsed_s"] for rr in rows if rr["_elapsed_s"] is not None] or [0])
+    last_start = max_elapsed - last_minutes_for_temp * 60
+    last_rows = [rr for rr in rows if (rr["_elapsed_s"] is not None and rr["_elapsed_s"] >= last_start)]
+
+    load_rows = [rr for rr in rows if (_to_float(rr.get(cpu_col)) is not None and _to_float(rr.get(cpu_col)) >= load_threshold)]
+
+    after_rows = [rr for rr in rows if (rr["_elapsed_s"] is not None and rr["_elapsed_s"] >= min_after_minutes * 60)]
+    after_load_rows = [rr for rr in after_rows if (_to_float(rr.get(cpu_col)) is not None and _to_float(rr.get(cpu_col)) >= load_threshold)]
+
+    cpu_avg = statistics.mean(cpu_all_num)
+
+    cpu_last_avg = None
+    if last_rows:
+        vals = []
+        for rr in last_rows:
+            v = _to_float(rr.get(cpu_col))
+            if v is not None:
+                vals.append(v)
+        cpu_last_avg = statistics.mean(vals) if vals else None
+
+    cpu_pct_ge = (sum(1 for x in cpu_all_num if x >= load_threshold) / len(cpu_all_num)) * 100.0
+
+    peak_temp = None
+    if last_rows:
+        vals = []
+        for rr in last_rows:
+            for c in temp_cols:
+                v = _to_float(rr.get(c))
+                if v is not None:
+                    vals.append(v)
+        peak_temp = max(vals) if vals else None
+
+    use_clock_rows = load_rows if load_rows else rows
+    all_clock_vals = []
+    for rr in use_clock_rows:
+        for c in clock_cols:
+            v = _to_float(rr.get(c))
+            if v is not None:
+                all_clock_vals.append(v)
+
+    clock_under = None
+    if all_clock_vals:
+        med = statistics.median(all_clock_vals)
+        if med > 100:  # MHz
+            clock_under = statistics.mean(all_clock_vals) / 1000.0
+        else:  # already GHz
+            clock_under = statistics.mean(all_clock_vals)
+
+    def _core_clock_list(rrs):
+        arr = []
+        for rr in rrs:
+            for c in clock_cols:
+                v = _to_float(rr.get(c))
+                if v is not None:
+                    arr.append(v)
+        return arr
+
+    first2 = [rr for rr in load_rows if (rr.get("_elapsed_s") is not None and rr["_elapsed_s"] <= 120)] if load_rows else []
+    base_list = _core_clock_list(first2) if len(first2) >= 3 else _core_clock_list(load_rows or rows)
+    later = [rr for rr in load_rows if (rr.get("_elapsed_s") is not None and rr["_elapsed_s"] >= min_after_minutes * 60)] if load_rows else []
+    later_list = _core_clock_list(later) if later else _core_clock_list(rows)
+
+    drop_detected = None
+    drop_pct_val = None
+    if base_list and later_list:
+        base_med = statistics.median(base_list)
+        later_min = min(later_list)
+        if base_med > 100:
+            base = base_med / 1000.0
+            later_min = later_min / 1000.0
+        else:
+            base = base_med
+
+        if base and base > 0:
+            drop_pct_val = ((base - later_min) / base) * 100.0
+            drop_detected = drop_pct_val >= clock_drop_pct
+
+    pwr_all = [_to_float(rr.get(pwr_col)) for rr in rows]
+    pwr_all = [x for x in pwr_all if x is not None]
+    pwr_max = max(pwr_all) if pwr_all else None
+
+    pwr_min_post = None
+    if after_load_rows:
+        p = [_to_float(rr.get(pwr_col)) for rr in after_load_rows]
+        p = [x for x in p if x is not None]
+        pwr_min_post = min(p) if p else None
+
+    return {
+        "cpu_load_avg_pct": round(cpu_avg, 2),
+        "cpu_load_last_window_avg_pct": round(cpu_last_avg, 2) if cpu_last_avg is not None else None,
+        "cpu_samples_ge_threshold_pct": round(cpu_pct_ge, 2),
+        "cpu_core_peak_temp_last_20min_c": round(peak_temp, 2) if peak_temp is not None else None,
+        "clock_under_load_avg_ghz": round(clock_under, 3) if clock_under is not None else None,
+        "clock_drop_detected": bool(drop_detected) if drop_detected is not None else None,
+        "clock_drop_pct": round(drop_pct_val, 2) if drop_pct_val is not None else None,
+        "cpu_package_power_max_w": round(pwr_max, 2) if pwr_max is not None else None,
+        "cpu_package_power_min_post5min_w": round(pwr_min_post, 2) if pwr_min_post is not None else None,
     }
-    if value_field:
-        payload[value_field] = value
-    if unit_field:
-        payload[unit_field] = unit
-
-    doc.append("njqca_result_parameters", payload)
 
 
-# ----------------------------
-# Main apply function
-# ----------------------------
-def _apply_heavyload_avg_temps(doc: Document) -> dict:
-    """
-    1) Find heavyload File docname from result parameters:
-         item_group == LAPTOP STORAGE
-         parameter  == heavy_load_File_Updated_name
-         value      == <File.name>
-    2) Load CSV
-    3) Compute avg temps
-    4) Upsert temp rows
-    """
+# ==========================================================
+# Y-cruncher parsing
+# ==========================================================
 
-    value_field, _ = _detect_value_and_unit_fields(doc)
+def _parse_ycruncher_content_to_kv(text: str) -> Dict[str, str]:
+    text = (text or "").replace("\ufeff", "").strip()
+    if not text:
+        return {}
 
-    file_docname = None
+    wanted = set(YCRUNCHER_KEEP_KEYS_ORDERED)
+    found: Dict[str, str] = {}
+
+    kv_rx = re.compile(r"^([A-Za-z][A-Za-z0-9 ()/_\-\.\#]{0,80})\s*:\s*(.+)$")
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.lower().startswith("benchmark validation file"):
+            continue
+
+        m = kv_rx.match(line)
+        if not m:
+            continue
+
+        k = (m.group(1) or "").strip()
+        v = (m.group(2) or "").strip()
+        if k in wanted and v and k not in found:
+            found[k] = v
+
+    ordered: Dict[str, str] = {}
+    for k in YCRUNCHER_KEEP_KEYS_ORDERED:
+        if k in found:
+            ordered[k] = found[k]
+    return ordered
+
+
+# ==========================================================
+# Gaming FPS parsing (correct, using TimeInSeconds etc.)
+# ==========================================================
+
+def _parse_gaming_fps_metrics_from_csv_bytes(csv_bytes: bytes) -> dict:
+    import csv, io, statistics
+    from typing import Optional
+
+    def _to_float(val) -> Optional[float]:
+        try:
+            f = float(val)
+            return f if f == f else None
+        except (TypeError, ValueError):
+            return None
+
+    def _percentile_inc(sorted_data: list, p: float) -> float:
+        n = len(sorted_data)
+        idx = p * (n - 1)
+        lo = int(idx)
+        hi = min(lo + 1, n - 1)
+        return sorted_data[lo] + (idx - lo) * (sorted_data[hi] - sorted_data[lo])
+
+    def _get_col(norm: dict, name: str) -> Optional[str]:
+        key = name.lower()
+        if key in norm:
+            return norm[key]
+        for k, orig in norm.items():
+            if key in k:
+                return orig
+        return None
+
+    def r2(x):
+        return None if x is None else round(float(x), 2)
+
+    text = csv_bytes.decode("utf-8-sig", errors="ignore")
+    if not text.strip():
+        return {"gaming_error": "FPS log is empty"}
+
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return {"gaming_error": "No rows in FPS log"}
+
+    fieldnames = reader.fieldnames or []
+    norm = {f.lower().strip(): f for f in fieldnames if f}
+
+    col_dropped = _get_col(norm, "Dropped")
+    col_time = _get_col(norm, "TimeInSeconds")
+    col_mbp = _get_col(norm, "msBetweenPresents")
+    col_bdc = _get_col(norm, "msBetweenDisplayChange")
+    col_gpu = _get_col(norm, "msGPUActive")
+
+    missing = [
+        name for name, col in [
+            ("Dropped", col_dropped),
+            ("TimeInSeconds", col_time),
+            ("msBetweenPresents", col_mbp),
+            ("msBetweenDisplayChange", col_bdc),
+        ] if not col
+    ]
+    if missing:
+        return {"gaming_error": f"Missing required columns: {missing}. Found: {fieldnames[:30]}"}
+
+    total_frames = len(rows)
+    displayed_rows = []
+    dropped_count = 0
+
+    for r in rows:
+        try:
+            is_dropped = int(float(r[col_dropped])) != 0
+        except (TypeError, ValueError):
+            is_dropped = False
+
+        if is_dropped:
+            dropped_count += 1
+        else:
+            displayed_rows.append(r)
+
+    if not displayed_rows:
+        return {"gaming_error": "No displayed frames found (all rows have Dropped=1)"}
+
+    times = [_to_float(r[col_time]) for r in displayed_rows]
+    times = [t for t in times if t is not None]
+    if len(times) < 2:
+        return {"gaming_error": "Not enough valid TimeInSeconds values to compute avg_fps"}
+
+    elapsed = times[-1] - times[0]
+    if elapsed <= 0:
+        return {"gaming_error": f"Invalid elapsed time: {elapsed}"}
+
+    avg_fps = (len(times) - 1) / elapsed
+
+    bdc_vals = [
+        _to_float(r[col_bdc])
+        for r in displayed_rows
+        if _to_float(r[col_bdc]) is not None and _to_float(r[col_bdc]) > 0
+    ]
+
+    fps_1pct_low = None
+    fps_01pct_low = None
+    frame_time_avg_ms = None
+    frame_time_stdev_ms = None
+
+    if bdc_vals:
+        fps_from_bdc = sorted(1000.0 / b for b in bdc_vals)
+        fps_1pct_low = _percentile_inc(fps_from_bdc, 0.01)
+        fps_01pct_low = _percentile_inc(fps_from_bdc, 0.001)
+        frame_time_avg_ms = statistics.mean(bdc_vals)
+        frame_time_stdev_ms = statistics.pstdev(bdc_vals) if len(bdc_vals) >= 2 else 0.0
+
+    mbp_disp = [_to_float(r[col_mbp]) for r in displayed_rows]
+    gpu_disp = [_to_float(r[col_gpu]) for r in displayed_rows] if col_gpu else []
+
+    paired = [(b, g) for b, g in zip(mbp_disp, gpu_disp) if b is not None and b > 0 and g is not None and g > 0]
+    gpu_load_pct = None
+    if paired:
+        mean_gpu = statistics.mean(p[1] for p in paired)
+        mean_mbp = statistics.mean(p[0] for p in paired)
+        gpu_load_pct = (mean_gpu / mean_mbp) * 100.0
+
+    frame_drop_pct = (dropped_count / total_frames) * 100.0
+
+    return {
+        "avg_fps": r2(avg_fps),
+        "fps_1pct_low": r2(fps_1pct_low),
+        "fps_01pct_low": r2(fps_01pct_low),
+        "frame_drop_pct": r2(frame_drop_pct),
+        "gpu_load_pct": r2(gpu_load_pct),
+        "frame_time_avg_ms": r2(frame_time_avg_ms),
+        "frame_time_stdev_ms": r2(frame_time_stdev_ms),
+    }
+
+
+# ==========================================================
+# Performance TXT parsing (FIXED: full parameter names)
+# ==========================================================
+
+def _parse_performance_txt_metrics(text: str) -> dict:
+    text = (text or "").replace("\ufeff", "")
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    metrics: Dict[str, Tuple[Any, str]] = {}
+
+    current_project = None
+    current_ppt_file = None
+
+    rx_running = re.compile(r"^---\s+Running\s+([A-Z]+)\s+project:\s*(.+?)\s*---$", re.I)
+    rx_ppt_opened = re.compile(r"^PPT opened:\s*(.+)$", re.I)
+    rx_ppt_load = re.compile(r"^PPT loading time \(launch \+ open file\):\s*([0-9.]+)\s*seconds?$", re.I)
+
+    rx_cpu_cores = re.compile(r"CPU Cores:\s*([0-9]+)", re.I)
+    rx_cpu_maxfreq = re.compile(r"CPU Max Frequency:\s*([0-9.]+)\s*MHz", re.I)
+
+    rx_blender_total = re.compile(r"^Blender total time taken\s*,\s*([0-9.]+)\s*s$", re.I)
+
+    rx_vscode_open = re.compile(r"^vs code open\s*,\s*([^,]+)\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
+    rx_vscode_close = re.compile(r"^vs code close\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
+
+    rx_django_start = re.compile(r"^Django server start\s*\((\d+)\)\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
+    rx_browser_close = re.compile(r"^Browser close\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
+
+    rx_static_stop = re.compile(r"^Static server stop\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
+    rx_url = re.compile(r"^url\s*,\s*(https?://[^,]+)\s*,\s*([0-9.]+)\s*$", re.I)
+
+    def _set_metric(param: str, value: Any, unit: str):
+        metrics[param] = (value, unit)
+
+    for ln in lines:
+        m = rx_running.match(ln)
+        if m:
+            current_project = (m.group(2) or "").strip()
+            continue
+
+        m = rx_cpu_cores.search(ln)
+        if m:
+            _set_metric("CPU Cores", int(m.group(1)), PERFORMANCE_METRIC_UNITS["CPU Cores"])
+            continue
+
+        m = rx_cpu_maxfreq.search(ln)
+        if m:
+            _set_metric("CPU Max Frequency", float(m.group(1)), PERFORMANCE_METRIC_UNITS["CPU Max Frequency"])
+            continue
+
+        m = rx_blender_total.match(ln)
+        if m:
+            _set_metric("Blender total time taken", float(m.group(1)), PERFORMANCE_METRIC_UNITS["Blender total time taken"])
+            continue
+
+        m = rx_ppt_opened.match(ln)
+        if m:
+            path = (m.group(1) or "").strip()
+            current_ppt_file = os.path.basename(path) if path else None
+            continue
+
+        m = rx_ppt_load.match(ln)
+        if m:
+            sec = float(m.group(1))
+            param = f"({current_ppt_file})" if current_ppt_file else "PPT loading time (launch + open file)"
+            _set_metric(param, sec, PERFORMANCE_METRIC_UNITS["PPT loading time (launch + open file)"])
+            continue
+
+        m = rx_vscode_open.match(ln)
+        if m:
+            proj = (m.group(1) or "").strip()
+            sec = float(m.group(2))
+            _set_metric(f"({proj})", sec, PERFORMANCE_METRIC_UNITS["VS Code open"])
+            continue
+
+        m = rx_django_start.match(ln)
+        if m:
+            port = (m.group(1) or "").strip()
+            sec = float(m.group(2))
+            proj = current_project or "Unknown"
+            _set_metric(f"({proj}) [{port}]", sec, PERFORMANCE_METRIC_UNITS["Django server start"])
+            continue
+
+        m = rx_browser_close.match(ln)
+        if m:
+            sec = float(m.group(1))
+            proj = current_project or "Unknown"
+            _set_metric(f"({proj})", sec, PERFORMANCE_METRIC_UNITS["Browser close"])
+            continue
+
+        m = rx_static_stop.match(ln)
+        if m:
+            sec = float(m.group(1))
+            proj = current_project or "Unknown"
+            _set_metric(f"({proj})", sec, PERFORMANCE_METRIC_UNITS["Static server stop"])
+            continue
+
+        m = rx_vscode_close.match(ln)
+        if m:
+            sec = float(m.group(1))
+            proj = current_project or "Unknown"
+            _set_metric(f"({proj})", sec, PERFORMANCE_METRIC_UNITS["VS Code close"])
+            continue
+
+        m = rx_url.match(ln)
+        if m:
+            url = (m.group(1) or "").strip()
+            sec = float(m.group(2))
+            _set_metric(f"({url})", sec, PERFORMANCE_METRIC_UNITS["URL load time"])
+            continue
+
+    out: Dict[str, Any] = {}
+    for k, (v, u) in metrics.items():
+        if isinstance(v, float):
+            out[k] = (round(v, 2), u)
+        else:
+            out[k] = (v, u)
+    return out
+
+
+# ==========================================================
+# Connectivity from njqca_item_component (NO mutation)
+# ==========================================================
+
+def _get_component_meta(doc: Document):
+    child_dt = doc.meta.get_field("njqca_item_component").options
+    return frappe.get_meta(child_dt)
+
+def _detect_component_variant3_field(doc: Document) -> str:
+    meta = _get_component_meta(doc)
+    for f in ("variant_3", "variant3", "variant_three"):
+        if meta.has_field(f):
+            return f
+    return "variant_3"
+
+def _collect_connectivity_changes(doc: Document, add_change) -> dict:
+    variant3_field = _detect_component_variant3_field(doc)
+
+    rows = list(doc.get("njqca_item_component") or [])
+    if not rows:
+        return {"status": "skip", "reason": "njqca_item_component empty"}
+
+    wifi_val = None
+    bt_val = None
+    lan_val = None
+
+    for r in rows:
+        ig = (r.get("item_group") or "").strip()
+        v3 = r.get(variant3_field)
+        v3 = str(v3).strip() if v3 is not None else None
+        if not v3:
+            continue
+
+        if _key(ig) == _key("WIFI CARD") and wifi_val is None:
+            wifi_val = v3
+            continue
+
+        if _key(ig) == _key("BLUETOOTH") and bt_val is None:
+            bt_val = v3
+            continue
+
+        if _key(ig) == _key("LAN PORT") and lan_val is None:
+            lan_val = v3
+            continue
+
+    written = []
+    if wifi_val is not None:
+        add_change("WIFI CARD", "wifi_speed", wifi_val, "")
+        written.append("WIFI CARD.wifi_speed")
+
+    if bt_val is not None:
+        add_change("BLUETOOTH", "bluetooth_speed", bt_val, "")
+        written.append("BLUETOOTH.bluetooth_speed")
+
+    if lan_val is not None:
+        add_change("LAN PORT", "lan_speed", lan_val, "")
+        written.append("LAN PORT.lan_speed")
+
+    if not written:
+        return {"status": "skip", "reason": "no connectivity speeds found in njqca_item_component"}
+
+    return {"status": "ok", "written": written}
+
+
+# ==========================================================
+# MAIN: Apply enrichment (NO mutation) -> returns info + changes
+# ==========================================================
+
+def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
+
+    info = {
+        "heavyload": {"status": "skip"},
+        "y_cruncher": {"status": "skip"},
+        "gaming_fps": {"status": "skip"},
+        "performance": {"status": "skip"},
+        "connectivity": {"status": "skip"},
+        "battery_bdt": {"status": "skip"},
+    }
+
+    add_change, flush_changes = _collect_upserts()
+    value_field, _unit_field = _detect_value_and_unit_fields(doc)
+
+    # -------------------------
+    # HEAVYLOAD (temps + summary)
+    # -------------------------
+    heavy_file_docname = None
     for row in doc.get("njqca_result_parameters") or []:
         ig = (row.get("item_group") or "").strip()
         p = (row.get("parameter") or "").strip()
-        if ig == HEAVYLOAD_REF_ITEM_GROUP and p == HEAVYLOAD_REF_PARAM:
+        if _key(ig) == _key(HEAVYLOAD_REF_ITEM_GROUP) and _key(p) == _key(HEAVYLOAD_REF_PARAM):
             val = _get_row_value(row, value_field)
             if val:
-                file_docname = str(val).strip()
+                heavy_file_docname = str(val).strip()
             break
 
-    if not file_docname:
-        return {"status": "skip", "reason": "HeavyLoad file reference not found / empty value"}
+    if heavy_file_docname:
+        try:
+            file_doc = frappe.get_doc("File", heavy_file_docname)
+            csv_bytes = _read_file_bytes_from_filedoctype(file_doc)
 
-    file_doc = frappe.get_doc("File", file_docname)
-    csv_bytes = _read_file_bytes_from_filedoctype(file_doc)
+            # temps avg/max
+            stats = _parse_temp_stats(csv_bytes)
+            if stats:
+                out = {}
+                for sensor, s in stats.items():
+                    disp = _display_sensor_name(sensor)
 
-    temps = _parse_temp_averages(csv_bytes)
-    if not temps:
-        return {"status": "skip", "reason": "No temperature columns found in CSV"}
+                    avg_param = f"Avg Temperature({disp})"
+                    max_param = f"Max Temperature({disp})"
 
-    for sensor, avg in temps.items():
-        disp = _display_sensor_name(sensor)             # CPU Core 1 / CPU Package
-        param_name = f"Temperature({disp})"            # your requested format
-        _upsert_result_param(
-            doc,
-            TEMP_TARGET_ITEM_GROUP,
-            param_name,
-            round(float(avg), 2),
-            TEMP_UNIT,
-        )
+                    avg_val = round(float(s["avg"]), 2)
+                    max_val = round(float(s["max"]), 2)
 
-    return {"status": "ok", "temps": {k: round(float(v), 2) for k, v in temps.items()}}
+                    add_change(TEMP_TARGET_ITEM_GROUP, avg_param, avg_val, TEMP_UNIT)
+                    add_change(TEMP_TARGET_ITEM_GROUP, max_param, max_val, TEMP_UNIT)
+                    out[disp] = {"avg": avg_val, "max": max_val}
+
+                temps_res = {"status": "ok", "temps": out}
+            else:
+                temps_res = {"status": "skip", "reason": "No temperature columns found in CSV"}
+
+            # summary
+            summary = _parse_heavyload_summary_from_csv_bytes(csv_bytes)
+            if "heavy_load_error" in summary:
+                info["heavyload"] = {"status": "error", "error": summary.get("heavy_load_error"), "temps": temps_res}
+            else:
+                for k, v in summary.items():
+                    if v is None:
+                        continue
+                    unit = HEAVYLOAD_METRIC_UNITS.get(k, "")
+                    add_change(TEMP_TARGET_ITEM_GROUP, k, v, unit)
+                info["heavyload"] = {"status": "ok", "temps": temps_res, "summary": summary}
+
+        except Exception as e:
+            info["heavyload"] = {"status": "error", "error": str(e)}
+
+    # -------------------------
+    # Y-CRUNCHER
+    # -------------------------
+    y_file_docname = None
+    for row in doc.get("njqca_result_parameters") or []:
+        p = (row.get("parameter") or "").strip()
+        if _key(p) == _key(YCRUNCHER_REF_PARAM):
+            val = _get_row_value(row, value_field)
+            if val:
+                y_file_docname = str(val).strip()
+            break
+
+    if y_file_docname:
+        try:
+            file_doc = frappe.get_doc("File", y_file_docname)
+            raw_bytes = _read_file_bytes_from_filedoctype(file_doc)
+            text = raw_bytes.decode("utf-8-sig", errors="ignore")
+
+            kv = _parse_ycruncher_content_to_kv(text)
+            if not kv:
+                info["y_cruncher"] = {"status": "skip", "reason": "no whitelisted keys found"}
+            else:
+                for k, v in kv.items():
+                    add_change(TEMP_TARGET_ITEM_GROUP, k, v, "")
+                info["y_cruncher"] = {"status": "ok", "keys_written": list(kv.keys())}
+        except Exception as e:
+            info["y_cruncher"] = {"status": "error", "error": str(e)}
+
+    # -------------------------
+    # GAMING FPS
+    # -------------------------
+    g_file_docname = None
+    for row in doc.get("njqca_result_parameters") or []:
+        p = (row.get("parameter") or "").strip()
+        if _key(p) == _key(GAMING_FPS_REF_PARAM):
+            val = _get_row_value(row, value_field)
+            if val:
+                g_file_docname = str(val).strip()
+            break
+
+    if g_file_docname:
+        try:
+            file_doc = frappe.get_doc("File", g_file_docname)
+            csv_bytes = _read_file_bytes_from_filedoctype(file_doc)
+
+            metrics = _parse_gaming_fps_metrics_from_csv_bytes(csv_bytes)
+            if "gaming_error" in metrics:
+                info["gaming_fps"] = {"status": "error", "error": metrics.get("gaming_error")}
+            else:
+                for k, v in metrics.items():
+                    unit = GAMING_METRIC_UNITS.get(k, "")
+                    add_change(GAMING_TARGET_ITEM_GROUP, k, v, unit)
+                info["gaming_fps"] = {"status": "ok", "metrics": metrics}
+        except Exception as e:
+            info["gaming_fps"] = {"status": "error", "error": str(e)}
+
+    # -------------------------
+    # PERFORMANCE TXT
+    # -------------------------
+    perf_file_docname = None
+    for row in doc.get("njqca_result_parameters") or []:
+        p = (row.get("parameter") or "").strip()
+        if _key(p) == _key(PERFORMANCE_REF_PARAM):
+            val = _get_row_value(row, value_field)
+            if val:
+                perf_file_docname = str(val).strip()
+            break
+
+    if perf_file_docname:
+        try:
+            file_doc = frappe.get_doc("File", perf_file_docname)
+            raw_bytes = _read_file_bytes_from_filedoctype(file_doc)
+            text = raw_bytes.decode("utf-8-sig", errors="ignore")
+
+            perf = _parse_performance_txt_metrics(text)
+            if not perf:
+                info["performance"] = {"status": "skip", "reason": "no requested performance metrics found"}
+            else:
+                written = []
+                for param, (val, unit) in perf.items():
+                    add_change(PERFORMANCE_TARGET_ITEM_GROUP, param, val, unit)
+                    written.append(param)
+                info["performance"] = {"status": "ok", "metrics_written": written}
+        except Exception as e:
+            info["performance"] = {"status": "error", "error": str(e)}
+
+    # CONNECTIVITY (from components)
+    try:
+        info["connectivity"] = _collect_connectivity_changes(doc, add_change)
+    except Exception as e:
+        info["connectivity"] = {"status": "error", "error": str(e)}
+
+    print('_collect_battery_bdt_change(doc, add_change)', _collect_battery_bdt_change(doc, add_change))
+
+    # BATTERY BDT (latest backup_duration_cycle_1)
+    info["battery_bdt"] = _collect_battery_bdt_change(doc, add_change)
+
+    return {"info": info, "changes": flush_changes()}
 
 
-# ----------------------------
-# Whitelisted endpoint
-# ----------------------------
+# ==========================================================
+# Whitelisted endpoint: returns changes (NOT updated_result_parameters)
+# ==========================================================
+
 @frappe.whitelist()
 def get_reliability_test_status(doc):
     """
-    Called from JS validate. Mutates doc (in-memory) and returns updated child table
-    so the client saves it without duplicates.
+    Called from JS validate.
+    DOES NOT mutate doc child table. Returns list of changes for JS to upsert.
     """
     if isinstance(doc, str):
         doc = json.loads(doc)
 
     d = frappe.get_doc(doc)
 
-    if (d.inspection_type or "").strip() == "Reliability Test":
-        info = _apply_heavyload_avg_temps(d)
-    else:
-        info = {"status": "skip", "reason": "Not Reliability Test"}
-
-    updated_rows = [row.as_dict() for row in (d.get("njqca_result_parameters") or [])]
+    res = _apply_reliability_enrichment_no_mutation(d)
     return {
-        "info": info,
-        "updated_result_parameters": updated_rows,
+        "info": res["info"],
+        "changes": res["changes"],
     }

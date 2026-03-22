@@ -1,0 +1,24 @@
+{
+ "doctype": "Workflow",
+ "workflow_name": "Cash Expense Request Workflow",
+ "document_type": "Cash Expense Request",
+ "workflow_state_field": "current_status",
+ "is_active": 1,
+
+ "states": [
+  {"state": "Draft", "doc_status": 0},
+  {"state": "Submitted", "doc_status": 0},
+  {"state": "Manager Approved", "doc_status": 0},
+  {"state": "Accounts Approved", "doc_status": 1},
+  {"state": "Rejected", "doc_status": 0}
+ ],
+
+ "transitions": [
+  {"state": "Draft", "action": "Submit", "next_state": "Submitted", "allowed": "Employee"},
+  {"state": "Submitted", "action": "Approve", "next_state": "Manager Approved", "allowed": "Reporting Manager"},
+  {"state": "Submitted", "action": "Reject", "next_state": "Rejected", "allowed": "Reporting Manager"},
+  {"state": "Manager Approved", "action": "Approve", "next_state": "Accounts Approved", "allowed": "Accounts Manager"},
+  {"state": "Manager Approved", "action": "Reject", "next_state": "Rejected", "allowed": "Accounts Manager"},
+  {"state": "Rejected", "action": "Resubmit", "next_state": "Submitted", "allowed": "Employee"}
+ ]
+}

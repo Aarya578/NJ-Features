@@ -107,6 +107,7 @@ Extract the following fields from this invoice image and return ONLY valid JSON 
   "supplier_invoice_date": "YYYY-MM-DD or null",
   "supplier_gstin": "string or null",
   "grand_total": number or null,
+  "subtotal": number or null,
   "total_taxes_and_charges": number or null,
   "purchase_order_no": "string or null",
   "gst_category": "string or null",
@@ -466,13 +467,13 @@ def _compare_ocr_with_pr(ocr_data, pr_items):
         warnings.append("Invoice OCR: No line items found in invoice image — could not verify qty/rate.")
         return warnings
 
-    # Compare grand total
-    ocr_total = ocr_data.get("grand_total")
-    pr_total = sum(flt(i.qty) * flt(i.rate) for i in pr_items)
-    if ocr_total and abs(flt(ocr_total) - pr_total) > 1:
+    # Compare subtotal only (exclude tax — tax template handled separately)
+    ocr_subtotal = ocr_data.get("subtotal")
+    pr_subtotal = sum(flt(i.qty) * flt(i.rate) for i in pr_items)
+    if ocr_subtotal and abs(flt(ocr_subtotal) - pr_subtotal) > 1:
         warnings.append(
-            f"Invoice total mismatch — invoice shows Rs {ocr_total}, "
-            f"PR calculated total Rs {round(pr_total, 2)}. Please verify."
+            f"Invoice subtotal mismatch — invoice shows Rs {ocr_subtotal}, "
+            f"PR subtotal Rs {round(pr_subtotal, 2)}. Please verify."
         )
 
     # Compare line items by position

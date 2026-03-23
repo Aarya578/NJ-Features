@@ -110,13 +110,22 @@ Extract the following fields from this invoice image and return ONLY valid JSON 
   "total_taxes_and_charges": number or null,
   "purchase_order_no": "string or null",
   "gst_category": "string or null",
-  "invoice_copy": "string or null"
+  "invoice_copy": "string or null",
+  "items": [
+    {
+      "description": "item description as printed on invoice",
+      "qty": number or null,
+      "rate": number or null,
+      "amount": number or null
+    }
+  ]
 }
+For items, extract every line item row from the invoice table.
 Return ONLY the JSON object, no explanation, no markdown."""
 
     payload = {
         "model": "gpt-4o",
-        "max_tokens": 500,
+        "max_tokens": 1000,
         "messages": [
             {
                 "role": "user",
@@ -360,7 +369,14 @@ def process_pr_invoice_scan(pr_name, file_url):
             })
             continue
 
+        # Compare OCR invoice items against PR items
+        ocr_warnings = _compare_ocr_with_pr(ocr_data, pr_items)
+
+        # Build PI items with smart qty/rate comparison
         pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name, pr.docstatus)
+
+        # Merge OCR comparison warnings at the top
+        warnings = ocr_warnings + warnings
 
         if not pi_items:
             results.append({
@@ -434,6 +450,65 @@ def _check_existing_pi(pr_name, po_name):
         limit=1
     )
     return existing[0].parent if existing else None
+
+
+
+def _compare_ocr_with_pr(ocr_data, pr_items):
+    """
+    Compare OCR extracted invoice items against PR items.
+    Checks: qty and rate match per line item (matched by position).
+    Returns list of warnings.
+    """
+    warnings = []
+    ocr_items = ocr_data.get("items") or []
+
+    if not ocr_items:
+        warnings.append("Invoice OCR: No line items found in invoice image — could not verify qty/rate.")
+        return warnings
+
+    # Compare grand total
+    ocr_total = ocr_data.get("grand_total")
+    pr_total = sum(flt(i.qty) * flt(i.rate) for i in pr_items)
+    if ocr_total and abs(flt(ocr_total) - pr_total) > 1:
+        warnings.append(
+            f"Invoice total mismatch — invoice shows Rs {ocr_total}, "
+            f"PR calculated total Rs {round(pr_total, 2)}. Please verify."
+        )
+
+    # Compare line items by position
+    for idx, pr_item in enumerate(pr_items):
+        pr_qty  = flt(pr_item.qty)
+        pr_rate = flt(pr_item.rate)
+
+        if idx < len(ocr_items):
+            ocr_item = ocr_items[idx]
+            ocr_qty  = flt(ocr_item.get("qty") or 0)
+            ocr_rate = flt(ocr_item.get("rate") or 0)
+
+            if ocr_qty and abs(ocr_qty - pr_qty) > 0.01:
+                warnings.append(
+                    f"Row {idx+1} ({pr_item.item_code}): "
+                    f"Invoice qty {ocr_qty} vs PR qty {pr_qty} — mismatch."
+                )
+
+            if ocr_rate and abs(ocr_rate - pr_rate) > 1:
+                warnings.append(
+                    f"Row {idx+1} ({pr_item.item_code}): "
+                    f"Invoice rate Rs {ocr_rate} vs PR rate Rs {pr_rate} — mismatch."
+                )
+        else:
+            warnings.append(
+                f"Row {idx+1} ({pr_item.item_code}): "
+                f"Not found in invoice — invoice has fewer items than PR."
+            )
+
+    if len(ocr_items) > len(pr_items):
+        warnings.append(
+            f"Invoice has {len(ocr_items)} items but PR has {len(pr_items)} — "
+            f"extra items on invoice not in PR."
+        )
+
+    return warnings
 
 
 def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):

@@ -373,7 +373,7 @@ def process_pr_invoice_scan(pr_name, file_url):
         ocr_warnings = _compare_ocr_with_pr(ocr_data, pr_items)
 
         # Build PI items with smart qty/rate comparison
-        pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name, pr.docstatus)
+        pi_items, warnings = _build_pi_items(pr_items, po_name, pr_name, pr.docstatus, ocr_data)
 
         # Merge OCR comparison warnings at the top
         warnings = ocr_warnings + warnings
@@ -486,10 +486,16 @@ def _compare_ocr_with_pr(ocr_data, pr_items):
             ocr_rate = flt(ocr_item.get("rate") or 0)
 
             if ocr_qty and abs(ocr_qty - pr_qty) > 0.01:
-                warnings.append(
-                    f"Row {idx+1} ({pr_item.item_code}): "
-                    f"Invoice qty {ocr_qty} vs PR qty {pr_qty} — mismatch."
-                )
+                if pr_qty < ocr_qty:
+                    warnings.append(
+                        f"{pr_item.item_code}: Received {pr_qty} but invoice shows {ocr_qty} — "
+                        f"billing for received qty {pr_qty} only."
+                    )
+                else:
+                    warnings.append(
+                        f"{pr_item.item_code}: Received {pr_qty} but invoice shows only {ocr_qty} — "
+                        f"PI qty capped at invoice qty {ocr_qty} to avoid overbilling."
+                    )
 
             if ocr_rate and abs(ocr_rate - pr_rate) > 1:
                 warnings.append(
@@ -511,7 +517,7 @@ def _compare_ocr_with_pr(ocr_data, pr_items):
     return warnings
 
 
-def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):
+def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0, ocr_data=None):
     """
     Build PI items from PR items with smart qty/rate comparison.
     Returns (items_list, warnings_list)
@@ -541,6 +547,14 @@ def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):
         pr_qty  = flt(pr_item.qty)
         pr_rate = flt(pr_item.rate)
 
+        # Get invoice qty for this item (by position) for PR > Invoice cap
+        inv_qty = None
+        if ocr_data:
+            ocr_items = ocr_data.get("items") or []
+            idx = list(pr_items).index(pr_item) if pr_item in list(pr_items) else -1
+            if idx >= 0 and idx < len(ocr_items):
+                inv_qty = flt(ocr_items[idx].get("qty") or 0) or None
+
         if pr_item.purchase_order_item:
             try:
                 po_item = frappe.get_doc("Purchase Order Item", pr_item.purchase_order_item)
@@ -548,9 +562,11 @@ def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):
                 po_rate = flt(po_item.rate)
 
                 if pr_qty < po_qty:
+                    inv_note = f", invoice shows {inv_qty}" if inv_qty else ""
                     warnings.append(
                         f"{pr_item.item_code}: Short delivery — "
-                        f"received {pr_qty} of {po_qty} ordered. "
+                        f"received {pr_qty} of {po_qty} ordered{inv_note}. "
+                        f"Billing for received qty {pr_qty}. "
                         f"Remaining {po_qty - pr_qty} units still on PO."
                     )
                     pi_item["qty"] = pr_qty
@@ -563,6 +579,11 @@ def _build_pi_items(pr_items, po_name, pr_name, pr_docstatus=0):
                     pi_item["qty"] = po_qty
                 else:
                     pi_item["qty"] = pr_qty
+
+                # Cap PI qty at invoice qty if PR > Invoice (avoid overbilling)
+                # Warning already shown by _compare_ocr_with_pr — just silently cap here
+                if inv_qty and flt(pi_item.get("qty", pr_qty)) > inv_qty:
+                    pi_item["qty"] = inv_qty
 
                 if po_rate > 0 and abs(pr_rate - po_rate) > 0.01:
                     warnings.append(

@@ -33,7 +33,7 @@ doctype_js = {
     "Sales Order": "public/js/sales_order.js",
     "Quotation": "public/js/quotation.js",
     "Purchase Invoice": "public/js/purchase_invoice_override.js",
-    "Purchase Receipt": "public/js/purchase_receipt_override.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js",
 }
 
 doctype_list_js = {

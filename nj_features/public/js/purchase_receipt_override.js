@@ -1,6 +1,83 @@
 console.log("purchase_receipt_override.js loaded");
 
+// ─────────────────────────────────────────
+// PURCHASE RECEIPT — MAIN FORM EVENTS
+// ─────────────────────────────────────────
+
 frappe.ui.form.on("Purchase Receipt", {
+
+    onload: function(frm) {
+        $('.col-lg-2.layout-side-section').hide();
+        if (frm.doc.docstatus == 0) {
+            var user_email = frappe.session.user;
+            frappe.db.get_value('Employee', {'user_id': user_email, 'status': 'Active'}, 'work_warehouse').then(function(r) {
+                if (r.message && r.message.work_warehouse) {
+                    frm.set_value('set_warehouse', r.message.work_warehouse);
+                    frm.doc.items.forEach(function(item) {
+                        frappe.db.get_list('NJ Settings', {
+                            filters: {'doc_type': 'Warehouse', 'module': 'NJ Features'},
+                            fields: ['parameter', 'value']
+                        }).then(function(result) {
+                            result.forEach(function(setting) {
+                                if (setting.parameter === item.item_group) {
+                                    item.warehouse = setting.value;
+                                }
+                            });
+                        });
+                    });
+                } else {
+                    frappe.throw("Work Warehouse is not set for <b>User: " + user_email + "</b>. Please mail us at <strong><a href='mailto:itsupport@newjaisa.com'>itsupport@newjaisa.com</a></strong> to create an employee.");
+                }
+            });
+        }
+        frm.refresh_field("items");
+    },
+
+    refresh: function(frm) {
+        if (frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('Print QR Code'), function() {
+                var docname = encodeURIComponent(frm.doc.name);
+                var format = "Purchase Receipt Barcode";
+                var print_trigger = 1;
+                window.open(frappe.urllib.get_full_url("/printview?" +
+                    "doctype=" + encodeURIComponent("Purchase Receipt") +
+                    "&name=" + docname +
+                    "&trigger_print=" + print_trigger +
+                    "&format=" + format +
+                    "&no_letterhead=0" +
+                    "&_lang=" + (frappe.boot.lang || "en")));
+            }).addClass('btn-primary');
+        } else {
+            frm.remove_custom_button('Print Barcode');
+        }
+
+        if ((frm.doc.items || []).length) {
+            frm.add_custom_button(__('Print All Items Barcode'), async function() {
+                await nj_pr_print_all_items(frm);
+            }).addClass('btn-primary');
+        }
+    },
+
+    fetch_unique_records: function(frm) {
+        frappe.call({
+            method: "nj_features.overrides.purchase_order.fetch_unique_records",
+            args: { doc: frm.doc },
+            freeze: true,
+            freeze_message: "Fetching Unique Records...",
+            callback: function(r) {
+                if (!r.message) return;
+                frm.clear_table("filtered_table");
+                r.message.forEach(row => {
+                    let child = frm.add_child("filtered_table");
+                    child.item_code = row.item_code;
+                    child.qty = row.qty;
+                    child.rate = row.rate;
+                    child.amount = row.amount;
+                });
+                frm.refresh_field("filtered_table");
+            }
+        });
+    },
 
     proof_image: function(frm) {
         console.log("PR proof_image changed", frm.doc.name, frm.doc.proof_image);
@@ -10,7 +87,6 @@ frappe.ui.form.on("Purchase Receipt", {
             return;
         }
 
-        // Must be saved first (needs a name)
         if (frm.doc.__islocal) {
             frappe.msgprint({
                 title: __("Save Required"),
@@ -25,7 +101,6 @@ frappe.ui.form.on("Purchase Receipt", {
             return;
         }
 
-        // Save the form first so proof_image is persisted, then run OCR
         frm.save().then(() => {
             _run_pr_invoice_scan(frm);
         });
@@ -34,21 +109,65 @@ frappe.ui.form.on("Purchase Receipt", {
     after_save: function(frm) {
         console.log("PR after_save triggered", frm.doc.name, frm.doc.proof_image);
 
-        // Only run if proof_image exists AND scan not already triggered by field change
         if (!frm.doc.proof_image) return;
         if (frm.__pr_invoice_scan_running) return;
-        if (frm.__pr_scan_done_for === frm.doc.proof_image) return; // already ran for this image
+        if (frm.__pr_scan_done_for === frm.doc.proof_image) return;
 
         _run_pr_invoice_scan(frm);
     }
 });
 
 
+// ─────────────────────────────────────────
+// PURCHASE RECEIPT ITEM — BARCODE PRINTING
+// ─────────────────────────────────────────
+
+frappe.ui.form.on('Purchase Receipt Item', {
+    print: function(frm, cdt, cdn) {
+        var child_doc = locals[cdt][cdn];
+
+        if (frm.doc.docstatus == 0) {
+            frappe.call({
+                method: 'nj_features.nj_features.api.qr_code.print_barcode',
+                args: { doc: child_doc },
+                callback: function(r) {
+                    if (r.message.serial_no) {
+                        frappe.model.set_value(cdt, cdn, 'serial_no', r.message.serial_no);
+                    }
+                    if (r.message.truncated_item_code) {
+                        frappe.model.set_value(cdt, cdn, 'truncated_item_code', r.message.truncated_item_code);
+                    }
+                    if (r.message.decoded_item_code) {
+                        frappe.model.set_value(cdt, cdn, 'decoded_item_code', r.message.decoded_item_code);
+                    }
+                }
+            });
+        }
+
+        if ((child_doc.qr_code_mapping || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
+            window.open(frappe.urllib.get_full_url("/printview?" +
+                "doctype=" + encodeURIComponent("Purchase Receipt Item") +
+                "&name=" + encodeURIComponent(child_doc.name) +
+                "&trigger_print=1" +
+                "&format=" + "PR Item Barcode" +
+                "&qr_code_name=" + child_doc.decoded_item_code +
+                "&no_letterhead=1" +
+                "&_lang=en"
+            ));
+        }
+    }
+});
+
+
+// ─────────────────────────────────────────
+// OCR — RUN PR INVOICE SCAN
+// ─────────────────────────────────────────
+
 function _run_pr_invoice_scan(frm) {
     if (frm.__pr_invoice_scan_running) return;
 
     frm.__pr_invoice_scan_running = true;
-    frm.__pr_scan_done_for = frm.doc.proof_image; // mark so after_save doesn't double-fire
+    frm.__pr_scan_done_for = frm.doc.proof_image;
 
     console.log("Running PR invoice scan for", frm.doc.name, frm.doc.proof_image);
 
@@ -79,7 +198,6 @@ function _run_pr_invoice_scan(frm) {
                 return;
             }
 
-            // Build result HTML
             let html = "<div>";
             let hasNewPI = false;
 
@@ -105,13 +223,11 @@ function _run_pr_invoice_scan(frm) {
 
                     html += "</p><hr>";
 
-                    // Open each newly created PI in a new tab
-                    // (skip if PI already existed)
                     if (row.pi && row.status !== "exists") {
                         hasNewPI = true;
                         setTimeout(() => {
                             window.open(`/app/purchase-invoice/${row.pi}`, "_blank");
-                        }, 800); // slight delay so popup shows first
+                        }, 800);
                     }
                 });
             } else {
@@ -125,7 +241,6 @@ function _run_pr_invoice_scan(frm) {
                 indicator: res.pi_list && res.pi_list.length ? "green" : "orange"
             });
 
-            // Refresh connections section so PI shows up
             frm.reload_doc();
         },
         error: function(r) {
@@ -137,5 +252,111 @@ function _run_pr_invoice_scan(frm) {
                 indicator: "red"
             });
         }
+    });
+}
+
+
+// ─────────────────────────────────────────
+// PRINT ALL ITEMS BARCODE
+// ─────────────────────────────────────────
+
+async function nj_pr_print_all_items(frm) {
+    const rows = frm.doc.items || [];
+    if (!rows.length) {
+        frappe.msgprint("No item rows found.");
+        return;
+    }
+
+    const target_rows = rows.filter(r => (r.item_code || r.component));
+    const print_windows = [];
+
+    frappe.show_progress("Printing", 0, target_rows.length, "Preparing...");
+
+    try {
+        if (frm.doc.docstatus === 0) {
+            frm.disable_save();
+
+            for (let i = 0; i < target_rows.length; i++) {
+                const row = target_rows[i];
+                frappe.show_progress("Printing", i + 1, target_rows.length, `Generating for row #${row.idx || (i + 1)}...`);
+
+                const msg = await nj_pr_call_print_barcode(row);
+
+                if (msg && msg.serial_no) {
+                    await frappe.model.set_value(row.doctype, row.name, 'serial_no', msg.serial_no);
+                }
+                if (msg && msg.truncated_item_code) {
+                    await frappe.model.set_value(row.doctype, row.name, 'truncated_item_code', msg.truncated_item_code);
+                }
+                if (msg && msg.decoded_item_code) {
+                    await frappe.model.set_value(row.doctype, row.name, 'decoded_item_code', msg.decoded_item_code);
+                }
+
+                frm.refresh_field("items");
+
+                const printable = (row.qr_code_mapping || row.truncated_item_code || row.decoded_item_code);
+                if (printable) {
+                    const w = window.open("about:blank");
+                    if (w) print_windows.push({ w, row });
+                }
+            }
+
+            frm.enable_save();
+            await frm.save();
+
+        } else {
+            for (let i = 0; i < target_rows.length; i++) {
+                const row = target_rows[i];
+                const printable = (row.qr_code_mapping || row.truncated_item_code || row.decoded_item_code);
+                if (printable) {
+                    const w = window.open("about:blank");
+                    if (w) print_windows.push({ w, row });
+                }
+            }
+        }
+
+        for (const pw of print_windows) {
+            const row = pw.row;
+            const qr_name = row.decoded_item_code || row.qr_code_mapping || row.truncated_item_code || "";
+            const url = frappe.urllib.get_full_url("/printview?" +
+                "doctype=" + encodeURIComponent("Purchase Receipt Item") +
+                "&name=" + encodeURIComponent(row.name) +
+                "&trigger_print=1" +
+                "&format=" + encodeURIComponent("PR Item Barcode") +
+                "&qr_code_name=" + encodeURIComponent(qr_name) +
+                "&no_letterhead=1" +
+                "&_lang=en"
+            );
+            if (pw.w) pw.w.location = url;
+        }
+
+        frappe.msgprint(`Done. Printed ${print_windows.length} item rows. If nothing opened, allow popups for this site.`);
+
+    } catch (e) {
+        console.error(e);
+        frm.enable_save();
+        frappe.msgprint({
+            title: "Print All Failed",
+            message: (e && e.message) ? e.message : e,
+            indicator: "red"
+        });
+    } finally {
+        frappe.hide_progress();
+        frm.enable_save();
+    }
+}
+
+function nj_pr_call_print_barcode(child_row) {
+    return new Promise((resolve, reject) => {
+        frappe.call({
+            method: 'nj_features.nj_features.api.qr_code.print_barcode',
+            args: { doc: child_row },
+            callback: function(r) {
+                resolve((r && r.message) ? r.message : {});
+            },
+            error: function(err) {
+                reject(err);
+            }
+        });
     });
 }

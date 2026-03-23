@@ -1,98 +1,44 @@
-frappe.ui.form.on('Purchase Receipt', {
+console.log("purchase_receipt_override.js loaded");
+
+// ─────────────────────────────────────────
+// PURCHASE RECEIPT — MAIN FORM EVENTS
+// ─────────────────────────────────────────
+
+frappe.ui.form.on("Purchase Receipt", {
+
     onload: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
         if (frm.doc.docstatus == 0) {
-            var user_email = frappe.session.user
+            var user_email = frappe.session.user;
             frappe.db.get_value('Employee', {'user_id': user_email, 'status': 'Active'}, 'work_warehouse').then(function(r) {
-
                 if (r.message && r.message.work_warehouse) {
-
-                    frm.set_value('set_warehouse', r.message.work_warehouse)
-
+                    frm.set_value('set_warehouse', r.message.work_warehouse);
                     frm.doc.items.forEach(function(item) {
                         frappe.db.get_list('NJ Settings', {
-                            filters: {'doc_type':'Warehouse', 'module':'NJ Features'},
+                            filters: {'doc_type': 'Warehouse', 'module': 'NJ Features'},
                             fields: ['parameter', 'value']
                         }).then(function(result) {
                             result.forEach(function(setting) {
-
                                 if (setting.parameter === item.item_group) {
                                     item.warehouse = setting.value;
                                 }
                             });
                         });
-
                     });
                 } else {
-                    frappe.throw("Work Warehouse is not set for <b>User: "+user_email+"</b>. Please mail us at <strong><a href='mailto:itsupport@newjaisa.com'>itsupport@newjaisa.com</a></strong> to create an employee.")
+                    frappe.throw("Work Warehouse is not set for <b>User: " + user_email + "</b>. Please mail us at <strong><a href='mailto:itsupport@newjaisa.com'>itsupport@newjaisa.com</a></strong> to create an employee.");
                 }
             });
         }
-        frm.refresh_field("items")
-
-
-        // let items = frm.doc.items.map(row => ({
-        //     idx: row.idx,
-        //     item_group: row.item_group
-        // }));
-
-        // frappe.call({
-        //     method: "nj_features.overrides.purchase_receipt.get_item_group_cost_centers",
-        //     args: { items: items },
-        //     callback: function(r) {
-
-        //         if (r.message) {
-        //             console.log("Cost centers:===", r.message);
-
-        //             frm.doc.items.forEach(row => {
-        //                 if (r.message[row.idx]) {
-        //                     frappe.model.set_value(row.doctype, row.name, "cost_center", r.message[row.idx]);
-
-        //                 }
-        //                  frm.refresh_field('cost_center');
-        //             });
-        //         }
-        //     }
-        // });
-    },
-
-    fetch_unique_records: function (frm) {
-        
-        frappe.call({
-            method: "nj_features.overrides.purchase_order.fetch_unique_records",
-            args: {
-                doc: frm.doc
-            },
-            freeze: true,
-            freeze_message: "Fetching Unique Records...",
-            callback: function (r) {
-                if (!r.message) return;
-
-                // Clear old table
-                frm.clear_table("filtered_table");
-
-                // Add new aggregated rows
-                r.message.forEach(row => {
-                    let child = frm.add_child("filtered_table");
-                    child.item_code = row.item_code;
-                    child.qty = row.qty;
-                    child.rate = row.rate;
-                    child.amount = row.amount;
-                });
-
-                frm.refresh_field("filtered_table");
-            }
-        });
+        frm.refresh_field("items");
     },
 
     refresh: function(frm) {
         if (frm.doc.docstatus === 1) {
-
             frm.add_custom_button(__('Print QR Code'), function() {
                 var docname = encodeURIComponent(frm.doc.name);
                 var format = "Purchase Receipt Barcode";
                 var print_trigger = 1;
-
                 window.open(frappe.urllib.get_full_url("/printview?" +
                     "doctype=" + encodeURIComponent("Purchase Receipt") +
                     "&name=" + docname +
@@ -101,43 +47,90 @@ frappe.ui.form.on('Purchase Receipt', {
                     "&no_letterhead=0" +
                     "&_lang=" + (frappe.boot.lang || "en")));
             }).addClass('btn-primary');
-
         } else {
             frm.remove_custom_button('Print Barcode');
         }
 
-        // ============================
-        // ✅ NEW: Print All Items Button
-        // ============================
         if ((frm.doc.items || []).length) {
             frm.add_custom_button(__('Print All Items Barcode'), async function() {
                 await nj_pr_print_all_items(frm);
             }).addClass('btn-primary');
         }
+    },
+
+    fetch_unique_records: function(frm) {
+        frappe.call({
+            method: "nj_features.overrides.purchase_order.fetch_unique_records",
+            args: { doc: frm.doc },
+            freeze: true,
+            freeze_message: "Fetching Unique Records...",
+            callback: function(r) {
+                if (!r.message) return;
+                frm.clear_table("filtered_table");
+                r.message.forEach(row => {
+                    let child = frm.add_child("filtered_table");
+                    child.item_code = row.item_code;
+                    child.qty = row.qty;
+                    child.rate = row.rate;
+                    child.amount = row.amount;
+                });
+                frm.refresh_field("filtered_table");
+            }
+        });
+    },
+
+    proof_image: function(frm) {
+        console.log("PR proof_image changed", frm.doc.name, frm.doc.proof_image);
+
+        if (!frm.doc.proof_image) {
+            console.log("No proof image uploaded.");
+            return;
+        }
+
+        if (frm.doc.__islocal) {
+            frappe.msgprint({
+                title: __("Save Required"),
+                message: __("Please save the Purchase Receipt before uploading a proof image."),
+                indicator: "orange"
+            });
+            return;
+        }
+
+        if (frm.__pr_invoice_scan_running) {
+            console.log("PR invoice scan is already running.");
+            return;
+        }
+
+        frm.save().then(() => {
+            _run_pr_invoice_scan(frm);
+        });
+    },
+
+    after_save: function(frm) {
+        console.log("PR after_save triggered", frm.doc.name, frm.doc.proof_image);
+
+        if (!frm.doc.proof_image) return;
+        if (frm.__pr_invoice_scan_running) return;
+        if (frm.__pr_scan_done_for === frm.doc.proof_image) return;
+
+        _run_pr_invoice_scan(frm);
     }
 });
 
-// Barcode printing
-frappe.ui.form.on('Purchase Receipt Item', {
-    // serial_no: function(frm, cdt, cdn) {
-    //     var child_doc = locals[cdt][cdn];
-    //     if (child_doc.serial_no && child_doc.serial_no.startsWith("NJ-")) {
-    //         frappe.msgprint("Manually entered serial numbers cannot start with 'NJ-'");
-    //         return;
-    //     }
-    // },
-    print: function(frm, cdt, cdn) {
 
+// ─────────────────────────────────────────
+// PURCHASE RECEIPT ITEM — BARCODE PRINTING
+// ─────────────────────────────────────────
+
+frappe.ui.form.on('Purchase Receipt Item', {
+    print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
 
-        if(frm.doc.docstatus == 0){
+        if (frm.doc.docstatus == 0) {
             frappe.call({
                 method: 'nj_features.nj_features.api.qr_code.print_barcode',
-                args: {
-                    doc: child_doc
-                },
+                args: { doc: child_doc },
                 callback: function(r) {
-
                     if (r.message.serial_no) {
                         frappe.model.set_value(cdt, cdn, 'serial_no', r.message.serial_no);
                     }
@@ -151,24 +144,121 @@ frappe.ui.form.on('Purchase Receipt Item', {
             });
         }
 
-        if((child_doc.qr_code_mapping || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
-            let objWindowOpenResult = window.open(frappe.urllib.get_full_url("/printview?" +
-                                        "doctype=" + encodeURIComponent("Purchase Receipt Item") +
-                                        "&name=" + encodeURIComponent(child_doc.name) +
-                                        "&trigger_print=1" +
-                                        "&format=" + "PR Item Barcode" +
-                                        "&qr_code_name=" + child_doc.decoded_item_code +
-                                        "&no_letterhead=1" +
-                                        "&_lang=en"
-                                    ));
+        if ((child_doc.qr_code_mapping || child_doc.truncated_item_code) && frm.doc.docstatus == 1) {
+            window.open(frappe.urllib.get_full_url("/printview?" +
+                "doctype=" + encodeURIComponent("Purchase Receipt Item") +
+                "&name=" + encodeURIComponent(child_doc.name) +
+                "&trigger_print=1" +
+                "&format=" + "PR Item Barcode" +
+                "&qr_code_name=" + child_doc.decoded_item_code +
+                "&no_letterhead=1" +
+                "&_lang=en"
+            ));
         }
     }
 });
 
 
-// =====================================================
-// ✅ NEW FUNCTIONS (do not interfere with existing code)
-// =====================================================
+// ─────────────────────────────────────────
+// OCR — RUN PR INVOICE SCAN
+// ─────────────────────────────────────────
+
+function _run_pr_invoice_scan(frm) {
+    if (frm.__pr_invoice_scan_running) return;
+
+    frm.__pr_invoice_scan_running = true;
+    frm.__pr_scan_done_for = frm.doc.proof_image;
+
+    console.log("Running PR invoice scan for", frm.doc.name, frm.doc.proof_image);
+
+    frappe.call({
+        method: "nj_features.nj_features.api.invoice_ocr.process_pr_invoice_scan",
+        args: {
+            pr_name: frm.doc.name,
+            file_url: frm.doc.proof_image
+        },
+        freeze: true,
+        freeze_message: __("Reading invoice and creating Purchase Invoice..."),
+        callback: function(r) {
+            console.log("PR OCR success", r);
+            frm.__pr_invoice_scan_running = false;
+
+            const res = r.message;
+            if (!res) {
+                frappe.msgprint(__("No response received from server."));
+                return;
+            }
+
+            if (!res.success) {
+                frappe.msgprint({
+                    title: __("OCR / PI Creation Failed"),
+                    message: res.error || __("Could not process invoice automatically."),
+                    indicator: "red"
+                });
+                return;
+            }
+
+            let html = "<div>";
+            let hasNewPI = false;
+
+            if (res.pi_list && res.pi_list.length) {
+                res.pi_list.forEach(row => {
+                    const piLink = row.pi
+                        ? `<a href="/app/purchase-invoice/${row.pi}" target="_blank">${row.pi}</a>`
+                        : "-";
+
+                    html += `<p>
+                        <b>PO:</b> ${row.po || "-"}<br>
+                        <b>PI:</b> ${piLink}<br>
+                        <b>Status:</b> ${row.status || "-"}<br>
+                        <b>Message:</b> ${row.message || "-"}<br>`;
+
+                    if (row.warnings && row.warnings.length) {
+                        html += "<b>Warnings:</b><ul>";
+                        row.warnings.forEach(w => {
+                            html += `<li style="color:orange">${w}</li>`;
+                        });
+                        html += "</ul>";
+                    }
+
+                    html += "</p><hr>";
+
+                    if (row.pi && row.status !== "exists") {
+                        hasNewPI = true;
+                        setTimeout(() => {
+                            window.open(`/app/purchase-invoice/${row.pi}`, "_blank");
+                        }, 800);
+                    }
+                });
+            } else {
+                html += "<p>No Purchase Invoices were created.</p>";
+            }
+            html += "</div>";
+
+            frappe.msgprint({
+                title: __("Purchase Invoice Processing Result"),
+                message: html,
+                indicator: res.pi_list && res.pi_list.length ? "green" : "orange"
+            });
+
+            frm.reload_doc();
+        },
+        error: function(r) {
+            console.log("PR OCR error", r);
+            frm.__pr_invoice_scan_running = false;
+            frappe.msgprint({
+                title: __("OCR / PI Creation Failed"),
+                message: __("Could not process invoice automatically. Please create PI manually."),
+                indicator: "red"
+            });
+        }
+    });
+}
+
+
+// ─────────────────────────────────────────
+// PRINT ALL ITEMS BARCODE
+// ─────────────────────────────────────────
 
 async function nj_pr_print_all_items(frm) {
     const rows = frm.doc.items || [];
@@ -177,29 +267,21 @@ async function nj_pr_print_all_items(frm) {
         return;
     }
 
-    // Filter: only rows having item_code/component
     const target_rows = rows.filter(r => (r.item_code || r.component));
-
-    // Popup blockers: open all windows immediately inside click
-    // We'll fill URLs after generation.
     const print_windows = [];
 
     frappe.show_progress("Printing", 0, target_rows.length, "Preparing...");
 
     try {
-        // 1) In Draft: generate mapping / serials first
         if (frm.doc.docstatus === 0) {
-
             frm.disable_save();
 
             for (let i = 0; i < target_rows.length; i++) {
                 const row = target_rows[i];
-
-                frappe.show_progress("Printing", i + 1, target_rows.length, `Generating for row #${row.idx || (i+1)}...`);
+                frappe.show_progress("Printing", i + 1, target_rows.length, `Generating for row #${row.idx || (i + 1)}...`);
 
                 const msg = await nj_pr_call_print_barcode(row);
 
-                // Update row fields using model.set_value (safer)
                 if (msg && msg.serial_no) {
                     await frappe.model.set_value(row.doctype, row.name, 'serial_no', msg.serial_no);
                 }
@@ -210,10 +292,8 @@ async function nj_pr_print_all_items(frm) {
                     await frappe.model.set_value(row.doctype, row.name, 'decoded_item_code', msg.decoded_item_code);
                 }
 
-                // refresh table
                 frm.refresh_field("items");
 
-                // Pre-open windows only for rows that are printable
                 const printable = (row.qr_code_mapping || row.truncated_item_code || row.decoded_item_code);
                 if (printable) {
                     const w = window.open("about:blank");
@@ -222,12 +302,9 @@ async function nj_pr_print_all_items(frm) {
             }
 
             frm.enable_save();
-
-            // Optional but highly recommended: save draft so child row data is persisted
-            // If you DON'T want autosave, comment below 2 lines.
             await frm.save();
+
         } else {
-            // 2) In Submitted: directly open windows for printable rows
             for (let i = 0; i < target_rows.length; i++) {
                 const row = target_rows[i];
                 const printable = (row.qr_code_mapping || row.truncated_item_code || row.decoded_item_code);
@@ -238,12 +315,9 @@ async function nj_pr_print_all_items(frm) {
             }
         }
 
-        // 3) Assign URLs to opened windows (avoids popup block)
         for (const pw of print_windows) {
             const row = pw.row;
-
             const qr_name = row.decoded_item_code || row.qr_code_mapping || row.truncated_item_code || "";
-
             const url = frappe.urllib.get_full_url("/printview?" +
                 "doctype=" + encodeURIComponent("Purchase Receipt Item") +
                 "&name=" + encodeURIComponent(row.name) +
@@ -253,7 +327,6 @@ async function nj_pr_print_all_items(frm) {
                 "&no_letterhead=1" +
                 "&_lang=en"
             );
-
             if (pw.w) pw.w.location = url;
         }
 

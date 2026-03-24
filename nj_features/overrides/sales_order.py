@@ -254,7 +254,12 @@ def calculate_dispatch_eta_for_sales_order():
                 item_eta = 0  # Fully allocated, no waiting time
             
             # Track max ETA per sales order
-            if so_name not in so_eta_map or item_eta > so_eta_map[so_name]:
+            # None means no stock at all — treat as worst case (higher than any int)
+            if so_name not in so_eta_map:
+                so_eta_map[so_name] = item_eta
+            elif item_eta is None:
+                so_eta_map[so_name] = None  # no stock overrides everything
+            elif so_eta_map[so_name] is not None and item_eta > so_eta_map[so_name]:
                 so_eta_map[so_name] = item_eta
         
         # Update ETA for each sales order
@@ -550,7 +555,6 @@ def calculate_item_eta(item_code, required_qty, departments):
     for dept in departments:
         accumulated_days += dept.min_aging_days
 
-        # Get warehouses in this department
         warehouses = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse` WHERE department = %s
         """, dept.name)
@@ -558,7 +562,6 @@ def calculate_item_eta(item_code, required_qty, departments):
         if not warehouses:
             continue
 
-        # Generate placeholders for warehouses
         placeholders = ', '.join(['%s'] * len(warehouses))
 
         query = f"""
@@ -580,14 +583,13 @@ def calculate_item_eta(item_code, required_qty, departments):
         available_count = frappe.db.sql(query, params)[0][0] or 0
         total_available += available_count
 
-        # Enough stock found in this department
         if available_count >= remaining_qty:
             return accumulated_days
         else:
             remaining_qty -= available_count
 
-    # Some stock exists across depts but not enough — return max aging days
-    # No stock at all anywhere — return None so UI can show "No Stock"
+    # Some stock exists but not enough → return max aging days
+    # No stock at all anywhere → return None so UI can show "No Stock"
     return accumulated_days if total_available > 0 else None
 
 
@@ -598,13 +600,11 @@ def update_sales_order_etas(so_eta_map):
         None  → no stock at all → eta_for_dispatch = 'No Stock', estimated_delivery_date = NULL
         int   → days from today until stock is ready
                 estimated_delivery_date = today + eta_days
-                (uses nowdate() not creation date so estimate is always future-facing
-                 and recalculates correctly every time the scheduler runs)
+                (uses nowdate() so estimate is always future-facing)
     """
     for so_name, eta in so_eta_map.items():
 
         if eta is None:
-            # Genuinely no stock in any eligible department
             frappe.db.sql("""
                 UPDATE `tabSales Order`
                 SET
@@ -619,8 +619,6 @@ def update_sales_order_etas(so_eta_map):
         except (ValueError, TypeError):
             eta_days = 0
 
-        # Always base on today so the estimate stays future-facing
-        # as the scheduler recalculates every 10 minutes
         estimated_delivery_date = add_days(nowdate(), eta_days)
 
         frappe.db.sql("""

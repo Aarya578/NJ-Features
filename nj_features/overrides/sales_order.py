@@ -3,27 +3,28 @@ import json
 import time
 import uuid
 import base64
-import frappe , requests
+import frappe, requests
 from datetime import datetime
 from frappe.utils import getdate, nowdate, add_days
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
-from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
+from nj_features.nj_features.api.shiprocket_api import get_auth_token, generate_awb, generate_label
 
 logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
-SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
+SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 
+
 class CustomSalesOrder(SalesOrder):
-    
+
     def on_submit(self):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
         # self.total_item_group_sum()
         raw_order_id = None
-        if self.order_type!="Maintenance":
+        if self.order_type != "Maintenance":
             if self.shopify_order_id:
                 stripped_id = self.shopify_order_id.lstrip('#')
                 if len(stripped_id) < 7:
@@ -42,10 +43,10 @@ class CustomSalesOrder(SalesOrder):
 
     def total_item_group_sum(self):
         item_group_value = frappe.db.get_value(
-            "NJ Settings", 
-            {"parameter": "Item Group Validation"}, 
+            "NJ Settings",
+            {"parameter": "Item Group Validation"},
             "value"
-        )    
+        )
         if not item_group_value:
             return
 
@@ -57,12 +58,12 @@ class CustomSalesOrder(SalesOrder):
                 total_qty += item.qty
 
         self.item_group_qty = total_qty
-        self.save(ignore_permissions=True)   
+        self.save(ignore_permissions=True)
 
     def payment_id_validation(self):
         nj_setting_value = frappe.db.get_value(
-            "NJ Settings", 
-            {"parameter": "sale_type"}, 
+            "NJ Settings",
+            {"parameter": "sale_type"},
             "value"
         )
         if self.sale_type != nj_setting_value:
@@ -93,43 +94,43 @@ class CustomSalesOrder(SalesOrder):
 
     # def maintenance_order_validation(self):
     #     nj_setting = frappe.db.get_value(
-    #         "NJ Settings", 
-    #         {"parameter": "order_type"}, 
+    #         "NJ Settings",
+    #         {"parameter": "order_type"},
     #         "value"
-    #     )        
+    #     )
     #     if self.order_type != nj_setting:
     #         return
-
+    #
     #     if self.grand_total < 500:
-    #         self.approve = 1  
+    #         self.approve = 1
     #     else:
-    #         self.approve = 0  
+    #         self.approve = 0
     #     self.save(ignore_permissions=True)
 
     def maintenance_order_validation(self):
-        
+
         nj_setting = frappe.db.get_value(
-            "NJ Settings", 
-            {"parameter": "order_type"}, 
+            "NJ Settings",
+            {"parameter": "order_type"},
             "value"
-        )        
+        )
 
         if self.order_type != nj_setting:
             return
 
         approve_value = 1 if self.grand_total < 500 else 0
-        frappe.db.set_value("Sales Order", self.name, "approve", approve_value , update_modified=False)
+        frappe.db.set_value("Sales Order", self.name, "approve", approve_value, update_modified=False)
         self.approve = approve_value
-    
+
     def sale_type_validation(self):
         nj_setting_value = frappe.db.get_value(
-            "NJ Settings", 
-            {"parameter": "sales_types"}, 
+            "NJ Settings",
+            {"parameter": "sales_types"},
             "value"
         )
 
         if not nj_setting_value:
-            return  
+            return
         allowed_sale_types = [v.strip() for v in nj_setting_value.split(",")]
 
         if self.sale_type in allowed_sale_types:
@@ -146,11 +147,11 @@ def trigger_fulfillment(order_id):
         }
         # Step 1: Fetch Order Details
         url = f"{SHOPIFY_URL}{order_id}"
-        response = requests.get(url, headers=headers)  
+        response = requests.get(url, headers=headers)
         data = response.json()
 
         if "orders" in data and data["orders"]:
-            order = data["orders"][0]  
+            order = data["orders"][0]
             order_id_shopify = order.get("id")
 
             if not order_id_shopify:
@@ -195,8 +196,8 @@ def trigger_fulfillment(order_id):
                 if "fulfillment" in fulfillment_data:
                     fulfillment_id = fulfillment_data["fulfillment"]["id"]
                     return {
-                            "status": "success", "fulfillment_id": fulfillment_id
-                        }
+                        "status": "success", "fulfillment_id": fulfillment_id
+                    }
                 else:
                     frappe.msgprint("Fulfillment creation failed.")
             else:
@@ -205,69 +206,98 @@ def trigger_fulfillment(order_id):
             frappe.msgprint("Order not found.")
     except Exception as e:
         frappe.throw(str(e))
- 
+
+
 """Laptop Allocations Functions - Modified with Delivery Date Logic"""
 
-frappe.whitelist(allow_guest=True)
-def calculate_dispatch_eta_for_sales_order():
-    """Main function to calculate dispatch ETA for all open sales orders"""
-    try:
-        # Get department-wise min aging days (in descending order of department_sequence)
-        departments = get_departments()
-        
-        # Get all open sales orders with their items (including product bundles)
-        open_orders = get_open_sales_orders()
 
-        # Dictionary to track max ETA per sales order
-        so_eta_map = {}
-        
-        # Process each sales order item
-        for order in open_orders:
+@frappe.whitelist(allow_guest=True)
+def calculate_dispatch_eta_for_sales_order():
+    """Main function to calculate dispatch ETA for all open sales orders."""
+    departments = get_departments()
+    open_orders = get_open_sales_orders()
+
+    so_eta_map = {}
+    item_errors = []
+
+    for order in open_orders:
+        try:
             so_name = order.sales_order
             item_code = order.item_code
-            ordered_qty = order.ordered_qty
+            ordered_qty = order.ordered_qty or 0
             delivery_date = order.delivery_date
-            
-            # Get delivered quantity
-            delivered_qty = get_delivered_quantity(so_name, item_code)
-            
-            # Calculate pending quantity
+
+            if not so_name or not item_code:
+                continue
+
+            delivered_qty = get_delivered_quantity(so_name, item_code) or 0
             net_pending = ordered_qty - delivered_qty
+
             if net_pending <= 0:
                 continue
-            
+
+            if not delivery_date:
+                msg = f"{so_name} | {item_code} | Missing delivery_date"
+                item_errors.append(msg)
+                continue
+
             # Calculate days to deliver
             days_to_deliver = (getdate(delivery_date) - getdate(nowdate())).days
-            
+
             # Get eligible departments based on delivery date
-            eligible_depts, remaining_depts = get_eligible_departments(departments, days_to_deliver)
-            
+            eligible_depts, remaining_depts = get_eligible_departments(
+                departments, days_to_deliver
+            )
+
             # Adjust serial allocations and get unallocated quantity
             unallocated_qty = adjust_serial_allocations(
                 so_name, item_code, net_pending, eligible_depts, remaining_depts
             )
-            
-            # Calculate ETA for this item (only if unallocated quantity exists)
+
+            # Calculate ETA for this item
             if unallocated_qty > 0:
                 item_eta = calculate_item_eta(item_code, unallocated_qty, departments)
             else:
-                item_eta = 0  # Fully allocated, no waiting time
-            
-            # Track max ETA per sales order
-            # None means no stock at all — treat as worst case (higher than any int)
+                item_eta = 0
+
+            # Track max ETA per sales order safely
             if so_name not in so_eta_map:
                 so_eta_map[so_name] = item_eta
-            elif item_eta is None:
-                so_eta_map[so_name] = None  # no stock overrides everything
-            elif so_eta_map[so_name] is not None and item_eta > so_eta_map[so_name]:
-                so_eta_map[so_name] = item_eta
-        
-        # Update ETA for each sales order
+            else:
+                current_eta = so_eta_map[so_name]
+
+                # If any item is "No Stock", whole SO becomes "No Stock"
+                if current_eta is None or item_eta is None:
+                    so_eta_map[so_name] = None
+                else:
+                    so_eta_map[so_name] = max(int(current_eta), int(item_eta))
+
+        except Exception:
+            error_message = (
+                f"SO: {getattr(order, 'sales_order', None)}\n"
+                f"Item: {getattr(order, 'item_code', None)}\n\n"
+                f"{frappe.get_traceback()}"
+            )
+            item_errors.append(error_message)
+            frappe.log_error(
+                title="Dispatch ETA item processing failed",
+                message=error_message
+            )
+            continue
+
+    # Update only successfully processed SOs
+    if so_eta_map:
         update_sales_order_etas(so_eta_map)
-        
-    except Exception as e:
-        frappe.log_error(f"Error in calculate_dispatch_eta_for_sales_order: {str(e)}")
-        frappe.db.rollback()
+
+    # Log failed rows without rolling back successful updates
+    if item_errors:
+        frappe.log_error(
+            title="Dispatch ETA batch completed with item errors",
+            message="\n\n".join(item_errors[:20])
+        )
+
+    return so_eta_map
+
 
 def get_departments():
     """Get all departments with aging information"""
@@ -278,6 +308,7 @@ def get_departments():
         ORDER BY department_sequence DESC
     """, as_dict=True)
 
+
 def get_eligible_departments(departments, days_to_deliver):
     """
     Determine eligible departments based on delivery date SLA
@@ -285,24 +316,25 @@ def get_eligible_departments(departments, days_to_deliver):
     """
     eligible_depts = []
     cumulative_days = 0
-    
+
     # Loop through departments in DESC order (as retrieved)
     for dept in departments:
         cumulative_days += dept.min_aging_days
         eligible_depts.append(dept)
-        
+
         # Break when cumulative days >= days to deliver
         if cumulative_days >= days_to_deliver:
             break
-    
+
     # Reverse the eligible departments for allocation (process in reverse order)
     eligible_depts_reversed = list(reversed(eligible_depts))
-    
+
     # Get remaining departments (those not in eligible list)
     eligible_names = {d.name for d in eligible_depts}
     remaining_depts = [d for d in departments if d.name not in eligible_names]
-    
+
     return eligible_depts_reversed, remaining_depts
+
 
 def get_open_sales_orders():
     """Get all open sales orders with pending items (serialized items only)"""
@@ -310,16 +342,16 @@ def get_open_sales_orders():
         SELECT *
         FROM (
             -- 1. Direct stock items
-            SELECT 
+            SELECT
                 so.name AS sales_order,
                 soi.item_code,
                 SUM(soi.qty) AS ordered_qty,
                 so.delivery_date
-            FROM 
+            FROM
                 `tabSales Order` so
-            INNER JOIN 
+            INNER JOIN
                 `tabSales Order Item` soi ON soi.parent = so.name
-            INNER JOIN 
+            INNER JOIN
                 `tabItem` i ON soi.item_code = i.item_code
             WHERE
                 so.docstatus = 1
@@ -327,28 +359,28 @@ def get_open_sales_orders():
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
-            GROUP BY 
+            GROUP BY
                 so.name, soi.item_code, so.delivery_date
 
             UNION ALL
 
             -- 2. Product bundle stock items
-            SELECT 
+            SELECT
                 so.name AS sales_order,
                 pbi.item_code,
                 pbi.qty * soi.qty AS ordered_qty,
                 so.delivery_date
-            FROM 
+            FROM
                 `tabSales Order` so
-            INNER JOIN 
+            INNER JOIN
                 `tabSales Order Item` soi ON soi.parent = so.name
-            INNER JOIN 
+            INNER JOIN
                 `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
-            INNER JOIN 
+            INNER JOIN
                 `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN 
+            INNER JOIN
                 `tabItem` i ON pbi.item_code = i.item_code
-            INNER JOIN 
+            INNER JOIN
                 `tabItem` soi_item ON soi.item_code = soi_item.item_code
             WHERE
                 so.docstatus = 1
@@ -361,10 +393,11 @@ def get_open_sales_orders():
         ORDER BY combined.delivery_date ASC
     """, as_dict=True)
 
+
 def get_delivered_quantity(so_name, item_code):
     """Get delivered quantity for a sales order item"""
     result = frappe.db.sql("""
-        SELECT SUM(dni.qty) 
+        SELECT SUM(dni.qty)
         FROM `tabDelivery Note Item` dni
         INNER JOIN `tabDelivery Note` dn ON dni.parent = dn.name
         WHERE dni.against_sales_order = %s
@@ -374,19 +407,20 @@ def get_delivered_quantity(so_name, item_code):
 
     return result[0][0] if result and result[0][0] else 0
 
+
 def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, remaining_depts):
     """Adjust serial allocations and return unallocated quantity"""
     # Get already allocated count
     allocated_count = frappe.db.sql("""
-        SELECT COUNT(*) 
-        FROM `tabSerial No` 
-        WHERE 
-            reserved_sales_order = %s 
+        SELECT COUNT(*)
+        FROM `tabSerial No`
+        WHERE
+            reserved_sales_order = %s
             AND item_code = %s
             AND NOT EXISTS (
-                SELECT 1 
-                FROM `tabDelivery Note Item` 
-                WHERE serial_no = `tabSerial No`.name 
+                SELECT 1
+                FROM `tabDelivery Note Item`
+                WHERE serial_no = `tabSerial No`.name
                     AND docstatus = 1
             )
     """, (so_name, item_code))[0][0] or 0
@@ -398,7 +432,7 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     # Unassign excess serial numbers
     if to_allocate < 0:
         unassign_serials(so_name, item_code, abs(to_allocate))
-    
+
     # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
         # First try eligible departments (in reverse order)
@@ -411,13 +445,14 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
             total_allocated = allocated_in_eligible + allocated_in_remaining
         else:
             total_allocated = allocated_in_eligible
-        
+
         unallocated_qty = to_allocate - total_allocated
 
         if unallocated_qty > 0:
             create_unallocated_log(so_name, item_code, unallocated_qty, "Insufficient available stock")
-    
+
     return unallocated_qty
+
 
 def assign_serials(so_name, item_code, to_allocate, departments):
     """Assign serial numbers from given departments"""
@@ -442,19 +477,19 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
 
         query = f"""
-            SELECT name 
-            FROM `tabSerial No` 
-            WHERE 
+            SELECT name
+            FROM `tabSerial No`
+            WHERE
                 item_code = '{item_code}'
                 AND warehouse IN ({warehouses_str})
                 AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                 AND NOT EXISTS (
-                    SELECT 1 
-                    FROM `tabDelivery Note Item` 
-                    WHERE serial_no = `tabSerial No`.name 
+                    SELECT 1
+                    FROM `tabDelivery Note Item`
+                    WHERE serial_no = `tabSerial No`.name
                         AND docstatus = 1
                 )
-            ORDER BY creation ASC 
+            ORDER BY creation ASC
             LIMIT {remaining}
         """
 
@@ -482,7 +517,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 serial_doc.reserved_sales_order = so_name
 
             # Calculate aging days
-            so_creation = frappe.get_value("Sales Order", so_name, "creation")
+            so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
             aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
 
             # Append aging detail
@@ -506,21 +541,21 @@ def assign_serials(so_name, item_code, to_allocate, departments):
 def unassign_serials(so_name, item_code, excess_qty):
     """Unassign excess serial numbers"""
     excess_serials = frappe.db.sql_list("""
-        SELECT name 
-        FROM `tabSerial No` 
-        WHERE 
-            reserved_sales_order = %s 
+        SELECT name
+        FROM `tabSerial No`
+        WHERE
+            reserved_sales_order = %s
             AND item_code = %s
             AND NOT EXISTS (
-                SELECT 1 
-                FROM `tabDelivery Note Item` 
-                WHERE serial_no = `tabSerial No`.name 
+                SELECT 1
+                FROM `tabDelivery Note Item`
+                WHERE serial_no = `tabSerial No`.name
                     AND docstatus = 1
             )
-        ORDER BY creation ASC 
+        ORDER BY creation ASC
         LIMIT %s
     """, (so_name, item_code, int(excess_qty)))
-    
+
     if excess_serials:
         frappe.db.sql("""
             UPDATE `tabSerial No`
@@ -528,6 +563,7 @@ def unassign_serials(so_name, item_code, excess_qty):
             WHERE name IN %(serials)s
         """, {"serials": excess_serials})
         frappe.db.commit()
+
 
 def create_unallocated_log(sales_order, item_code, pending_qty, reason):
     """Create a log entry in Unallocated Sales Order Item"""
@@ -539,6 +575,7 @@ def create_unallocated_log(sales_order, item_code, pending_qty, reason):
     doc.posting_date = frappe.utils.nowdate()
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
+
 
 def calculate_item_eta(item_code, required_qty, departments):
     """Calculate ETA in days for a specific item quantity.
@@ -567,14 +604,14 @@ def calculate_item_eta(item_code, required_qty, departments):
         query = f"""
             SELECT COUNT(*)
             FROM `tabSerial No`
-            WHERE 
+            WHERE
                 item_code = %s
                 AND warehouse IN ({placeholders})
                 AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                 AND NOT EXISTS (
-                    SELECT 1 
-                    FROM `tabDelivery Note Item` 
-                    WHERE serial_no = `tabSerial No`.name 
+                    SELECT 1
+                    FROM `tabDelivery Note Item`
+                    WHERE serial_no = `tabSerial No`.name
                         AND docstatus = 1
                 )
         """
@@ -631,7 +668,9 @@ def update_sales_order_etas(so_eta_map):
 
     frappe.db.commit()
 
+
 """Ending of Laptop Allocations Functions"""
+
 
 @frappe.whitelist()
 def setting_sales_channel_value(doc):
@@ -690,8 +729,8 @@ def fetch_payment_id_from_shopify(doc):
 
     frappe.db.set_value(
         "Sales Order",
-        doc.get("name"),  
-        "payment_id",     
+        doc.get("name"),
+        "payment_id",
         source_identifier,
         update_modified=True
     )

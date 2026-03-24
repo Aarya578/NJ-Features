@@ -22,6 +22,7 @@ class CustomSalesOrder(SalesOrder):
     def on_submit(self):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
+
         # self.total_item_group_sum()
         raw_order_id = None
         if self.order_type != "Maintenance":
@@ -37,9 +38,20 @@ class CustomSalesOrder(SalesOrder):
 
             # if order_id:
             #     trigger_fulfillment(order_id)
+
         self.payment_id_validation()
         self.maintenance_order_validation()
         self.sale_type_validation()
+
+        # Auto-calculate ETA for this SO immediately after submit
+        try:
+            calculate_dispatch_eta_for_sales_order(self.name)
+            self.reload()
+        except Exception:
+            frappe.log_error(
+                title="Sales Order submit ETA calculation failed",
+                message=f"SO: {self.name}\n\n{frappe.get_traceback()}"
+            )
 
     def total_item_group_sum(self):
         item_group_value = frappe.db.get_value(
@@ -212,32 +224,35 @@ def trigger_fulfillment(order_id):
 
 
 @frappe.whitelist(allow_guest=True)
-def calculate_dispatch_eta_for_sales_order():
-    """Main function to calculate dispatch ETA for all open sales orders."""
+def calculate_dispatch_eta_for_sales_order(so_name=None):
+    """Calculate dispatch ETA.
+    - If so_name is passed: calculate only for that Sales Order
+    - Else: calculate for all open Sales Orders
+    """
     departments = get_departments()
-    open_orders = get_open_sales_orders()
+    open_orders = get_open_sales_orders(so_name=so_name)
 
     so_eta_map = {}
     item_errors = []
 
     for order in open_orders:
         try:
-            so_name = order.sales_order
+            so_name_local = order.sales_order
             item_code = order.item_code
             ordered_qty = order.ordered_qty or 0
             delivery_date = order.delivery_date
 
-            if not so_name or not item_code:
+            if not so_name_local or not item_code:
                 continue
 
-            delivered_qty = get_delivered_quantity(so_name, item_code) or 0
+            delivered_qty = get_delivered_quantity(so_name_local, item_code) or 0
             net_pending = ordered_qty - delivered_qty
 
             if net_pending <= 0:
                 continue
 
             if not delivery_date:
-                msg = f"{so_name} | {item_code} | Missing delivery_date"
+                msg = f"{so_name_local} | {item_code} | Missing delivery_date"
                 item_errors.append(msg)
                 continue
 
@@ -251,7 +266,7 @@ def calculate_dispatch_eta_for_sales_order():
 
             # Adjust serial allocations and get unallocated quantity
             unallocated_qty = adjust_serial_allocations(
-                so_name, item_code, net_pending, eligible_depts, remaining_depts
+                so_name_local, item_code, net_pending, eligible_depts, remaining_depts
             )
 
             # Calculate ETA for this item
@@ -261,16 +276,16 @@ def calculate_dispatch_eta_for_sales_order():
                 item_eta = 0
 
             # Track max ETA per sales order safely
-            if so_name not in so_eta_map:
-                so_eta_map[so_name] = item_eta
+            if so_name_local not in so_eta_map:
+                so_eta_map[so_name_local] = item_eta
             else:
-                current_eta = so_eta_map[so_name]
+                current_eta = so_eta_map[so_name_local]
 
                 # If any item is "No Stock", whole SO becomes "No Stock"
                 if current_eta is None or item_eta is None:
-                    so_eta_map[so_name] = None
+                    so_eta_map[so_name_local] = None
                 else:
-                    so_eta_map[so_name] = max(int(current_eta), int(item_eta))
+                    so_eta_map[so_name_local] = max(int(current_eta), int(item_eta))
 
         except Exception:
             error_message = (
@@ -295,6 +310,9 @@ def calculate_dispatch_eta_for_sales_order():
             title="Dispatch ETA batch completed with item errors",
             message="\n\n".join(item_errors[:20])
         )
+
+    if so_name:
+        return so_eta_map.get(so_name)
 
     return so_eta_map
 
@@ -336,9 +354,20 @@ def get_eligible_departments(departments, days_to_deliver):
     return eligible_depts_reversed, remaining_depts
 
 
-def get_open_sales_orders():
-    """Get all open sales orders with pending items (serialized items only)"""
-    return frappe.db.sql("""
+def get_open_sales_orders(so_name=None):
+    """Get all open sales orders with pending items.
+    If so_name is passed, return only that Sales Order's items.
+    """
+    condition_direct = ""
+    condition_bundle = ""
+    params = []
+
+    if so_name:
+        condition_direct = " AND so.name = %s "
+        condition_bundle = " AND so.name = %s "
+        params.extend([so_name, so_name])
+
+    query = f"""
         SELECT *
         FROM (
             -- 1. Direct stock items
@@ -359,6 +388,7 @@ def get_open_sales_orders():
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
+                {condition_direct}
             GROUP BY
                 so.name, soi.item_code, so.delivery_date
 
@@ -389,9 +419,14 @@ def get_open_sales_orders():
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
                 AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
+                {condition_bundle}
         ) AS combined
         ORDER BY combined.delivery_date ASC
-    """, as_dict=True)
+    """
+
+    if params:
+        return frappe.db.sql(query, tuple(params), as_dict=True)
+    return frappe.db.sql(query, as_dict=True)
 
 
 def get_delivered_quantity(so_name, item_code):

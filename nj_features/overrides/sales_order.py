@@ -5,7 +5,7 @@ import uuid
 import base64
 import frappe , requests
 from datetime import datetime
-from frappe.utils import getdate, nowdate
+from frappe.utils import getdate, nowdate, add_days
 from erpnext.selling.doctype.sales_order.sales_order import SalesOrder
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from nj_features.nj_features.api.shiprocket_api import get_auth_token,generate_awb,generate_label
@@ -586,13 +586,26 @@ def calculate_item_eta(item_code, required_qty, departments):
     return accumulated_days
 
 def update_sales_order_etas(so_eta_map):
-    """Update ETA for dispatch on sales orders using direct SQL UPDATE"""
+    """Update eta_for_dispatch and estimated_delivery_date on Sales Orders.
+    estimated_delivery_date = SO creation date + eta_for_dispatch days
+    """
     for so_name, eta in so_eta_map.items():
+        try:
+            eta_days = int(eta) if eta is not None else 0
+        except (ValueError, TypeError):
+            eta_days = 0
+
+        so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
+        estimated_delivery_date = add_days(getdate(so_creation), eta_days)
+
         frappe.db.sql("""
             UPDATE `tabSales Order`
-            SET eta_for_dispatch = %s
+            SET
+                eta_for_dispatch = %s,
+                estimated_delivery_date = %s
             WHERE name = %s
-        """, (eta, so_name))
+        """, (eta, estimated_delivery_date, so_name))
+
     frappe.db.commit()
 
 """Ending of Laptop Allocations Functions"""

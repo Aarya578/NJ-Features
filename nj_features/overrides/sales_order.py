@@ -536,10 +536,17 @@ def create_unallocated_log(sales_order, item_code, pending_qty, reason):
     frappe.db.commit()
 
 def calculate_item_eta(item_code, required_qty, departments):
-    """Calculate ETA for a specific item quantity"""
+    """Calculate ETA in days for a specific item quantity.
+
+    Returns:
+        int   — days until stock is ready (0 = ready now)
+        None  — no stock at all found across all eligible departments
+                (distinguishes "needs aging" from "genuinely no stock")
+    """
     accumulated_days = 0
     remaining_qty = required_qty
-    
+    total_available = 0
+
     for dept in departments:
         accumulated_days += dept.min_aging_days
 
@@ -553,8 +560,7 @@ def calculate_item_eta(item_code, required_qty, departments):
 
         # Generate placeholders for warehouses
         placeholders = ', '.join(['%s'] * len(warehouses))
-        
-        # Compose the SQL query with dynamic placeholders
+
         query = f"""
             SELECT COUNT(*)
             FROM `tabSerial No`
@@ -570,33 +576,52 @@ def calculate_item_eta(item_code, required_qty, departments):
                 )
         """
 
-        # Combine item_code and warehouses into a single params list
         params = [item_code] + warehouses
-
-        # Execute the query
         available_count = frappe.db.sql(query, params)[0][0] or 0
+        total_available += available_count
 
-        # Check if enough stock in this department
+        # Enough stock found in this department
         if available_count >= remaining_qty:
             return accumulated_days
         else:
             remaining_qty -= available_count
 
-    # Return total accumulated days if not enough stock
-    return accumulated_days
+    # Some stock exists across depts but not enough — return max aging days
+    # No stock at all anywhere — return None so UI can show "No Stock"
+    return accumulated_days if total_available > 0 else None
+
 
 def update_sales_order_etas(so_eta_map):
     """Update eta_for_dispatch and estimated_delivery_date on Sales Orders.
-    estimated_delivery_date = SO creation date + eta_for_dispatch days
+
+    ETA logic:
+        None  → no stock at all → eta_for_dispatch = 'No Stock', estimated_delivery_date = NULL
+        int   → days from today until stock is ready
+                estimated_delivery_date = today + eta_days
+                (uses nowdate() not creation date so estimate is always future-facing
+                 and recalculates correctly every time the scheduler runs)
     """
     for so_name, eta in so_eta_map.items():
+
+        if eta is None:
+            # Genuinely no stock in any eligible department
+            frappe.db.sql("""
+                UPDATE `tabSales Order`
+                SET
+                    eta_for_dispatch = 'No Stock',
+                    estimated_delivery_date = NULL
+                WHERE name = %s
+            """, so_name)
+            continue
+
         try:
             eta_days = int(eta) if eta is not None else 0
         except (ValueError, TypeError):
             eta_days = 0
 
-        so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
-        estimated_delivery_date = add_days(getdate(so_creation), eta_days)
+        # Always base on today so the estimate stays future-facing
+        # as the scheduler recalculates every 10 minutes
+        estimated_delivery_date = add_days(nowdate(), eta_days)
 
         frappe.db.sql("""
             UPDATE `tabSales Order`

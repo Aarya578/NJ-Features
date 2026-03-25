@@ -683,23 +683,52 @@ def get_item_eta_breakdown(item_code, required_qty, departments):
 
 
 def format_eta_breakdown_text(item_code, required_qty, predicted_eta, breakdown):
-    """Make a readable text block for Sales Order field display."""
+    """Make a compact human-readable ETA summary for Sales Order display."""
+    if not breakdown:
+        return (
+            f"Item: {item_code}\n"
+            f"Required Qty: {required_qty}\n"
+            f"Predicted ETA: {'No Stock' if predicted_eta is None else predicted_eta}"
+        )
+
+    enough_row = next((row for row in breakdown if row.get("status") == "enough_here"), None)
+
     lines = []
     lines.append(f"Item: {item_code}")
     lines.append(f"Required Qty: {required_qty}")
-    lines.append(f"Predicted ETA: {'No Stock' if predicted_eta is None else predicted_eta}")
-    lines.append("-" * 90)
+    lines.append(f"Predicted ETA: {'No Stock' if predicted_eta is None else str(predicted_eta) + ' days'}")
 
+    if enough_row:
+        lines.append(f"Stock becomes available at: {enough_row['department']}")
+        lines.append(f"Available Qty there: {enough_row['available_qty']}")
+        lines.append(f"Estimated Delivery Date Basis: today + {predicted_eta} days")
+
+    lines.append("")
+    lines.append("ETA Timeline:")
+
+    timeline_parts = []
     for row in breakdown:
-        lines.append(
-            f"{row['department']} | "
-            f"Min Days: {row['min_aging_days']} | "
-            f"Cumulative ETA: {row['cumulative_eta_days']} | "
-            f"Available Qty: {row['available_qty']} | "
-            f"Required Before: {row['required_before_this_dept']} | "
-            f"Remaining After: {row['remaining_after_this_dept']} | "
-            f"Status: {row['status']}"
-        )
+        if row.get("min_aging_days"):
+            timeline_parts.append(f"{row['department']} (+{row['min_aging_days']})")
+
+    if timeline_parts:
+        lines.append(" -> ".join(timeline_parts))
+    else:
+        lines.append("Ready stock available immediately")
+
+    if enough_row:
+        lines.append("")
+        lines.append("Department-wise Summary:")
+        for row in breakdown:
+            status_text = "Reached here" if row["status"] == "enough_here" else "Waiting"
+            lines.append(
+                f"- {row['department']}: "
+                f"min {row['min_aging_days']} day(s), "
+                f"cumulative {row['cumulative_eta_days']} day(s), "
+                f"available {row['available_qty']}, "
+                f"remaining {row['remaining_after_this_dept']} "
+                f"({status_text})"
+            )
 
     return "\n".join(lines)
 

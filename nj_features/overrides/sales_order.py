@@ -228,6 +228,10 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
     """Calculate dispatch ETA.
     - If so_name is passed: calculate only for that Sales Order
     - Else: calculate for all open Sales Orders
+
+    Display ETA is based on the theoretical prediction from calculate_item_eta()
+    using full pending quantity, not on whether the order is already reserved /
+    allocated. Allocation is still executed for reservation side effects.
     """
     departments = get_departments()
     open_orders = get_open_sales_orders(so_name=so_name)
@@ -264,28 +268,27 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
                 departments, days_to_deliver
             )
 
-            # Adjust serial allocations and get unallocated quantity
-            unallocated_qty = adjust_serial_allocations(
+            # IMPORTANT:
+            # Use theoretical ETA for full pending quantity for display on SO,
+            # irrespective of whether the item is already allocated/reserved.
+            display_item_eta = calculate_item_eta(item_code, net_pending, departments)
+
+            # Still execute allocation logic for reservation side effects
+            adjust_serial_allocations(
                 so_name_local, item_code, net_pending, eligible_depts, remaining_depts
             )
 
-            # Calculate ETA for this item
-            if unallocated_qty > 0:
-                item_eta = calculate_item_eta(item_code, unallocated_qty, departments)
-            else:
-                item_eta = 0
-
             # Track max ETA per sales order safely
             if so_name_local not in so_eta_map:
-                so_eta_map[so_name_local] = item_eta
+                so_eta_map[so_name_local] = display_item_eta
             else:
                 current_eta = so_eta_map[so_name_local]
 
                 # If any item is "No Stock", whole SO becomes "No Stock"
-                if current_eta is None or item_eta is None:
+                if current_eta is None or display_item_eta is None:
                     so_eta_map[so_name_local] = None
                 else:
-                    so_eta_map[so_name_local] = max(int(current_eta), int(item_eta))
+                    so_eta_map[so_name_local] = max(int(current_eta), int(display_item_eta))
 
         except Exception:
             error_message = (

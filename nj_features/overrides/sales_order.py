@@ -23,7 +23,6 @@ class CustomSalesOrder(SalesOrder):
         if self.naming_series and self.naming_series.startswith("SO-Snapmint-"):
             return
 
-        # self.total_item_group_sum()
         raw_order_id = None
         if self.order_type != "Maintenance":
             if self.shopify_order_id:
@@ -43,7 +42,6 @@ class CustomSalesOrder(SalesOrder):
         self.maintenance_order_validation()
         self.sale_type_validation()
 
-        # Auto-calculate ETA for this SO immediately after submit
         try:
             calculate_dispatch_eta_for_sales_order(self.name)
             self.reload()
@@ -87,7 +85,7 @@ class CustomSalesOrder(SalesOrder):
                 {
                     "payment_id": self.payment_id,
                     "docstatus": 1,
-                    "name": ["!=", self.name]  # exclude self
+                    "name": ["!=", self.name]
                 },
                 "name"
             )
@@ -98,29 +96,12 @@ class CustomSalesOrder(SalesOrder):
                 )
             else:
                 self.approve = 1
-                # Use DB update to avoid document save validation
-                if self.docstatus == 1:  # Already submitted
+                if self.docstatus == 1:
                     frappe.db.set_value("Sales Order", self.name, "approve", 1)
                 else:
                     self.save(ignore_permissions=True)
 
-    # def maintenance_order_validation(self):
-    #     nj_setting = frappe.db.get_value(
-    #         "NJ Settings",
-    #         {"parameter": "order_type"},
-    #         "value"
-    #     )
-    #     if self.order_type != nj_setting:
-    #         return
-    #
-    #     if self.grand_total < 500:
-    #         self.approve = 1
-    #     else:
-    #         self.approve = 0
-    #     self.save(ignore_permissions=True)
-
     def maintenance_order_validation(self):
-
         nj_setting = frappe.db.get_value(
             "NJ Settings",
             {"parameter": "order_type"},
@@ -143,6 +124,7 @@ class CustomSalesOrder(SalesOrder):
 
         if not nj_setting_value:
             return
+
         allowed_sale_types = [v.strip() for v in nj_setting_value.split(",")]
 
         if self.sale_type in allowed_sale_types:
@@ -157,7 +139,7 @@ def trigger_fulfillment(order_id):
             "Content-Type": "application/json",
             "X-Shopify-Access-Token": TOKEN
         }
-        # Step 1: Fetch Order Details
+
         url = f"{SHOPIFY_URL}{order_id}"
         response = requests.get(url, headers=headers)
         data = response.json()
@@ -174,7 +156,6 @@ def trigger_fulfillment(order_id):
             if full_filment_status == "fulfilled":
                 return {"status": "already_fulfilled"}
 
-            # Step 2: Fetch Fulfillment Order
             fulfillment_order_url = FULLFILMENT_ORDER_ID.format(shopify_order_id=order_id_shopify)
             fulfillment_order_response = requests.get(fulfillment_order_url, headers=headers)
             fulfillment_order_data = fulfillment_order_response.json()
@@ -182,7 +163,6 @@ def trigger_fulfillment(order_id):
             if "fulfillment_orders" in fulfillment_order_data and fulfillment_order_data["fulfillment_orders"]:
                 fulfillment_order_id = fulfillment_order_data["fulfillment_orders"][0]["id"]
 
-                # Dummy Tracking Info
                 tracking_number = str(uuid.uuid4()).replace('-', '')[:12].upper()
                 tracking_url = "https://criticalog.com/tracking/"
                 tracking_company = "Criticalog"
@@ -226,6 +206,7 @@ def trigger_fulfillment(order_id):
 @frappe.whitelist(allow_guest=True)
 def calculate_dispatch_eta_for_sales_order(so_name=None):
     """Calculate dispatch ETA.
+
     - If so_name is passed: calculate only for that Sales Order
     - Else: calculate for all open Sales Orders
 
@@ -237,6 +218,7 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
     open_orders = get_open_sales_orders(so_name=so_name)
 
     so_eta_map = {}
+    so_breakdown_map = {}
     item_errors = []
 
     for order in open_orders:
@@ -260,35 +242,37 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
                 item_errors.append(msg)
                 continue
 
-            # Calculate days to deliver
             days_to_deliver = (getdate(delivery_date) - getdate(nowdate())).days
 
-            # Get eligible departments based on delivery date
             eligible_depts, remaining_depts = get_eligible_departments(
                 departments, days_to_deliver
             )
 
-            # IMPORTANT:
-            # Use theoretical ETA for full pending quantity for display on SO,
-            # irrespective of whether the item is already allocated/reserved.
             display_item_eta = calculate_item_eta(item_code, net_pending, departments)
+            display_breakdown = get_item_eta_breakdown(item_code, net_pending, departments)
+            display_breakdown_text = format_eta_breakdown_text(
+                item_code=item_code,
+                required_qty=net_pending,
+                predicted_eta=display_item_eta,
+                breakdown=display_breakdown
+            )
 
-            # Still execute allocation logic for reservation side effects
+            # Keep reservation side effects
             adjust_serial_allocations(
                 so_name_local, item_code, net_pending, eligible_depts, remaining_depts
             )
 
-            # Track max ETA per sales order safely
             if so_name_local not in so_eta_map:
                 so_eta_map[so_name_local] = display_item_eta
             else:
                 current_eta = so_eta_map[so_name_local]
-
-                # If any item is "No Stock", whole SO becomes "No Stock"
                 if current_eta is None or display_item_eta is None:
                     so_eta_map[so_name_local] = None
                 else:
                     so_eta_map[so_name_local] = max(int(current_eta), int(display_item_eta))
+
+            so_breakdown_map.setdefault(so_name_local, [])
+            so_breakdown_map[so_name_local].append(display_breakdown_text)
 
         except Exception:
             error_message = (
@@ -303,11 +287,9 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
             )
             continue
 
-    # Update only successfully processed SOs
     if so_eta_map:
-        update_sales_order_etas(so_eta_map)
+        update_sales_order_etas(so_eta_map, so_breakdown_map)
 
-    # Log failed rows without rolling back successful updates
     if item_errors:
         frappe.log_error(
             title="Dispatch ETA batch completed with item errors",
@@ -338,19 +320,15 @@ def get_eligible_departments(departments, days_to_deliver):
     eligible_depts = []
     cumulative_days = 0
 
-    # Loop through departments in DESC order (as retrieved)
     for dept in departments:
         cumulative_days += dept.min_aging_days
         eligible_depts.append(dept)
 
-        # Break when cumulative days >= days to deliver
         if cumulative_days >= days_to_deliver:
             break
 
-    # Reverse the eligible departments for allocation (process in reverse order)
     eligible_depts_reversed = list(reversed(eligible_depts))
 
-    # Get remaining departments (those not in eligible list)
     eligible_names = {d.name for d in eligible_depts}
     remaining_depts = [d for d in departments if d.name not in eligible_names]
 
@@ -373,7 +351,6 @@ def get_open_sales_orders(so_name=None):
     query = f"""
         SELECT *
         FROM (
-            -- 1. Direct stock items
             SELECT
                 so.name AS sales_order,
                 soi.item_code,
@@ -397,7 +374,6 @@ def get_open_sales_orders(so_name=None):
 
             UNION ALL
 
-            -- 2. Product bundle stock items
             SELECT
                 so.name AS sales_order,
                 pbi.item_code,
@@ -448,7 +424,6 @@ def get_delivered_quantity(so_name, item_code):
 
 def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, remaining_depts):
     """Adjust serial allocations and return unallocated quantity"""
-    # Get already allocated count
     allocated_count = frappe.db.sql("""
         SELECT COUNT(*)
         FROM `tabSerial No`
@@ -463,20 +438,15 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
             )
     """, (so_name, item_code))[0][0] or 0
 
-    # Calculate net to allocate
     to_allocate = net_pending - allocated_count
     unallocated_qty = 0
 
-    # Unassign excess serial numbers
     if to_allocate < 0:
         unassign_serials(so_name, item_code, abs(to_allocate))
 
-    # Allocate new serial numbers and track unallocated quantity
     elif to_allocate > 0:
-        # First try eligible departments (in reverse order)
         allocated_in_eligible = assign_serials(so_name, item_code, to_allocate, eligible_depts)
 
-        # If not fully allocated, try remaining departments
         if allocated_in_eligible < to_allocate:
             remaining_to_allocate = to_allocate - allocated_in_eligible
             allocated_in_remaining = assign_serials(so_name, item_code, remaining_to_allocate, remaining_depts)
@@ -501,7 +471,6 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         if allocated_count >= to_allocate:
             break
 
-        # Get warehouses for this department
         warehouses = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse` WHERE department = %s
         """, dept.name)
@@ -510,8 +479,6 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             continue
 
         remaining = int(to_allocate - allocated_count)
-
-        # Build SQL-safe string
         warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
 
         query = f"""
@@ -543,7 +510,6 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             print("is_replace:", serial_doc.is_replace)
             print("return_reason:", serial_doc.return_reason)
 
-            # Determine which Sales Order ID to reserve
             if serial_doc.is_replace or serial_doc.return_reason:
                 print("🧩 Updating (replacement case)")
                 sales_order_id = serial_doc.get("sales_order_id")
@@ -554,22 +520,17 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 print("serial_name:", serial_name)
                 serial_doc.reserved_sales_order = so_name
 
-            # Calculate aging days
             so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
             aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
 
-            # Append aging detail
             serial_doc.append("sales_order_details", {
                 "sales_order": so_name,
                 "aging_days": aging_days
             })
 
-            # Save changes properly
             serial_doc.save(ignore_permissions=True)
 
-        # Commit once per department batch
         frappe.db.commit()
-
         allocated_count += count_in_dept
 
     print("✅ Successfully returned from assign_serials()")
@@ -616,13 +577,7 @@ def create_unallocated_log(sales_order, item_code, pending_qty, reason):
 
 
 def calculate_item_eta(item_code, required_qty, departments):
-    """Calculate ETA in days for a specific item quantity.
-
-    Returns:
-        int   — days until stock is ready (0 = ready now)
-        None  — no stock at all found across all eligible departments
-                (distinguishes "needs aging" from "genuinely no stock")
-    """
+    """Calculate ETA in days for a specific item quantity."""
     accumulated_days = 0
     remaining_qty = required_qty
     total_available = 0
@@ -663,46 +618,175 @@ def calculate_item_eta(item_code, required_qty, departments):
         else:
             remaining_qty -= available_count
 
-    # Some stock exists but not enough → return max aging days
-    # No stock at all anywhere → return None so UI can show "No Stock"
     return accumulated_days if total_available > 0 else None
 
 
-def update_sales_order_etas(so_eta_map):
-    """Update eta_for_dispatch and estimated_delivery_date on Sales Orders.
+def get_item_eta_breakdown(item_code, required_qty, departments):
+    """Return department-wise ETA ladder for one item."""
+    breakdown = []
+    accumulated_days = 0
+    remaining_qty = required_qty
 
-    ETA logic:
-        None  → no stock at all → eta_for_dispatch = 'No Stock', estimated_delivery_date = NULL
-        int   → days from today until stock is ready
-                estimated_delivery_date = today + eta_days
-                (uses nowdate() so estimate is always future-facing)
-    """
-    for so_name, eta in so_eta_map.items():
+    for dept in departments:
+        accumulated_days += dept.min_aging_days
 
-        if eta is None:
-            frappe.db.sql("""
-                UPDATE `tabSales Order`
-                SET
-                    eta_for_dispatch = 'No Stock',
-                    estimated_delivery_date = NULL
-                WHERE name = %s
-            """, so_name)
+        warehouses = frappe.db.sql_list("""
+            SELECT name
+            FROM `tabWarehouse`
+            WHERE department = %s
+        """, dept.name)
+
+        available_count = 0
+
+        if warehouses:
+            placeholders = ', '.join(['%s'] * len(warehouses))
+            query = f"""
+                SELECT COUNT(*)
+                FROM `tabSerial No`
+                WHERE
+                    item_code = %s
+                    AND warehouse IN ({placeholders})
+                    AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM `tabDelivery Note Item`
+                        WHERE serial_no = `tabSerial No`.name
+                          AND docstatus = 1
+                    )
+            """
+            params = [item_code] + warehouses
+            available_count = frappe.db.sql(query, params)[0][0] or 0
+
+        before_remaining = remaining_qty
+
+        if available_count >= remaining_qty:
+            remaining_qty = 0
+            status = "enough_here"
+        else:
+            remaining_qty -= available_count
+            status = "not_enough"
+
+        breakdown.append({
+            "department": dept.name,
+            "min_aging_days": dept.min_aging_days,
+            "cumulative_eta_days": accumulated_days,
+            "available_qty": available_count,
+            "required_before_this_dept": before_remaining,
+            "remaining_after_this_dept": remaining_qty,
+            "status": status
+        })
+
+        if remaining_qty <= 0:
+            break
+
+    return breakdown
+
+
+def format_eta_breakdown_text(item_code, required_qty, predicted_eta, breakdown):
+    """Make a readable text block for Sales Order field display."""
+    lines = []
+    lines.append(f"Item: {item_code}")
+    lines.append(f"Required Qty: {required_qty}")
+    lines.append(f"Predicted ETA: {'No Stock' if predicted_eta is None else predicted_eta}")
+    lines.append("-" * 90)
+
+    for row in breakdown:
+        lines.append(
+            f"{row['department']} | "
+            f"Min Days: {row['min_aging_days']} | "
+            f"Cumulative ETA: {row['cumulative_eta_days']} | "
+            f"Available Qty: {row['available_qty']} | "
+            f"Required Before: {row['required_before_this_dept']} | "
+            f"Remaining After: {row['remaining_after_this_dept']} | "
+            f"Status: {row['status']}"
+        )
+
+    return "\n".join(lines)
+
+
+def get_eta_breakdown_fieldname():
+    """Find the Sales Order custom fieldname for ETA breakdown by label."""
+    rows = frappe.get_all(
+        "Custom Field",
+        filters={
+            "dt": "Sales Order",
+            "label": "ETA Department Breakdown"
+        },
+        fields=["fieldname"],
+        order_by="creation desc",
+        limit=1
+    )
+
+    if rows:
+        return rows[0].fieldname
+
+    if frappe.db.has_column("Sales Order", "eta_department_breakdown"):
+        return "eta_department_breakdown"
+
+    return None
+
+
+@frappe.whitelist()
+def get_sales_order_eta_breakdown(so_name):
+    """Whitelisted helper if you want to fetch SO ETA breakdown from UI later."""
+    departments = get_departments()
+    open_orders = get_open_sales_orders(so_name=so_name)
+
+    result = []
+
+    for order in open_orders:
+        item_code = order.item_code
+        ordered_qty = order.ordered_qty or 0
+        delivered_qty = get_delivered_quantity(order.sales_order, item_code) or 0
+        net_pending = ordered_qty - delivered_qty
+
+        if net_pending <= 0:
             continue
 
-        try:
-            eta_days = int(eta) if eta is not None else 0
-        except (ValueError, TypeError):
-            eta_days = 0
+        predicted_eta = calculate_item_eta(item_code, net_pending, departments)
+        breakdown = get_item_eta_breakdown(item_code, net_pending, departments)
 
-        estimated_delivery_date = add_days(nowdate(), eta_days)
+        result.append({
+            "sales_order": order.sales_order,
+            "item_code": item_code,
+            "pending_qty": net_pending,
+            "predicted_eta": predicted_eta,
+            "breakdown": breakdown
+        })
 
-        frappe.db.sql("""
-            UPDATE `tabSales Order`
-            SET
-                eta_for_dispatch = %s,
-                estimated_delivery_date = %s
-            WHERE name = %s
-        """, (eta, estimated_delivery_date, so_name))
+    return result
+
+
+def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
+    """Update eta_for_dispatch, estimated_delivery_date and breakdown text on Sales Orders."""
+    breakdown_fieldname = get_eta_breakdown_fieldname()
+
+    for so_name, eta in so_eta_map.items():
+        update_values = {}
+
+        if eta is None:
+            update_values["eta_for_dispatch"] = "No Stock"
+            update_values["estimated_delivery_date"] = None
+        else:
+            try:
+                eta_days = int(eta) if eta is not None else 0
+            except (ValueError, TypeError):
+                eta_days = 0
+
+            update_values["eta_for_dispatch"] = eta
+            update_values["estimated_delivery_date"] = add_days(nowdate(), eta_days)
+
+        if so_breakdown_map and breakdown_fieldname:
+            update_values[breakdown_fieldname] = "\n\n".join(
+                so_breakdown_map.get(so_name, [])
+            )
+
+        frappe.db.set_value(
+            "Sales Order",
+            so_name,
+            update_values,
+            update_modified=False
+        )
 
     frappe.db.commit()
 

@@ -10,8 +10,6 @@ app_email = "itsupport@newjaisa.com"
 app_license = "MIT"
 
 # ========== Assets / Includes ==========
-# include js, css files in header of desk.html
-# app_include_css = "/assets/nj_features/css/nj_features.css"
 app_include_js = "/assets/nj_features/js/nj_features.js"
 
 # ========== Client Scripts ==========
@@ -28,13 +26,14 @@ doctype_js = {
     "Sales Invoice": "public/js/sales_invoice.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Material Request": "public/js/material_request.js",
-    "Purchase Receipt": "public/js/purchase_receipt.js",
     "Quality Procedure": "public/js/quality_procedure.js",
     "Quality Review": "public/js/quality_review.js",
     "Product Bundle": "public/js/product_bundle.js",
     "Address": "public/js/address.js",
     "Sales Order": "public/js/sales_order.js",
     "Quotation": "public/js/quotation.js",
+    "Purchase Invoice": "public/js/purchase_invoice_override.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js",
 }
 
 doctype_list_js = {
@@ -43,7 +42,6 @@ doctype_list_js = {
     "Serial No": "public/js/serial_no_list.js",
     "Sales Invoice": "public/js/sales_invoice_list.js",
 }
-
 
 # ========== Override Doctype Classes ==========
 
@@ -67,10 +65,10 @@ override_doctype_class = {
 # ========== Doc Events ==========
 
 doc_events = {
-    "Item": {
-        "after_insert": "nj_features.overrides.product.upload_erpnext_item",
-        "on_update": "nj_features.overrides.product.upload_erpnext_item",
-    },
+    # "Item": {
+    #     "after_insert": "nj_features.overrides.product.upload_erpnext_item",
+    #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
+    # },
     "Purchase Receipt": {
         "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
         "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
@@ -91,16 +89,8 @@ doc_events = {
         "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
         "on_update_after_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
     },
-    
-    # "Quotation": {
-    #     "on_submit": "nj_features.nj_features.api.login.create_customer_response_token"
-    # },
-    # "Customer Response": {
-    #     "before_save": "nj_features.nj_features.doctype.customer_response.customer_response.after_insert",
-             
-    # } ,    
     "Sales Invoice": {
-        "before_save":  [
+        "before_save": [
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
         ]
@@ -109,17 +99,16 @@ doc_events = {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     },
     "Delivery Note": {
-        "before_save":  [       
+        "before_save": [
             "nj_features.overrides.delivery_note.deviding_tax_chargese"
-        ],   
-        "on_update":  [
+        ],
+        "on_update": [
             "nj_features.overrides.delivery_note.set_cod_details_critical"
-        ]   
+        ]
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
     }
-
 }
 
 # ========== Override Whitelisted Methods ==========
@@ -139,70 +128,39 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
-        # DAILY AT 10:00 PM (22:00)
-        # Runs daily non-compliance and daily report check
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
             "nj_features.nj_features.doctype.productivity.productivity.fetch_productivity_data",
         ],
-
-        # DAILY AT 7:45 AM
-        # Employee experience table update
         "45 7 * * *": [
             "nj_features.overrides.employee.update_employee_experience_table",
         ],
-
-        # EVERY HOUR AT MINUTE 1
-        # Product bundle quantity sync
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
         "59 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
-
-        # EVERY HOUR AT MINUTE 10
-        # Department details + dispatch ETA updater
         "10 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",
             "nj_features.overrides.sales_order.calculate_dispatch_eta_for_sales_order",
         ],
-
-        # EVERY HOUR AT MINUTE 0
-        # Shopify: fetch and stage
-        # Production Planning: RUN EVERY 1 HOUR
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
         ],
-
-        # EVERY HOUR AT MINUTES 20 & 40
-        # Shopify: start sync
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync",
         ],
-
-        # EVERY 58 MINUTES
-        # AWB tracking
         "*/58 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status",
         ],
-         "0 */2 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status",
-
-        ],
-
-        # EVER 5 hours
-        # Update Shopify status
-        "0 */5 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
-        ],
-
-        # EVERY 2 HOURS (AT MINUTE 0)
-        # SLA department updater
         "0 */2 * * *": [
-            "nj_features.nj_features.doctype.so_quantity_check.so_quantity_check.updting_sla_department",
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
+        ],
+        "*/59 * * * *": [
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
         ],
     }
 }

@@ -1,0 +1,83 @@
+{
+ "doctype": "Workflow",
+ "document_type": "Cash Expense Request",
+ "workflow_name": "Cash Expense Workflow",
+ "is_active": 1,
+ "workflow_state_field": "current_status",
+ "states": [
+  {
+   "state": "Draft",
+   "doc_status": 0,
+   "allow_edit": "Employee"
+  },
+  {
+   "state": "Submitted",
+   "doc_status": 0,
+   "allow_edit": "Reporting Manager"
+  },
+  {
+   "state": "Manager Approved",
+   "doc_status": 0,
+   "allow_edit": "Accounts Manager"
+  },
+  {
+   "state": "Accounts Approved",
+   "doc_status": 1,
+   "allow_edit": "Accounts User"
+  },
+  {
+   "state": "Rejected",
+   "doc_status": 0,
+   "allow_edit": "Employee"
+  },
+  {
+   "state": "Posted",
+   "doc_status": 1,
+   "allow_edit": "Accounts User"
+  }
+ ],
+ "transitions": [
+  {
+   "state": "Draft",
+   "action": "Submit Request",
+   "next_state": "Submitted",
+   "allowed": "Employee"
+  },
+  {
+   "state": "Submitted",
+   "action": "Manager Approve",
+   "next_state": "Manager Approved",
+   "allowed": "Reporting Manager"
+  },
+  {
+   "state": "Submitted",
+   "action": "Reject Request",
+   "next_state": "Rejected",
+   "allowed": "Reporting Manager"
+  },
+  {
+   "state": "Manager Approved",
+   "action": "Accounts Approve",
+   "next_state": "Accounts Approved",
+   "allowed": "Accounts Manager"
+  },
+  {
+   "state": "Manager Approved",
+   "action": "Reject After Review",
+   "next_state": "Rejected",
+   "allowed": "Accounts Manager"
+  },
+  {
+   "state": "Rejected",
+   "action": "Resend Request",
+   "next_state": "Submitted",
+   "allowed": "Employee"
+  },
+  {
+   "state": "Accounts Approved",
+   "action": "Post Entry",
+   "next_state": "Posted",
+   "allowed": "Accounts User"
+  }
+ ]
+}

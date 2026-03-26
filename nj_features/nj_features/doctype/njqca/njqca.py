@@ -40,7 +40,7 @@ def update_serial_no_componont_for_grade(self):
         if item_template:
             item_wizard = get_latest_item_wizard(item_template, serial_no_doc.item_code)
             item_wizard_doc = frappe.get_doc("Item Wizards", {"name": item_wizard})
-            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model,db_insert=False)
+            update_component_in_serial_no(item_wizard_doc, serial_no_doc, serial_no_doc.model,db_insert=True)
         serial_no_doc.save()
 
     except Exception as e:
@@ -1160,7 +1160,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                 return { "status": "failed" }
             if newmodel:
                 serial_no_doc.serial_no_component = []
-                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                 serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
@@ -1192,7 +1192,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
                 
@@ -1213,7 +1213,7 @@ def model_change_for_serial_no(newmodel, serial_no):
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
                     serial_no_doc.serial_no_component = []
-                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=False)
+                    update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
             else:
@@ -1405,11 +1405,8 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
 
 def update_part_item_code_from_child(doc):
     child_table_map = {
-        "njqca_laptop_processors": "NJQCA PROCESSOR",
         "njqca_laptop_ram": "NJQCA Laptop Ram",
-        "njqca_laptop_storage": "NJQCA Laptop Storage",
-        "njqca_display": "NJQCA Display",
-        "njqca_adaptor": "NJQCA Adaptor"
+        "njqca_laptop_storage": "NJQCA Laptop Storage"
     }
 
     serial_no_doc = frappe.get_doc('Serial No', doc.serial_no)
@@ -1425,7 +1422,7 @@ def update_part_item_code_from_child(doc):
             item_group = child.get("item_group")
             item_group_idx = child.get("item_group_idx")
 
-            if not (calculated_item_code and item_group and item_group_idx is not None):
+            if not (calculated_item_code and item_group):
                 continue
 
             found = False
@@ -1440,6 +1437,10 @@ def update_part_item_code_from_child(doc):
                         sn.reference_doctype_no = doc.name
                         updated = True
                     break
+                # If no match and no component_serial_no, remove the row
+                elif sn.item_group == item_group and sn.item_group_idx != item_group_idx and sn.item != calculated_item_code and not sn.component_serial_no:
+                    serial_no_doc.serial_no_component.remove(sn)
+                    updated = True
 
             if not found:
                 row = serial_no_doc.append("serial_no_component", {})

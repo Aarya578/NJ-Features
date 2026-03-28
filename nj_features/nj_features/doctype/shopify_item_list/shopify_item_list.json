@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-13 16:50:33.956408",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "for_sale",
+  "to_make_ratio",
+  "variant_id",
+  "product_bundle",
+  "product_id",
+  "shopify_sku"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "for_sale",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "For Sale"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "to_make_ratio",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "To Make Ratio"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "variant_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Variant Id"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "product_bundle",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Product Bundle"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "product_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Product Id"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "shopify_sku",
+   "fieldtype": "Small Text",
+   "label": "Shopify SKU"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-26 18:51:10.987245",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Shopify Item List",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

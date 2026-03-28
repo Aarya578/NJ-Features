@@ -4658,6 +4658,157 @@ def _collect_connectivity_changes(doc: Document, add_change) -> dict:
 
     return {"status": "ok", "written": written}
 
+def _parse_ram_metrics_from_csv_bytes(csv_bytes: bytes) -> dict:
+    text = csv_bytes.decode("utf-8-sig", errors="ignore")
+    if not text.strip():
+        return {}
+
+    rows = list(csv.reader(io.StringIO(text)))
+    if len(rows) < 2:
+        return {}
+
+    raw_header = rows[0]
+    header_norm = [
+        h.strip().replace("\ufeff", "").replace("|", " ").replace("#", " ").lower().strip()
+        for h in raw_header
+    ]
+
+    def find_col(*keyword_sets):
+        for keywords in keyword_sets:
+            for i, h in enumerate(header_norm):
+                if all(k.lower() in h for k in keywords):
+                    return i
+        return None
+
+    ram_col       = find_col(["ram free mb"], ["ram free"], ["free mb"])
+    cpu_col       = find_col(["cpu %"], ["cpu%"], ["cpu"])
+    disk_write_col= find_col(["disk write mbs"], ["disk write mb/s"], ["disk write"], ["write mbs"], ["write mb"])
+    time_col      = find_col(["time"])
+
+    if ram_col is None or cpu_col is None:
+        return {
+            "Baseline Free RAM %":        "ERROR: RAM/CPU column not found",
+            "Minimum Free RAM % (Stress)":"ERROR: RAM/CPU column not found",
+            "RAM Stability (Std Dev)":    "ERROR: RAM/CPU column not found",
+            "Paging Events":              "ERROR: RAM/CPU column not found",
+            "Recovery Time":              "ERROR: RAM/CPU column not found",
+        }
+
+    def _to_float(val):
+        try:
+            return float(str(val).strip().replace(",", "."))
+        except (ValueError, TypeError):
+            return None
+
+    def _to_sec(t):
+        if not t:
+            return None
+        parts = str(t).strip().split(":")
+        if len(parts) == 3:
+            try:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+            except Exception:
+                return None
+        return None
+
+    data = []
+    for r in rows[1:]:
+        ram  = _to_float(r[ram_col])  if ram_col  < len(r) else None
+        cpu  = _to_float(r[cpu_col])  if cpu_col  < len(r) else None
+        disk = _to_float(r[disk_write_col]) if disk_write_col and disk_write_col < len(r) else 0.0
+        t    = r[time_col].strip()    if time_col and time_col < len(r) else None
+        if ram is not None and cpu is not None:
+            data.append({"ram": ram, "cpu": cpu, "disk": disk or 0.0, "time": t})
+
+    if not data:
+        return {
+            "Baseline Free RAM %":        "ERROR: no valid data rows",
+            "Minimum Free RAM % (Stress)":"ERROR: no valid data rows",
+            "RAM Stability (Std Dev)":    "ERROR: no valid data rows",
+            "Paging Events":              "ERROR: no valid data rows",
+            "Recovery Time":              "ERROR: no valid data rows",
+        }
+
+    total_ram = max(d["ram"] for d in data)
+    if total_ram <= 0:
+        return {
+            "Baseline Free RAM %":        "ERROR: total RAM is zero",
+            "Minimum Free RAM % (Stress)":"ERROR: total RAM is zero",
+            "RAM Stability (Std Dev)":    "ERROR: total RAM is zero",
+            "Paging Events":              "ERROR: total RAM is zero",
+            "Recovery Time":              "ERROR: total RAM is zero",
+        }
+
+    idle_rows   = [d["ram"] for d in data if d["cpu"] < 40]
+    stress_rows = [d["ram"] for d in data if d["cpu"] >= 90]
+
+    results = {}
+
+    # Metric 3: Baseline Free RAM %
+    if idle_rows:
+        baseline_pct = (sum(idle_rows) / len(idle_rows)) / total_ram * 100
+        results["Baseline Free RAM %"] = round(baseline_pct, 2)
+    else:
+        results["Baseline Free RAM %"] = None
+
+    # Metric 4: Minimum Free RAM % (Stress)
+    if stress_rows:
+        min_free_pct = min(stress_rows) / total_ram * 100
+        results["Minimum Free RAM % (Stress)"] = round(min_free_pct, 2)
+    else:
+        results["Minimum Free RAM % (Stress)"] = None
+
+    # Metric 5: RAM Stability (Std Dev)
+    if len(stress_rows) >= 2:
+        mean_s = sum(stress_rows) / len(stress_rows)
+        variance = sum((x - mean_s) ** 2 for x in stress_rows) / len(stress_rows)
+        results["RAM Stability (Std Dev)"] = round(variance ** 0.5, 2)
+    else:
+        results["RAM Stability (Std Dev)"] = None
+
+    # Metric 6: Paging Events
+    results["Paging Events"] = sum(1 for d in data if d["ram"] < 500 and d["disk"] > 100)
+
+    # Metric 7: Recovery Time
+    # Metric 7: Recovery Time
+    # If time column missing OR RAM never recovered, still write a value so the row appears
+    if not stress_rows:
+        results["Recovery Time"] = "NO STRESS DATA"
+    elif time_col is None:
+        results["Recovery Time"] = "NO TIME COLUMN"
+    else:
+        target_ram = 0.70 * total_ram
+        stress_indexed = [(i, d) for i, d in enumerate(data) if d["cpu"] >= 90]
+
+        if not stress_indexed:
+            results["Recovery Time"] = "NO STRESS DATA"
+        else:
+            t1_idx, t1_row = min(stress_indexed, key=lambda x: x[1]["ram"])
+            t1_sec = _to_sec(t1_row["time"])
+            recovery_sec = None
+
+            for j in range(t1_idx + 1, len(data)):
+                if data[j]["ram"] >= target_ram:
+                    t2_sec = _to_sec(data[j]["time"])
+                    if t1_sec is not None and t2_sec is not None:
+                        recovery_sec = round(t2_sec - t1_sec, 1)
+                    break
+
+            if recovery_sec is not None:
+                results["Recovery Time"] = recovery_sec
+            else:
+                # RAM never recovered to 70% baseline after stress ended
+                # Calculate total elapsed time from stress peak to end of recording
+                # as a fallback worst-case value
+                last_row = data[-1]
+                t_last = _to_sec(last_row["time"])
+                t1_sec_safe = _to_sec(t1_row["time"])
+                if t_last is not None and t1_sec_safe is not None and t_last > t1_sec_safe:
+                    results["Recovery Time"] = round(t_last - t1_sec_safe, 1)
+                else:
+                    results["Recovery Time"] = "NOT RECOVERED"
+
+    return results
 
 # ==========================================================
 # MAIN: Apply enrichment (NO mutation) -> returns info + changes
@@ -4701,7 +4852,6 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
                 out = {}
                 for sensor, s in stats.items():
                     disp = _display_sensor_name(sensor)
-
                     avg_param = f"Avg Temperature({disp})"
                     max_param = f"Max Temperature({disp})"
 
@@ -4727,7 +4877,36 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
                     unit = HEAVYLOAD_METRIC_UNITS.get(k, "")
                     add_change(TEMP_TARGET_ITEM_GROUP, k, v, unit)
                 info["heavyload"] = {"status": "ok", "temps": temps_res, "summary": summary}
-
+            # RAM metrics from heavyload CSV
+            ram_metrics = _parse_ram_metrics_from_csv_bytes(csv_bytes)
+            RAM_METRIC_UNITS = {
+                "Baseline Free RAM %":         "%",
+                "Minimum Free RAM % (Stress)": "%",
+                "RAM Stability (Std Dev)":     "MB",
+                "Paging Events":               "",
+                "Recovery Time":               "sec",
+            }
+            for param_name, value in ram_metrics.items():
+                if value is None:
+                    continue
+                unit = RAM_METRIC_UNITS.get(param_name, "")
+                add_change("LAPTOP STORAGE", param_name, str(value), unit)
+            info["heavyload"]["ram_metrics"] = ram_metrics
+            # Disk metrics from heavyload CSV
+            disk_metrics = _parse_disk_metrics_from_csv_bytes(csv_bytes)
+            DISK_METRIC_UNITS = {
+                "Disk Response Time":         "MB/s",
+                "Sequential Read Stability":  "MB/s",
+                "Sequential Write Stability": "MB/s",
+                "Disk Active Time at Idle":   "MB/s",
+                "CPU-Disk Bottleneck Ratio":  "%",
+            }
+            for param_name, value in disk_metrics.items():
+                if value is None:
+                    continue
+                unit = DISK_METRIC_UNITS.get(param_name, "")
+                add_change("LAPTOP STORAGE", param_name, str(value), unit)
+            info["heavyload"]["disk_metrics"] = disk_metrics
         except Exception as e:
             info["heavyload"] = {"status": "error", "error": str(e)}
 
@@ -4830,7 +5009,188 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
 
     return {"info": info, "changes": flush_changes()}
 
+def _parse_disk_metrics_from_csv_bytes(csv_bytes: bytes) -> dict:
+    text = csv_bytes.decode("utf-8-sig", errors="ignore")
+    if not text.strip():
+        return {}
 
+    rows = list(csv.reader(io.StringIO(text)))
+    if len(rows) < 2:
+        return {}
+
+    raw_header = rows[0]
+    header_norm = [
+        h.strip().replace("\ufeff", "").replace("|", " ").replace("#", " ").lower().strip()
+        for h in raw_header
+    ]
+
+    def find_col(*keyword_sets):
+        for keywords in keyword_sets:
+            for i, h in enumerate(header_norm):
+                if all(k.lower() in h for k in keywords):
+                    return i
+        return None
+
+    # Find all required columns
+    cpu_col        = find_col(["cpu %"], ["cpu%"], ["cpu"])
+    disk_read_col  = find_col(["disk read mbs"], ["disk read mb/s"], ["disk read"], ["read mbs"], ["read mb"])
+    disk_write_col = find_col(["disk write mbs"], ["disk write mb/s"], ["disk write"], ["write mbs"], ["write mb"])
+    time_col       = find_col(["time"])
+
+    if cpu_col is None:
+        return {
+            "Disk Response Time":          "ERROR: CPU column not found",
+            "Sequential Read Stability":   "ERROR: CPU column not found",
+            "Sequential Write Stability":  "ERROR: CPU column not found",
+            "Disk Active Time at Idle":    "ERROR: CPU column not found",
+            "CPU-Disk Bottleneck Ratio":   "ERROR: CPU column not found",
+        }
+
+    if disk_read_col is None or disk_write_col is None:
+        return {
+            "Disk Response Time":          "ERROR: Disk Read/Write column not found",
+            "Sequential Read Stability":   "ERROR: Disk Read/Write column not found",
+            "Sequential Write Stability":  "ERROR: Disk Read/Write column not found",
+            "Disk Active Time at Idle":    "ERROR: Disk Read/Write column not found",
+            "CPU-Disk Bottleneck Ratio":   "ERROR: Disk Read/Write column not found",
+        }
+
+    def _to_float(val):
+        try:
+            return float(str(val).strip().replace(",", "."))
+        except (ValueError, TypeError):
+            return None
+
+    def _to_sec(t):
+        if not t:
+            return None
+        parts = str(t).strip().split(":")
+        if len(parts) == 3:
+            try:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+            except Exception:
+                return None
+        return None
+
+    # Parse all rows
+    data = []
+    for r in rows[1:]:
+        cpu   = _to_float(r[cpu_col])        if cpu_col        < len(r) else None
+        read  = _to_float(r[disk_read_col])  if disk_read_col  < len(r) else None
+        write = _to_float(r[disk_write_col]) if disk_write_col < len(r) else None
+        t     = r[time_col].strip()          if time_col and time_col < len(r) else None
+
+        if cpu is not None:
+            data.append({
+                "cpu":   cpu,
+                "read":  read  if read  is not None else 0.0,
+                "write": write if write is not None else 0.0,
+                "time":  t,
+            })
+
+    if not data:
+        return {
+            "Disk Response Time":          "ERROR: no valid data rows",
+            "Sequential Read Stability":   "ERROR: no valid data rows",
+            "Sequential Write Stability":  "ERROR: no valid data rows",
+            "Disk Active Time at Idle":    "ERROR: no valid data rows",
+            "CPU-Disk Bottleneck Ratio":   "ERROR: no valid data rows",
+        }
+
+    results = {}
+
+    # ── Metric 4: Disk Response Time ─────────────────────────────────────────
+    # Avg I/O latency in ms = (sample interval in seconds / total IO MB/s) * 1000
+    # Only during high CPU load rows
+
+    def _to_sec(t):
+        if not t:
+            return None
+        parts = str(t).strip().split(":")
+        if len(parts) == 3:
+            try:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+            except Exception:
+                return None
+        return None
+
+    high_cpu_data = [d for d in data if d["cpu"] >= 80]
+
+    latency_vals = []
+    for i in range(1, len(high_cpu_data)):
+        prev = high_cpu_data[i - 1]
+        curr = high_cpu_data[i]
+
+        t1 = _to_sec(prev["time"])
+        t2 = _to_sec(curr["time"])
+
+        if t1 is None or t2 is None:
+            continue
+
+        interval_sec = t2 - t1
+        if interval_sec <= 0:
+            continue
+
+        total_io = curr["read"] + curr["write"]
+        if total_io <= 0:
+            continue
+
+        # latency = how many ms to process 1 MB
+        latency_ms = (interval_sec / total_io) * 1000
+        latency_vals.append(latency_ms)
+
+    if latency_vals:
+        results["Disk Response Time"] = round(
+            sum(latency_vals) / len(latency_vals), 2
+        )
+    else:
+        results["Disk Response Time"] = "No I/O data during high CPU load"
+
+    # ── Metric 5: Sequential Read Stability ──────────────────────────────────
+    # AVG(Disk Read MB/s) where CPU >= 80%
+    read_under_load = [d["read"] for d in data if d["cpu"] >= 80]
+    if read_under_load:
+        results["Sequential Read Stability"] = round(
+            sum(read_under_load) / len(read_under_load), 2
+        )
+    else:
+        results["Sequential Read Stability"] = None
+
+    # ── Metric 6: Sequential Write Stability ─────────────────────────────────
+    # AVG(Disk Write MB/s) where CPU >= 80%
+    write_under_load = [d["write"] for d in data if d["cpu"] >= 80]
+    if write_under_load:
+        results["Sequential Write Stability"] = round(
+            sum(write_under_load) / len(write_under_load), 2
+        )
+    else:
+        results["Sequential Write Stability"] = None
+
+    # ── Metric 7: Disk Active Time at Idle ───────────────────────────────────
+    # Disk usage (read + write MB/s) when CPU < 10%
+    idle_rows = [d for d in data if d["cpu"] < 10]
+    if idle_rows:
+        idle_io = [d["read"] + d["write"] for d in idle_rows]
+        results["Disk Active Time at Idle"] = round(
+            sum(idle_io) / len(idle_io), 2
+        )
+    else:
+        results["Disk Active Time at Idle"] = "CPU never dropped below 10%"
+
+    # ── Metric 8: CPU-Disk Bottleneck Ratio ──────────────────────────────────
+    # High CPU (>= 80%) + low disk read throughput (< 10 MB/s)
+    # Count of such rows as % of total high-CPU rows
+    high_cpu_rows = [d for d in data if d["cpu"] >= 80]
+    if high_cpu_rows:
+        bottleneck_rows = [d for d in high_cpu_rows if d["read"] < 10]
+        bottleneck_pct = round(
+            len(bottleneck_rows) / len(high_cpu_rows) * 100, 2
+        )
+        results["CPU-Disk Bottleneck Ratio"] = bottleneck_pct
+    else:
+        results["CPU-Disk Bottleneck Ratio"] = None
+
+    return results
 # ==========================================================
 # Whitelisted endpoint: returns changes (NOT updated_result_parameters)
 # ==========================================================

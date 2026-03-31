@@ -1101,7 +1101,11 @@ frappe.ui.form.on("NJQCA", {
     if (frm.doc.serial_no) {
       if (!frm.doc.rfq_id) {
         frm.set_value("warehouse", "");
-        trigger_serial_no(frm);
+        if (frm.__skip_serial_no_trigger_once) {
+          frm.__skip_serial_no_trigger_once = false;
+        } else {
+          trigger_serial_no(frm);
+        }
       }
     } else {
       frm.set_value("warehouse", "");

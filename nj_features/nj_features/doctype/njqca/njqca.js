@@ -106,6 +106,7 @@ frappe.ui.form.on("NJQCA", {
 
     if (frm.doc.docstatus == 0) {
       trigger_serial_no(frm);
+      syncDesktopManufacturerModelFlow(frm);
       frm.events.power_on();
       handleScannerInput(frm, "serial_no");
       show_checkbutton_for_field(frm, "njqca_laptop_processors");
@@ -279,11 +280,7 @@ frappe.ui.form.on("NJQCA", {
       }
 
       if (!frm.doc.__islocal) {
-        if (is_desktop_item_group(frm.doc.item_group)) {
-          load_desktop_manufacturer_models(frm, true);
-        } else {
-          njqca.get_model(frm.doc.manufacturer_model);
-        }
+        njqca.get_model(frm.doc.manufacturer_model, frm.doc.item_group, frm.doc.brand);
       }
 
       setup_merge_checkbox_handler(frm, "njqca_laptop_processors");
@@ -1134,6 +1131,7 @@ frappe.ui.form.on("NJQCA", {
               frm.set_value(field, r.message[field]);
               cur_frm.refresh_field(field);
             });
+            syncDesktopManufacturerModelFlow(frm);
           },
         });
       }
@@ -1144,33 +1142,35 @@ frappe.ui.form.on("NJQCA", {
   },
 
   manufacturer_model: function (frm) {
-    if (frm.doc.manufacturer_model) {
-      if (is_desktop_item_group(frm.doc.item_group)) {
-        njqca.get_model(
-          frm.doc.manufacturer_model,
-          frm.doc.item_group,
-          frm.doc.brand,
-        );
-      } else {
-        njqca.get_model(frm.doc.manufacturer_model);
+    if (!frm.doc.manufacturer_model) {
+      if (isDesktopNJQCA(frm.doc)) {
+        resetDesktopSelection(frm, { keepManufacturerModel: true });
       }
-    } else if (is_desktop_item_group(frm.doc.item_group)) {
-      frm.set_value("model", "");
-      frm.set_df_property("model", "read_only", 0);
-      frm.set_df_property("model", "options", "");
-      frm.refresh_field("model");
+      return;
     }
+
+    if (isDesktopNJQCA(frm.doc)) {
+      frm.set_value("model", "");
+      frm.set_value("model_description", "");
+      frm.set_value("item_template", "");
+      frm.refresh_field("model");
+      frm.refresh_field("model_description");
+      frm.refresh_field("item_template");
+      njqca.get_model(
+        frm.doc.manufacturer_model,
+        frm.doc.item_group,
+        frm.doc.brand,
+      );
+      return;
+    }
+
+    njqca.get_model(frm.doc.manufacturer_model);
   },
 
   brand: function (frm) {
-    if (is_desktop_item_group(frm.doc.item_group) && frm.doc.brand) {
-      load_desktop_manufacturer_models(frm);
-    }
-  },
-
-  item_group: function (frm) {
-    if (is_desktop_item_group(frm.doc.item_group) && frm.doc.brand) {
-      load_desktop_manufacturer_models(frm);
+    if (isDesktopNJQCA(frm.doc)) {
+      resetDesktopSelection(frm);
+      syncDesktopManufacturerModelFlow(frm);
     }
   },
 
@@ -1559,6 +1559,49 @@ frappe.ui.form.on("NJQCA", {
   },
 });
 
+
+function isDesktopNJQCA(doc) {
+  return (doc.item_group || "").trim().toLowerCase() === "desktops";
+}
+
+function resetDesktopSelection(frm, { keepManufacturerModel = false } = {}) {
+  if (!keepManufacturerModel) {
+    frm.set_value("manufacturer_model", "");
+  }
+  frm.set_value("model", "");
+  frm.set_value("model_description", "");
+  frm.set_value("item_template", "");
+  frm.refresh_field("manufacturer_model");
+  frm.refresh_field("model");
+  frm.refresh_field("model_description");
+  frm.refresh_field("item_template");
+  frm.set_df_property("model", "read_only", 0);
+  frm.set_df_property("model", "options", "\n");
+}
+
+function syncDesktopManufacturerModelFlow(frm, { clearSelections = false } = {}) {
+  if (!isDesktopNJQCA(frm.doc)) {
+    return;
+  }
+
+  frm.set_df_property("manufacturer_model", "read_only", 0);
+  frm.set_df_property("model", "read_only", 0);
+
+  if (clearSelections) {
+    resetDesktopSelection(frm);
+  }
+
+  if (!frm.doc.brand) {
+    frm.set_df_property("manufacturer_model", "options", "\n");
+    frm.refresh_field("manufacturer_model");
+    return;
+  }
+
+  njqca.get_manufacturer_models(frm, {
+    selected_manufacturer_model: frm.doc.manufacturer_model,
+  });
+}
+
 function trigger_serial_no(frm) {
   if (
     (cur_frm.doc.serial_no || cur_frm.doc.bios_serialno) &&
@@ -1577,8 +1620,9 @@ function trigger_serial_no(frm) {
           cur_frm.refresh_field(field);
         });
 
-        if (is_desktop_item_group(frm.doc.item_group)) {
-          load_desktop_manufacturer_models(frm);
+        if (isDesktopNJQCA(frm.doc)) {
+          resetDesktopSelection(frm);
+          syncDesktopManufacturerModelFlow(frm);
         }
       },
       error: function (err) {
@@ -2099,15 +2143,11 @@ function get_item_template(model, brand, item_group) {
   });
 }
 
-function is_desktop_item_group(item_group) {
-  return (item_group || "").trim().toLowerCase() === "desktops";
-}
-
-function load_desktop_manufacturer_models(frm, preserve_current = false) {
-  if (!is_desktop_item_group(frm.doc.item_group) || !frm.doc.brand) {
-    return;
-  }
-
+frappe.provide("njqca");
+njqca.get_manufacturer_models = function (
+  frm,
+  { selected_manufacturer_model = null } = {},
+) {
   frappe.call({
     method:
       "nj_features.nj_features.doctype.njqca.njqca.get_manufacturer_models",
@@ -2116,51 +2156,41 @@ function load_desktop_manufacturer_models(frm, preserve_current = false) {
       brand: frm.doc.brand,
     },
     callback: function (r) {
-      const rows = Array.isArray(r.message) ? r.message : [];
-      const manufacturerModels = rows
-        .map((row) => row.manufacturer_model)
+      const manufacturerModelList = r.message || [];
+      const options = manufacturerModelList
+        .map((item) => item.manufacturer_model)
         .filter(Boolean);
-      const options = [""].concat(manufacturerModels).join("\n");
 
-      frm.set_df_property("manufacturer_model", "options", options);
-      frm.set_df_property("manufacturer_model", "read_only", 0);
+      frm.set_df_property(
+        "manufacturer_model",
+        "options",
+        options.length ? [""].concat(options).join("\n") : "\n",
+      );
       frm.refresh_field("manufacturer_model");
 
-      const currentManufacturerModel = preserve_current
-        ? frm.doc.manufacturer_model
-        : "";
-      const hasCurrentValue = manufacturerModels.includes(currentManufacturerModel);
+      if (!options.length) {
+        frm.set_value("manufacturer_model", "");
+        frm.set_value("model", "");
+        frm.refresh_field("model");
+        return;
+      }
 
-      frm.set_df_property("model", "read_only", 0);
-      frm.set_df_property("model", "options", "");
+      const preferredValue =
+        selected_manufacturer_model && options.includes(selected_manufacturer_model)
+          ? selected_manufacturer_model
+          : frm.doc.manufacturer_model && options.includes(frm.doc.manufacturer_model)
+            ? frm.doc.manufacturer_model
+            : null;
 
-      if (manufacturerModels.length === 1) {
-        frm.set_value("manufacturer_model", manufacturerModels[0]);
-      } else {
-        if (hasCurrentValue) {
-          njqca.get_model(
-            currentManufacturerModel,
-            frm.doc.item_group,
-            frm.doc.brand,
-          );
-        } else {
-          frm.set_value("manufacturer_model", "");
-          frm.set_value("model", "");
-          frm.refresh_field("model");
-        }
-
-        if (manufacturerModels.length > 1) {
-          frappe.show_alert({
-            message: __("Select Manufacturer Model"),
-            indicator: "green",
-          });
-        }
+      if (preferredValue) {
+        frm.set_value("manufacturer_model", preferredValue);
+      } else if (options.length === 1) {
+        frm.set_value("manufacturer_model", options[0]);
       }
     },
   });
-}
+};
 
-frappe.provide("njqca");
 njqca.get_model = function (manufacturer_model, item_group = null, brand = null) {
   console.log("njqca.get_model");
   frappe.call({
@@ -2179,12 +2209,10 @@ njqca.get_model = function (manufacturer_model, item_group = null, brand = null)
             cur_frm.set_df_property("model", "read_only", 1);
           } else {
             cur_frm.set_df_property("model", "read_only", 0);
-            var options = [""]
-              .concat(
-                model_list.map(function (item) {
-                  return item.model;
-                }),
-              )
+            var options = model_list
+              .map(function (item) {
+                return item.model;
+              })
               .join("\n");
             cur_frm.set_df_property("model", "options", options);
             $('[data-fieldname="model"]')

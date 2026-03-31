@@ -23,6 +23,54 @@ from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,che
 frappe.utils.logger.set_log_level("DEBUG")
 logger = frappe.logger("njqca", allow_site=True, file_count=1)
 
+
+def _is_desktop_item_group(item_group):
+    return str(item_group or '').strip().lower() == 'desktops'
+
+
+def _extract_brand_from_item_code(item_code):
+    item_code = str(item_code or '').strip()
+    if not item_code:
+        return None
+    if item_code.startswith('S-'):
+        item_code = item_code[2:].strip()
+    if not item_code:
+        return None
+    return item_code.split()[0].strip() or None
+
+
+def _resolve_item_brand(serial_brand=None, item_brand=None, item_code=None, variant_of=None):
+    if serial_brand:
+        return serial_brand
+    if item_brand:
+        return item_brand
+    template_brand = frappe.db.get_value('Item', variant_of, 'brand') if variant_of else None
+    if template_brand:
+        return template_brand
+    return _extract_brand_from_item_code(item_code)
+
+
+@frappe.whitelist()
+def get_manufacturer_models(item_group=None, brand=None):
+    if not item_group or not brand:
+        return []
+
+    query = """
+        SELECT DISTINCT mmc.manufacturer_model
+        FROM `tabItem` i
+        INNER JOIN `tabManufacturer Model Child` mmc
+            ON mmc.parent = i.item_model
+        WHERE i.item_group = %(item_group)s
+          AND i.brand = %(brand)s
+          AND IFNULL(i.item_model, '') != ''
+          AND IFNULL(mmc.manufacturer_model, '') != ''
+          AND i.disabled = 0
+        ORDER BY mmc.manufacturer_model
+    """
+
+    return frappe.db.sql(query, {'item_group': item_group, 'brand': brand}, as_dict=True)
+
+
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
     try:
@@ -1381,15 +1429,23 @@ def get_info_from_serial_no(doc=None):
 
     if sle:
         sle_entry = sle[0]
-        item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
+        item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of', 'item_group'], as_dict=1) or {}
+
+        resolved_brand = _resolve_item_brand(
+            serial_brand=sle_entry.get('brand'),
+            item_brand=item_code_data.get('brand'),
+            item_code=sle_entry.get('item_code'),
+            variant_of=item_code_data.get('variant_of'),
+        )
+        resolved_model = sle_entry.get('model') or item_code_data.get('item_model')
 
         result.update({
             'warehouse': sle_entry.get('warehouse'),
             'base_price': sle_entry.get('purchase_rate'),
             'repack_itm_price': item_code_data.get('valuation_rate'),
             'department': emp_dept.get('department') if emp_dept else None,
-            'brand': sle_entry.get('brand') or item_code_data.get('brand'),
-            'model': sle_entry.get('model') or item_code_data.get('item_model'),
+            'brand': resolved_brand,
+            'model': resolved_model,
         })
 
         item_group = sle_entry.get('item_group') or item_code_data.get('item_group')
@@ -1434,13 +1490,22 @@ def get_info_from_component_serial_no(doc=None):
         
         if sle and len(sle) > 0:
             sle_entry = sle[0]
-            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-            
+            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of', 'item_group'], as_dict=1) or {}
+            resolved_brand = _resolve_item_brand(
+                serial_brand=sle_entry.get('brand'),
+                item_brand=item_code_data.get('brand'),
+                item_code=sle_entry.get('item_code'),
+                variant_of=item_code_data.get('variant_of'),
+            )
+            resolved_model = item_code_data.get('item_model')
+
             result.update({
                 'warehouse': sle_entry.get('warehouse',""),
                 'base_price': sle_entry.get('purchase_rate'),
                 'repack_itm_price': item_code_data.get('valuation_rate') if item_code_data else None,
                 'department': emp_dept.get('department') if emp_dept else None,
+                'brand': resolved_brand,
+                'model': resolved_model,
             })
 
             result['item_code'] = sle_entry.get('item_code')
@@ -2177,57 +2242,40 @@ def construct_item_code(item_template, args_list):
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
-def get_manufacturer_models(item_group=None, brand=None):
-    try:
-        if not item_group or not brand:
-            return []
+def get_model(manufacturer_model=None, item_group=None, brand=None):
+    query, model_list = '', []
 
+    if not manufacturer_model:
+        return model_list
+
+    if _is_desktop_item_group(item_group) and brand:
         query = """
-            SELECT DISTINCT mmc.manufacturer_model
+            SELECT DISTINCT mmc.parent AS model
             FROM `tabItem` i
             INNER JOIN `tabManufacturer Model Child` mmc
                 ON mmc.parent = i.item_model
             WHERE i.item_group = %(item_group)s
               AND i.brand = %(brand)s
-              AND IFNULL(i.item_model, '') != ''
-              AND IFNULL(mmc.manufacturer_model, '') != ''
-              AND i.disabled = 0
-            ORDER BY mmc.manufacturer_model
-        """
-
-        return frappe.db.sql(query, {
-            'item_group': item_group,
-            'brand': brand,
-        }, as_dict=True)
-
-    except Exception as e:
-        frappe.throw("Error While fetching Manufacturer Models: " + str(e))
-        return []
-
-@frappe.whitelist()
-def get_model(manufacturer_model=None, item_group=None, brand=None):
-    query, model_list = '', []
-
-    if model_list == []:
-        query = """
-            SELECT DISTINCT mmc.parent AS model
-            FROM `tabManufacturer Model Child` AS mmc
-            INNER JOIN `tabItem` i
-                ON i.item_model = mmc.parent
-            WHERE mmc.manufacturer_model = %(manufacturer_model)s
-              AND (%(item_group)s IS NULL OR %(item_group)s = '' OR i.item_group = %(item_group)s)
-              AND (%(brand)s IS NULL OR %(brand)s = '' OR i.brand = %(brand)s)
+              AND mmc.manufacturer_model = %(manufacturer_model)s
               AND i.disabled = 0
             ORDER BY mmc.parent
         """
         params = {
-            'manufacturer_model': manufacturer_model,
             'item_group': item_group,
             'brand': brand,
+            'manufacturer_model': manufacturer_model,
         }
         model_list = frappe.db.sql(query, params, as_dict=True)
-        if not model_list:
-            frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
+    else:
+        query = """SELECT DISTINCT mmc.parent AS model
+                   FROM `tabManufacturer Model Child` AS mmc
+                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
+                   WHERE mmc.manufacturer_model = %s"""
+        params = (manufacturer_model)
+        model_list = frappe.db.sql(query, params, as_dict=True)
+
+    if not model_list:
+        frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
 

@@ -52,42 +52,66 @@ def get_inspection_types_for_user(doctype, txt, searchfield, start, page_len, fi
         emp_data = get_active_emp(frappe.session.user, fields=['role_profile'])
         role_profile = emp_data.get('role_profile') if emp_data else None
 
-        allowed_inspection_type = None
+        allowed_inspection_types = []
 
         if role_profile:
-            role_inspection_type, department = frappe.db.get_value(
-                'Role Profile',
-                {'name': role_profile},
-                ['inspection_type', 'department']
+            # Step 1: Try Table MultiSelect child table (multiple inspection types)
+            child_types = frappe.db.get_all(
+                'Inspection Type Multiselect',
+                filters={'parent': role_profile},
+                fields=['inspection_type'],
+                order_by='idx'
             )
+            allowed_inspection_types = [
+                row['inspection_type']
+                for row in child_types
+                if row.get('inspection_type')
+            ]
 
-            if role_inspection_type:
-                allowed_inspection_type = role_inspection_type
-            elif department:
-                allowed_inspection_type = frappe.db.get_value(
-                    'Department', 
-                    {'name': department}, 
+            # Step 2: If child table empty, fallback to single 'inspection_type' field
+            if not allowed_inspection_types:
+                single_type = frappe.db.get_value(
+                    'Role Profile',
+                    {'name': role_profile},
                     'inspection_type'
                 )
+                if single_type:
+                    allowed_inspection_types = [single_type]
 
-        # If nothing found anywhere, show all active inspection types
-        if not allowed_inspection_type:
+            # Step 3: If still empty, try department's inspection type
+            if not allowed_inspection_types:
+                department = frappe.db.get_value(
+                    'Role Profile',
+                    {'name': role_profile},
+                    'department'
+                )
+                if department:
+                    dept_type = frappe.db.get_value(
+                        'Department',
+                        {'name': department},
+                        'inspection_type'
+                    )
+                    if dept_type:
+                        allowed_inspection_types = [dept_type]
+
+        # Step 4: If nothing found anywhere, show all active inspection types
+        if not allowed_inspection_types:
             return frappe.db.sql("""
                 SELECT name FROM `tabInspection Type`
-                WHERE active = 1 
+                WHERE active = 1
                 AND name LIKE %(txt)s
                 LIMIT %(page_len)s OFFSET %(start)s
             """, {"txt": f"%{txt}%", "page_len": page_len, "start": start})
 
-        # Show only the mapped inspection type
+        # Step 5: Show all matched inspection types from the list using IN
         return frappe.db.sql("""
             SELECT name FROM `tabInspection Type`
             WHERE active = 1
-            AND name = %(allowed)s
+            AND name IN %(allowed)s
             AND name LIKE %(txt)s
             LIMIT %(page_len)s OFFSET %(start)s
         """, {
-            "allowed": allowed_inspection_type,
+            "allowed": tuple(allowed_inspection_types),
             "txt": f"%{txt}%",
             "page_len": page_len,
             "start": start

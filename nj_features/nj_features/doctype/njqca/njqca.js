@@ -279,7 +279,11 @@ frappe.ui.form.on("NJQCA", {
       }
 
       if (!frm.doc.__islocal) {
-        njqca.get_model(frm.doc.manufacturer_model);
+        if (is_desktop_item_group(frm.doc.item_group)) {
+          load_desktop_manufacturer_models(frm, true);
+        } else {
+          njqca.get_model(frm.doc.manufacturer_model);
+        }
       }
 
       setup_merge_checkbox_handler(frm, "njqca_laptop_processors");
@@ -1141,7 +1145,32 @@ frappe.ui.form.on("NJQCA", {
 
   manufacturer_model: function (frm) {
     if (frm.doc.manufacturer_model) {
-      njqca.get_model(frm.doc.manufacturer_model);
+      if (is_desktop_item_group(frm.doc.item_group)) {
+        njqca.get_model(
+          frm.doc.manufacturer_model,
+          frm.doc.item_group,
+          frm.doc.brand,
+        );
+      } else {
+        njqca.get_model(frm.doc.manufacturer_model);
+      }
+    } else if (is_desktop_item_group(frm.doc.item_group)) {
+      frm.set_value("model", "");
+      frm.set_df_property("model", "read_only", 0);
+      frm.set_df_property("model", "options", "");
+      frm.refresh_field("model");
+    }
+  },
+
+  brand: function (frm) {
+    if (is_desktop_item_group(frm.doc.item_group) && frm.doc.brand) {
+      load_desktop_manufacturer_models(frm);
+    }
+  },
+
+  item_group: function (frm) {
+    if (is_desktop_item_group(frm.doc.item_group) && frm.doc.brand) {
+      load_desktop_manufacturer_models(frm);
     }
   },
 
@@ -1547,6 +1576,10 @@ function trigger_serial_no(frm) {
           frm.set_value(field, r.message[field]);
           cur_frm.refresh_field(field);
         });
+
+        if (is_desktop_item_group(frm.doc.item_group)) {
+          load_desktop_manufacturer_models(frm);
+        }
       },
       error: function (err) {
         console.error(err);
@@ -2066,12 +2099,77 @@ function get_item_template(model, brand, item_group) {
   });
 }
 
+function is_desktop_item_group(item_group) {
+  return (item_group || "").trim().toLowerCase() === "desktops";
+}
+
+function load_desktop_manufacturer_models(frm, preserve_current = false) {
+  if (!is_desktop_item_group(frm.doc.item_group) || !frm.doc.brand) {
+    return;
+  }
+
+  frappe.call({
+    method:
+      "nj_features.nj_features.doctype.njqca.njqca.get_manufacturer_models",
+    args: {
+      item_group: frm.doc.item_group,
+      brand: frm.doc.brand,
+    },
+    callback: function (r) {
+      const rows = Array.isArray(r.message) ? r.message : [];
+      const manufacturerModels = rows
+        .map((row) => row.manufacturer_model)
+        .filter(Boolean);
+      const options = [""].concat(manufacturerModels).join("\n");
+
+      frm.set_df_property("manufacturer_model", "options", options);
+      frm.set_df_property("manufacturer_model", "read_only", 0);
+      frm.refresh_field("manufacturer_model");
+
+      const currentManufacturerModel = preserve_current
+        ? frm.doc.manufacturer_model
+        : "";
+      const hasCurrentValue = manufacturerModels.includes(currentManufacturerModel);
+
+      frm.set_df_property("model", "read_only", 0);
+      frm.set_df_property("model", "options", "");
+
+      if (manufacturerModels.length === 1) {
+        frm.set_value("manufacturer_model", manufacturerModels[0]);
+      } else {
+        if (hasCurrentValue) {
+          njqca.get_model(
+            currentManufacturerModel,
+            frm.doc.item_group,
+            frm.doc.brand,
+          );
+        } else {
+          frm.set_value("manufacturer_model", "");
+          frm.set_value("model", "");
+          frm.refresh_field("model");
+        }
+
+        if (manufacturerModels.length > 1) {
+          frappe.show_alert({
+            message: __("Select Manufacturer Model"),
+            indicator: "green",
+          });
+        }
+      }
+    },
+  });
+}
+
 frappe.provide("njqca");
-njqca.get_model = function (manufacturer_model) {
+njqca.get_model = function (manufacturer_model, item_group = null, brand = null) {
   console.log("njqca.get_model");
   frappe.call({
     method: "nj_features.nj_features.doctype.njqca.njqca.get_model",
-    args: { manufacturer_model: manufacturer_model },
+    args: {
+      manufacturer_model: manufacturer_model,
+      item_group: item_group,
+      brand: brand,
+    },
     callback: function (r) {
       if (r.message) {
         var model_list = r.message;
@@ -2080,10 +2178,13 @@ njqca.get_model = function (manufacturer_model) {
             cur_frm.set_value("model", model_list[0].model);
             cur_frm.set_df_property("model", "read_only", 1);
           } else {
-            var options = model_list
-              .map(function (item) {
-                return item.model;
-              })
+            cur_frm.set_df_property("model", "read_only", 0);
+            var options = [""]
+              .concat(
+                model_list.map(function (item) {
+                  return item.model;
+                }),
+              )
               .join("\n");
             cur_frm.set_df_property("model", "options", options);
             $('[data-fieldname="model"]')

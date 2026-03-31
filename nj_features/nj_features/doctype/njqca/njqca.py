@@ -2177,15 +2177,54 @@ def construct_item_code(item_template, args_list):
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
-def get_model(manufacturer_model=None):
+def get_manufacturer_models(item_group=None, brand=None):
+    try:
+        if not item_group or not brand:
+            return []
+
+        query = """
+            SELECT DISTINCT mmc.manufacturer_model
+            FROM `tabItem` i
+            INNER JOIN `tabManufacturer Model Child` mmc
+                ON mmc.parent = i.item_model
+            WHERE i.item_group = %(item_group)s
+              AND i.brand = %(brand)s
+              AND IFNULL(i.item_model, '') != ''
+              AND IFNULL(mmc.manufacturer_model, '') != ''
+              AND i.disabled = 0
+            ORDER BY mmc.manufacturer_model
+        """
+
+        return frappe.db.sql(query, {
+            'item_group': item_group,
+            'brand': brand,
+        }, as_dict=True)
+
+    except Exception as e:
+        frappe.throw("Error While fetching Manufacturer Models: " + str(e))
+        return []
+
+@frappe.whitelist()
+def get_model(manufacturer_model=None, item_group=None, brand=None):
     query, model_list = '', []
 
     if model_list == []:
-        query = """SELECT DISTINCT mmc.parent AS model
-                   FROM `tabManufacturer Model Child` AS mmc
-                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
-                   WHERE mmc.manufacturer_model = %s"""
-        params = (manufacturer_model)
+        query = """
+            SELECT DISTINCT mmc.parent AS model
+            FROM `tabManufacturer Model Child` AS mmc
+            INNER JOIN `tabItem` i
+                ON i.item_model = mmc.parent
+            WHERE mmc.manufacturer_model = %(manufacturer_model)s
+              AND (%(item_group)s IS NULL OR %(item_group)s = '' OR i.item_group = %(item_group)s)
+              AND (%(brand)s IS NULL OR %(brand)s = '' OR i.brand = %(brand)s)
+              AND i.disabled = 0
+            ORDER BY mmc.parent
+        """
+        params = {
+            'manufacturer_model': manufacturer_model,
+            'item_group': item_group,
+            'brand': brand,
+        }
         model_list = frappe.db.sql(query, params, as_dict=True)
         if not model_list:
             frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")

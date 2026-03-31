@@ -9,11 +9,15 @@ frappe.ui.form.on('Sales Invoice', {
 		}
         // Custom E-Invoicing functionality override
         // setup_custom_einvoice_actions(frm);
+
+        // Run on refresh as well; onload can fire before taxes are fully populated.
+        if (Number(frm.doc.docstatus || 0) === 0 && Number(frm.doc.is_debit_note || 0) === 0) {
+            update_gst_tax_type_from_nj_settings(frm);
+        }
     },
      onload(frm) {
-        if(frm.docstatus==0 && frm.doc.is_debit_note==0){
-           update_gst_tax_type_from_nj_settings(frm);
-            
+        if (Number(frm.doc.docstatus || 0) === 0 && Number(frm.doc.is_debit_note || 0) === 0) {
+            update_gst_tax_type_from_nj_settings(frm);
         }
     }
     ,
@@ -108,7 +112,7 @@ function update_gst_tax_type_from_nj_settings(frm) {
     console.log("updating============================");
 
     // 🔒 Skip if document is submitted
-    if (frm.doc.docstatus === 1) {
+    if (Number(frm.doc.docstatus || 0) === 1) {
         return;
     }
 
@@ -124,27 +128,59 @@ function update_gst_tax_type_from_nj_settings(frm) {
 
         if (!csv) return;
 
+        const normalize = (value) => (value || "")
+            .toString()
+            .trim()
+            .toLowerCase();
+
         const account_heads = csv
             .split(',')
-            .map(v => v.trim());
+            .map(v => normalize(v))
+            .filter(Boolean);
+
+        let updated_any = false;
 
         frm.doc.taxes.forEach(tax => {
+            const tax_account_head = normalize(tax.account_head);
+            const matched = account_heads.some(setting_head =>
+                tax_account_head === setting_head || tax_account_head.startsWith(`${setting_head} - `)
+            );
+
             if (
-                tax.charge_type === "Actual" &&
-                tax.account_head &&
-                account_heads.includes(tax.account_head.trim())
+                tax_account_head &&
+                matched &&
+                tax.charge_type !== "On Net Total"
             ) {
+                const net_total = Number(frm.doc.net_total || 0);
+                const current_rate = Number(tax.rate || 0);
+                const current_tax_amount = Number(tax.tax_amount || 0);
+
+                // If tax came as "Actual" with amount but no rate (common in SO->SI mapping),
+                // derive a percentage before switching to "On Net Total" so recalculation works.
+                if (current_rate === 0 && current_tax_amount > 0 && net_total > 0) {
+                    const derived_rate = Number(((current_tax_amount / net_total) * 100).toFixed(6));
+                    frappe.model.set_value(
+                        tax.doctype,
+                        tax.name,
+                        "rate",
+                        derived_rate
+                    );
+                }
+
                 frappe.model.set_value(
                     tax.doctype,
                     tax.name,
                     "charge_type",
                     "On Net Total"
                 );
+                updated_any = true;
             }
         });
 
-        // Recalculate after updates
-        frm.cscript.calculate_taxes_and_totals();
+        // Recalculate only if any row was changed
+        if (updated_any) {
+            frm.cscript.calculate_taxes_and_totals();
+        }
     });
 }
 

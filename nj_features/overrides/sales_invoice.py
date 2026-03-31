@@ -36,6 +36,7 @@ class CustomSalesInvoice(SalesInvoice):
     def on_submit(self):
         super(CustomSalesInvoice, self).on_submit()
         self.close_sales_order_if_fully_refunded()
+        self.validate_si_tax_presence()
     
     def close_sales_order_if_fully_refunded(self):
         """Close linked Sales Orders if full qty refunded via Credit Notes"""
@@ -173,6 +174,39 @@ class CustomSalesInvoice(SalesInvoice):
             else:
                 self.approved = 1
 
+
+    def validate_si_tax_presence(self):
+        print("inside tax validation=================")
+
+        if not self.name:
+            return
+
+        # 🔹 Fetch values from Sales Invoice
+        data = frappe.db.get_value(
+            "Sales Invoice",
+            self.name,
+            ["total", "total_taxes_and_charges"],
+            as_dict=True
+        )
+
+        if not data:
+            return
+
+        total = data.get("total") or 0
+        taxes = data.get("total_taxes_and_charges") or 0
+
+        print("total=================", total)
+        print("taxes=================", taxes)
+
+        # ✅ Condition
+        if total > 0 and taxes == 0:
+            frappe.throw(_(
+                f"""Invalid Sales Invoice!
+
+    Total is {total} but Taxes & Charges is 0.
+
+    Please ensure taxes are applied before proceeding."""
+            ))
 
 # Hook this class to override default Sales Invoice behavior
 def override_sales_invoice():
@@ -815,16 +849,16 @@ def get_item_group_cost_centers(items):
 
 
 
+
 @frappe.whitelist()
 def deviding_tax_chargese(doc, method=None):
+    if doc.is_return == 1:
+        return
 
     # --------------------------------------------------
     # 1️⃣ Fetch Sales Orders from SI
     # --------------------------------------------------
-    sales_orders = [
-        item.sales_order for item in doc.items if item.sales_order
-    ]
-
+    sales_orders = list({item.sales_order for item in doc.items if item.sales_order})
     print("sales_orders========================", sales_orders)
 
     if not sales_orders:
@@ -834,50 +868,17 @@ def deviding_tax_chargese(doc, method=None):
     # 2️⃣ Pick FIRST Sales Order only
     # --------------------------------------------------
     first_so = sales_orders[0]
-
-    sale_type = frappe.db.get_value(
-        "Sales Order",
-        first_so,
-        "sale_type"
-    )
-
+    sale_type = frappe.db.get_value("Sales Order", first_so, "sale_type")
     print("sale_type========================", sale_type)
 
     # --------------------------------------------------
-    # 3️⃣ Run validation ONLY for NJ-Website-B2C
+    # 3️⃣ Run validation ONLY for Amazon
     # --------------------------------------------------
     if sale_type != "NJ-Website-B2C":
         return
 
     # --------------------------------------------------
-    # 2️⃣ Fetch SO TOTAL QTY (PARENT)
-    # --------------------------------------------------
-    so_qty_data = frappe.db.sql("""
-        SELECT so.name, SUM(soi.qty) AS total_qty
-        FROM `tabSales Order` so
-        JOIN `tabSales Order Item` soi ON soi.parent = so.name
-        WHERE so.name IN %(sales_orders)s
-          AND so.docstatus = 1
-        GROUP BY so.name
-    """, {"sales_orders": tuple(sales_orders)}, as_dict=True,debug=1)
-    print("so_qty_data========================", so_qty_data)
-
-    so_qty_map = {r.name: r.total_qty for r in so_qty_data}
-    print("so_qty_map========================", so_qty_map)
-    submitted_si_qty = frappe.db.sql("""
-        SELECT sii.sales_order, SUM(sii.qty) AS total_qty
-        FROM `tabSales Invoice` si
-        JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
-        WHERE sii.sales_order IN %(sales_orders)s
-          AND si.docstatus = 1
-        GROUP BY sii.sales_order
-    """, {"sales_orders": tuple(sales_orders)}, as_dict=True,debug=1)
-    print("submitted_si_qty=====================", submitted_si_qty)
-
-    si_qty_maps = {row.sales_order: row.total_qty for row in submitted_si_qty}
-    print("si_qty_maps=====================", si_qty_maps)
-    # --------------------------------------------------
-    # 3️⃣ Fetch NJ Settings (Allowed tax accounts)
+    # 4️⃣ Fetch NJ Settings (Allowed tax accounts)
     # --------------------------------------------------
     nj_setting_value = frappe.db.get_value(
         "NJ Settings",
@@ -890,18 +891,39 @@ def deviding_tax_chargese(doc, method=None):
 
     try:
         allowed_accounts = set(json.loads(nj_setting_value))
-        print("allowed_accounts=====================", allowed_accounts)
     except Exception:
         allowed_accounts = set(
             acc.strip() for acc in nj_setting_value.split(",") if acc.strip()
         )
-        print("allowed_accounts=====================", allowed_accounts)
+    print("allowed_accounts=====================", allowed_accounts)
 
     # --------------------------------------------------
-    # 4️⃣ Fetch UNMATCHED TAXES FROM SALES ORDER (KEY FIX)
+    # 5️⃣ Fetch SO TOTAL VALUE + CURRENT SI VALUE (per SO)
+    # --------------------------------------------------
+    so_total_value_rows = frappe.db.get_all(
+        "Sales Order",
+        filters={"name": ["in", sales_orders], "docstatus": 1},
+        fields=["name", "total"]
+    )
+    so_total_value_map = {row.name: flt(row.total) for row in so_total_value_rows}
+    print("so_total_value_map=====================", so_total_value_map)
+
+    current_si_value_map = {}
+    for item in doc.items:
+        if not item.sales_order:
+            continue
+        current_si_value_map[item.sales_order] = (
+            flt(current_si_value_map.get(item.sales_order)) + flt(item.amount)
+        )
+    print("current_si_value_map=====================", current_si_value_map)
+
+    if not current_si_value_map:
+        return
+
+    # --------------------------------------------------
+    # 6️⃣ Fetch UNMATCHED TAXES FROM SALES ORDER (per SO)
     # --------------------------------------------------
     so_unmatched_taxes = {}
-
     for so_name in sales_orders:
         so_taxes = frappe.get_all(
             "Sales Taxes and Charges",
@@ -910,46 +932,49 @@ def deviding_tax_chargese(doc, method=None):
         )
         print("so_taxes=====================", so_taxes)
 
+        so_unmatched_taxes[so_name] = {}
         for tax in so_taxes:
             if tax.account_head not in allowed_accounts:
-                so_unmatched_taxes[tax.account_head] = tax.tax_amount
-                print("so_unmatched_taxes=====================", so_unmatched_taxes)
+                so_unmatched_taxes[so_name][tax.account_head] = flt(tax.tax_amount)
 
-    if not so_unmatched_taxes:
+    print("so_unmatched_taxes=====================", so_unmatched_taxes)
+    if not any(so_unmatched_taxes.values()):
         return
 
     # --------------------------------------------------
-    # 5️⃣ Fetch CURRENT SI TOTAL QTY (PARENT)
+    # 7️⃣ Allocate unmatched SO taxes by VALUE ratio
+    # formula: (SO tax / SO total value) * current SI value for that SO
     # --------------------------------------------------
-    current_si_qty = sum(
-        item.qty for item in doc.items if item.sales_order
-    )
-    print("current_si_qty=====================", current_si_qty)
-    if not current_si_qty:
-        return
+    allocated_tax_by_account = {}
 
-    # --------------------------------------------------
-    # 6️⃣ Divide SO TAX using CURRENT SI QTY
-    # --------------------------------------------------
     for so_name in sales_orders:
-        so_total_qty = so_qty_map.get(so_name)
-        print("so_total_qty=====================", so_total_qty)
-        if not so_total_qty:
+        so_total_value = flt(so_total_value_map.get(so_name))
+        current_si_value = flt(current_si_value_map.get(so_name))
+
+        print("so_total_value=====================", so_total_value)
+        print("current_si_value=====================", current_si_value)
+
+        if not so_total_value or not current_si_value:
             continue
 
-        for account_head, so_tax_amount in so_unmatched_taxes.items():
-            divided_amount = round(
-                (so_tax_amount / so_total_qty) * current_si_qty, 2
+        for account_head, so_tax_amount in (so_unmatched_taxes.get(so_name) or {}).items():
+            divided_amount = round((flt(so_tax_amount) / so_total_value) * current_si_value, 2)
+            allocated_tax_by_account[account_head] = round(
+                flt(allocated_tax_by_account.get(account_head)) + divided_amount, 2
             )
             print("divided_amount=====================", divided_amount)
 
-            # --------------------------------------------------
-            # 7️⃣ Update SAME tax row in SI
-            # --------------------------------------------------
-            for tax in doc.taxes:
-                if tax.account_head == account_head:
-                    tax.tax_amount = divided_amount
-                    tax.base_tax_amount = divided_amount
-                    break
+    if not allocated_tax_by_account:
+        return
 
+    print("allocated_tax_by_account=====================", allocated_tax_by_account)
 
+    # --------------------------------------------------
+    # 8️⃣ Update SAME tax row in SI
+    # --------------------------------------------------
+    conversion_rate = flt(doc.conversion_rate) or 1
+    for tax in doc.taxes:
+        if tax.account_head in allocated_tax_by_account:
+            tax_amount = flt(allocated_tax_by_account[tax.account_head])
+            tax.tax_amount = tax_amount
+            tax.base_tax_amount = round(tax_amount * conversion_rate, 2)

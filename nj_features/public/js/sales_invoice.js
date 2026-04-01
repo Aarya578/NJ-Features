@@ -108,13 +108,87 @@ frappe.ui.form.on('Sales Invoice', {
     },
     
 });
-function update_gst_tax_type_from_nj_settings(frm) {
-    console.log("updating============================");
+// function update_gst_tax_type_from_nj_settings(frm) {
+//     console.log("updating============================");
 
-    // 🔒 Skip if document is submitted
-    if (Number(frm.doc.docstatus || 0) === 1) {
-        return;
-    }
+//     // 🔒 Skip if document is submitted
+//     if (Number(frm.doc.docstatus || 0) === 1) {
+//         return;
+//     }
+
+//     if (!frm.doc.taxes || !frm.doc.taxes.length) return;
+
+//     frappe.db.get_value(
+//         "NJ Settings",
+//         { parameter: "taxe_account_heads" },
+//         "value"
+//     ).then(r => {
+//         const csv = r?.message?.value;
+//         console.log("message=========", r.message);
+
+//         if (!csv) return;
+
+//         const normalize = (value) => (value || "")
+//             .toString()
+//             .trim()
+//             .toLowerCase();
+
+//         const account_heads = csv
+//             .split(',')
+//             .map(v => normalize(v))
+//             .filter(Boolean);
+
+//         let updated_any = false;
+
+//         frm.doc.taxes.forEach(tax => {
+//             const tax_account_head = normalize(tax.account_head);
+//             const matched = account_heads.some(setting_head =>
+//                 tax_account_head === setting_head || tax_account_head.startsWith(`${setting_head} - `)
+//             );
+
+//             if (
+//                 tax_account_head &&
+//                 matched &&
+//                 tax.charge_type !== "On Net Total"
+//             ) {
+//                 const net_total = Number(frm.doc.net_total || 0);
+//                 const current_rate = Number(tax.rate || 0);
+//                 const current_tax_amount = Number(tax.tax_amount || 0);
+
+//                 // If tax came as "Actual" with amount but no rate (common in SO->SI mapping),
+//                 // derive a percentage before switching to "On Net Total" so recalculation works.
+//                 if (current_rate === 0 && current_tax_amount > 0 && net_total > 0) {
+//                     const derived_rate = Number(((current_tax_amount / net_total) * 100).toFixed(6));
+//                     frappe.model.set_value(
+//                         tax.doctype,
+//                         tax.name,
+//                         "rate",
+//                         derived_rate
+//                     );
+//                 }
+
+//                 frappe.model.set_value(
+//                     tax.doctype,
+//                     tax.name,
+//                     "charge_type",
+//                     "On Net Total"
+//                 );
+//                 updated_any = true;
+//             }
+//         });
+
+//         // Recalculate only if any row was changed
+//         if (updated_any) {
+//             frm.cscript.calculate_taxes_and_totals();
+//         }
+//     });
+// }
+
+function update_gst_tax_type_from_nj_settings(frm) {
+    console.log("Updating GST tax types...");
+
+    // 🔒 Skip if submitted
+    if (Number(frm.doc.docstatus || 0) === 1) return;
 
     if (!frm.doc.taxes || !frm.doc.taxes.length) return;
 
@@ -123,15 +197,11 @@ function update_gst_tax_type_from_nj_settings(frm) {
         { parameter: "taxe_account_heads" },
         "value"
     ).then(r => {
-        const csv = r?.message?.value;
-        console.log("message=========", r.message);
 
+        const csv = r?.message?.value;
         if (!csv) return;
 
-        const normalize = (value) => (value || "")
-            .toString()
-            .trim()
-            .toLowerCase();
+        const normalize = (val) => (val || "").toString().trim().toLowerCase();
 
         const account_heads = csv
             .split(',')
@@ -141,32 +211,44 @@ function update_gst_tax_type_from_nj_settings(frm) {
         let updated_any = false;
 
         frm.doc.taxes.forEach(tax => {
+
             const tax_account_head = normalize(tax.account_head);
+
+            // Check if tax belongs to configured heads
             const matched = account_heads.some(setting_head =>
-                tax_account_head === setting_head || tax_account_head.startsWith(`${setting_head} - `)
+                tax_account_head === setting_head ||
+                tax_account_head.startsWith(`${setting_head} -`)
             );
 
-            if (
-                tax_account_head &&
-                matched &&
-                tax.charge_type !== "On Net Total"
-            ) {
-                const net_total = Number(frm.doc.net_total || 0);
-                const current_rate = Number(tax.rate || 0);
-                const current_tax_amount = Number(tax.tax_amount || 0);
+            if (!matched) return;
 
-                // If tax came as "Actual" with amount but no rate (common in SO->SI mapping),
-                // derive a percentage before switching to "On Net Total" so recalculation works.
-                if (current_rate === 0 && current_tax_amount > 0 && net_total > 0) {
-                    const derived_rate = Number(((current_tax_amount / net_total) * 100).toFixed(6));
-                    frappe.model.set_value(
-                        tax.doctype,
-                        tax.name,
-                        "rate",
-                        derived_rate
-                    );
-                }
+            // ✅ FIX 1: Always set correct GST rate (NO reverse calculation)
+            let correct_rate = 0;
 
+            if (tax_account_head.includes("sgst")) {
+                correct_rate = 9;
+            } else if (tax_account_head.includes("cgst")) {
+                correct_rate = 9;
+            } else if (tax_account_head.includes("igst")) {
+                correct_rate = 18;
+            }
+
+            // Skip if no GST match
+            if (!correct_rate) return;
+
+            // ✅ FIX 2: Set rate only if different
+            if (Number(tax.rate) !== correct_rate) {
+                frappe.model.set_value(
+                    tax.doctype,
+                    tax.name,
+                    "rate",
+                    correct_rate
+                );
+                updated_any = true;
+            }
+
+            // ✅ FIX 3: Force correct charge type
+            if (tax.charge_type !== "On Net Total") {
                 frappe.model.set_value(
                     tax.doctype,
                     tax.name,
@@ -175,16 +257,24 @@ function update_gst_tax_type_from_nj_settings(frm) {
                 );
                 updated_any = true;
             }
+
+            // ✅ FIX 4: Clear wrong actual amount (important)
+            if (tax.charge_type === "Actual") {
+                frappe.model.set_value(
+                    tax.doctype,
+                    tax.name,
+                    "tax_amount",
+                    0
+                );
+            }
         });
 
-        // Recalculate only if any row was changed
+        // ✅ Recalculate once
         if (updated_any) {
             frm.cscript.calculate_taxes_and_totals();
         }
     });
 }
-
-
 function setup_custom_einvoice_actions(frm) {
 
     if (frm.doc.docstatus == 2) return;    

@@ -216,7 +216,7 @@
   },
   {
    "fieldname": "manufacturer_model",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "label": "Manufacturer Model",
    "read_only": 1
   },

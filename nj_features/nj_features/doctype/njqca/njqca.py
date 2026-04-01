@@ -23,6 +23,54 @@ from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,che
 frappe.utils.logger.set_log_level("DEBUG")
 logger = frappe.logger("njqca", allow_site=True, file_count=1)
 
+
+def _is_desktop_item_group(item_group):
+    return str(item_group or '').strip().lower() == 'desktops'
+
+
+def _extract_brand_from_item_code(item_code):
+    item_code = str(item_code or '').strip()
+    if not item_code:
+        return None
+    if item_code.startswith('S-'):
+        item_code = item_code[2:].strip()
+    if not item_code:
+        return None
+    return item_code.split()[0].strip() or None
+
+
+def _resolve_item_brand(serial_brand=None, item_brand=None, item_code=None, variant_of=None):
+    if serial_brand:
+        return serial_brand
+    if item_brand:
+        return item_brand
+    template_brand = frappe.db.get_value('Item', variant_of, 'brand') if variant_of else None
+    if template_brand:
+        return template_brand
+    return _extract_brand_from_item_code(item_code)
+
+
+@frappe.whitelist()
+def get_manufacturer_models(item_group=None, brand=None):
+    if not item_group or not brand:
+        return []
+
+    query = """
+        SELECT DISTINCT mmc.manufacturer_model
+        FROM `tabItem` i
+        INNER JOIN `tabManufacturer Model Child` mmc
+            ON mmc.parent = i.item_model
+        WHERE i.item_group = %(item_group)s
+          AND i.brand = %(brand)s
+          AND IFNULL(i.item_model, '') != ''
+          AND IFNULL(mmc.manufacturer_model, '') != ''
+          AND i.disabled = 0
+        ORDER BY mmc.manufacturer_model
+    """
+
+    return frappe.db.sql(query, {'item_group': item_group, 'brand': brand}, as_dict=True)
+
+
 @frappe.whitelist()
 def update_serial_no_componont_for_grade(self):
     try:
@@ -45,6 +93,81 @@ def update_serial_no_componont_for_grade(self):
 
     except Exception as e:
         return {f'Error while updating the Serial No Component: {str(e)}'}
+    
+@frappe.whitelist()
+def get_inspection_types_for_user(doctype, txt, searchfield, start, page_len, filters):
+    try:
+        emp_data = get_active_emp(frappe.session.user, fields=['role_profile'])
+        role_profile = emp_data.get('role_profile') if emp_data else None
+
+        allowed_inspection_types = []
+
+        if role_profile:
+            # Step 1: Try Table MultiSelect child table (multiple inspection types)
+            child_types = frappe.db.get_all(
+                'Inspection Type Multiselect',
+                filters={'parent': role_profile},
+                fields=['inspection_type'],
+                order_by='idx'
+            )
+            allowed_inspection_types = [
+                row['inspection_type']
+                for row in child_types
+                if row.get('inspection_type')
+            ]
+
+            # Step 2: If child table empty, fallback to single 'inspection_type' field
+            if not allowed_inspection_types:
+                single_type = frappe.db.get_value(
+                    'Role Profile',
+                    {'name': role_profile},
+                    'inspection_type'
+                )
+                if single_type:
+                    allowed_inspection_types = [single_type]
+
+            # Step 3: If still empty, try department's inspection type
+            if not allowed_inspection_types:
+                department = frappe.db.get_value(
+                    'Role Profile',
+                    {'name': role_profile},
+                    'department'
+                )
+                if department:
+                    dept_type = frappe.db.get_value(
+                        'Department',
+                        {'name': department},
+                        'inspection_type'
+                    )
+                    if dept_type:
+                        allowed_inspection_types = [dept_type]
+
+        # Step 4: If nothing found anywhere, show all active inspection types
+        if not allowed_inspection_types:
+            return frappe.db.sql("""
+                SELECT name FROM `tabInspection Type`
+                WHERE active = 1
+                AND name LIKE %(txt)s
+                LIMIT %(page_len)s OFFSET %(start)s
+            """, {"txt": f"%{txt}%", "page_len": page_len, "start": start})
+
+        # Step 5: Show all matched inspection types from the list using IN
+        return frappe.db.sql("""
+            SELECT name FROM `tabInspection Type`
+            WHERE active = 1
+            AND name IN %(allowed)s
+            AND name LIKE %(txt)s
+            LIMIT %(page_len)s OFFSET %(start)s
+        """, {
+            "allowed": tuple(allowed_inspection_types),
+            "txt": f"%{txt}%",
+            "page_len": page_len,
+            "start": start
+        })
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_inspection_types_for_user error")
+        return []
 
 @frappe.whitelist()
 def get_inspection_type():
@@ -473,6 +596,7 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
+        set_fail_for_empty_reliability_params(self)
 
     def on_submit(self):
         try:
@@ -1306,15 +1430,23 @@ def get_info_from_serial_no(doc=None):
 
     if sle:
         sle_entry = sle[0]
-        item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
+        item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of', 'item_group'], as_dict=1) or {}
+
+        resolved_brand = _resolve_item_brand(
+            serial_brand=sle_entry.get('brand'),
+            item_brand=item_code_data.get('brand'),
+            item_code=sle_entry.get('item_code'),
+            variant_of=item_code_data.get('variant_of'),
+        )
+        resolved_model = sle_entry.get('model') or item_code_data.get('item_model')
 
         result.update({
             'warehouse': sle_entry.get('warehouse'),
             'base_price': sle_entry.get('purchase_rate'),
             'repack_itm_price': item_code_data.get('valuation_rate'),
             'department': emp_dept.get('department') if emp_dept else None,
-            'brand': sle_entry.get('brand') or item_code_data.get('brand'),
-            'model': sle_entry.get('model') or item_code_data.get('item_model'),
+            'brand': resolved_brand,
+            'model': resolved_model,
         })
 
         item_group = sle_entry.get('item_group') or item_code_data.get('item_group')
@@ -1359,13 +1491,22 @@ def get_info_from_component_serial_no(doc=None):
         
         if sle and len(sle) > 0:
             sle_entry = sle[0]
-            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of'], as_dict=1)
-            
+            item_code_data = frappe.get_value('Item', {'name': sle_entry.get('item_code')}, ['valuation_rate', 'item_model', 'brand', 'variant_of', 'item_group'], as_dict=1) or {}
+            resolved_brand = _resolve_item_brand(
+                serial_brand=sle_entry.get('brand'),
+                item_brand=item_code_data.get('brand'),
+                item_code=sle_entry.get('item_code'),
+                variant_of=item_code_data.get('variant_of'),
+            )
+            resolved_model = item_code_data.get('item_model')
+
             result.update({
                 'warehouse': sle_entry.get('warehouse',""),
                 'base_price': sle_entry.get('purchase_rate'),
                 'repack_itm_price': item_code_data.get('valuation_rate') if item_code_data else None,
                 'department': emp_dept.get('department') if emp_dept else None,
+                'brand': resolved_brand,
+                'model': resolved_model,
             })
 
             result['item_code'] = sle_entry.get('item_code')
@@ -2102,18 +2243,40 @@ def construct_item_code(item_template, args_list):
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
-def get_model(manufacturer_model=None):
+def get_model(manufacturer_model=None, item_group=None, brand=None):
     query, model_list = '', []
 
-    if model_list == []:
+    if not manufacturer_model:
+        return model_list
+
+    if _is_desktop_item_group(item_group) and brand:
+        query = """
+            SELECT DISTINCT mmc.parent AS model
+            FROM `tabItem` i
+            INNER JOIN `tabManufacturer Model Child` mmc
+                ON mmc.parent = i.item_model
+            WHERE i.item_group = %(item_group)s
+              AND i.brand = %(brand)s
+              AND mmc.manufacturer_model = %(manufacturer_model)s
+              AND i.disabled = 0
+            ORDER BY mmc.parent
+        """
+        params = {
+            'item_group': item_group,
+            'brand': brand,
+            'manufacturer_model': manufacturer_model,
+        }
+        model_list = frappe.db.sql(query, params, as_dict=True)
+    else:
         query = """SELECT DISTINCT mmc.parent AS model
                    FROM `tabManufacturer Model Child` AS mmc
                    LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
                    WHERE mmc.manufacturer_model = %s"""
         params = (manufacturer_model)
         model_list = frappe.db.sql(query, params, as_dict=True)
-        if not model_list:
-            frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
+
+    if not model_list:
+        frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
 
@@ -2620,6 +2783,119 @@ def update_storage_type(doc):
             row.storage_type = "SSD"
         elif row.storage_capacity in ["200 GB", "320 GB", "500 GB"]:
             row.storage_type = "HDD"
+
+@frappe.whitelist()
+def set_fail_for_empty_reliability_params(doc):
+    """
+    If inspection_type is 'Reliability Test':
+    1. Fetch all required parameters from NJ Quality Checks
+    2. For each required parameter:
+       - If missing from njqca_result_parameters -> add new row with FAIL
+       - If exists but value is empty -> set value = FAIL, score = 41
+    """
+    try:
+        if not doc.inspection_type:
+            return
+
+        if doc.inspection_type.strip().lower() != 'reliability test':
+            return
+
+        bios_serial_no = doc.get('bios_serialno') or ''
+        serial_no = doc.get('serial_no') or ''
+
+        # ------------------------------------------------
+        # STEP 1: Get required parameters from NJ Quality
+        # Checks for Reliability Test inspection type
+        # ------------------------------------------------
+        if serial_no and bios_serial_no:
+            rows = frappe.db.sql("""
+                SELECT DISTINCT cl.parameter, qc.item_group
+                FROM `tabNJ QC Check List` cl
+                INNER JOIN `tabNj QC Options` qc_opts
+                    ON qc_opts.quality_check = cl.name
+                INNER JOIN `tabNJ Quality Checks` qc
+                    ON qc.name = qc_opts.parent
+                INNER JOIN `tabSerial No` Sr
+                    ON Sr.bios_serial_no = %(bios_serial_no)s
+                LEFT JOIN `tabModel Specific` MS
+                    ON MS.parent = cl.name
+                    AND MS.model = Sr.model
+                WHERE cl.parameter IS NOT NULL
+                AND qc.inspection_type = %(inspection_type)s
+                AND qc.status = 'Active'
+                AND qc.docstatus = 1
+                AND cl.docstatus = 1
+                AND (
+                    (cl.is_model_specific = 1 AND MS.model IS NOT NULL)
+                    OR (cl.exclude_models = 1 AND MS.model IS NULL)
+                    OR (cl.is_model_specific = 0 AND cl.exclude_models = 0)
+                )
+            """, {
+                'inspection_type': doc.inspection_type,
+                'bios_serial_no': bios_serial_no
+            }, as_dict=True)
+        else:
+            rows = frappe.db.sql("""
+                SELECT DISTINCT cl.parameter, qc.item_group
+                FROM `tabNJ QC Check List` cl
+                INNER JOIN `tabNj QC Options` qc_opts
+                    ON qc_opts.quality_check = cl.name
+                INNER JOIN `tabNJ Quality Checks` qc
+                    ON qc.name = qc_opts.parent
+                WHERE cl.parameter IS NOT NULL
+                AND qc.inspection_type = %s
+                AND qc.status = 'Active'
+                AND qc.docstatus = 1
+                AND cl.docstatus = 1
+            """, (doc.inspection_type,), as_dict=True)
+
+        if not rows:
+            return
+
+        # ------------------------------------------------
+        # STEP 2: Build map of existing parameters
+        # key = parameter name lowercase
+        # ------------------------------------------------
+        existing_param_map = {}
+        for row in doc.get('njqca_result_parameters') or []:
+            param = row.get('parameter')
+            if param and str(param).strip():
+                existing_param_map[str(param).strip().lower()] = row
+
+        # ------------------------------------------------
+        # STEP 3: For each required parameter:
+        # missing -> add new FAIL row
+        # exists but empty value -> set FAIL
+        # ------------------------------------------------
+        for r in rows:
+            param = (r.get('parameter') or '').strip()
+            item_group = (r.get('item_group') or '').strip()
+
+            if not param:
+                continue
+
+            param_key = param.lower()
+
+            if param_key in existing_param_map:
+                # Parameter exists - check if value is empty
+                existing_row = existing_param_map[param_key]
+                val = existing_row.get('value')
+                if val is None or str(val).strip() == '':
+                    existing_row.value = 'FAIL'
+                    existing_row.score = 41
+            else:
+                # Parameter completely missing - add new row
+                new_row = doc.append('njqca_result_parameters', {})
+                new_row.parameter = param
+                new_row.value = 'FAIL'
+                new_row.score = 41
+                new_row.item_group = item_group
+
+    except Exception as e:
+        log_error(
+            frappe.get_traceback(),
+            f"Error in set_fail_for_empty_reliability_params: {str(e)}"
+        )
 
 @frappe.whitelist()
 def get_item_code_from_rfq_id(rfq_id):

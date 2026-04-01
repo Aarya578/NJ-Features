@@ -596,7 +596,6 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
-        set_fail_for_empty_reliability_params(self)
 
     def on_submit(self):
         try:
@@ -2783,121 +2782,6 @@ def update_storage_type(doc):
             row.storage_type = "SSD"
         elif row.storage_capacity in ["200 GB", "320 GB", "500 GB"]:
             row.storage_type = "HDD"
-
-
-
-@frappe.whitelist()
-def set_fail_for_empty_reliability_params(doc):
-    """
-    If inspection_type is 'Reliability Test':
-    1. Fetch all required parameters from NJ Quality Checks
-    2. For each required parameter:
-       - If missing from njqca_result_parameters -> add new row with FAIL
-       - If exists but value is empty -> set value = FAIL, score = 41
-    """
-    try:
-        if not doc.inspection_type:
-            return
-
-        if doc.inspection_type.strip().lower() != 'reliability test':
-            return
-
-        bios_serial_no = doc.get('bios_serialno') or ''
-        serial_no = doc.get('serial_no') or ''
-
-        # ------------------------------------------------
-        # STEP 1: Get required parameters from NJ Quality
-        # Checks for Reliability Test inspection type
-        # ------------------------------------------------
-        if serial_no and bios_serial_no:
-            rows = frappe.db.sql("""
-                SELECT DISTINCT cl.parameter, qc.item_group
-                FROM `tabNJ QC Check List` cl
-                INNER JOIN `tabNj QC Options` qc_opts
-                    ON qc_opts.quality_check = cl.name
-                INNER JOIN `tabNJ Quality Checks` qc
-                    ON qc.name = qc_opts.parent
-                INNER JOIN `tabSerial No` Sr
-                    ON Sr.bios_serial_no = %(bios_serial_no)s
-                LEFT JOIN `tabModel Specific` MS
-                    ON MS.parent = cl.name
-                    AND MS.model = Sr.model
-                WHERE cl.parameter IS NOT NULL
-                AND qc.inspection_type = %(inspection_type)s
-                AND qc.status = 'Active'
-                AND qc.docstatus = 1
-                AND cl.docstatus = 1
-                AND (
-                    (cl.is_model_specific = 1 AND MS.model IS NOT NULL)
-                    OR (cl.exclude_models = 1 AND MS.model IS NULL)
-                    OR (cl.is_model_specific = 0 AND cl.exclude_models = 0)
-                )
-            """, {
-                'inspection_type': doc.inspection_type,
-                'bios_serial_no': bios_serial_no
-            }, as_dict=True)
-        else:
-            rows = frappe.db.sql("""
-                SELECT DISTINCT cl.parameter, qc.item_group
-                FROM `tabNJ QC Check List` cl
-                INNER JOIN `tabNj QC Options` qc_opts
-                    ON qc_opts.quality_check = cl.name
-                INNER JOIN `tabNJ Quality Checks` qc
-                    ON qc.name = qc_opts.parent
-                WHERE cl.parameter IS NOT NULL
-                AND qc.inspection_type = %s
-                AND qc.status = 'Active'
-                AND qc.docstatus = 1
-                AND cl.docstatus = 1
-            """, (doc.inspection_type,), as_dict=True)
-
-        if not rows:
-            return
-
-        # ------------------------------------------------
-        # STEP 2: Build map of existing parameters
-        # key = parameter name lowercase
-        # ------------------------------------------------
-        existing_param_map = {}
-        for row in doc.get('njqca_result_parameters') or []:
-            param = row.get('parameter')
-            if param and str(param).strip():
-                existing_param_map[str(param).strip().lower()] = row
-
-        # ------------------------------------------------
-        # STEP 3: For each required parameter:
-        # missing -> add new FAIL row
-        # exists but empty value -> set FAIL
-        # ------------------------------------------------
-        for r in rows:
-            param = (r.get('parameter') or '').strip()
-            item_group = (r.get('item_group') or '').strip()
-
-            if not param:
-                continue
-
-            param_key = param.lower()
-
-            if param_key in existing_param_map:
-                # Parameter exists - check if value is empty
-                existing_row = existing_param_map[param_key]
-                val = existing_row.get('value')
-                if val is None or str(val).strip() == '':
-                    existing_row.value = 'FAIL'
-                    existing_row.score = 41
-            else:
-                # Parameter completely missing - add new row
-                new_row = doc.append('njqca_result_parameters', {})
-                new_row.parameter = param
-                new_row.value = 'FAIL'
-                new_row.score = 41
-                new_row.item_group = item_group
-
-    except Exception as e:
-        log_error(
-            frappe.get_traceback(),
-            f"Error in set_fail_for_empty_reliability_params: {str(e)}"
-        )
 
 @frappe.whitelist()
 def get_item_code_from_rfq_id(rfq_id):

@@ -106,6 +106,7 @@ frappe.ui.form.on("NJQCA", {
 
     if (frm.doc.docstatus == 0) {
       trigger_serial_no(frm);
+      applyDesktopFieldState(frm);
       syncDesktopManufacturerModelFlow(frm);
       frm.events.power_on();
       handleScannerInput(frm, "serial_no");
@@ -280,7 +281,11 @@ frappe.ui.form.on("NJQCA", {
       }
 
       if (!frm.doc.__islocal) {
-        njqca.get_model(frm.doc.manufacturer_model, frm.doc.item_group, frm.doc.brand);
+        njqca.get_model(
+          isDesktopNJQCA(frm.doc) ? null : frm.doc.manufacturer_model,
+          frm.doc.item_group,
+          frm.doc.brand,
+        );
       }
 
       setup_merge_checkbox_handler(frm, "njqca_laptop_processors");
@@ -712,13 +717,11 @@ frappe.ui.form.on("NJQCA", {
       });
     }
 
-    var requiredFields = [
-      "serial_no",
-      "item_group",
-      "brand",
-      "manufacturer_model",
-      "model",
-    ];
+    var requiredFields = ["serial_no", "item_group", "brand", "model"];
+
+    if (!isDesktopNJQCA(frm.doc)) {
+      requiredFields.splice(3, 0, "manufacturer_model");
+    }
     if (frm.doc.rfq_id) {
       requiredFields.push("warehouse");
     }
@@ -1146,25 +1149,11 @@ frappe.ui.form.on("NJQCA", {
   },
 
   manufacturer_model: function (frm) {
-    if (!frm.doc.manufacturer_model) {
-      if (isDesktopNJQCA(frm.doc)) {
-        resetDesktopSelection(frm, { keepManufacturerModel: true });
-      }
+    if (isDesktopNJQCA(frm.doc)) {
       return;
     }
 
-    if (isDesktopNJQCA(frm.doc)) {
-      frm.set_value("model", "");
-      frm.set_value("model_description", "");
-      frm.set_value("item_template", "");
-      frm.refresh_field("model");
-      frm.refresh_field("model_description");
-      frm.refresh_field("item_template");
-      njqca.get_model(
-        frm.doc.manufacturer_model,
-        frm.doc.item_group,
-        frm.doc.brand,
-      );
+    if (!frm.doc.manufacturer_model) {
       return;
     }
 
@@ -1334,7 +1323,7 @@ frappe.ui.form.on("NJQCA", {
     );
     const isComponent = item_group_data?.message?.is_component;
 
-    if (selectedModel) {
+    if (selectedModel && !isDesktopNJQCA(frm.doc)) {
       await frappe.call({
         method: "nj_features.nj_features.doctype.njqca.njqca.validate_model",
         args: {
@@ -1348,6 +1337,10 @@ frappe.ui.form.on("NJQCA", {
           }
         },
       });
+    }
+
+    if (selectedModel && isDesktopNJQCA(frm.doc)) {
+      frm.set_value("manufacturer_model", selectedModel);
     }
 
     if (
@@ -1568,6 +1561,16 @@ function isDesktopNJQCA(doc) {
   return (doc.item_group || "").trim().toLowerCase() === "desktops";
 }
 
+function applyDesktopFieldState(frm) {
+  const isDesktop = isDesktopNJQCA(frm.doc);
+
+  frm.set_df_property("manufacturer_model", "hidden", isDesktop ? 1 : 0);
+  frm.set_df_property("model", "read_only", 0);
+
+  frm.refresh_field("manufacturer_model");
+  frm.refresh_field("model");
+}
+
 function resetDesktopSelection(frm, { keepManufacturerModel = false } = {}) {
   if (!keepManufacturerModel) {
     frm.set_value("manufacturer_model", "");
@@ -1588,22 +1591,19 @@ function syncDesktopManufacturerModelFlow(frm, { clearSelections = false } = {})
     return;
   }
 
-  frm.set_df_property("manufacturer_model", "read_only", 0);
-  frm.set_df_property("model", "read_only", 0);
+  applyDesktopFieldState(frm);
 
   if (clearSelections) {
     resetDesktopSelection(frm);
   }
 
   if (!frm.doc.brand) {
-    frm.set_df_property("manufacturer_model", "options", "\n");
-    frm.refresh_field("manufacturer_model");
+    frm.set_df_property("model", "options", "\n");
+    frm.refresh_field("model");
     return;
   }
 
-  njqca.get_manufacturer_models(frm, {
-    selected_manufacturer_model: frm.doc.manufacturer_model,
-  });
+  njqca.get_model(null, frm.doc.item_group, frm.doc.brand);
 }
 
 function trigger_serial_no(frm) {
@@ -2196,7 +2196,8 @@ njqca.get_manufacturer_models = function (
 };
 
 njqca.get_model = function (manufacturer_model, item_group = null, brand = null) {
-  console.log("njqca.get_model");
+  const isDesktop = (item_group || "").trim().toLowerCase() === "desktops";
+
   frappe.call({
     method: "nj_features.nj_features.doctype.njqca.njqca.get_model",
     args: {
@@ -2205,37 +2206,56 @@ njqca.get_model = function (manufacturer_model, item_group = null, brand = null)
       brand: brand,
     },
     callback: function (r) {
-      if (r.message) {
-        var model_list = r.message;
-        if (Array.isArray(model_list) && model_list.length > 0) {
-          if (model_list.length === 1) {
-            cur_frm.set_value("model", model_list[0].model);
-            cur_frm.set_df_property("model", "read_only", 1);
-          } else {
-            cur_frm.set_df_property("model", "read_only", 0);
-            var options = model_list
-              .map(function (item) {
-                return item.model;
-              })
-              .join("\n");
-            cur_frm.set_df_property("model", "options", options);
-            $('[data-fieldname="model"]')
-              .focus()
-              .closest(".control-input")
-              .css({
-                "border-radius": "0.25rem",
-                border: "2px solid rgba(173, 216, 230, 0.5)",
-              });
+      const model_list = Array.isArray(r.message) ? r.message : [];
+      const options = model_list
+        .map((item) => item.model)
+        .filter(Boolean);
 
-            frappe.show_alert({
-              message: __("Select Model"),
-              indicator: "green",
-            });
-          }
-          cur_frm.events.model(cur_frm);
-        }
+      cur_frm.set_df_property(
+        "model",
+        "options",
+        options.length ? [""].concat(options).join("\n") : "\n",
+      );
+
+      if (!options.length) {
+        cur_frm.set_value("model", "");
         cur_frm.refresh_field("model");
+        return;
       }
+
+      const preferredValue =
+        cur_frm.doc.model && options.includes(cur_frm.doc.model)
+          ? cur_frm.doc.model
+          : options.length === 1
+            ? options[0]
+            : null;
+
+      if (preferredValue) {
+        cur_frm.set_value("model", preferredValue);
+        cur_frm.set_df_property("model", "read_only", options.length === 1 ? 1 : 0);
+      } else {
+        cur_frm.set_df_property("model", "read_only", 0);
+
+        $('[data-fieldname="model"]')
+          .focus()
+          .closest(".control-input")
+          .css({
+            "border-radius": "0.25rem",
+            border: "2px solid rgba(173, 216, 230, 0.5)",
+          });
+
+        frappe.show_alert({
+          message: __("Select Model"),
+          indicator: "green",
+        });
+      }
+
+      if (isDesktop && cur_frm.doc.model) {
+        cur_frm.set_value("manufacturer_model", cur_frm.doc.model);
+      }
+
+      cur_frm.events.model(cur_frm);
+      cur_frm.refresh_field("model");
     },
   });
 };

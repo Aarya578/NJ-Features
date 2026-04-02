@@ -218,7 +218,8 @@
    "fieldname": "manufacturer_model",
    "fieldtype": "Select",
    "label": "Manufacturer Model",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.item_group != \"Desktops\""
   },
   {
    "fieldname": "bios_serialno",

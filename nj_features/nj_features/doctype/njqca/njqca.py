@@ -2246,34 +2246,34 @@ def construct_item_code(item_template, args_list):
 def get_model(manufacturer_model=None, item_group=None, brand=None):
     query, model_list = '', []
 
-    if not manufacturer_model:
-        return model_list
+    if _is_desktop_item_group(item_group):
+        if not brand:
+            return model_list
 
-    if _is_desktop_item_group(item_group) and brand:
         query = """
-            SELECT DISTINCT mmc.parent AS model
+            SELECT DISTINCT i.item_model AS model
             FROM `tabItem` i
-            INNER JOIN `tabManufacturer Model Child` mmc
-                ON mmc.parent = i.item_model
             WHERE i.item_group = %(item_group)s
               AND i.brand = %(brand)s
-              AND mmc.manufacturer_model = %(manufacturer_model)s
+              AND IFNULL(i.item_model, '') != ''
               AND i.disabled = 0
-            ORDER BY mmc.parent
+            ORDER BY i.item_model
         """
         params = {
             'item_group': item_group,
             'brand': brand,
-            'manufacturer_model': manufacturer_model,
         }
-        model_list = frappe.db.sql(query, params, as_dict=True)
-    else:
-        query = """SELECT DISTINCT mmc.parent AS model
-                   FROM `tabManufacturer Model Child` AS mmc
-                   LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
-                   WHERE mmc.manufacturer_model = %s"""
-        params = (manufacturer_model)
-        model_list = frappe.db.sql(query, params, as_dict=True)
+        return frappe.db.sql(query, params, as_dict=True)
+
+    if not manufacturer_model:
+        return model_list
+
+    query = """SELECT DISTINCT mmc.parent AS model
+               FROM `tabManufacturer Model Child` AS mmc
+               LEFT JOIN `tabMake Child` AS mc ON mc.parent = mmc.parent
+               WHERE mmc.manufacturer_model = %s
+               ORDER BY mmc.parent"""
+    model_list = frappe.db.sql(query, (manufacturer_model,), as_dict=True)
 
     if not model_list:
         frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")

@@ -311,6 +311,7 @@ class CustomDeliveryNote(DeliveryNote):
                 # ------------------------------------------------------------------
                    
                 # self.validate_dn_vs_si()
+
                 with log_time("delete_department_history", self.name):
                     self.delete_department_history()
 
@@ -3199,3 +3200,129 @@ def deviding_tax_chargese_return_dn(doc, method=None):
             tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+# @frappe.whitelist()
+# def deviding_tax_chargese(doc, method=None):
+#     print("sales_orders=================34343434=======")
+
+
+@frappe.whitelist()
+def deviding_tax_chargese_return_dn(doc, method=None):
+    # Run ONLY for return DN
+    if doc.is_return != 1:
+        return
+
+    # --------------------------------------------------
+    # 1) Fetch original DN from return_against
+    # --------------------------------------------------
+    original_dn_name = doc.return_against
+    print("original_dn_name========================", original_dn_name)
+    if not original_dn_name:
+        return
+
+    # --------------------------------------------------
+    # 2) Check sales channel from original DN's first linked SI
+    # --------------------------------------------------
+    original_dn_sales_invoices = list(
+        {
+            item.against_sales_invoice
+            for item in frappe.get_all(
+                "Delivery Note Item",
+                filters={"parent": original_dn_name},
+                fields=["against_sales_invoice"]
+            )
+            if item.against_sales_invoice
+        }
+    )
+    print("original_dn_sales_invoices========================", original_dn_sales_invoices)
+    if not original_dn_sales_invoices:
+        return
+
+    first_si = original_dn_sales_invoices[0]
+    sales_channel = frappe.db.get_value("Sales Invoice", first_si, "sales_channel")
+    print("sales_channel========================", sales_channel)
+
+    # --------------------------------------------------
+    # 3) Run validation ONLY for Amazon
+    # --------------------------------------------------
+    if sales_channel != "Amazon":
+        return
+
+    # --------------------------------------------------
+    # 4) Fetch NJ Settings (Allowed tax accounts)
+    # --------------------------------------------------
+    nj_setting_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "taxe_account_heads"},
+        "value"
+    )
+    print("nj_setting_value=====================", nj_setting_value)
+    if not nj_setting_value:
+        return
+
+    try:
+        allowed_accounts = set(json.loads(nj_setting_value))
+    except Exception:
+        allowed_accounts = set(
+            acc.strip() for acc in nj_setting_value.split(",") if acc.strip()
+        )
+    print("allowed_accounts=====================", allowed_accounts)
+
+    # --------------------------------------------------
+    # 5) Fetch original DN total + current return DN total
+    # --------------------------------------------------
+    original_dn_total = abs(flt(frappe.db.get_value("Delivery Note", original_dn_name, "total")))
+    current_return_dn_total = abs(flt(doc.total))
+    print("original_dn_total=====================", original_dn_total)
+    print("current_return_dn_total=====================", current_return_dn_total)
+
+    if not original_dn_total or not current_return_dn_total:
+        return
+
+    # --------------------------------------------------
+    # 6) Fetch UNMATCHED TAXES FROM original DN
+    # --------------------------------------------------
+    original_dn_unmatched_taxes = {}
+    original_dn_taxes = frappe.get_all(
+        "Sales Taxes and Charges",
+        filters={"parent": original_dn_name, "parenttype": "Delivery Note"},
+        fields=["account_head", "charge_type", "tax_amount"]
+    )
+    print("original_dn_taxes=====================", original_dn_taxes)
+
+    for tax in original_dn_taxes:
+        if tax.account_head not in allowed_accounts:
+            original_dn_unmatched_taxes[tax.account_head] = flt(tax.tax_amount)
+
+    print("original_dn_unmatched_taxes=====================", original_dn_unmatched_taxes)
+    if not original_dn_unmatched_taxes:
+        return
+
+    # --------------------------------------------------
+    # 7) Allocate unmatched DN taxes by VALUE ratio
+    # formula: (abs(DN tax) / abs(original DN total)) * abs(current return DN total)
+    # final tax is stored as negative for return DN
+    # --------------------------------------------------
+    allocated_tax_by_account = {}
+    for account_head, dn_tax_amount in original_dn_unmatched_taxes.items():
+        divided_amount = round((abs(flt(dn_tax_amount)) / original_dn_total) * current_return_dn_total, 2)
+        divided_amount = -abs(divided_amount)
+        allocated_tax_by_account[account_head] = round(
+            flt(allocated_tax_by_account.get(account_head)) + divided_amount, 2
+        )
+        print("divided_amount=====================", divided_amount)
+
+    if not allocated_tax_by_account:
+        return
+
+    print("allocated_tax_by_account=====================", allocated_tax_by_account)
+
+    # --------------------------------------------------
+    # 8) Update SAME tax row in return DN
+    # --------------------------------------------------
+    conversion_rate = flt(doc.conversion_rate) or 1
+    for tax in doc.taxes:
+        if tax.account_head in allocated_tax_by_account:
+            tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
+            tax.tax_amount = tax_amount
+            tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+

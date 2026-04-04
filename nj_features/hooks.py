@@ -104,6 +104,9 @@ doc_events = {
             "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
 
         ],
+        # "before_save": [
+        #     "nj_features.overrides.delivery_note.deviding_tax_chargese"
+        # ],
         "on_update": [
             "nj_features.overrides.delivery_note.set_cod_details_critical"
         ]

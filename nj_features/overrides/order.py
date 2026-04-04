@@ -409,42 +409,54 @@ def create_sales_order(shopify_order, setting, company=None):
         so.add_comment(text=f"Order Note: {shopify_order.get('note')}")
 
     return so
+
 def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopify_response=None):
     items = []
     all_product_exists = True
     product_not_exists = []
-    
+
+    # -----------------------------
+    # Normal Shopify Items
+    # -----------------------------
     for shopify_item in order_items:
         if not shopify_item.get("product_exists"):
             all_product_exists = False
-            product_not_exists.append(
-                {"title": shopify_item.get("title"), ORDER_ID_FIELD: shopify_item.get("id")}
-            )
+            product_not_exists.append({
+                "title": shopify_item.get("title"),
+                ORDER_ID_FIELD: shopify_item.get("id")
+            })
             continue
-            
+
         if all_product_exists:
             item_code = get_item_code(shopify_item)
-            items.append(
-                {
-                    "item_code": item_code,
-                    "item_name": item_code,
-                    "rate": _get_item_price(shopify_item, taxes_inclusive),  # Fixed: added underscore
-                    "delivery_date": delivery_date,
-                    "qty": shopify_item.get("quantity"),
-                    "stock_uom": shopify_item.get("uom") or "Nos",
-                    "warehouse": setting.warehouse,
-                    ORDER_ITEM_DISCOUNT_FIELD: (
-                        _get_total_discount(shopify_item) / cint(shopify_item.get("quantity"))  # Fixed: added underscore
-                    ),
-                }
-            )
+
+            items.append({
+                "item_code": item_code,
+                "item_name": item_code,
+                "qty": shopify_item.get("quantity"),
+                "delivery_date": delivery_date,
+                "stock_uom": shopify_item.get("uom") or "Nos",
+                "warehouse": setting.warehouse,
+
+                # normal pricing
+                "rate": _get_item_price(shopify_item, taxes_inclusive),
+                ORDER_ITEM_DISCOUNT_FIELD: (
+                    _get_total_discount(shopify_item) / cint(shopify_item.get("quantity"))
+                ),
+            })
         else:
             items = []
+
+    # -----------------------------
+    # Coupon Logic
+    # -----------------------------
     if shopify_response and all_product_exists:
         try:
             logistics_settings = frappe.get_single("Logistics Settings")
+
             if logistics_settings and logistics_settings.coupon_codes:
 
+                # Build coupon map
                 coupon_map = {}
                 for c in logistics_settings.coupon_codes:
                     if c.code:
@@ -454,17 +466,17 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
                             "apply_coupen_code": c.apply_coupen_code
                         })
 
-                # ✅ Get coupon code from discount_codes first
+                # Get discount code
                 discount_code = ""
                 if shopify_response.get("discount_codes"):
                     discount_code = (shopify_response["discount_codes"][0].get("code") or "").strip()
 
-                # ✅ If discount_codes empty, fallback to discount_applications.description
                 elif shopify_response.get("discount_applications"):
                     discount_code = (shopify_response["discount_applications"][0].get("description") or "").strip()
 
-                # ✅ Continue only if discount_code exists in our mapping
+                # Apply coupon items
                 if discount_code and discount_code in coupon_map:
+
                     total_qty = sum(
                         li.get("fulfillable_quantity", 0)
                         for li in shopify_response.get("line_items", [])
@@ -479,17 +491,109 @@ def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopif
                         items.append({
                             "item_code": item_code,
                             "item_name": item_code,
-                            "rate": 0,
-                            "delivery_date": delivery_date,
                             "qty": qty,
+                            "delivery_date": delivery_date,
                             "stock_uom": "Nos",
                             "warehouse": setting.warehouse,
+
+                            # 🔥 FORCE ZERO PRICE (IMPORTANT)
+                            "rate": 0,
+                            "price_list_rate": 0,
+                            "base_rate": 0,
+                            "base_price_list_rate": 0,
+                            "discount_percentage": 100,
+                            "discount_amount": 0,
+
+                            # 🔥 BLOCK ERP PRICING ENGINE
+                            "is_free_item": 1,
+                            "ignore_pricing_rule": 1,
                         })
 
         except Exception:
-            frappe.log_error(
-                f"Coupon code processing failed: {frappe.get_traceback()}"
-            )
+            frappe.log_error(f"Coupon code processing failed: {frappe.get_traceback()}")
+
+    return items
+# def get_order_items(order_items, setting, delivery_date, taxes_inclusive, shopify_response=None):
+#     items = []
+#     all_product_exists = True
+#     product_not_exists = []
+    
+#     for shopify_item in order_items:
+#         if not shopify_item.get("product_exists"):
+#             all_product_exists = False
+#             product_not_exists.append(
+#                 {"title": shopify_item.get("title"), ORDER_ID_FIELD: shopify_item.get("id")}
+#             )
+#             continue
+            
+#         if all_product_exists:
+#             item_code = get_item_code(shopify_item)
+#             items.append(
+#                 {
+#                     "item_code": item_code,
+#                     "item_name": item_code,
+#                     "rate": _get_item_price(shopify_item, taxes_inclusive),  # Fixed: added underscore
+#                     "delivery_date": delivery_date,
+#                     "qty": shopify_item.get("quantity"),
+#                     "stock_uom": shopify_item.get("uom") or "Nos",
+#                     "warehouse": setting.warehouse,
+#                     ORDER_ITEM_DISCOUNT_FIELD: (
+#                         _get_total_discount(shopify_item) / cint(shopify_item.get("quantity"))  # Fixed: added underscore
+#                     ),
+#                 }
+#             )
+#         else:
+#             items = []
+#     if shopify_response and all_product_exists:
+#         try:
+#             logistics_settings = frappe.get_single("Logistics Settings")
+#             if logistics_settings and logistics_settings.coupon_codes:
+
+#                 coupon_map = {}
+#                 for c in logistics_settings.coupon_codes:
+#                     if c.code:
+#                         code = c.code.strip()
+#                         coupon_map.setdefault(code, []).append({
+#                             "item_code": c.item_code,
+#                             "apply_coupen_code": c.apply_coupen_code
+#                         })
+
+#                 # ✅ Get coupon code from discount_codes first
+#                 discount_code = ""
+#                 if shopify_response.get("discount_codes"):
+#                     discount_code = (shopify_response["discount_codes"][0].get("code") or "").strip()
+
+#                 # ✅ If discount_codes empty, fallback to discount_applications.description
+#                 elif shopify_response.get("discount_applications"):
+#                     discount_code = (shopify_response["discount_applications"][0].get("description") or "").strip()
+
+#                 # ✅ Continue only if discount_code exists in our mapping
+#                 if discount_code and discount_code in coupon_map:
+#                     total_qty = sum(
+#                         li.get("fulfillable_quantity", 0)
+#                         for li in shopify_response.get("line_items", [])
+#                     )
+
+#                     for entry in coupon_map[discount_code]:
+#                         item_code = entry["item_code"]
+#                         apply_flag = entry.get("apply_coupen_code", 0)
+
+#                         qty = total_qty if apply_flag == 1 else 1
+
+#                         items.append({
+#                             "item_code": item_code,
+#                             "item_name": item_code,
+#                             "rate": 0,
+#                             "delivery_date": delivery_date,
+#                             "qty": qty,
+#                             "stock_uom": "Nos",
+#                             "warehouse": setting.warehouse,
+#                         })
+
+#         except Exception:
+#             frappe.log_error(
+#                 f"Coupon code processing failed: {frappe.get_traceback()}"
+#             )
 
     # if shopify_response and shopify_response.get("discount_codes") and all_product_exists:
     #     try:

@@ -94,6 +94,10 @@ frappe.ui.form.on("NJQCA", {
   refresh: function (frm) {
     $(".col-lg-2.layout-side-section").hide();
     $(frm.layout.wrapper).find(".form-message.red").remove();
+    frm.set_value("merged_ram_item_code", 0);
+    frm.set_value("merged_storage_item_code", 0);
+    frm.refresh_field("merged_ram_item_code");
+    frm.refresh_field("merged_storage_item_code");
     frm.set_df_property("njqca_item_component", "cannot_add_rows", true);
     frm.set_df_property("njqca_item_component", "cannot_delete_rows", true);
     frm.set_df_property("njqca_laptop_processors", "cannot_delete_rows", true);
@@ -290,6 +294,11 @@ frappe.ui.form.on("NJQCA", {
       frm.doc.manual_repack_item_code &&
       frm.doc.manual_repack_item_code !== frm.doc.repack_item_code
     ) {
+      console.log("Manual repack item code does not match automated item code. Clearing related fields.");
+      frm.set_value("merged_ram_item_code", 0);
+      frm.set_value("merged_storage_item_code", 0);
+      frm.refresh_field("merged_ram_item_code");
+      frm.refresh_field("merged_storage_item_code");
       processItemTemplate(frm);
     }
     var selectedModel = frm.doc.model;
@@ -3269,51 +3278,72 @@ function bind_checkbox_listener(grid, child_name) {
   }
 }
 
+
 function show_delete_button(grid, selected_rows, child_name) {
-  remove_delete_button(grid);
+    remove_delete_button(grid);
 
-  const [row] = selected_rows;
+    const [row] = selected_rows;
+    if (!row) return;
 
-  if (!row) return;
+    const allowed_roles = ["Process Engineer", "Ops Manager"];
+    const has_permission = frappe.user_roles.some((role) =>
+        allowed_roles.includes(role)
+    );
+    if (!has_permission) return;
 
-  const allowed_roles = ["Process Engineer", "Ops Manager"];
-  const has_permission = frappe.user_roles.some((role) =>
-    allowed_roles.includes(role)
-  );
+    // Show delete button for any unmerged row with no fetched_item_code
+    const isCalcItemCode =
+        row.fetched_item_code == null || 
+        row.fetched_item_code === "" || 
+        row.fetched_item_code.trim() === "";
 
-  if (!has_permission) return;
-  const isStorageCapacity =
-    row.storage_capacity == null || row.storage_capacity.trim() === "";
-  const isCalcItemCode =
-    row.fetched_item_code == null || row.fetched_item_code.trim() === "";
+    const isNotMerged = row.merged == 0 || row.merged == null;
 
-  if (
-    (child_name =
-      "njqca_laptop_storage" &&
-      isStorageCapacity &&
-      row.merged == 0 &&
-      isCalcItemCode)
-  ) {
-    const btn =
-      $(`<button class="btn btn-xs btn-danger delete-btn" style="margin-right: 8px;">
-                Delete
-            </button>
-        `);
+    if (isCalcItemCode && isNotMerged) {
+        const btn = $(`<button class="btn btn-xs btn-danger delete-btn" style="margin-right: 8px;">
+            Delete
+        </button>`);
 
-    grid.wrapper.find(".grid-buttons").prepend(btn);
+        grid.wrapper.find(".grid-buttons").prepend(btn);
 
-    btn.on("click", function () {
-      cur_frm.fields_dict[child_name].grid.grid_rows_by_docname[
-        row.name
-      ].remove();
-      cur_frm.refresh_field(child_name);
+        btn.on("click", function () {
+            frappe.confirm(
+                "Are you sure you want to delete this row?",
+                function () {
+                    // YES
+                    const frm = cur_frm;
+                    const field = frm.fields_dict[child_name];
 
-      frappe.show_alert(
-        { message: "Row deleted successfully.", indicator: "red" },
-        5
-      );
-    });
-  }
+                    if (!field || !field.grid) {
+                        frappe.show_alert(
+                            { message: "Could not find grid: " + child_name, indicator: "red" },
+                            5
+                        );
+                        return;
+                    }
+
+                    const gridRow = field.grid.grid_rows_by_docname[row.name];
+                    if (!gridRow) {
+                        frappe.show_alert(
+                            { message: "Row not found in grid.", indicator: "red" },
+                            5
+                        );
+                        return;
+                    }
+
+                    gridRow.remove();
+                    field.grid.refresh();
+                    frm.refresh_field(child_name);
+                    remove_delete_button(grid);
+
+                    frappe.show_alert(
+                        { message: "Row deleted successfully.", indicator: "green" },
+                        5
+                    );
+                }
+            );
+        });
+    }
 }
 
 function remove_delete_button(grid) {
@@ -3321,19 +3351,18 @@ function remove_delete_button(grid) {
 }
 
 function show_merge_button(grid, selected_rows, child_name) {
-  remove_merge_button(grid);
+    remove_merge_button(grid);  // Clean up first
 
-  const btn =
-    $(`<button class="btn btn-xs btn-primary merge-btn" style="margin-right: 8px;">
-            Merge
-        </button>
-    `);
+    const btn = $(`<button class="btn btn-xs btn-primary merge-btn" style="margin-right: 8px;">
+        Merge
+    </button>`);
 
-  grid.wrapper.find(".grid-buttons").prepend(btn);
+    grid.wrapper.find(".grid-buttons").prepend(btn);
 
-  btn.on("click", function () {
-    handle_merge(grid.frm, selected_rows, child_name);
-  });
+    btn.on("click", function () {
+        // FIX: was missing handle_merge call
+        handle_merge(grid.frm || cur_frm, selected_rows, child_name);
+    });
 }
 
 function remove_merge_button(grid) {

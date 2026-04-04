@@ -1403,15 +1403,55 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     else:
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
+from frappe.utils import cint
+
 def update_part_item_code_from_child(doc):
     child_table_map = {
         "njqca_laptop_ram": "NJQCA Laptop Ram",
         "njqca_laptop_storage": "NJQCA Laptop Storage"
     }
 
-    serial_no_doc = frappe.get_doc('Serial No', doc.serial_no)
+    serial_no_doc = frappe.get_doc("Serial No", doc.serial_no)
     updated = False
-    item_group_idx_value = serial_no_doc.get("max_item_group_idx")
+
+    print(f"\n=== START update_part_item_code_from_child | Doc: {doc.doctype} | Name: {doc.name} | Serial No: {doc.serial_no} ===")
+
+    # ---------------------------------------------------------
+    # PRE-CLEAN: remove all existing Laptop RAM / Laptop Storage
+    # rows from Serial No, but keep rows having component_serial_no
+    # ---------------------------------------------------------
+    target_item_groups = set()
+
+    for table_field in child_table_map:
+        for child in (doc.get(table_field) or []):
+            if child.get("item_group"):
+                target_item_groups.add(child.get("item_group"))
+
+    if target_item_groups:
+        for sn in list(serial_no_doc.serial_no_component):
+            if sn.item_group in target_item_groups and not sn.component_serial_no:
+                print(
+                    f"[PRE-REMOVE] serial_component={sn.name} | "
+                    f"item_group={sn.item_group} | item_group_idx={sn.item_group_idx} | "
+                    f"item={sn.item} | grade={sn.grade}"
+                )
+                serial_no_doc.serial_no_component.remove(sn)
+                updated = True
+
+    # Build exact existing row map by (item_group, item_group_idx)
+    existing_map = {}
+    for sn in serial_no_doc.serial_no_component:
+        key = (sn.item_group, cint(sn.item_group_idx))
+        existing_map[key] = sn
+
+    # Track all child rows that should exist after sync
+    desired_keys = set()
+
+    # Always calculate fresh max idx from actual child table, not from max_item_group_idx field
+    current_max_idx = max(
+        [cint(d.item_group_idx) for d in serial_no_doc.serial_no_component if d.item_group_idx],
+        default=0
+    )
 
     for table_field, item_group_label in child_table_map.items():
         child_items = doc.get(table_field) or []
@@ -1420,43 +1460,99 @@ def update_part_item_code_from_child(doc):
             grade = child.get("grade")
             calculated_item_code = child.get("calculated_item_code")
             item_group = child.get("item_group")
-            item_group_idx = child.get("item_group_idx")
+            item_group_idx = cint(child.get("item_group_idx"))
 
             if not (calculated_item_code and item_group):
+                print(
+                    f"[SKIP] table={table_field} child={child.get('name')} | "
+                    f"missing calculated_item_code/item_group | "
+                    f"calculated_item_code={calculated_item_code}, item_group={item_group}"
+                )
                 continue
 
-            found = False
+            # If child row has no idx, assign a new one
+            if not item_group_idx:
+                current_max_idx += 1
+                item_group_idx = current_max_idx
+                child.item_group_idx = item_group_idx
+                print(
+                    f"[NEW IDX] table={table_field} child={child.get('name')} | "
+                    f"item_group={item_group} | assigned item_group_idx={item_group_idx}"
+                )
 
-            for sn in serial_no_doc.serial_no_component:
-                if sn.item_group == item_group and sn.item_group_idx == item_group_idx:
-                    found = True
-                    if ( sn.item != calculated_item_code or sn.grade != grade ):
-                        sn.item = calculated_item_code
-                        sn.grade = grade
-                        sn.reference_doctype = doc.doctype
-                        sn.reference_doctype_no = doc.name
-                        updated = True
-                    break
-                # If no match and no component_serial_no, remove the row
-                elif sn.item_group == item_group and sn.item_group_idx != item_group_idx and sn.item != calculated_item_code and not sn.component_serial_no:
-                    serial_no_doc.serial_no_component.remove(sn)
+            key = (item_group, item_group_idx)
+            desired_keys.add(key)
+
+            existing_row = existing_map.get(key)
+
+            if existing_row:
+                changes = []
+
+                if existing_row.item != calculated_item_code:
+                    changes.append(f"item: {existing_row.item} -> {calculated_item_code}")
+                    existing_row.item = calculated_item_code
+
+                if existing_row.grade != grade:
+                    changes.append(f"grade: {existing_row.grade} -> {grade}")
+                    existing_row.grade = grade
+
+                if existing_row.reference_doctype != doc.doctype:
+                    changes.append(f"reference_doctype: {existing_row.reference_doctype} -> {doc.doctype}")
+                    existing_row.reference_doctype = doc.doctype
+
+                if existing_row.reference_doctype_no != doc.name:
+                    changes.append(f"reference_doctype_no: {existing_row.reference_doctype_no} -> {doc.name}")
+                    existing_row.reference_doctype_no = doc.name
+
+                if changes:
                     updated = True
+                    print(
+                        f"[UPDATE] serial_component={existing_row.name} | "
+                        f"item_group={item_group} | item_group_idx={item_group_idx} | "
+                        + " | ".join(changes)
+                    )
+                else:
+                    print(
+                        f"[NO CHANGE] serial_component={existing_row.name} | "
+                        f"item_group={item_group} | item_group_idx={item_group_idx}"
+                    )
 
-            if not found:
+            else:
                 row = serial_no_doc.append("serial_no_component", {})
                 row.item = calculated_item_code
                 row.item_group = item_group
-                item_group_idx_value += 1
-                row.item_group_idx = item_group_idx_value
+                row.item_group_idx = item_group_idx
                 row.is_available = 1
                 row.grade = grade
                 row.quantity = 1
                 row.reference_doctype = doc.doctype
                 row.reference_doctype_no = doc.name
+
                 updated = True
+                existing_map[key] = row
+
+                print(
+                    f"[ADD] serial_component={row.name} | "
+                    f"item_group={item_group} | item_group_idx={item_group_idx} | "
+                    f"item={calculated_item_code} | grade={grade}"
+                )
+
+    # Update max_item_group_idx properly
+    serial_no_doc.max_item_group_idx = max(
+        [cint(d.item_group_idx) for d in serial_no_doc.serial_no_component if d.item_group_idx],
+        default=0
+    )
 
     if updated:
+        print(
+            f"[SAVE] Serial No document {serial_no_doc.name} is being saved | "
+            f"max_item_group_idx={serial_no_doc.max_item_group_idx}"
+        )
         serial_no_doc.save(ignore_permissions=True)
+    else:
+        print(f"[NO SAVE] No changes found for Serial No {serial_no_doc.name}")
+
+    print(f"=== END update_part_item_code_from_child | Serial No: {doc.serial_no} ===\n")
 
 
 def get_item_code_for_each_part(doc):
@@ -1542,7 +1638,7 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
-                        elif item_group.lower() == storage.lower() and row.get('variant_10'):
+                        elif item_group.lower() == storage.lower() and row.get('variant_10') and row.get('variant_3') != 'USB':
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \

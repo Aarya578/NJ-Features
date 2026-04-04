@@ -65,10 +65,10 @@ override_doctype_class = {
 # ========== Doc Events ==========
 
 doc_events = {
-    "Item": {
-        "after_insert": "nj_features.overrides.product.upload_erpnext_item",
-        "on_update": "nj_features.overrides.product.upload_erpnext_item",
-    },
+    # "Item": {
+    #     "after_insert": "nj_features.overrides.product.upload_erpnext_item",
+    #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
+    # },
     "Purchase Receipt": {
         "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
         "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
@@ -100,7 +100,9 @@ doc_events = {
     },
     "Delivery Note": {
         "before_save": [
-            "nj_features.overrides.delivery_note.deviding_tax_chargese"
+            "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
+            "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
+
         ],
         "on_update": [
             "nj_features.overrides.delivery_note.set_cod_details_critical"

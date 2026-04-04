@@ -661,7 +661,7 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     print("serial_defects_set ===============", serial_defects_set)
 
     # Track item groups present
-    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group")}
+    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group") and int(comp.get("quantity")) == 1}
 
     # ----------------------------
     # Build allowed maps
@@ -755,7 +755,8 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
 
 
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
-    result = frappe.db.get_value('Serial No', {'name':serial_doc.get('name')}, ['grade', 'item_group'])
+    # --- Top-level serial no grade validation ---
+    result = frappe.db.get_value('Serial No', {'name': serial_doc.get('name')}, ['grade', 'item_group'])
 
     if result is None:
         error_messages.append(
@@ -775,15 +776,75 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
                 f"with Item Group: <b>{lap_item_group}</b> has Grade: <b>{lap_grade}</b> this is not allowed "
                 f"for Department: <b>{department_doc.name}</b>."
             )
-    
-    for component in serial_doc.get('serial_no_component', []):
-        for restriction in department_doc.get('stock_movement_restriction_table', []):
-            restricted_grades = restriction.get('restricted_grade', "").split(",")
-            restricted_item_group = restriction.get('item_group')
 
-            if (component.get('item_group') == restricted_item_group and
-                    component.get('grade') in restricted_grades and
-                    component.get('quantity') == 1):
+    restrict_all = department_doc.get('restrict_all')
+
+    if restrict_all:
+        # --- Step 1: Get mandatory item groups from Item Wizard ---
+        item_wizard_name = serial_doc.get("item_wizard")
+        if not item_wizard_name:
+            return
+
+        item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_name)
+
+        mandatory_item_groups = set(
+            row.get("component_type")
+            for row in item_wizard_doc.get("component", [])
+            if row.get("mandatory") == 1
+        )
+
+        # --- Step 2: Build lookup of item_group -> grade from serial_no_component (qty=1 only) ---
+        component_grade_map = {}
+        for component in serial_doc.get('serial_no_component', []):
+            if component.get('quantity') == 1:
+                component_grade_map[component.get('item_group')] = component.get('grade')
+
+        # --- Step 3: Build restriction lookup { item_group: [restricted_grades] } ---
+        restriction_map = {}
+        for restriction in department_doc.get('stock_movement_restriction_table', []):
+            item_group = restriction.get('item_group')
+            grades = [g.strip() for g in restriction.get('restricted_grade', "").split(",")]
+            restriction_map[item_group] = grades
+
+        # --- Step 4: Evaluate each restricted item group ---
+        all_violating = True
+
+        for item_group, restricted_grades in restriction_map.items():
+            grade = component_grade_map.get(item_group)  # None if missing from serial_no_component
+
+            if grade is None:
+                # Part is missing from serial_no_component — check Item Wizard
+                if item_group in mandatory_item_groups:
+                    # Mandatory but missing — cannot validate, so Allow
+                    all_violating = False
+                    break
+                else:
+                    # Not mandatory — optional part, skip and continue checking others
+                    continue
+
+            if grade not in restricted_grades:
+                # This part's grade is NOT in restricted list — Allow
+                all_violating = False
+                break
+
+        # --- Step 5: Block only if all restricted item groups are violating ---
+        if all_violating and restriction_map:
+            error_messages.append(
+                f"Serial No.: <b>{serial_doc.name}</b> — all components "
+                f"({', '.join(restriction_map.keys())}) have restricted grades "
+                f"and are not allowed for Department: <b>{department_doc.name}</b>."
+            )
+
+    else:
+        # --- Old logic: block individually if any single component violates ---
+        for component in serial_doc.get('serial_no_component', []):
+            for restriction in department_doc.get('stock_movement_restriction_table', []):
+                restricted_grades = restriction.get('restricted_grade', "").split(",")
+                restricted_item_group = restriction.get('item_group')
+
+                if (component.get('item_group') == restricted_item_group and
+                        component.get('grade') in restricted_grades and
+                        component.get('quantity') == 1):
                     error_messages.append(
                         f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                         f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."

@@ -81,12 +81,7 @@ UPDATE_SERIAL_RESERVED_SO = True
 _ITEM_CORE: Dict[str, Dict] = {}
 _ITEM_ATTRS: Dict[str, Dict] = {}
 _ITEM_KEYS: Dict[str, Dict] = {}
-
-# =========================
-# Sellable target indexes
-# =========================
-_SELLABLE_BY_MODEL: Dict[tuple, List[str]] = defaultdict(list)
-_SELLABLE_BY_CONFIG: Dict[tuple, List[str]] = defaultdict(list)
+_SELLABLE_ITEM_CODES: set = set()
 
 # =========================
 # Part allocation global state (virtual stock)
@@ -295,9 +290,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
     sales_rate = _compute_recency_weighted_sales_rates_SO_union(sellable_items)
     if not sales_rate:
         logger.warning("No sales_rate computed.")
-
-    _index_sellable_targets(sellable_items, sales_rate)
-
     random.seed(42)
 
     plan_date = frappe.utils.nowdate()
@@ -357,7 +349,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 inward_grain=inward_grain,
                 forward_grain=forward_grain,
                 current_department=dept_name,
-                sales_rate=sales_rate,
             )
 
             fwd_inventory = _get_forward_inventory_excluding_current_dept(
@@ -607,45 +598,57 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     return rows
 
-
 @log_io
 def _allocate_orders_to_sequences_multi(
     pending_orders, sequences, cum_sla, today, forward_grain_per_seq, max_seq
 ):
     """
-    Orders are queued at CONFIG grain (exact item requirement).
-    Shared queue across sequences.
+    UPDATED:
+    - Build ONE shared order queue for ALL sequences (global pool).
+    - Orders are queued at CONFIG grain (exact item requirement).
+    - Every sequence receives the SAME dict reference, so consuming an order in any
+      department/sequence removes it for everyone (prevents double-allocation).
+    - Reverse loop order in nj_run_unified_production_plan ensures higher sequence depts pick first.
     """
+    from collections import defaultdict
+
+    # ✅ One shared pool across all sequences
     shared_queue = defaultdict(list)
+
+    # Optional: unique id for debugging/tracing
     uid = 0
 
     for row in pending_orders:
         ic = row["item_code"]
         qty = int(math.ceil(row["qty_pending"]))
 
+        # ✅ Always use CONFIG key for order fulfillment (orders are specific SKUs)
         key = _key_for_grain(ic, "config")
 
         base_ref = {
             "so_name": row["so_name"],
             "delivery_date": row.get("delivery_date"),
             "order_item_code": ic,
+            "pb_code": row.get("pb_code"),
         }
 
         for _ in range(qty):
             uid += 1
             ref = dict(base_ref)
-            ref["_uid"] = uid
+            ref["_uid"] = uid  # debug only
             shared_queue[key].append(ref)
 
+    # ✅ Every sequence points to the same shared queue object
     demand_by_seq = {s: shared_queue for s in sequences}
     return demand_by_seq
-
 
 # =========================
 # Sellable portfolio & sales-rate
 # =========================
 @log_io
 def _get_sellable_items() -> List[Dict]:
+    global _SELLABLE_ITEM_CODES
+
     where_shopify = ""
     if REQUIRE_SHOPIFY_IDS_FOR_SELLABLE:
         where_shopify = """
@@ -689,10 +692,14 @@ def _get_sellable_items() -> List[Dict]:
         )
 
     sellable = [{"name": r["item_code"]} for r in (rows or [])]
+    _SELLABLE_ITEM_CODES = {r["name"] for r in sellable}
+
     if not sellable:
         logger.warning("No sellable Product Bundle components found with current filters.")
+
     _prime_item_cache([r["name"] for r in sellable])
     return sellable
+
 
 
 @log_io
@@ -790,108 +797,6 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
 
 
 @log_io
-def _index_sellable_targets(sellable_items: List[Dict], sales_rate: Dict):
-    """
-    Build lookup indexes so planner can resolve to_make target item_code
-    from PB item universe instead of falling back to serial current item_code.
-    """
-    global _SELLABLE_BY_MODEL, _SELLABLE_BY_CONFIG
-
-    _SELLABLE_BY_MODEL = defaultdict(list)
-    _SELLABLE_BY_CONFIG = defaultdict(list)
-
-    codes = [it["name"] for it in (sellable_items or []) if it.get("name")]
-    if not codes:
-        return
-
-    _prime_item_cache(codes)
-
-    for ic in codes:
-        mk = _get_model_key(ic)
-        ck = _get_config_key(ic)
-        _SELLABLE_BY_MODEL[mk].append(ic)
-        _SELLABLE_BY_CONFIG[ck].append(ic)
-
-    for mk, items in list(_SELLABLE_BY_MODEL.items()):
-        uniq = list(dict.fromkeys(items))
-        uniq.sort(
-            key=lambda ic: (
-                -float(sales_rate.get(_get_config_key(ic), 1.0)),
-                ic,
-            )
-        )
-        _SELLABLE_BY_MODEL[mk] = uniq
-
-    for ck, items in list(_SELLABLE_BY_CONFIG.items()):
-        uniq = list(dict.fromkeys(items))
-        uniq.sort(key=lambda ic: ic)
-        _SELLABLE_BY_CONFIG[ck] = uniq
-
-
-@log_io
-def _resolve_planned_target_item_code(key, sales_rate: Optional[Dict] = None) -> Optional[str]:
-    """
-    Resolve item_code to write into to_make from the planned target key.
-
-    Priority:
-    1. Exact PB sellable item for CONFIG key
-    2. Best PB sellable item under same MODEL key
-    3. Existing variant lookup
-    4. None
-    """
-    if not key:
-        return None
-
-    sales_rate = sales_rate or {}
-
-    if key[0] == "CONFIG":
-        exact = _SELLABLE_BY_CONFIG.get(key) or []
-        if exact:
-            exact = sorted(
-                exact,
-                key=lambda ic: (
-                    -float(sales_rate.get(_get_config_key(ic), 1.0)),
-                    ic,
-                )
-            )
-            return exact[0]
-
-        model_key = ("MODEL", key[1], key[2])
-        model_items = _SELLABLE_BY_MODEL.get(model_key) or []
-        if model_items:
-            model_items = sorted(
-                model_items,
-                key=lambda ic: (
-                    -float(sales_rate.get(_get_config_key(ic), 1.0)),
-                    ic,
-                )
-            )
-            return model_items[0]
-
-        existing = _resolve_existing_item_for_key(key)
-        if existing:
-            return existing
-
-        return None
-
-    if key[0] == "MODEL":
-        model_items = _SELLABLE_BY_MODEL.get(key) or []
-        if model_items:
-            model_items = sorted(
-                model_items,
-                key=lambda ic: (
-                    -float(sales_rate.get(_get_config_key(ic), 1.0)),
-                    ic,
-                )
-            )
-            return model_items[0]
-
-        return None
-
-    return None
-
-
-@log_io
 def _build_forward_keys(sellable_items, forward_grain, sales_rate):
     """
     - "model" grain means ("MODEL", template, proc)
@@ -941,7 +846,6 @@ def _match_inventory_to_order_queues_for_sequence(
     inward_grain,
     forward_grain,
     current_department: str,
-    sales_rate: Dict,
 ):
     allocations = []
     remaining = serial_map[:]
@@ -1005,7 +909,127 @@ def _match_inventory_to_order_queues_for_sequence(
             if not chosen:
                 break
 
-            target_item_code = _resolve_planned_target_item_code(key, sales_rate=sales_rate) or chosen["item_code"]
+            pb_fallback = chosen.get("fallback_pb_item_code")
+
+            if key and key[0] == "CONFIG":
+                target_item_code = _resolve_target_item_code(
+                    key,
+                    fallback_pb_code=order_ref.get("pb_code") or pb_fallback,
+                )
+            else:
+                target_item_code = pb_fallback
+
+            if not target_item_code:
+                target_item_code = order_ref.get("pb_code") or pb_fallback
+
+            if _DEPT_ALLOCATE_PARTS.get(current_department):
+                ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+                if not ok:
+                    _update_serial_to_make(chosen["serial_no"], target_item_code)
+
+                    remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
+                    by_model[chosen["forward_key_model"]] = [
+                        x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
+                    ]
+                    by_config[chosen["forward_key_config"]] = [
+                        x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
+                    ]
+                    continue
+
+            ref_list.pop()
+
+            allocations.append(
+                {
+                    "serial_no": chosen["serial_no"],
+                    "warehouse": chosen["warehouse"],
+                    "target_item_code": target_item_code,
+                    "forward_key": key,
+                    "order_name": order_ref.get("so_name"),
+                    "required_by": order_ref.get("delivery_date"),
+                    "age_days": chosen.get("age_days"),
+                }
+            )
+
+            remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
+            by_model[chosen["forward_key_model"]] = [
+                x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
+            ]
+            by_config[chosen["forward_key_config"]] = [
+                x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
+            ]
+
+    for k in [k for k, v in list(seq_order_queues.items()) if not v]:
+        del seq_order_queues[k]
+
+    return allocations, remaining
+
+    by_model = defaultdict(list)
+    by_config = defaultdict(list)
+    for s in remaining:
+        by_model[s["forward_key_model"]].append(s)
+        by_config[s["forward_key_config"]].append(s)
+
+    for k in by_model:
+        by_model[k] = _oldest_first(by_model[k])
+    for k in by_config:
+        by_config[k] = _oldest_first(by_config[k])
+
+    for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
+        while ref_list:
+            order_ref = ref_list[-1]
+
+            target_cfg_tuple = None
+            if order_ref.get("order_item_code"):
+                target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
+
+            chosen = None
+
+            if key and key[0] == "CONFIG":
+                if not allow_reconfig:
+                    cfg_pool = by_config.get(key, [])
+                    if not cfg_pool:
+                        break
+                    chosen = _oldest_first(cfg_pool)[0] if cfg_pool else None
+                else:
+                    model_key = ("MODEL", key[1], key[2])
+                    model_pool = by_model.get(model_key, [])
+                    if not model_pool:
+                        break
+
+                    if target_cfg_tuple:
+                        exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
+                        exact = _oldest_first(exact)
+                        if exact:
+                            chosen = exact[0]
+
+                    if not chosen and target_cfg_tuple:
+                        near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
+                        near = _oldest_first(near)
+                        if near:
+                            chosen = near[0]
+
+                    if not chosen and model_pool:
+                        chosen = _oldest_first(model_pool)[0]
+
+            else:
+                model_pool = by_model.get(key, [])
+                if not model_pool:
+                    break
+                chosen = _oldest_first(model_pool)[0] if model_pool else None
+
+            if not chosen:
+                break
+
+            if key and key[0] == "CONFIG":
+                target_item_code = _resolve_target_item_code(
+                    key,
+                    fallback_pb_code=order_ref.get("pb_code"),
+                )
+            else:
+                target_item_code = chosen["item_code"]
+
+            if not target_item_code:
+                target_item_code = order_ref.get("pb_code") or chosen["item_code"]
 
             if _DEPT_ALLOCATE_PARTS.get(current_department):
                 ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
@@ -1133,7 +1157,15 @@ def _allocate_forecast_to_balance_doi(
             work.pop(0)
             continue
 
-        target_item_code = _resolve_planned_target_item_code(target, sales_rate=sales_rate) or chosen["item_code"]
+        pb_fallback = chosen.get("fallback_pb_item_code")
+
+        if target and target[0] == "CONFIG":
+            target_item_code = _resolve_existing_item_for_key(target)
+        else:
+            target_item_code = pb_fallback
+
+        if not target_item_code:
+            target_item_code = pb_fallback
 
         if _DEPT_ALLOCATE_PARTS.get(current_department):
             ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
@@ -1347,6 +1379,77 @@ def _resolve_existing_item_for_key(key) -> Optional[str]:
         },
     )
 
+@log_io
+def _resolve_target_item_code(key, fallback_pb_code: Optional[str] = None) -> Optional[str]:
+    exact_item = _resolve_existing_item_for_key(key)
+    if exact_item:
+        return exact_item
+
+    if fallback_pb_code:
+        return fallback_pb_code
+
+    return None
+
+
+def _is_blankish_attr(val) -> bool:
+    v = (val or "").strip().upper()
+    return v in ("", "NONE", "NO RAM", "NO DISK", "UNKNOWN", "N/A", "NA")
+
+
+@log_io
+def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
+    """
+    Return the best sellable/Product Bundle item code for the same model key.
+
+    Priority:
+    1. exact config match among sellable items
+    2. same model with real RAM + real Storage
+    3. same model, alphabetically stable
+    """
+    if not item_code:
+        return None
+
+    if item_code not in _ITEM_KEYS:
+        _prime_item_cache([item_code])
+
+    model_key = _ITEM_KEYS[item_code]["model_key"]
+    config_key = _ITEM_KEYS[item_code]["config_key"]
+
+    candidates = []
+    for ic in (_SELLABLE_ITEM_CODES or set()):
+        if ic not in _ITEM_KEYS:
+            _prime_item_cache([ic])
+        if _ITEM_KEYS.get(ic, {}).get("model_key") == model_key:
+            candidates.append(ic)
+
+    if not candidates:
+        return None
+
+    for ic in candidates:
+        if _ITEM_KEYS.get(ic, {}).get("config_key") == config_key:
+            return ic
+
+    def _rank(ic: str):
+        attrs = _ITEM_ATTRS.get(ic, {})
+        ram = attrs.get(RAM_ATTR)
+        sto = attrs.get(STORAGE_ATTR)
+        proc = attrs.get(PROCESSOR_ATTR)
+
+        good_ram = 0 if _is_blankish_attr(ram) else 1
+        good_sto = 0 if _is_blankish_attr(sto) else 1
+        good_proc = 0 if _is_blankish_attr(proc) else 1
+
+        return (
+            good_ram + good_sto + good_proc,
+            good_ram,
+            good_sto,
+            good_proc,
+            ic,
+        )
+
+    candidates = sorted(candidates, key=_rank, reverse=True)
+    return candidates[0] if candidates else None
+
 
 @log_io
 def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> Union[str, None]:
@@ -1381,10 +1484,12 @@ def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
         base_date = today
 
     age_days = (today - base_date).days if base_date else 0
+    fallback_pb_item_code = _get_fallback_pb_item_code(ic)
 
     return {
         "serial_no": snrow["name"],
         "item_code": ic,
+        "fallback_pb_item_code": fallback_pb_item_code,
         "warehouse": snrow["warehouse"],
         "forward_key_model": _ITEM_KEYS[ic]["model_key"],
         "forward_key_config": _ITEM_KEYS[ic]["config_key"],

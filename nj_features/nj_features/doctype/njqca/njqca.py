@@ -1542,7 +1542,7 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(row.get(variant), mapping.get('attribute_name'))
                         
-                        elif item_group.lower() == storage.lower() and row.get('variant_10'):
+                        elif item_group.lower() == storage.lower() and row.get('variant_10') and row.get('variant_3') != 'USB':
                             variant_type = ''
                             
                             if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
@@ -1657,7 +1657,14 @@ def get_attribute_from_erp(attribute_value, parent):
     return None
 
 def process_variant(variant, row, mapping, attribute_object):
+
+    print("\n\nvariant", variant)
+    print("row", row)
+    print("mapping", mapping)
+    print("attribute_object", attribute_object)
+
     if 'interface' in mapping.get('attribute_name').lower() and row.get(variant):
+        print("inside interface ------------- ", row)
         interfaces = {
             'SATA': ['sata', 'sata3', 'sata2', 'sata1', 'hdd', 'ssd'],
             'MSATA': ['msata'],
@@ -1666,9 +1673,13 @@ def process_variant(variant, row, mapping, attribute_object):
             'M.2 PCL': ['pcl', 'pcie'],
         }
 
+        print("interfaces_items -------------- ", interfaces.items())
+
         for interface, keywords in interfaces.items():
             for keyword in keywords:
+                print(f'keyword -------------- {keyword} ------- row -- {row.get(variant)}')
                 if keyword in row.get(variant).lower():
+                    print("coming inside", interface)
                     attribute_object[mapping.get('attribute_name')] = interface
                     return True
                 
@@ -1681,7 +1692,7 @@ def process_variant(variant, row, mapping, attribute_object):
             'M.2 SATA 2280': ['m.2 sata 2280', 'm.2 sata', 'ngff 2280'],
             'M.2 SATA 2242': ['m.2 sata 2242', 'ngff 2242'],
             'M.2 NVMe 2280': ['m.2 nvme 2280', 'nvme 2280', 'pcie 2280'],
-            'SSD': ['ssd', 'solid state drive', 'nvme'],
+            'SSD': ['ssd', 'solid state drive'],
             'HDD': ['hdd', 'hard drive', 'harddisk'],
         }
 
@@ -1690,6 +1701,9 @@ def process_variant(variant, row, mapping, attribute_object):
                 if keyword in row.get(variant).lower():
                     attribute_object[mapping.get('attribute_name')] = nj_type
                     return True
+    
+
+    print("attribute_object -------------- ", attribute_object)
 
     return False
 

@@ -1541,7 +1541,6 @@ frappe.ui.form.on("NJQCA", {
   },
 });
 
-
 function isDesktopNJQCA(doc) {
   return (doc.item_group || "").trim().toLowerCase() === "desktops";
 }
@@ -3400,11 +3399,10 @@ function show_delete_button(grid, selected_rows, child_name) {
 
   const allowed_roles = ["Process Engineer", "Ops Manager"];
   const has_permission = frappe.user_roles.some((role) =>
-    allowed_roles.includes(role)
+    allowed_roles.includes(role),
   );
   if (!has_permission) return;
 
-  // Show delete button only for unmerged rows with no fetched_item_code
   const isCalcItemCode =
     row.fetched_item_code == null ||
     row.fetched_item_code === "" ||
@@ -3429,7 +3427,7 @@ function show_delete_button(grid, selected_rows, child_name) {
           if (!field || !field.grid) {
             frappe.show_alert(
               { message: "Could not find grid: " + child_name, indicator: "red" },
-              5
+              5,
             );
             return;
           }
@@ -3438,7 +3436,7 @@ function show_delete_button(grid, selected_rows, child_name) {
           if (!gridRow) {
             frappe.show_alert(
               { message: "Row not found in grid.", indicator: "red" },
-              5
+              5,
             );
             return;
           }
@@ -3450,9 +3448,9 @@ function show_delete_button(grid, selected_rows, child_name) {
 
           frappe.show_alert(
             { message: "Row deleted successfully.", indicator: "green" },
-            5
+            5,
           );
-        }
+        },
       );
     });
   }

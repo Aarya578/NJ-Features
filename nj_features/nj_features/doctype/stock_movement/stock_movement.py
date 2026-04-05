@@ -720,7 +720,7 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     print("serial_defects_set ===============", serial_defects_set)
 
     # Track item groups present
-    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group")}
+    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group") and int(comp.get("quantity")) == 1}
 
     # ----------------------------
     # Build allowed maps

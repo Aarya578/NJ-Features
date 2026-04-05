@@ -99,6 +99,11 @@ doc_events = {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
     },
     "Delivery Note": {
+        "before_save": [
+            "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
+            "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
+
+        ],
         # "before_save": [
         #     "nj_features.overrides.delivery_note.deviding_tax_chargese"
         # ],

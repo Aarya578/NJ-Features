@@ -118,11 +118,13 @@ frappe.ui.form.on("Purchase Receipt", {
 });
 
 
-// ─────────────────────────────────────────
-// PURCHASE RECEIPT ITEM — BARCODE PRINTING
-// ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PURCHASE RECEIPT ITEM — BARCODE PRINTING + MANUAL CONVERSION OVERRIDE
+// ─────────────────────────────────────────────────────────────────────────────
 
 frappe.ui.form.on('Purchase Receipt Item', {
+
+    // ── Existing: barcode printing ────────────────────────────────────────────
     print: function(frm, cdt, cdn) {
         var child_doc = locals[cdt][cdn];
 
@@ -155,7 +157,21 @@ frappe.ui.form.on('Purchase Receipt Item', {
                 "&_lang=en"
             ));
         }
+    },
+
+    // ── NEW: manual conversion override ───────────────────────────────────────
+    manual_conversion_override: function(frm, cdt, cdn) {
+        nj_pr_toggle_conversion_editability(frm, cdt, cdn);
+    },
+
+    qty: function(frm, cdt, cdn) {
+        nj_pr_recalc_stock_qty(frm, cdt, cdn);
+    },
+
+    conversion_factor: function(frm, cdt, cdn) {
+        nj_pr_recalc_stock_qty(frm, cdt, cdn);
     }
+    // ─────────────────────────────────────────────────────────────────────────
 });
 
 
@@ -254,6 +270,54 @@ function _run_pr_invoice_scan(frm) {
         }
     });
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANUAL CONVERSION OVERRIDE — PR helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Toggle whether conversion_factor is editable on this PR item row.
+ * When override is OFF, restore the item-master value via API.
+ */
+function nj_pr_toggle_conversion_editability(frm, cdt, cdn) {
+    var row = locals[cdt][cdn];
+    var is_override = !!row.manual_conversion_override;
+
+    frm.fields_dict["items"].grid.update_docfield_property(
+        "conversion_factor", "read_only", is_override ? 0 : 1
+    );
+    frm.fields_dict["items"].grid.refresh();
+
+    if (!is_override) {
+        // Restore the item-master-driven conversion_factor
+        if (row.item_code && row.uom) {
+            frappe.call({
+                method: "erpnext.stock.get_item_details.get_conversion_factor",
+                args: { item_code: row.item_code, uom: row.uom },
+                callback: function(r) {
+                    if (r && r.message) {
+                        frappe.model.set_value(cdt, cdn, "conversion_factor", r.message.conversion_factor || 1);
+                    }
+                }
+            });
+        }
+    }
+}
+
+/**
+ * Recalculate stock_qty = qty * conversion_factor when override is ON.
+ * Standard ERPNext handles this when override is OFF.
+ */
+function nj_pr_recalc_stock_qty(frm, cdt, cdn) {
+    var row = locals[cdt][cdn];
+    if (row.manual_conversion_override && flt(row.conversion_factor) > 0) {
+        var stock_qty = flt(row.qty) * flt(row.conversion_factor);
+        frappe.model.set_value(cdt, cdn, "stock_qty", stock_qty);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 
 // ─────────────────────────────────────────

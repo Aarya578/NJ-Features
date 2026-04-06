@@ -15,7 +15,30 @@ def create_batch(doc, method=None):
             batch_doc.batch_id = doc.name +'-'+ str(item.idx)
             batch_doc.item = item.item_code
             batch_doc.save()
-            
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MANUAL CONVERSION OVERRIDE — server-side guard
+# Register in hooks.py:
+#   "Purchase Order": { "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po" }
+# ─────────────────────────────────────────────────────────────────────────────
+def restore_manual_conversion_on_po(doc, method=None):
+    """
+    If a PO item row has manual_conversion_override checked, ERPNext's
+    validate may reset conversion_factor from item master. We re-assert
+    the user's value and recompute stock_qty after standard validate runs.
+    """
+    for item in doc.items:
+        if item.get("manual_conversion_override"):
+            cf = flt(item.conversion_factor)
+            if cf <= 0:
+                frappe.throw(
+                    f"Row {item.idx} ({item.item_code}): Conversion Factor must be "
+                    f"greater than 0 when Manual Conversion Override is enabled."
+                )
+            item.stock_qty = flt(item.qty) * cf
+
+
 @frappe.whitelist()
 def check_billed_and_closed_amount(purchase_order, po_grand_total):
     po_grand_total = float(po_grand_total)
@@ -53,8 +76,13 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
                 for sir_item in sir_doc.get('transfer_registry', []):
                     if sir_item.get('item_code') == obj.item_code:
                         target.qty = sir_item.get('actual_qty')
-                        
-            # target.qty = flt(obj.qty) - flt(obj.received_qty)
+
+            # ── Carry manual conversion override from PO row to PR row ────────
+            if obj.get("manual_conversion_override"):
+                target.manual_conversion_override = 1
+                target.conversion_factor = flt(obj.conversion_factor)
+            # ─────────────────────────────────────────────────────────────────
+
             target.stock_qty = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.conversion_factor)
             target.amount = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.rate)
             target.base_amount = (
@@ -187,10 +215,6 @@ def part_warrnty_days_after_save(docname):
             # Update existing row
             user_days = existing_row.warranty_days or 0
             if user_days < standard_days:
-                # frappe.throw(
-                #     f"Warranty days for <b>{item_group}</b> is less than standard.<br>"
-                #     f"Entered: <b>{user_days}</b>, Required: <b>{standard_days}</b>"
-                # )
                 return {
                     "error": (
                         f"Warranty days entered for Item Group <b>{item_group}</b> is less than the standard.<br>"
@@ -239,32 +263,6 @@ def get_tax_without_holding(supplier):
     return tax_category
 
 
-
-
-
-@frappe.whitelist()
-def get_item_group_cost_centers(items):
-
-    """
-    Fetch cost centers for given item_groups in bulk.
-    items comes as JSON string, so parse it first.
-    """
-    try:
-        items = json.loads(items)
-    except Exception:
-        items = []
-
-    result = {}
-    for item in items:
-        if item.get("item_group"):
-            cost_center = frappe.db.get_value("Item Group", item["item_group"], "cost_center")
-            if cost_center:
-                result[item["idx"]] = cost_center
-    return result
-
-
-
-
 @frappe.whitelist()
 def get_item_group_cost_centers(items):
     print("get_item_group_cost_centers========+++++++")
@@ -284,7 +282,6 @@ def get_item_group_cost_centers(items):
             if cost_center:
                 result[item["idx"]] = cost_center
     return result
-
 
 
 @frappe.whitelist()
@@ -321,232 +318,11 @@ def fetch_unique_records(doc):
 
     return unique_rows
 
-import frappe
-
 
 @frappe.whitelist()
 def create_pr_on_submit(doc, method):
     """
     Auto-create and submit Purchase Receipt when ALL items
     in Purchase Order are NON-STOCK items.
-
-    Fixes:
-    - Correct GST + TDS handling
-    - TDS deducted correctly
-    - % Received updated on PO
-    - ERPNext v13 compatible
-    - Proper error handling
-    - Idempotent (won't create duplicate PRs)
     """
-
     return
-    
-    # --------------------------------------------------
-    # 0) Check if PR already exists (prevent duplicates)
-    # --------------------------------------------------
-    # existing_pr = frappe.db.exists(
-    #     "Purchase Receipt",
-    #     {
-    #         "purchase_order": doc.name,
-    #         "docstatus": ["!=", 2]  # Not cancelled
-    #     }
-    # )
-    
-    # if existing_pr:
-    #     frappe.msgprint(f"Purchase Receipt already exists for this PO: {existing_pr}")
-    #     return
-
-    # # --------------------------------------------------
-    # # 1) Check stock / non-stock items
-    # # --------------------------------------------------
-    # item_stock_map = {}
-    # has_stock_item = False
-    # has_non_stock_item = False
-
-    # for po_item in doc.items:
-    #     if not po_item.item_code:
-    #         continue
-
-    #     if po_item.item_code not in item_stock_map:
-    #         item_stock_map[po_item.item_code] = frappe.db.get_value(
-    #             "Item", po_item.item_code, "is_stock_item"
-    #         )
-
-    #     if item_stock_map[po_item.item_code]:
-    #         has_stock_item = True
-    #     else:
-    #         has_non_stock_item = True
-
-    # # ❌ Stop if any stock item exists
-    # if has_stock_item:
-    #     return
-
-    # # ❌ Stop if no non-stock items
-    # if not has_non_stock_item:
-    #     return
-
-    # # --------------------------------------------------
-    # # 2) Create Purchase Receipt
-    # # --------------------------------------------------
-    # pr = frappe.new_doc("Purchase Receipt")
-
-    # pr.supplier = doc.supplier
-    # pr.company = doc.company
-    # pr.posting_date = doc.transaction_date
-    # pr.posting_time = frappe.utils.nowtime()
-    # pr.set_warehouse = getattr(doc, "set_warehouse", None)
-    
-    # # Copy additional fields
-    # pr.supplier_address = doc.supplier_address
-    # pr.supplier_gstin = doc.supplier_gstin
-    # pr.address_display = doc.address_display
-    # pr.shipping_address = doc.shipping_address
-    # pr.shipping_address_display = doc.shipping_address_display
-    # pr.billing_address = doc.billing_address
-    # pr.billing_address_display = doc.billing_address_display
-    # pr.place_of_supply = doc.place_of_supply
-    
-    # pr.currency = doc.currency
-    # pr.conversion_rate = doc.conversion_rate
-    # pr.buying_price_list = doc.buying_price_list
-    
-    # pr.tax_category = doc.tax_category
-    # pr.taxes_and_charges = doc.taxes_and_charges
-    
-    # # Link to PO
-    # pr.purchase_order = doc.name
-    
-    # # Apply TDS if applicable
-    # if getattr(doc, "apply_tds", None):
-    #     pr.apply_tds = doc.apply_tds
-    #     pr.tax_withholding_category = doc.tax_withholding_category
-
-    # # --------------------------------------------------
-    # # 3) Add ONLY non-stock items
-    # # --------------------------------------------------
-    # for po_item in doc.items:
-    #     if item_stock_map.get(po_item.item_code):
-    #         continue
-
-    #     pr_item = pr.append("items", {
-    #         "item_code": po_item.item_code,
-    #         "item_name": po_item.item_name,
-    #         "description": po_item.description,
-    #         "qty": po_item.qty,
-    #         "rate": po_item.rate,
-    #         "amount": po_item.amount,
-    #         "uom": po_item.uom,
-    #         "stock_uom": po_item.stock_uom,
-    #         "conversion_factor": po_item.conversion_factor,
-    #         "warehouse": po_item.warehouse or pr.set_warehouse,
-    #         "cost_center": po_item.cost_center,
-    #         "expense_account": po_item.expense_account,
-    #         "purchase_order": doc.name,
-    #         "purchase_order_item": po_item.name,  # 🔥 CRITICAL - This links PR item to PO item
-    #     })
-        
-    #     # Copy item tax template if exists
-    #     if hasattr(po_item, "item_tax_template") and po_item.item_tax_template:
-    #         pr_item.item_tax_template = po_item.item_tax_template
-        
-    #     # Copy item tax rate if exists
-    #     if hasattr(po_item, "item_tax_rate") and po_item.item_tax_rate:
-    #         pr_item.item_tax_rate = po_item.item_tax_rate
-
-    # # --------------------------------------------------
-    # # 4) Copy taxes correctly (GST + TDS)
-    # # --------------------------------------------------
-    # if doc.taxes:
-    #     for tax in doc.taxes:
-    #         tax_row = {
-    #             "charge_type": tax.charge_type,
-    #             "account_head": tax.account_head,
-    #             "description": tax.description,
-    #             "rate": tax.rate,
-    #             "cost_center": tax.cost_center,
-    #             "included_in_print_rate": tax.included_in_print_rate,
-    #             "add_deduct_tax": tax.add_deduct_tax,  # 🔥 CRITICAL
-    #         }
-
-    #         # 🔥 Preserve ACTUAL (TDS) values
-    #         if tax.charge_type == "Actual":
-    #             tax_row.update({
-    #                 "tax_amount": tax.tax_amount,
-    #                 "base_tax_amount": tax.base_tax_amount,
-    #             })
-
-    #         pr.append("taxes", tax_row)
-
-    # # --------------------------------------------------
-    # # 5) Recalculate totals
-    # # --------------------------------------------------
-    # pr.set_missing_values()
-    # pr.calculate_taxes_and_totals()
-
-    # # --------------------------------------------------
-    # # 6) Safety check for TDS
-    # # --------------------------------------------------
-    # for t in pr.taxes:
-    #     if t.charge_type == "Actual" and t.add_deduct_tax != "Deduct":
-    #         frappe.throw(
-    #             "TDS must be Deduct type in auto-created Purchase Receipt"
-    #         )
-
-    # # --------------------------------------------------
-    # # 7) Insert & Submit Purchase Receipt
-    # # --------------------------------------------------
-    # try:
-    #     pr.insert(ignore_permissions=True)
-    #     pr.submit()
-        
-    #     frappe.msgprint(
-    #         f"Purchase Receipt {pr.name} created and submitted successfully",
-    #         alert=True,
-    #         indicator="green"
-    #     )
-        
-    # except Exception as e:
-    #     frappe.log_error(
-    #         title=f"Auto PR Creation Failed for {doc.name}",
-    #         message=frappe.get_traceback()
-    #     )
-    #     frappe.throw(f"Failed to create Purchase Receipt: {str(e)}")
-
-    # # --------------------------------------------------
-    # # 8) 🔥 UPDATE PURCHASE ORDER - RECEIVED QTY & % RECEIVED
-    # # --------------------------------------------------
-    # # The key issue: ERPNext doesn't auto-update PO's received_qty
-    # # when PR is created programmatically. We must do it manually.
-    
-    # try:
-    #     # Commit PR changes to database first
-    #     frappe.db.commit()
-        
-    #     # Reload PO to get fresh data after PR submission
-    #     doc.reload()
-        
-    #     # Update billing and receiving percentages
-    #     # These methods recalculate per_billed and per_received
-    #     doc.update_billing_percentage()
-    #     doc.update_receiving_percentage() 
-        
-    #     # Set correct status based on percentages
-    #     doc.set_status(update=True)
-        
-    #     # Save to database without triggering validations again
-    #     doc.db_update()
-        
-    #     # Commit final PO updates
-    #     frappe.db.commit()
-        
-    # except Exception as e:
-    #     frappe.log_error(
-    #         title=f"PO Status Update Failed for {doc.name}",
-    #         message=frappe.get_traceback()
-    #     )
-    #     # Don't throw error here - PR is already created successfully
-    #     frappe.msgprint(
-    #         f"Purchase Receipt created but PO status update failed: {str(e)}",
-    #         alert=True,
-    #         indicator="orange"
-    #     )

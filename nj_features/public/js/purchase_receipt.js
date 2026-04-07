@@ -8,28 +8,6 @@ frappe.ui.form.on("Purchase Receipt", {
 
     onload: function(frm) {
         $('.col-lg-2.layout-side-section').hide();
-        if (frm.doc.docstatus == 0) {
-            var user_email = frappe.session.user;
-            frappe.db.get_value(
-                'Employee',
-                {'user_id': user_email, 'status': 'Active'},
-                ['work_warehouse', 'rejected_work_warehouse']
-            ).then(function(r) {
-                if (r.message && r.message.work_warehouse) {
-                    // Set header-level warehouses — ERPNext propagates these to all item rows.
-                    // ❌ REMOVED: NJ Settings item_group warehouse override loop.
-                    //    It was ignoring set_warehouse and routing stock to wrong warehouses
-                    //    (e.g. consumables going to Consumable - NJ instead of employee warehouse).
-                    frm.set_value('set_warehouse', r.message.work_warehouse);
-                    frm.set_value('rejected_warehouse', r.message.rejected_work_warehouse || r.message.work_warehouse);
-                } else {
-                    frappe.throw(
-                        "Work Warehouse is not set for <b>User: " + user_email +
-                        "</b>. Please mail us at <strong><a href='mailto:itsupport@newjaisa.com'>itsupport@newjaisa.com</a></strong> to create an employee."
-                    );
-                }
-            });
-        }
         frm.refresh_field("items");
     },
 

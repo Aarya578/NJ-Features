@@ -4,7 +4,7 @@
 import json
 import frappe
 from datetime import timedelta
-from frappe.utils import getdate, nowdate
+from frappe.utils import getdate, nowdate, flt
 from nj_lib.utils.common_utils import is_serialized
 from nj_features.nj_features.api.qr_code import generate_and_save_qrcode
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
@@ -12,6 +12,30 @@ from frappe import _
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 
 class CustomPurchaseReceipt(PurchaseReceipt):
+
+    # ─────────────────────────────────────────────────────────────────────
+    # MANUAL CONVERSION OVERRIDE — re-assert after standard validate
+    # ─────────────────────────────────────────────────────────────────────
+    def validate(self):
+        super().validate()
+        self._restore_manual_conversion_factors()
+
+    def _restore_manual_conversion_factors(self):
+        """
+        ERPNext's standard validate can reset conversion_factor from item master.
+        If manual_conversion_override is ON for a row, we re-assert the user's
+        value and recompute stock_qty so the manual setting is never silently lost.
+        """
+        for item in self.items:
+            if item.get("manual_conversion_override"):
+                cf = flt(item.conversion_factor)
+                if cf <= 0:
+                    frappe.throw(
+                        f"Row {item.idx} ({item.item_code}): Conversion Factor must be "
+                        f"greater than 0 when Manual Conversion Override is enabled."
+                    )
+                item.stock_qty = flt(item.qty) * cf
+    # ─────────────────────────────────────────────────────────────────────
 
     def on_submit(self):
         super(CustomPurchaseReceipt, self).on_submit()
@@ -157,43 +181,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                 
                                 if int(updated_qty) + int(resulting_val) == int(item.qty): 
                                     break
-    # def auto_create_debit_note(self):
-    #     print("inside auto_create_debit_note==============")
-    #     if not self.is_return:
-    #         return
 
-    #     # Prevent duplicate
-    #     existing = frappe.db.exists(
-    #         "Purchase Invoice",
-    #         {
-    #             "is_return": 1,
-    #             "return_against": self.name
-    #         }
-    #     )
-    #     print("existing========", existing)
-
-    #     if existing:
-    #         return
-
-    #     try:
-    #         # This already creates saved Purchase Invoice
-    #         debit_note = make_purchase_invoice(self.name)
-    #         print("Debit Note Created:===========", debit_note.name)
-
-    #         # Just submit it
-    #         debit_note.flags.ignore_permissions = True
-    #         debit_note.submit()
-
-    #         frappe.msgprint(
-    #             _("Debit Note {0} created and submitted automatically.").format(debit_note.name),
-    #             alert=True
-    #         )
-
-    #     except Exception:
-    #         frappe.log_error(
-    #             frappe.get_traceback(),
-    #             "Auto Debit Note Creation Failed"
-    #         )
     def auto_create_debit_note(self):
 
         print("inside auto_create_debit_note==============")
@@ -266,7 +254,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 frappe.throw("Debit Note creation failed")
 
             # =============================
-            # 🔥 STEP 3: SET MANDATORY FIELDS BEFORE SUBMIT
+            # STEP 3: SET MANDATORY FIELDS BEFORE SUBMIT
             # =============================
             debit_note.supplier_gst_no = supplier_gst_no or "N/A"
             debit_note.bill_no = bill_no or "AUTO"
@@ -287,6 +275,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 "Auto Debit Note Creation Failed"
             )
             raise
+
 def generate_batch_no(doc, method=None):
     for item in doc.items:
         set_registry_no(item)

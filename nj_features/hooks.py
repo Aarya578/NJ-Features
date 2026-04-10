@@ -74,6 +74,7 @@ doc_events = {
         "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
     },
     "Purchase Order": {
+        "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",  # ← ADDED
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
         "on_submit": [
             "nj_features.overrides.purchase_order.validate_warranty_on_submit",

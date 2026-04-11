@@ -678,31 +678,140 @@ class CustomDeliveryNote(DeliveryNote):
                         serial_doc.save(ignore_permissions=True)
                         # frappe.db.commit()
     def _process_serial_numbers(self):
-
         sn_is_replace = 0
-        sn_update = self.cause_of_return
+        sn_update = self.cause_of_return or ""
+
         if self.replacement_serial_no:
             sn_is_replace = 1
+
         serial_nos = set()
+
         dn_items = frappe.db.sql("""
             SELECT serial_no FROM `tabDelivery Note Item` WHERE parent = %s
             UNION
             SELECT serial_no FROM `tabPacked Item` WHERE parent = %s
         """, (self.name, self.name), as_dict=True)
+
         for row in dn_items:
             if row.serial_no:
-                serial_nos.update([s.strip() for s in row.serial_no.split(',') if s.strip()])
-        for sn in serial_nos:
-            frappe.db.set_value("Serial No", sn, "return_reason", sn_update)
-        if self.replacement_serial_no:
-            frappe.db.set_value("Serial No", self.replacement_serial_no, "is_replace", sn_is_replace)
+                row_serials = str(row.serial_no).replace(",", "\n").split("\n")
+                serial_nos.update([s.strip() for s in row_serials if s.strip()])
 
-        for item in self.items:
-            if not self._should_process_item(item):
+        for sn in serial_nos:
+            frappe.db.set_value(
+                "Serial No",
+                sn,
+                "return_reason",
+                sn_update,
+                update_modified=False
+            )
+
+        if self.replacement_serial_no:
+            frappe.db.set_value(
+                "Serial No",
+                self.replacement_serial_no,
+                "is_replace",
+                sn_is_replace,
+                update_modified=False
+            )
+
+        expense_account = frappe.db.get_single_value(
+            "NewJaisa Configuration",
+            "default_operational_cost_account"
+        )
+
+        processed = set()
+
+        for sn in serial_nos:
+            if sn in processed:
                 continue
+            processed.add(sn)
+
+            warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
+
+            if not warehouse:
+                sle = frappe.db.sql("""
+                    SELECT warehouse
+                    FROM `tabStock Ledger Entry`
+                    WHERE serial_no = %s
+                    AND is_cancelled = 0
+                    AND qty_after_transaction > 0
+                    ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                    LIMIT 1
+                """, (sn,), as_list=True)
+                warehouse = sle[0][0] if sle else None
+
+            if not warehouse:
+                warehouse = frappe.db.get_value(
+                    "Delivery Note Item",
+                    {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
+                    "warehouse"
+                )
+
+            if not warehouse:
+                frappe.log_error(
+                    f"Warehouse not found for serial no {sn} in return DN {self.name}.",
+                    "Return DN Grade Reset"
+                )
+                continue
+
+            parent_item_code = frappe.db.get_value("Serial No", sn, "item_code")
+
+            stock_qty = frappe.db.sql("""
+                SELECT actual_qty
+                FROM `tabBin`
+                WHERE item_code = %s
+                AND warehouse = %s
+                LIMIT 1
+            """, (parent_item_code, warehouse), as_dict=True)
+
+            actual_qty = stock_qty[0]["actual_qty"] if stock_qty else 0
+
+            if actual_qty <= 0:
+                frappe.log_error(
+                    f"Skipping grade reset for serial {sn}. "
+                    f"Item {parent_item_code} has no stock in warehouse {warehouse}. "
+                    f"Actual Qty: {actual_qty}",
+                    "Return DN Grade Reset"
+                )
+                continue
+
+            # STEP 1: unpack -> grade change -> repack
+            reset_part_grades_to_unknown_on_return(
+                sn,
+                self.name,
+                warehouse,
+                expense_account
+            )
+
+            # STEP 2: refresh parent laptop component table after repack
+            try:
+                serial_no_doc = frappe.get_doc("Serial No", sn)
+                item_code = serial_no_doc.item_code
+
+                item_template = frappe.db.get_value(
+                    "Item",
+                    {"name": item_code},
+                    "variant_of"
+                )
+
+                if item_template:
+                    latest_item_wizard = self._get_latest_item_wizard(item_template, item_code)
+                    item_wizard_doc = frappe.get_doc("Item Wizards", latest_item_wizard)
+
+                    self._update_components(
+                        serial_no_doc,
+                        item_wizard_doc,
+                        self.doctype,
+                        self.name
+                    )
+            except Exception as e:
+                frappe.log_error(
+                    f"Error refreshing parent serial components for {sn}: {str(e)}",
+                    "CustomDeliveryNote Serial Number Update"
+                )
+                
             
-            self._update_serial_number_components(item)
-        
     def _should_process_item(self, item):
        
         has_serial_no = frappe.db.get_value('Item', item.item_code, 'has_serial_no')
@@ -743,43 +852,57 @@ class CustomDeliveryNote(DeliveryNote):
         return get_latest_item_wizard(item_template, item_code)
     
     def _update_components(self, serial_no_doc, item_wizard_doc, reference_doctype, reference_name):
-      
         updated = False
-        
+
         for item_component in item_wizard_doc.component:
             for serial_no_component in serial_no_doc.serial_no_component:
                 if serial_no_component.item_group == item_component.get("component_type"):
-                    serial_no_component.quantity = '1'
-                    serial_no_component.grade = 'UNKNOWN'
-                    serial_no_component.reference_doctype = reference_doctype
-                    serial_no_component.reference_doctype_no = reference_name
+                    serial_no_component.quantity = 1
                     updated = True
-        
-        serial_no_doc.awb_no = ''
-        serial_no_doc.address = ''
-        serial_no_doc.end_date = ''
-        serial_no_doc.email_id = ''
-        serial_no_doc.order_id = ''
-        serial_no_doc.mobile_no = ''
-        serial_no_doc.last_name = ''
-        serial_no_doc.first_name = ''
-        serial_no_doc.customer = ''
-        serial_no_doc.customer_name = ''
-        serial_no_doc.order_date = ''
-        serial_no_doc.tracking_id = ''
-        serial_no_doc.shipped_date = ''
-        serial_no_doc.deliver_date = ''
-        serial_no_doc.courier_name = ''
-        serial_no_doc.sales_channel = ''
-        serial_no_doc.sale_type = ''
-        serial_no_doc.sales_order_id = ''
-        serial_no_doc.warranty_start_date_ = ''
-        serial_no_doc.reserved_sales_order = ''
-        serial_no_doc.modified = now()
+
+                    # only for serialized child parts -> relink child serial to parent laptop
+                    if serial_no_component.component_serial_no:
+                        frappe.db.set_value(
+                            "Serial No",
+                            serial_no_component.component_serial_no,
+                            {
+                                "parent_serial_no": serial_no_doc.name,
+                                "status": "Delivered",
+                                "warehouse": None,
+                                "delivery_document_no": reference_name
+                            },
+                            update_modified=False
+                        )
 
         if updated:
-            serial_no_doc.save()
-        
+            frappe.db.set_value(
+                "Serial No",
+                serial_no_doc.name,
+                {
+                    "awb_no": '',
+                    "address": '',
+                    "end_date": '',
+                    "email_id": '',
+                    "order_id": '',
+                    "mobile_no": '',
+                    "last_name": '',
+                    "first_name": '',
+                    "customer": '',
+                    "customer_name": '',
+                    "order_date": '',
+                    "tracking_id": '',
+                    "shipped_date": '',
+                    "deliver_date": '',
+                    "courier_name": '',
+                    "sales_channel": '',
+                    "sale_type": '',
+                    "sales_order_id": '',
+                    "warranty_start_date_": '',
+                    "reserved_sales_order": ''
+                },
+                update_modified=False
+            )
+            
 
     def update_mail_from_address(self):
         try:
@@ -1057,6 +1180,330 @@ class CustomDeliveryNote(DeliveryNote):
             unique_errors = list(set(error_messages))
 
             frappe.throw("<br>".join(unique_errors))
+
+@frappe.whitelist()
+def reset_part_grades_to_unknown_on_return(serial_no, dn_name, warehouse, expense_account):
+    import json
+    from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+    from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+
+    parent_item = frappe.db.get_value("Serial No", serial_no, "item_code")
+    if not parent_item:
+        frappe.log_error(
+            f"Parent item not found for serial no {serial_no}",
+            "Return DN Grade Reset"
+        )
+        return
+
+    if not warehouse:
+        frappe.log_error(
+            f"Warehouse not found for serial no {serial_no}",
+            "Return DN Grade Reset"
+        )
+        return
+
+    # ----------------------------------------------------------
+    # Split into serialized vs non-serialized components
+    # ----------------------------------------------------------
+    serialized_components = frappe.db.sql("""
+        SELECT item, component_serial_no, item_group, item_group_idx
+        FROM `tabSerial No Component`
+        WHERE parent = %s
+          AND is_available = 1
+          AND component_serial_no IS NOT NULL
+          AND component_serial_no != ''
+    """, (serial_no,), as_dict=True)
+
+    non_serialized_components = frappe.db.sql("""
+        SELECT item, component_serial_no, item_group, item_group_idx
+        FROM `tabSerial No Component`
+        WHERE parent = %s
+          AND is_available = 1
+          AND (component_serial_no IS NULL OR component_serial_no = '')
+    """, (serial_no,), as_dict=True)
+
+    if not serialized_components and not non_serialized_components:
+        return
+
+    # ==========================================================
+    # STEP 1 — UNPACK ONLY SERIALIZED COMPONENTS
+    # Parent laptop IN → serialized child parts OUT + parent base back IN
+    # ==========================================================
+    grade_changed_components = []
+
+    if serialized_components:
+        unpack_items = []
+
+        parent_val = get_part_ledger_entry(parent_item, serial_no) or 0
+        total_component_value = 0
+
+        # consume full parent laptop
+        unpack_items.append({
+            "repack_item_code": parent_item,
+            "repack_serial_no": serial_no,
+            "repack_item_source_warehouse": warehouse,
+            "repack_item_base_price": parent_val,
+        })
+
+        # create child serialized parts back into stock
+        for comp in serialized_components:
+            part_serial = comp.component_serial_no
+            current_item = comp.item
+
+            if not part_serial or not current_item:
+                continue
+
+            comp_wh = frappe.db.get_value("Serial No", part_serial, "warehouse") or warehouse
+            comp_val = get_part_ledger_entry(current_item, part_serial) or 0
+            total_component_value += comp_val
+
+            unpack_items.append({
+                "unpack_item_code": current_item,
+                "unpack_serial_no": part_serial,
+                "unpack_item_target_warehouse": comp_wh,
+                "unpack_item_base_price": comp_val,
+            })
+
+        # create stripped/base parent item back into stock
+        parent_base_value = parent_val - total_component_value
+        if parent_base_value < 0:
+            parent_base_value = 0
+
+        unpack_items.append({
+            "unpack_item_code": parent_item,
+            "unpack_serial_no": serial_no,
+            "unpack_item_target_warehouse": warehouse,
+            "unpack_item_base_price": parent_base_value,
+        })
+
+        if len(unpack_items) > 2:
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": unpack_items,
+            }))
+
+        # ==========================================================
+        # STEP 2 — CHANGE SERIALIZED PART ITEMS TO UNKNOWN
+        # ==========================================================
+        grade_change_items = []
+
+        for comp in serialized_components:
+            part_serial = comp.component_serial_no
+            current_item = comp.item
+
+            if not part_serial or not current_item:
+                continue
+
+            parts = current_item.rsplit("-", 1)
+            if len(parts) == 2:
+                unknown_item = parts[0] + "-UNKNOWN"
+            else:
+                unknown_item = current_item
+
+            if not frappe.db.exists("Item", unknown_item):
+                frappe.log_error(
+                    f"UNKNOWN item not found: {unknown_item}",
+                    "Return DN"
+                )
+                grade_changed_components.append({
+                    "comp": comp,
+                    "grade_changed": False,
+                    "final_item": current_item,
+                })
+                continue
+
+            comp_warehouse = frappe.db.get_value("Serial No", part_serial, "warehouse")
+            if not comp_warehouse:
+                sle = frappe.db.sql("""
+                    SELECT warehouse
+                    FROM `tabStock Ledger Entry`
+                    WHERE item_code = %s
+                      AND serial_no = %s
+                      AND is_cancelled = 0
+                      AND qty_after_transaction > 0
+                    ORDER BY posting_date DESC, posting_time DESC
+                    LIMIT 1
+                """, (current_item, part_serial), as_list=True)
+                comp_warehouse = sle[0][0] if sle else warehouse
+
+            valuation_rate = get_part_ledger_entry(current_item, part_serial) or 0
+
+            grade_change_items.append({
+                "repack_item_code": current_item,
+                "repack_serial_no": part_serial,
+                "repack_item_source_warehouse": comp_warehouse,
+                "repack_item_base_price": valuation_rate,
+                "unpack_item_code": unknown_item,
+                "unpack_serial_no": part_serial,
+                "unpack_item_target_warehouse": comp_warehouse,
+                "unpack_item_base_price": valuation_rate,
+            })
+
+            grade_changed_components.append({
+                "comp": comp,
+                "grade_changed": True,
+                "final_item": unknown_item,
+                "comp_warehouse": comp_warehouse,
+                "valuation_rate": valuation_rate,
+            })
+
+        if grade_change_items:
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": grade_change_items,
+            }))
+
+        # ==========================================================
+        # STEP 3 — FINAL REPACK ONLY SERIALIZED COMPONENTS
+        # Parent laptop IN + UNKNOWN serialized parts IN -> laptop OUT
+        # ==========================================================
+        final_repack_items = []
+
+        total_comp_valuation = 0
+        for gc in grade_changed_components:
+            part_serial = gc["comp"].component_serial_no
+            if not part_serial:
+                continue
+
+            if gc.get("grade_changed"):
+                val = gc.get("valuation_rate", 0)
+            else:
+                val = get_part_ledger_entry(gc["final_item"], part_serial) or 0
+
+            total_comp_valuation += val
+
+        parent_valuation_final = get_part_ledger_entry(parent_item, serial_no) or 0
+        final_repack_items.append({
+            "repack_item_code": parent_item,
+            "repack_serial_no": serial_no,
+            "repack_item_source_warehouse": warehouse,
+            "repack_item_base_price": parent_valuation_final,
+        })
+
+        for gc in grade_changed_components:
+            part_serial = gc["comp"].component_serial_no
+            final_item = gc["final_item"]
+
+            if not part_serial or not final_item:
+                continue
+
+            comp_warehouse = frappe.db.get_value("Serial No", part_serial, "warehouse")
+            if not comp_warehouse:
+                sle = frappe.db.sql("""
+                    SELECT warehouse
+                    FROM `tabStock Ledger Entry`
+                    WHERE item_code = %s
+                      AND serial_no = %s
+                      AND is_cancelled = 0
+                      AND qty_after_transaction > 0
+                    ORDER BY posting_date DESC, posting_time DESC
+                    LIMIT 1
+                """, (final_item, part_serial), as_list=True)
+                comp_warehouse = sle[0][0] if sle else warehouse
+
+            val = gc.get("valuation_rate", 0)
+
+            final_repack_items.append({
+                "repack_item_code": final_item,
+                "repack_serial_no": part_serial,
+                "repack_item_source_warehouse": comp_warehouse,
+                "repack_item_base_price": val,
+            })
+
+        final_repack_items.append({
+            "unpack_item_code": parent_item,
+            "unpack_serial_no": serial_no,
+            "unpack_item_target_warehouse": warehouse,
+            "unpack_item_base_price": parent_valuation_final + total_comp_valuation,
+        })
+
+        if final_repack_items:
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": final_repack_items,
+            }))
+
+        # ==========================================================
+        # STEP 4 — UPDATE SERIALIZED COMPONENT DB / CHILD SERIALS
+        # ==========================================================
+        for gc in grade_changed_components:
+            part_serial = gc["comp"].component_serial_no
+            if not part_serial:
+                continue
+
+            frappe.db.set_value(
+                "Serial No",
+                part_serial,
+                {
+                    "item_code": gc["final_item"],
+                    "parent_serial_no": serial_no,
+                    "status": "Delivered",
+                    "warehouse": None,
+                    "delivery_document_no": dn_name
+                },
+                update_modified=False
+            )
+
+            frappe.db.sql("""
+                UPDATE `tabSerial No Component`
+                SET grade = 'UNKNOWN',
+                    item = %s,
+                    reference_doctype = 'Delivery Note',
+                    reference_doctype_no = %s
+                WHERE parent = %s
+                  AND component_serial_no = %s
+            """, (gc["final_item"], dn_name, serial_no, part_serial))
+
+    # ==========================================================
+    # STEP 5 — UPDATE NON-SERIALIZED COMPONENTS DIRECTLY
+    # No unpack / repack, only UNKNOWN conversion
+    # ==========================================================
+    for comp in non_serialized_components:
+        current_item = comp.get("item")
+        if not current_item:
+            continue
+
+        parts = current_item.rsplit("-", 1)
+        if len(parts) == 2:
+            unknown_item = parts[0] + "-UNKNOWN"
+        else:
+            unknown_item = current_item
+
+        if not frappe.db.exists("Item", unknown_item):
+            frappe.log_error(
+                f"UNKNOWN item not found for non-serialized component: {unknown_item}",
+                "Return DN Non-Serialized Grade Reset"
+            )
+            continue
+
+        frappe.db.sql("""
+            UPDATE `tabSerial No Component`
+            SET grade = 'UNKNOWN',
+                item = %s,
+                reference_doctype = 'Delivery Note',
+                reference_doctype_no = %s
+            WHERE parent = %s
+              AND item_group = %s
+              AND item_group_idx = %s
+              AND (component_serial_no IS NULL OR component_serial_no = '')
+        """, (
+            unknown_item,
+            dn_name,
+            serial_no,
+            comp.get("item_group"),
+            comp.get("item_group_idx")
+        ))
+
+
 @frappe.whitelist()
 def custome_limits_crossed_error(self, args, item, qty_or_amount):
 

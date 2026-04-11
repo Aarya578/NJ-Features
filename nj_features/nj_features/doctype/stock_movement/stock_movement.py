@@ -264,9 +264,13 @@ def get_child_warehouses(parent_warehouse):
 
     return all_emp_ware 
 
+# Patch for stock movement restriction
+# Replace validate_serial_no_and_department() with the version below
+# and add check_if_serial_exists_in_active_bag_list() in the same file.
+
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
-    
+
         if isinstance(doc, str):
             doc = json.loads(doc)
 
@@ -287,14 +291,14 @@ def validate_serial_no_and_department(row, error_messages):
 
     if not has_serialized:
         return False
-    
+
     s_warehouse = row.get('s_warehouse')
     t_warehouse = row.get('t_warehouse')
     serial_no = row.get('serial_no')
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
-    
+
 
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
@@ -307,20 +311,26 @@ def validate_serial_no_and_department(row, error_messages):
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
-    
+
+    # NEW RESTRICTION:
+    # If this serial already exists as an active part in the Bag List of any parent serial,
+    # block stock movement.
+    if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
+        return False
+
     restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
 
     restriction_item = [r.get("name") for r in restriction_item]
 
     if serial_doc.get("item_group") not in restriction_item:
         return False
-    
+
 
     if not serial_doc.get("bypass"):
 
         if department_doc.get('warrenty_restriction_check'):  
             check_warranty_expiry(serial_doc, error_messages)
-        
+
         s_inspection_type = frappe.get_doc('Department', s_department)
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
@@ -333,7 +343,7 @@ def validate_serial_no_and_department(row, error_messages):
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
             one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages)
-        
+
         if (
                 s_department and 
                 s_department != department and 
@@ -349,6 +359,55 @@ def validate_serial_no_and_department(row, error_messages):
             return True
 
     return True
+
+def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
+    """
+    Block movement of a serialized part if it is already present in the active
+    Bag List of some laptop/parent serial.
+
+    Example:
+    - Laptop serial: NJ-LP-334131
+    - Bag List contains part serial: NJ-ST-314522
+    - If someone tries to transfer NJ-ST-314522 directly, throw an error.
+    """
+    if not serial_no:
+        return True
+
+    bag_rows = frappe.db.sql(
+        """
+        SELECT
+            parent,
+            item,
+            item_group,
+            quantity,
+            is_available
+        FROM `tabBag List`
+        WHERE serial_no = %s
+          AND COALESCE(quantity, 0) > 0
+          AND COALESCE(is_available, 0) = 1
+        ORDER BY modified DESC, creation DESC
+        LIMIT 1
+        """,
+        (serial_no,),
+        as_dict=True
+    )
+
+    if not bag_rows:
+        return True
+
+    row = bag_rows[0]
+    parent_serial = row.get("parent")
+    item_group = row.get("item_group") or ""
+    item_code = row.get("item") or ""
+
+    error_messages.append(
+        f"Serial No <b>{serial_no}</b> cannot be transferred because it already exists "
+        f"in the active Bag List of Serial No <b>{parent_serial}</b>."
+        f"{' Item Group: <b>' + item_group + '</b>.' if item_group else ''}"
+        f"{' Item Code: <b>' + item_code + '</b>.' if item_code else ''} "
+        f"Please remove it from that Bag List first."
+    )
+    return False
 
 def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     

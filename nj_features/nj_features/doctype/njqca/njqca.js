@@ -678,16 +678,6 @@ frappe.ui.form.on("NJQCA", {
             });
             frappe.validated = false;
           } else if (r.message) {
-            // let existingRow = null;
-            // (frm.doc.njqca_result_parameters || []).forEach(row => {
-            //     if (row.parameter === r.message.parameter) {
-            //         existingRow = row;
-            //     }
-            // });
-
-            // if (existingRow) {
-            //     frappe.model.clear_doc(existingRow.doctype, existingRow.name);
-            // }
             var child = frappe.model.add_child(
               frm.doc,
               "njqca_result_parameters",
@@ -797,8 +787,6 @@ frappe.ui.form.on("NJQCA", {
                 };
               });
             }
-            // frm.set_df_property('serial_no', 'read_only', 1);
-            // frm.refresh_field('serial_no');
           } else {
             frappe.msgprint(__("No items found for this RFQ."));
           }
@@ -1458,18 +1446,6 @@ frappe.ui.form.on("NJQCA", {
     ) {
       processItemTemplate(frm);
     }
-    // else if(frm.doc.item_template && frm.doc.power_on == 'Yes' &&frm.doc.item_group=="BATTERY") {
-    //    frappe.call({
-    //        method: 'nj_features.nj_features.doctype.njqca.njqca.get_battery_auto_item_code',
-    //        args: { "name": frm.doc.name, "item_template": frm.doc.item_template, "manufacturer_model": frm.doc.manufacturer_model },
-    //        callback: function(r) {
-    //             if(r.message){
-    //                 frm.set_value('manual_repack_item_code', r.message);
-    //                 frm.refresh_field('item_template');
-    //             }
-    //         }
-    //    })
-    // }
   },
 
   before_save: function (frm) {
@@ -1564,7 +1540,6 @@ frappe.ui.form.on("NJQCA", {
     }
   },
 });
-
 
 function isDesktopNJQCA(doc) {
   return (doc.item_group || "").trim().toLowerCase() === "desktops";
@@ -1693,24 +1668,6 @@ function processItemTemplate(frm) {
             );
             $(frm.layout.wrapper).find(".form-message.red").remove();
             $(frm.layout.wrapper).prepend(errorDiv);
-
-            // const existing = (frm.doc.comments || []).some(comment => {
-            //     return comment.comment === errorMessageString;
-            // });
-
-            // if (!existing) {
-            //     frappe.call({
-            //         method: "frappe.desk.form.utils.add_comment",
-            //         args: {
-            //             reference_doctype: frm.doctype,
-            //             reference_name: frm.docname,
-            //             content: errorMessageString,
-            //             comment_email: frappe.session.user,
-            //             comment_by: frappe.session.user_fullname
-            //         },
-            //         error: function(err) { console.error("API Error:", err); }
-            //     });
-            // }
 
             frappe.show_alert(
               {
@@ -2039,7 +1996,7 @@ function processItemTemplate(frm) {
                 show_checkbutton_for_field(frm, "njqca_adaptor");
               }
 
-              if (newRset_valueow) {
+              if (newRow) {
                 for (let key in item) {
                   if (
                     item.hasOwnProperty(key) &&
@@ -3206,7 +3163,7 @@ frappe.ui.form.on("NJQCA Laptop Ram", {
           fieldtype: "Select",
           options: ["Loading..."],
           default: child.ram_speed || "",
-          reqd: !child.ram_speed, //made always selectable
+          reqd: !child.ram_speed,
         },
         {
           label: "Grade",
@@ -3434,94 +3391,69 @@ function bind_checkbox_listener(grid, child_name) {
   }
 }
 
-
 function show_delete_button(grid, selected_rows, child_name) {
-    remove_delete_button(grid);
+  remove_delete_button(grid);
 
-    const [row] = selected_rows;
-    if (!row) return;
+  const [row] = selected_rows;
+  if (!row) return;
 
-    const allowed_roles = ["Process Engineer", "Ops Manager"];
-    const has_permission = frappe.user_roles.some((role) =>
-        allowed_roles.includes(role)
-    );
-    if (!has_permission) return;
-
-<<<<<<< HEAD
-    // Show delete button for any unmerged row with no fetched_item_code
-    const isCalcItemCode =
-        row.fetched_item_code == null || 
-        row.fetched_item_code === "" || 
-        row.fetched_item_code.trim() === "";
-=======
   const allowed_roles = ["Process Engineer", "Ops Manager"];
   const has_permission = frappe.user_roles.some((role) =>
     allowed_roles.includes(role),
   );
->>>>>>> ab56b005392745ca04f5bfdf16ba1bb1daa81a03
+  if (!has_permission) return;
 
-    const isNotMerged = row.merged == 0 || row.merged == null;
+  const isCalcItemCode =
+    row.fetched_item_code == null ||
+    row.fetched_item_code === "" ||
+    row.fetched_item_code.trim() === "";
 
-    if (isCalcItemCode && isNotMerged) {
-        const btn = $(`<button class="btn btn-xs btn-danger delete-btn" style="margin-right: 8px;">
+  const isNotMerged = row.merged == 0 || row.merged == null;
+
+  if (isCalcItemCode && isNotMerged) {
+    const btn = $(`<button class="btn btn-xs btn-danger delete-btn" style="margin-right: 8px;">
             Delete
         </button>`);
 
-        grid.wrapper.find(".grid-buttons").prepend(btn);
+    grid.wrapper.find(".grid-buttons").prepend(btn);
 
-<<<<<<< HEAD
-        btn.on("click", function () {
-            frappe.confirm(
-                "Are you sure you want to delete this row?",
-                function () {
-                    // YES
-                    const frm = cur_frm;
-                    const field = frm.fields_dict[child_name];
-
-                    if (!field || !field.grid) {
-                        frappe.show_alert(
-                            { message: "Could not find grid: " + child_name, indicator: "red" },
-                            5
-                        );
-                        return;
-                    }
-
-                    const gridRow = field.grid.grid_rows_by_docname[row.name];
-                    if (!gridRow) {
-                        frappe.show_alert(
-                            { message: "Row not found in grid.", indicator: "red" },
-                            5
-                        );
-                        return;
-                    }
-
-                    gridRow.remove();
-                    field.grid.refresh();
-                    frm.refresh_field(child_name);
-                    remove_delete_button(grid);
-
-                    frappe.show_alert(
-                        { message: "Row deleted successfully.", indicator: "green" },
-                        5
-                    );
-                }
-            );
-        });
-    }
-=======
     btn.on("click", function () {
-      cur_frm.fields_dict[child_name].grid.grid_rows_by_docname[
-        row.name
-      ].remove();
-      cur_frm.refresh_field(child_name);
+      frappe.confirm(
+        "Are you sure you want to delete this row?",
+        function () {
+          const frm = cur_frm;
+          const field = frm.fields_dict[child_name];
 
-      frappe.show_alert(
-        { message: "Row deleted successfully.", indicator: "red" },
-        5,
+          if (!field || !field.grid) {
+            frappe.show_alert(
+              { message: "Could not find grid: " + child_name, indicator: "red" },
+              5,
+            );
+            return;
+          }
+
+          const gridRow = field.grid.grid_rows_by_docname[row.name];
+          if (!gridRow) {
+            frappe.show_alert(
+              { message: "Row not found in grid.", indicator: "red" },
+              5,
+            );
+            return;
+          }
+
+          gridRow.remove();
+          field.grid.refresh();
+          frm.refresh_field(child_name);
+          remove_delete_button(grid);
+
+          frappe.show_alert(
+            { message: "Row deleted successfully.", indicator: "green" },
+            5,
+          );
+        },
       );
     });
   }
->>>>>>> ab56b005392745ca04f5bfdf16ba1bb1daa81a03
 }
 
 function remove_delete_button(grid) {
@@ -3529,18 +3461,17 @@ function remove_delete_button(grid) {
 }
 
 function show_merge_button(grid, selected_rows, child_name) {
-    remove_merge_button(grid);  // Clean up first
+  remove_merge_button(grid);
 
-    const btn = $(`<button class="btn btn-xs btn-primary merge-btn" style="margin-right: 8px;">
+  const btn = $(`<button class="btn btn-xs btn-primary merge-btn" style="margin-right: 8px;">
         Merge
     </button>`);
 
-    grid.wrapper.find(".grid-buttons").prepend(btn);
+  grid.wrapper.find(".grid-buttons").prepend(btn);
 
-    btn.on("click", function () {
-        // FIX: was missing handle_merge call
-        handle_merge(grid.frm || cur_frm, selected_rows, child_name);
-    });
+  btn.on("click", function () {
+    handle_merge(grid.frm || cur_frm, selected_rows, child_name);
+  });
 }
 
 function remove_merge_button(grid) {
@@ -3681,13 +3612,11 @@ function upsertResultParam(frm, change) {
   );
 
   if (existing) {
-    // ✅ update existing row
     existing.item_group = change.item_group;
     existing.parameter = change.parameter;
     existing[valueField] = change.value;
     existing[unitField] = change.units;
   } else {
-    // ✅ add new row
     const child = frm.add_child("njqca_result_parameters");
     child.item_group = change.item_group;
     child.parameter = change.parameter;
@@ -3699,7 +3628,6 @@ function upsertResultParam(frm, change) {
 function applyChangesNoDuplicates(frm, changes) {
   if (!Array.isArray(changes) || !changes.length) return;
 
-  // extra safety: last-write-wins if python sent same key twice
   const map = {};
   for (const c of changes) {
     const k = _key(c.item_group) + "||" + _key(c.parameter);
@@ -3709,10 +3637,6 @@ function applyChangesNoDuplicates(frm, changes) {
   Object.values(map).forEach((c) => upsertResultParam(frm, c));
 }
 
-/**
- * Optional cleanup: removes duplicates already present.
- * Keeps the LAST occurrence (latest stays).
- */
 function dedupeChildTable(frm) {
   const rows = frm.doc.njqca_result_parameters || [];
   if (!rows.length) return;

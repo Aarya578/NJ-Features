@@ -60,6 +60,7 @@ override_doctype_class = {
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
+    "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
 }
 
 # ========== Doc Events ==========

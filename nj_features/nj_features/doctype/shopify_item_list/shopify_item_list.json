@@ -12,7 +12,8 @@
   "variant_id",
   "product_bundle",
   "product_id",
-  "shopify_sku"
+  "shopify_sku",
+  "performance_criteria"
  ],
  "fields": [
   {
@@ -63,12 +64,18 @@
    "fieldname": "shopify_sku",
    "fieldtype": "Small Text",
    "label": "Shopify SKU"
+  },
+  {
+   "fieldname": "performance_criteria",
+   "fieldtype": "Link",
+   "label": "Performance Criteria",
+   "options": "Performance Criteria"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-26 18:51:10.987245",
+ "modified": "2026-04-13 12:12:20.238377",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Shopify Item List",

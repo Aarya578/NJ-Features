@@ -12,6 +12,16 @@ frappe.ui.form.on("Purchase Receipt", {
     },
 
     refresh: function(frm) {
+        // Set UOM query on refresh for existing rows
+        frm.set_query('uom', 'items', function(doc, cdt, cdn) {
+            var r = locals[cdt][cdn];
+            if (!r.item_code) return {};
+            return {
+                query: 'nj_features.overrides.purchase_receipt.get_item_uoms_for_query',
+                filters: { item_code: r.item_code }
+            };
+        });
+
         if (frm.doc.docstatus === 1) {
             frm.add_custom_button(__('Print QR Code'), function() {
                 var docname = encodeURIComponent(frm.doc.name);
@@ -97,10 +107,49 @@ frappe.ui.form.on("Purchase Receipt", {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PURCHASE RECEIPT ITEM — BARCODE PRINTING + MANUAL CONVERSION OVERRIDE
+// PURCHASE RECEIPT ITEM — UOM FILTER + BARCODE PRINTING + MANUAL CONVERSION
 // ─────────────────────────────────────────────────────────────────────────────
 
 frappe.ui.form.on('Purchase Receipt Item', {
+
+    item_code: function(frm, cdt, cdn) {
+        var row = locals[cdt][cdn];
+        if (!row.item_code) return;
+
+        // Set per-row UOM filter dynamically
+        frm.set_query('uom', 'items', function(doc, cdt, cdn) {
+            var r = locals[cdt][cdn];
+            if (!r.item_code) return {};
+            return {
+                query: 'nj_features.overrides.purchase_receipt.get_item_uoms_for_query',
+                filters: { item_code: r.item_code }
+            };
+        });
+    },
+
+    uom: function(frm, cdt, cdn) {
+        var row = locals[cdt][cdn];
+        if (row.manual_conversion_override) return;
+        if (!row.uom || !row.item_code) return;
+
+        var selected_uom = row.uom;
+
+        frappe.call({
+            method: 'nj_features.overrides.purchase_receipt.get_item_uoms',
+            args: { item_code: row.item_code },
+            callback: function(r) {
+                if (!r.message) return;
+                var match = r.message.find(u => u.uom === selected_uom);
+                if (match) {
+                    var cf = flt(match.conversion_factor, 9);
+                    console.log("PR UOM:", selected_uom, "| CF:", cf);
+                    frappe.model.set_value(cdt, cdn, 'uom', selected_uom);
+                    frappe.model.set_value(cdt, cdn, 'conversion_factor', cf);
+                    frappe.model.set_value(cdt, cdn, 'stock_qty', flt(row.qty || 0) * cf);
+                }
+            }
+        });
+    },
 
     // ── Existing: barcode printing ────────────────────────────────────────────
     print: function(frm, cdt, cdn) {
@@ -254,10 +303,6 @@ function _run_pr_invoice_scan(frm) {
 // MANUAL CONVERSION OVERRIDE — PR helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Toggle whether conversion_factor is editable on this PR item row.
- * When override is OFF, restore the item-master value via API.
- */
 function nj_pr_toggle_conversion_editability(frm, cdt, cdn) {
     var row = locals[cdt][cdn];
     var is_override = !!row.manual_conversion_override;
@@ -268,7 +313,6 @@ function nj_pr_toggle_conversion_editability(frm, cdt, cdn) {
     frm.fields_dict["items"].grid.refresh();
 
     if (!is_override) {
-        // Restore the item-master-driven conversion_factor
         if (row.item_code && row.uom) {
             frappe.call({
                 method: "erpnext.stock.get_item_details.get_conversion_factor",
@@ -283,10 +327,6 @@ function nj_pr_toggle_conversion_editability(frm, cdt, cdn) {
     }
 }
 
-/**
- * Recalculate stock_qty = qty * conversion_factor when override is ON.
- * Standard ERPNext handles this when override is OFF.
- */
 function nj_pr_recalc_stock_qty(frm, cdt, cdn) {
     var row = locals[cdt][cdn];
     if (row.manual_conversion_override && flt(row.conversion_factor) > 0) {

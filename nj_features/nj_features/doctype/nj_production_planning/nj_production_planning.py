@@ -15,8 +15,8 @@ from collections import defaultdict, Counter
 # -------------------------
 # Logger setup
 # -------------------------
-logger = frappe.logger("NJProductionPlanningAllocationLog", allow_site=True, file_count=5)
-part_logger = frappe.logger("part_allocation", allow_site=True, file_count=10)
+logger = frappe.logger("new_Production_planning", allow_site=True, file_count=5)
+
 
 
 def _safe_repr(obj, maxlen: int = 4000):
@@ -37,6 +37,8 @@ def _safe_repr(obj, maxlen: int = 4000):
 def log_io(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        # Log function inputs
+        logger.debug(f"Calling function {fn.__name__} with args: {args} and kwargs: {kwargs}")
         try:
             result = fn(*args, **kwargs)
             return result
@@ -94,6 +96,7 @@ _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_p
 # =========================
 # Helpers
 # =========================
+@log_io
 def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
     """Update Serial No.to_make (lightweight db write)."""
     if not UPDATE_SERIAL_TO_MAKE:
@@ -110,6 +113,7 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
 
 
+@log_io
 def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> None:
     """Update Serial No.reserved_sales_order (lightweight db write)."""
     if not UPDATE_SERIAL_RESERVED_SO:
@@ -136,6 +140,7 @@ def _round_half_up(value) -> int:
 # =========================
 # Helpers for ordering serials
 # =========================
+@log_io
 def _oldest_first(lst: List[Dict]) -> List[Dict]:
     """
     Age-aware sort:
@@ -184,6 +189,7 @@ def _same_storage_diff_ram(serial: Dict, target_cfg: tuple) -> bool:
     return (st == tt and sp == tp and ss == ts and sr != tr)
 
 
+@log_io
 def _cfg_tuple_from_item(item_code: str) -> tuple:
     """
     Return (template, processor, ram, storage) so we NEVER cross processor.
@@ -320,6 +326,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
             inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
+            # Log number of serials fetched from department
+            logger.debug(f"has taken {len(inward_serials_per_dept[dept_name])} serial no from the department {dept_name}")
 
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
@@ -334,12 +342,63 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
             if not dept.get("run_production_planning"):
                 continue
 
+            # Log department execution
+            logger.debug(f"running for this department: {dept_name}")
+
             allow_reconfig = bool(dept.get("allow_reconfig"))
             inward_grain = "config" if dept.get("inwarded_config") else "model"
             forward_grain = seq_forward_grain
 
             serial_rows = inward_serials_per_dept.get(dept_name, [])
-            serial_map = [_enrich_serial_from_attrs(sn) for sn in serial_rows]
+            initial_serial_count = len(serial_rows)
+            initial_serial_lookup = {sn['name']: sn for sn in serial_rows} # For warehouse info
+
+            # Pre-Planning Validation
+            healthy_serials = []
+            for row in serial_rows:
+                sn_id = row['name']
+                wh = row['warehouse']
+                
+                # 1. Check Item Wizard existence
+                if not row.get("item_wizard"):
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": "Item Wizard not found"
+                    })
+                    continue
+                
+                # 2. Check Part List Status (Incomplete Wizard)
+                if row.get("part_list_status") != "Completed":
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": "Item Wizard not Completed"
+                    })
+                    continue
+                
+                healthy_serials.append(row)
+
+            # Enrich and check Product Bundle mapping
+            serial_map = []
+            for row in healthy_serials:
+                enriched = _enrich_serial_from_attrs(row)
+                
+                # 3. Check Product Bundle mapping
+                if not enriched.get("fallback_pb_item_code"):
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": row['name'],
+                        "current_department": dept_name,
+                        "current_warehouse": row['warehouse'],
+                        "reason": "Product Bundle not found"
+                    })
+                    continue
+                
+                serial_map.append(enriched)
+
+            serials_before_match = {s['serial_no'] for s in serial_map}
 
             order_allocs, remaining_serials = _match_inventory_to_order_queues_for_sequence(
                 seq=s,
@@ -350,6 +409,21 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 forward_grain=forward_grain,
                 current_department=dept_name,
             )
+
+            # Identify serials dropped due to parts in Match
+            allocated_in_match = {a['serial_no'] for a in order_allocs}
+            remaining_after_match = {r['serial_no'] for r in remaining_serials}
+            dropped_in_match = serials_before_match - allocated_in_match - remaining_after_match
+            for sn in dropped_in_match:
+                info = initial_serial_lookup[sn]
+                plan_doc.append("missing_serial_nos", {
+                    "serial_no": sn,
+                    "current_department": dept_name,
+                    "current_warehouse": info['warehouse'],
+                    "reason": "Part allocation failed (Order Match)"
+                })
+            
+            serials_before_forecast = remaining_after_match
 
             fwd_inventory = _get_forward_inventory_excluding_current_dept(
                 inward_serials_per_dept=inward_serials_per_dept,
@@ -417,10 +491,47 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
                 )
                 priority_per_dept[dept_name] += 1
 
+            # Identify serials dropped due to parts in Forecast or no demand
+            allocated_in_forecast = {a['serial_no'] for a in forecast_allocs}
+            remaining_after_forecast = {r['serial_no'] for r in remaining_serials}
+            
+            dropped_in_forecast = serials_before_forecast - allocated_in_forecast - remaining_after_forecast
+            for sn in dropped_in_forecast:
+                info = initial_serial_lookup[sn]
+                plan_doc.append("missing_serial_nos", {
+                    "serial_no": sn,
+                    "current_department": dept_name,
+                    "current_warehouse": info['warehouse'],
+                    "reason": "Part allocation failed (Forecast)"
+                })
+
+            for sn in remaining_after_forecast:
+                info = initial_serial_lookup[sn]
+                plan_doc.append("missing_serial_nos", {
+                    "serial_no": sn,
+                    "current_department": dept_name,
+                    "current_warehouse": info['warehouse'],
+                    "reason": "No matching order or forecast demand found"
+                })
+
             consumed_serial_nos = {a["serial_no"] for a in order_allocs + forecast_allocs}
+            
+            # Log serials skipped due to no demand
+            for sn in remaining_serials:
+                logger.debug(f"Skipping serial_no: {sn['serial_no']} - Reason: No matching order or forecast demand found.")
+
             inward_serials_per_dept[dept_name] = [
                 sn for sn in inward_serials_per_dept[dept_name] if sn["name"] not in consumed_serial_nos
             ]
+
+            # Print Department Summary
+            added_count = len(consumed_serial_nos)
+            skipped_count = initial_serial_count - added_count
+            logger.debug(f"--- Department Summary for {dept_name} ---")
+            logger.debug(f"Total serial numbers received: {initial_serial_count}")
+            logger.debug(f"Total serial numbers added to plan: {added_count}")
+            logger.debug(f"Total serial numbers skipped: {skipped_count}")
+            logger.debug(f"-------------------------------------------")
 
     plan_doc.save(ignore_permissions=True)
     total_rows = len(plan_doc.get("lines") or [])
@@ -747,6 +858,7 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
               AND soi.item_group IN %(igroups)s
               AND soi.item_code IN (SELECT name FROM `tabItem` WHERE is_stock_item = 0)
               AND i.is_stock_item = 1
+              AND pb.disable <> 1
             GROUP BY pbi.item_code, DATE(so.creation)
         )
         SELECT * FROM SalesData
@@ -934,6 +1046,7 @@ def _match_inventory_to_order_queues_for_sequence(
                     by_config[chosen["forward_key_config"]] = [
                         x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
                     ]
+                    logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
                     continue
 
             ref_list.pop()
@@ -1043,6 +1156,7 @@ def _match_inventory_to_order_queues_for_sequence(
                     by_config[chosen["forward_key_config"]] = [
                         x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
                     ]
+                    logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
                     continue
 
             ref_list.pop()
@@ -1073,6 +1187,7 @@ def _match_inventory_to_order_queues_for_sequence(
     return allocations, remaining
 
 
+@log_io
 def _estimate_forward_inventory(forward_keys, serials, forward_grain):
     inv = Counter()
     for s in serials:
@@ -1082,7 +1197,6 @@ def _estimate_forward_inventory(forward_keys, serials, forward_grain):
     return dict(inv)
 
 
-@log_io
 def _allocate_forecast_to_balance_doi(
     remaining_serials,
     forward_grain,
@@ -1184,6 +1298,7 @@ def _allocate_forecast_to_balance_doi(
                     mk = chosen["forward_key_model"]
                     if mk in buckets:
                         buckets[mk] = [x for x in buckets[mk] if x["serial_no"] != chosen["serial_no"]]
+                logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Forecast)")
                 continue
 
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
@@ -1237,7 +1352,10 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             restricted_warehouse.extend([w.strip() for w in raw.split(",") if w.strip()])
 
     extra_where = ""
-    params = {"dept": dept_doc.name}
+    params = {
+        "dept": dept_doc.name,
+        "igroups": tuple(SELLABLE_ITEM_GROUPS)
+    }
 
     if restricted_warehouse:
         extra_where = " AND sn.warehouse NOT IN %(restricted_whs)s"
@@ -1252,15 +1370,16 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             sn.department,
             sn.creation,
             sn.purchase_date,
+            sn.item_wizard,
             iw.part_list_status
         FROM `tabSerial No` sn
-        INNER JOIN `tabItem Wizards` iw
+        INNER JOIN `tabItem` it
+            ON sn.item_code = it.name
+        LEFT JOIN `tabItem Wizards` iw
             ON sn.item_wizard = iw.name
         WHERE sn.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-          AND sn.item_wizard IS NOT NULL
-          AND sn.item_wizard != ''
-          AND iw.part_list_status = 'Completed'
+          AND it.item_group IN %(igroups)s
           {extra_where}
         """,
         params,
@@ -1364,6 +1483,7 @@ def _target_item_for_key(key):
     return variant or f"{template}::{proc}-{ram}-{sto}"
 
 
+@log_io
 def _resolve_existing_item_for_key(key) -> Optional[str]:
     if not key:
         return None
@@ -1396,7 +1516,6 @@ def _is_blankish_attr(val) -> bool:
     return v in ("", "NONE", "NO RAM", "NO DISK", "UNKNOWN", "N/A", "NA")
 
 
-@log_io
 def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
     """
     Return the best sellable/Product Bundle item code for the same model key.
@@ -1576,10 +1695,10 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     - Phase 1: check all MR lines are feasible WITHOUT changing globals.
     - Phase 2: only if feasible, commit reservation into _PART_PLANNED_ALLOCATION.
     """
-    part_logger.debug(f"\n\n\n[ALLOCATE_STARTED] serial_no={serial_no}, dept={current_department}")
+    logger.debug(f"\n\n\n[ALLOCATE_STARTED] serial_no={serial_no}, dept={current_department}")
 
     if not _DEPT_ALLOCATE_PARTS.get(current_department):
-        part_logger.debug(
+        logger.debug(
             f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
             f"result=ALLOCATED (bypassed, allocate_parts disabled for this dept)"
         )
@@ -1612,13 +1731,13 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     )
 
     mr_names = sorted({row["material_request"] for row in mr_items}) if mr_items else []
-    part_logger.debug(
+    logger.debug(
         f"\n[MR_INFO] serial_no={serial_no}, dept={current_department}, "
         f"mr_count={len(mr_items)}, mr_list={mr_names}"
     )
 
     if not mr_items:
-        part_logger.debug(
+        logger.debug(
             f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
             f"result=ALLOCATED, reason='no pending Material Requests for this serial'"
         )
@@ -1636,7 +1755,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
         if mr_qty <= 0:
-            part_logger.debug(f"\n[MR_SKIP_ZERO_QTY] serial_no={serial_no}, item_code={item_code}, mr_qty={mr_qty}")
+            logger.debug(f"\n[MR_SKIP_ZERO_QTY] serial_no={serial_no}, item_code={item_code}, mr_qty={mr_qty}")
             continue
 
         already_planned = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0))
@@ -1646,7 +1765,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
         if available_before >= mr_qty:
             to_reserve[item_code] += mr_qty
-            part_logger.debug(
+            logger.debug(
                 f"\n[LINE_CHECK_OK] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
                 f"required={mr_qty}, available_before={available_before}, would_reserve_total={to_reserve[item_code]}"
             )
@@ -1659,7 +1778,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
                     "available": available_before,
                 }
             )
-            part_logger.debug(
+            logger.debug(
                 f"\n[LINE_CHECK_BLOCKED] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
                 f"required={mr_qty}, available={available_before} (insufficient stock)"
             )
@@ -1670,7 +1789,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     }
 
     if unallocated_lines:
-        part_logger.debug(
+        logger.debug(
             f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
             f"result=NOT_ALLOCATED, reason='insufficient stock for some MR lines', "
             f"unallocated_lines={unallocated_lines}, remaining_virtual_stock={remaining_virtual_stock}"
@@ -1692,7 +1811,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         for item_code in sorted(involved_item_codes)
     }
 
-    part_logger.debug(
+    logger.debug(
         f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
         f"result=ALLOCATED, reason='all MR lines fully allocatable from virtual stock', "
         f"allocated_lines={alloc_rows}, remaining_virtual_stock={remaining_virtual_stock_after}"
@@ -1719,6 +1838,8 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,
 ):
+    # Log each serial number being processed
+    logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
     _update_serial_to_make(serial_no, item_code_to_make)
 
     if reason == "Order" and sales_order_number:

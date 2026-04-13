@@ -9,10 +9,7 @@
   "department",
   "plan_date",
   "lines",
-  "nj_production_planning_child",
-  "final_config",
-  "suggested_serial_no",
-  "laptop_allocation",
+  "missing_serial_nos",
   "amended_from"
  ],
  "fields": [
@@ -24,13 +21,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "nj_production_planning_child",
-   "fieldtype": "Table",
-   "hidden": 1,
-   "label": "NJ Production Planning Child",
-   "options": "NJ Production Planning Child"
-  },
-  {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
@@ -38,27 +28,6 @@
    "options": "NJ Production Planning",
    "print_hide": 1,
    "read_only": 1
-  },
-  {
-   "fieldname": "suggested_serial_no",
-   "fieldtype": "Table",
-   "hidden": 1,
-   "label": "Suggested Serial No",
-   "options": "Suggested Serial No"
-  },
-  {
-   "fieldname": "laptop_allocation",
-   "fieldtype": "Table",
-   "hidden": 1,
-   "label": "Laptop Allocation",
-   "options": "Laptop Allocation Child"
-  },
-  {
-   "fieldname": "final_config",
-   "fieldtype": "Table",
-   "hidden": 1,
-   "label": "Final Config",
-   "options": "Final Config"
   },
   {
    "fieldname": "plan_date",
@@ -71,11 +40,17 @@
    "fieldtype": "Table",
    "label": "Final Production Planning Data",
    "options": "Final Production Planning Data"
+  },
+  {
+   "fieldname": "missing_serial_nos",
+   "fieldtype": "Table",
+   "label": "Missing Serial Nos",
+   "options": "Missing Serial Nos"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-20 10:49:13.224478",
+ "modified": "2026-04-13 17:00:25.692600",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

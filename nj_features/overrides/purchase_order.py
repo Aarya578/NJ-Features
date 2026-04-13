@@ -19,15 +19,8 @@ def create_batch(doc, method=None):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MANUAL CONVERSION OVERRIDE — server-side guard
-# Register in hooks.py:
-#   "Purchase Order": { "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po" }
 # ─────────────────────────────────────────────────────────────────────────────
 def restore_manual_conversion_on_po(doc, method=None):
-    """
-    If a PO item row has manual_conversion_override checked, ERPNext's
-    validate may reset conversion_factor from item master. We re-assert
-    the user's value and recompute stock_qty after standard validate runs.
-    """
     for item in doc.items:
         if item.get("manual_conversion_override"):
             cf = flt(item.conversion_factor)
@@ -77,11 +70,9 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
                     if sir_item.get('item_code') == obj.item_code:
                         target.qty = sir_item.get('actual_qty')
 
-            # ── Carry manual conversion override from PO row to PR row ────────
             if obj.get("manual_conversion_override"):
                 target.manual_conversion_override = 1
                 target.conversion_factor = flt(obj.conversion_factor)
-            # ─────────────────────────────────────────────────────────────────
 
             target.stock_qty = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.conversion_factor)
             target.amount = (flt(obj.qty) - flt(obj.received_qty)) * flt(obj.rate)
@@ -128,7 +119,6 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
         return {'error': str(e), 'traceback': traceback_info}
     
 
-
 def validate_mandatory_links(doc, method=None):
 
     core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
@@ -174,15 +164,10 @@ def set_missing_values(source, target):
 
 @frappe.whitelist()
 def part_warrnty_days_after_save(docname):
-    """
-    Update warranty table after document is saved
-    using latest values from the client (not DB).
-    """
     doc = frappe.get_doc("Purchase Order", docname)
     if not doc.get("part_warranty"):
         return {"status": "skipped", "message": "Part warranty not enabled"}
     
-    # Collect item groups from items table
     current_item_groups = set()
     item_group_map = {}  
     
@@ -200,7 +185,6 @@ def part_warrnty_days_after_save(docname):
                 item_group_doc = frappe.get_doc("Item Group", item_group)
                 item_group_map[item_group] = item_group_doc.warranty_days or 0
     
-    # Process child table - FIXED LOGIC
     existing_rows = {r.item_group: r for r in doc.get("purchase_order_warrenty_for_specific_parts", []) if r.item_group}
     new_warranty_entries = [] 
     added_count = 0
@@ -208,11 +192,9 @@ def part_warrnty_days_after_save(docname):
     
     for item_group in current_item_groups:
         standard_days = item_group_map.get(item_group, 0)
-        
         existing_row = existing_rows.get(item_group)
         
         if existing_row:
-            # Update existing row
             user_days = existing_row.warranty_days or 0
             if user_days < standard_days:
                 return {
@@ -221,20 +203,17 @@ def part_warrnty_days_after_save(docname):
                         f"Entered: <b>{user_days}</b> | Required Above: <b>{standard_days}</b>"
                     )
                 }
-            # Keep the existing row with user-entered days
             new_warranty_entries.append({
                 "item_group": item_group,
                 "warranty_days": existing_row.warranty_days
             })
         else:
-            # Add new row with standard days
             new_warranty_entries.append({
                 "item_group": item_group,
                 "warranty_days": standard_days
             })
             added_count += 1
     
-    # Clear and rebuild the child table
     doc.set("purchase_order_warrenty_for_specific_parts", [])
     
     for entry in new_warranty_entries:
@@ -252,24 +231,14 @@ def part_warrnty_days_after_save(docname):
 
 @frappe.whitelist()
 def get_tax_without_holding(supplier):
-    """
-    Fetch the Tax Withholding Category for the given Supplier.
-    Assumes 'tax_withholding_category' is a field in the Supplier doctype.
-    """
     tax_category = frappe.db.get_value("Supplier", supplier, "tax_withholding_category")
-    
     frappe.logger().info(f"Fetched Tax Withholding Category for {supplier}: {tax_category}")
-    
     return tax_category
 
 
 @frappe.whitelist()
 def get_item_group_cost_centers(items):
     print("get_item_group_cost_centers========+++++++")
-    """
-    Fetch cost centers for given item_groups in bulk.
-    items comes as JSON string, so parse it first.
-    """
     try:
         items = json.loads(items)
     except Exception:
@@ -291,7 +260,6 @@ def fetch_unique_records(doc):
     items = doc.get("items", [])
     summary = {}  
 
-    # Group and Sum
     for row in items:
         item_code = row.get("item_code")
         if not item_code:
@@ -313,16 +281,42 @@ def fetch_unique_records(doc):
             summary[item_code]["rate"] = rate
             summary[item_code]["amount"] += amount
 
-    # Convert dict to list to return
     unique_rows = list(summary.values())
-
     return unique_rows
 
 
 @frappe.whitelist()
 def create_pr_on_submit(doc, method):
-    """
-    Auto-create and submit Purchase Receipt when ALL items
-    in Purchase Order are NON-STOCK items.
-    """
     return
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UOM Helpers — used by Purchase Order JS for item-wise UOM dropdown + CF
+# ─────────────────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_item_uoms(item_code):
+    """Return all UOMs and conversion factors for an item."""
+    return frappe.db.get_all(
+        'UOM Conversion Detail',
+        filters={'parent': item_code},
+        fields=['uom', 'conversion_factor'],
+        order_by='idx asc'
+    )
+
+
+@frappe.whitelist()
+def get_item_uoms_for_query(doctype, txt, searchfield, start, page_len, filters):
+    """Search query for UOM dropdown — filters to item-linked UOMs only."""
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    item_code = filters.get('item_code')
+    if not item_code:
+        return []
+    return frappe.db.sql("""
+        SELECT ucd.uom
+        FROM `tabUOM Conversion Detail` ucd
+        WHERE ucd.parent = %s
+        AND ucd.uom LIKE %s
+        LIMIT %s OFFSET %s
+    """, (item_code, "%%%s%%" % txt, page_len, start))

@@ -21,11 +21,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
         self._restore_manual_conversion_factors()
 
     def _restore_manual_conversion_factors(self):
-        """
-        ERPNext's standard validate can reset conversion_factor from item master.
-        If manual_conversion_override is ON for a row, we re-assert the user's
-        value and recompute stock_qty so the manual setting is never silently lost.
-        """
         for item in self.items:
             if item.get("manual_conversion_override"):
                 cf = flt(item.conversion_factor)
@@ -47,7 +42,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
         self.set_registry_no_on_cancel()
 
     def set_registry_no_on_submit(self):
-
         total_qty = 0
         for item in self.items:
             total_qty += item.qty
@@ -116,7 +110,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                     
                     if get_sir_data:
                         if int(get_sir_data[0].get('actual_qty')) + int(sir_list[0].get('actual_qty')) == int(get_sir_data[0].get('received_qty')):
-
                             frappe.db.sql("""
                                 UPDATE `tabSecurity Inward Registry Child`
                                 SET actual_qty = actual_qty + %s
@@ -146,9 +139,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                             """, (sir.get('sir_registry_no'), item.item_code, item.item_group), as_dict=1)
                         
                         if get_sir_data:
-
                             if int(sir.get('actual_qty')) + int(get_sir_data[0].get('actual_qty')) == int(get_sir_data[0].get('received_qty')):
-
                                 frappe.db.sql("""
                                     UPDATE `tabSecurity Inward Registry Child`
                                     SET actual_qty = actual_qty + %s
@@ -161,7 +152,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                     break
 
                             elif int(sir.get('actual_qty')) + int(get_sir_data[0].get('actual_qty')) != int(get_sir_data[0].get('received_qty')):
-
                                 updated_qty = 0
                                 for r in sir_list:
                                     if r.get('sir_registry_no') != sir.get('sir_registry_no'):
@@ -183,7 +173,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                                     break
 
     def auto_create_debit_note(self):
-
         print("inside auto_create_debit_note==============")
 
         if not self.is_return:
@@ -201,9 +190,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             return
 
         try:
-            # =============================
-            # STEP 1: FIND PI (FOR GST + BILL)
-            # =============================
             pr_name = self.return_against
 
             pi_name = frappe.db.get_value(
@@ -216,7 +202,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             )
 
             if not pi_name:
-                # fallback via PO
                 po_name = frappe.db.get_value(
                     "Purchase Receipt Item",
                     {"parent": pr_name},
@@ -239,23 +224,16 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             print("Using PI:", pi_name)
 
             source_pi = frappe.get_doc("Purchase Invoice", pi_name)
-
             supplier_gst_no = source_pi.get("supplier_gst_no")
             bill_no = source_pi.get("bill_no")
 
             print("GST:", supplier_gst_no, "| Bill No:", bill_no)
 
-            # =============================
-            # STEP 2: CREATE DEBIT NOTE (FROM PR)
-            # =============================
             debit_note = make_purchase_invoice(self.name)
 
             if not debit_note:
                 frappe.throw("Debit Note creation failed")
 
-            # =============================
-            # STEP 3: SET MANDATORY FIELDS BEFORE SUBMIT
-            # =============================
             debit_note.supplier_gst_no = supplier_gst_no or "N/A"
             debit_note.bill_no = bill_no or "AUTO"
 
@@ -331,12 +309,10 @@ def update_serial_no_on_pr_submit(doc, method=None):
                 update_serial_no(serial_no, doc, item)
 
 def update_serial_no(serial_no, doc, item):
-
     serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
     
     if serial_no_doc:
-
         get_purc_warranty_data = get_purchase_warranty_data(item, item.purchase_order)
 
         has_warrenty = frappe.db.get_value('Purchase Receipt', {'name': doc.name}, 'has_warranty')
@@ -358,7 +334,6 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.save()
 
 def get_purchase_warranty_data(item, purchase_order):
-
     purc_doc = frappe.get_doc('Purchase Order', purchase_order)
     matching_warranty = {}
 
@@ -371,7 +346,6 @@ def get_purchase_warranty_data(item, purchase_order):
     return matching_warranty
 
 def set_registry_no(item):
-
     query = """
         SELECT name FROM `tabSecurity Inward Registry` 
         WHERE reference_po_number = %s AND docstatus = 1 AND total_qty > 0
@@ -384,7 +358,6 @@ def set_registry_no(item):
         sir_actual_qty = []
 
         for data in get_sir_data:
-
             get_registry_doc = frappe.get_doc('Security Inward Registry', data.get('name'))
 
             if get_registry_doc.get('registry_type') == "Accept Registry":
@@ -399,7 +372,6 @@ def set_registry_no(item):
 
 @frappe.whitelist()
 def check_for_warranty_validity(doc):
-    
     if isinstance(doc, str):
         doc = json.loads(doc)
 
@@ -417,3 +389,35 @@ def check_for_warranty_validity(doc):
     frappe.db.set_value(doc.get("doctype"), name, "warranty_valid_check", is_warranty_valid)
 
     return {"warranty_valid_check": is_warranty_valid}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UOM Helpers — used by Purchase Receipt JS for item-wise UOM dropdown + CF
+# ─────────────────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_item_uoms(item_code):
+    """Return all UOMs and conversion factors for an item."""
+    return frappe.db.get_all(
+        'UOM Conversion Detail',
+        filters={'parent': item_code},
+        fields=['uom', 'conversion_factor'],
+        order_by='idx asc'
+    )
+
+
+@frappe.whitelist()
+def get_item_uoms_for_query(doctype, txt, searchfield, start, page_len, filters):
+    """Search query for UOM dropdown — filters to item-linked UOMs only."""
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    item_code = filters.get('item_code')
+    if not item_code:
+        return []
+    return frappe.db.sql("""
+        SELECT ucd.uom
+        FROM `tabUOM Conversion Detail` ucd
+        WHERE ucd.parent = %s
+        AND ucd.uom LIKE %s
+        LIMIT %s OFFSET %s
+    """, (item_code, "%%%s%%" % txt, page_len, start))

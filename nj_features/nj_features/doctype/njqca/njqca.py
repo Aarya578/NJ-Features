@@ -2362,7 +2362,7 @@ def normalize_gen(cpu_value, model):
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model == '5430 TOUCH(IR)' else str(int(numeric_part) // 1000)  # Extract the generation number
+            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)  # Extract the generation number
             
             if gen_number == '1':
                 gen_number += 'st'

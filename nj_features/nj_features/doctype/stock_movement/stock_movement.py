@@ -333,8 +333,8 @@ def validate_serial_no_and_department(row, error_messages):
     # NEW RESTRICTION:
     # If this serial already exists as an active part in the Bag List of any parent serial,
     # block stock movement.
-    # if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
-    #     return False
+    if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
+        return False
 
     restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
 

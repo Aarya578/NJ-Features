@@ -286,6 +286,7 @@ def validate_stock_movement_for_grade(doc):
         return {"success": "Validation passed without errors."}
 
 def validate_serial_no_and_department(row, error_messages):
+    # 🔴 Reconfiguration Validation based on Department setting
 
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
 
@@ -312,6 +313,23 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+
+    if department:
+        allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
+
+        # If reconfiguration is NOT allowed
+        if not allow_reconfig:
+            item_code = serial_doc.get("item_code")
+            to_make = serial_doc.get("to_make")
+
+            # If both are different → throw error
+            if item_code and to_make and item_code != to_make:
+                error_messages.append(
+                    f"Reconfiguration not allowed for Department <b>{department}</b>. "
+                    f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
+                )
+                return False
+
     # NEW RESTRICTION:
     # If this serial already exists as an active part in the Bag List of any parent serial,
     # block stock movement.
@@ -331,7 +349,7 @@ def validate_serial_no_and_department(row, error_messages):
         if department_doc.get('warrenty_restriction_check'):  
             check_warranty_expiry(serial_doc, error_messages)
 
-        s_inspection_type = frappe.get_doc('Department', s_department)
+        s_inspection_type = frappe.get_doc('Department', s_department) if s_department else None
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
         if not is_component and s_department != department:
@@ -347,6 +365,7 @@ def validate_serial_no_and_department(row, error_messages):
         if (
                 s_department and 
                 s_department != department and 
+                s_inspection_type and
                 s_inspection_type.get("inspection_types") and  
                 s_inspection_type.get("inspection_types") is not None and 
                 s_inspection_type.get("inspection_types") != [] and

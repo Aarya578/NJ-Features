@@ -1545,6 +1545,9 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
 
 from frappe.utils import cint
+from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+
 
 def update_part_item_code_from_child(doc):
     child_table_map = {
@@ -1579,19 +1582,28 @@ def update_part_item_code_from_child(doc):
                 serial_no_doc.serial_no_component.remove(sn)
                 updated = True
 
-    # Build exact existing row map by (item_group, item_group_idx)
+    # Build map by component_serial_no for serialized rows
+    component_serial_map = {}
+    for sn in serial_no_doc.serial_no_component:
+        if sn.component_serial_no:
+            component_serial_map[sn.component_serial_no] = sn
+
+    # Build existing map by (item_group, item_group_idx) for non-serialized rows
     existing_map = {}
     for sn in serial_no_doc.serial_no_component:
         key = (sn.item_group, cint(sn.item_group_idx))
         existing_map[key] = sn
 
-    # Track all child rows that should exist after sync
-    desired_keys = set()
-
-    # Always calculate fresh max idx from actual child table, not from max_item_group_idx field
+    # Always calculate fresh max idx from actual child table
     current_max_idx = max(
         [cint(d.item_group_idx) for d in serial_no_doc.serial_no_component if d.item_group_idx],
         default=0
+    )
+
+    # Fetch expense_account once
+    expense_account = frappe.db.get_single_value(
+        "NewJaisa Configuration",
+        "default_operational_cost_account"
     )
 
     for table_field, item_group_label in child_table_map.items():
@@ -1602,16 +1614,228 @@ def update_part_item_code_from_child(doc):
             calculated_item_code = child.get("calculated_item_code")
             item_group = child.get("item_group")
             item_group_idx = cint(child.get("item_group_idx"))
+            component_serial_no = child.get("component_serial_no")
 
             if not (calculated_item_code and item_group):
                 print(
                     f"[SKIP] table={table_field} child={child.get('name')} | "
-                    f"missing calculated_item_code/item_group | "
-                    f"calculated_item_code={calculated_item_code}, item_group={item_group}"
+                    f"missing calculated_item_code/item_group"
                 )
                 continue
 
-            # If child row has no idx, assign a new one
+            # ---------------------------------------------------------
+            # CASE 1: Row has component_serial_no → match by it
+            # Check if item code changed, if yes do full 3 step repack flow
+            # STEP 1: Unpack parent laptop → component OUT (becomes Active)
+            # STEP 2: Grade change component (now Active in stock)
+            # STEP 3: Repack component back into parent laptop
+            # ---------------------------------------------------------
+            if component_serial_no:
+                existing_row = component_serial_map.get(component_serial_no)
+
+                if not existing_row:
+                    print(
+                        f"[SKIP] component_serial_no={component_serial_no} | "
+                        f"no matching serial_no_component row found"
+                    )
+                    continue
+
+                fetched_item_code = existing_row.item
+
+                if not fetched_item_code:
+                    print(
+                        f"[SKIP] component_serial_no={component_serial_no} | "
+                        f"fetched_item_code is empty"
+                    )
+                    continue
+
+                if fetched_item_code == calculated_item_code:
+                    print(
+                        f"[NO CHANGE] component_serial_no={component_serial_no} | "
+                        f"item already matches: {fetched_item_code}"
+                    )
+                    continue
+
+                print(
+                    f"[GRADE CHANGE] component_serial_no={component_serial_no} | "
+                    f"fetched={fetched_item_code} → calculated={calculated_item_code}"
+                )
+
+                # Fetch parent laptop details
+                parent_item = frappe.db.get_value("Serial No", doc.serial_no, "item_code")
+                parent_warehouse = frappe.db.get_value("Serial No", doc.serial_no, "warehouse")
+
+                if not parent_warehouse:
+                    sle = frappe.db.sql("""
+                        SELECT warehouse
+                        FROM `tabStock Ledger Entry`
+                        WHERE serial_no = %s
+                          AND is_cancelled = 0
+                          AND qty_after_transaction > 0
+                        ORDER BY posting_date DESC, posting_time DESC
+                        LIMIT 1
+                    """, (doc.serial_no,), as_list=True)
+                    parent_warehouse = sle[0][0] if sle else None
+
+                if not parent_warehouse:
+                    frappe.log_error(
+                        f"Warehouse not found for parent serial_no={doc.serial_no}",
+                        "update_part_item_code_from_child"
+                    )
+                    continue
+
+                # Fetch component warehouse from SLE since it is packed inside parent
+                comp_warehouse = frappe.db.sql("""
+                    SELECT warehouse
+                    FROM `tabStock Ledger Entry`
+                    WHERE item_code = %s
+                      AND serial_no = %s
+                      AND is_cancelled = 0
+                      AND qty_after_transaction > 0
+                    ORDER BY posting_date DESC, posting_time DESC
+                    LIMIT 1
+                """, (fetched_item_code, component_serial_no), as_list=True)
+                comp_warehouse = comp_warehouse[0][0] if comp_warehouse else parent_warehouse
+
+                parent_val = get_part_ledger_entry(parent_item, doc.serial_no) or 0
+                comp_val = get_part_ledger_entry(fetched_item_code, component_serial_no) or 0
+                parent_base_value = parent_val - comp_val
+                if parent_base_value < 0:
+                    parent_base_value = 0
+
+                # ==============================================
+                # STEP 1 — UNPACK parent laptop
+                # Parent laptop IN → component OUT + base parent back IN
+                # ==============================================
+                print(f"[STEP 1] Unpacking parent laptop={doc.serial_no} to bring component={component_serial_no} into stock")
+
+                unpack_items = [
+                    {
+                        "repack_item_code": parent_item,
+                        "repack_serial_no": doc.serial_no,
+                        "repack_item_source_warehouse": parent_warehouse,
+                        "repack_item_base_price": parent_val,
+                    },
+                    {
+                        "unpack_item_code": fetched_item_code,
+                        "unpack_serial_no": component_serial_no,
+                        "unpack_item_target_warehouse": comp_warehouse,
+                        "unpack_item_base_price": comp_val,
+                    },
+                    {
+                        "unpack_item_code": parent_item,
+                        "unpack_serial_no": doc.serial_no,
+                        "unpack_item_target_warehouse": parent_warehouse,
+                        "unpack_item_base_price": parent_base_value,
+                    },
+                ]
+
+                stock_entry_using_nj_lib(frappe.as_json({
+                    "name": doc.name,
+                    "doctype": doc.doctype,
+                    "stock_entry_type": "Repack",
+                    "expense_account": expense_account,
+                    "repack_items": unpack_items,
+                }))
+
+                print(f"[STEP 1 DONE] component={component_serial_no} is now Active in warehouse={comp_warehouse}")
+
+                # ==============================================
+                # STEP 2 — GRADE CHANGE component
+                # fetched_item_code IN → calculated_item_code OUT
+                # component is now Active in stock after step 1
+                # ==============================================
+                print(f"[STEP 2] Grade change component={component_serial_no} | {fetched_item_code} → {calculated_item_code}")
+
+                grade_change_items = [
+                    {
+                        "repack_item_code": fetched_item_code,
+                        "repack_serial_no": component_serial_no,
+                        "repack_item_source_warehouse": comp_warehouse,
+                        "repack_item_base_price": comp_val,
+                        "unpack_item_code": calculated_item_code,
+                        "unpack_serial_no": component_serial_no,
+                        "unpack_item_target_warehouse": comp_warehouse,
+                        "unpack_item_base_price": comp_val,
+                    }
+                ]
+
+                stock_entry_using_nj_lib(frappe.as_json({
+                    "name": doc.name,
+                    "doctype": doc.doctype,
+                    "stock_entry_type": "Repack",
+                    "expense_account": expense_account,
+                    "repack_items": grade_change_items,
+                }))
+
+                print(f"[STEP 2 DONE] component={component_serial_no} item changed to {calculated_item_code}")
+
+                # ==============================================
+                # STEP 3 — REPACK component back into parent laptop
+                # base parent IN + calculated_item_code IN → parent laptop OUT
+                # ==============================================
+                print(f"[STEP 3] Repacking component={component_serial_no} back into parent laptop={doc.serial_no}")
+
+                final_parent_val = get_part_ledger_entry(parent_item, doc.serial_no) or 0
+                final_comp_val = get_part_ledger_entry(calculated_item_code, component_serial_no) or 0
+
+                repack_items = [
+                    {
+                        "repack_item_code": parent_item,
+                        "repack_serial_no": doc.serial_no,
+                        "repack_item_source_warehouse": parent_warehouse,
+                        "repack_item_base_price": final_parent_val,
+                    },
+                    {
+                        "repack_item_code": calculated_item_code,
+                        "repack_serial_no": component_serial_no,
+                        "repack_item_source_warehouse": comp_warehouse,
+                        "repack_item_base_price": final_comp_val,
+                    },
+                    {
+                        "unpack_item_code": parent_item,
+                        "unpack_serial_no": doc.serial_no,
+                        "unpack_item_target_warehouse": parent_warehouse,
+                        "unpack_item_base_price": final_parent_val + final_comp_val,
+                    },
+                ]
+
+                stock_entry_using_nj_lib(frappe.as_json({
+                    "name": doc.name,
+                    "doctype": doc.doctype,
+                    "stock_entry_type": "Repack",
+                    "expense_account": expense_account,
+                    "repack_items": repack_items,
+                }))
+
+                print(f"[STEP 3 DONE] parent laptop={doc.serial_no} repacked with updated component={component_serial_no}")
+
+                # Update serial_no_component row
+                existing_row.item = calculated_item_code
+                existing_row.grade = grade
+                existing_row.reference_doctype = doc.doctype
+                existing_row.reference_doctype_no = doc.name
+                updated = True
+
+                # Update the component Serial No's item_code as well
+                frappe.db.set_value(
+                    "Serial No",
+                    component_serial_no,
+                    "item_code",
+                    calculated_item_code,
+                    update_modified=False
+                )
+
+                print(
+                    f"[UPDATED] component_serial_no={component_serial_no} | "
+                    f"item: {fetched_item_code} → {calculated_item_code}"
+                )
+                continue
+
+            # ---------------------------------------------------------
+            # CASE 2: No component_serial_no → match by (item_group, item_group_idx)
+            # Original flow unchanged
+            # ---------------------------------------------------------
             if not item_group_idx:
                 current_max_idx += 1
                 item_group_idx = current_max_idx
@@ -1622,8 +1846,6 @@ def update_part_item_code_from_child(doc):
                 )
 
             key = (item_group, item_group_idx)
-            desired_keys.add(key)
-
             existing_row = existing_map.get(key)
 
             if existing_row:
@@ -1678,7 +1900,7 @@ def update_part_item_code_from_child(doc):
                     f"item={calculated_item_code} | grade={grade}"
                 )
 
-    # Update max_item_group_idx properly
+    # Update max_item_group_idx
     serial_no_doc.max_item_group_idx = max(
         [cint(d.item_group_idx) for d in serial_no_doc.serial_no_component if d.item_group_idx],
         default=0
@@ -1692,8 +1914,6 @@ def update_part_item_code_from_child(doc):
         serial_no_doc.save(ignore_permissions=True)
     else:
         print(f"[NO SAVE] No changes found for Serial No {serial_no_doc.name}")
-
-    print(f"=== END update_part_item_code_from_child | Serial No: {doc.serial_no} ===\n")
 
 
 def get_item_code_for_each_part(doc):
@@ -1743,7 +1963,7 @@ def get_item_code_for_each_part(doc):
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
-                            normalize_cpu = normalize_gen(cpu_value)
+                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'))
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(normalize_cpu, mapping.get('attribute_name'))
 
@@ -2142,7 +2362,7 @@ def normalize_gen(cpu_value):
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 1000)  # Extract the generation number
+            gen_number = str(int(numeric_part) // 100) if model == '5430 TOUCH(IR)' else str(int(numeric_part) // 1000)  # Extract the generation number
             
             if gen_number == '1':
                 gen_number += 'st'
@@ -2688,12 +2908,13 @@ def get_options_for_label(item_group, label, item_template):
 
 @frappe.whitelist()
 def get_fetched_item_code(serial_no, partData):
+    print(f"get_fetched_item_code called with serial_no: {serial_no} and partData: {partData}")
     unmatched_item_code = []
     partData = frappe.parse_json(partData)
 
     serial_no_components = frappe.db.sql(
         """
-            SELECT name, item_group, item, reference_doctype_no, item_group_idx 
+            SELECT name, item_group, item, reference_doctype_no, item_group_idx, component_serial_no
             FROM `tabSerial No Component` WHERE parent = %s
         """, (serial_no,), as_dict=True
     )
@@ -2763,7 +2984,7 @@ def get_fetched_item_code(serial_no, partData):
 
     serial_no_components_list = [
         (row.get("name"), row.get("item"), row.get("item_group"),
-         row.get("reference_doctype_no"), row.get("item_group_idx"))
+         row.get("reference_doctype_no"), row.get("item_group_idx"), row.get("component_serial_no"))
         for row in serial_no_components
     ]
     partData_item_groups = {
@@ -2771,11 +2992,12 @@ def get_fetched_item_code(serial_no, partData):
         for data in partData if data.get("item_group")
     }
 
-    for name, item, item_group, reference_docname, item_group_idx in serial_no_components_list:
+    for name, item, item_group, reference_docname, item_group_idx, component_serial_no in serial_no_components_list:
         if (item not in partData_fetched_item
                 and item_group in partData_item_groups
                 and name not in used_serial_rows):
             updated_part_data.append({
+                "serial_no": component_serial_no,
                 "fetched_item_code": item,
                 "attr_data": {},
                 "part_item_code": "",
@@ -2783,6 +3005,8 @@ def get_fetched_item_code(serial_no, partData):
                 "reference_docname": reference_docname,
                 "item_group_idx": item_group_idx
             })
+
+    print("updated_part_data >>>>>>>>>>>> ", updated_part_data)
 
     return updated_part_data if updated_part_data else partData
 
@@ -5598,3 +5822,12 @@ def get_reliability_test_status(doc):
         "info": res["info"],
         "changes": res["changes"],
     }
+
+@frappe.whitelist()
+def get_item_variant_attributes(item_code):
+    return frappe.get_all(
+        "Item Variant Attribute",
+        filters={"parent": item_code},
+        fields=["attribute", "attribute_value"],
+        ignore_permissions=True,
+    )

@@ -315,8 +315,8 @@ def validate_serial_no_and_department(row, error_messages):
     # NEW RESTRICTION:
     # If this serial already exists as an active part in the Bag List of any parent serial,
     # block stock movement.
-    if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
-        return False
+    # if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
+    #     return False
 
     restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
 
@@ -677,18 +677,12 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
-    """
-    Validate serial components of a laptop against allowed grades and defect types in a department.
-
-    Args:
-        serial_doc (dict): Serial document containing item_group, serial_no_component.
-        department_doc (dict): Department document containing allowed_item_group_grades, all flag.
-        error_messages (list): List to append error messages to.
-    """
     if serial_doc.get("item_group") != "Laptops":
         return
 
     serial_components = serial_doc.get("serial_no_component", [])
+    include_bag_list = department_doc.get("blmh")
+
     allowed_table = department_doc.get("allowed_item_group_grades", [])
     all_must_match = department_doc.get("all", False)
 
@@ -716,27 +710,29 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
             defects = [d.strip() for d in comp.get("defects_type", "").split(",") if d.strip()]
             for d in defects:
                 serial_defects_set.add((ig, d))
-                
+
     print("serial_defects_set ===============", serial_defects_set)
 
     # Track item groups present
-    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group") and int(comp.get("quantity")) == 1}
+    serial_item_groups_present = {
+        comp.get("item_group")
+        for comp in serial_components
+        if comp.get("item_group") and int(comp.get("quantity", 0)) == 1
+    }
 
     # ----------------------------
     # Build allowed maps
     # ----------------------------
-    allowed_map = defaultdict(set)  # For grades
-    allowed_defective_checks = defaultdict(set)  # For defects
+    allowed_map = defaultdict(set)
+    allowed_defective_checks = defaultdict(set)
 
     for entry in allowed_table:
         ig = entry.get("item_group")
         if not ig:
             continue
-        # Grades
         if entry.get("restricted_grade"):
             grades = [g.strip() for g in entry.get("restricted_grade", "").split(",") if g.strip()]
             allowed_map[ig].update(grades)
-        # Defects
         if entry.get("defects_type"):
             defects = [d.strip() for d in entry.get("defects_type", "").split(",") if d.strip()]
             allowed_defective_checks[ig].update(defects)
@@ -744,14 +740,13 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
     print("allowed_defective_checks ===============", dict(allowed_defective_checks))
 
     # ----------------------------
-    # Grades validation
+    # Grades validation — serial_no_component
     # ----------------------------
     if all_must_match:
         for ig, allowed_grades in allowed_map.items():
             if ig not in serial_item_groups_present:
                 continue
             matched = any((ig, grade) in serial_set for grade in allowed_grades)
-            print(f"Checking grades for {ig}: matched = {matched}")
             if not matched:
                 actual_grades = {grade for ig2, grade in serial_set if ig2 == ig}
                 actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
@@ -785,20 +780,16 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
                 )
 
     # ----------------------------
-    # Defects validation
+    # Defects validation — serial_no_component
     # ----------------------------
     for ig, allowed_defects in allowed_defective_checks.items():
-        # Skip item groups with no defects restriction
         if not allowed_defects:
             continue
-
         if ig not in serial_item_groups_present:
             continue
 
-        # Collect actual defects for this item group
         actual_defects = {d for ig2, d in serial_defects_set if ig2 == ig}
 
-        # If NONE of the actual defects are allowed → error
         if actual_defects and actual_defects.isdisjoint(allowed_defects):
             actual_display = ', '.join(sorted(actual_defects))
             allowed_display = ', '.join(sorted(allowed_defects))
@@ -808,10 +799,98 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
                 f"but found: <b>{actual_display}</b>."
             )
 
-        # ✅ If at least one defect is allowed, nothing is appended
+    # ----------------------------
+    # bag_list validation (only if blmh is enabled)
+    # ----------------------------
+    if include_bag_list:
+        bag_components = serial_doc.get("bag_list", [])
+
+        # Grades
+        bag_set = {
+            (comp.get("item_group"), comp.get("grade"))
+            for comp in bag_components
+            if comp.get("item_group") and comp.get("grade")
+        }
+
+        # Item groups present in bag_list (qty == 1)
+        bag_item_groups_present = {
+            comp.get("item_group")
+            for comp in bag_components
+            if comp.get("item_group") and int(comp.get("quantity", 0)) == 1
+        }
+
+        # Defects
+        bag_defects_set = set()
+        for comp in bag_components:
+            ig = comp.get("item_group")
+            if not ig:
+                continue
+            if comp.get("aesthetic_issue"):
+                bag_defects_set.add((ig, "Aesthetic Issue"))
+            if comp.get("functional_issue"):
+                bag_defects_set.add((ig, "Functional Issue"))
+            if comp.get("defects_type"):
+                defects = [d.strip() for d in comp.get("defects_type", "").split(",") if d.strip()]
+                for d in defects:
+                    bag_defects_set.add((ig, d))
+
+        # Grades validation — bag_list
+        if all_must_match:
+            for ig, allowed_grades in allowed_map.items():
+                if ig not in bag_item_groups_present:
+                    continue
+                matched = any((ig, grade) in bag_set for grade in allowed_grades)
+                if not matched:
+                    actual_grades = {grade for ig2, grade in bag_set if ig2 == ig}
+                    actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                    allowed_display = ', '.join(sorted(allowed_grades))
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                        f"only grade(s) <b>{allowed_display}</b> are allowed for item group <b>{ig}</b>, "
+                        f"but found: <b>{actual_display}</b>."
+                    )
+                    break
+        else:
+            match_found = False
+            for ig, allowed_grades in allowed_map.items():
+                if ig not in bag_item_groups_present:
+                    continue
+                if any((ig, grade) in bag_set for grade in allowed_grades):
+                    match_found = True
+                    break
+
+            if not match_found:
+                for ig, allowed_grades in allowed_map.items():
+                    if ig not in bag_item_groups_present:
+                        continue
+                    actual_grades = {grade for ig2, grade in bag_set if ig2 == ig}
+                    actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                    allowed_display = ', '.join(sorted(allowed_grades))
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                        f"for item group <b>{ig}</b>, only grade(s) <b>{allowed_display}</b> are allowed, "
+                        f"but found: <b>{actual_display}</b>."
+                    )
+
+        # Defects validation — bag_list
+        for ig, allowed_defects in allowed_defective_checks.items():
+            if not allowed_defects:
+                continue
+            if ig not in bag_item_groups_present:
+                continue
+
+            actual_defects = {d for ig2, d in bag_defects_set if ig2 == ig}
+
+            if actual_defects and actual_defects.isdisjoint(allowed_defects):
+                actual_display = ', '.join(sorted(actual_defects))
+                allowed_display = ', '.join(sorted(allowed_defects))
+                error_messages.append(
+                    f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                    f"for item group <b>{ig}</b>, only defect type(s) <b>{allowed_display}</b> are allowed, "
+                    f"but found: <b>{actual_display}</b>."
+                )
 
     return error_messages
-
 
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
     # --- Top-level serial no grade validation ---
@@ -837,8 +916,9 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             )
 
     restrict_all = department_doc.get('restrict_all')
+    include_bag_list = department_doc.get('blmnh')  # Flag to include bag_list in validation
 
-    if restrict_all:
+    if int(restrict_all):
         # --- Step 1: Get mandatory item groups from Item Wizard ---
         item_wizard_name = serial_doc.get("item_wizard")
         if not item_wizard_name:
@@ -858,6 +938,15 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             if component.get('quantity') == 1:
                 component_grade_map[component.get('item_group')] = component.get('grade')
 
+        # --- Step 2b: If BLMNH is enabled, also include bag_list entries ---
+        if include_bag_list:
+            for bag in serial_doc.get('bag_list', []):
+                if bag.get('quantity') == 1:
+                    # bag_list entries supplement serial_no_component; don't overwrite existing
+                    item_group = bag.get('item_group')
+                    if item_group and item_group not in component_grade_map:
+                        component_grade_map[item_group] = bag.get('grade')
+
         # --- Step 3: Build restriction lookup { item_group: [restricted_grades] } ---
         restriction_map = {}
         for restriction in department_doc.get('stock_movement_restriction_table', []):
@@ -872,13 +961,13 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             grade = component_grade_map.get(item_group)  # None if missing from serial_no_component
 
             if grade is None:
-                # Part is missing from serial_no_component — check Item Wizard
+                # Part is missing — check Item Wizard
                 if item_group in mandatory_item_groups:
                     # Mandatory but missing — cannot validate, so Allow
                     all_violating = False
                     break
                 else:
-                    # Not mandatory — optional part, skip and continue checking others
+                    # Not mandatory — optional part, skip
                     continue
 
             if grade not in restricted_grades:
@@ -908,6 +997,21 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
                         f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                         f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
                     )
+
+        # --- If BLMNH is enabled, apply same individual check for bag_list ---
+        if include_bag_list:
+            for bag in serial_doc.get('bag_list', []):
+                for restriction in department_doc.get('stock_movement_restriction_table', []):
+                    restricted_grades = restriction.get('restricted_grade', "").split(",")
+                    restricted_item_group = restriction.get('item_group')
+
+                    if (bag.get('item_group') == restricted_item_group and
+                            bag.get('grade') in restricted_grades and
+                            bag.get('quantity') == 1):
+                        error_messages.append(
+                            f"Serial No <b>{serial_doc.name}</b> (bag_list) for item_group <b>{bag.get('item_group')}</b> "
+                            f"has a grade <b>{bag.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                        )
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):

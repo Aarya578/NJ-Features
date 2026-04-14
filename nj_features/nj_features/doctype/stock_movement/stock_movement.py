@@ -314,21 +314,21 @@ def validate_serial_no_and_department(row, error_messages):
         return False
 
 
-    if department:
-        allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
+    # if department:
+    #     allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
 
-        # If reconfiguration is NOT allowed
-        if not allow_reconfig:
-            item_code = serial_doc.get("item_code")
-            to_make = serial_doc.get("to_make")
+    #     # If reconfiguration is NOT allowed
+    #     if not allow_reconfig:
+    #         item_code = serial_doc.get("item_code")
+    #         to_make = serial_doc.get("to_make")
 
-            # If both are different → throw error
-            if item_code and to_make and item_code != to_make:
-                error_messages.append(
-                    f"Reconfiguration not allowed for Department <b>{department}</b>. "
-                    f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
-                )
-                return False
+    #         # If both are different → throw error
+    #         if item_code and to_make and item_code != to_make:
+    #             error_messages.append(
+    #                 f"Reconfiguration not allowed for Department <b>{department}</b>. "
+    #                 f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
+    #             )
+    #             return False
 
     # NEW RESTRICTION:
     # If this serial already exists as an active part in the Bag List of any parent serial,

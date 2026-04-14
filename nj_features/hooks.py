@@ -115,6 +115,9 @@ doc_events = {
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
+    },
+    "Journal Entry": {
+        "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
     }
 }
 

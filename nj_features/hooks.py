@@ -61,6 +61,7 @@ override_doctype_class = {
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
     "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
+    "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
 
 # ========== Doc Events ==========
@@ -118,6 +119,10 @@ doc_events = {
     },
     "Journal Entry": {
         "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
+    },
+    "Purchase Invoice": {
+        "on_submit": "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice"
+    
     }
 }
 

@@ -408,16 +408,16 @@ def get_item_uoms(item_code):
 
 @frappe.whitelist()
 def get_item_uoms_for_query(doctype, txt, searchfield, start, page_len, filters):
-    """Search query for UOM dropdown — filters to item-linked UOMs only."""
+    """Search query for UOM dropdown — returns all active UOMs."""
     if isinstance(filters, str):
         filters = json.loads(filters)
-    item_code = filters.get('item_code')
-    if not item_code:
-        return []
     return frappe.db.sql("""
-        SELECT ucd.uom
-        FROM `tabUOM Conversion Detail` ucd
-        WHERE ucd.parent = %s
-        AND ucd.uom LIKE %s
+        SELECT uom.name
+        FROM `tabUOM` uom
+        WHERE uom.enabled = 1
+        AND uom.name LIKE %s
+        ORDER BY
+            CASE WHEN uom.name = %s THEN 0 ELSE 1 END,
+            uom.name ASC
         LIMIT %s OFFSET %s
-    """, (item_code, "%%%s%%" % txt, page_len, start))
+    """, ("%%%s%%" % txt, txt or "", page_len, start))

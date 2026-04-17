@@ -29,7 +29,7 @@ class DepartmentRecommendationEngine(Document):
         # ✅ Check if document status is either Draft (0) or Submitted (1)
         if doc.get('docstatus') in [0, 1]:
             if self.safe_eval("python_condition", doc):
-                print("safe eval true==================")
+                # print("safe eval true==================")
 
                 # ✅ Step 1: Check SQL Condition
                 if self.sql_condition:
@@ -40,11 +40,11 @@ class DepartmentRecommendationEngine(Document):
                         if "{docname}" in sql_query:
                             sql_query = sql_query.replace("{docname}", doc.name)
 
-                        print("sql condition query====================", sql_query)
+                        # print("sql condition query====================", sql_query)
 
                         # Run the query
                         sql_result = frappe.db.sql(sql_query, as_dict=True)
-                        print("sql condition result====================", sql_result)
+                        # print("sql condition result====================", sql_result)
 
                         # Extract result (0 or 1)
                         if sql_result and "result" in sql_result[0]:
@@ -52,7 +52,7 @@ class DepartmentRecommendationEngine(Document):
                         else:
                             condition_value = 0
 
-                        print("sql condition result====================", condition_value)
+                        # print("sql condition result====================", condition_value)
 
                         # ✅ Step 2: Only execute python_action if condition_value == 1
                         if condition_value == 1:
@@ -91,17 +91,17 @@ class DepartmentRecommendationEngine(Document):
             # Create execution context
             context = self.get_execution_context(doc)
             python_action = self.python_action.strip()
-            print("python action====================", python_action)
+            # print("python action====================", python_action)
 
             # ✅ Replace placeholder with submitted doc name
             if "{docname}" in python_action:
                 python_action = python_action.replace("{docname}", doc.name)
-                print("python action with docname====================", python_action)
+                # print("python action with docname====================", python_action)
 
             # ✅ Check if it's a SQL query (starts with SELECT/UPDATE/DELETE/INSERT)
             if python_action.lower().startswith(("select", "update", "delete", "insert","with")):
                 result = eq(python_action)
-                print("Query Result ====================", result)
+                # print("Query Result ====================", result)
 
                 # ✅ If query returned warehouse + barcode, update Serial No
                 if result and isinstance(result, list) and "barcode" in result[0] and "warehouse" in result[0]:
@@ -109,7 +109,7 @@ class DepartmentRecommendationEngine(Document):
             else:
                 # ✅ Otherwise treat it as executable Python code
                 exec(python_action, {"__builtins__": {}}, context)
-                print("python action executed====================", python_action)
+                # print("python action executed====================", python_action)
 
             frappe.db.commit()
             return True
@@ -229,7 +229,7 @@ def update_document_field(doctype, docname, field_name, value):
 # Main execution functions (similar to assignment_rule.py)
 def apply_recommendation_rules(doc, method=None, doctype=None, name=None):
     """Main function to apply recommendation rules"""
-    print("apply recommendation rules=======23456=============")
+    # print("apply recommendation rules=======23456=============")
     if not doctype:
         doctype = doc.doctype
 
@@ -303,7 +303,7 @@ def suggest_warehouse_update(query):
     """Execute query, then update Serial No.s suggested_warehouse field (comma separated if multiple warehouses)."""
     try:
         result = eq(query)
-        print("Query Result ====================", result)
+        # print("Query Result ====================", result)
 
         if not result or "error" in result:
             return {"error": f"Query failed: {result}"}

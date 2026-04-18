@@ -4,17 +4,15 @@ import frappe
 
 def load():
     base = os.path.dirname(__file__)
-
     formats = [
         ("NJ Sales Invoice", "nj_sales_invoice.html"),
         ("NJ GST E INVOICE", "nj_gst_e_invoice.html"),
+        ("NJ Purchase Invoice", "nj_purchase_invoice.html"),
     ]
-
     for name, filename in formats:
         path = os.path.join(base, filename)
         with open(path) as f:
             html = f.read()
-
         pf = frappe.get_doc("Print Format", name)
         pf.html = html
         pf.save()
@@ -24,12 +22,11 @@ def load():
 
 def dump():
     base = os.path.dirname(__file__)
-
     formats = [
         ("NJ Sales Invoice", "nj_sales_invoice.html"),
         ("NJ GST E INVOICE", "nj_gst_e_invoice.html"),
+        ("NJ Purchase Invoice", "nj_purchase_invoice.html"),
     ]
-
     for name, filename in formats:
         pf = frappe.get_doc("Print Format", name)
         path = os.path.join(base, filename)

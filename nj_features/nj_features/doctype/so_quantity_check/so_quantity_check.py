@@ -56,17 +56,31 @@ def update_so_quantity_check(settings):
         # Step 1: Get inventory data from first query
 
         query = f"""
-                WITH Parent_Stock AS (
+               WITH Parent_Stock AS (
                     SELECT 
                         i.variant_of AS parent,
                         COUNT(b.serial_no) AS total_actual_qty_for_parent
                     FROM `tabItem` i
                     LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
                     LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+                    LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (b.return_reason != 'Repair' or b.return_reason is null or b.return_reason='') AND b.is_replace = 0
+                        AND b.is_replace = 0
+                        AND (
+                            b.return_reason IS NULL
+                            OR b.return_reason = ''
+                            OR b.return_reason != 'Repair'
+                            OR (
+                                b.return_reason = 'Repair'
+                                AND (
+                                    so.name IS NULL
+                                    OR so.status = 'Closed'
+                                    OR so.per_delivered = 100
+                                )
+                            )
+                        )
                         {warehouse_clause}
                     GROUP BY i.variant_of
                 ),
@@ -78,10 +92,24 @@ def update_so_quantity_check(settings):
                     FROM `tabSerial No` s
                     INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
                     INNER JOIN `tabItem` i ON s.item_code = i.item_code
+                    LEFT JOIN `tabSales Order` so ON s.sales_order_id = so.name
                     WHERE
                         i.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
-                        AND (s.return_reason != 'Repair' or s.return_reason is null or s.return_reason='') AND s.is_replace = 0
+                        AND s.is_replace = 0
+                        AND (
+                            s.return_reason IS NULL
+                            OR s.return_reason = ''
+                            OR s.return_reason != 'Repair'
+                            OR (
+                                s.return_reason = 'Repair'
+                                AND (
+                                    so.name IS NULL
+                                    OR so.status = 'Closed'
+                                    OR so.per_delivered = 100
+                                )
+                            )
+                        )
                         {warehouse_clause}
                     GROUP BY s.item_code
                 ),
@@ -89,7 +117,8 @@ def update_so_quantity_check(settings):
                 Main_Data AS (
                     SELECT DISTINCT
                         pb.shopify_variant_id,
-                        i.item_code, i.item_group,
+                        i.item_code, 
+                        i.item_group,
                         i.variant_of AS parent,
                         ps.total_actual_qty_for_parent,
                         isq.total_actual_qty_for_itemcode
@@ -103,11 +132,13 @@ def update_so_quantity_check(settings):
 
                 SELECT 
                     shopify_variant_id,
-                    item_code, item_group,
+                    item_code, 
+                    item_group,
                     total_actual_qty_for_itemcode AS actual_qty,
-                    parent, total_actual_qty_for_parent
+                    parent, 
+                    total_actual_qty_for_parent
                 FROM Main_Data
-                ORDER BY shopify_variant_id, item_code
+                ORDER BY shopify_variant_id, item_code;
             """
 
         params = (

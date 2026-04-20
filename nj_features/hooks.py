@@ -96,7 +96,10 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
-        ]
+        ],
+        "on_submit": [
+            "nj_features.overrides.sales_invoice.send_invoice_email",
+        ],
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
@@ -105,7 +108,6 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
             "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
-
         ],
         # "before_save": [
         #     "nj_features.overrides.delivery_note.deviding_tax_chargese"
@@ -121,9 +123,11 @@ doc_events = {
         "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
     },
     "Purchase Invoice": {
-        "on_submit": "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice"
-    
-    }
+        "on_submit": [
+            "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice",
+            "nj_features.overrides.purchase_invoice.send_invoice_email",
+        ],
+    },
 }
 
 # ========== Override Whitelisted Methods ==========

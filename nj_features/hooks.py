@@ -60,7 +60,7 @@ override_doctype_class = {
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
-    "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
+    # "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
     "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
 
@@ -119,9 +119,9 @@ doc_events = {
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
     },
-    "Journal Entry": {
-        "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
-    },
+    # "Journal Entry": {
+    #     "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
+    # },
     "Purchase Invoice": {
         "on_submit": [
             "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice",

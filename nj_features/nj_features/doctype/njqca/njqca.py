@@ -356,64 +356,85 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             #     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s AND qc_check.diagnostic_type = 'Automatic'
             # """
             sql = """
-                SELECT options.quality_check
+                SELECT DISTINCT
+                    qc.item_group AS target_item_group,
+                    options.quality_check
                 FROM `tabNJ Quality Checks` qc
-                LEFT JOIN `tabNj QC Options` options 
+                LEFT JOIN `tabNj QC Options` options
                     ON qc.name = options.parent
-                INNER JOIN `tabNJ QC Check List` qc_check 
+                INNER JOIN `tabNJ QC Check List` qc_check
                     ON options.quality_check = qc_check.name
-                WHERE qc.item_group = %s
-                AND qc.inspection_type = %s
+                WHERE qc.inspection_type = %s
                 AND qc_check.parameter = %s
                 AND qc_check.diagnostic_type = 'Automatic'
                 AND qc.docstatus = 1
-                AND qc_check.docstatus = 1;
+                AND qc_check.docstatus = 1
             """
-            field_name_data = frappe.db.sql(sql, (data.get("item_group"), inspection_type, data.get("parameter")), as_dict=True)
+            field_name_data = frappe.db.sql(
+                sql,
+                (inspection_type, data.get("parameter")),
+                as_dict=True
+            )
 
-            new_qi_2 = json.loads(new_qi.as_json())
-            matches = [x for x in new_qi_2.get("nj_quality_readings", []) if x.get("item_group") == data.get("item_group")]
+            if not field_name_data:
+                continue
 
-            if field_name_data:
-                for field in field_name_data:
-                    name_of_check = field["quality_check"]
-                    check_options = frappe.db.sql("""
-                        SELECT check_options, score FROM `tabQC Options` WHERE parent = %s
-                    """, name_of_check, as_dict=True)
+            existing = {
+                (child.item_group, child.check_name, int(child.item_group_idx or 0)): child
+                for child in new_qi.get("nj_quality_checks", [])
+            }
 
-                    existing = {
-                        (child.item_group, child.check_name, child.item_group_idx)
-                        for child in new_qi.get("nj_quality_checks", [])
-                    }
+            for field in field_name_data:
+                name_of_check = field.get("quality_check")
+                target_item_group = field.get("target_item_group")
 
-                    if check_options and data.get("score") is not None and data.get("score") != '':
+                if not name_of_check or not target_item_group:
+                    continue
+
+                matches = [
+                    x for x in new_qi.get("nj_quality_readings", [])
+                    if x.get("item_group") == target_item_group
+                ]
+
+                if not matches:
+                    continue
+
+                check_options = frappe.db.sql("""
+                    SELECT check_options, score
+                    FROM `tabQC Options`
+                    WHERE parent = %s
+                    ORDER BY idx
+                """, name_of_check, as_dict=True)
+
+                resolved_option = data.get("value")
+                resolved_score = data.get("score")
+
+                if check_options and data.get("score") not in (None, ""):
+                    try:
+                        score_value = float(data.get("score"))
                         for opt in check_options:
-                            if float(data.get("score")) == float(opt["score"] or 0):
-                                for m in matches:
-                                    idx_val = int(m['item_group_idx'])
-                                    key = (data.get("item_group"), name_of_check, idx_val)
-                                    if key not in existing:
-                                        child = new_qi.append("nj_quality_checks", {})
-                                        child.check_name = name_of_check
-                                        child.item_group = data.get("item_group")
-                                        child.options = opt["check_options"]
-                                        child.automated_check_name = data.get("check_options")
-                                        child.score = float(opt["score"])
-                                        child.item_group_idx = idx_val
-                                        existing.add(key)
-                    else:
-                        for m in matches:
-                            idx_val = int(m['item_group_idx'])
-                            key = (data.get("item_group"), name_of_check, idx_val)
-                            if key not in existing:
-                                child = new_qi.append("nj_quality_checks", {})
-                                child.check_name = name_of_check
-                                child.item_group = data.get("item_group")
-                                child.options = data.get('value')
-                                child.automated_check_name = data.get('value')
-                                child.score = data.get('score')
-                                child.item_group_idx = idx_val
-                                existing.add(key)
+                            if score_value == float(opt.get("score") or 0):
+                                resolved_option = opt.get("check_options")
+                                resolved_score = float(opt.get("score") or 0)
+                                break
+                    except Exception:
+                        pass
+
+                for m in matches:
+                    idx_val = int(m.get("item_group_idx") or 0)
+                    key = (target_item_group, name_of_check, idx_val)
+
+                    child = existing.get(key)
+                    if not child:
+                        child = new_qi.append("nj_quality_checks", {})
+                        existing[key] = child
+
+                    child.check_name = name_of_check
+                    child.item_group = target_item_group
+                    child.options = resolved_option
+                    child.automated_check_name = resolved_option
+                    child.score = resolved_score
+                    child.item_group_idx = idx_val
 
         new_qi.save()
 

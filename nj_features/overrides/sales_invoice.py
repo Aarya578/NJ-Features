@@ -847,9 +847,6 @@ def get_item_group_cost_centers(items):
     return result
 
 
-
-
-
 @frappe.whitelist()
 def deviding_tax_chargese(doc, method=None):
     if doc.is_return == 1:
@@ -978,3 +975,68 @@ def deviding_tax_chargese(doc, method=None):
             tax_amount = flt(allocated_tax_by_account[tax.account_head])
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+
+
+def send_invoice_email(doc, method=None):
+    """
+    Email logic:
+    - Sales Invoice  → always send, format: NJ Sales Invoice
+    - Debit Note     → always send, format: NJ Sales Invoice
+    - Credit Note    → only if IRN exists (signed_einvoice), format: NJ GST E INVOICE
+    """
+    try:
+        # ── Credit Note: only send if IRN exists ──
+        if cint(doc.is_return) and not doc.signed_einvoice:
+            frappe.logger().info(
+                f"Skipping email for credit note {doc.name} — no IRN"
+            )
+            return
+
+        recipient = (
+            doc.contact_email
+            or frappe.db.get_value("Customer", doc.customer, "email_id")
+        )
+
+        if not recipient:
+            frappe.log_error(
+                f"No email found for {doc.name} (customer: {doc.customer})",
+                "NJ Invoice Email"
+            )
+            return
+
+        # ── Pick print format ──
+        if doc.signed_einvoice:
+            print_format = "NJ GST E INVOICE"
+        else:
+            print_format = "NJ Sales Invoice"
+
+        # ── Doc label ──
+        if cint(doc.is_return):
+            doc_label = "Credit Note"
+        elif cint(doc.is_debit_note):
+            doc_label = "Debit Note"
+        else:
+            doc_label = "Sales Invoice"
+
+        pdf = frappe.get_print(
+            "Sales Invoice",
+            doc.name,
+            print_format=print_format,
+            as_pdf=True
+        )
+
+        frappe.sendmail(
+            recipients=[recipient],
+            subject=f"{doc_label} {doc.name} - NEWJAISA Technologies Limited",
+            message=f"""<p>Dear {doc.customer_name},</p>
+<p>Please find attached your {doc_label} <b>{doc.name}</b> dated {doc.posting_date}
+for <b>&#8377; {doc.rounded_total or doc.grand_total}</b>.</p>
+<p>For any queries, contact us at support@newjaisa.com</p>
+<p>Thanks,<br>NEWJAISA Technologies Limited</p>""",
+            attachments=[{"fname": f"{doc.name}.pdf", "fcontent": pdf}]
+        )
+
+        frappe.logger().info(f"Invoice email sent for {doc.name} to {recipient}")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"NJ Invoice Email Failed: {doc.name}")

@@ -61,6 +61,7 @@ frappe.ui.form.on('Sales Invoice', {
     //     });
     // },
     validate:  function(frm) {
+        apply_allocated(frm);
         //  frm.call({
         //     method: "nj_features.overrides.sales_invoice.approve_validation",
         //     doc: frm.doc,  // automatically sends doc
@@ -106,6 +107,13 @@ frappe.ui.form.on('Sales Invoice', {
 
 
     },
+    before_save(frm) {
+        apply_allocated(frm);
+    },
+
+    grand_total(frm) {
+        apply_allocated(frm);
+    }
     
 });
 // function update_gst_tax_type_from_nj_settings(frm) {
@@ -183,7 +191,51 @@ frappe.ui.form.on('Sales Invoice', {
 //         }
 //     });
 // }
+frappe.ui.form.on('Sales Invoice Advance', {
+    advances_add(frm, cdt, cdn) {
+        set_row_allocated(frm, cdt, cdn);
+    },
 
+    reference_name(frm, cdt, cdn) {
+        // wait for ERP to fetch values, then override once
+        setTimeout(() => {
+            set_row_allocated(frm, cdt, cdn);
+        }, 500);
+    }
+});
+
+function apply_allocated(frm) {
+    const gt = flt(frm.doc.grand_total);
+    let remaining = gt;
+
+    // Prevent server-side validate from recalculating advances and overriding manual allocation.
+    if (Object.prototype.hasOwnProperty.call(frm.doc, "allocate_advances_automatically")) {
+        frm.doc.allocate_advances_automatically = 0;
+    }
+
+    (frm.doc.advances || []).forEach(row => {
+        const max_alloc = flt(row.advance_amount || 0);
+        const next_alloc = Math.max(0, Math.min(max_alloc, remaining));
+
+        if (flt(row.allocated_amount) !== next_alloc) {
+            frappe.model.set_value(row.doctype, row.name, 'allocated_amount', next_alloc);
+        }
+
+        remaining = Math.max(0, remaining - next_alloc);
+    });
+
+    frm.refresh_field("advances");
+}
+
+function set_row_allocated(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    const gt = flt(frm.doc.grand_total);
+    const next_alloc = Math.max(0, Math.min(flt(row.advance_amount || 0), gt));
+
+    if (flt(row.allocated_amount) !== next_alloc) {
+        frappe.model.set_value(cdt, cdn, 'allocated_amount', next_alloc);
+    }
+}
 function update_gst_tax_type_from_nj_settings(frm) {
     console.log("Updating GST tax types...");
 

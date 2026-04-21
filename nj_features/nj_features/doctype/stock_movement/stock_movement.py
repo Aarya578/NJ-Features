@@ -16,29 +16,11 @@ class StockMovement(Document):
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
             else:
-                do_stock_entry_for_consumables=frappe.db.get_value('NJ Settings', {'parameter': 'do_stock_entry_for_consumables'}, 'value')
+                # Consumable repack is handled automatically by CustomStockEntry.on_submit()
+                # via _create_consumable_repack_for_transfer() when the Material Transfer
+                # SE below is submitted. No need to call make_repack here.
                 material_transfer_items = []
                 for row in self.items:
-                    if do_stock_entry_for_consumables=="1" and row.s_warehouse and row.t_warehouse and row.serial_no and row.item_code and item_item_group(row.item_code) == "Laptops":
-                        source_dept=warehouse_dept(row.s_warehouse)
-                        if source_dept != warehouse_dept(row.t_warehouse):
-                            consumables=consumables_for_department(row.item_code, source_dept, row.serial_no)
-                            repack_items=[]                               
-                            for consumable in consumables:
-                                consumable_warehouse=get_consumables_warehouse(source_dept)
-                                if not consumable_warehouse:
-                                    frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
-                                qty=warehouse_qty(consumable_warehouse, consumable)
-                                if qty and qty >0:
-                                    if not consumable_warehouse:
-                                        frappe.throw(f"No consumable Warehouse found for department <b>{source_dept}</b>")
-                                    repack_items.append({
-                                        'qty': 1,
-                                        'item_code': consumable,
-                                        's_warehouse':consumable_warehouse ,                                         
-                                    })
-                            if repack_items:
-                                make_repack(row.serial_no, repack_items, row.s_warehouse,self.name,self.doctype)                                                                      
                     material_transfer_items.append({
                         'qty': row.qty,
                         'item_code': row.item_code,
@@ -253,7 +235,6 @@ def get_child_warehouses(parent_warehouse):
                 FROM `tabWarehouse` w LEFT JOIN `tabWarehouse Qty` q ON q.warehouse = w.name 
                 WHERE w.parent_warehouse = %s AND w.disabled = 0"""
     child_warehouse_with_qty = frappe.db.sql(child_warehouse_with_qty_query, parent_warehouse, as_dict=1)
-    # child_warehouses = frappe.db.get_all('Warehouse', {'parent_warehouse': parent_warehouse, 'disabled': 0}, ['name', 'available_capacity', 'max_capacity', 'is_group'])
 
     for row in child_warehouse_with_qty:
         if row['is_group']: 
@@ -263,10 +244,6 @@ def get_child_warehouses(parent_warehouse):
                 all_emp_ware.append(row)  
 
     return all_emp_ware 
-
-# Patch for stock movement restriction
-# Replace validate_serial_no_and_department() with the version below
-# and add check_if_serial_exists_in_active_bag_list() in the same file.
 
 @frappe.whitelist()
 def validate_stock_movement_for_grade(doc):
@@ -286,7 +263,6 @@ def validate_stock_movement_for_grade(doc):
         return {"success": "Validation passed without errors."}
 
 def validate_serial_no_and_department(row, error_messages):
-
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
 
     if not has_serialized:
@@ -298,7 +274,6 @@ def validate_serial_no_and_department(row, error_messages):
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
-
 
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
@@ -312,26 +287,35 @@ def validate_serial_no_and_department(row, error_messages):
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
-    # NEW RESTRICTION:
-    # If this serial already exists as an active part in the Bag List of any parent serial,
-    # block stock movement.
+    if department:
+        allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
+
+        if not allow_reconfig:
+            item_code = serial_doc.get("item_code")
+            to_make = serial_doc.get("to_make")
+
+            if item_code and to_make and item_code != to_make:
+                error_messages.append(
+                    f"Reconfiguration not allowed for Department <b>{department}</b>. "
+                    f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
+                )
+                return False
+
     if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
         return False
 
     restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
-
     restriction_item = [r.get("name") for r in restriction_item]
 
     if serial_doc.get("item_group") not in restriction_item:
         return False
-
 
     if not serial_doc.get("bypass"):
 
         if department_doc.get('warrenty_restriction_check'):  
             check_warranty_expiry(serial_doc, error_messages)
 
-        s_inspection_type = frappe.get_doc('Department', s_department)
+        s_inspection_type = frappe.get_doc('Department', s_department) if s_department else None
         is_component = frappe.db.get_value('Item Group', serial_doc.get('item_group'), 'is_component')
 
         if not is_component and s_department != department:
@@ -339,14 +323,15 @@ def validate_serial_no_and_department(row, error_messages):
             if check_lesson_validation and int(check_lesson_validation):
                 validate_lesson_completion_for_serial_model(serial_doc, error_messages)
             validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages)
-            check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)#this function will check the mandatory item groups, for those item groups, the qty in part list should be within range defined
+            check_min_qty_and_max_qty(serial_doc, department_doc, error_messages)
             validate_grade_restriction(serial_doc, department_doc, error_messages)
             check_bag_list_validation(serial_doc, error_messages, department_doc)
-            one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages)
+            one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse, error_messages)
 
         if (
                 s_department and 
                 s_department != department and 
+                s_inspection_type and
                 s_inspection_type.get("inspection_types") and  
                 s_inspection_type.get("inspection_types") is not None and 
                 s_inspection_type.get("inspection_types") != [] and
@@ -361,15 +346,6 @@ def validate_serial_no_and_department(row, error_messages):
     return True
 
 def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
-    """
-    Block movement of a serialized part if it is already present in the active
-    Bag List of some laptop/parent serial.
-
-    Example:
-    - Laptop serial: NJ-LP-334131
-    - Bag List contains part serial: NJ-ST-314522
-    - If someone tries to transfer NJ-ST-314522 directly, throw an error.
-    """
     if not serial_no:
         return True
 
@@ -417,7 +393,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     if not model:
         return
 
-    # Step 1: Get all enrolled courses via LMS Batch Membership
     enrolled_courses = frappe.get_all("LMS Batch Membership",
         filters={"member": user},
         pluck="course"
@@ -426,18 +401,16 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     if not enrolled_courses:
         return
 
-    # Step 2: Filter courses where model is in Course.models table
     matched_courses = []
     for course_name in enrolled_courses:
         course_doc = frappe.get_doc("LMS Course", course_name)
-        course_models = [row.models for row in course_doc.model]  # assuming 'model' is the child table field
+        course_models = [row.models for row in course_doc.model]
         if model in course_models:
             matched_courses.append(course_name)
 
     if not matched_courses:
         return
 
-    # Step 3: Get chapters from those courses
     chapters = frappe.get_all("Course Chapter",
         filters={"course": ["in", matched_courses]},
         pluck="name"
@@ -446,7 +419,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     if not chapters:
         return
 
-    # Step 4: Get lessons linked in chapter.lesson (child table: Lesson Reference)
     required_lessons = set()
     for chapter in chapters:
         chapter_doc = frappe.get_doc("Course Chapter", chapter)
@@ -461,7 +433,6 @@ def validate_lesson_completion_for_serial_model(serial_no_doc, error_messages):
     if not required_lessons:
         return
 
-    # Step 5: Check which lessons are completed
     completed_lessons = frappe.get_all("LMS Course Progress",
         filters={
             "owner": user,
@@ -483,7 +454,6 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
     if serial_doc and department_doc.get("check_for_bag_list"):
         bag_list = serial_doc.get("bag_list", [])
         
-        # Filter items with quantity > 0
         valid_items = [item for item in bag_list if item.get("quantity", 0) > 0]
         
         if valid_items:
@@ -498,14 +468,11 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
     try:
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
 
-        # Only validate for laptops
         if serial_no_doc.get("item_group") in ['Laptops']:
-            # Get source department and inspection types
             s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
             s_inspection_type = frappe.get_doc('Department', s_department)
             inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
 
-            # Find the last material transfer entry for this serial
             query = """
                 SELECT se.creation, se.name
                 FROM `tabStock Entry Detail` sed
@@ -523,10 +490,8 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                 creation_time = result[0]["creation"]
                 formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
 
-                # Convert current time to IST (UTC+5:30)
                 current_time = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
 
-                # Fetch QI created between transfer and now
                 qi_query = """
                     SELECT name
                     FROM `tabNJ Quality Inspection`
@@ -543,7 +508,6 @@ def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_
                     as_dict=True
                 )
 
-                # Get target department rules
                 t_inspection_type = frappe.get_doc('Department', t_department)
 
                 if qi_result:
@@ -677,32 +641,21 @@ def validate_grade_restriction(serial_doc, department_doc, error_messages):
         error_messages.append(f"Error in grade restriction validation: {str(e)}")
 
 def validate_allowed_serial_component_grades(serial_doc, department_doc, error_messages):
-    """
-    Validate serial components of a laptop against allowed grades and defect types in a department.
-
-    Args:
-        serial_doc (dict): Serial document containing item_group, serial_no_component.
-        department_doc (dict): Department document containing allowed_item_group_grades, all flag.
-        error_messages (list): List to append error messages to.
-    """
     if serial_doc.get("item_group") != "Laptops":
         return
 
     serial_components = serial_doc.get("serial_no_component", [])
+    include_bag_list = department_doc.get("blmh")
+
     allowed_table = department_doc.get("allowed_item_group_grades", [])
     all_must_match = department_doc.get("all", False)
 
-    # ----------------------------
-    # Build serial sets
-    # ----------------------------
-    # Grades
     serial_set = {
         (comp.get("item_group"), comp.get("grade"))
         for comp in serial_components
         if comp.get("item_group") and comp.get("grade")
     }
 
-    # Defects
     serial_defects_set = set()
     for comp in serial_components:
         ig = comp.get("item_group")
@@ -716,42 +669,36 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
             defects = [d.strip() for d in comp.get("defects_type", "").split(",") if d.strip()]
             for d in defects:
                 serial_defects_set.add((ig, d))
-                
+
     print("serial_defects_set ===============", serial_defects_set)
 
-    # Track item groups present
-    serial_item_groups_present = {comp.get("item_group") for comp in serial_components if comp.get("item_group") and int(comp.get("quantity")) == 1}
+    serial_item_groups_present = {
+        comp.get("item_group")
+        for comp in serial_components
+        if comp.get("item_group") and int(comp.get("quantity", 0)) == 1
+    }
 
-    # ----------------------------
-    # Build allowed maps
-    # ----------------------------
-    allowed_map = defaultdict(set)  # For grades
-    allowed_defective_checks = defaultdict(set)  # For defects
+    allowed_map = defaultdict(set)
+    allowed_defective_checks = defaultdict(set)
 
     for entry in allowed_table:
         ig = entry.get("item_group")
         if not ig:
             continue
-        # Grades
         if entry.get("restricted_grade"):
             grades = [g.strip() for g in entry.get("restricted_grade", "").split(",") if g.strip()]
             allowed_map[ig].update(grades)
-        # Defects
         if entry.get("defects_type"):
             defects = [d.strip() for d in entry.get("defects_type", "").split(",") if d.strip()]
             allowed_defective_checks[ig].update(defects)
 
     print("allowed_defective_checks ===============", dict(allowed_defective_checks))
 
-    # ----------------------------
-    # Grades validation
-    # ----------------------------
     if all_must_match:
         for ig, allowed_grades in allowed_map.items():
             if ig not in serial_item_groups_present:
                 continue
             matched = any((ig, grade) in serial_set for grade in allowed_grades)
-            print(f"Checking grades for {ig}: matched = {matched}")
             if not matched:
                 actual_grades = {grade for ig2, grade in serial_set if ig2 == ig}
                 actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
@@ -784,21 +731,14 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
                     f"but found: <b>{actual_display}</b>."
                 )
 
-    # ----------------------------
-    # Defects validation
-    # ----------------------------
     for ig, allowed_defects in allowed_defective_checks.items():
-        # Skip item groups with no defects restriction
         if not allowed_defects:
             continue
-
         if ig not in serial_item_groups_present:
             continue
 
-        # Collect actual defects for this item group
         actual_defects = {d for ig2, d in serial_defects_set if ig2 == ig}
 
-        # If NONE of the actual defects are allowed → error
         if actual_defects and actual_defects.isdisjoint(allowed_defects):
             actual_display = ', '.join(sorted(actual_defects))
             allowed_display = ', '.join(sorted(allowed_defects))
@@ -808,13 +748,92 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
                 f"but found: <b>{actual_display}</b>."
             )
 
-        # ✅ If at least one defect is allowed, nothing is appended
+    if include_bag_list:
+        bag_components = serial_doc.get("bag_list", [])
+
+        bag_set = {
+            (comp.get("item_group"), comp.get("grade"))
+            for comp in bag_components
+            if comp.get("item_group") and comp.get("grade")
+        }
+
+        bag_item_groups_present = {
+            comp.get("item_group")
+            for comp in bag_components
+            if comp.get("item_group") and int(comp.get("quantity", 0)) == 1
+        }
+
+        bag_defects_set = set()
+        for comp in bag_components:
+            ig = comp.get("item_group")
+            if not ig:
+                continue
+            if comp.get("aesthetic_issue"):
+                bag_defects_set.add((ig, "Aesthetic Issue"))
+            if comp.get("functional_issue"):
+                bag_defects_set.add((ig, "Functional Issue"))
+            if comp.get("defects_type"):
+                defects = [d.strip() for d in comp.get("defects_type", "").split(",") if d.strip()]
+                for d in defects:
+                    bag_defects_set.add((ig, d))
+
+        if all_must_match:
+            for ig, allowed_grades in allowed_map.items():
+                if ig not in bag_item_groups_present:
+                    continue
+                matched = any((ig, grade) in bag_set for grade in allowed_grades)
+                if not matched:
+                    actual_grades = {grade for ig2, grade in bag_set if ig2 == ig}
+                    actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                    allowed_display = ', '.join(sorted(allowed_grades))
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                        f"only grade(s) <b>{allowed_display}</b> are allowed for item group <b>{ig}</b>, "
+                        f"but found: <b>{actual_display}</b>."
+                    )
+                    break
+        else:
+            match_found = False
+            for ig, allowed_grades in allowed_map.items():
+                if ig not in bag_item_groups_present:
+                    continue
+                if any((ig, grade) in bag_set for grade in allowed_grades):
+                    match_found = True
+                    break
+
+            if not match_found:
+                for ig, allowed_grades in allowed_map.items():
+                    if ig not in bag_item_groups_present:
+                        continue
+                    actual_grades = {grade for ig2, grade in bag_set if ig2 == ig}
+                    actual_display = ', '.join(sorted(actual_grades)) if actual_grades else "None"
+                    allowed_display = ', '.join(sorted(allowed_grades))
+                    error_messages.append(
+                        f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                        f"for item group <b>{ig}</b>, only grade(s) <b>{allowed_display}</b> are allowed, "
+                        f"but found: <b>{actual_display}</b>."
+                    )
+
+        for ig, allowed_defects in allowed_defective_checks.items():
+            if not allowed_defects:
+                continue
+            if ig not in bag_item_groups_present:
+                continue
+
+            actual_defects = {d for ig2, d in bag_defects_set if ig2 == ig}
+
+            if actual_defects and actual_defects.isdisjoint(allowed_defects):
+                actual_display = ', '.join(sorted(actual_defects))
+                allowed_display = ', '.join(sorted(allowed_defects))
+                error_messages.append(
+                    f"Serial No <b>{serial_doc.name}</b> (bag_list): In department <b>{department_doc.name}</b>, "
+                    f"for item group <b>{ig}</b>, only defect type(s) <b>{allowed_display}</b> are allowed, "
+                    f"but found: <b>{actual_display}</b>."
+                )
 
     return error_messages
 
-
 def validate_non_component_grade(serial_doc, department_doc, error_messages):
-    # --- Top-level serial no grade validation ---
     result = frappe.db.get_value('Serial No', {'name': serial_doc.get('name')}, ['grade', 'item_group'])
 
     if result is None:
@@ -837,9 +856,9 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             )
 
     restrict_all = department_doc.get('restrict_all')
+    include_bag_list = department_doc.get('blmnh')
 
-    if restrict_all:
-        # --- Step 1: Get mandatory item groups from Item Wizard ---
+    if int(restrict_all):
         item_wizard_name = serial_doc.get("item_wizard")
         if not item_wizard_name:
             return
@@ -852,41 +871,40 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             if row.get("mandatory") == 1
         )
 
-        # --- Step 2: Build lookup of item_group -> grade from serial_no_component (qty=1 only) ---
         component_grade_map = {}
         for component in serial_doc.get('serial_no_component', []):
             if component.get('quantity') == 1:
                 component_grade_map[component.get('item_group')] = component.get('grade')
 
-        # --- Step 3: Build restriction lookup { item_group: [restricted_grades] } ---
+        if include_bag_list:
+            for bag in serial_doc.get('bag_list', []):
+                if bag.get('quantity') == 1:
+                    item_group = bag.get('item_group')
+                    if item_group and item_group not in component_grade_map:
+                        component_grade_map[item_group] = bag.get('grade')
+
         restriction_map = {}
         for restriction in department_doc.get('stock_movement_restriction_table', []):
             item_group = restriction.get('item_group')
             grades = [g.strip() for g in restriction.get('restricted_grade', "").split(",")]
             restriction_map[item_group] = grades
 
-        # --- Step 4: Evaluate each restricted item group ---
         all_violating = True
 
         for item_group, restricted_grades in restriction_map.items():
-            grade = component_grade_map.get(item_group)  # None if missing from serial_no_component
+            grade = component_grade_map.get(item_group)
 
             if grade is None:
-                # Part is missing from serial_no_component — check Item Wizard
                 if item_group in mandatory_item_groups:
-                    # Mandatory but missing — cannot validate, so Allow
                     all_violating = False
                     break
                 else:
-                    # Not mandatory — optional part, skip and continue checking others
                     continue
 
             if grade not in restricted_grades:
-                # This part's grade is NOT in restricted list — Allow
                 all_violating = False
                 break
 
-        # --- Step 5: Block only if all restricted item groups are violating ---
         if all_violating and restriction_map:
             error_messages.append(
                 f"Serial No.: <b>{serial_doc.name}</b> — all components "
@@ -895,7 +913,6 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
             )
 
     else:
-        # --- Old logic: block individually if any single component violates ---
         for component in serial_doc.get('serial_no_component', []):
             for restriction in department_doc.get('stock_movement_restriction_table', []):
                 restricted_grades = restriction.get('restricted_grade', "").split(",")
@@ -908,6 +925,20 @@ def validate_non_component_grade(serial_doc, department_doc, error_messages):
                         f"Serial No <b>{serial_doc.name}</b> for item_group <b>{component.get('item_group')}</b> "
                         f"has a grade <b>{component.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
                     )
+
+        if include_bag_list:
+            for bag in serial_doc.get('bag_list', []):
+                for restriction in department_doc.get('stock_movement_restriction_table', []):
+                    restricted_grades = restriction.get('restricted_grade', "").split(",")
+                    restricted_item_group = restriction.get('item_group')
+
+                    if (bag.get('item_group') == restricted_item_group and
+                            bag.get('grade') in restricted_grades and
+                            bag.get('quantity') == 1):
+                        error_messages.append(
+                            f"Serial No <b>{serial_doc.name}</b> (bag_list) for item_group <b>{bag.get('item_group')}</b> "
+                            f"has a grade <b>{bag.get('grade')}</b> that is not allowed for department <b>{department_doc.name}</b>."
+                        )
 
 def validate_component_grade(serial_doc, department_doc, error_messages):
     for restriction in department_doc.get('stock_movement_restriction_table', []):
@@ -944,7 +975,6 @@ def get_grades_from_part_list(search_value):
 
     results = []
 
-    # Loop through each item_group from the query result
     for row in query:
         item_group = row['item_group']
         aesthetic_issue = row['aesthetic_issue']
@@ -955,10 +985,9 @@ def get_grades_from_part_list(search_value):
             damage_types.append("Aesthetic")
         if functional_issue == 1:
             damage_types.append("Technical")
-        if not damage_types:  # If both issues are 0
+        if not damage_types:
             damage_types = [""]
 
-        # Fetch department value from the Repairability child table
         department_query = frappe.db.sql(
             """
                 SELECT department
@@ -971,16 +1000,13 @@ def get_grades_from_part_list(search_value):
             as_dict=True
         )
 
-        # If department data is found, append it to the result list
         if department_query:
             for department_row in department_query:
                 results.append({ "department": department_row['department'] })
 
-    # Return the consolidated results
     return results
 
 def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
-    # Get mandatory item groups
     item_wizards_mandatory_item_groups_data = frappe.db.get_all(
         'Component',
         {'parent': serial_doc.item_wizard, 'mandatory': '1'},
@@ -991,15 +1017,12 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
         item_group = row.get('item_group')
         if item_group in mandatory_item_groups:
             total_quantity = 0
-            # Sum quantity from serial_no_component
             for col in serial_doc.get('serial_no_component', []):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
-            # Sum quantity from bag_list
             for col in serial_doc.get('bag_list', []):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
-            # Compare with min/max
             min_qty = int(row.get('min_quantity') or 0)
             max_qty = int(row.get('max_quantity') or 1)
 
@@ -1010,7 +1033,7 @@ def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
                     f"(Min: {min_qty}, Max: {max_qty})"
                 )
 
-def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse,error_messages):
+def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse, error_messages):
     if not department_doc.get('one_of_these_component_grades_must_be_true'):
         return
 
@@ -1037,14 +1060,10 @@ def one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_war
         as_dict=True
     )
 
-    # if not result:
-    #     error_messages.append(f'This Serial No: <b>{serial_doc.name}</b> is not allowed to be moved to <b>{department_doc.name}</b> Department. Validate Item group , Grade and Work required for this Serial No to know the reason')
-
 @frappe.whitelist()
 def check_warehouse_qty(name):
     error_msg = ""
 
-    # Get total qty per target warehouse from Stock Movement Detail
     warehouse_data_query = """
         SELECT SUM(qty) AS total_qty, t_warehouse 
         FROM `tabStock Movement Detail` 
@@ -1060,8 +1079,6 @@ def check_warehouse_qty(name):
         warehouse = row.get("t_warehouse")
         total_qty = float(row.get("total_qty") or 0)
 
-        # Get available capacity from Warehouse & Serial No
-        # available_capacity = max_capacity - current_occupied_qty_in_serial_no
         capacity_query = """
             SELECT
                 COALESCE(w.max_capacity, 0) 
@@ -1083,11 +1100,9 @@ def check_warehouse_qty(name):
         if result and result[0].get("available_capacity") is not None:
             available_qty = float(result[0].get("available_capacity") or 0)
 
-        # Optional: don't allow negative available qty
         if available_qty < 0:
             available_qty = 0.0
 
-        # Compare requested qty vs available capacity
         if total_qty > available_qty:
             error_msg += (
                 f"Total qty for warehouse <b>{warehouse}</b> is <b>{total_qty}</b>, "
@@ -1104,68 +1119,7 @@ def warehouse_dept(warehouse):
     return frappe.db.get_value('Warehouse', warehouse, 'department')
 
 def warehouse_qty(warehouse, item):
-    return frappe.db.get_value('Stock Ledger Entry', {'warehouse': warehouse, 'item_code': item, 'is_cancelled': 0}, 'qty_after_transaction',order_by='creation desc')
-
+    return frappe.db.get_value('Stock Ledger Entry', {'warehouse': warehouse, 'item_code': item, 'is_cancelled': 0}, 'qty_after_transaction', order_by='creation desc')
 
 def item_item_group(item):
     return frappe.db.get_value('Item', item, 'item_group')
-
-def consumables_for_department(item, department, serial_no):
-    iw=frappe.db.get_value('Serial No', serial_no, 'item_wizard')
-    pattern=f"%{department}%"
-    query=""" 
-        Select item_code from `tabConsumables` where parent=%(item_wizard)s and (departments like %(pattern)s) ;
-       """
-    consubles_items=[]
-    if iw:
-        result=frappe.db.sql(query,{'item_wizard':iw,'pattern':pattern},as_dict=True)
-        if result:
-            for item in result:
-                consubles_items.append(item.get('item_code'))
-    return consubles_items
-
-def get_consumables_warehouse(department):
-    return frappe.db.get_value('Warehouse', {'department': department, 'used_for_consumables_stock':1}, 'name')
-    
-def make_repack(serial_no, repack_items,source_warehouse,name,doctype):
-    if serial_no and repack_items:
-        item_code=frappe.db.get_value('Serial No', serial_no, 'item_code')
-        qty=1
-        part_rate=0.0
-        valuation_rate_parent_serial_no=get_part_ledger_entry(item_code,serial_no)
-        part_rate+=valuation_rate_parent_serial_no
-        new_stock_entry={
-            "doctype": doctype,
-            "name": name,
-            "stock_entry_type": "Repack",
-            "parent_serial_no":serial_no,
-            "repack_items":[]
-        }
-        new_stock_entry["repack_items"].append({
-            "repack_item_code":item_code,
-            "qty":qty,
-            "repack_serial_no":serial_no,
-            "repack_item_source_warehouse":source_warehouse,
-            "unpack_item_base_price":valuation_rate_parent_serial_no            
-        })
-        for item in repack_items:
-            valuation_rate=get_part_ledger_entry(item.get('item_code'))
-            if not valuation_rate:
-                part_rate+=valuation_rate_parent_serial_no
-            new_stock_entry["repack_items"].append({
-                "repack_item_code":item.get('item_code'),
-                "qty":item.get('qty'),
-                "repack_item_source_warehouse":item.get('s_warehouse'),
-                "repack_item_base_price":valuation_rate
-            })
-        new_stock_entry["repack_items"].append({
-            "unpack_item_code":item_code,
-            "qty":qty,
-            "unpack_item_target_warehouse":source_warehouse,
-            "unpack_serial_no":serial_no,
-            "unpack_item_base_price":part_rate
-        })
-        return stock_entry_using_nj_lib(new_stock_entry)
-
-def get_valuation_rate(warehouse, item_code):
-    return frappe.db.get_value('Stock Ledger Entry', {'warehouse': warehouse, 'item_code': item_code, 'is_cancelled': 0}, 'valuation_rate',order_by='creation desc')

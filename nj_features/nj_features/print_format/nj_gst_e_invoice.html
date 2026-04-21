@@ -1,0 +1,200 @@
+{%- from "templates/print_formats/standard_macros.html" import add_header, render_field, print_value -%}
+
+<style>
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
+  .nj-title { font-size: 11px; font-weight: bold; color: #1F4E8C; border-bottom: 2px solid #1F4E8C; padding-bottom: 3px; margin: 12px 0 8px 0; }
+  .nj-lbl { color: #777; font-size: 9px; width: 120px; vertical-align: top; padding: 3px 8px 3px 0; }
+  .nj-val { color: #111; font-size: 10px; font-weight: bold; padding: 3px 0; }
+  .nj-ph { font-size: 10px; font-weight: bold; color: #1F4E8C; border-bottom: 1px solid #1F4E8C; padding-bottom: 3px; margin-bottom: 5px; }
+  .nj-p { font-size: 10px; color: #333; margin: 2px 0; line-height: 1.5; }
+  .nj-th { padding: 7px 8px; font-size: 10px; font-weight: bold; color: #1F4E8C; border: 1px solid #c5d5e8; text-align: left; }
+  .nj-thr { padding: 7px 8px; font-size: 10px; font-weight: bold; color: #1F4E8C; border: 1px solid #c5d5e8; text-align: right; }
+  .nj-td { padding: 6px 8px; font-size: 10px; border: 1px solid #ddd; vertical-align: top; }
+  .nj-tdr { padding: 6px 8px; font-size: 10px; border: 1px solid #ddd; vertical-align: top; text-align: right; }
+</style>
+
+<div>
+{% if doc.signed_einvoice %}
+{%- set einvoice = json.loads(doc.signed_einvoice) -%}
+
+  <!-- LETTER HEAD -->
+  <div {% if print_settings.repeat_header_footer %} id="header-html" class="hidden-pdf" {% endif %}>
+    {% if letter_head and not no_letterhead %}
+      <div class="letter-head">{{ letter_head }}</div>
+    {% endif %}
+    <div style="margin:6px 0 4px 0;">
+      <span style="font-size:14px; font-weight:bold; color:#1F4E8C;">E Invoice</span>
+      &nbsp;&nbsp;
+      <span style="font-size:11px; color:#555;">{{ doc.name }}</span>
+    </div>
+  </div>
+
+  {% if print_settings.repeat_header_footer %}
+  <div id="footer-html" class="visible-pdf">
+    {% if not no_letterhead and footer %}
+    <div class="letter-head-footer">{{ footer }}</div>
+    {% endif %}
+    <p class="text-center small page-number visible-pdf">
+      {{ _("Page {0} of {1}").format('<span class="page"></span>', '<span class="topage"></span>') }}
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- 1. TRANSACTION DETAILS -->
+  <div class="nj-title">1. Transaction Details</div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ddd; margin-bottom:0;">
+    <tr>
+      <td style="width:60%; vertical-align:top; padding:8px 10px; border-right:1px solid #ddd;">
+        <table cellpadding="0" cellspacing="0" width="100%">
+          <tr><td class="nj-lbl">IRN</td><td class="nj-val" style="font-size:9px; word-break:break-all;">{{ einvoice.Irn }}</td></tr>
+          <tr><td class="nj-lbl">Ack. No</td><td class="nj-val">{{ einvoice.AckNo }}</td></tr>
+          <tr><td class="nj-lbl">Ack. Date</td><td class="nj-val">{{ frappe.utils.format_datetime(einvoice.AckDt, "dd/MM/yyyy hh:mm:ss") }}</td></tr>
+          <tr><td class="nj-lbl">Category</td><td class="nj-val">{{ einvoice.TranDtls.SupTyp }}</td></tr>
+          <tr><td class="nj-lbl">Document Type</td><td class="nj-val">{{ einvoice.DocDtls.Typ }}</td></tr>
+          <tr><td class="nj-lbl">Document No</td><td class="nj-val" style="color:#1F4E8C;">{{ einvoice.DocDtls.No }}</td></tr>
+          <tr><td class="nj-lbl">Document Date</td><td class="nj-val">{{ einvoice.DocDtls.Dt }}</td></tr>
+          {% if doc.po_no %}<tr><td class="nj-lbl">Customer PO</td><td class="nj-val">{{ doc.po_no }}</td></tr>{% endif %}
+        </table>
+      </td>
+      <td style="width:40%; vertical-align:middle; padding:8px; text-align:center;">
+        {% if doc.qrcode_image %}
+          <img src="https://amzuat.newjaisa.com{{ doc.qrcode_image }}" width="160px">
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <!-- 2. PARTY DETAILS -->
+  <div class="nj-title">2. Party Details</div>
+  {%- set seller = einvoice.SellerDtls -%}
+  {%- set buyer = einvoice.BuyerDtls -%}
+  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ddd; margin-bottom:0;">
+    <tr>
+      <td style="width:25%; vertical-align:top; padding:8px 10px; border-right:1px solid #ddd;">
+        <div class="nj-ph">Seller</div>
+        {%- if seller.get('Gstin') -%}<p class="nj-p"><strong>{{ seller.Gstin }}</strong></p>{%- endif %}
+        {%- if seller.LglNm -%}<p class="nj-p">{{ seller.LglNm }}</p>{%- endif %}
+        {%- if seller.Addr1 -%}<p class="nj-p">{{ seller.Addr1 }}</p>{%- endif %}
+        {%- if seller.get('Addr2') -%}<p class="nj-p">{{ seller.Addr2 }}</p>{%- endif %}
+        {%- if seller.Loc -%}<p class="nj-p">{{ seller.Loc }}</p>{%- endif %}
+        <p class="nj-p">{{ frappe.db.get_value("Address", doc.company_address, "gst_state") or '' }} - {{ seller.Pin or '' }}</p>
+      </td>
+      <td style="width:25%; vertical-align:top; padding:8px 10px; border-right:1px solid #ddd;">
+        <div class="nj-ph">Buyer</div>
+        {%- if buyer.get('Gstin') -%}<p class="nj-p"><strong>{{ buyer.Gstin }}</strong></p>{%- endif %}
+        {%- if buyer.LglNm -%}<p class="nj-p">{{ buyer.LglNm }}</p>{%- endif %}
+        {%- if buyer.Addr1 -%}<p class="nj-p">{{ buyer.Addr1 }}</p>{%- endif %}
+        {%- if buyer.get('Addr2') -%}<p class="nj-p">{{ buyer.Addr2 }}</p>{%- endif %}
+        {%- if buyer.Loc -%}<p class="nj-p">{{ buyer.Loc }}</p>{%- endif %}
+        <p class="nj-p">{{ frappe.db.get_value("Address", doc.customer_address, "gst_state") or '' }} - {{ buyer.Pin or '' }}</p>
+      </td>
+      <td style="width:25%; vertical-align:top; padding:8px 10px; border-right:1px solid #ddd;">
+        <div class="nj-ph">Dispatch From</div>
+        {%- if einvoice.DispDtls -%}
+          {%- set dispatch = einvoice.DispDtls -%}
+          {%- if dispatch.get('Gstin') -%}<p class="nj-p"><strong>{{ dispatch.Gstin }}</strong></p>{%- endif %}
+          {%- if dispatch.LglNm -%}<p class="nj-p">{{ dispatch.LglNm }}</p>{%- endif %}
+          {%- if dispatch.Addr1 -%}<p class="nj-p">{{ dispatch.Addr1 }}</p>{%- endif %}
+          {%- if dispatch.get('Addr2') -%}<p class="nj-p">{{ dispatch.Addr2 }}</p>{%- endif %}
+          {%- if dispatch.Loc -%}<p class="nj-p">{{ dispatch.Loc }}</p>{%- endif %}
+          <p class="nj-p">{{ frappe.db.get_value("Address", doc.dispatch_address_name, "gst_state") or '' }} - {{ dispatch.Pin or '' }}</p>
+        {%- else -%}
+          {%- if seller.get('Gstin') -%}<p class="nj-p"><strong>{{ seller.Gstin }}</strong></p>{%- endif %}
+          {%- if seller.LglNm -%}<p class="nj-p">{{ seller.LglNm }}</p>{%- endif %}
+          {%- if seller.Addr1 -%}<p class="nj-p">{{ seller.Addr1 }}</p>{%- endif %}
+          {%- if seller.Loc -%}<p class="nj-p">{{ seller.Loc }}</p>{%- endif %}
+          <p class="nj-p">{{ frappe.db.get_value("Address", doc.company_address, "gst_state") or '' }} - {{ seller.Pin or '' }}</p>
+        {%- endif %}
+      </td>
+      <td style="width:25%; vertical-align:top; padding:8px 10px;">
+        <div class="nj-ph">Ship To</div>
+        {%- if einvoice.ShipDtls -%}
+          {%- set shipping = einvoice.ShipDtls -%}
+          {%- if shipping.get('Gstin') -%}<p class="nj-p"><strong>{{ shipping.Gstin }}</strong></p>{%- endif %}
+          {%- if shipping.LglNm -%}<p class="nj-p">{{ shipping.LglNm }}</p>{%- endif %}
+          {%- if shipping.Addr1 -%}<p class="nj-p">{{ shipping.Addr1 }}</p>{%- endif %}
+          {%- if shipping.get('Addr2') -%}<p class="nj-p">{{ shipping.Addr2 }}</p>{%- endif %}
+          {%- if shipping.Loc -%}<p class="nj-p">{{ shipping.Loc }}</p>{%- endif %}
+          <p class="nj-p">{{ frappe.db.get_value("Address", doc.shipping_address_name, "gst_state") or '' }} - {{ shipping.Pin or '' }}</p>
+        {%- else -%}
+          {%- if buyer.get('Gstin') -%}<p class="nj-p"><strong>{{ buyer.Gstin }}</strong></p>{%- endif %}
+          {%- if buyer.LglNm -%}<p class="nj-p">{{ buyer.LglNm }}</p>{%- endif %}
+          {%- if buyer.Addr1 -%}<p class="nj-p">{{ buyer.Addr1 }}</p>{%- endif %}
+          {%- if buyer.Loc -%}<p class="nj-p">{{ buyer.Loc }}</p>{%- endif %}
+          <p class="nj-p">{{ frappe.db.get_value("Address", doc.customer_address, "gst_state") or '' }} - {{ buyer.Pin or '' }}</p>
+        {%- endif %}
+      </td>
+    </tr>
+  </table>
+
+  <!-- 3. ITEM DETAILS -->
+  <div class="nj-title">3. Item Details</div>
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr bgcolor="#E8EFF8" style="background-color:#E8EFF8;">
+      <th class="nj-th" style="width:3%;">Sr.</th>
+      <th class="nj-th">Item</th>
+      <th class="nj-th" style="width:9%;">HSN Code</th>
+      <th class="nj-thr" style="width:5%;">Qty</th>
+      <th class="nj-th" style="width:5%;">UOM</th>
+      <th class="nj-thr">Rate</th>
+      <th class="nj-thr" style="width:6%;">Discount</th>
+      <th class="nj-thr">Taxable Amt</th>
+      <th class="nj-thr" style="width:7%;">Tax Rate</th>
+      <th class="nj-thr" style="width:5%;">Other</th>
+      <th class="nj-thr">Total</th>
+    </tr>
+    {% for item in einvoice.ItemList %}
+    <tr bgcolor="{{ '#eef3fb' if loop.index is even else '#ffffff' }}" style="background-color:{{ '#eef3fb' if loop.index is even else '#ffffff' }};">
+      <td class="nj-td">{{ item.SlNo }}</td>
+      <td class="nj-td">{{ item.PrdDesc }}</td>
+      <td class="nj-td">{{ item.HsnCd }}</td>
+      <td class="nj-tdr">{{ item.Qty }}</td>
+      <td class="nj-td">{{ item.Unit }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(item.UnitPrice, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(item.Discount, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(item.AssAmt, None, "INR") }}</td>
+      <td class="nj-tdr">{{ item.GstRt + item.CesRt }} %</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(0, None, "INR") }}</td>
+      <td class="nj-tdr"><strong>{{ frappe.utils.fmt_money(item.TotItemVal, None, "INR") }}</strong></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <!-- 4. VALUE DETAILS -->
+  <div class="nj-title">4. Value Details</div>
+  {%- set v = einvoice.ValDtls -%}
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr bgcolor="#E8EFF8" style="background-color:#E8EFF8;">
+      <th class="nj-thr">Taxable Amount</th>
+      <th class="nj-thr">CGST</th>
+      <th class="nj-thr">SGST</th>
+      <th class="nj-thr">IGST</th>
+      <th class="nj-thr">CESS</th>
+      <th class="nj-thr">State CESS</th>
+      <th class="nj-thr">Discount</th>
+      <th class="nj-thr">Other Charges</th>
+      <th class="nj-thr">Round Off</th>
+      <th class="nj-thr">Total Value</th>
+    </tr>
+    <tr bgcolor="#eef3fb" style="background-color:#eef3fb;">
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.AssVal, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.CgstVal, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.SgstVal, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.IgstVal, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.CesVal, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(0, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.Discount, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.OthChrg, None, "INR") }}</td>
+      <td class="nj-tdr">{{ frappe.utils.fmt_money(v.RndOffAmt, None, "INR") }}</td>
+      <td class="nj-tdr" style="font-weight:bold; color:#1F4E8C;">{{ frappe.utils.fmt_money(v.TotInvVal, None, "INR") }}</td>
+    </tr>
+  </table>
+
+{% else %}
+  <div style="text-align:center; color:#888; font-size:13px; margin-top:40px;">
+    You must generate IRN before you can preview GST E-Invoice.
+  </div>
+{% endif %}
+</div>
+

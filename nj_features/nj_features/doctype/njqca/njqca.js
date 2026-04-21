@@ -891,6 +891,9 @@ frappe.ui.form.on("NJQCA", {
 
         for (let table of tablesToCheck) {
           for (let row of frm.doc[table] || []) {
+            if (row.component_serial_no && row.component_serial_no.trim() !== "") {
+              continue;
+            }
             if (
               !row.calculated_item_code ||
               row.calculated_item_code.trim() === ""
@@ -1782,6 +1785,12 @@ function processItemTemplate(frm) {
                 "item_group_idx",
                 row.item_group_idx,
               );
+              frappe.model.set_value(
+                newRow.doctype,
+                newRow.name,
+                "component_serial_no",
+                row.serial_no,
+              );
               if (row.reference_docname) {
                 frappe.model.set_value(
                   newRow.doctype,
@@ -1948,6 +1957,12 @@ function processItemTemplate(frm) {
                 "item_group_idx",
                 row.item_group_idx,
               );
+              frappe.model.set_value(
+                newRow.doctype,
+                newRow.name,
+                "component_serial_no",
+                row.serial_no,
+              );
               if (row.reference_docname) {
                 frappe.model.set_value(
                   newRow.doctype,
@@ -1976,48 +1991,48 @@ function processItemTemplate(frm) {
       },
     });
 
-    if (frm.doc.serial_no) {
-      frappe.call({
-        method:
-          "nj_features.nj_features.doctype.njqca.njqca.get_disp_and_adp_data",
-        args: { serial_no: frm.doc.serial_no },
-        callback: function (r) {
-          if (r.message) {
-            r.message.forEach((item) => {
-              let newRow;
+    // if (frm.doc.serial_no) {
+    //   frappe.call({
+    //     method:
+    //       "nj_features.nj_features.doctype.njqca.njqca.get_disp_and_adp_data",
+    //     args: { serial_no: frm.doc.serial_no },
+    //     callback: function (r) {
+    //       if (r.message) {
+    //         r.message.forEach((item) => {
+    //           let newRow;
 
-              if (item.item_group === "Display") {
-                frm.clear_table("njqca_display");
-                newRow = frappe.model.add_child(frm.doc, "njqca_display");
-                show_checkbutton_for_field(frm, "njqca_display");
-              } else if (item.item_group === "Laptop Adaptors") {
-                frm.clear_table("njqca_adaptor");
-                newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
-                show_checkbutton_for_field(frm, "njqca_adaptor");
-              }
+    //           if (item.item_group === "Display") {
+    //             frm.clear_table("njqca_display");
+    //             newRow = frappe.model.add_child(frm.doc, "njqca_display");
+    //             show_checkbutton_for_field(frm, "njqca_display");
+    //           } else if (item.item_group === "Laptop Adaptors") {
+    //             frm.clear_table("njqca_adaptor");
+    //             newRow = frappe.model.add_child(frm.doc, "njqca_adaptor");
+    //             show_checkbutton_for_field(frm, "njqca_adaptor");
+    //           }
 
-              if (newRow) {
-                for (let key in item) {
-                  if (
-                    item.hasOwnProperty(key) &&
-                    key.toLowerCase() != "model"
-                  ) {
-                    frappe.model.set_value(
-                      newRow.doctype,
-                      newRow.name,
-                      key,
-                      item[key],
-                    );
-                  }
-                }
-              }
-              frm.set_value("fetched_adaptor");
-            });
-            frm.refresh_fields();
-          }
-        },
-      });
-    }
+    //           if (newRow) {
+    //             for (let key in item) {
+    //               if (
+    //                 item.hasOwnProperty(key) &&
+    //                 key.toLowerCase() != "model"
+    //               ) {
+    //                 frappe.model.set_value(
+    //                   newRow.doctype,
+    //                   newRow.name,
+    //                   key,
+    //                   item[key],
+    //                 );
+    //               }
+    //             }
+    //           }
+    //           frm.set_value("fetched_adaptor");
+    //         });
+    //         frm.refresh_fields();
+    //       }
+    //     },
+    //   });
+    // }
   }
 }
 
@@ -3478,22 +3493,19 @@ function remove_merge_button(grid) {
   grid.wrapper.find(".merge-btn").remove();
 }
 
-function handle_merge(frm, selected_rows, child_name) {
+async function handle_merge(frm, selected_rows, child_name) {
   console.log("handle_merge_child__name__ -------------", child_name);
+
   const [row1, row2] = selected_rows;
 
   if (!row1.fetched_item_code && !row2.fetched_item_code) {
     frappe.show_alert(
-      {
-        message: "No Fetched Item Code(Serial No.) found in either row(s).",
-        indicator: "red",
-      },
+      { message: "No Fetched Item Code(Serial No.) found in either row(s).", indicator: "red" },
       10,
     );
     return;
   }
 
-  let source_row, target_row;
   if (row2.merged === 1 || row1.merged === 1) {
     frappe.show_alert(
       { message: "One of the rows has already been merged.", indicator: "red" },
@@ -3501,6 +3513,8 @@ function handle_merge(frm, selected_rows, child_name) {
     );
     return;
   }
+
+  let source_row, target_row;
 
   if (row1.fetched_item_code && !row2.fetched_item_code) {
     source_row = row1;
@@ -3510,22 +3524,101 @@ function handle_merge(frm, selected_rows, child_name) {
     target_row = row1;
   }
 
-  target_row.fetched_item_code = source_row.fetched_item_code;
-  target_row.reference_docname = source_row.reference_docname;
-  source_row.reference_docname = null;
-  target_row.merged = 1;
+  // ─── Validate attributes before merging ───────────────────────────────────
+  if (source_row && source_row.component_serial_no) {
 
-  frm.fields_dict[child_name].grid.grid_rows_by_docname[
-    source_row.name
-  ].remove();
+    const field_attribute_map = {
+      njqca_laptop_ram: [
+        { fieldname: "ram_type",     attribute: "RAM Type" },
+        { fieldname: "ram_capacity", attribute: "RAM Capacity" },
+        { fieldname: "ram_speed",    attribute: "RAM Speed" },
+      ],
+      njqca_laptop_storage: [
+        { fieldname: "storage_type",      attribute: "Storage Type" },
+        { fieldname: "storage_interface", attribute: "Storage Interface" },
+        { fieldname: "storage_capacity",  attribute: "Storage Capacity" },
+        { fieldname: "storage_length",    attribute: "Storage Length" },
+      ],
+    };
+
+    const fields_to_check = field_attribute_map[child_name];
+
+    if (fields_to_check) {
+
+      // Step 1: Check if target_row has all required fields filled
+      for (const { fieldname, attribute } of fields_to_check) {
+        if (!target_row[fieldname]) {
+          frappe.show_alert(
+            {
+              message: `Please fill "${attribute}" in the other row before merging.`,
+              indicator: "red",
+            },
+            10,
+          );
+          return;
+        }
+      }
+
+      // Step 2: Fetch attributes using custom whitelisted method
+      let item_attributes = {};
+      try {
+        const r = await frappe.call({
+          method: "nj_features.nj_features.doctype.njqca.njqca.get_item_variant_attributes", // 👈 update this path if needed
+          args: {
+            item_code: source_row.fetched_item_code,
+          },
+        });
+
+        if (r && r.message) {
+          r.message.forEach((row) => {
+            item_attributes[row.attribute] = row.attribute_value;
+          });
+        }
+      } catch (e) {
+        console.error("Error fetching item attributes:", e);
+        frappe.show_alert(
+          { message: "Error fetching item attributes. Please try again.", indicator: "red" },
+          10,
+        );
+        return;
+      }
+
+      // Step 3: Compare target_row field values against fetched item attributes
+      for (const { fieldname, attribute } of fields_to_check) {
+        const fetched_value = item_attributes[attribute];
+        const target_value  = target_row[fieldname];
+
+        if (fetched_value && target_value) {
+          const normalize = (v) => String(v).trim().toLowerCase();
+
+          if (normalize(fetched_value) !== normalize(target_value)) {
+            frappe.show_alert(
+              {
+                message: `"${attribute}" does not match. Expected "${fetched_value}" but found "${target_value}". Please select the correct attribute before merging.`,
+                indicator: "orange",
+              },
+              12,
+            );
+            return;
+          }
+        }
+      }
+    }
+  }
+  // ─── END validation ───────────────────────────────────────────────────────
+
+  // Proceed with merge
+  target_row.fetched_item_code   = source_row.fetched_item_code;
+  target_row.reference_docname   = source_row.reference_docname;
+  target_row.component_serial_no = source_row.component_serial_no;
+  source_row.reference_docname   = null;
+  target_row.merged              = 1;
+
+  frm.fields_dict[child_name].grid.grid_rows_by_docname[source_row.name].remove();
   update_empty_param_in_child(frm, source_row, target_row);
-
   frm.refresh_field(child_name);
 
-  frappe.show_alert(
-    { message: "Rows merged successfully.", indicator: "blue" },
-    5,
-  );
+  frappe.show_alert({ message: "Rows merged successfully.", indicator: "blue" }, 5);
 
   if (child_name == "njqca_laptop_ram") {
     frm.set_value("merged_ram_item_code", 1);

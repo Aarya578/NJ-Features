@@ -12,7 +12,7 @@ frappe.ui.form.on("Purchase Receipt", {
     },
 
     refresh: function(frm) {
-        // Set UOM query on refresh for existing rows
+        // Set UOM query on refresh for existing rows (show all UOMs)
         frm.set_query('uom', 'items', function(doc, cdt, cdn) {
             var r = locals[cdt][cdn];
             if (!r.item_code) return {};
@@ -116,7 +116,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
         var row = locals[cdt][cdn];
         if (!row.item_code) return;
 
-        // Set per-row UOM filter dynamically
+        // Set per-row UOM query dynamically (show all UOMs)
         frm.set_query('uom', 'items', function(doc, cdt, cdn) {
             var r = locals[cdt][cdn];
             if (!r.item_code) return {};
@@ -134,21 +134,7 @@ frappe.ui.form.on('Purchase Receipt Item', {
 
         var selected_uom = row.uom;
 
-        frappe.call({
-            method: 'nj_features.overrides.purchase_receipt.get_item_uoms',
-            args: { item_code: row.item_code },
-            callback: function(r) {
-                if (!r.message) return;
-                var match = r.message.find(u => u.uom === selected_uom);
-                if (match) {
-                    var cf = flt(match.conversion_factor, 9);
-                    console.log("PR UOM:", selected_uom, "| CF:", cf);
-                    frappe.model.set_value(cdt, cdn, 'uom', selected_uom);
-                    frappe.model.set_value(cdt, cdn, 'conversion_factor', cf);
-                    frappe.model.set_value(cdt, cdn, 'stock_qty', flt(row.qty || 0) * cf);
-                }
-            }
-        });
+        nj_pr_set_conversion_factor(frm, cdt, cdn, row, selected_uom);
     },
 
     // ── Existing: barcode printing ────────────────────────────────────────────
@@ -201,6 +187,48 @@ frappe.ui.form.on('Purchase Receipt Item', {
     // ─────────────────────────────────────────────────────────────────────────
 });
 
+
+function nj_pr_apply_uom_and_cf(frm, cdt, cdn, row, selected_uom, cf) {
+    frappe.model.set_value(cdt, cdn, 'uom', selected_uom);
+    frappe.model.set_value(cdt, cdn, 'conversion_factor', cf);
+    frappe.model.set_value(cdt, cdn, 'stock_qty', flt(row.qty || 0) * cf);
+}
+
+function nj_pr_set_conversion_factor(frm, cdt, cdn, row, selected_uom) {
+    frappe.call({
+        method: 'nj_features.overrides.purchase_receipt.get_item_uoms',
+        args: { item_code: row.item_code },
+        callback: function(r) {
+            var uoms = r.message || [];
+            var match = uoms.find(u => u.uom === selected_uom);
+            if (match) {
+                var cf = flt(match.conversion_factor, 9);
+                console.log('PR UOM:', selected_uom, '| CF:', cf, '| source=item mapping');
+                nj_pr_apply_uom_and_cf(frm, cdt, cdn, row, selected_uom, cf);
+                return;
+            }
+
+            frappe.call({
+                method: 'erpnext.stock.get_item_details.get_conversion_factor',
+                args: { item_code: row.item_code, uom: selected_uom },
+                callback: function(res) {
+                    var conversion_factor = res && res.message ? flt(res.message.conversion_factor, 9) : 0;
+
+                    if (conversion_factor > 0) {
+                        console.log('PR UOM:', selected_uom, '| CF:', conversion_factor, '| source=erpnext fallback');
+                        nj_pr_apply_uom_and_cf(frm, cdt, cdn, row, selected_uom, conversion_factor);
+                        return;
+                    }
+
+                    frappe.show_alert({
+                        message: __('Selected UOM is not mapped for this item. Enable Manual Conversion Override and enter the conversion factor.'),
+                        indicator: 'orange'
+                    }, 7);
+                }
+            });
+        }
+    });
+}
 
 // ─────────────────────────────────────────
 // OCR — RUN PR INVOICE SCAN

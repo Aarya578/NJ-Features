@@ -60,7 +60,8 @@ override_doctype_class = {
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
-    "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
+    # "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
+    "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
 
 # ========== Doc Events ==========
@@ -95,7 +96,10 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
-        ]
+        ],
+        "on_submit": [
+            "nj_features.overrides.sales_invoice.send_invoice_email",
+        ],
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
@@ -104,7 +108,6 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.delivery_note.deviding_tax_chargese_dn",
             "nj_features.overrides.delivery_note.deviding_tax_chargese_return_dn",
-
         ],
         # "before_save": [
         #     "nj_features.overrides.delivery_note.deviding_tax_chargese"
@@ -115,7 +118,16 @@ doc_events = {
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
-    }
+    },
+    # "Journal Entry": {
+    #     "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
+    # },
+    "Purchase Invoice": {
+        "on_submit": [
+            "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice",
+            "nj_features.overrides.purchase_invoice.send_invoice_email",
+        ],
+    },
 }
 
 # ========== Override Whitelisted Methods ==========

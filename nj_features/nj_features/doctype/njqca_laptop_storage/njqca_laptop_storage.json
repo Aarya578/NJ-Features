@@ -18,6 +18,7 @@
   "reference_docname",
   "merged",
   "item_group_idx",
+  "component_serial_no",
   "reference_item"
  ],
  "fields": [
@@ -125,11 +126,17 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Reference Item"
+  },
+  {
+   "fieldname": "component_serial_no",
+   "fieldtype": "Link",
+   "label": "Component Serial No",
+   "options": "Serial No"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2025-09-08 17:51:19.489705",
+ "modified": "2026-04-13 21:43:59.685214",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA Laptop Storage",

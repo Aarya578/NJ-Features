@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Force backgrounds to print in ALL browsers + wkhtmltopdf */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; margin: 0; padding: 0; }
+  .page { padding: 10px 28px 28px 28px; }
+  table { border-collapse: collapse; }
+  .w100 { width: 100%; }
+  .lbl { color: #777; font-size: 9px; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; }
+  .val { color: #111; font-size: 10px; font-weight: bold; padding: 2px 0; }
+  .itd { padding: 6px 8px; font-size: 10px; vertical-align: top; border: 1px solid #ddd; }
+  .itr { padding: 6px 8px; font-size: 10px; vertical-align: top; border: 1px solid #ddd; text-align: right; }
+  .tl { font-size: 10px; padding: 4px 8px; border-bottom: 1px solid #eee; color: #444; }
+  .tr { font-size: 10px; padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #1F4E8C; }
+  .sec-head { font-size: 10px; font-weight: bold; color: #1F4E8C; border-bottom: 1px solid #1F4E8C; padding-bottom: 3px; margin-bottom: 6px; }
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- LETTER HEAD — renders whichever is selected in print view sidebar -->
+  {{ letter_head }}
+
+  <!-- DOC TITLE -->
+  <table class="w100" cellpadding="0" cellspacing="0" style="border-bottom: 2px solid #1F4E8C; margin-bottom: 10px; padding-bottom: 5px;">
+    <tr>
+      <td style="font-size:14px; font-weight:bold; color:#1F4E8C;">Sales Invoice</td>
+      <td style="text-align:right; font-size:11px; color:#555;">{{ doc.name }}</td>
+    </tr>
+  </table>
+
+  <!-- BILL TO + INVOICE DETAILS -->
+  <table class="w100" cellpadding="0" cellspacing="0" style="border: 1px solid #ddd; margin-bottom: 12px;">
+    <tr>
+      <td style="width:50%; vertical-align:top; padding:8px 10px; border-right:1px solid #ddd;">
+        <div class="sec-head">Bill To</div>
+        <table cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="lbl">Customer</td>
+            <td class="val">{{ doc.customer_name or doc.customer }}</td>
+          </tr>
+          {% if doc.address_display %}
+          <tr>
+            <td class="lbl">Address</td>
+            <td style="font-size:10px; color:#444; padding:2px 0; line-height:1.5;">
+              {{ doc.address_display | replace('\n', '<br>') }}
+            </td>
+          </tr>
+          {% endif %}
+          {% if doc.customer_gstin %}
+          <tr>
+            <td class="lbl">GSTIN</td>
+            <td class="val">{{ doc.customer_gstin }}</td>
+          </tr>
+          {% elif doc.billing_address_gstin %}
+          <tr>
+            <td class="lbl">GSTIN</td>
+            <td class="val">{{ doc.billing_address_gstin }}</td>
+          </tr>
+          {% endif %}
+          {% if doc.contact_mobile %}
+          <tr>
+            <td class="lbl">Mobile</td>
+            <td class="val">{{ doc.contact_mobile }}</td>
+          </tr>
+          {% endif %}
+        </table>
+      </td>
+      <td style="width:50%; vertical-align:top; padding:8px 10px;">
+        <div class="sec-head">Invoice Details</div>
+        <table cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="lbl">Invoice No.</td>
+            <td class="val" style="color:#1F4E8C;">{{ doc.name }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Date</td>
+            <td class="val">{{ doc.posting_date }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">Due Date</td>
+            <td class="val">
+              {% if doc.payment_schedule %}{{ doc.payment_schedule[0].due_date }}{% else %}{{ doc.due_date or '—' }}{% endif %}
+            </td>
+          </tr>
+          {% if doc.po_no %}
+          <tr>
+            <td class="lbl">PO No.</td>
+            <td class="val">{{ doc.po_no }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td class="lbl">Place of Supply</td>
+            <td class="val">{{ doc.place_of_supply or '—' }}</td>
+          </tr>
+          <tr>
+            <td class="lbl">GST Category</td>
+            <td class="val">{{ doc.gst_category or '—' }}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ITEMS TABLE -->
+  <table class="w100" cellpadding="0" cellspacing="0">
+    <tr bgcolor="#E8EFF8" style="background-color:#E8EFF8;">
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; width:28px;">Sr.</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; width:120px;">Item</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8;">Description</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; width:55px;">HSN/SAC</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; text-align:right; width:45px;">Qty</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; text-align:right; width:75px;">Rate</td>
+      <td style="padding:7px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #c5d5e8; text-align:right; width:85px;">Amount (INR)</td>
+    </tr>
+    {% for row in doc.items %}
+    <tr bgcolor="{{ '#eef3fb' if loop.index is even else '#ffffff' }}" style="background-color:{{ '#eef3fb' if loop.index is even else '#ffffff' }};">
+      <td class="itd">{{ loop.index }}</td>
+      <td class="itd">
+        {% set iname = row.item_name if row.item_name and row.item_name != "Item Not Found" else row.item_code %}
+        <strong>{{ iname }}</strong>
+        {% if row.item_name and row.item_name != "Item Not Found" and row.item_code != row.item_name %}
+          <br><span style="color:#999; font-size:9px;">{{ row.item_code }}</span>
+        {% endif %}
+      </td>
+      <td class="itd" style="color:#555; font-size:9px;">{{ row.description | striptags if row.description else '—' }}</td>
+      <td class="itd" style="color:#666;">{{ row.gst_hsn_code or '—' }}</td>
+      <td class="itr">{{ row.qty | int }}<br><span style="color:#999; font-size:9px;">{{ row.uom or '' }}</span></td>
+      <td class="itr">{{ "%.2f" | format(row.rate or 0) }}</td>
+      <td class="itr"><strong>{{ "%.2f" | format(row.amount or 0) }}</strong></td>
+    </tr>
+    {% endfor %}
+    <!-- Total row -->
+    <tr bgcolor="#dde8f5" style="background-color:#dde8f5;">
+      <td colspan="6" style="padding:6px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #ccc; text-align:right;">Total (INR)</td>
+      <td style="padding:6px 8px; font-size:10px; font-weight:bold; color:#1F4E8C; border:1px solid #ccc; text-align:right;">&#8377; {{ "%.2f" | format(doc.total or 0) }}</td>
+    </tr>
+  </table>
+
+  <!-- TOTALS + TAX -->
+  <table class="w100" cellpadding="0" cellspacing="0" style="border-top:2px solid #1F4E8C;">
+    <tr>
+      <!-- In Words -->
+      <td style="width:55%; vertical-align:top; padding:10px 12px 10px 0;">
+        <div style="font-size:9px; color:#555; font-style:italic; border-top:1px dashed #bbb; padding-top:6px; line-height:1.6;">
+          <strong style="color:#1F4E8C; font-style:normal;">Amount in Words:</strong><br>
+          {{ doc.in_words or '—' }}
+        </div>
+        {% if doc.terms %}
+        <div style="margin-top:10px;">
+          <div class="sec-head">Terms &amp; Conditions</div>
+          <div style="font-size:9px; color:#555; line-height:1.6;">{{ doc.terms | striptags }}</div>
+        </div>
+        {% endif %}
+      </td>
+      <!-- Tax breakdown -->
+      <td style="width:45%; vertical-align:top; padding:10px 0 10px 10px;">
+        <table class="w100" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="tl">Subtotal</td>
+            <td class="tr">&#8377; {{ "%.2f" | format(doc.total or 0) }}</td>
+          </tr>
+          {% for tax in doc.taxes %}
+            {% if tax.tax_amount and tax.tax_amount != 0 %}
+            <tr>
+              <td class="tl">{{ tax.description }}{% if tax.rate %} <span style="color:#999; font-size:9px;">({{ "%.2f" | format(tax.rate) }}%)</span>{% endif %}</td>
+              <td class="tr">&#8377; {{ "%.2f" | format(tax.tax_amount) }}</td>
+            </tr>
+            {% endif %}
+          {% endfor %}
+          {% if doc.discount_amount and doc.discount_amount > 0 %}
+          <tr>
+            <td class="tl">Discount</td>
+            <td class="tr" style="color:#c0392b;">- &#8377; {{ "%.2f" | format(doc.discount_amount) }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td class="tl">Grand Total</td>
+            <td class="tr">&#8377; {{ "%.2f" | format(doc.grand_total or 0) }}</td>
+          </tr>
+          {% if doc.rounding_adjustment and doc.rounding_adjustment != 0 %}
+          <tr>
+            <td class="tl">Rounding</td>
+            <td class="tr">{{ "%.2f" | format(doc.rounding_adjustment) }}</td>
+          </tr>
+          {% endif %}
+          <tr bgcolor="#E8EFF8" style="background-color:#E8EFF8;">
+            <td style="padding:7px 8px; font-size:11px; font-weight:bold; color:#1F4E8C; border-top:2px solid #1F4E8C;">Rounded Total (INR)</td>
+            <td style="padding:7px 8px; font-size:11px; font-weight:bold; color:#1F4E8C; text-align:right; border-top:2px solid #1F4E8C;">&#8377; {{ "%.2f" | format(doc.rounded_total or doc.grand_total or 0) }}</td>
+          </tr>
+          <tr>
+            <td class="tl">Outstanding</td>
+            <td class="tr" style="color:#c0392b;">&#8377; {{ "%.2f" | format(doc.outstanding_amount or 0) }}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</div>
+</body>
+</html>
+

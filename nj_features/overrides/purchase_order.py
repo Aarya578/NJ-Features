@@ -123,6 +123,17 @@ def validate_mandatory_links(doc, method=None):
 
     core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
     requires_links = False
+
+     # Add email validation here
+    email_id = (doc.get("contact_email") or "").strip()
+
+    # fallback to Supplier master email, if needed
+    if not email_id and doc.get("supplier"):
+        email_id = (frappe.db.get_value("Supplier", doc.supplier, "email_id") or "").strip()
+
+    if not email_id:
+        frappe.throw("Email ID is mandatory for invoicing.")
+
     
     if doc.is_sample:
         return

@@ -2043,7 +2043,7 @@ def get_item_code_for_each_part(doc):
 
                                     final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
+                                elif numeric_value >= 60 and numeric_value <= 80 and 'Chromebook' in doc.get('item_code'):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))

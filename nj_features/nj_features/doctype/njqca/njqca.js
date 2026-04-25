@@ -2713,27 +2713,42 @@ frappe.ui.form.on("NJQCA Display", {
   },
 });
 
+
 async function get_options(attributeName, item_group) {
   return new Promise((resolve, reject) => {
     frappe.call({
-      method:
-        "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
+      method: "nj_features.nj_features.doctype.njqca.njqca.get_options_for_label",
       args: {
         label: attributeName,
         item_template: cur_frm.doc.item_template,
         item_group: item_group,
       },
       callback: function (r) {
-        if (r.message && r.message.error) {
-          frappe.show_alert({ message: r.message.error, indicator: "red" }, 10);
-          return;
-        }
-        if (r.message && Array.isArray(r.message)) {
-          resolve(r.message);
-        } else {
-          resolve([]);
-        }
-      },
+          console.log(`Options for ${attributeName}:`, r.message);
+
+          if (r.message && r.message.error) {
+            frappe.show_alert({ message: r.message.error, indicator: "red" }, 10);
+            return;
+          }
+
+          if (r.message && Array.isArray(r.message)) {
+            let filtered = r.message.filter(
+              (opt) => String(opt).toLowerCase() !== "unknown"
+            );
+
+            // Add 2666 GHZ only for RAM Speed
+            if (attributeName === "RAM Speed") {
+              filtered.push("2666 GHZ");
+            }
+
+            // Remove duplicates
+            filtered = [...new Set(filtered)];
+
+            resolve(filtered);
+          } else {
+            resolve([]);
+          }
+        },
       error: function (err) {
         console.error("API Error:", err);
         reject(err);
@@ -2879,6 +2894,7 @@ frappe.ui.form.on("NJQCA Adaptor", {
   },
 });
 
+
 frappe.ui.form.on("NJQCA Laptop Storage", {
   check_button: async function (frm, cdt, cdn) {
     let child = locals[cdt][cdn];
@@ -2964,7 +2980,7 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
           options: ["Loading..."],
           default: child.storage_interface || "",
           reqd: !child.storage_interface,
-          read_only: !!child.storage_interface,
+          // read_only: !!child.storage_interface,
         },
         {
           label: "Storage Capacity",
@@ -2991,6 +3007,7 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
           options: ["Loading..."],
           default: child.grade || "",
           reqd: !child.grade,
+          // read_only: !!child.grade,   // 👈 add this
         },
       ],
       primary_action_label: "Save",
@@ -3013,6 +3030,40 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
         d.hide();
       },
     });
+
+    // ─── Inject reference image below dialog title ────────────────────────
+    frappe.db.get_value("File", "bd09102d7c", "file_url", function (r) {
+      if (r && r.file_url) {
+        const base_url = frappe.urllib.get_base_url();
+        const img_url = r.file_url.startsWith("http")
+          ? r.file_url
+          : base_url + r.file_url;
+
+        const $img = $(`
+          <div style="
+            text-align: center;
+            padding: 8px 16px 4px 16px;
+            border-bottom: 1px solid #444;
+            margin-bottom: 4px;
+          ">
+            <img
+              src="${img_url}"
+              alt="Storage Reference"
+              style="
+                width: 600px;
+                max-width: 100%;
+                border-radius: 6px;
+                border: 1px solid #555;
+                object-fit: contain;
+              "
+            />
+          </div>
+        `);
+
+        d.$wrapper.find(".modal-header").after($img);
+      }
+    });
+    // ─────────────────────────────────────────────────────────────────────
 
     const fieldToAttribute = {
       storage_type: "Storage Type",
@@ -3110,6 +3161,7 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
     }
   },
 });
+
 
 function shouldBeRequired(child) {
   return (

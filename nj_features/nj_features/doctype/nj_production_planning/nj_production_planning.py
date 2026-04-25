@@ -534,6 +534,122 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             logger.debug(f"Total serial numbers skipped: {skipped_count}")
             logger.debug(f"-------------------------------------------")
 
+    # =======================================================
+    # RECONFIG PHASE: Rescue stale serials from downstream depts
+    # =======================================================
+    reconfig_aging_days = frappe.db.get_single_value(
+        "NewJaisa Configuration", "reconfig_aging"
+    ) or 0
+    reconfig_aging_days = int(reconfig_aging_days)
+
+    if reconfig_aging_days > 0:
+        logger.debug(f"[RECONFIG_PHASE] Starting reconfig phase with aging threshold = {reconfig_aging_days} days")
+
+        # Collect all serials already planned to avoid duplicates
+        planned_sns = {row.serial_no for row in plan_doc.get("lines", [])}
+
+        for s in sorted(sequences, reverse=True):
+            seq_forward_grain = forward_grain_per_seq[s]
+            forward_keys = forward_keys_per_seq[s]
+
+            for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
+                dept_name = dept["name"]
+
+                if not dept.get("run_production_planning"):
+                    continue
+
+                dept_doc = frappe.get_doc("Department", dept_name)
+
+                # Read reconfig_department Table MultiSelect (child doctype: Department Multi Models)
+                reconfig_dept_rows = dept_doc.get("reconfig_department", [])
+                reconfig_dept_names = [r.department for r in reconfig_dept_rows if r.department]
+
+                if not reconfig_dept_names:
+                    continue
+
+                logger.debug(
+                    f"[RECONFIG] Department {dept_name} scanning reconfig departments: {reconfig_dept_names}"
+                )
+
+                # Refresh planned set (grows as we add reconfig rows)
+                planned_sns = {row.serial_no for row in plan_doc.get("lines", [])}
+
+                stale_serials = _get_reconfig_serials_for_departments(
+                    department_names=reconfig_dept_names,
+                    reconfig_aging_days=reconfig_aging_days,
+                    already_planned_sns=planned_sns,
+                )
+
+                if not stale_serials:
+                    logger.debug(f"[RECONFIG] No stale serials found for {dept_name}")
+                    continue
+
+                # Compute current DOI snapshot for reconfig allocation
+                fwd_inventory_reconfig = _estimate_forward_inventory(
+                    forward_keys, [], seq_forward_grain
+                )
+                # Include already-planned serials in DOI calculation
+                for row in plan_doc.get("lines", []):
+                    if row.item_code:
+                        if row.item_code not in _ITEM_KEYS:
+                            _prime_item_cache([row.item_code])
+                        ik = _ITEM_KEYS.get(row.item_code, {})
+                        fk = ik.get("config_key") if seq_forward_grain == "config" else ik.get("model_key")
+                        if fk and fk in forward_keys:
+                            fwd_inventory_reconfig[fk] = fwd_inventory_reconfig.get(fk, 0) + 1
+
+                doi_snapshot_reconfig = {
+                    k: (float(fwd_inventory_reconfig.get(k, 0)) / max(1.0, float(sales_rate.get(k, 1.0))))
+                    for k in forward_keys
+                }
+
+                reconfig_allocs = _allocate_reconfig_serials(
+                    stale_serials=stale_serials,
+                    forward_keys=forward_keys,
+                    sales_rate=sales_rate,
+                    current_doi=doi_snapshot_reconfig,
+                    current_department=dept_name,
+                )
+
+                for alloc in reconfig_allocs:
+                    k = alloc["forward_key"]
+                    rate_display = float(sales_rate.get(k, 1.0))
+                    doi_display = float(alloc.get("doi", 0.0))
+                    _append_plan_row(
+                        plan_doc,
+                        serial_no=alloc["serial_no"],
+                        current_warehouse=alloc["warehouse"],
+                        current_department=dept_name,
+                        sales_rate=rate_display,
+                        doi=doi_display,
+                        sales_order_number=None,
+                        delivery_date=None,
+                        item_code_to_make=alloc["target_item_code"],
+                        reason="Reconfig",
+                        priority_rank=priority_per_dept[dept_name],
+                        serial_age_days=alloc.get("dwell_days"),
+                    )
+                    priority_per_dept[dept_name] += 1
+
+                # Log serials that failed part allocation during reconfig
+                allocated_sns = {a["serial_no"] for a in reconfig_allocs}
+                for serial in stale_serials:
+                    if serial["serial_no"] not in allocated_sns:
+                        plan_doc.append("missing_serial_nos", {
+                            "serial_no": serial["serial_no"],
+                            "current_department": serial.get("source_department", ""),
+                            "current_warehouse": serial["warehouse"],
+                            "reason": "Part allocation failed (Reconfig)" if _DEPT_ALLOCATE_PARTS.get(dept_name) else "No matching reconfig target found",
+                        })
+
+                logger.debug(
+                    f"[RECONFIG_SUMMARY] Department {dept_name}: "
+                    f"{len(stale_serials)} stale serials found, "
+                    f"{len(reconfig_allocs)} allocated for reconfig"
+                )
+    else:
+        logger.debug("[RECONFIG_PHASE] Skipped — reconfig_aging is 0 or not configured")
+
     plan_doc.save(ignore_permissions=True)
     total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
@@ -900,11 +1016,31 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
         rate = (num / den) if den else 0.0
         rates[key] = (rate if rate > 0 else 1.0)
 
+    # Load to_make_ratio from Shopify Item List for default rate calculation
+    ratio_rows = frappe.db.sql(
+        """
+        SELECT item_code, IFNULL(to_make_ratio, 0) AS to_make_ratio
+        FROM `tabShopify Item List`
+        WHERE item_code IS NOT NULL AND item_code != ''
+        """,
+        as_dict=True,
+    )
+    to_make_ratio_map = {}
+    for r in ratio_rows:
+        ratio = int(r.get("to_make_ratio") or 0)
+        to_make_ratio_map[r["item_code"]] = ratio
+
     for it in (sellable_items or []):
-        km = _get_model_key(it["name"])
-        kc = _get_config_key(it["name"])
-        rates.setdefault(km, 1.0)
-        rates.setdefault(kc, 1.0)
+        ic = it["name"]
+        km = _get_model_key(ic)
+        kc = _get_config_key(ic)
+
+        # Use to_make_ratio as multiplier; if 0 or missing, fall back to 1.0
+        ratio = to_make_ratio_map.get(ic, 0)
+        default_rate = max(1.0, 1.0 * ratio) if ratio > 0 else 1.0
+
+        rates.setdefault(km, default_rate)
+        rates.setdefault(kc, default_rate)
 
     return rates
 
@@ -1077,117 +1213,6 @@ def _match_inventory_to_order_queues_for_sequence(
 
     return allocations, remaining
 
-    by_model = defaultdict(list)
-    by_config = defaultdict(list)
-    for s in remaining:
-        by_model[s["forward_key_model"]].append(s)
-        by_config[s["forward_key_config"]].append(s)
-
-    for k in by_model:
-        by_model[k] = _oldest_first(by_model[k])
-    for k in by_config:
-        by_config[k] = _oldest_first(by_config[k])
-
-    for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
-        while ref_list:
-            order_ref = ref_list[-1]
-
-            target_cfg_tuple = None
-            if order_ref.get("order_item_code"):
-                target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
-
-            chosen = None
-
-            if key and key[0] == "CONFIG":
-                if not allow_reconfig:
-                    cfg_pool = by_config.get(key, [])
-                    if not cfg_pool:
-                        break
-                    chosen = _oldest_first(cfg_pool)[0] if cfg_pool else None
-                else:
-                    model_key = ("MODEL", key[1], key[2])
-                    model_pool = by_model.get(model_key, [])
-                    if not model_pool:
-                        break
-
-                    if target_cfg_tuple:
-                        exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
-                        exact = _oldest_first(exact)
-                        if exact:
-                            chosen = exact[0]
-
-                    if not chosen and target_cfg_tuple:
-                        near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
-                        near = _oldest_first(near)
-                        if near:
-                            chosen = near[0]
-
-                    if not chosen and model_pool:
-                        chosen = _oldest_first(model_pool)[0]
-
-            else:
-                model_pool = by_model.get(key, [])
-                if not model_pool:
-                    break
-                chosen = _oldest_first(model_pool)[0] if model_pool else None
-
-            if not chosen:
-                break
-
-            if key and key[0] == "CONFIG":
-                target_item_code = _resolve_target_item_code(
-                    key,
-                    fallback_pb_code=order_ref.get("pb_code"),
-                )
-            else:
-                target_item_code = chosen["item_code"]
-
-            if not target_item_code:
-                target_item_code = order_ref.get("pb_code") or chosen["item_code"]
-
-            if _DEPT_ALLOCATE_PARTS.get(current_department):
-                ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-                if not ok:
-                    _update_serial_to_make(chosen["serial_no"], target_item_code)
-
-                    remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-                    by_model[chosen["forward_key_model"]] = [
-                        x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    by_config[chosen["forward_key_config"]] = [
-                        x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
-                    continue
-
-            ref_list.pop()
-
-            allocations.append(
-                {
-                    "serial_no": chosen["serial_no"],
-                    "warehouse": chosen["warehouse"],
-                    "target_item_code": target_item_code,
-                    "forward_key": key,
-                    "order_name": order_ref.get("so_name"),
-                    "required_by": order_ref.get("delivery_date"),
-                    "age_days": chosen.get("age_days"),
-                }
-            )
-
-            remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-            by_model[chosen["forward_key_model"]] = [
-                x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
-            ]
-            by_config[chosen["forward_key_config"]] = [
-                x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
-            ]
-
-    for k in [k for k, v in list(seq_order_queues.items()) if not v]:
-        del seq_order_queues[k]
-
-    return allocations, remaining
-
-
 @log_io
 def _estimate_forward_inventory(forward_keys, serials, forward_grain):
     inv = Counter()
@@ -1330,6 +1355,260 @@ def _allocate_forecast_to_balance_doi(
             mk = chosen["forward_key_model"]
             if mk in buckets:
                 buckets[mk] = [x for x in buckets[mk] if x["serial_no"] != chosen["serial_no"]]
+
+    return allocations
+
+
+# =========================
+# Reconfig stale serial helpers
+# =========================
+@log_io
+def _get_serial_dwell_days(serial_nos: List[str]) -> Dict[str, int]:
+    """
+    For each serial, find the last submitted Material Transfer (Stock Entry)
+    and compute dwell_days = today - posting_date.
+    Returns {serial_no: dwell_days}.
+    Falls back to Serial No creation date if no Material Transfer found.
+    """
+    if not serial_nos:
+        return {}
+
+    today = frappe.utils.getdate(frappe.utils.nowdate())
+    result: Dict[str, int] = {}
+
+    # Batch query: find the latest Material Transfer posting_date per serial
+    # Stock Entry Detail stores serial_no as a text field (newline-separated for multi)
+    # For single serial items, it's just the serial name.
+    placeholders = ",".join(["%s"] * len(serial_nos))
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            sed.serial_no AS raw_serial,
+            MAX(se.posting_date) AS last_transfer_date
+        FROM `tabStock Entry Detail` sed
+        INNER JOIN `tabStock Entry` se
+            ON se.name = sed.parent
+            AND se.stock_entry_type = 'Material Transfer'
+            AND se.docstatus = 1
+        WHERE sed.serial_no IN ({placeholders})
+        GROUP BY sed.serial_no
+        """,
+        tuple(serial_nos),
+        as_dict=True,
+    )
+
+    transfer_dates = {}
+    for r in rows:
+        raw = (r.get("raw_serial") or "").strip()
+        if raw:
+            # Handle single serial per row
+            transfer_dates[raw] = r["last_transfer_date"]
+
+    for sn in serial_nos:
+        last_date = transfer_dates.get(sn)
+        if last_date:
+            dwell = (today - frappe.utils.getdate(last_date)).days
+        else:
+            # Fallback: use serial creation date
+            creation = frappe.db.get_value("Serial No", sn, "creation")
+            if creation:
+                dwell = (today - frappe.utils.getdate(creation)).days
+            else:
+                dwell = 0
+        result[sn] = max(dwell, 0)
+
+    return result
+
+
+@log_io
+def _get_reconfig_serials_for_departments(
+    department_names: List[str],
+    reconfig_aging_days: int,
+    already_planned_sns: set,
+) -> List[Dict]:
+    """
+    Fetch active serials from the given departments that have been sitting
+    longer than reconfig_aging_days (based on last Material Transfer).
+    Excludes serials already in the current plan.
+    Returns enriched serial dicts ready for allocation.
+    """
+    if not department_names or reconfig_aging_days <= 0:
+        return []
+
+    dept_tuple = tuple(department_names)
+    igroup_tuple = tuple(SELLABLE_ITEM_GROUPS)
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            sn.name,
+            sn.item_code,
+            sn.warehouse,
+            sn.department,
+            sn.creation,
+            sn.purchase_date,
+            sn.item_wizard,
+            iw.part_list_status
+        FROM `tabSerial No` sn
+        INNER JOIN `tabItem` it
+            ON sn.item_code = it.name
+        LEFT JOIN `tabItem Wizards` iw
+            ON sn.item_wizard = iw.name
+        WHERE sn.department IN %(depts)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND it.item_group IN %(igroups)s
+        """,
+        {"depts": dept_tuple, "igroups": igroup_tuple},
+        as_dict=True,
+    )
+
+    if not rows:
+        return []
+
+    # Filter out already-planned serials
+    rows = [r for r in rows if r["name"] not in already_planned_sns]
+    if not rows:
+        return []
+
+    # Validate: must have Item Wizard with completed part list
+    valid_rows = []
+    for r in rows:
+        if not r.get("item_wizard"):
+            continue
+        if r.get("part_list_status") != "Completed":
+            continue
+        valid_rows.append(r)
+
+    if not valid_rows:
+        return []
+
+    # Compute dwell days
+    serial_names = [r["name"] for r in valid_rows]
+    dwell_map = _get_serial_dwell_days(serial_names)
+
+    # Filter by aging threshold
+    stale_rows = [r for r in valid_rows if dwell_map.get(r["name"], 0) > reconfig_aging_days]
+    if not stale_rows:
+        return []
+
+    logger.debug(
+        f"[RECONFIG] Found {len(stale_rows)} stale serials (aging > {reconfig_aging_days} days) "
+        f"from departments {department_names}"
+    )
+
+    # Prime item cache and enrich
+    _prime_item_cache([r["item_code"] for r in stale_rows])
+    enriched = []
+    for r in stale_rows:
+        e = _enrich_serial_from_attrs(r)
+        e["dwell_days"] = dwell_map.get(r["name"], 0)
+        e["source_department"] = r["department"]
+
+        # Must have a fallback PB item code
+        if not e.get("fallback_pb_item_code"):
+            continue
+
+        enriched.append(e)
+
+    return enriched
+
+
+@log_io
+def _allocate_reconfig_serials(
+    stale_serials: List[Dict],
+    forward_keys: List,
+    sales_rate: Dict,
+    current_doi: Dict,
+    current_department: str,
+) -> List[Dict]:
+    """
+    Allocate stale serials to the best target config using lowest-DOI logic.
+    For each stale serial:
+      1. Find its model_key
+      2. Among forward_keys, find configs matching the same model
+      3. Pick the config with the lowest DOI
+      4. Run part allocation check
+      5. If OK -> allocate; if not -> skip
+    Returns list of allocation dicts.
+    """
+    allocations = []
+
+    # Sort stale serials: oldest first (highest dwell_days first)
+    stale_serials = sorted(stale_serials, key=lambda s: -s.get("dwell_days", 0))
+
+    for serial in stale_serials:
+        model_key = serial["forward_key_model"]
+        # model_key is ("MODEL", template, processor)
+        if not model_key or len(model_key) < 3:
+            continue
+
+        template = model_key[1]
+        proc = model_key[2]
+
+        # Find all forward_keys that match this model (same template + processor)
+        matching_keys = []
+        for fk in forward_keys:
+            if fk[0] == "CONFIG" and len(fk) >= 3 and fk[1] == template and fk[2] == proc:
+                matching_keys.append(fk)
+            elif fk[0] == "MODEL" and len(fk) >= 3 and fk[1] == template and fk[2] == proc:
+                matching_keys.append(fk)
+
+        if not matching_keys:
+            logger.debug(
+                f"[RECONFIG_SKIP] serial_no={serial['serial_no']} - no matching forward keys for model {model_key}"
+            )
+            continue
+
+        # Sort by DOI ascending (lowest DOI = most urgently needed)
+        matching_keys.sort(key=lambda k: (float(current_doi.get(k, 0.0)), -float(sales_rate.get(k, 1.0))))
+        target_key = matching_keys[0]
+
+        # Resolve target item code
+        if target_key[0] == "CONFIG":
+            target_item_code = _resolve_existing_item_for_key(target_key)
+        else:
+            target_item_code = target_key[1]  # template item for MODEL key
+
+        if not target_item_code:
+            target_item_code = serial.get("fallback_pb_item_code")
+
+        if not target_item_code:
+            continue
+
+        # Part allocation check
+        if _DEPT_ALLOCATE_PARTS.get(current_department):
+            ok = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
+            if not ok:
+                _update_serial_to_make(serial["serial_no"], target_item_code)
+                logger.debug(
+                    f"[RECONFIG_SKIP] serial_no={serial['serial_no']} - "
+                    f"Part allocation failed for department {current_department}"
+                )
+                continue
+
+        # Update DOI after allocation
+        rate = max(1.0, float(sales_rate.get(target_key, 1.0)))
+        inv_now = float(current_doi.get(target_key, 0.0)) * rate
+        new_doi = (inv_now + 1.0) / rate
+        current_doi[target_key] = new_doi
+
+        allocations.append({
+            "serial_no": serial["serial_no"],
+            "warehouse": serial["warehouse"],
+            "target_item_code": target_item_code,
+            "forward_key": target_key,
+            "doi": new_doi,
+            "dwell_days": serial.get("dwell_days", 0),
+            "source_department": serial.get("source_department"),
+            "age_days": serial.get("age_days"),
+        })
+
+        logger.debug(
+            f"[RECONFIG_ALLOCATED] serial_no={serial['serial_no']}, "
+            f"from_dept={serial.get('source_department')}, "
+            f"target_item={target_item_code}, doi={new_doi:.2f}, "
+            f"dwell_days={serial.get('dwell_days', 0)}"
+        )
 
     return allocations
 

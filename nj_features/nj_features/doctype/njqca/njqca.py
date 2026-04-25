@@ -2043,7 +2043,7 @@ def get_item_code_for_each_part(doc):
 
                                     final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
+                                elif numeric_value >= 60 and numeric_value <= 80 and 'Chromebook' in doc.get('item_code'):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
@@ -4394,11 +4394,12 @@ from frappe.model.document import Document
 HEAVYLOAD_REF_ITEM_GROUP = "LAPTOP STORAGE"
 HEAVYLOAD_REF_PARAM = "heavy_load_File_Updated_name"
 
-YCRUNCHER_REF_PARAM = "y_cruncher_status"
+YCRUNCHER_REF_PARAM = "y_cruncher_File_Updated_name"
 GAMING_FPS_REF_PARAM = "gaming_fps_file_uploaded"
 PERFORMANCE_REF_PARAM = "performance_File_Updated_name"
 
 # Where to write derived parameters (JS will upsert to these item_groups)
+YCRUNCHER_TARGET_ITEM_GROUP = "Laptop RAM"
 TEMP_TARGET_ITEM_GROUP = "Laptop Processors"
 GAMING_TARGET_ITEM_GROUP = "Laptop RAM"
 PERFORMANCE_TARGET_ITEM_GROUP = "Laptop RAM"
@@ -4427,26 +4428,32 @@ HEAVYLOAD_METRIC_UNITS = {
     "cpu_package_power_min_post5min_w": "W",
 }
 
+# YCRUNCHER_KEEP_KEYS_ORDERED = [
+#     "Spot Check",
+#     "Timer Sanity Check",
+#     "ECC Recovered Errors",
+#     "Decimal Digits",
+#     "Hexadecimal Digits",
+#     "Algorithm",
+#     "Computation Mode",
+#     "Working Memory",
+#     "Total Computation Time",
+#     "Start-to-End Wall Time",
+#     "CPU Utilization",
+#     "Multi-core Efficiency",
+#     "Threading Mode",
+#     "Logical Cores",
+#     "Physical Cores",
+#     "Base Frequency",
+#     "Est. Frequency",
+#     "Start Date",
+#     "End Date",
+# ]
+
 YCRUNCHER_KEEP_KEYS_ORDERED = [
     "Spot Check",
     "Timer Sanity Check",
     "ECC Recovered Errors",
-    "Decimal Digits",
-    "Hexadecimal Digits",
-    "Algorithm",
-    "Computation Mode",
-    "Working Memory",
-    "Total Computation Time",
-    "Start-to-End Wall Time",
-    "CPU Utilization",
-    "Multi-core Efficiency",
-    "Threading Mode",
-    "Logical Cores",
-    "Physical Cores",
-    "Base Frequency",
-    "Est. Frequency",
-    "Start Date",
-    "End Date",
 ]
 
 GAMING_METRIC_UNITS = {
@@ -4973,6 +4980,24 @@ def _parse_ycruncher_content_to_kv(text: str) -> Dict[str, str]:
             ordered[k] = found[k]
     return ordered
 
+def _evaluate_ycruncher_status(kv: Dict[str, str]) -> tuple[str, str]:
+    spot_check = (kv.get("Spot Check") or "").strip()
+    timer_check = (kv.get("Timer Sanity Check") or "").strip()
+    ecc_errors = (kv.get("ECC Recovered Errors") or "").strip()
+
+    if not kv:
+        return "FAIL", "No y-cruncher values parsed from report"
+
+    if not spot_check.startswith("Good through"):
+        return "FAIL", f"Spot Check failed: {spot_check or 'missing'}"
+
+    if timer_check != "Passed":
+        return "FAIL", f"Timer Sanity Check failed: {timer_check or 'missing'}"
+
+    if ecc_errors != "0":
+        return "FAIL", f"ECC Recovered Errors is {ecc_errors or 'missing'}"
+
+    return "PASS", "Spot Check good, Timer Sanity Check passed, ECC errors 0"
 
 # ==========================================================
 # Gaming FPS parsing (correct, using TimeInSeconds etc.)
@@ -5562,12 +5587,25 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
 
             kv = _parse_ycruncher_content_to_kv(text)
             if not kv:
+                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", "FAIL", "")
+                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", "No y-cruncher values parsed from report", "")
                 info["y_cruncher"] = {"status": "skip", "reason": "no whitelisted keys found"}
             else:
                 for k, v in kv.items():
-                    add_change(TEMP_TARGET_ITEM_GROUP, k, v, "")
-                info["y_cruncher"] = {"status": "ok", "keys_written": list(kv.keys())}
+                    add_change(YCRUNCHER_TARGET_ITEM_GROUP, k, v, "")
+
+                y_status, y_reason = _evaluate_ycruncher_status(kv)
+                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", y_status, "")
+                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", y_reason, "")
+                info["y_cruncher"] = {
+                    "status": "ok",
+                    "keys_written": list(kv.keys()),
+                    "final_status": y_status,
+                    "reason": y_reason
+                }
         except Exception as e:
+            add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", "FAIL", "")
+            add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", f"Error while parsing y-cruncher file: {str(e)}", "")
             info["y_cruncher"] = {"status": "error", "error": str(e)}
 
     # -------------------------

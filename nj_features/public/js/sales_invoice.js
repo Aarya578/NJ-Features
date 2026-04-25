@@ -1,5 +1,7 @@
 frappe.ui.form.on('Sales Invoice', {
-    refresh: function(frm) {        
+    refresh: function(frm) {   
+        // remove "Update Items" button from UI
+        frm.remove_custom_button('Update Items');     
         // Ensure the button is shown even if update_stock == 1
 		var from_delivery_note = frm.doc.items.some(item => item.delivery_note ? true : false);
 

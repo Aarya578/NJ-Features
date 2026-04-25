@@ -601,6 +601,7 @@ def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
         WHERE serial_no = %s
           AND COALESCE(quantity, 0) > 0
           AND COALESCE(is_available, 0) = 1
+          AND parenttype = "Serial No"
         ORDER BY modified DESC, creation DESC
         LIMIT 1
         """,
@@ -1246,30 +1247,80 @@ def get_grades_from_part_list(search_value):
 
     return results
 
+def get_special_max_qty_item_groups_from_nj_settings():
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "doc_type": "Stock Movement",
+            "parameter": "Restriction for min and max"
+        },
+        "value"
+    ) or ""
+
+    return [
+        row.strip()
+        for row in value.splitlines()
+        if row and row.strip()
+    ]
+
 def check_min_qty_and_max_qty(serial_doc, department_doc, error_messages):
+    # Fetch special item groups from NJ Settings instead of hardcoding
+    special_item_groups = get_special_max_qty_item_groups_from_nj_settings()
+
+    # Fetch mandatory components from Item Wizard
     item_wizards_mandatory_item_groups_data = frappe.db.get_all(
         'Component',
-        {'parent': serial_doc.item_wizard, 'mandatory': '1'},
-        'component_type'
+        {
+            'parent': serial_doc.item_wizard,
+            'mandatory': '1'
+        },
+        ['component_type', 'quantity']
     )
-    mandatory_item_groups = [row.get("component_type") for row in item_wizards_mandatory_item_groups_data]
+
+    mandatory_item_groups = [
+        row.get("component_type")
+        for row in item_wizards_mandatory_item_groups_data
+    ]
+
+    # Item Wizard quantity lookup
+    iw_quantity_map = {
+        row.get("component_type"): int(row.get("quantity") or 0)
+        for row in item_wizards_mandatory_item_groups_data
+        if row.get("component_type")
+    }
+
     for row in department_doc.get('allowed_item_group_grades'):
         item_group = row.get('item_group')
+
         if item_group in mandatory_item_groups:
             total_quantity = 0
+
+            # Sum quantity from serial_no_component
             for col in serial_doc.get('serial_no_component', []):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
+
+            # Sum quantity from bag_list
             for col in serial_doc.get('bag_list', []):
                 if col.get('item_group') == item_group:
                     total_quantity += int(col.get('quantity') or 0)
+
+            # Min quantity always from Department
             min_qty = int(row.get('min_quantity') or 0)
-            max_qty = int(row.get('max_quantity') or 1)
+
+            # Max quantity:
+            # For configured special item groups -> from Item Wizard qty
+            # Everything else -> keep previous Department max flow
+            if item_group in special_item_groups:
+                max_qty = int(iw_quantity_map.get(item_group) or 0)
+            else:
+                max_qty = int(row.get('max_quantity') or 1)
 
             if total_quantity < min_qty or total_quantity > max_qty:
                 error_messages.append(
                     f"Serial No <b>{serial_doc.name}</b> for item_group <b>{item_group}</b> "
-                    f"has a Total quantity <b>{total_quantity}</b> that is not allowed for department <b>{department_doc.name}</b>. "
+                    f"has Total quantity <b>{total_quantity}</b> that is not allowed for department "
+                    f"<b>{department_doc.name}</b>. "
                     f"(Min: {min_qty}, Max: {max_qty})"
                 )
 

@@ -727,62 +727,112 @@ class CustomDeliveryNote(DeliveryNote):
                 continue
             processed.add(sn)
 
-            warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
+            cause = (self.cause_of_return or "").strip()
 
-            if not warehouse:
-                sle = frappe.db.sql("""
-                    SELECT warehouse
-                    FROM `tabStock Ledger Entry`
-                    WHERE serial_no = %s
-                    AND is_cancelled = 0
-                    AND qty_after_transaction > 0
-                    ORDER BY posting_date DESC, posting_time DESC, creation DESC
+            if cause == "Repair":
+                warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
+
+                if not warehouse:
+                    sle = frappe.db.sql("""
+                        SELECT warehouse
+                        FROM `tabStock Ledger Entry`
+                        WHERE serial_no = %s
+                        AND is_cancelled = 0
+                        AND qty_after_transaction > 0
+                        ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                        LIMIT 1
+                    """, (sn,), as_list=True)
+                    warehouse = sle[0][0] if sle else None
+
+                if not warehouse:
+                    warehouse = frappe.db.get_value(
+                        "Delivery Note Item",
+                        {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
+                        "warehouse"
+                    )
+
+                if not warehouse:
+                    frappe.log_error(
+                        f"Warehouse not found for serial no {sn} in return DN {self.name}.",
+                        "Return DN Grade D Reset"
+                    )
+                    continue
+
+                reset_only_motherboard_grade_to_d_on_return(
+                    sn,
+                    self.name,
+                    warehouse,
+                    expense_account
+                )
+
+            elif cause in ["RTO Customer", "RTO Delivery Partner"]:
+                frappe.logger().info(
+                    f"No grade change required for serial {sn} in Return DN {self.name}. "
+                    f"cause_of_return={cause}"
+                )
+
+            elif cause in ["Replace", "Refund"]:
+                warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
+
+                if not warehouse:
+                    sle = frappe.db.sql("""
+                        SELECT warehouse
+                        FROM `tabStock Ledger Entry`
+                        WHERE serial_no = %s
+                        AND is_cancelled = 0
+                        AND qty_after_transaction > 0
+                        ORDER BY posting_date DESC, posting_time DESC, creation DESC
+                        LIMIT 1
+                    """, (sn,), as_list=True)
+                    warehouse = sle[0][0] if sle else None
+
+                if not warehouse:
+                    warehouse = frappe.db.get_value(
+                        "Delivery Note Item",
+                        {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
+                        "warehouse"
+                    )
+
+                if not warehouse:
+                    frappe.log_error(
+                        f"Warehouse not found for serial no {sn} in return DN {self.name}.",
+                        "Return DN Grade Reset"
+                    )
+                    continue
+
+                parent_item_code = frappe.db.get_value("Serial No", sn, "item_code")
+
+                stock_qty = frappe.db.sql("""
+                    SELECT actual_qty
+                    FROM `tabBin`
+                    WHERE item_code = %s
+                    AND warehouse = %s
                     LIMIT 1
-                """, (sn,), as_list=True)
-                warehouse = sle[0][0] if sle else None
+                """, (parent_item_code, warehouse), as_dict=True)
 
-            if not warehouse:
-                warehouse = frappe.db.get_value(
-                    "Delivery Note Item",
-                    {"parent": self.name, "serial_no": ["like", f"%{sn}%"]},
-                    "warehouse"
+                actual_qty = stock_qty[0]["actual_qty"] if stock_qty else 0
+
+                if actual_qty <= 0:
+                    frappe.log_error(
+                        f"Skipping grade reset for serial {sn}. "
+                        f"Item {parent_item_code} has no stock in warehouse {warehouse}. "
+                        f"Actual Qty: {actual_qty}",
+                        "Return DN Grade Reset"
+                    )
+                    continue
+
+                reset_part_grades_to_unknown_on_return(
+                    sn,
+                    self.name,
+                    warehouse,
+                    expense_account
                 )
 
-            if not warehouse:
-                frappe.log_error(
-                    f"Warehouse not found for serial no {sn} in return DN {self.name}.",
-                    "Return DN Grade Reset"
+            else:
+                frappe.logger().info(
+                    f"No grade change rule matched for serial {sn} in Return DN {self.name}. "
+                    f"cause_of_return={cause}"
                 )
-                continue
-
-            parent_item_code = frappe.db.get_value("Serial No", sn, "item_code")
-
-            stock_qty = frappe.db.sql("""
-                SELECT actual_qty
-                FROM `tabBin`
-                WHERE item_code = %s
-                AND warehouse = %s
-                LIMIT 1
-            """, (parent_item_code, warehouse), as_dict=True)
-
-            actual_qty = stock_qty[0]["actual_qty"] if stock_qty else 0
-
-            if actual_qty <= 0:
-                frappe.log_error(
-                    f"Skipping grade reset for serial {sn}. "
-                    f"Item {parent_item_code} has no stock in warehouse {warehouse}. "
-                    f"Actual Qty: {actual_qty}",
-                    "Return DN Grade Reset"
-                )
-                continue
-
-            # STEP 1: unpack -> grade change -> repack
-            reset_part_grades_to_unknown_on_return(
-                sn,
-                self.name,
-                warehouse,
-                expense_account
-            )
 
             # STEP 2: refresh parent laptop component table after repack
             try:
@@ -1503,6 +1553,168 @@ def reset_part_grades_to_unknown_on_return(serial_no, dn_name, warehouse, expens
             comp.get("item_group_idx")
         ))
 
+@frappe.whitelist()
+def reset_only_motherboard_grade_to_d_on_return(serial_no, dn_name, warehouse, expense_account):
+    import json
+    from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+    from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+
+    motherboard_groups = ["MOTHERBOARD", "MOTHER BOARD"]
+
+    parent_item = frappe.db.get_value("Serial No", serial_no, "item_code")
+    if not parent_item:
+        frappe.log_error(
+            f"Parent item not found for serial no {serial_no}",
+            "Return DN Grade D Reset"
+        )
+        return
+
+    motherboard_components = frappe.db.sql("""
+        SELECT name, item, component_serial_no, item_group, item_group_idx
+        FROM `tabSerial No Component`
+        WHERE parent = %s
+          AND is_available = 1
+          AND UPPER(TRIM(item_group)) IN ('MOTHERBOARD', 'MOTHER BOARD')
+    """, (serial_no,), as_dict=True)
+
+    if not motherboard_components:
+        frappe.logger().info(
+            f"No motherboard row found to mark Grade D for serial {serial_no} in Return DN {dn_name}"
+        )
+        return
+
+    for comp in motherboard_components:
+        current_item = comp.get("item")
+        if not current_item:
+            continue
+
+        parts = current_item.rsplit("-", 1)
+        if len(parts) == 2:
+            grade_d_item = parts[0] + "-GRADE D"
+        else:
+            grade_d_item = current_item
+
+        if not frappe.db.exists("Item", grade_d_item):
+            frappe.log_error(
+                f"Grade D item not found: {grade_d_item}",
+                "Return DN Grade D Reset"
+            )
+            continue
+
+        # ----------------------------------------------------------
+        # SERIALIZED motherboard: unpack -> grade change -> repack
+        # ----------------------------------------------------------
+        if comp.get("component_serial_no"):
+            mb_serial = comp.get("component_serial_no")
+
+            parent_val = get_part_ledger_entry(parent_item, serial_no) or 0
+            mb_val = get_part_ledger_entry(current_item, mb_serial) or 0
+
+            # STEP 1: unpack motherboard from laptop
+            unpack_items = [
+                {
+                    "repack_item_code": parent_item,
+                    "repack_serial_no": serial_no,
+                    "repack_item_source_warehouse": warehouse,
+                    "repack_item_base_price": parent_val,
+                },
+                {
+                    "unpack_item_code": current_item,
+                    "unpack_serial_no": mb_serial,
+                    "unpack_item_target_warehouse": warehouse,
+                    "unpack_item_base_price": mb_val,
+                },
+                {
+                    "unpack_item_code": parent_item,
+                    "unpack_serial_no": serial_no,
+                    "unpack_item_target_warehouse": warehouse,
+                    "unpack_item_base_price": max(parent_val - mb_val, 0),
+                },
+            ]
+
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": unpack_items,
+            }))
+
+            # STEP 2: convert motherboard item to Grade D
+            grade_change_items = [{
+                "repack_item_code": current_item,
+                "repack_serial_no": mb_serial,
+                "repack_item_source_warehouse": warehouse,
+                "repack_item_base_price": mb_val,
+                "unpack_item_code": grade_d_item,
+                "unpack_serial_no": mb_serial,
+                "unpack_item_target_warehouse": warehouse,
+                "unpack_item_base_price": mb_val,
+            }]
+
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": grade_change_items,
+            }))
+
+            # STEP 3: repack Grade D motherboard back into laptop
+            repack_items = [
+                {
+                    "repack_item_code": parent_item,
+                    "repack_serial_no": serial_no,
+                    "repack_item_source_warehouse": warehouse,
+                    "repack_item_base_price": max(parent_val - mb_val, 0),
+                },
+                {
+                    "repack_item_code": grade_d_item,
+                    "repack_serial_no": mb_serial,
+                    "repack_item_source_warehouse": warehouse,
+                    "repack_item_base_price": mb_val,
+                },
+                {
+                    "unpack_item_code": parent_item,
+                    "unpack_serial_no": serial_no,
+                    "unpack_item_target_warehouse": warehouse,
+                    "unpack_item_base_price": parent_val,
+                },
+            ]
+
+            stock_entry_using_nj_lib(json.dumps({
+                "name": dn_name,
+                "doctype": "Delivery Note",
+                "stock_entry_type": "Repack",
+                "expense_account": expense_account,
+                "repack_items": repack_items,
+            }))
+
+            # STEP 4: update serialized child Serial No
+            frappe.db.set_value(
+                "Serial No",
+                mb_serial,
+                {
+                    "item_code": grade_d_item,
+                    "parent_serial_no": serial_no,
+                    "status": "Delivered",
+                    "warehouse": None,
+                    "delivery_document_no": dn_name
+                },
+                update_modified=False
+            )
+
+        # ----------------------------------------------------------
+        # NON-SERIALIZED motherboard: direct item/grade update
+        # ----------------------------------------------------------
+        frappe.db.sql("""
+            UPDATE `tabSerial No Component`
+            SET grade = 'Grade D',
+                item = %s,
+                reference_doctype = 'Delivery Note',
+                reference_doctype_no = %s
+            WHERE name = %s
+        """, (grade_d_item, dn_name, comp.get("name")))
 
 @frappe.whitelist()
 def custome_limits_crossed_error(self, args, item, qty_or_amount):

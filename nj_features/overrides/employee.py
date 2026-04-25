@@ -752,3 +752,91 @@ def update_item_group_and_max_qty_in_warehouse(doc, method=None):
             "update_item_group_and_max_qty_in_warehouse"
         )
         return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
+def check_pending_lms_courses(employee, role_profile, department):
+
+    #  GET USER EMAIL
+    user = frappe.db.get_value("Employee", employee, "user_id")
+
+    if not user:
+        frappe.throw("Employee is not linked to a User.")
+
+    #  GET COURSES LINKED TO ROLE PROFILE (FILTER CLEAN)
+    role_courses = frappe.db.sql("""
+        SELECT DISTINCT parent
+        FROM `tabRole Profile Multiselect`
+        WHERE role_profile = %s
+        AND parent IS NOT NULL AND parent != ''
+    """, (role_profile,), as_dict=True)
+
+    #  GET COURSES LINKED TO DEPARTMENT (FILTER CLEAN)
+    dept_courses = frappe.db.sql("""
+        SELECT DISTINCT parent
+        FROM `tabDepartment Multi Models`
+        WHERE department = %s
+        AND parent IS NOT NULL AND parent != ''
+    """, (department,), as_dict=True)
+
+    #  UNION OF COURSES
+    course_names = set()
+
+    for r in role_courses:
+        course_names.add(r.parent)
+
+    for d in dept_courses:
+        course_names.add(d.parent)
+
+    pending_courses = []
+
+    for course_name in course_names:
+
+        # SKIP INVALID COURSE NAMES
+        if not course_name:
+            continue
+
+        #  GET COURSE TITLE
+        title = frappe.db.get_value("LMS Course", course_name, "title")
+
+        #  SKIP IF COURSE DOES NOT EXIST
+        if not title:
+            continue
+
+        #  GET PROGRESS (STATUS + APPROVED)
+        progress = frappe.db.get_value(
+            "LMS Course Progress",
+            {
+                "owner": user,
+                "course": course_name
+            },
+            ["status", "approved"],
+            as_dict=True
+        )
+
+        #  NO RECORD → NOT STARTED
+        if not progress:
+            pending_courses.append({
+                "name": course_name,
+                "title": f"{title} (Not Started)"
+            })
+
+        else:
+            status = progress.status
+            approved = progress.approved
+
+            #  COMPLETE BUT NOT APPROVED
+            if status == "Complete" and not approved:
+                pending_courses.append({
+                    "name": course_name,
+                    "title": f"{title} (Approval Needed)"
+                })
+
+            #  NOT COMPLETE
+            elif status != "Complete":
+                pending_courses.append({
+                    "name": course_name,
+                    "title": f"{title} ({status})"
+                })
+
+    return pending_courses

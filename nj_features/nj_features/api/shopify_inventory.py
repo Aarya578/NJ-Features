@@ -8,6 +8,7 @@ from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
+logger=frappe.logger("InventoryLog", allow_site=True, file_count=2)
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
@@ -206,13 +207,16 @@ def fetch_and_stage_inventory_sync():
 #                     log_error(f"Error in fetching & staging inventory sync: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
 #                     return str(traceback.format_exc())
 def create_rq_doc():
+    logger.debug(f"create_rq_doc called======iniside============")
     settings = get_shopify_settings()
+    logger.debug(f"settings================== {settings}")
 
     # =========================================================
     # 🔹 Fetch Rule Config (Flags)
     # =========================================================
     try:
         rule_config = frappe.db.get_value("NJ Settings", {"parameter": "reconfigsync"}, "value")
+        logger.debug(f"rule_config================== {rule_config}")
     except Exception:
         rule_config = 0
 
@@ -226,11 +230,12 @@ def create_rq_doc():
         return
 
     flags = {
-        "enable_parent_override": getattr(rule_config, "enable_parent_override", 0),
-        "parent_threshold": getattr(rule_config, "parent_override_threshold", 3) or 3,
+        "enable_parent_override": getattr(rule_config, "enable_parent_override", 1),
+        "parent_threshold": getattr(rule_config, "parent_override_threshold", 1) or 1,
         "enable_warranty": getattr(rule_config, "enable_warranty_rule", 1),
         "warranty_threshold": getattr(rule_config, "warranty_threshold", 3) or 3,
     }
+    logger.debug(f"flags================== {flags}")
 
     # =========================================================
     # 🔹 Run Pre-Processing
@@ -251,6 +256,8 @@ def create_rq_doc():
         query = """
             SELECT 
                 pb.shopify_variant_id,
+                MAX(i.variant_of) AS parent1,
+                MAX(COALESCE(iva.attribute_value, '')) AS processor,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
@@ -262,30 +269,45 @@ def create_rq_doc():
                 `tabItem` i ON pbi.item_code = i.item_code
             JOIN 
                 `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
+            LEFT JOIN
+                `tabItem Variant Attribute` iva
+                ON iva.parent = i.item_code
+                AND iva.attribute = 'Processor Type1'
             GROUP BY 
                 pb.shopify_variant_id
             ORDER BY 
                 total_actual_qty DESC
         """
+        logger.debug(f"query================== {query}")
 
         results = frappe.db.sql(query, as_dict=True)
+        logger.debug(f"results================== {results}")
 
         # =========================================================
         # 🔹 Preload Parent Quantities (IMPORTANT)
         # =========================================================
         parent_qty_map = frappe.db.sql("""
-            SELECT parent1, SUM(update_qty2) AS total_parent_qty
-            FROM `tabSO Quantity Check`
-            GROUP BY parent1
+            SELECT
+                sqc.parent1,
+                COALESCE(iva.attribute_value, '') AS processor,
+                SUM(sqc.update_qty2) AS total_parent_qty
+            FROM `tabSO Quantity Check` sqc
+            LEFT JOIN `tabItem Variant Attribute` iva
+                ON iva.parent = sqc.item_code
+                AND iva.attribute = 'Processor Type1'
+            GROUP BY sqc.parent1, COALESCE(iva.attribute_value, '')
         """, as_dict=True)
+        logger.debug(f"parent_qty_map================== {parent_qty_map}")
 
         parent_qty_dict = {
-            row["parent1"]: safe_float(row["total_parent_qty"])
+            (row["parent1"], row["processor"]): safe_float(row["total_parent_qty"])
             for row in parent_qty_map
         }
+        logger.debug(f"parent_qty_dict================== {parent_qty_dict}")
 
         updated_doc_names = set()
         product_ids = [row.shopify_variant_id for row in results]
+        logger.debug(f"product_ids================== {product_ids}")
 
         # =========================================================
         # 🔁 MAIN LOOP
@@ -293,6 +315,7 @@ def create_rq_doc():
         for row in results:
             update_status = ''
             row.total_actual_qty = safe_float(row.total_actual_qty)
+            logger.debug(f"row================== {row}")
 
             if row.total_actual_qty is None:
                 continue
@@ -304,14 +327,17 @@ def create_rq_doc():
                 flags["enable_parent_override"]
                 and row.total_actual_qty < flags["parent_threshold"]
             ):
-                parent_qty = parent_qty_dict.get(row.shopify_variant_id)
+                parent_qty = parent_qty_dict.get((row.parent1, row.processor or ""))
+                logger.debug(f"parent_qty================== {parent_qty}")
 
                 if (
                     parent_qty is not None
                     and parent_qty > flags["parent_threshold"]
                 ):
                     row.total_actual_qty = parent_qty
+                    logger.debug(f"row.total_actual_qty================== {row.total_actual_qty}")
                     update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "
+                    logger.debug(f"update_status================== {update_status}")
 
             # =====================================================
             # 🔹 RULE 2: Warranty Rule (FLAG-BASED)
@@ -332,22 +358,27 @@ def create_rq_doc():
                     )
                     AND item_code LIKE '%%additional%%';
                 """
+                logger.debug(f"add_item_code_available_query================== {add_item_code_available_query}")
 
                 add_item_code_available = frappe.db.sql(
                     add_item_code_available_query,
                     (row.shopify_variant_id,),
                     as_dict=True
                 )
+                logger.debug(f"add_item_code_available================== {add_item_code_available}")
 
                 if add_item_code_available:
                     row.total_actual_qty = 0
                     update_status += "[WarrantyApplied] "
+                    logger.debug(f"update_status================== {update_status}")
 
             # =====================================================
             # 🔹 UPSERT INTO NJ Inventory Sync Main
             # =====================================================
             item_code_like_clauses = []
             params = [row.shopify_variant_id]
+            logger.debug(f"item_code_like_clauses================== {item_code_like_clauses}")
+            logger.debug(f"params================== {params}")
 
             for code in row.item_codes.split(', '):
                 item_code_like_clauses.append("item_code LIKE %s")
@@ -360,12 +391,15 @@ def create_rq_doc():
                 AND ({' OR '.join(item_code_like_clauses)})
                 ORDER BY modified DESC
             """, tuple(params), as_dict=True)
+            logger.debug(f"existing================== {existing}")
 
             if existing:
                 existing_doc = existing[0]
+                logger.debug(f"existing_doc================== {existing_doc}")
                 updated_doc_names.add(existing_doc.name)
 
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
+                logger.debug(f"existing_qty================== {existing_qty}")
 
                 if float(row.total_actual_qty) != existing_qty:
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
@@ -378,17 +412,27 @@ def create_rq_doc():
                     })
             else:
                 doc = frappe.new_doc("NJ Inventory Sync Main")
+                logger.debug(f"doc================== {doc}")
 
                 qty = safe_float(row.total_actual_qty)
+                logger.debug(f"qty================== {qty}")
 
                 doc.is_active = 1
+                logger.debug(f"doc.is_active================== {doc.is_active}")
                 doc.actual_qty = qty
+                logger.debug(f"doc.actual_qty================== {doc.actual_qty}")
                 doc.status = "Queued"
+                logger.debug(f"doc.status================== {doc.status}")
                 doc.updated_qty = qty
+                logger.debug(f"doc.updated_qty================== {doc.updated_qty}")
                 doc.item_code = row.item_codes
+                logger.debug(f"doc.item_code================== {doc.item_code}")
                 doc.item_group = row.item_groups
+                logger.debug(f"doc.item_group================== {doc.item_group}")
                 doc.shopify_variant_id = row.shopify_variant_id
+                logger.debug(f"doc.shopify_variant_id================== {doc.shopify_variant_id}")
                 doc.sync_error = update_status
+                logger.debug(f"doc.sync_error================== {doc.sync_error}")
 
                 try:
                     doc.insert()
@@ -403,6 +447,7 @@ def create_rq_doc():
         # 🔹 Shopify Variant Sync (unchanged)
         # =========================================================
         shopify_data = get_shopify_variants(product_ids, settings["shop"], settings["token"])
+        logger.debug(f"shopify_data================== {shopify_data}")
 
         for data in shopify_data:
             frappe.db.sql("""

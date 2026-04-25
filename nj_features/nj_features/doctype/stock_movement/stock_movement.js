@@ -5,6 +5,49 @@ $('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Canc
 var item_code_init = "";
 var default_ware = "";
 
+function triggerUnifiedProductionPlanning() {
+    frappe.msgprint({
+        title: __("Production Planning"),
+        message: __("Production Planning started. Please try after 15 minutes."),
+        indicator: "blue"
+    });
+
+    frappe.call({
+        method: "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
+        callback: function () {},
+        error: function () {
+            frappe.msgprint({
+                title: __("Error"),
+                message: __("Failed to trigger Production Planning. Please try again."),
+                indicator: "red"
+            });
+        }
+    });
+}
+
+function showProductionPlanningConfirmDialog() {
+    const dialog = new frappe.ui.Dialog({
+        title: __("Production Planning"),
+        fields: [
+            {
+                fieldtype: "HTML",
+                fieldname: "message_html",
+                options: __("Item Code Model and To Make Model are different.<br>Do you want to run Production Planning?")
+            }
+        ],
+        primary_action_label: __("Yes"),
+        primary_action: function () {
+            dialog.hide();
+            triggerUnifiedProductionPlanning();
+        },
+        secondary_action_label: __("No"),
+        secondary_action: function () {
+            dialog.hide();
+        }
+    });
+    dialog.show();
+}
+
 frappe.ui.form.on('Stock Movement', {
     onload: function(frm) {
         handleScannerInput(frm, 'scan_barcode');
@@ -200,11 +243,20 @@ frappe.ui.form.on('Stock Movement', {
             callback: function (r) {
                 if (r && r.message) {
                     if (r.message.error) {
+                        const errorMessage = Array.isArray(r.message.error)
+                            ? r.message.error.join("<br>")
+                            : r.message.error;
+
                         frappe.msgprint({
                             title: __('Error'),
-                            message: __(r.message.error),
+                            message: __(errorMessage),
                             indicator: 'red'
                         });
+
+                        if (r.message.show_production_plan_prompt) {
+                            showProductionPlanningConfirmDialog();
+                        }
+
                         frappe.validated = false; 
                         return; 
                     }

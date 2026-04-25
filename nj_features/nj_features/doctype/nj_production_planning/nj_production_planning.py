@@ -231,7 +231,8 @@ def _get_forward_inventory_excluding_current_dept(
 # =========================
 @frappe.whitelist()
 @log_io
-def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
+def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) -> Dict:
+    print("Running unified production plan...=============")
     depts = frappe.get_all(
         "Department",
         filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],

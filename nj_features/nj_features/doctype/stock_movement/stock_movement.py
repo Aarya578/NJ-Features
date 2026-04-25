@@ -361,6 +361,7 @@ def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
         WHERE serial_no = %s
           AND COALESCE(quantity, 0) > 0
           AND COALESCE(is_available, 0) = 1
+          AND parenttype = "Serial No"
         ORDER BY modified DESC, creation DESC
         LIMIT 1
         """,

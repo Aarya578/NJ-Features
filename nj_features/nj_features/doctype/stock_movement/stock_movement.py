@@ -269,9 +269,10 @@ def validate_stock_movement_for_grade(doc):
 
         return {"success": "Validation passed without errors."}
 
-def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages=None, qty_check_cache=None):
-    
-    
+def validate_serial_no_and_department(row, doc=None, error_messages=None, model_mismatch_messages=None, qty_check_cache=None):
+    doc = doc or {}
+    error_messages = error_messages if error_messages is not None else []
+
     has_serialized = frappe.db.get_value('Item', {'name': row.get('item_code')}, 'has_serial_no')
 
     if not has_serialized:

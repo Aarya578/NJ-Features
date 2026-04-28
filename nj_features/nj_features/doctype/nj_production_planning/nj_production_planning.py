@@ -231,7 +231,8 @@ def _get_forward_inventory_excluding_current_dept(
 # =========================
 @frappe.whitelist()
 @log_io
-def nj_run_unified_production_plan(planning_horizon_days: int = 30) -> Dict:
+def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) -> Dict:
+    print("Running unified production plan...=============")
     depts = frappe.get_all(
         "Department",
         filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],
@@ -1211,117 +1212,6 @@ def _match_inventory_to_order_queues_for_sequence(
         del seq_order_queues[k]
 
     return allocations, remaining
-
-    by_model = defaultdict(list)
-    by_config = defaultdict(list)
-    for s in remaining:
-        by_model[s["forward_key_model"]].append(s)
-        by_config[s["forward_key_config"]].append(s)
-
-    for k in by_model:
-        by_model[k] = _oldest_first(by_model[k])
-    for k in by_config:
-        by_config[k] = _oldest_first(by_config[k])
-
-    for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
-        while ref_list:
-            order_ref = ref_list[-1]
-
-            target_cfg_tuple = None
-            if order_ref.get("order_item_code"):
-                target_cfg_tuple = _cfg_tuple_from_item(order_ref["order_item_code"])
-
-            chosen = None
-
-            if key and key[0] == "CONFIG":
-                if not allow_reconfig:
-                    cfg_pool = by_config.get(key, [])
-                    if not cfg_pool:
-                        break
-                    chosen = _oldest_first(cfg_pool)[0] if cfg_pool else None
-                else:
-                    model_key = ("MODEL", key[1], key[2])
-                    model_pool = by_model.get(model_key, [])
-                    if not model_pool:
-                        break
-
-                    if target_cfg_tuple:
-                        exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
-                        exact = _oldest_first(exact)
-                        if exact:
-                            chosen = exact[0]
-
-                    if not chosen and target_cfg_tuple:
-                        near = [s for s in model_pool if _same_storage_diff_ram(s, target_cfg_tuple)]
-                        near = _oldest_first(near)
-                        if near:
-                            chosen = near[0]
-
-                    if not chosen and model_pool:
-                        chosen = _oldest_first(model_pool)[0]
-
-            else:
-                model_pool = by_model.get(key, [])
-                if not model_pool:
-                    break
-                chosen = _oldest_first(model_pool)[0] if model_pool else None
-
-            if not chosen:
-                break
-
-            if key and key[0] == "CONFIG":
-                target_item_code = _resolve_target_item_code(
-                    key,
-                    fallback_pb_code=order_ref.get("pb_code"),
-                )
-            else:
-                target_item_code = chosen["item_code"]
-
-            if not target_item_code:
-                target_item_code = order_ref.get("pb_code") or chosen["item_code"]
-
-            if _DEPT_ALLOCATE_PARTS.get(current_department):
-                ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-                if not ok:
-                    _update_serial_to_make(chosen["serial_no"], target_item_code)
-
-                    remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-                    by_model[chosen["forward_key_model"]] = [
-                        x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    by_config[chosen["forward_key_config"]] = [
-                        x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
-                    continue
-
-            ref_list.pop()
-
-            allocations.append(
-                {
-                    "serial_no": chosen["serial_no"],
-                    "warehouse": chosen["warehouse"],
-                    "target_item_code": target_item_code,
-                    "forward_key": key,
-                    "order_name": order_ref.get("so_name"),
-                    "required_by": order_ref.get("delivery_date"),
-                    "age_days": chosen.get("age_days"),
-                }
-            )
-
-            remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-            by_model[chosen["forward_key_model"]] = [
-                x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
-            ]
-            by_config[chosen["forward_key_config"]] = [
-                x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
-            ]
-
-    for k in [k for k, v in list(seq_order_queues.items()) if not v]:
-        del seq_order_queues[k]
-
-    return allocations, remaining
-
 
 @log_io
 def _estimate_forward_inventory(forward_keys, serials, forward_grain):

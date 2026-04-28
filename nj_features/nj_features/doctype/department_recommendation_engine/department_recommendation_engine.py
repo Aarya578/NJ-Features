@@ -228,10 +228,12 @@ def update_document_field(doctype, docname, field_name, value):
 
 # Main execution functions (similar to assignment_rule.py)
 def apply_recommendation_rules(doc, method=None, doctype=None, name=None):
+    print("apply recommendation rules=======23456=============")
     """Main function to apply recommendation rules"""
     # print("apply recommendation rules=======23456=============")
     if not doctype:
         doctype = doc.doctype
+        print("doctype=========",doctype)
 
     if (
         frappe.flags.in_patch
@@ -243,6 +245,7 @@ def apply_recommendation_rules(doc, method=None, doctype=None, name=None):
 
     if not doc and doctype and name:
         doc = frappe.get_doc(doctype, name)
+        print("doc=========",doc)
 
     # Get all recommendation rules for this document type
     recommendation_rules = frappe.cache_manager.get_doctype_map(
@@ -251,6 +254,7 @@ def apply_recommendation_rules(doc, method=None, doctype=None, name=None):
         dict(document_type=doc.doctype, enabled=1),
         order_by="priority desc",
     )
+    print("recommendation_rules=========",recommendation_rules)
 
     if not recommendation_rules:
         return
@@ -279,6 +283,7 @@ def clear_recommendation_rule_cache(rule):
 
 @frappe.whitelist()
 def bulk_apply(doctype, docnames):
+    print("docnames=============inside the function====",docnames)
     """Apply recommendation rules to multiple documents"""
     import json
     

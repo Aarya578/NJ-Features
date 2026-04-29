@@ -63,37 +63,58 @@ frappe.ui.form.on('Employee', {
         if (frm.doc.role_profile && frm.doc.previous_role_profile && frm.doc.role_profile !== frm.doc.previous_role_profile) {
 
             let blocked = false;
+            let lms_enabled = false;
 
+            // 🔹 NEW: Fetch checkbox from Role Profile
             frappe.call({
-                method: "nj_features.overrides.employee.check_pending_lms_courses",
+                method: "frappe.client.get_value",
                 args: {
-                    employee: frm.doc.name,
-                    role_profile: frm.doc.role_profile,
-                    department: frm.doc.department
+                    doctype: "Role Profile",
+                    filters: { name: frm.doc.role_profile },
+                    fieldname: ["lms_course_evaluation"]
                 },
                 async: false,  // 🔥 CRITICAL
-                callback: function(r) {
-                    if (r.message && r.message.length > 0) {
-
-                        let course_list = r.message.map(c =>
-                            `<a href="/app/lms-course/${c.name}" target="_blank">${c.title}</a>`
-                        ).join("<br>");
-
-                        frappe.msgprint({
-                            title: "⚠ Role Change Blocked",
-                            message: `You must complete the following courses:<br><br>${course_list}`,
-                            indicator: "red"
-                        });
-
-                        blocked = true;
+                callback: function(res) {
+                    if (res.message && res.message.lms_course_evaluation) {
+                        lms_enabled = true;
                     }
                 }
             });
 
-            // 🔥 HARD STOP (NO FLOW BREAK)
-            if (blocked) {
-                frappe.validated = false;
-                return false;   // 🔥 THIS STOPS SAVE COMPLETELY
+            // 🔥 ONLY RUN YOUR EXISTING FLOW IF ENABLED
+            if (lms_enabled) {
+
+                frappe.call({
+                    method: "nj_features.overrides.employee.check_pending_lms_courses",
+                    args: {
+                        employee: frm.doc.name,
+                        role_profile: frm.doc.role_profile,
+                        department: frm.doc.department
+                    },
+                    async: false,  // 🔥 CRITICAL
+                    callback: function(r) {
+                        if (r.message && r.message.length > 0) {
+
+                            let course_list = r.message.map(c =>
+                                `<a href="/app/lms-course/${c.name}" target="_blank">${c.title}</a>`
+                            ).join("<br>");
+
+                            frappe.msgprint({
+                                title: "⚠ Role Change Blocked",
+                                message: `You must complete the following courses:<br><br>${course_list}`,
+                                indicator: "red"
+                            });
+
+                            blocked = true;
+                        }
+                    }
+                });
+
+                // 🔥 HARD STOP (NO FLOW BREAK)
+                if (blocked) {
+                    frappe.validated = false;
+                    return false;
+                }
             }
         }
 

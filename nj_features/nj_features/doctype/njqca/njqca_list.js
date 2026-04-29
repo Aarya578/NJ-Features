@@ -22,7 +22,7 @@ frappe.listview_settings['NJQCA'] = {
                     let user_department = r.message.department;
                     console.log(user_department);
                     // ✅ Show button only if department matches
-                    if (user_department === "BG - Core IQC - NJ") {   // <-- put your department name here
+                    if (user_department in ("BG - Core IQC - NJ", "")) {   // <-- put your department name here
                         listview.page.add_inner_button(__('Duplicate NJQCA'), function () {
                             let dialog = new frappe.ui.Dialog({
                                 title: "Duplicate NJQCA by Serial No",

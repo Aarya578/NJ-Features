@@ -282,7 +282,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     serial_no = row.get('serial_no')
 
     department = frappe.db.get_value('Warehouse', {'name': t_warehouse}, 'department')
+    print("_t ==department=================",department )
     s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
+    print("_s ==department=================",s_department )
 
     if not department:
         error_messages.append(f"Target warehouse <b>{t_warehouse}</b> has no associated department.")
@@ -296,19 +298,20 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
-    if department:
+    if department and department != s_department:
+        print("department and department != s_department=================",department and department != s_department )
         allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
 
         if not allow_reconfig:
             item_code = serial_doc.get("item_code")
-            print("item_code=================",item_code )
+            # print("item_code=================",item_code )
             to_make = serial_doc.get("to_make")
-            print("to_make=================",to_make )
+            # print("to_make=================",to_make )
             
             item_code_model= frappe.db.get_value("Item", item_code, "item_model")
-            print("item_code_model=================",item_code_model )
+            # print("item_code_model=================",item_code_model )
             to_make_model= frappe.db.get_value("Item", to_make, "item_model")
-            print("to_make_model=================",to_make_model )
+            # print("to_make_model=================",to_make_model )
 
             if item_code_model and to_make_model and item_code_model != to_make_model:
                 model_mismatch_message = (
@@ -362,7 +365,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     s.warehouse AS warehouse,
                     MAX(DATEDIFF(CURDATE(), s.purchase_date)) AS max_age_days
                 FROM `tabSerial No` s
-                WHERE s.warehouse = %s
+                WHERE s.item_group in ('Laptops','Desktops','Chromebooks') and s.warehouse = %s
                 """,
                 (t_warehouse,),
                 as_dict=True,
@@ -428,7 +431,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                         f"but Serial No <b>{department_age_serial}</b> has department aging of <b>{int(department_age)}</b> days."
                     )
                     return False
-                     
+        # suggested_warehouse_validation(doc, t_warehouse, error_messages)             
         deparement_qty_check_for_validation(doc, department, t_warehouse, error_messages, qty_check_cache)
 
     if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
@@ -474,6 +477,96 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             return True
 
     return True
+
+def suggested_warehouse_validation(doc, t_warehouse, error_messages):
+
+    if not t_warehouse:
+        return
+
+    serial_rows = []
+    serial_nos = []
+
+    for item_row in doc.get("items", []):
+        row_t_warehouse = item_row.get("t_warehouse")
+        row_serial_no = item_row.get("serial_no")
+
+        if not row_t_warehouse or not row_serial_no:
+            continue
+
+        for serial_no in str(row_serial_no).split("\n"):
+            serial_no = serial_no.strip()
+            if not serial_no:
+                continue
+
+            serial_rows.append({
+                "serial_no": serial_no,
+                "t_warehouse": row_t_warehouse,
+            })
+            serial_nos.append(serial_no)
+
+    print("Collected Serial Nos:================", serial_nos)
+
+    unique_serial_nos = list(dict.fromkeys(serial_nos))
+    print("Unique Serial Nos:=============", unique_serial_nos)
+
+    if not unique_serial_nos:
+        print("No serial numbers found, exiting...")
+        return
+
+    from nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine import bulk_apply
+
+    for start in range(0, len(unique_serial_nos), 5):
+        batch_serial_nos = unique_serial_nos[start:start + 5]
+        print("Processing batch:==============", batch_serial_nos)
+        bulk_apply("Serial No", json.dumps(batch_serial_nos))
+
+    serial_docs = frappe.get_all(
+        "Serial No",
+        filters={"name": ["in", unique_serial_nos]},
+        fields=["name", "suggested_warehouse"],
+    )
+
+    print("Fetched Serial Docs:=============", serial_docs)
+
+    suggested_warehouse_map = {
+        row.get("name"): row.get("suggested_warehouse")
+        for row in serial_docs
+    }
+
+    print("Suggested Warehouse Map:=================", suggested_warehouse_map)
+
+    for row in serial_rows:
+        serial_no = row.get("serial_no")
+        row_t_warehouse = row.get("t_warehouse")
+        suggested_warehouse = suggested_warehouse_map.get(serial_no)
+
+        print(f"Checking Serial:========= {serial_no}")
+        print(f"Row Warehouse:============ {row_t_warehouse}")
+        print(f"Suggested Warehouse:=========== {suggested_warehouse}")
+
+        if not suggested_warehouse:
+            print("No suggested warehouse, skipping...")
+            continue
+
+        allowed_warehouses = [
+            warehouse.strip()
+            for warehouse in str(suggested_warehouse).split(",")
+            if warehouse and warehouse.strip()
+        ]
+
+        print("Allowed Warehouses:=============", allowed_warehouses)
+
+        if row_t_warehouse in allowed_warehouses:
+            print("Warehouse is valid ✅")
+            continue
+
+        print("❌ Warehouse mismatch found")
+
+        error_messages.append(
+            f"Target warehouse <b>{row_t_warehouse}</b> is not allowed for Serial No <b>{serial_no}</b>. "
+            f"Suggested warehouse should be one of <b>{', '.join(allowed_warehouses)}</b>."
+        )
+
 
 def deparement_qty_check_for_validation(doc, department, t_warehouse, error_messages, qty_check_cache=None):
     if not t_warehouse:

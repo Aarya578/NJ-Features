@@ -8,9 +8,11 @@
  "field_order": [
   "previous_department",
   "changed_by",
+  "skill_level_ramp",
   "column_break_czjgg",
   "changed_on",
   "user_name",
+  "skill_level_target",
   "section_break_e118x",
   "current_department",
   "employee_id",
@@ -111,12 +113,22 @@
    "in_list_view": 1,
    "label": "Actual Productivity",
    "read_only": 1
+  },
+  {
+   "fieldname": "skill_level_ramp",
+   "fieldtype": "Data",
+   "label": "Skill Level Ramp"
+  },
+  {
+   "fieldname": "skill_level_target",
+   "fieldtype": "Data",
+   "label": "Skill Level Target"
   }
  ],
  "in_create": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-09-24 14:23:23.822724",
+ "modified": "2026-04-29 10:44:39.389560",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Department Change Log",

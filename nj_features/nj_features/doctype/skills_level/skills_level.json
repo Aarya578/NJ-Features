@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-28 11:42:04.028438",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "skill",
+  "is_primary",
+  "weightage"
+ ],
+ "fields": [
+  {
+   "fieldname": "skill",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Skill",
+   "options": "\nQC\nRepair\nMPC"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_primary",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Primary"
+  },
+  {
+   "fieldname": "weightage",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Weightage"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-28 11:54:30.961754",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Skills Level",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

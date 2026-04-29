@@ -15,7 +15,23 @@ from nj_lib.nj_lib.doctype.nj_refund.nj_refund import supplier_payment_reconcile
 #     frappe.logger().info(f"Calling reconcile for supplier: {doc.supplier}")
 #     supplier_payment_reconcile(doc.supplier)
 class CustomPurchaseInvoice(PurchaseInvoice):
-    pass
+    def before_submit(self):
+        self.email_field_filling()
+
+    def email_field_filling(self):
+        print("inside email_field_filling=================")
+        if not self.customer_address:
+            frappe.throw(_("Please select Customer Address"))
+
+        # Fetch email_id from Address doctype
+        email_id = frappe.db.get_value("Address", self.customer_address, "email_id")
+        print("email_id===================", email_id)
+
+        if email_id:
+            self.email = email_id
+            print("self.email===================", self.email)
+        else:
+            frappe.throw(_("Please enter Email ID in Customer Address"))  
 
 
 def _reconcile_supplier_with_elevated_access(supplier):

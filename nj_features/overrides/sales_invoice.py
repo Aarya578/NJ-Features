@@ -38,6 +38,7 @@ class CustomSalesInvoice(SalesInvoice):
         self.close_sales_order_if_fully_refunded()
         self.validate_si_tax_presence()
     
+
     def close_sales_order_if_fully_refunded(self):
         """Close linked Sales Orders if full qty refunded via Credit Notes"""
 
@@ -89,6 +90,7 @@ class CustomSalesInvoice(SalesInvoice):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
         self.approve_validation()
+        self.email_field_filling()
 
     def update_packing_list(self):
         """ Override the default method to prevent clearing packed_items """
@@ -174,9 +176,22 @@ class CustomSalesInvoice(SalesInvoice):
             else:
                 self.approved = 1
 
+    def email_field_filling(self):
+        print("inside email_field_filling=================")
+        if not self.customer_address:
+            frappe.throw(_("Please select Customer Address"))
 
+        # Fetch email_id from Address doctype
+        email_id = frappe.db.get_value("Address", self.customer_address, "email_id")
+        print("email_id===================", email_id)
+
+        if email_id:
+            self.email = email_id
+            print("self.email===================", self.email)
+        else:
+            frappe.throw(_("Please enter Email ID in Customer Address"))      
     def validate_si_tax_presence(self):
-        print("inside tax validation=================")
+        # print("inside tax validation=================")
 
         if not self.name:
             return
@@ -195,8 +210,8 @@ class CustomSalesInvoice(SalesInvoice):
         total = data.get("total") or 0
         taxes = data.get("total_taxes_and_charges") or 0
 
-        print("total=================", total)
-        print("taxes=================", taxes)
+        # print("total=================", total)
+        # print("taxes=================", taxes)
 
         # ✅ Condition
         if total > 0 and taxes == 0:

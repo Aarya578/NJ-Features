@@ -16,7 +16,7 @@ def update_department_change_logs():
         employees = frappe.get_all(
             "Employee",
             filters={"status": "Active"},
-            fields=["user_id", "emp_id", "department", "role_profile", "ramp_level", "target"]
+            fields=["user_id", "emp_id", "department", "role_profile", "ramp_level", "target", "skill_level_ramp", "skill_level_target"]
         )
 
         for employee in employees:
@@ -46,6 +46,8 @@ def update_department_change_logs():
                 "role_profile": employee.role_profile,
                 "ramp_level": employee.ramp_level,
                 "target": employee.target,
+                "skill_level_ramp": employee.skill_level_ramp,
+                "skill_level_target": employee.skill_level_target,
                 "log_datetime": frappe.utils.now()
             })
             doc.insert(ignore_permissions=True)

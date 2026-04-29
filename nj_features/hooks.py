@@ -97,9 +97,9 @@ doc_events = {
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
         ],
-        "on_submit": [
-            "nj_features.overrides.sales_invoice.send_invoice_email",
-        ],
+        # "on_submit": [
+        #     "nj_features.overrides.sales_invoice.send_invoice_email",
+        # ],
     },
     "Laptop Box": {
         "before_save": "nj_features.nj_features.doctype.laptop_box.laptop_box.printing_barcode"
@@ -125,7 +125,7 @@ doc_events = {
     "Purchase Invoice": {
         "on_submit": [
             "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice",
-            "nj_features.overrides.purchase_invoice.send_invoice_email",
+            # "nj_features.overrides.purchase_invoice.send_invoice_email",
         ],
     },
 }
@@ -155,17 +155,20 @@ scheduler_events = {
         "45 7 * * *": [
             "nj_features.overrides.employee.update_employee_experience_table",
         ],
+        "45 8 * * *": [
+            "nj_features.overrides.employee.update_skill_experiance_table",
+        ],
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
+        "45 9 * * *": [
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+        ],
         "45 10 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
-        "15 11 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
-        ],
-        "59 11 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
+        "45 11 * * *": [
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
         "10 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",

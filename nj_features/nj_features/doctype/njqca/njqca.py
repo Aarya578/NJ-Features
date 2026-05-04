@@ -355,7 +355,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         #   4. QC Options score mapping
 
         existing = {
-            child.check_name: child
+            (child.check_name, child.item_group): child
             for child in new_qi.get("nj_quality_checks", [])
             if child.check_name
         }
@@ -420,18 +420,19 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     try:
                         score_value = float(score)
                         for opt in check_options:
-                            if score_value == float(opt.get("score") or 0):
+                            opt_score = opt.get("score")
+                            if opt_score not in (None, "") and score_value == float(opt_score):
                                 resolved_option = opt.get("check_options") or value
-                                resolved_score = float(opt.get("score") or 0)
+                                resolved_score = float(opt_score)
                                 break
                     except Exception:
                         pass
-
-                child = existing.get(check_name)
+                key = (check_name, target_item_group)
+                child = existing.get(key)
 
                 if not child:
                     child = new_qi.append("nj_quality_checks", {})
-                    existing[check_name] = child
+                    existing[key] = child
 
                 child.item_group = target_item_group
                 child.check_name = check_name

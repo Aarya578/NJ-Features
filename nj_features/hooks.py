@@ -193,6 +193,16 @@ scheduler_events = {
     }
 }
 
+# ========== Fixtures ==========
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "=", "Product Bundle-disable"]
+        ]
+    }
+]
+
 # ========== User Data Protection ==========
 
 user_data_fields = [

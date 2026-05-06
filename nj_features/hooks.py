@@ -204,6 +204,12 @@ fixtures = [
         "filters": [
             ["name", "=", "Product Bundle-disable"]
         ]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "=", "Department-expense_credit_account"]
+        ]
     }
 ]
 

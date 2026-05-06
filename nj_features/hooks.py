@@ -197,19 +197,31 @@ scheduler_events = {
     }
 }
 
-# ========== Fixtures ==========
 fixtures = [
     {
         "dt": "Custom Field",
-        "filters": [
-            ["name", "=", "Product Bundle-disable"]
-        ]
+        "filters": [["name", "=", "Product Bundle-disable"]]
     },
     {
         "dt": "Custom Field",
-        "filters": [
-            ["name", "=", "Department-expense_credit_account"]
-        ]
+        "filters": [["name", "=", "Department-expense_credit_account"]]
+    },
+    {
+        "dt": "Workflow",
+        "filters": [["name", "=", "Cash Expense Request Workflow"]]
+    },
+    {
+        "dt": "Workflow State",
+        "filters": [["workflow_state_name", "in", [
+            "Draft", "Submitted", "Manager Approved",
+            "Accounts Approved", "Posted", "Rejected"
+        ]]]
+    },
+    {
+        "dt": "Workflow Action Master",
+        "filters": [["workflow_action_name", "in", [
+            "Submit", "Approve", "Reject", "Resubmit", "Post"
+        ]]]
     }
 ]
 

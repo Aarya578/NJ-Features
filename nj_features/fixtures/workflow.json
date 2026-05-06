@@ -1,0 +1,218 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Workflow",
+  "document_type": "Cash Expense Request",
+  "is_active": 0,
+  "modified": "2026-05-06 18:35:11.129141",
+  "name": "Cash Expense Request Workflow",
+  "override_status": 0,
+  "parent": null,
+  "parentfield": null,
+  "parenttype": null,
+  "send_email_alert": 1,
+  "states": [
+   {
+    "allow_edit": "All",
+    "doc_status": "0",
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "states",
+    "parenttype": "Workflow",
+    "state": "Draft",
+    "update_field": null,
+    "update_value": null
+   },
+   {
+    "allow_edit": "Accounts Manager",
+    "doc_status": "0",
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "states",
+    "parenttype": "Workflow",
+    "state": "Submitted",
+    "update_field": null,
+    "update_value": null
+   },
+   {
+    "allow_edit": "Accounts Manager",
+    "doc_status": "0",
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "states",
+    "parenttype": "Workflow",
+    "state": "Accounts Approved",
+    "update_field": null,
+    "update_value": null
+   },
+   {
+    "allow_edit": "Accounts Manager",
+    "doc_status": "1",
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "states",
+    "parenttype": "Workflow",
+    "state": "Posted",
+    "update_field": null,
+    "update_value": null
+   },
+   {
+    "allow_edit": "All",
+    "doc_status": "0",
+    "is_optional_state": 0,
+    "message": null,
+    "next_action_email_template": null,
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "states",
+    "parenttype": "Workflow",
+    "state": "Rejected",
+    "update_field": null,
+    "update_value": null
+   }
+  ],
+  "transitions": [
+   {
+    "action": "Submit",
+    "allow_self_approval": 0,
+    "allowed": "Employee",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Draft"
+   },
+   {
+    "action": "Submit",
+    "allow_self_approval": 0,
+    "allowed": "Accounts Manager",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Draft"
+   },
+   {
+    "action": "Submit",
+    "allow_self_approval": 0,
+    "allowed": "Accounts User",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Draft"
+   },
+   {
+    "action": "Approve",
+    "allow_self_approval": 0,
+    "allowed": "Accounts Manager",
+    "condition": null,
+    "next_state": "Accounts Approved",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Submitted"
+   },
+   {
+    "action": "Approve",
+    "allow_self_approval": 0,
+    "allowed": "Accounts User",
+    "condition": null,
+    "next_state": "Accounts Approved",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Submitted"
+   },
+   {
+    "action": "Reject",
+    "allow_self_approval": 0,
+    "allowed": "Accounts Manager",
+    "condition": null,
+    "next_state": "Rejected",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Submitted"
+   },
+   {
+    "action": "Reject",
+    "allow_self_approval": 0,
+    "allowed": "Accounts User",
+    "condition": null,
+    "next_state": "Rejected",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Submitted"
+   },
+   {
+    "action": "Post",
+    "allow_self_approval": 0,
+    "allowed": "Accounts Manager",
+    "condition": null,
+    "next_state": "Posted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Accounts Approved"
+   },
+   {
+    "action": "Post",
+    "allow_self_approval": 0,
+    "allowed": "Accounts User",
+    "condition": null,
+    "next_state": "Posted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Accounts Approved"
+   },
+   {
+    "action": "Resubmit",
+    "allow_self_approval": 0,
+    "allowed": "Employee",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Rejected"
+   },
+   {
+    "action": "Resubmit",
+    "allow_self_approval": 0,
+    "allowed": "Accounts Manager",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Rejected"
+   },
+   {
+    "action": "Resubmit",
+    "allow_self_approval": 0,
+    "allowed": "Accounts User",
+    "condition": null,
+    "next_state": "Submitted",
+    "parent": "Cash Expense Request Workflow",
+    "parentfield": "transitions",
+    "parenttype": "Workflow",
+    "state": "Rejected"
+   }
+  ],
+  "workflow_name": "Cash Expense Request Workflow",
+  "workflow_state_field": "current_status"
+ }
+]

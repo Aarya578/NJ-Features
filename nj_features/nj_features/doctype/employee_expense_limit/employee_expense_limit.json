@@ -18,12 +18,14 @@
    "fieldname": "employee",
    "fieldtype": "Link",
    "label": "Employee",
-   "options": "Employee"
+   "options": "Employee",
+   "reqd": 1
   },
   {
    "fieldname": "monthly_limit",
    "fieldtype": "Currency",
-   "label": "Monthly Limit"
+   "label": "Monthly Limit",
+   "reqd": 1
   },
   {
    "fieldname": "cost_center",
@@ -40,17 +42,19 @@
   {
    "fieldname": "last_reset_date",
    "fieldtype": "Date",
-   "label": "Last Reset Date"
+   "label": "Last Reset Date",
+   "read_only": 1
   },
   {
    "fieldname": "current_month_expense",
    "fieldtype": "Currency",
-   "label": "Current Month Expense"
+   "label": "Current Month Expense",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-07 14:39:36.791481",
+ "modified": "2026-05-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Employee Expense Limit",
@@ -70,12 +74,13 @@
   },
   {
    "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Accounts User",
+   "role": "Accounts Manager",
    "select": 1,
    "share": 1,
    "write": 1
@@ -87,7 +92,7 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Accounts Manager",
+   "role": "Accounts User",
    "select": 1,
    "share": 1,
    "write": 1

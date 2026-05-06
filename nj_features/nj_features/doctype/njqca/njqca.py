@@ -353,9 +353,18 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         #   2. NJQCA Result Parameter.parameter
         #   3. NJQCA Result Parameter.score
         #   4. QC Options score mapping
+        def safe_int(value):
+            try:
+                return int(float(value or 0))
+            except Exception:
+                return 0
 
         existing = {
-            (child.check_name, child.item_group): child
+            (
+                child.check_name,
+                child.item_group,
+                safe_int(child.get("item_group_idx"))
+            ): child
             for child in new_qi.get("nj_quality_checks", [])
             if child.check_name
         }
@@ -398,7 +407,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 check_name = mapped.get("quality_check")
                 target_item_group = mapped.get("target_item_group")
 
-                if not check_name:
+                if not check_name or not target_item_group:
                     continue
 
                 # Default: use NJQCA value directly
@@ -427,31 +436,37 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                                 break
                     except Exception:
                         pass
-                key = (check_name, target_item_group)
-                child = existing.get(key)
 
-                if not child:
-                    child = new_qi.append("nj_quality_checks", {})
-                    existing[key] = child
+                # Get all QI reading rows for this item group.
+                # This is the important fix for repeated Laptop RAM / LAPTOP STORAGE rows.
+                matched_readings = [
+                    r for r in new_qi.get("nj_quality_readings", [])
+                    if r.get("item_group") == target_item_group
+                ]
 
-                child.item_group = target_item_group
-                child.check_name = check_name
-                child.options = resolved_option
-                child.automated_check_name = resolved_option
-                child.score = resolved_score
+                # If no reading row exists, still create/update one automatic check row.
+                if not matched_readings:
+                    matched_readings = [None]
 
-                # Optional: keep item_group_idx if same item group exists in QI readings.
-                # But do not skip if it does not exist.
-                matched_reading = next(
-                    (
-                        r for r in new_qi.get("nj_quality_readings", [])
-                        if r.get("item_group") == target_item_group
-                    ),
-                    None
-                )
+                for matched_reading in matched_readings:
+                    item_group_idx = 0
 
-                if matched_reading:
-                    child.item_group_idx = int(matched_reading.get("item_group_idx") or 0)
+                    if matched_reading:
+                        item_group_idx = safe_int(matched_reading.get("item_group_idx"))
+
+                    key = (check_name, target_item_group, item_group_idx)
+                    child = existing.get(key)
+
+                    if not child:
+                        child = new_qi.append("nj_quality_checks", {})
+                        existing[key] = child
+
+                    child.item_group = target_item_group
+                    child.check_name = check_name
+                    child.options = resolved_option
+                    child.automated_check_name = resolved_option
+                    child.score = resolved_score
+                    child.item_group_idx = item_group_idx
 
         new_qi.save()
 

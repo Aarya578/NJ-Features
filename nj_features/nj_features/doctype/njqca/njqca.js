@@ -109,9 +109,13 @@ frappe.ui.form.on("NJQCA", {
     frm.refresh_field("njqca_result_parameters");
 
     if (frm.doc.docstatus == 0) {
-      trigger_serial_no(frm);
+      if (frm.doc.__islocal) {  
+        trigger_serial_no(frm);
+      }
       applyDesktopFieldState(frm);
-      syncDesktopManufacturerModelFlow(frm);
+      if (!isDesktopNJQCA(frm.doc)) {  
+        syncDesktopManufacturerModelFlow(frm);
+      }
       frm.events.power_on();
       handleScannerInput(frm, "serial_no");
       show_checkbutton_for_field(frm, "njqca_laptop_processors");
@@ -1161,11 +1165,13 @@ frappe.ui.form.on("NJQCA", {
   },
 
   brand: function (frm) {
-    if (isDesktopNJQCA(frm.doc)) {
-      resetDesktopSelection(frm);
-      syncDesktopManufacturerModelFlow(frm);
-    }
-  },
+      if (isDesktopNJQCA(frm.doc)) {
+        frm.__desktop_resetting = true;
+        resetDesktopSelection(frm);
+        syncDesktopManufacturerModelFlow(frm);
+        frm.__desktop_resetting = false;
+      }
+    },
 
   inspection_type: function (frm) {
     if (frm.doc.inspection_type) {
@@ -1436,8 +1442,10 @@ frappe.ui.form.on("NJQCA", {
     frm.refresh_field("item_template");
 
     if (!frm.doc.model) {
-      frm.set_value("manual_repack_item_code", "");
-      frm.refresh_field("manual_repack_item_code");
+        if (!frm.__desktop_resetting) {       // ← this check needs the flag set
+            frm.set_value("manual_repack_item_code", "");
+            frm.refresh_field("manual_repack_item_code");
+        }
     }
   },
 
@@ -1612,7 +1620,9 @@ function trigger_serial_no(frm) {
         });
 
         if (isDesktopNJQCA(frm.doc)) {
+         if (!r.message.model) { 
           resetDesktopSelection(frm);
+         }
           syncDesktopManufacturerModelFlow(frm);
         }
       },

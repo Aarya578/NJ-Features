@@ -345,96 +345,128 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         #             row.automated_check_name = val
         #             row.item_group = check_mapping[idx]["item_group"]
 
-        # ✅ MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
-        for data in self.njqca_result_parameters:
+        # MODIFIED BLOCK — LOOP OVER ALL item_group_idx matches
+        # PARAMETER + SCORE BASED NJQCA → QI SYNC
+        # This does NOT depend on NJQCA item_group or QI reading item_group.
+        # It only uses:
+        #   1. inspection_type
+        #   2. NJQCA Result Parameter.parameter
+        #   3. NJQCA Result Parameter.score
+        #   4. QC Options score mapping
+        def safe_int(value):
+            try:
+                return int(float(value or 0))
+            except Exception:
+                return 0
 
-            # sql = """
-            #     SELECT options.quality_check
-            #     FROM `tabNJ Quality Checks` qc
-            #     LEFT JOIN `tabNj QC Options` options ON qc.name = options.parent
-            #     INNER JOIN `tabNJ QC Check List` qc_check ON options.quality_check = qc_check.name
-            #     WHERE qc.item_group = %s AND qc.inspection_type = %s AND qc_check.parameter = %s AND qc_check.diagnostic_type = 'Automatic'
-            # """
+        existing = {
+            (
+                child.check_name,
+                child.item_group,
+                safe_int(child.get("item_group_idx"))
+            ): child
+            for child in new_qi.get("nj_quality_checks", [])
+            if child.check_name
+        }
+
+        for data in self.njqca_result_parameters:
+            parameter = (data.get("parameter") or "").strip()
+            score = data.get("score")
+            value = data.get("value")
+
+            if not parameter:
+                continue
+
             sql = """
                 SELECT DISTINCT
                     qc.item_group AS target_item_group,
                     options.quality_check
                 FROM `tabNJ Quality Checks` qc
-                LEFT JOIN `tabNj QC Options` options
+                INNER JOIN `tabNj QC Options` options
                     ON qc.name = options.parent
                 INNER JOIN `tabNJ QC Check List` qc_check
                     ON options.quality_check = qc_check.name
                 WHERE qc.inspection_type = %s
-                AND qc_check.parameter = %s
+                AND TRIM(qc_check.parameter) = %s
                 AND qc_check.diagnostic_type = 'Automatic'
                 AND qc.docstatus = 1
+                AND qc.status = 'Active'
                 AND qc_check.docstatus = 1
             """
-            field_name_data = frappe.db.sql(
+
+            mapped_checks = frappe.db.sql(
                 sql,
-                (inspection_type, data.get("parameter")),
+                (inspection_type, parameter),
                 as_dict=True
             )
 
-            if not field_name_data:
+            if not mapped_checks:
                 continue
 
-            existing = {
-                (child.item_group, child.check_name, int(child.item_group_idx or 0)): child
-                for child in new_qi.get("nj_quality_checks", [])
-            }
+            for mapped in mapped_checks:
+                check_name = mapped.get("quality_check")
+                target_item_group = mapped.get("target_item_group")
 
-            for field in field_name_data:
-                name_of_check = field.get("quality_check")
-                target_item_group = field.get("target_item_group")
-
-                if not name_of_check or not target_item_group:
+                if not check_name or not target_item_group:
                     continue
 
-                matches = [
-                    x for x in new_qi.get("nj_quality_readings", [])
-                    if x.get("item_group") == target_item_group
-                ]
+                # Default: use NJQCA value directly
+                resolved_option = value
+                resolved_score = score
 
-                if not matches:
-                    continue
-
+                # Score-based option conversion:
+                # score 0  -> Pass
+                # score 41 -> Fail
                 check_options = frappe.db.sql("""
                     SELECT check_options, score
                     FROM `tabQC Options`
                     WHERE parent = %s
+                    AND active = 1
                     ORDER BY idx
-                """, name_of_check, as_dict=True)
+                """, check_name, as_dict=True)
 
-                resolved_option = data.get("value")
-                resolved_score = data.get("score")
-
-                if check_options and data.get("score") not in (None, ""):
+                if check_options and score not in (None, ""):
                     try:
-                        score_value = float(data.get("score"))
+                        score_value = float(score)
                         for opt in check_options:
-                            if score_value == float(opt.get("score") or 0):
-                                resolved_option = opt.get("check_options")
-                                resolved_score = float(opt.get("score") or 0)
+                            opt_score = opt.get("score")
+                            if opt_score not in (None, "") and score_value == float(opt_score):
+                                resolved_option = opt.get("check_options") or value
+                                resolved_score = float(opt_score)
                                 break
                     except Exception:
                         pass
 
-                for m in matches:
-                    idx_val = int(m.get("item_group_idx") or 0)
-                    key = (target_item_group, name_of_check, idx_val)
+                # Get all QI reading rows for this item group.
+                # This is the important fix for repeated Laptop RAM / LAPTOP STORAGE rows.
+                matched_readings = [
+                    r for r in new_qi.get("nj_quality_readings", [])
+                    if r.get("item_group") == target_item_group
+                ]
 
+                # If no reading row exists, still create/update one automatic check row.
+                if not matched_readings:
+                    matched_readings = [None]
+
+                for matched_reading in matched_readings:
+                    item_group_idx = 0
+
+                    if matched_reading:
+                        item_group_idx = safe_int(matched_reading.get("item_group_idx"))
+
+                    key = (check_name, target_item_group, item_group_idx)
                     child = existing.get(key)
+
                     if not child:
                         child = new_qi.append("nj_quality_checks", {})
                         existing[key] = child
 
-                    child.check_name = name_of_check
                     child.item_group = target_item_group
+                    child.check_name = check_name
                     child.options = resolved_option
                     child.automated_check_name = resolved_option
                     child.score = resolved_score
-                    child.item_group_idx = idx_val
+                    child.item_group_idx = item_group_idx
 
         new_qi.save()
 
@@ -2043,7 +2075,7 @@ def get_item_code_for_each_part(doc):
 
                                     final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and 'Chromebook' in doc.get('item_code'):
+                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))

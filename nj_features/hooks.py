@@ -72,8 +72,9 @@ doc_events = {
     #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
     # },
     "Purchase Receipt": {
-        "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
-        "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
+        # "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
+        # "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
+        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",       
     },
     "Purchase Order": {
         "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",  # ← ADDED
@@ -164,10 +165,10 @@ scheduler_events = {
         "45 9 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
-        "45 10 * * *": [
+        "05 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
-        "45 11 * * *": [
+        "25 10 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
         ],
         "10 * * * *": [
@@ -189,6 +190,9 @@ scheduler_events = {
         ],
         "*/59 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
+        ],
+        "*/55 * * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_from_priduction_plan",
         ],
     }
 }
@@ -215,3 +219,4 @@ user_data_fields = [
         "doctype": "{doctype_4}",
     },
 ]
+

@@ -1,0 +1,40 @@
+{
+ "add_total_row": 0,
+ "columns": [
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due Date",
+   "width": 0
+  }
+ ],
+ "creation": "2025-09-03 17:35:15.107853",
+ "disable_prepared_report": 0,
+ "disabled": 1,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "modified": "2026-05-05 10:47:36.579922",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Payment Report",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "query": "SELECT \n    due_date, payment_amount, paid_amount\nFROM \n    `tabPayment Schedule`\nWHERE \n    due_date = CURDATE()\n    AND (payment_amount - paid_amount) > 0;\n",
+ "ref_doctype": "Sales Invoice",
+ "report_name": "Payment Report",
+ "report_type": "Query Report",
+ "roles": [
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Employee Self Service"
+  },
+  {
+   "role": "Accounts Manager"
+  }
+ ]
+}

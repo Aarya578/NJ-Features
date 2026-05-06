@@ -6,7 +6,7 @@ import random
 import logging
 import functools
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import add_days, flt, nowdate
 from typing import Dict, List, Optional, Union
 from frappe.model.document import Document
 from datetime import timedelta
@@ -2143,4 +2143,370 @@ def _append_plan_row(
             "serial_age_days": serial_age_days,
             "allocate_parts": 1,
         },
+    )
+
+PP_MR_DEFAULT_SCHEDULE_DAYS = 3
+PP_MR_STORES_DEPARTMENT = "Stores - NJ"
+PP_MR_CORE_ITEM_GROUPS = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
+PP_MR_MIN_QTY = 0.000001
+
+
+def _split_pp_department_names(departments):
+    if not departments:
+        return []
+
+    return [d.strip() for d in str(departments).split(",") if d.strip()]
+
+
+def _get_pp_schedule_days(source_department, target_department):
+    source_sequence = frappe.db.get_value(
+        "Department",
+        source_department,
+        "department_sequence",
+    )
+    target_sequence = frappe.db.get_value(
+        "Department",
+        target_department,
+        "department_sequence",
+    )
+
+    if source_sequence is None or target_sequence is None:
+        return PP_MR_DEFAULT_SCHEDULE_DAYS
+
+    source_sequence = int(source_sequence)
+    target_sequence = int(target_sequence)
+
+    if target_sequence >= source_sequence:
+        result = frappe.db.sql("""
+            SELECT SUM(department_sla)
+            FROM `tabDepartment`
+            WHERE department_sequence >= %(from_sequence)s
+                AND department_sequence < %(to_sequence)s
+        """, {
+            "from_sequence": source_sequence,
+            "to_sequence": target_sequence,
+        })
+    else:
+        result = frappe.db.sql("""
+            SELECT SUM(department_sla)
+            FROM `tabDepartment`
+            WHERE department_sequence > %(from_sequence)s
+                AND department_sequence <= %(to_sequence)s
+        """, {
+            "from_sequence": target_sequence,
+            "to_sequence": source_sequence,
+        })
+
+    if not result or result[0][0] is None:
+        return PP_MR_DEFAULT_SCHEDULE_DAYS
+
+    return int(result[0][0] or 0)
+
+
+def _get_pp_default_company():
+    company = (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+    )
+
+    if not company:
+        frappe.throw(_("Default Company is required to create Material Request."))
+
+    return company
+
+
+def _get_latest_nj_production_plan_name():
+    latest_plan = frappe.get_all(
+        "NJ Production Planning",
+        filters={"docstatus": ["!=", 2]},
+        fields=["name"],
+        order_by="creation desc",
+        limit=1,
+    )
+    print("latest_plan=====================", latest_plan)
+    return latest_plan[0].name if latest_plan else None
+
+
+def _get_pp_template_department_qty(plan_name):
+    rows = frappe.db.sql("""
+        SELECT
+            IFNULL(NULLIF(i.variant_of, ''), i.name) AS item_template,
+            f.current_department,
+            COUNT(*) AS planned_qty
+        FROM
+            `tabFinal Production Planning Data` f
+        INNER JOIN
+            `tabItem` i
+            ON i.name = f.item_code
+        WHERE
+            f.parent = %(plan_name)s
+            AND f.item_code IS NOT NULL
+            AND i.item_group IN %(core_item_groups)s
+        GROUP BY
+            IFNULL(NULLIF(i.variant_of, ''), i.name),
+            f.current_department
+    """, {
+        "plan_name": plan_name,
+        "core_item_groups": tuple(PP_MR_CORE_ITEM_GROUPS),
+    }, as_dict=1)
+
+    print("PP MR template_department_qty count:", len(rows))
+    return rows
+
+
+def _get_pp_consumables_by_template(item_templates):
+    rows = frappe.db.sql("""
+        SELECT
+            iw.item_template,
+            c.item_code,
+            c.quantity,
+            c.departments
+        FROM
+            `tabItem Wizards` iw
+        INNER JOIN
+            `tabConsumables` c
+            ON c.parent = iw.name
+        INNER JOIN
+            `tabItem` item_doc
+            ON item_doc.name = c.item_code
+        WHERE
+            iw.item_template IN %(item_templates)s
+            AND item_doc.in_stock = 1
+    """, {
+        "item_templates": tuple(item_templates),
+    }, as_dict=1)
+
+    consumables_by_template = defaultdict(list)
+    for row in rows:
+        consumables_by_template[row.item_template].append(row)
+
+    print("PP MR item_templates count:", len(item_templates))
+    print("PP MR consumables rows count:", len(rows))
+    return consumables_by_template
+
+
+def _get_pp_store_stock(consumable_item_codes):
+    rows = frappe.db.sql("""
+        SELECT
+            b.item_code,
+            SUM(b.actual_qty) AS actual_qty
+        FROM
+            `tabBin` b
+        WHERE
+            b.warehouse IN (
+                SELECT name
+                FROM `tabWarehouse`
+                WHERE department = %(stores_department)s
+            )
+            AND b.item_code IN %(consumable_item_codes)s
+        GROUP BY
+            b.item_code
+    """, {
+        "stores_department": PP_MR_STORES_DEPARTMENT,
+        "consumable_item_codes": tuple(consumable_item_codes),
+    }, as_dict=1)
+
+    print("PP MR consumable_item_codes count:", len(consumable_item_codes))
+    print("PP MR store stock rows count:", len(rows))
+    return {row.item_code: flt(row.actual_qty) for row in rows}
+
+
+def _get_pp_shortage_items(template_department_qty, consumables_by_template):
+    required_qty_by_item = defaultdict(float)
+    schedule_days_by_item = defaultdict(list)
+
+    for row in template_department_qty:
+        item_template = row.item_template
+        current_department = row.current_department
+        planned_qty = flt(row.planned_qty)
+
+        for consumable in consumables_by_template.get(item_template, []):
+            required_qty_by_item[consumable.item_code] += flt(consumable.quantity) * planned_qty
+
+            target_departments = _split_pp_department_names(consumable.departments)
+            if not target_departments:
+                schedule_days_by_item[consumable.item_code].append(PP_MR_DEFAULT_SCHEDULE_DAYS)
+
+            for target_department in target_departments:
+                schedule_days_by_item[consumable.item_code].append(
+                    _get_pp_schedule_days(current_department, target_department)
+                )
+
+    if not required_qty_by_item:
+        return []
+
+    stock_by_item = _get_pp_store_stock(list(required_qty_by_item))
+
+    shortage_items = []
+    for item_code, required_qty in required_qty_by_item.items():
+        available_qty = stock_by_item.get(item_code, 0)
+        shortage_qty = required_qty - available_qty
+        if shortage_qty > PP_MR_MIN_QTY:
+            shortage_items.append({
+                "item_code": item_code,
+                "qty": flt(shortage_qty, 6),
+                "schedule_days": schedule_days_by_item.get(
+                    item_code,
+                    [PP_MR_DEFAULT_SCHEDULE_DAYS],
+                ),
+            })
+
+    print("PP MR required consumable items count:", len(required_qty_by_item))
+    print("PP MR shortage items count:", len(shortage_items))
+    return shortage_items
+
+
+def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items):
+    if not shortage_items:
+        return []
+
+    existing_mr_items = frappe.db.sql("""
+        SELECT
+            mri.item_code,
+            SUM(mri.qty) AS existing_qty
+        FROM
+            `tabMaterial Request Item` mri
+        INNER JOIN
+            `tabMaterial Request` mr
+            ON mr.name = mri.parent
+        WHERE
+            mr.material_request_type = 'Manufacture'
+            AND mr.docstatus < 2
+            AND mri.item_code IN %(item_codes)s
+        GROUP BY
+            mri.item_code
+    """, {
+        "item_codes": tuple(d["item_code"] for d in shortage_items),
+    }, as_dict=1)
+
+    if not existing_mr_items:
+        print("PP MR existing Manufacture MR items count: 0")
+        return shortage_items
+
+    existing_qty_by_item = {}
+    for row in existing_mr_items:
+        existing_qty_by_item[row.item_code] = flt(row.existing_qty)
+
+    adjusted_items = []
+    message_rows = []
+
+    for item in shortage_items:
+        existing_qty = existing_qty_by_item.get(item["item_code"], 0)
+        if existing_qty <= 0:
+            adjusted_items.append(item)
+            continue
+
+        required_qty = flt(item["qty"])
+        pending_qty = required_qty - existing_qty
+
+        if pending_qty > PP_MR_MIN_QTY:
+            adjusted_item = item.copy()
+            adjusted_item["qty"] = flt(pending_qty, 6)
+            adjusted_items.append(adjusted_item)
+
+        message_rows.append(
+            _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | New MR Qty: {3}").format(
+                frappe.bold(item["item_code"]),
+                frappe.bold(required_qty),
+                frappe.bold(existing_qty),
+                frappe.bold(max(pending_qty, 0)),
+            )
+        )
+
+    print("PP MR existing Manufacture MR items count:", len(existing_mr_items))
+    print("PP MR adjusted shortage items count:", len(adjusted_items))
+    if message_rows:
+        frappe.msgprint(
+            _("Existing Manufacture Material Request qty adjusted:<br>{0}").format(
+                "<br>".join(message_rows)
+            ),
+            title=_("Material Request Qty Adjusted"),
+            indicator="orange",
+        )
+
+    return adjusted_items
+
+
+def mr_raise_from_priduction_plan(doc=None, method=None):
+    print("mr_raise_from_priduction_plan")
+    plan_name = _get_latest_nj_production_plan_name()
+    print("PP MR latest plan:", plan_name)
+    if not plan_name:
+        return
+
+    template_department_qty = _get_pp_template_department_qty(plan_name)
+    print("PP MR grouped template/department rows:", len(template_department_qty))
+    if not template_department_qty:
+        return
+
+    item_templates = list({row.item_template for row in template_department_qty if row.item_template})
+    print("PP MR unique item templates:", len(item_templates))
+    if not item_templates:
+        return
+
+    consumables_by_template = _get_pp_consumables_by_template(item_templates)
+    print("PP MR templates with consumables:", len(consumables_by_template))
+    if not consumables_by_template:
+        return
+
+    shortage_items = _get_pp_shortage_items(
+        template_department_qty,
+        consumables_by_template,
+    )
+    print("PP MR shortage items before existing MR adjustment:", len(shortage_items))
+    if not shortage_items:
+        return
+
+    shortage_items = _adjust_pp_shortage_qty_for_existing_mrs(shortage_items)
+    print("PP MR shortage items after existing MR adjustment:", len(shortage_items))
+    if not shortage_items:
+        return
+
+    schedule_days = max(
+        days
+        for item in shortage_items
+        for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
+    )
+    schedule_date = add_days(nowdate(), schedule_days)
+    print("PP MR schedule days:", schedule_days)
+    print("PP MR schedule date:", schedule_date)
+
+    item_fru_map = {
+        d["name"]: d["fru_number"]
+        for d in frappe.get_all(
+            "Item",
+            filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+            fields=["name", "fru_number"],
+        )
+    }
+    print("PP MR FRU map count:", len(item_fru_map))
+
+    mr = frappe.new_doc("Material Request")
+    mr.material_request_type = "Manufacture"
+    mr.purpose = "Purchase"
+    mr.naming_series = "MREQ-.YYYY.-.MM.-"
+    mr.title = f"Production Plan - {plan_name}"
+    mr.company = _get_pp_default_company()
+    mr.schedule_date = schedule_date
+    mr.post_order_status = ""
+
+    for item in shortage_items:
+        print("PP MR append item:", item["item_code"], "qty:", item["qty"])
+        mr.append("items", {
+            "item_code": item["item_code"],
+            "qty": item["qty"],
+            "schedule_date": schedule_date,
+            "warehouse": PP_MR_STORES_DEPARTMENT,
+            "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+        })
+
+    mr.insert(ignore_permissions=True)
+    mr.submit()
+    print("PP MR created:", mr.name, "items:", len(shortage_items))
+
+    frappe.msgprint(
+        _("Material Request Created from Production Plan {0}: {1}").format(
+            frappe.bold(plan_name),
+            frappe.bold(mr.name),
+        )
     )

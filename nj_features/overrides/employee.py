@@ -38,9 +38,10 @@ def create_user_and_warehouse(self):
             frappe.throw("User not created using email: ", self.get("prefered_email"))
 
         return return_data
-    
+    except frappe.ValidationError:
+        raise
     except Exception as e:
-        frappe.throw("Error while creating user and warehouse: ", e)
+        frappe.throw(_("Error while creating user and warehouse: {0}").format(str(e)))
 
 def update_department_in_work_warehouse(self):
 
@@ -62,13 +63,20 @@ def update_department_in_work_warehouse(self):
         work_ware.extend(existing_work_warehouse)
 
     work_ware = list(set(work_ware))
+    if not work_ware:
+        return
 
     get_dept_from_warehouse = frappe.db.get_values("Warehouse",
         {'name': ('in', work_ware), 'disabled': 0},
         ["name", "department"], as_dict=True
     )
 
-    if get_dept_from_warehouse and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse] and qty_check == '0':
+    warehouse_department_mismatch = (
+        get_dept_from_warehouse
+        and self.get('department') not in [d.get('department') for d in get_dept_from_warehouse]
+    )
+
+    if warehouse_department_mismatch and qty_check == '0':
         query = """
             SELECT count(sn.name) AS total_qty
             FROM `tabSerial No` sn
@@ -88,22 +96,23 @@ def update_department_in_work_warehouse(self):
             total_qty = sum((d.get("total_qty") or 0) for d in data)
 
             if total_qty > 0:
-                frappe.msgprint(
+                frappe.throw(
                     _("Please transfer the stock of <b>{0} Qty(s)</b> from the following warehouses: <br><b>{1}</b>").format(
                         total_qty, warehouse_str)
                 )
                 return None
 
-    else:
-        dept_work_ware = get_dept_work_warehouse(self.get('department'))
-        if dept_work_ware and dept_work_ware != "pass":
-            try:
-                get_work_warehouse_doc = frappe.get_doc("Warehouse", self.get('work_warehouse'))
-                get_work_warehouse_doc.parent_warehouse = dept_work_ware
-                get_work_warehouse_doc.department = self.get('department')
-                get_work_warehouse_doc.save(ignore_permissions=True)
-            except Exception as e:
-                frappe.throw(_("Error while updating work warehouse: {0}").format(str(e)))
+    dept_work_ware = get_dept_work_warehouse(self.get('department'))
+    if dept_work_ware and dept_work_ware != "pass":
+        try:
+            get_work_warehouse_doc = frappe.get_doc("Warehouse", self.get('work_warehouse'))
+            get_work_warehouse_doc.parent_warehouse = dept_work_ware
+            get_work_warehouse_doc.department = self.get('department')
+            get_work_warehouse_doc.save(ignore_permissions=True)
+        except frappe.ValidationError:
+            raise
+        except Exception as e:
+            frappe.throw(_("Error while updating work warehouse: {0}").format(str(e)))
 
 @frappe.whitelist()
 def update_work_warehouse(doc):
@@ -679,6 +688,10 @@ def get_filtered_role_profiles(doctype, txt, searchfield, start, page_len, filte
 @frappe.whitelist()
 def update_item_group_and_max_qty_in_warehouse(doc, method=None):
     try:
+        previous_doc = doc.get_doc_before_save()
+        if previous_doc and previous_doc.get("department") != doc.get("department"):
+            update_department_in_work_warehouse(doc)
+
         employee = doc.name  # Employee ID
 
         if not employee:
@@ -746,6 +759,8 @@ def update_item_group_and_max_qty_in_warehouse(doc, method=None):
 
         return {"success": True, "message": "No changes needed"}
 
+    except frappe.ValidationError:
+        raise
     except Exception as e:
         frappe.log_error(
             frappe.get_traceback(),
@@ -937,133 +952,133 @@ def check_pending_lms_courses(employee, role_profile, department):
 #     except Exception as e:
 #         frappe.throw(f"Error while updating skill experience table: {str(e)}")
 
-def update_skill_experiance_table():
-    try:
-        employees = frappe.get_all(
-            "Employee",
-            filters={"status": "Active"},
-            fields=["name", "role_profile"]
-        )
-        print("employees=====================", employees)
+# def update_skill_experiance_table():
+#     try:
+#         employees = frappe.get_all(
+#             "Employee",
+#             filters={"status": "Active"},
+#             fields=["name", "role_profile"]
+#         )
+#         print("employees=====================", employees)
 
-        for emp in employees:
-            try:
-                print("\n-----------------------------")
-                print("Processing Employee:", emp.name)
+#         for emp in employees:
+#             try:
+#                 print("\n-----------------------------")
+#                 print("Processing Employee:", emp.name)
 
-                doc = frappe.get_doc("Employee", emp.name)
-                print("doc=====================", doc)
+#                 doc = frappe.get_doc("Employee", emp.name)
+#                 print("doc=====================", doc)
 
-                # -------- Skill Experience --------
-                skill_data = frappe.db.sql("""
-                    SELECT 
-                        sk.skill AS skill_name,
-                        SUM(CAST(COALESCE(NULLIF(exp.no_of_days, ''), 0) AS UNSIGNED)) AS sum_days
-                    FROM `tabEmployee Experience` exp
-                    INNER JOIN `tabSkills Level` sk 
-                        ON sk.parent = exp.role_profile
-                        AND sk.parenttype = 'Role Profile'
-                    WHERE exp.parent = %s
-                        AND exp.parenttype = 'Employee'
-                        AND IFNULL(sk.skill, '') != ''
-                    GROUP BY sk.skill
-                """, (emp.name,), as_dict=True)
+#                 # -------- Skill Experience --------
+#                 skill_data = frappe.db.sql("""
+#                     SELECT 
+#                         sk.skill AS skill_name,
+#                         SUM(CAST(COALESCE(NULLIF(exp.no_of_days, ''), 0) AS UNSIGNED)) AS sum_days
+#                     FROM `tabEmployee Experience` exp
+#                     INNER JOIN `tabSkills Level` sk 
+#                         ON sk.parent = exp.role_profile
+#                         AND sk.parenttype = 'Role Profile'
+#                     WHERE exp.parent = %s
+#                         AND exp.parenttype = 'Employee'
+#                         AND IFNULL(sk.skill, '') != ''
+#                     GROUP BY sk.skill
+#                 """, (emp.name,), as_dict=True)
 
-                print("skill_data=====================", skill_data)
+#                 print("skill_data=====================", skill_data)
 
-                doc.set("skill__experience", [])
+#                 doc.set("skill__experience", [])
 
-                for row in skill_data:
-                    print(f"Appending -> Skill: {row.skill_name}, Level: {row.sum_days}")
-                    doc.append("skill__experience", {
-                        "skill_name": row.skill_name,
-                        "level": row.sum_days or 0
-                    })
+#                 for row in skill_data:
+#                     print(f"Appending -> Skill: {row.skill_name}, Level: {row.sum_days}")
+#                     doc.append("skill__experience", {
+#                         "skill_name": row.skill_name,
+#                         "level": row.sum_days or 0
+#                     })
 
-                # -------- Primary Skill --------
-                primary_skill = frappe.db.get_value(
-                    "Skills Level",
-                    {
-                        "parent": doc.role_profile,
-                        "parenttype": "Role Profile",
-                        "is_primary": 1
-                    },
-                    "skill"
-                )
-                print("primary_skill=====================", primary_skill)
+#                 # -------- Primary Skill --------
+#                 primary_skill = frappe.db.get_value(
+#                     "Skills Level",
+#                     {
+#                         "parent": doc.role_profile,
+#                         "parenttype": "Role Profile",
+#                         "is_primary": 1
+#                     },
+#                     "skill"
+#                 )
+#                 print("primary_skill=====================", primary_skill)
 
-                doc.skill_level_ramp = "Level not found"
-                doc.skill_level_target = "Level not found"
+#                 doc.skill_level_ramp = "Level not found"
+#                 doc.skill_level_target = "Level not found"
 
-                if primary_skill:
-                    skill_row = next(
-                        (row for row in doc.get("skill__experience")
-                         if row.skill_name == primary_skill),
-                        None
-                    )
-                    print("skill_row=====================", skill_row)
+#                 if primary_skill:
+#                     skill_row = next(
+#                         (row for row in doc.get("skill__experience")
+#                          if row.skill_name == primary_skill),
+#                         None
+#                     )
+#                     print("skill_row=====================", skill_row)
 
-                    if skill_row:
-                        level = int(skill_row.level or 0)
-                        print("level=====================", level)
+#                     if skill_row:
+#                         level = int(skill_row.level or 0)
+#                         print("level=====================", level)
 
-                        # -------- NEW KPI LOGIC (target >= level) --------
-                        target_kpi = frappe.db.sql("""
-                            SELECT target, ramp_level
-                            FROM `tabTarget Kpi`
-                            WHERE parent = %s
-                                AND parenttype = 'Role Profile'
-                                AND CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) >= %s
-                            ORDER BY CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) ASC
-                            LIMIT 1
-                        """, (doc.role_profile, level), as_dict=True)
+#                         # -------- NEW KPI LOGIC (target >= level) --------
+#                         target_kpi = frappe.db.sql("""
+#                             SELECT target, ramp_level
+#                             FROM `tabTarget Kpi`
+#                             WHERE parent = %s
+#                                 AND parenttype = 'Role Profile'
+#                                 AND CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) >= %s
+#                             ORDER BY CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) ASC
+#                             LIMIT 1
+#                         """, (doc.role_profile, level), as_dict=True)
 
-                        print("target_kpi (>= level)===========", target_kpi)
+#                         print("target_kpi (>= level)===========", target_kpi)
 
-                        # -------- Fallback: pick max target --------
-                        if not target_kpi:
-                            print("No >= target found, using max target fallback")
+#                         # -------- Fallback: pick max target --------
+#                         if not target_kpi:
+#                             print("No >= target found, using max target fallback")
 
-                            target_kpi = frappe.db.sql("""
-                                SELECT target, ramp_level
-                                FROM `tabTarget Kpi`
-                                WHERE parent = %s
-                                    AND parenttype = 'Role Profile'
-                                ORDER BY CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) DESC
-                                LIMIT 1
-                            """, (doc.role_profile,), as_dict=True)
+#                             target_kpi = frappe.db.sql("""
+#                                 SELECT target, ramp_level
+#                                 FROM `tabTarget Kpi`
+#                                 WHERE parent = %s
+#                                     AND parenttype = 'Role Profile'
+#                                 ORDER BY CAST(COALESCE(NULLIF(target, ''), 0) AS UNSIGNED) DESC
+#                                 LIMIT 1
+#                             """, (doc.role_profile,), as_dict=True)
 
-                            print("fallback target_kpi===========", target_kpi)
+#                             print("fallback target_kpi===========", target_kpi)
 
-                        if target_kpi:
-                            doc.skill_level_ramp = target_kpi[0].ramp_level
-                            doc.skill_level_target = target_kpi[0].target
+#                         if target_kpi:
+#                             doc.skill_level_ramp = target_kpi[0].ramp_level
+#                             doc.skill_level_target = target_kpi[0].target
 
-                            print("Assigned Ramp===============", doc.skill_level_ramp)
-                            print("Assigned Target=============", doc.skill_level_target)
-                        else:
-                            print("No KPI data available at all")
+#                             print("Assigned Ramp===============", doc.skill_level_ramp)
+#                             print("Assigned Target=============", doc.skill_level_target)
+#                         else:
+#                             print("No KPI data available at all")
 
-                    else:
-                        print("Primary skill not found in skill experience")
+#                     else:
+#                         print("Primary skill not found in skill experience")
 
-                else:
-                    print("No primary skill configured")
+#                 else:
+#                     print("No primary skill configured")
 
-                doc.save(ignore_permissions=True)
-                print("Saved Employee:", emp.name)
+#                 doc.save(ignore_permissions=True)
+#                 print("Saved Employee:", emp.name)
 
-            except Exception:
-                print(f"Error for Employee: {emp.name}")
-                print(frappe.get_traceback())
-                frappe.log_error(
-                    frappe.get_traceback(),
-                    f"Skill update failed for {emp.name}"
-                )
+#             except Exception:
+#                 print(f"Error for Employee: {emp.name}")
+#                 print(frappe.get_traceback())
+#                 frappe.log_error(
+#                     frappe.get_traceback(),
+#                     f"Skill update failed for {emp.name}"
+#                 )
 
-        frappe.db.commit()
-        print("\n=== PROCESS COMPLETED ===")
+#         frappe.db.commit()
+#         print("\n=== PROCESS COMPLETED ===")
 
-    except Exception as e:
-        print("MAIN ERROR:", str(e))
-        frappe.throw(f"Error while updating skill experience table: {str(e)}")
+#     except Exception as e:
+#         print("MAIN ERROR:", str(e))
+#         frappe.throw(f"Error while updating skill experience table: {str(e)}")

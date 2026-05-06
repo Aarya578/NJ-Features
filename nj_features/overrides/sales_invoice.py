@@ -177,17 +177,14 @@ class CustomSalesInvoice(SalesInvoice):
                 self.approved = 1
 
     def email_field_filling(self):
-        print("inside email_field_filling=================")
         if not self.customer_address:
             frappe.throw(_("Please select Customer Address"))
 
         # Fetch email_id from Address doctype
         email_id = frappe.db.get_value("Address", self.customer_address, "email_id")
-        print("email_id===================", email_id)
 
         if email_id:
             self.email = email_id
-            print("self.email===================", self.email)
         else:
             frappe.throw(_("Please enter Email ID in Customer Address"))      
     def validate_si_tax_presence(self):

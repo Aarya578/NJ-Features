@@ -3,6 +3,7 @@
 
 import json
 import frappe
+from frappe.utils import nowdate, add_days
 from datetime import timedelta
 from frappe.utils import getdate, nowdate, flt
 from nj_lib.utils.common_utils import is_serialized
@@ -421,3 +422,516 @@ def get_item_uoms_for_query(doctype, txt, searchfield, start, page_len, filters)
             uom.name ASC
         LIMIT %s OFFSET %s
     """, ("%%%s%%" % txt, txt or "", page_len, start))
+
+
+MR_SOURCE_DEPARTMENT = "Inward  - NJ"
+MR_DEFAULT_SCHEDULE_DAYS = 3
+MR_MIN_QTY = 0.000001
+
+
+def _split_department_names(departments):
+    if not departments:
+        return []
+
+    return [d.strip() for d in str(departments).split(",") if d.strip()]
+
+
+def _get_consumable_departments(core_item_codes, consumable_item_codes):
+    if not core_item_codes or not consumable_item_codes:
+        return set()
+
+    rows = frappe.db.sql("""
+        SELECT DISTINCT
+            c.departments
+        FROM
+            `tabItem` i
+        INNER JOIN
+            `tabItem Wizards` iw
+            ON iw.item_template = i.variant_of
+        INNER JOIN
+            `tabConsumables` c
+            ON c.parent = iw.name
+        INNER JOIN
+            `tabItem` item_doc
+            ON item_doc.name = c.item_code
+        WHERE
+            i.item_code IN %(core_item_codes)s
+            AND c.item_code IN %(consumable_item_codes)s
+            AND item_doc.in_stock = 1
+    """, {
+        "core_item_codes": tuple(core_item_codes),
+        "consumable_item_codes": tuple(consumable_item_codes),
+    }, as_dict=1)
+
+    departments = set()
+    for row in rows:
+        departments.update(_split_department_names(row.departments))
+
+    return departments
+
+
+def _get_schedule_days_for_department(source_department, target_department):
+    source_sequence = frappe.db.get_value(
+        "Department",
+        source_department,
+        "department_sequence",
+    )
+    print("source_sequence=======================", source_sequence)
+    target_sequence = frappe.db.get_value(
+        "Department",
+        target_department,
+        "department_sequence",
+    )
+    print("target_sequence=======================", target_sequence)
+
+    if source_sequence is None or target_sequence is None:
+        return None
+
+    source_sequence = int(source_sequence)
+    print("source_sequence=======================", source_sequence)
+    target_sequence = int(target_sequence)
+    print("target_sequence=======================", target_sequence)
+
+    if target_sequence >= source_sequence:
+        filters = {
+            "from_sequence": source_sequence,
+            "to_sequence": target_sequence,
+        }
+        print("filters=======================", filters)
+        result = frappe.db.sql("""
+            SELECT SUM(department_sla)
+            FROM `tabDepartment`
+            WHERE department_sequence >= %(from_sequence)s
+                AND department_sequence < %(to_sequence)s
+        """, filters)
+        print("result=======================", result)
+    else:
+        filters = {
+            "from_sequence": target_sequence,
+            "to_sequence": source_sequence,
+        }
+        print("filters=======================", filters)
+        result = frappe.db.sql("""
+            SELECT SUM(department_sla)
+            FROM `tabDepartment`
+            WHERE department_sequence > %(from_sequence)s
+                AND department_sequence <= %(to_sequence)s
+        """, filters)
+        print("result=======================", result)
+
+    if not result or result[0][0] is None:
+        return None
+
+    return int(result[0][0] or 0)
+
+
+def get_mr_schedule_date_from_pr(core_item_codes, shortage_item_codes):
+    consumable_departments = _get_consumable_departments(
+        core_item_codes,
+        shortage_item_codes,
+    )
+    print("consumable_departments========11111111===============", consumable_departments)
+
+    if not consumable_departments:
+        return add_days(nowdate(), MR_DEFAULT_SCHEDULE_DAYS)
+
+    schedule_days = []
+    for department in consumable_departments:
+        days = _get_schedule_days_for_department(MR_SOURCE_DEPARTMENT, department)
+        if days is not None:
+            schedule_days.append(days)
+
+    if not schedule_days:
+        return add_days(nowdate(), MR_DEFAULT_SCHEDULE_DAYS)
+
+    return add_days(nowdate(), max(schedule_days))
+
+
+
+
+
+
+# def mr_raise_from_pr(doc, method=None):
+#     print("inside the function===================")
+#     core_items = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
+#     print("core_items=======================", core_items)
+
+#     # 🔹 Step 1: Get PR item codes
+#     item_codes = list({d.item_code for d in doc.items if d.item_code})
+#     print("item_codes=======================", item_codes)
+#     if not item_codes:
+#         return
+
+#     # 🔹 Step 2: Filter core items
+#     core_item_codes = frappe.get_all(
+#         "Item",
+#         filters={
+#             "item_code": ["in", item_codes],
+#             "item_group": ["in", core_items],
+#         },
+#         pluck="item_code",
+#     )
+#     print("core_item_codes=======================", core_item_codes)
+
+#     if not core_item_codes:
+#         return
+
+#     # 🔹 Step 3: Fetch Consumables (SUM)
+#     consumable_items = frappe.db.sql("""
+#         SELECT 
+#             c.item_code,
+#             SUM(c.quantity) AS quantity
+#         FROM 
+#             `tabItem` i
+#         INNER JOIN 
+#             `tabItem Wizards` iw 
+#             ON iw.item_template = i.variant_of
+#         INNER JOIN 
+#             `tabConsumables` c 
+#             ON c.parent = iw.name
+#         INNER JOIN 
+#             `tabItem` item_doc
+#             ON item_doc.name = c.item_code
+#         WHERE 
+#             i.item_code IN %(core_item_codes)s
+#             AND item_doc.in_stock = 1
+#         GROUP BY 
+#             c.item_code
+#     """, {"core_item_codes": tuple(core_item_codes)}, as_dict=1 , debug=1)
+#     print("consumable_items=======================", consumable_items)
+
+#     if not consumable_items:
+#         return
+
+#     # 🔹 Step 4: Extract item codes
+#     consumable_item_codes = list({d["item_code"] for d in consumable_items})
+#     print("consumable_item_codes=================", consumable_item_codes)
+#     if not consumable_item_codes:
+#         return
+
+#     # 🔹 Step 5: Warehouse stock (SUM)
+#     warehouse_qty = frappe.db.sql("""
+#         SELECT  
+#             b.item_code,
+#             SUM(b.actual_qty) AS actual_qty
+#         FROM 
+#             `tabBin` b 
+#         WHERE 
+#             b.warehouse IN (
+#                 SELECT name 
+#                 FROM `tabWarehouse`
+#                 WHERE department = 'Stores - NJ'
+#             )
+#             AND b.item_code IN %(consumable_item_codes)s
+#         GROUP BY 
+#             b.item_code
+#     """, {
+#         "consumable_item_codes": tuple(consumable_item_codes)
+#     }, as_dict=1, debug=1)
+#     print("warehouse_qty=======================", warehouse_qty)
+
+#     # 🔹 Step 6: Convert to dict
+#     bin_map = {d["item_code"]: d["actual_qty"] for d in warehouse_qty}
+#     print("bin_map=======================", bin_map)
+
+#     # 🔹 Step 7: Calculate shortage
+#     shortage_items = []
+#     for d in consumable_items:
+#         item_code = d["item_code"]
+#         print("item_code=======================", item_code)
+#         required_qty = d["quantity"]
+#         print("required_qty=======================", required_qty)
+#         available_qty = bin_map.get(item_code, 0)
+#         print("available_qty=======================", available_qty)
+
+#         if available_qty < required_qty:
+#             shortage_qty = required_qty - available_qty
+#             print("shortage_qty=======================", shortage_qty)
+#             shortage_items.append({
+#                 "item_code": item_code,
+#                 "qty": shortage_qty
+#             })
+
+#     # 🔹 Step 8: Stop if no shortage
+#     if not shortage_items:
+#         return
+
+#     # 🔹 Step 9: Fetch FRU numbers in one go
+#     item_fru_map = {
+#         d["name"]: d["fru_number"]
+#         for d in frappe.get_all(
+#             "Item",
+#             filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+#             fields=["name", "fru_number"]
+#         )
+#     }
+#     print("item_fru_map=======================", item_fru_map)
+
+#     # 🔹 Step 10: Create MR
+#     mr = frappe.new_doc("Material Request")
+#     mr.material_request_type = "Manufacture"
+#     mr.purpose = "Purchase"
+#     mr.naming_series = 'MREQ-.YYYY.-.MM.-'
+#     mr.company = doc.company
+#     mr.schedule_date = add_days(nowdate(), 3)
+#     mr.post_order_status = ''
+
+#     # 🔹 Step 11: Append items
+#     for d in shortage_items:
+#         fru_number = item_fru_map.get(d["item_code"]) or "N/A"
+
+#         mr.append("items", {
+#             "item_code": d["item_code"],
+#             "qty": d["qty"],
+#             "schedule_date": mr.schedule_date,
+#             "warehouse": "Stores - NJ",
+#             "fru_number": fru_number
+#         })
+
+#     # 🔹 Step 12: Save & Submit
+#     mr.insert(ignore_permissions=True)
+#     mr.submit()
+
+#     frappe.msgprint(f"Material Request Created: {mr.name}")
+
+def mr_raise_from_pr(doc, method=None):
+    print("inside the function===================")
+    core_items = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
+    print("core_items=======================", core_items)
+
+    # 🔹 Step 1: Get PR item codes
+    item_codes = list({d.item_code for d in doc.items if d.item_code})
+    print("item_codes=======================", item_codes)
+    if not item_codes:
+        return
+
+    # 🔹 Step 2: Filter core items
+    core_item_codes = frappe.get_all(
+        "Item",
+        filters={
+            "item_code": ["in", item_codes],
+            "item_group": ["in", core_items],
+        },
+        pluck="item_code",
+    )
+    print("core_item_codes=======================", core_item_codes)
+
+    if not core_item_codes:
+        return
+
+    # 🔹 Step 3: Fetch Consumables (SUM)
+    consumable_items = frappe.db.sql("""
+        SELECT 
+            c.item_code,
+            SUM(c.quantity * pri.qty) AS quantity
+        FROM 
+            `tabPurchase Receipt Item` pri
+        INNER JOIN 
+            `tabItem` i
+            ON i.name = pri.item_code
+        INNER JOIN 
+            `tabItem Wizards` iw 
+            ON iw.item_template = i.variant_of
+        INNER JOIN 
+            `tabConsumables` c 
+            ON c.parent = iw.name
+        INNER JOIN 
+            `tabItem` item_doc
+            ON item_doc.name = c.item_code
+        WHERE 
+            pri.parent = %(purchase_receipt)s
+            AND i.item_code IN %(core_item_codes)s
+            AND item_doc.in_stock = 1
+        GROUP BY 
+            c.item_code
+    """, {
+        "purchase_receipt": doc.name,
+        "core_item_codes": tuple(core_item_codes),
+    }, as_dict=1 , debug=1)
+    print("consumable_items=======================", consumable_items)
+
+    if not consumable_items:
+        return
+
+    # 🔹 Step 4: Extract item codes
+    consumable_item_codes = list({d["item_code"] for d in consumable_items})
+    print("consumable_item_codes=================", consumable_item_codes)
+    print("PR MR consumable_item_codes count=================", len(consumable_item_codes))
+    if not consumable_item_codes:
+        return
+
+    # 🔹 Step 5: Warehouse stock (SUM)
+    warehouse_qty = frappe.db.sql("""
+        SELECT  
+            b.item_code,
+            SUM(b.actual_qty) AS actual_qty
+        FROM 
+            `tabBin` b 
+        WHERE 
+            b.warehouse IN (
+                SELECT name 
+                FROM `tabWarehouse`
+                WHERE department = 'Stores - NJ'
+            )
+            AND b.item_code IN %(consumable_item_codes)s
+        GROUP BY 
+            b.item_code
+    """, {
+        "consumable_item_codes": tuple(consumable_item_codes)
+    }, as_dict=1, debug=1)
+    print("warehouse_qty=======================", warehouse_qty)
+    print("PR MR warehouse_qty rows count=======================", len(warehouse_qty))
+
+    # 🔹 Step 6: Convert to dict
+    bin_map = {d["item_code"]: d["actual_qty"] for d in warehouse_qty}
+    print("bin_map=======================", bin_map)
+
+    # 🔹 Step 7: Calculate shortage
+    shortage_items = []
+    for d in consumable_items:
+        item_code = d["item_code"]
+        print("item_code=======================", item_code)
+        required_qty = d["quantity"]
+        print("required_qty=======================", required_qty)
+        available_qty = bin_map.get(item_code, 0)
+        print("available_qty=======================", available_qty)
+
+        shortage_qty = required_qty - available_qty
+        if shortage_qty > MR_MIN_QTY:
+            print("shortage_qty=======================", shortage_qty)
+            shortage_items.append({
+                "item_code": item_code,
+                "qty": flt(shortage_qty, 6)
+            })
+
+    print("PR MR shortage_items before MR qty adjustment=======================", shortage_items)
+    print("PR MR shortage_items count before MR qty adjustment=======================", len(shortage_items))
+
+    # 🔹 Step 8: Stop if no shortage
+    if not shortage_items:
+        return
+
+    # 🔹 Step 9: Adjust shortage qty by already raised active Manufacture MR qty
+    existing_mr_items = frappe.db.sql("""
+        SELECT
+            mri.item_code,
+            SUM(mri.qty) AS existing_qty
+        FROM
+            `tabMaterial Request Item` mri
+        INNER JOIN
+            `tabMaterial Request` mr
+            ON mr.name = mri.parent
+        WHERE
+            mr.material_request_type = 'Manufacture'
+            AND mr.docstatus < 2
+            AND mri.item_code IN %(item_codes)s
+        GROUP BY
+            mri.item_code
+    """, {
+        "item_codes": tuple(d["item_code"] for d in shortage_items)
+    }, as_dict=1)
+    print("PR MR existing Manufacture MR qty rows=======================", existing_mr_items)
+    print("PR MR existing Manufacture MR qty rows count=======================", len(existing_mr_items))
+
+    if existing_mr_items:
+        existing_qty_by_item = {}
+        for row in existing_mr_items:
+            existing_qty_by_item[row.item_code] = flt(row.existing_qty)
+        print("PR MR existing_qty_by_item=======================", existing_qty_by_item)
+
+        adjusted_shortage_items = []
+        message_rows = []
+
+        for d in shortage_items:
+            existing_qty = existing_qty_by_item.get(d["item_code"], 0)
+            if existing_qty <= 0:
+                adjusted_shortage_items.append(d)
+                continue
+
+            required_qty = flt(d["qty"])
+            pending_qty = required_qty - existing_qty
+            print(
+                "PR MR qty adjustment=======================",
+                d["item_code"],
+                "required:",
+                required_qty,
+                "existing_mr_qty:",
+                existing_qty,
+                "new_mr_qty:",
+                max(pending_qty, 0),
+            )
+
+            if pending_qty > MR_MIN_QTY:
+                adjusted_shortage_items.append({
+                    "item_code": d["item_code"],
+                    "qty": flt(pending_qty, 6),
+                })
+
+            message_rows.append(
+                _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | New MR Qty: {3}").format(
+                    frappe.bold(d["item_code"]),
+                    frappe.bold(required_qty),
+                    frappe.bold(existing_qty),
+                    frappe.bold(max(pending_qty, 0)),
+                )
+            )
+
+        frappe.msgprint(
+            _("Existing Manufacture Material Request qty adjusted:<br>{0}").format(
+                "<br>".join(message_rows)
+            ),
+            title=_("Material Request Qty Adjusted"),
+            indicator="orange",
+        )
+
+        shortage_items = adjusted_shortage_items
+
+    print("PR MR shortage_items after MR qty adjustment=======================", shortage_items)
+    print("PR MR shortage_items count after MR qty adjustment=======================", len(shortage_items))
+
+    if not shortage_items:
+        return
+
+    # 🔹 Step 10: Fetch FRU numbers in one go
+    item_fru_map = {
+        d["name"]: d["fru_number"]
+        for d in frappe.get_all(
+            "Item",
+            filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+            fields=["name", "fru_number"]
+        )
+    }
+    print("item_fru_map=======================", item_fru_map)
+
+    # 🔹 Step 11: Create MR
+    mr = frappe.new_doc("Material Request")
+    mr.material_request_type = "Manufacture"
+    mr.purpose = "Purchase"
+    mr.naming_series = 'MREQ-.YYYY.-.MM.-'
+    mr.company = doc.company
+    mr.schedule_date = get_mr_schedule_date_from_pr(
+        core_item_codes,
+        [d["item_code"] for d in shortage_items],
+    )
+    print("PR MR schedule_date=======================", mr.schedule_date)
+    mr.post_order_status = ''
+
+    # 🔹 Step 12: Append items
+    for d in shortage_items:
+        fru_number = item_fru_map.get(d["item_code"]) or "N/A"
+        print("PR MR append item=======================", d["item_code"], "qty:", d["qty"], "fru:", fru_number)
+
+        mr.append("items", {
+            "item_code": d["item_code"],
+            "qty": d["qty"],
+            "schedule_date": mr.schedule_date,
+            "warehouse": "Stores - NJ",
+            "fru_number": fru_number
+        })
+
+    # 🔹 Step 13: Save & Submit
+    mr.insert(ignore_permissions=True)
+    mr.submit()
+    print("PR MR created=======================", mr.name, "items:", len(shortage_items))
+
+    frappe.msgprint(f"Material Request Created: {mr.name}")

@@ -74,10 +74,10 @@ doc_events = {
     "Purchase Receipt": {
         # "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
         # "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
-        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",       
+        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
     },
     "Purchase Order": {
-        "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",  # ← ADDED
+        "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
         "on_submit": [
             "nj_features.overrides.purchase_order.validate_warranty_on_submit",
@@ -197,6 +197,8 @@ scheduler_events = {
     }
 }
 
+# ========== Fixtures ==========
+# Workflow fixtures removed — approval flow handled via custom Python methods
 fixtures = [
     {
         "dt": "Custom Field",
@@ -205,23 +207,6 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [["name", "=", "Department-expense_credit_account"]]
-    },
-    {
-        "dt": "Workflow",
-        "filters": [["name", "=", "Cash Expense Request Workflow"]]
-    },
-    {
-        "dt": "Workflow State",
-        "filters": [["workflow_state_name", "in", [
-            "Draft", "Submitted", "Manager Approved",
-            "Accounts Approved", "Posted", "Rejected"
-        ]]]
-    },
-    {
-        "dt": "Workflow Action Master",
-        "filters": [["workflow_action_name", "in", [
-            "Submit", "Approve", "Reject", "Resubmit", "Post"
-        ]]]
     }
 ]
 
@@ -247,4 +232,3 @@ user_data_fields = [
         "doctype": "{doctype_4}",
     },
 ]
-

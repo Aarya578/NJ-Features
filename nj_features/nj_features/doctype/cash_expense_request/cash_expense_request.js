@@ -53,12 +53,18 @@ frappe.ui.form.on('Cash Expense Request', {
 
 // ─────────────────────────────────────────────────────────────
 //  ACTION BUTTONS
-//  Rendered based on current_status + user role
+//
+//  Employee flow:
+//    Draft     → [Submit for Approval]
+//    Rejected  → [Resubmit]
+//
+//  Accounts flow:
+//    Submitted → [Submit & Create Journal Entry] + [Reject]
+//    Rejected  → [Resubmit]
 // ─────────────────────────────────────────────────────────────
 
 function setup_action_buttons(frm) {
 
-    // Don't show on new unsaved docs or already posted
     if (frm.is_new()) return;
 
     const status      = frm.doc.current_status;
@@ -67,7 +73,7 @@ function setup_action_buttons(frm) {
     const can_submit  = is_accounts || is_employee;
     const MODULE      = "nj_features.nj_features.doctype.cash_expense_request.cash_expense_request";
 
-    // ── Draft → Submit ────────────────────────────────────────
+    // ── Draft → Submit for Approval (Employee + Accounts) ────
     if (status === "Draft" && can_submit && frm.doc.docstatus === 0) {
         frm.add_custom_button(__("Submit for Approval"), function() {
             frappe.confirm(
@@ -88,27 +94,29 @@ function setup_action_buttons(frm) {
         }).addClass("btn-primary");
     }
 
-    // ── Submitted → Approve / Reject ─────────────────────────
+    // ── Submitted → Submit & Create JE + Reject (Accounts only) ──
     if (status === "Submitted" && is_accounts && frm.doc.docstatus === 0) {
 
-        frm.add_custom_button(__("Approve"), function() {
+        // Primary action — post and create JE
+        frm.add_custom_button(__("Submit & Create Journal Entry"), function() {
             frappe.confirm(
-                __("Approve this expense request?"),
+                __("Submit this expense and create the Journal Entry? This cannot be undone."),
                 function() {
                     frappe.call({
-                        method: MODULE + ".approve_request",
+                        method: MODULE + ".post_request",
                         args: { docname: frm.doc.name },
                         callback: function(r) {
                             if (r.message) {
-                                frappe.show_alert({ message: __("Expense Approved"), indicator: "green" }, 4);
+                                frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
                                 frm.reload_doc();
                             }
                         }
                     });
                 }
             );
-        }).addClass("btn-success");
+        }).addClass("btn-primary");
 
+        // Reject alongside
         frm.add_custom_button(__("Reject"), function() {
             frappe.prompt(
                 { fieldtype: "Small Text", fieldname: "reason", label: "Rejection Reason", reqd: 1 },
@@ -129,28 +137,7 @@ function setup_action_buttons(frm) {
         }).addClass("btn-danger");
     }
 
-    // ── Accounts Approved → Post (creates JE) ─────────────────
-    if (status === "Accounts Approved" && is_accounts && frm.doc.docstatus === 0) {
-        frm.add_custom_button(__("Post & Create Journal Entry"), function() {
-            frappe.confirm(
-                __("Post this expense and create the Journal Entry? This cannot be undone."),
-                function() {
-                    frappe.call({
-                        method: MODULE + ".post_request",
-                        args: { docname: frm.doc.name },
-                        callback: function(r) {
-                            if (r.message) {
-                                frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
-                                frm.reload_doc();
-                            }
-                        }
-                    });
-                }
-            );
-        }).addClass("btn-primary");
-    }
-
-    // ── Rejected → Resubmit ───────────────────────────────────
+    // ── Rejected → Resubmit (Employee + Accounts) ────────────
     if (status === "Rejected" && can_submit && frm.doc.docstatus === 0) {
         frm.add_custom_button(__("Resubmit"), function() {
             frappe.confirm(

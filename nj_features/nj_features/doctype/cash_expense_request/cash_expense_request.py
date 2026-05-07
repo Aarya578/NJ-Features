@@ -8,27 +8,14 @@ SUBMIT_ROLES   = {"System Manager", "Accounts Manager", "Accounts User", "Employ
 
 class CashExpenseRequest(Document):
 
-    # =============================
-    # BEFORE INSERT
-    # =============================
-
     def before_insert(self):
         self.current_status = "Draft"
-
-    # =============================
-    # VALIDATE BEFORE SAVE
-    # =============================
 
     def validate(self):
         self.fetch_department()
         self.validate_receipt()
-        # Budget check on every save so user sees warning early
         if self.employee:
             self.check_employee_limit()
-
-    # =============================
-    # AUTO FETCH DEPARTMENT
-    # =============================
 
     def fetch_department(self):
         if self.employee:
@@ -36,18 +23,10 @@ class CashExpenseRequest(Document):
             if department:
                 self.department = department
 
-    # =============================
-    # RECEIPT VALIDATION
-    # =============================
-
     def validate_receipt(self):
         if self.amount and self.amount > 1000:
             if not self.receipt_upload and not self.multiple_receipts:
                 frappe.throw("Receipt is mandatory for expenses above Rs.1000")
-
-    # =============================
-    # BUDGET VALIDATION
-    # =============================
 
     def check_employee_limit(self):
         limit_doc = frappe.db.get_value(
@@ -90,7 +69,6 @@ class CashExpenseRequest(Document):
         if not self.employee:
             return
 
-        # Update employee expense usage
         limit_name = frappe.db.get_value(
             "Employee Expense Limit",
             {"employee": self.employee}
@@ -104,10 +82,7 @@ class CashExpenseRequest(Document):
         limit_doc.current_month_expense = (limit_doc.current_month_expense or 0) + (self.amount or 0)
         limit_doc.save(ignore_permissions=True)
 
-        # Create JE
         self.create_journal_entry()
-
-        # Mark as Posted
         self.db_set("current_status", "Posted")
 
     # =============================
@@ -180,10 +155,6 @@ class CashExpenseRequest(Document):
         je.submit()
         self.db_set("accounts_entry", je.name)
 
-    # =============================
-    # MODE → CREDIT ACCOUNT HELPER
-    # =============================
-
     def _get_mode_credit_account(self, company, company_doc):
         mode = self.mode or ""
 
@@ -226,7 +197,7 @@ class CashExpenseRequest(Document):
 
 
 # ============================================================
-# INTERNAL HELPER — AUTO MONTH RESET
+# INTERNAL HELPERS
 # ============================================================
 
 def _auto_reset_if_new_month(limit_doc):
@@ -307,7 +278,7 @@ def get_employee_budget(employee):
 
 # ============================================================
 # ACTION — SUBMIT (Draft → Submitted)
-# Employee, Accounts Manager, Accounts User
+# Employee + Accounts
 # ============================================================
 
 @frappe.whitelist()
@@ -329,31 +300,8 @@ def submit_request(docname):
 
 
 # ============================================================
-# ACTION — APPROVE (Submitted → Accounts Approved)
-# Accounts Manager, Accounts User only
-# ============================================================
-
-@frappe.whitelist()
-def approve_request(docname):
-    _check_accounts_role()
-
-    doc = frappe.get_doc("Cash Expense Request", docname)
-
-    if doc.current_status != "Submitted":
-        frappe.throw(f"Cannot approve. Current status is {doc.current_status}.")
-
-    doc.current_status = "Accounts Approved"
-    doc.approved_by    = frappe.session.user
-    doc.approval_date  = nowdate()
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-
-    return "Accounts Approved"
-
-
-# ============================================================
 # ACTION — REJECT (Submitted → Rejected)
-# Accounts Manager, Accounts User only
+# Accounts only
 # ============================================================
 
 @frappe.whitelist()
@@ -382,9 +330,8 @@ def reject_request(docname, reason=""):
 
 
 # ============================================================
-# ACTION — POST (Accounts Approved → Posted)
-# Triggers frappe submit → on_submit → JE created
-# Accounts Manager, Accounts User only
+# ACTION — POST (Submitted → Posted)
+# Creates JE via on_submit, Accounts only
 # ============================================================
 
 @frappe.whitelist()
@@ -393,10 +340,12 @@ def post_request(docname):
 
     doc = frappe.get_doc("Cash Expense Request", docname)
 
-    if doc.current_status != "Accounts Approved":
+    if doc.current_status != "Submitted":
         frappe.throw(f"Cannot post. Current status is {doc.current_status}.")
 
-    # Native frappe submit sets docstatus=1 and fires on_submit
+    # Set approver details before submitting
+    doc.approved_by   = frappe.session.user
+    doc.approval_date = nowdate()
     doc.flags.ignore_permissions = True
     doc.submit()
     frappe.db.commit()
@@ -406,7 +355,7 @@ def post_request(docname):
 
 # ============================================================
 # ACTION — RESUBMIT (Rejected → Submitted)
-# Employee, Accounts Manager, Accounts User
+# Employee + Accounts
 # ============================================================
 
 @frappe.whitelist()

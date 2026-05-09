@@ -3313,6 +3313,314 @@ PARAMETER_TYPE_MAPPING = {
         'file_size'
     ]
 }
+def normalize_parameter_name(value):
+    return str(value or "").strip().lower()
+
+
+def get_status_parameter_list(setting_parameter):
+    raw_value = frappe.db.get_value(
+        "NJ Settings",
+        {"doc_type": "NJQCA", "parameter": setting_parameter},
+        "value"
+    )
+
+    if not raw_value:
+        raw_value = frappe.db.get_value(
+            "NJ Settings",
+            {"parameter": setting_parameter},
+            "value"
+        )
+
+    if not raw_value:
+        return []
+
+    raw_value = str(raw_value).strip()
+
+    try:
+        parsed = json.loads(raw_value)
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x).strip()]
+    except Exception:
+        pass
+
+    return [x.strip() for x in raw_value.replace("\n", ",").split(",") if x.strip()]
+
+
+def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
+    allowed_parameters = get_status_parameter_list(setting_parameter)
+
+    if not allowed_parameters:
+        return []
+
+    allowed_set = {
+        normalize_parameter_name(p)
+        for p in allowed_parameters
+    }
+
+    criteria_map = {}
+    for row in criteria_rows or []:
+        param = row.get("parameter")
+        if param and normalize_parameter_name(param) in allowed_set:
+            criteria_map[normalize_parameter_name(param)] = row
+
+    result_map = {}
+    for row in doc.get("njqca_result_parameters") or []:
+        param = row.get("parameter")
+        if param:
+            result_map[normalize_parameter_name(param)] = row
+
+    evaluation_results = []
+
+    for parameter in allowed_parameters:
+        key = normalize_parameter_name(parameter)
+
+        criteria_row = criteria_map.get(key)
+        result_row = result_map.get(key)
+
+        # If parameter is in NJ Settings but not in Criteria Child,
+        # skip it instead of failing with blank actual/expected.
+        if not criteria_row:
+            continue
+
+        expected_value = criteria_row.get("parameter_value")
+
+        # If criteria exists but NJQCA value is missing, then fail.
+        if not result_row:
+            evaluation_results.append({
+                "parameter": parameter,
+                "njqca_value": "",
+                "expected_range": expected_value,
+                "status": "Fail",
+                "message": f"{parameter} is in Criteria Child but not found in NJQCA Result Parameters"
+            })
+            continue
+
+        actual_value = ""
+
+        if key == "average_restart_time":
+            avg_time = convert_to_seconds(result_row.get("value"), parameter)
+
+            for result_param in doc.get("njqca_result_parameters") or []:
+                if result_param.get("parameter") in ["Restart_1", "Restart_2", "Restart_3"]:
+                    if avg_time > convert_to_seconds(result_param.get("value"), result_param.get("parameter")):
+                        actual_value = result_param.get("value")
+
+        if not actual_value:
+            actual_value = result_row.get("value") or result_row.get("score", "")
+
+        is_passing, message = compare_parameter(
+            parameter,
+            actual_value,
+            expected_value
+        )
+
+        evaluation_results.append({
+            "parameter": parameter,
+            "njqca_value": actual_value,
+            "expected_range": expected_value,
+            "status": "Pass" if is_passing else "Fail",
+            "message": message
+        })
+
+    return evaluation_results
+
+
+def get_final_status_result(status_parameter, evaluation_results, item_group):
+    if not evaluation_results:
+        return {
+            "parameter": status_parameter,
+            "value": "FAIL",
+            "score": 41,
+            "item_group": item_group,
+            "part_config_id": 0
+        }
+
+    final_status = "PASS"
+    final_score = 0
+
+    for row in evaluation_results:
+        if row.get("status") == "Fail":
+            final_status = "FAIL"
+            final_score = 41
+            break
+
+    return {
+        "parameter": status_parameter,
+        "value": final_status,
+        "score": final_score,
+        "item_group": item_group,
+        "part_config_id": 0
+    }
+
+
+def update_or_append_result_parameter(njqca_name, result):
+    if not njqca_name or not result:
+        return
+
+    parameter = result.get("parameter")
+    item_group = result.get("item_group")
+
+    if not parameter or not item_group:
+        return
+
+    # Dedup only for our new status/reason parameters.
+    # This avoids touching other existing NJQCA result parameters.
+    allowed_dedup_parameters = {
+        "Performance_status",
+        "Performance_status_reason",
+        "heavy_load_status",
+        "heavy_load_status_reason"
+    }
+
+    rows = frappe.db.sql("""
+        SELECT name, idx
+        FROM `tabNJQCA Result Parameters`
+        WHERE parent = %s
+          AND parameter = %s
+          AND item_group = %s
+        ORDER BY idx DESC
+    """, (njqca_name, parameter, item_group), as_dict=True)
+
+    if rows:
+        # Keep latest row based on highest idx
+        keep_row = rows[0]
+
+        # Delete duplicate rows only for our status/reason parameters
+        if parameter in allowed_dedup_parameters:
+            for duplicate in rows[1:]:
+                frappe.delete_doc(
+                    "NJQCA Result Parameters",
+                    duplicate.name,
+                    force=True,
+                    ignore_permissions=True
+                )
+
+        frappe.db.set_value("NJQCA Result Parameters", keep_row.name, {
+            "item_group": item_group,
+            "value": result.get("value"),
+            "score": result.get("score"),
+            "part_config_id": result.get("part_config_id") or 0
+        })
+
+    else:
+        njqca_doc = frappe.get_doc("NJQCA", njqca_name)
+        njqca_doc.append("njqca_result_parameters", {
+            "item_group": item_group,
+            "parameter": parameter,
+            "value": result.get("value"),
+            "score": result.get("score"),
+            "part_config_id": result.get("part_config_id") or 0
+        })
+        njqca_doc.save(ignore_permissions=True)
+
+def build_status_reason(evaluation_results, status_name):
+    MAX_LEN = 135
+
+    if not evaluation_results:
+        return f"{status_name}: No criteria checked"[:MAX_LEN]
+
+    failed_rows = [
+        row for row in evaluation_results
+        if row.get("status") == "Fail"
+    ]
+
+    if not failed_rows:
+        return f"{status_name}: All checked params passed"[:MAX_LEN]
+
+    first = failed_rows[0]
+
+    parameter = str(first.get("parameter") or "")
+    actual = str(first.get("njqca_value") or "")
+    expected = str(first.get("expected_range") or "")
+    message = str(first.get("message") or "")
+
+    if "not found in NJQCA Result Parameters" in message:
+        reason = f"{parameter}: NJQCA value missing, expected={expected}"
+    else:
+        reason = f"{parameter} FAIL: actual={actual}, expected={expected}"
+
+    if len(failed_rows) > 1:
+        reason += f" +{len(failed_rows) - 1} more"
+
+    return reason[:MAX_LEN]
+
+def process_performance_and_heavyload_status(doc, criteria_rows):
+    """
+    Performance_status checks only:
+        NJ Settings -> performance_status_parameters
+
+    heavy_load_status checks only:
+        NJ Settings -> heavy_load_status_parameters
+    """
+
+    performance_evaluation_results = evaluate_status_from_criteria(
+        doc=doc,
+        criteria_rows=criteria_rows,
+        setting_parameter="performance_status_parameters"
+    )
+
+    if performance_evaluation_results:
+        update_njqca_doc(doc.get("name"), performance_evaluation_results)
+
+    performance_result = get_final_status_result(
+        status_parameter="Performance_status",
+        evaluation_results=performance_evaluation_results,
+        item_group="Software Configuration"
+    )
+    update_or_append_result_parameter(
+        doc.get("name"),
+        performance_result
+    )
+    performance_reason = build_status_reason(
+        performance_evaluation_results,
+        "Performance_status"
+    )
+
+    update_or_append_result_parameter(
+        doc.get("name"),
+        {
+            "parameter": "Performance_status_reason",
+            "value": performance_reason,
+            "score": performance_result.get("score"),
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        }
+    )
+
+    heavyload_evaluation_results = evaluate_status_from_criteria(
+        doc=doc,
+        criteria_rows=criteria_rows,
+        setting_parameter="heavy_load_status_parameters"
+    )
+
+    if heavyload_evaluation_results:
+        heavyload_result = get_final_status_result(
+            status_parameter="heavy_load_status",
+            evaluation_results=heavyload_evaluation_results,
+            item_group="LAPTOP STORAGE"
+        )
+
+        update_or_append_result_parameter(
+            doc.get("name"),
+            heavyload_result
+        )
+        heavyload_reason = build_status_reason(
+            heavyload_evaluation_results,
+            "heavy_load_status"
+        )
+
+        update_or_append_result_parameter(
+            doc.get("name"),
+            {
+                "parameter": "heavy_load_status_reason",
+                "value": heavyload_reason,
+                "score": heavyload_result.get("score"),
+                "item_group": "LAPTOP STORAGE",
+                "part_config_id": 0
+            }
+        )
+
+    return performance_result
 
 @frappe.whitelist()
 def update_performance_criteria(doc):
@@ -3386,34 +3694,10 @@ def update_performance_criteria(doc):
         if not disk_criteria_list:
             return
 
-        njqca_results = doc.get("njqca_result_parameters", [])
-        evaluation_results = []
-
-        for criteria_row in disk_criteria_list:
-            param_name = criteria_row.get("parameter")
-            param_range = criteria_row.get("parameter_value")
-            njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
-
-            if njqca_param:
-                njqca_value=""
-                if(njqca_param.get("parameter").lower() == "average_restart_time"):
-                    avg_time =convert_to_seconds(njqca_param.get("value"))
-                    for parameter in njqca_results:
-                        if parameter.get("parameter") == "Restart_1" or parameter.get("parameter") == "Restart_2" or parameter.get("parameter") == "Restart_3":
-                            if avg_time >convert_to_seconds(parameter.get("value")):
-                                njqca_value=parameter.get("value")
-
-                if not njqca_value:
-                   njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                is_passing, message = compare_parameter(param_name, njqca_value, param_range)
-
-                evaluation_results.append({
-                    "parameter": param_name,
-                    "njqca_value": njqca_value,
-                    "expected_range": param_range,
-                    "status": "Pass" if is_passing else "Fail",
-                    "message": message
-                })
+        return process_performance_and_heavyload_status(
+            doc,
+            disk_criteria_list
+        )
 
         frappe.logger().info("\nEvaluation Results:")
         for result in evaluation_results:
@@ -3449,26 +3733,11 @@ def update_performance_criteria(doc):
 
             if transformed_data == row_data:
                 criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
-                njqca_results = doc.get("njqca_result_parameters", [])
-                evaluation_results = []
 
-                for criteria_row in criteria_doc.get("criteria_child"):
-                    param_name = criteria_row.get("parameter")
-                    param_range = criteria_row.get("parameter_value")
-
-                    njqca_param = next((p for p in njqca_results if p.get("parameter") == param_name), None)
-
-                    if njqca_param:
-                        njqca_value = njqca_param.get("value") or njqca_param.get("score", "")
-                        is_passing, message = compare_parameter(param_name, njqca_value, param_range)
-
-                        evaluation_results.append({
-                            "parameter": param_name,
-                            "njqca_value": njqca_value,
-                            "expected_range": param_range,
-                            "status": "Pass" if is_passing else "Fail",
-                            "message": message
-                        })
+                return process_performance_and_heavyload_status(
+                    doc,
+                    criteria_doc.get("criteria_child")
+                )
 
                 # frappe.logger().info("\nEvaluation Results:")
                 # for result in evaluation_results:
@@ -3496,19 +3765,25 @@ def update_performance_criteria(doc):
 
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""
+
     attribute_map = {
         "storage capacity": "ssd",
         "ram capacity": "ram",
-        "processor type": "processor"
+        "processor type": "processor",
+        "processor type1": "processor",
+        "processor": "processor"
     }
 
     transformed_data = {}
+
     for item in item_config:
-        attribute = item.get("attribute")
-        value = item.get("value")
-        if attribute in attribute_map:
+        attribute = str(item.get("attribute") or "").strip().lower()
+        value = str(item.get("value") or "").strip().lower()
+
+        if attribute in attribute_map and value:
             transformed_key = attribute_map[attribute]
-            transformed_data[transformed_key] = value.lower() 
+            transformed_data[transformed_key] = value
+
     return transformed_data
 
 def get_parameter_type(param_name):
@@ -3518,6 +3793,48 @@ def get_parameter_type(param_name):
         if any(keyword in param_name_lower for keyword in keywords):
             return param_type
     return None
+
+def compare_operator_condition(actual_value, expected_range):
+    actual_text = str(actual_value or "").strip()
+    expected_text = str(expected_range or "").strip().replace(" ", "")
+
+    actual_numbers = extract_numbers(actual_text)
+    expected_numbers = extract_numbers(expected_text)
+
+    if expected_numbers and not actual_numbers:
+        return False, f"{actual_value} has no numeric value to compare with {expected_range}"
+
+    if not expected_numbers:
+        if actual_text.lower() == str(expected_range or "").strip().lower():
+            return True, f"{actual_value} matches expected {expected_range}"
+        return False, f"{actual_value} does not match expected {expected_range}"
+
+    actual = actual_numbers[0]
+
+    if expected_text.startswith(">="):
+        limit = expected_numbers[0]
+        return actual >= limit, f"{actual_value} {'satisfies' if actual >= limit else 'does not satisfy'} {expected_range}"
+
+    if expected_text.startswith(">"):
+        limit = expected_numbers[0]
+        return actual > limit, f"{actual_value} {'satisfies' if actual > limit else 'does not satisfy'} {expected_range}"
+
+    if expected_text.startswith("<="):
+        limit = expected_numbers[0]
+        return actual <= limit, f"{actual_value} {'satisfies' if actual <= limit else 'does not satisfy'} {expected_range}"
+
+    if expected_text.startswith("<"):
+        limit = expected_numbers[0]
+        return actual < limit, f"{actual_value} {'satisfies' if actual < limit else 'does not satisfy'} {expected_range}"
+
+    if "-" in expected_text and len(expected_numbers) >= 2:
+        min_val = expected_numbers[0]
+        max_val = expected_numbers[1]
+        ok = min_val <= actual <= max_val
+        return ok, f"{actual_value} {'is within' if ok else 'is outside'} range {expected_range}"
+
+    limit = expected_numbers[0]
+    return actual == limit, f"{actual_value} {'equals' if actual == limit else 'does not equal'} {expected_range}"
 
 def compare_parameter(param_name, actual_value, expected_range):
     """Compare actual value with expected range and return pass/fail status."""
@@ -3533,6 +3850,11 @@ def compare_parameter(param_name, actual_value, expected_range):
             return False, f"{actual_value} is outside range {expected_range}"
                 
         elif param_type == 'speed':
+            expected_text = str(expected_range or "").strip()
+
+            if expected_text.startswith((">", "<")):
+                return compare_operator_condition(actual_value, expected_range)
+
             actual_speed = extract_number(actual_value)
             min_speed, max_speed = parse_speed_range(expected_range)
             
@@ -3549,9 +3871,7 @@ def compare_parameter(param_name, actual_value, expected_range):
             return False, f"{actual_value} doesn't match expected {expected_range}"
                 
         else:
-            if str(actual_value).strip() == str(expected_range).strip():
-                return True, f"{actual_value} matches expected {expected_range}"
-            return False, f"{actual_value} doesn't match expected {expected_range}"
+            return compare_operator_condition(actual_value, expected_range)
                 
     except Exception as e:
         log_error(f"Error comparing parameter {param_name}: {str(e)}", "An error occurred in compare_parameter in NJQCA")
@@ -3623,15 +3943,7 @@ def parse_speed_range(range_str):
 
 def extract_numbers(text):
     """Extract all numbers from a string."""
-    numbers = []
-    for word in str(text).split():
-        cleaned = ''.join(c for c in word if c.isdigit() or c == '.')
-        if cleaned:
-            try:
-                numbers.append(float(cleaned))
-            except ValueError:
-                continue
-    return numbers
+    return [float(x) for x in re.findall(r"\d+(?:\.\d+)?", str(text or ""))]
 
 def extract_number(value_str):
     """Extract the first number from a string."""

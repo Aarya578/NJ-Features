@@ -3593,32 +3593,32 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         setting_parameter="heavy_load_status_parameters"
     )
 
-    if heavyload_evaluation_results:
-        heavyload_result = get_final_status_result(
-            status_parameter="heavy_load_status",
-            evaluation_results=heavyload_evaluation_results,
-            item_group="LAPTOP STORAGE"
-        )
+    heavyload_result = get_final_status_result(
+        status_parameter="heavy_load_status",
+        evaluation_results=heavyload_evaluation_results,
+        item_group="LAPTOP STORAGE"
+    )
 
-        update_or_append_result_parameter(
-            doc.get("name"),
-            heavyload_result
-        )
-        heavyload_reason = build_status_reason(
-            heavyload_evaluation_results,
-            "heavy_load_status"
-        )
+    update_or_append_result_parameter(
+        doc.get("name"),
+        heavyload_result
+    )
 
-        update_or_append_result_parameter(
-            doc.get("name"),
-            {
-                "parameter": "heavy_load_status_reason",
-                "value": heavyload_reason,
-                "score": heavyload_result.get("score"),
-                "item_group": "LAPTOP STORAGE",
-                "part_config_id": 0
-            }
-        )
+    heavyload_reason = build_status_reason(
+        heavyload_evaluation_results,
+        "heavy_load_status"
+    )
+
+    update_or_append_result_parameter(
+        doc.get("name"),
+        {
+            "parameter": "heavy_load_status_reason",
+            "value": heavyload_reason,
+            "score": heavyload_result.get("score"),
+            "item_group": "LAPTOP STORAGE",
+            "part_config_id": 0
+        }
+    )
 
     return performance_result
 
@@ -3839,6 +3839,35 @@ def compare_operator_condition(actual_value, expected_range):
 def compare_parameter(param_name, actual_value, expected_range):
     """Compare actual value with expected range and return pass/fail status."""
     try:
+        actual_text = str(actual_value or "").strip()
+        expected_text = str(expected_range or "").strip()
+
+        # If expected criteria is numeric/range/operator based,
+        # but actual value is text like NOT RECOVERED / No I/O data / ERROR,
+        # then it should fail directly.
+        numeric_expected = bool(
+            re.search(r"(>=|<=|>|<)", expected_text)
+            or re.search(r"\d+\s*[-–]\s*\d+", expected_text)
+            or re.search(r"\d+", expected_text)
+        )
+
+        actual_has_number = bool(re.search(r"\d+(?:\.\d+)?", actual_text))
+
+        invalid_actual_words = [
+            "NOT RECOVERED",
+            "NO I/O DATA",
+            "ERROR",
+            "NO STRESS DATA",
+            "NO TIME COLUMN",
+            "NO VALID DATA"
+        ]
+
+        if numeric_expected and (
+            not actual_has_number
+            or any(word in actual_text.upper() for word in invalid_actual_words)
+        ):
+            return False, f"{actual_text or 'blank'} is not a valid numeric value for expected range {expected_text}"
+
         param_type = get_parameter_type(param_name)
         
         if param_type == 'time':

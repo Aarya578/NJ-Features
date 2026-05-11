@@ -1,8 +1,17 @@
 # apps/nj_features/nj_features/overrides/product_bundle.py
 
+import time
+
 import frappe
+import requests
 from frappe import _
+from frappe.utils.background_jobs import enqueue
 from erpnext.selling.doctype.product_bundle.product_bundle import ProductBundle
+from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
+
+SHOPIFY_SHOP_URL = "https://newjaisa.myshopify.com"
+SHOPIFY_ACCESS_TOKEN = "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"
+SHOPIFY_API_VERSION = "2025-07"
 
 class CustomProductBundle(ProductBundle):
 	def validate(self):
@@ -209,3 +218,140 @@ def update_product_bundle_quantities():
 
 		# Step 6: Update and save Product Bundle quantity
 		frappe.db.set_value("Product Bundle", pb.name, "quantity", total_count, update_modified=False)
+
+@frappe.whitelist()
+def update_variant_status(run_now=False):
+	"""Queue Product Bundle shopify_status sync from Shopify product status."""
+	if frappe.parse_json(run_now):
+		return _update_variant_status_job()
+
+	enqueue(
+		method="nj_features.overrides.product_bundle._update_variant_status_job",
+		queue="long",
+		timeout=3600,
+		job_name="update_product_bundle_shopify_status",
+	)
+	return "Product Bundle Shopify status update queued"
+
+
+def _update_variant_status_job(batch_size=50, commit_every=500):
+	if not frappe.get_meta("Product Bundle").has_field("shopify_status"):
+		log_error("Field shopify_status not found in Product Bundle", "update_variant_status")
+		return {"updated": 0, "failed": 0, "skipped": 0}
+
+	variant_rows = frappe.db.sql(
+		"""
+		SELECT DISTINCT TRIM(shopify_variant_id) AS shopify_variant_id
+		FROM `tabProduct Bundle`
+		WHERE IFNULL(TRIM(shopify_variant_id), '') != ''
+		ORDER BY shopify_variant_id
+		""",
+		as_dict=True,
+	)
+	variant_ids = [row.shopify_variant_id for row in variant_rows if row.shopify_variant_id]
+	if not variant_ids:
+		log_error("No Product Bundle records found with shopify_variant_id", "update_variant_status", "Info")
+		return {"updated": 0, "failed": 0, "skipped": 0}
+
+	updated = 0
+	failed = 0
+	skipped = 0
+	status_by_variant = {}
+	url = f"{SHOPIFY_SHOP_URL}/admin/api/{SHOPIFY_API_VERSION}/graphql.json"
+	headers = {
+		"X-Shopify-Access-Token": SHOPIFY_ACCESS_TOKEN,
+		"Content-Type": "application/json",
+	}
+	batch_size = int(batch_size or 50)
+	commit_every = int(commit_every or 500)
+
+	for index in range(0, len(variant_ids), batch_size):
+		batch = variant_ids[index:index + batch_size]
+		try:
+			batch_statuses = _fetch_shopify_product_statuses_for_variants(url, headers, batch)
+		except Exception:
+			failed += len(batch)
+			log_error(frappe.get_traceback(), "update_variant_status batch fetch")
+			continue
+
+		for variant_id in batch:
+			status = batch_statuses.get(str(variant_id))
+			if not status:
+				skipped += 1
+				continue
+
+			status_by_variant[str(variant_id)] = status
+			frappe.db.sql(
+				"""
+				UPDATE `tabProduct Bundle`
+				SET shopify_status = %s
+				WHERE shopify_variant_id = %s
+				AND IFNULL(shopify_status, '') != %s
+				""",
+				(status, variant_id, status),
+			)
+			updated += frappe.db.sql("SELECT ROW_COUNT()", as_list=True)[0][0]
+
+		if (index + len(batch)) % commit_every == 0:
+			frappe.db.commit()
+
+	frappe.db.commit()
+	message = (
+		f"Product Bundle Shopify status sync completed. "
+		f"Variants: {len(variant_ids)}, updated rows: {updated}, "
+		f"statuses found: {len(status_by_variant)}, skipped: {skipped}, failed: {failed}"
+	)
+	log_error(message, "update_variant_status", "Info")
+	return {"updated": updated, "failed": failed, "skipped": skipped}
+
+
+def _fetch_shopify_product_statuses_for_variants(url, headers, variant_ids):
+	gids = [f"gid://shopify/ProductVariant/{variant_id}" for variant_id in variant_ids]
+	batch_ids = ",\n".join(f'"{gid}"' for gid in gids)
+	query = f"""
+	{{
+		nodes(ids: [
+			{batch_ids}
+		]) {{
+			... on ProductVariant {{
+				id
+				product {{
+					status
+				}}
+			}}
+		}}
+	}}
+	"""
+
+	for attempt in range(3):
+		response = requests.post(url, headers=headers, json={"query": query}, timeout=60)
+		if response.status_code == 429 or response.status_code >= 500:
+			time.sleep(2 ** attempt)
+			continue
+
+		if response.status_code != 200:
+			frappe.throw(f"Shopify API error {response.status_code}: {response.text}")
+
+		payload = response.json()
+		errors = payload.get("errors") or []
+		if errors:
+			error_text = str(errors)
+			if "THROTTLED" in error_text and attempt < 2:
+				time.sleep(2 ** attempt)
+				continue
+			frappe.throw(f"Shopify GraphQL error: {error_text}")
+
+		statuses = {}
+		for node in payload.get("data", {}).get("nodes", []) or []:
+			if not node:
+				continue
+
+			variant_gid = node.get("id") or ""
+			variant_id = variant_gid.split("/")[-1]
+			status = (node.get("product") or {}).get("status")
+			if variant_id and status:
+				statuses[variant_id] = status.lower()
+
+		return statuses
+
+	frappe.throw("Shopify API throttled or unavailable after 3 attempts")

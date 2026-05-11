@@ -777,38 +777,78 @@ def fetching_transporter_details(docname):
         "transporter_names": invoice.transporter_names,
         "email": invoice.email,
     }
+
 @frappe.whitelist()
-def approve_validation(doc,method=None):
+def approve_validation(doc, method=None):
+    print("inside approve validation================")
+
     if doc.is_return == 1:
         return
-    # get first sales_order from child table
+
+    # get sales order from items
     sales_order_name = None
+
     for item in doc.items:
         if item.sales_order:
             sales_order_name = item.sales_order
             break
 
     if not sales_order_name:
-        frappe.throw("No sales order found for this sales invoice.")
+        frappe.throw("No Sales Order found for this Sales Invoice.")
 
-    query = """
-        SELECT 
-            si.name AS sales_invoice, 
-            so.approve 
-        FROM `tabSales Invoice` si 
-        INNER JOIN `tabSales Invoice Item` sii     
-            ON si.name = sii.parent 
-        INNER JOIN `tabSales Order` so
-            ON sii.sales_order = so.name 
-        WHERE so.name = %s 
-    """  
-    results = frappe.db.sql(query, (sales_order_name,), as_dict=True)  
-    for row in results:        
-        if not row.approve or int(row.approve) != 1:
-            # self.approved = 1
-            frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
-        else:
-            doc.approved = 1
+    # directly check Sales Order approve field
+    approve = frappe.db.get_value(
+        "Sales Order",
+        sales_order_name,
+        "approve"
+    )
+
+    print("approve=====================", approve)
+
+    if not approve or int(approve) != 1:
+        frappe.throw(
+            f"Sales Order {sales_order_name} is not approved. Please approve it first."
+        )
+
+    # if approved
+    doc.approved = 1
+# @frappe.whitelist()
+# def approve_validation(doc,method=None):
+#     print("inside approve validation================")
+#     if doc.is_return == 1:
+#         return
+#     # get first sales_order from child table
+#     sales_order_name = None
+
+#     print("doc.items=======================",doc.items)
+#     for item in doc.items:
+#         if item.sales_order:
+#             sales_order_name = item.sales_order
+#             print("sales_order_name==============",sales_order_name)
+#             break
+
+#     if not sales_order_name:
+#         frappe.throw("No sales order found for this sales invoice.")
+
+#     query = """
+#         SELECT 
+#             si.name AS sales_invoice, 
+#             so.approve 
+#         FROM `tabSales Invoice` si 
+#         INNER JOIN `tabSales Invoice Item` sii     
+#             ON si.name = sii.parent 
+#         INNER JOIN `tabSales Order` so
+#             ON sii.sales_order = so.name 
+#         WHERE so.name = %s 
+#     """  
+#     results = frappe.db.sql(query, (sales_order_name,), as_dict=True, debug=True)  
+#     print("results=======================",results)
+#     for row in results:        
+#         if not row.approve or int(row.approve) != 1:
+#             # self.approved = 1
+#             frappe.throw(f"Sales Order {sales_order_name} is not approved. Please approve it first.")
+#         else:
+#             doc.approved = 1
 # @frappe.whitelist()
 # def due_date_validation(doc):
 #     if isinstance(doc, str):

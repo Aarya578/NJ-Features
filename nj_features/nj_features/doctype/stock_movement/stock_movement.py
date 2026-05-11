@@ -359,19 +359,43 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         department_sla = frappe.db.get_value("Department", department, "department_sla")
         if warehouse_sla and t_warehouse:
             warehouse_sla_days = int(warehouse_sla)
+            print("warehouse_sla_days=================",warehouse_sla_days )
             warehouse_aging = frappe.db.sql(
                 """
-                SELECT
-                    s.warehouse AS warehouse,
-                    MAX(DATEDIFF(CURDATE(), s.purchase_date)) AS max_age_days
+                SELECT s.name,s.item_group,
+                    s.purchase_date,
+                    s.purchase_time,
+                    s.warehouse,
+
+                    MAX(
+                        FLOOR(
+                            (
+                                TIMESTAMPDIFF(
+                                    HOUR,
+                                    TIMESTAMP(s.purchase_date, s.purchase_time),
+                                    NOW()
+                                )
+                                -
+                                (
+                                    (
+                                        DATEDIFF(CURDATE(), s.purchase_date)
+                                        + WEEKDAY(s.purchase_date) + 1
+                                    ) DIV 7
+                                ) * 24
+                            ) / 24
+                        )
+                    ) AS max_age_days_excluding_sundays
+
                 FROM `tabSerial No` s
-                WHERE s.item_group in ('Laptops','Desktops','Chromebooks') and s.warehouse = %s
+                WHERE s.warehouse IS NOT NULL and s.item_group in ('Laptops','Chromebooks') and s.warehouse = %s
+                GROUP BY s.warehouse; 
                 """,
                 (t_warehouse,),
-                as_dict=True,
+                as_dict=True,debug=True
             )
 
             max_age_days = warehouse_aging[0].get("max_age_days") if warehouse_aging else None
+            print("max_age_days=================",max_age_days )
             if max_age_days is not None and int(max_age_days) >= warehouse_sla_days:
                 error_messages.append(
                     f"SLA exceeded for Department <b>{department}</b>. "

@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Union
 from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
+from itertools import product
 
 # -------------------------
 # Logger setup
@@ -2145,6 +2146,13 @@ def _append_plan_row(
         },
     )
 
+
+
+
+
+# Manufacture MR section==================
+
+
 PP_MR_DEFAULT_SCHEDULE_DAYS = 3
 PP_MR_STORES_DEPARTMENT = "Stores - NJ"
 PP_MR_CORE_ITEM_GROUPS = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
@@ -2215,6 +2223,36 @@ def _get_pp_default_company():
     return company
 
 
+def _get_pp_item_skip_reasons(item_codes):
+    item_codes = [item_code for item_code in set(item_codes or []) if item_code]
+    if not item_codes:
+        return {}
+
+    item_rows = frappe.get_all(
+        "Item",
+        filters={"name": ["in", item_codes]},
+        fields=["name", "disabled", "end_of_life"],
+    )
+    item_by_code = {row.name: row for row in item_rows}
+
+    skip_reasons = {}
+    for item_code in item_codes:
+        item_doc = item_by_code.get(item_code)
+        if not item_doc:
+            skip_reasons[item_code] = "item code not found"
+            continue
+
+        if flt(item_doc.get("disabled")):
+            skip_reasons[item_code] = "item is disabled"
+            continue
+
+        end_of_life = item_doc.get("end_of_life")
+        if end_of_life and frappe.utils.getdate(end_of_life) <= frappe.utils.getdate(nowdate()):
+            skip_reasons[item_code] = f"item reached end of life on {end_of_life}"
+
+    return skip_reasons
+
+
 def _get_latest_nj_production_plan_name():
     latest_plan = frappe.get_all(
         "NJ Production Planning",
@@ -2238,9 +2276,13 @@ def _get_pp_template_department_qty(plan_name):
         INNER JOIN
             `tabItem` i
             ON i.name = f.item_code
+        INNER JOIN
+            `tabWarehouse` w
+            ON w.name = f.current_warehouse
         WHERE
             f.parent = %(plan_name)s
             AND f.item_code IS NOT NULL
+            AND IFNULL(w.used_for_consumables_stock, 0) = 1
             AND i.item_group IN %(core_item_groups)s
         GROUP BY
             IFNULL(NULLIF(i.variant_of, ''), i.name),
@@ -2257,6 +2299,7 @@ def _get_pp_template_department_qty(plan_name):
 def _get_pp_consumables_by_template(item_templates):
     rows = frappe.db.sql("""
         SELECT
+            iw.name AS item_wizard,
             iw.item_template,
             c.item_code,
             c.quantity,
@@ -2266,54 +2309,102 @@ def _get_pp_consumables_by_template(item_templates):
         INNER JOIN
             `tabConsumables` c
             ON c.parent = iw.name
-        INNER JOIN
-            `tabItem` item_doc
-            ON item_doc.name = c.item_code
         WHERE
             iw.item_template IN %(item_templates)s
-            AND item_doc.in_stock = 1
     """, {
         "item_templates": tuple(item_templates),
-    }, as_dict=1)
+    }, as_dict=1,debug=1)
 
     consumables_by_template = defaultdict(list)
     for row in rows:
         consumables_by_template[row.item_template].append(row)
+        print(
+            "PP MR consumable row:",
+            "item_wizard:", row.item_wizard,
+            "item_template:", row.item_template,
+            "item_code:", row.item_code,
+            "quantity:", row.quantity,
+            "departments:", row.departments,
+        )
 
     print("PP MR item_templates count:", len(item_templates))
     print("PP MR consumables rows count:", len(rows))
     return consumables_by_template
 
 
-def _get_pp_store_stock(consumable_item_codes):
+def _get_pp_department_consumable_stock(consumable_item_codes, departments):
+    if not consumable_item_codes or not departments:
+        print("PP MR consumable stock skipped: item codes or departments empty")
+        return {}
+
+    item_group_rows = frappe.get_all(
+        "Item",
+        filters={"name": ["in", consumable_item_codes]},
+        fields=["name", "item_group"],
+    )
+    item_groups = sorted({
+        row.item_group
+        for row in item_group_rows
+        if row.item_group
+    })
+
+    print("PP MR consumable item groups:", item_groups)
+    if not item_groups:
+        print("PP MR consumable stock skipped: no item groups found for consumable item codes")
+        return {}
+
     rows = frappe.db.sql("""
         SELECT
             b.item_code,
-            SUM(b.actual_qty) AS actual_qty
+            b.warehouse,
+            w.department,
+            b.actual_qty
         FROM
             `tabBin` b
+        INNER JOIN
+            `tabWarehouse` w
+            ON w.name = b.warehouse
+        INNER JOIN
+            `tabItem` i
+            ON i.name = b.item_code
         WHERE
-            b.warehouse IN (
-                SELECT name
-                FROM `tabWarehouse`
-                WHERE department = %(stores_department)s
-            )
+            w.department IN %(departments)s
             AND b.item_code IN %(consumable_item_codes)s
-        GROUP BY
+            AND i.item_group IN %(item_groups)s
+            AND b.actual_qty > 0
+        ORDER BY
+            w.department,
+            b.warehouse,
             b.item_code
     """, {
-        "stores_department": PP_MR_STORES_DEPARTMENT,
         "consumable_item_codes": tuple(consumable_item_codes),
-    }, as_dict=1)
+        "departments": tuple(departments),
+        "item_groups": tuple(item_groups),
+    }, as_dict=1,debug=1)
 
     print("PP MR consumable_item_codes count:", len(consumable_item_codes))
-    print("PP MR store stock rows count:", len(rows))
-    return {row.item_code: flt(row.actual_qty) for row in rows}
+    print("PP MR stock departments:", departments)
+    print("PP MR department consumable stock rows count:", len(rows))
+
+    stock_by_item = defaultdict(float)
+    for row in rows:
+        stock_by_item[row.item_code] += flt(row.actual_qty)
+        print(
+            "PP MR department stock detail:",
+            "department:", row.department,
+            "warehouse:", row.warehouse,
+            "item_code:", row.item_code,
+            "actual_qty:", flt(row.actual_qty),
+        )
+
+    print("PP MR department stock aggregated:", dict(stock_by_item))
+    return stock_by_item
 
 
 def _get_pp_shortage_items(template_department_qty, consumables_by_template):
     required_qty_by_item = defaultdict(float)
     schedule_days_by_item = defaultdict(list)
+    stock_departments = set()
 
     for row in template_department_qty:
         item_template = row.item_template
@@ -2325,9 +2416,23 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
 
             target_departments = _split_pp_department_names(consumable.departments)
             if not target_departments:
+                print(
+                    "PP MR consumable departments empty:",
+                    "item_template:", item_template,
+                    "item_code:", consumable.item_code,
+                    "default_schedule_days:", PP_MR_DEFAULT_SCHEDULE_DAYS,
+                )
                 schedule_days_by_item[consumable.item_code].append(PP_MR_DEFAULT_SCHEDULE_DAYS)
 
             for target_department in target_departments:
+                print(
+                    "PP MR consumable parsed department:",
+                    "item_template:", item_template,
+                    "item_code:", consumable.item_code,
+                    "current_department:", current_department,
+                    "target_department:", target_department,
+                )
+                stock_departments.add(target_department)
                 schedule_days_by_item[consumable.item_code].append(
                     _get_pp_schedule_days(current_department, target_department)
                 )
@@ -2335,12 +2440,43 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
     if not required_qty_by_item:
         return []
 
-    stock_by_item = _get_pp_store_stock(list(required_qty_by_item))
+    item_skip_reasons = _get_pp_item_skip_reasons(list(required_qty_by_item))
+    for item_code, reason in sorted(item_skip_reasons.items()):
+        print(
+            "PP MR skipped consumable item:",
+            "item_code:", item_code,
+            "required_qty:", required_qty_by_item.get(item_code, 0),
+            "reason:", reason,
+        )
+
+    valid_item_codes = [
+        item_code
+        for item_code in required_qty_by_item
+        if item_code not in item_skip_reasons
+    ]
+    if not valid_item_codes:
+        print("PP MR no valid consumable items after lifecycle validation")
+        return []
+
+    stock_by_item = _get_pp_department_consumable_stock(
+        valid_item_codes,
+        sorted(stock_departments),
+    )
 
     shortage_items = []
     for item_code, required_qty in required_qty_by_item.items():
+        if item_code in item_skip_reasons:
+            continue
+
         available_qty = stock_by_item.get(item_code, 0)
         shortage_qty = required_qty - available_qty
+        print(
+            "PP MR consumable compare:",
+            "item_code:", item_code,
+            "required_qty:", required_qty,
+            "available_qty:", available_qty,
+            "shortage_qty:", shortage_qty,
+        )
         if shortage_qty > PP_MR_MIN_QTY:
             shortage_items.append({
                 "item_code": item_code,
@@ -2356,36 +2492,40 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
     return shortage_items
 
 
-def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items):
+def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items, material_request_type="Material Issue"):
     if not shortage_items:
         return []
 
     existing_mr_items = frappe.db.sql("""
         SELECT
             mri.item_code,
-            SUM(mri.qty) AS existing_qty
+            SUM(mri.qty) AS existing_qty,
+            GROUP_CONCAT(DISTINCT mr.name ORDER BY mr.name SEPARATOR ', ') AS mr_names
         FROM
             `tabMaterial Request Item` mri
         INNER JOIN
             `tabMaterial Request` mr
             ON mr.name = mri.parent
         WHERE
-            mr.material_request_type = 'Manufacture'
+            mr.material_request_type = %(material_request_type)s
             AND mr.docstatus < 2
             AND mri.item_code IN %(item_codes)s
         GROUP BY
             mri.item_code
     """, {
         "item_codes": tuple(d["item_code"] for d in shortage_items),
+        "material_request_type": material_request_type,
     }, as_dict=1)
 
     if not existing_mr_items:
-        print("PP MR existing Manufacture MR items count: 0")
+        print(f"PP MR existing {material_request_type} MR items count: 0")
         return shortage_items
 
     existing_qty_by_item = {}
+    existing_mr_names_by_item = {}
     for row in existing_mr_items:
         existing_qty_by_item[row.item_code] = flt(row.existing_qty)
+        existing_mr_names_by_item[row.item_code] = row.mr_names
 
     adjusted_items = []
     message_rows = []
@@ -2398,6 +2538,17 @@ def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items):
 
         required_qty = flt(item["qty"])
         pending_qty = required_qty - existing_qty
+        existing_mr_names = existing_mr_names_by_item.get(item["item_code"]) or ""
+
+        print(
+            "PP MR existing MR adjustment:",
+            "type:", material_request_type,
+            "item:", item["item_code"],
+            "required:", required_qty,
+            "existing_qty:", existing_qty,
+            "existing_mr_names:", existing_mr_names,
+            "new_qty:", max(pending_qty, 0),
+        )
 
         if pending_qty > PP_MR_MIN_QTY:
             adjusted_item = item.copy()
@@ -2405,19 +2556,21 @@ def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items):
             adjusted_items.append(adjusted_item)
 
         message_rows.append(
-            _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | New MR Qty: {3}").format(
+            _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | Existing MR: {3} | New MR Qty: {4}").format(
                 frappe.bold(item["item_code"]),
                 frappe.bold(required_qty),
                 frappe.bold(existing_qty),
+                frappe.bold(existing_mr_names or "N/A"),
                 frappe.bold(max(pending_qty, 0)),
             )
         )
 
-    print("PP MR existing Manufacture MR items count:", len(existing_mr_items))
+    print(f"PP MR existing {material_request_type} MR items count:", len(existing_mr_items))
     print("PP MR adjusted shortage items count:", len(adjusted_items))
     if message_rows:
         frappe.msgprint(
-            _("Existing Manufacture Material Request qty adjusted:<br>{0}").format(
+            _("Existing {0} Material Request qty adjusted:<br>{1}").format(
+                frappe.bold(material_request_type),
                 "<br>".join(message_rows)
             ),
             title=_("Material Request Qty Adjusted"),
@@ -2462,6 +2615,27 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
     if not shortage_items:
         return
 
+    item_skip_reasons = _get_pp_item_skip_reasons([item["item_code"] for item in shortage_items])
+    if item_skip_reasons:
+        valid_shortage_items = []
+        for item in shortage_items:
+            skip_reason = item_skip_reasons.get(item["item_code"])
+            if skip_reason:
+                print(
+                    "PP MR skipped MR item after existing adjustment:",
+                    "item_code:", item["item_code"],
+                    "qty:", item["qty"],
+                    "reason:", skip_reason,
+                )
+                continue
+
+            valid_shortage_items.append(item)
+
+        shortage_items = valid_shortage_items
+        print("PP MR shortage items after item lifecycle validation:", len(shortage_items))
+        if not shortage_items:
+            return
+
     schedule_days = max(
         days
         for item in shortage_items
@@ -2482,7 +2656,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
     print("PP MR FRU map count:", len(item_fru_map))
 
     mr = frappe.new_doc("Material Request")
-    mr.material_request_type = "Manufacture"
+    mr.material_request_type = "Material Issue"
     mr.purpose = "Purchase"
     mr.naming_series = "MREQ-.YYYY.-.MM.-"
     mr.title = f"Production Plan - {plan_name}"
@@ -2510,3 +2684,1121 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
             frappe.bold(mr.name),
         )
     )
+
+
+
+# Section 2: collecting all purpose of Material Issue from MR doc and calculating them with store department stock
+
+
+STOCK_DEPARTMENT_NAME = "Stores - NJ"
+def cosumables_material_issue_mr(doc=None, method=None):
+    print("collect_all_purpose_material_issue")
+
+    stock_data = frappe.db.sql("""
+        SELECT
+            b.item_code,
+            b.actual_qty,
+            b.warehouse,
+            i.item_group,
+            i.in_stock
+            
+        FROM `tabBin` b
+        INNER JOIN `tabItem` i
+            ON i.name = b.item_code
+        WHERE b.warehouse IN (
+            SELECT name
+            FROM `tabWarehouse`
+            WHERE department = %(stock_department)s
+        )
+        AND i.item_group IN (
+            'PORT PLUGS',
+            'Consumable',
+            'Generic Services',
+            'Department Consumable',
+            'UPPER BUSH',
+            'TOUCHPAD SCREW',
+            'LAN PORT PLUG',
+            'PAINT LAMINATION',
+            'HDMI PORT PLUG',
+            'BODY A LOGO',
+            'GRADE STICKER',
+            'TOUCHPAD STICKER',
+            'MASKING STICKER',
+            'BODY B LOGO',
+            'CAMERA LENS',
+            'LOWER BUSH',
+            'USB PORT PLUG',
+            'AUDIO JACK PLUG'
+        )
+        AND b.actual_qty > 0 order by i.in_stock desc
+    """, {
+        "stock_department": STOCK_DEPARTMENT_NAME,
+    }, as_dict=True)
+
+    print("stock_data===============", stock_data)
+
+    material_issues = frappe.db.sql("""
+        SELECT
+            mri.parent,
+            mri.item_code,
+            mri.qty,
+            mri.schedule_date,
+            mri.warehouse,
+            w.department AS source_department
+        FROM `tabMaterial Request Item` mri
+        INNER JOIN `tabMaterial Request` mr
+            ON mr.name = mri.parent
+        LEFT JOIN `tabWarehouse` w
+            ON w.name = mri.warehouse
+        WHERE mr.material_request_type = 'Material Issue'
+        AND mr.docstatus = 1
+        AND mr.status NOT IN ('Stopped', 'Cancelled', 'Completed')
+        AND mri.item_code IS NOT NULL
+        AND mri.item_code != ''
+    """, as_dict=True)
+
+    print("material_issues===============", material_issues)
+
+    stock_qty_by_item = defaultdict(float)
+    stock_warehouse_by_item = {}
+    for row in stock_data:
+        stock_qty_by_item[row.item_code] += flt(row.actual_qty)
+        stock_warehouse_by_item.setdefault(row.item_code, row.warehouse)
+
+    print("all purpose stock qty by item===============", dict(stock_qty_by_item))
+
+    issue_qty_by_item = defaultdict(float)
+    issue_mr_names_by_item = defaultdict(set)
+    issue_warehouse_by_item = {}
+    schedule_days_by_item = defaultdict(list)
+    for row in material_issues:
+        issue_qty_by_item[row.item_code] += flt(row.qty)
+        issue_mr_names_by_item[row.item_code].add(row.parent)
+        if row.get("warehouse"):
+            issue_warehouse_by_item.setdefault(row.item_code, row.warehouse)
+
+        if row.get("source_department") and STOCK_DEPARTMENT_NAME:
+            schedule_days = _get_pp_schedule_days(
+                row.source_department,
+                STOCK_DEPARTMENT_NAME,
+            )
+        else:
+            schedule_days = PP_MR_DEFAULT_SCHEDULE_DAYS
+
+        schedule_days_by_item[row.item_code].append(schedule_days)
+        print(
+            "all purpose schedule days source:",
+            "item_code:", row.item_code,
+            "material_issue:", row.parent,
+            "source_warehouse:", row.get("warehouse"),
+            "source_department:", row.get("source_department"),
+            "target_department:", STOCK_DEPARTMENT_NAME,
+            "schedule_days:", schedule_days,
+        )
+
+    print("all purpose material issue qty by item===============", dict(issue_qty_by_item))
+
+    default_target_warehouse = frappe.db.get_value(
+        "Warehouse",
+        {
+            "department": STOCK_DEPARTMENT_NAME,
+            "disabled": 0,
+        },
+        "name",
+    )
+    print("all purpose default target warehouse===============", default_target_warehouse)
+
+    shortage_items = []
+    for item_code, issue_qty in issue_qty_by_item.items():
+        skip_reason = _get_laptop_adaptor_item_skip_reason(item_code)
+        if skip_reason:
+            print(
+                "all purpose skipped purchase MR item:",
+                "item_code:", item_code,
+                "issue_qty:", issue_qty,
+                "reason:", skip_reason,
+            )
+            continue
+
+        stock_qty = flt(stock_qty_by_item.get(item_code))
+        shortage_qty = flt(issue_qty - stock_qty, 6)
+        issue_mr_names = ", ".join(sorted(issue_mr_names_by_item.get(item_code) or []))
+
+        print(
+            "all purpose compare:",
+            "item_code:", item_code,
+            "material_issue_qty:", issue_qty,
+            "department_stock_qty:", stock_qty,
+            "shortage_qty:", shortage_qty,
+            "material_issue_mrs:", issue_mr_names,
+        )
+
+        if shortage_qty <= PP_MR_MIN_QTY:
+            print(
+                "all purpose no Purchase MR required:",
+                "item_code:", item_code,
+                "stock_qty:", stock_qty,
+                "material_issue_qty:", issue_qty,
+            )
+            continue
+
+        shortage_items.append({
+            "item_code": item_code,
+            "qty": shortage_qty,
+            "warehouse": (
+                stock_warehouse_by_item.get(item_code)
+                or issue_warehouse_by_item.get(item_code)
+                or default_target_warehouse
+            ),
+            "material_issue_mrs": issue_mr_names,
+            "schedule_days": schedule_days_by_item.get(
+                item_code,
+                [PP_MR_DEFAULT_SCHEDULE_DAYS],
+            ),
+        })
+        print(
+            "all purpose creatable Purchase MR item:",
+            "item_code:", item_code,
+            "qty:", shortage_qty,
+            "schedule_days:", schedule_days_by_item.get(item_code, [PP_MR_DEFAULT_SCHEDULE_DAYS]),
+            "source_material_issue_mrs:", issue_mr_names,
+        )
+
+    print("all purpose shortage item count===============", len(shortage_items))
+    if not shortage_items:
+        return
+
+    item_stock_rows = frappe.get_all(
+        "Item",
+        filters={"name": ["in", [item["item_code"] for item in shortage_items]]},
+        fields=["name", "in_stock"],
+    )
+    in_stock_by_item = {
+        row.name: bool(flt(row.get("in_stock")))
+        for row in item_stock_rows
+    }
+
+    shortage_items_by_mr_type = defaultdict(list)
+    for item in shortage_items:
+        material_request_type = "Manufacture" if in_stock_by_item.get(item["item_code"]) else "Purchase"
+        shortage_items_by_mr_type[material_request_type].append(item)
+        print(
+            "all purpose MR type selected:",
+            "item_code:", item["item_code"],
+            "qty:", item["qty"],
+            "in_stock:", int(in_stock_by_item.get(item["item_code"], False)),
+            "material_request_type:", material_request_type,
+        )
+
+    created_mrs = []
+    for material_request_type in ("Manufacture", "Purchase"):
+        typed_shortage_items = shortage_items_by_mr_type.get(material_request_type) or []
+        print(
+            "all purpose",
+            material_request_type,
+            "MR shortage item count===============",
+            len(typed_shortage_items),
+        )
+        if not typed_shortage_items:
+            continue
+
+        typed_shortage_items = _adjust_pp_shortage_qty_for_existing_mrs(
+            typed_shortage_items,
+            material_request_type=material_request_type,
+        )
+        print(
+            "all purpose",
+            material_request_type,
+            "MR shortage item count after existing adjustment===============",
+            len(typed_shortage_items),
+        )
+        if not typed_shortage_items:
+            continue
+
+        max_schedule_days = max(
+            days
+            for item in typed_shortage_items
+            for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
+        )
+        schedule_date = add_days(nowdate(), max_schedule_days)
+        print("all purpose", material_request_type, "MR schedule days===============", max_schedule_days)
+        print("all purpose", material_request_type, "MR schedule date===============", schedule_date)
+
+        item_fru_map = {
+            d["name"]: d["fru_number"]
+            for d in frappe.get_all(
+                "Item",
+                filters={"name": ["in", [i["item_code"] for i in typed_shortage_items]]},
+                fields=["name", "fru_number"],
+            )
+        }
+
+        mr = frappe.new_doc("Material Request")
+        mr.material_request_type = material_request_type
+        mr.naming_series = "MREQ-.YYYY.-.MM.-"
+        mr.title = f"{material_request_type} Against Material Issue - {nowdate()}"
+        mr.company = _get_pp_default_company()
+        mr.schedule_date = schedule_date
+        mr.post_order_status = ""
+
+        for item in typed_shortage_items:
+            print(
+                "all purpose append",
+                material_request_type,
+                "MR item:",
+                "item_code:", item["item_code"],
+                "qty:", item["qty"],
+                "warehouse:", item.get("warehouse"),
+                "schedule_days:", item.get("schedule_days"),
+                "source_material_issue_mrs:", item.get("material_issue_mrs"),
+            )
+
+            item_row = {
+                "item_code": item["item_code"],
+                "qty": item["qty"],
+                "schedule_date": schedule_date,
+                "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+            }
+            if item.get("warehouse"):
+                item_row["warehouse"] = item.get("warehouse")
+
+            mr.append("items", item_row)
+
+        mr.insert(ignore_permissions=True)
+        mr.submit()
+        created_mrs.append(mr.name)
+        print(
+            "all purpose",
+            material_request_type,
+            "MR created:",
+            mr.name,
+            "items:",
+            len(typed_shortage_items),
+        )
+
+    if created_mrs:
+        frappe.msgprint(
+            _("Material Requests Created against Material Issue shortage: {0}").format(
+                frappe.bold(", ".join(created_mrs)),
+            )
+        )
+
+    return created_mrs
+
+
+# ================================================================================
+
+
+# Laptop Adaptos MR Section
+
+
+PP_MR_LAPTOP_ADAPTOR_DEPARTMENT = "BG - Adaptor QC - NJ"
+PP_MR_LAPTOP_ADAPTOR_ITEM_GROUP = "Laptop Adaptors"
+PP_MR_LAPTOP_ADAPTOR_GRADE = "Grade A"
+PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES = ("Brand", "Wattage Capacity", "Adapter Pin Type")
+
+
+def _normalize_laptop_adaptor_value(value):
+    return "".join(str(value or "").upper().split())
+
+
+def _get_laptop_adaptor_match_key(values):
+    return tuple(_normalize_laptop_adaptor_value(value) for value in values)
+
+
+def _dedupe_laptop_adaptor_values(values):
+    seen = set()
+    result = []
+    for value in values:
+        normalized_value = _normalize_laptop_adaptor_value(value)
+        if not normalized_value or normalized_value in seen:
+            continue
+
+        seen.add(normalized_value)
+        result.append(value)
+
+    return result
+
+
+def _get_laptop_adaptor_combinations(attributes):
+    attribute_values = []
+    for attr in PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES:
+        values = attributes.get(attr) or []
+        if not isinstance(values, list):
+            values = [values]
+
+        values = _dedupe_laptop_adaptor_values(values)
+        if not values:
+            return []
+
+        attribute_values.append(values)
+
+    return [
+        {
+            "values": combination,
+            "key": _get_laptop_adaptor_match_key(combination),
+        }
+        for combination in product(*attribute_values)
+    ]
+
+
+def _get_laptop_adaptor_item_key_from_code(item_code):
+    code = str(item_code or "")
+    prefix = f"S-{PP_MR_LAPTOP_ADAPTOR_ITEM_GROUP}-"
+    suffix = f"-{PP_MR_LAPTOP_ADAPTOR_GRADE}"
+
+    if code.upper().startswith(prefix.upper()):
+        code = code[len(prefix):]
+
+    if code.upper().endswith(suffix.upper()):
+        code = code[:-len(suffix)]
+
+    return _get_laptop_adaptor_match_key(code.split("-"))
+
+
+def _get_laptop_adaptor_item_skip_reason(item_code, item_doc=None):
+    if not item_code:
+        return "item code not found"
+
+    if item_doc is None:
+        item_doc = frappe.db.get_value(
+            "Item",
+            item_code,
+            ["name", "disabled", "end_of_life"],
+            as_dict=True,
+        )
+
+    if not item_doc:
+        return "item code not found"
+
+    if flt(item_doc.get("disabled")):
+        return "item is disabled"
+
+    end_of_life = item_doc.get("end_of_life")
+    if end_of_life and frappe.utils.getdate(end_of_life) <= frappe.utils.getdate(nowdate()):
+        return f"item reached end of life on {end_of_life}"
+
+    return None
+
+
+
+def _get_laptop_adaptor_grade_a_items():
+    rows = frappe.db.sql("""
+        SELECT
+            i.name AS item_code,
+            i.disabled,
+            i.end_of_life,
+            iva.attribute,
+            iva.attribute_value
+        FROM `tabItem` i
+        INNER JOIN `tabItem Variant Attribute` iva
+            ON iva.parent = i.name
+        WHERE i.item_group = %(item_group)s
+            AND iva.attribute IN %(attributes)s
+    """, {
+        "item_group": PP_MR_LAPTOP_ADAPTOR_ITEM_GROUP,
+        "attributes": tuple(PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES + ("Grade",)),
+    }, as_dict=True)
+
+    attributes_by_item = defaultdict(dict)
+    item_doc_by_item = {}
+    for row in rows:
+        attributes_by_item[row.item_code][row.attribute] = row.attribute_value
+        item_doc_by_item[row.item_code] = row
+
+    items_by_key = {}
+    for item_code, attributes in attributes_by_item.items():
+        skip_reason = _get_laptop_adaptor_item_skip_reason(
+            item_code,
+            item_doc_by_item.get(item_code),
+        )
+        if skip_reason:
+            print(
+                "PP MR laptop adaptor skipped item:",
+                "item_code:", item_code,
+                "reason:", skip_reason,
+            )
+            continue
+
+        if _normalize_laptop_adaptor_value(attributes.get("Grade")) != _normalize_laptop_adaptor_value(PP_MR_LAPTOP_ADAPTOR_GRADE):
+            continue
+
+        if not all(attributes.get(attr) for attr in PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES):
+            continue
+
+        key = _get_laptop_adaptor_match_key(
+            attributes.get(attr) for attr in PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES
+        )
+        items_by_key[key] = item_code
+        print(
+            "PP MR laptop adaptor Grade A item mapping:",
+            "key:", key,
+            "item_code:", item_code,
+            "attributes:", attributes,
+        )
+
+    print("PP MR laptop adaptor Grade A item count:", len(items_by_key))
+    return items_by_key
+
+
+def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
+    grade_a_items_by_key = _get_laptop_adaptor_grade_a_items()
+
+    stock_by_key = defaultdict(float)
+    stock_item_by_key = {}
+    for row in department_stock:
+        skip_reason = _get_laptop_adaptor_item_skip_reason(row.item_code, row)
+        if skip_reason:
+            print(
+                "PP MR laptop adaptor skipped stock item:",
+                "item_code:", row.item_code,
+                "warehouse:", row.warehouse,
+                "stock_qty:", flt(row.stock_qty),
+                "reason:", skip_reason,
+            )
+            continue
+
+        key = _get_laptop_adaptor_item_key_from_code(row.item_code)
+        stock_by_key[key] += flt(row.stock_qty)
+        stock_item_by_key[key] = row.item_code
+        print(
+            "PP MR laptop adaptor stock mapping:",
+            "key:", key,
+            "item_code:", row.item_code,
+            "stock_qty:", flt(row.stock_qty),
+            "warehouse:", row.warehouse,
+        )
+
+    shortage_by_item = {}
+    schedule_days_by_item = defaultdict(list)
+
+    for wizard_row in item_wizard_data:
+        attributes = wizard_row.get("attributes") or {}
+        missing_attributes = [
+            attr for attr in PP_MR_LAPTOP_ADAPTOR_ATTRIBUTES
+            if not attributes.get(attr)
+        ]
+        if missing_attributes:
+            print(
+                "PP MR laptop adaptor missing attributes:",
+                wizard_row.get("item_wizard"),
+                missing_attributes,
+            )
+            continue
+
+        combinations = _get_laptop_adaptor_combinations(attributes)
+        print(
+            "PP MR laptop adaptor wizard combinations:",
+            "item_wizard:", wizard_row.get("item_wizard"),
+            "serial_no_count:", wizard_row.get("serial_no_count"),
+            "combination_count:", len(combinations),
+        )
+        for combination in combinations:
+            print(
+                "PP MR laptop adaptor wizard combination:",
+                "item_wizard:", wizard_row.get("item_wizard"),
+                "values:", combination["values"],
+                "key:", combination["key"],
+                "item_code:", grade_a_items_by_key.get(combination["key"]) or stock_item_by_key.get(combination["key"]),
+                "stock_qty:", flt(stock_by_key.get(combination["key"])),
+            )
+
+        valid_combinations = [
+            combination for combination in combinations
+            if grade_a_items_by_key.get(combination["key"]) or stock_item_by_key.get(combination["key"])
+        ]
+        print(
+            "PP MR laptop adaptor valid combination count:",
+            "item_wizard:", wizard_row.get("item_wizard"),
+            "count:", len(valid_combinations),
+        )
+
+        if not valid_combinations:
+            print(
+                "PP MR laptop adaptor item not found for wizard combinations:",
+                wizard_row.get("item_wizard"),
+                attributes,
+            )
+            continue
+
+        selected_combination = max(
+            valid_combinations,
+            key=lambda combination: flt(stock_by_key.get(combination["key"])),
+        )
+        key = selected_combination["key"]
+        item_code = grade_a_items_by_key.get(key) or stock_item_by_key.get(key)
+        required_qty = flt(wizard_row.get("serial_no_count"))
+        available_qty = flt(stock_by_key.get(key))
+        shortage_qty = required_qty - available_qty
+
+        print(
+            "PP MR laptop adaptor compare:",
+            wizard_row.get("item_wizard"),
+            "combination:", selected_combination["values"],
+            "item:", item_code,
+            "required:", required_qty,
+            "available:", available_qty,
+            "shortage:", shortage_qty,
+        )
+
+        if shortage_qty > PP_MR_MIN_QTY:
+            shortage_item = shortage_by_item.setdefault(item_code, {
+                "item_code": item_code,
+                "qty": 0,
+                "schedule_days": [],
+            })
+            shortage_item["qty"] = flt(shortage_item["qty"] + shortage_qty, 6)
+            print(
+                "PP MR laptop adaptor creatable MR item:",
+                "item_wizard:", wizard_row.get("item_wizard"),
+                "item_code:", item_code,
+                "qty_to_raise:", flt(shortage_qty, 6),
+            )
+        else:
+            print(
+                "PP MR laptop adaptor no MR required:",
+                "item_wizard:", wizard_row.get("item_wizard"),
+                "item_code:", item_code,
+                "stock_sufficient_qty:", available_qty,
+                "required_qty:", required_qty,
+            )
+
+        stock_by_key[key] = max(available_qty - required_qty, 0)
+
+        for current_department in wizard_row.get("current_departments") or []:
+            schedule_days_by_item[item_code].append(
+                _get_pp_schedule_days(current_department, PP_MR_LAPTOP_ADAPTOR_DEPARTMENT)
+            )
+
+    shortage_items = list(shortage_by_item.values())
+    for item in shortage_items:
+        item["schedule_days"] = schedule_days_by_item.get(
+            item["item_code"],
+            [PP_MR_DEFAULT_SCHEDULE_DAYS],
+        )
+
+    print("PP MR laptop adaptor shortage items count:", len(shortage_items))
+    for item in shortage_items:
+        print(
+            "PP MR laptop adaptor final shortage item:",
+            "item_code:", item["item_code"],
+            "qty:", item["qty"],
+            "schedule_days:", item.get("schedule_days"),
+        )
+    return shortage_items
+
+
+def _create_laptop_adaptor_mr(plan_name, shortage_items):
+    if not shortage_items:
+        return None
+
+    valid_shortage_items = []
+    for item in shortage_items:
+        skip_reason = _get_laptop_adaptor_item_skip_reason(item.get("item_code"))
+        if skip_reason:
+            print(
+                "PP MR laptop adaptor skipped MR item:",
+                "item_code:", item.get("item_code"),
+                "qty:", item.get("qty"),
+                "reason:", skip_reason,
+            )
+            continue
+
+        valid_shortage_items.append(item)
+
+    if not valid_shortage_items:
+        print("PP MR laptop adaptor no valid shortage items after item lifecycle validation")
+        return None
+
+    shortage_items = valid_shortage_items
+
+    schedule_days = max(
+        days
+        for item in shortage_items
+        for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
+    )
+    schedule_date = add_days(nowdate(), schedule_days)
+    print("PP MR laptop adaptor schedule days:", schedule_days)
+    print("PP MR laptop adaptor schedule date:", schedule_date)
+
+    item_fru_map = {
+        d["name"]: d["fru_number"]
+        for d in frappe.get_all(
+            "Item",
+            filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+            fields=["name", "fru_number"],
+        )
+    }
+
+    mr = frappe.new_doc("Material Request")
+    mr.material_request_type = "Material Issue"
+    mr.purpose = "Purchase"
+    mr.naming_series = "MREQ-.YYYY.-.MM.-"
+    mr.title = f"Laptop Adaptors - {plan_name}"
+    mr.company = _get_pp_default_company()
+    mr.schedule_date = schedule_date
+    mr.post_order_status = ""
+
+    for item in shortage_items:
+        print("PP MR laptop adaptor append item:", item["item_code"], "qty:", item["qty"])
+        mr.append("items", {
+            "item_code": item["item_code"],
+            "qty": item["qty"],
+            "schedule_date": schedule_date,
+            "warehouse": PP_MR_STORES_DEPARTMENT,
+            "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+        })
+
+    mr.insert(ignore_permissions=True)
+    mr.submit()
+    print("PP MR laptop adaptor created:", mr.name, "items:", len(shortage_items))
+
+    frappe.msgprint(
+        _("Laptop Adaptor Material Request Created from Production Plan {0}: {1}").format(
+            frappe.bold(plan_name),
+            frappe.bold(mr.name),
+        )
+    )
+    return mr.name
+
+
+def get_stock_from_department():
+    stock_data = frappe.db.sql("""
+        SELECT      
+            b.item_code,
+            i.item_name,
+            i.item_group,
+            i.disabled,
+            i.end_of_life,
+            SUM(b.actual_qty) AS stock_qty,
+            b.warehouse
+        FROM `tabBin` AS b
+        INNER JOIN `tabWarehouse` AS w
+            ON w.name = b.warehouse
+        INNER JOIN `tabItem` AS i
+            ON i.name = b.item_code
+        INNER JOIN `tabItem Variant Attribute` AS iva
+            ON iva.parent = i.name
+        WHERE w.department = %(department)s
+            AND i.item_group = %(item_group)s
+            AND iva.attribute = 'Grade'
+            AND iva.attribute_value = %(grade)s
+            AND b.actual_qty > 0
+        GROUP BY b.item_code, i.item_name, i.item_group, i.disabled, i.end_of_life, b.warehouse
+        ORDER BY b.item_code
+    """, {
+        "department": PP_MR_LAPTOP_ADAPTOR_DEPARTMENT,
+        "item_group": PP_MR_LAPTOP_ADAPTOR_ITEM_GROUP,
+        "grade": PP_MR_LAPTOP_ADAPTOR_GRADE,
+    }, as_dict=True, debug=1)
+
+    print("\nAdaptor Stock Details =====================")
+
+    for row in stock_data:
+        print(f"""
+Item Code   : {row.item_code}
+Item Name   : {row.item_name}
+Item Group  : {row.item_group}
+Stock Qty   : {row.stock_qty}
+Warehouse   : {row.warehouse}
+=============================================
+""")
+
+    return stock_data
+
+def get_laptop_adaptor_serial_nos(production_plan):
+    serial_nos = frappe.db.sql("""
+        SELECT 
+            cd.serial_no,
+            sn.item_wizard
+        FROM `tabFinal Production Planning Data` AS cd
+        INNER JOIN `tabNJ Production Planning` AS pp
+            ON cd.parent = pp.name
+        INNER JOIN `tabSerial No` AS sn
+            ON sn.name = cd.serial_no
+        WHERE pp.name = %s
+            AND IFNULL(cd.serial_no, '') != ''
+            AND NOT EXISTS (
+                SELECT 1
+                FROM `tabSerial No Component` AS snc
+                WHERE snc.parent = cd.serial_no
+                AND snc.item_group = 'Laptop Adaptors'
+            )
+        GROUP BY sn.item_wizard
+    """, (production_plan,), as_dict=True, debug=1)
+
+    print("Filtered Item Wizards ========")
+
+    item_wizard_data = []
+
+    print("serial_nos======================", serial_nos)
+
+    for row in serial_nos:
+
+        print(f"\nItem Wizard ===== {row.item_wizard}")
+
+        serial_no_details = frappe.db.sql("""
+            SELECT 
+                cd.serial_no,
+                cd.current_department,
+                d1.name AS current_department_name,
+                d1.department_sla AS current_department_sla,
+                (
+                    SELECT d2.name
+                    FROM `tabDepartment` d2
+                    WHERE d2.department_sla = (d1.department_sla - 1)
+                    ORDER BY d2.name
+                    LIMIT 1
+                ) AS previous_department_name,
+                (
+                    SELECT d2.department_sla
+                    FROM `tabDepartment` d2
+                    WHERE d2.department_sla = (d1.department_sla - 1)
+                    ORDER BY d2.name
+                    LIMIT 1
+                ) AS previous_department_sla
+            FROM `tabFinal Production Planning Data` AS cd
+            INNER JOIN `tabNJ Production Planning` AS pp
+                ON cd.parent = pp.name
+            INNER JOIN `tabSerial No` AS sn
+                ON sn.name = cd.serial_no
+            LEFT JOIN `tabDepartment` AS d1
+                ON d1.name = cd.current_department
+            WHERE pp.name = %s
+                AND sn.item_wizard = %s
+                AND IFNULL(cd.serial_no, '') != ''
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM `tabSerial No Component` AS snc
+                    WHERE snc.parent = cd.serial_no
+                    AND snc.item_group = 'Laptop Adaptors'
+                )
+        """, (production_plan, row.item_wizard), as_dict=True)
+
+        serial_no_list = [d.serial_no for d in serial_no_details]
+        weighted_serial_count = 0
+        current_departments = sorted({
+            d.current_department for d in serial_no_details
+            if d.current_department
+        })
+
+        print("Serial No Count ======================", len(serial_no_list))
+        print("Serial Nos ===========================")
+
+        for serial in serial_no_details:
+            has_previous_department = bool(
+                serial.current_department_name and serial.previous_department_name
+            )
+            qty_weight = 2 if has_previous_department else 1
+            weighted_serial_count += qty_weight
+            print(
+                "Laptop adaptor serial:",
+                "serial_no:", serial.serial_no,
+                "current_department:", serial.current_department_name,
+                "current_department_sla:", serial.current_department_sla,
+                "previous_department:", serial.previous_department_name,
+                "previous_department_sla:", serial.previous_department_sla,
+                "qty_weight:", qty_weight,
+            )
+
+        print("Weighted Serial No Count =============", weighted_serial_count)
+
+        attributes = frappe.db.sql("""
+            SELECT 
+                c.item_attribute,
+                c.attribute_value
+            FROM `tabItems Attribute` AS c
+            INNER JOIN `tabItem Wizards` AS p
+                ON c.parent = p.name
+            WHERE p.name = %s
+                AND c.item_attribute IN (
+                    'Brand',
+                    'Wattage Capacity',
+                    'Adapter Pin Type'
+                )
+        """, (row.item_wizard,), as_dict=True, debug=1)
+
+        attribute_dict = defaultdict(list)
+        for d in attributes:
+            attribute_dict[d.item_attribute].append(d.attribute_value)
+        attribute_dict = {
+            item_attribute: _dedupe_laptop_adaptor_values(attribute_values)
+            for item_attribute, attribute_values in attribute_dict.items()
+        }
+
+        print("attribute_dict======================", attribute_dict)
+
+        item_wizard_data.append({
+            "item_wizard": row.item_wizard,
+            "serial_no_count": weighted_serial_count,
+            "actual_serial_no_count": len(serial_no_list),
+            "serial_nos": serial_no_list,
+            "current_departments": current_departments,
+            "attributes": attribute_dict
+        })
+
+    return item_wizard_data
+
+
+def mr_raise_for_laptop_adaptors(doc=None, method=None):
+    print("mr_raise_for_laptop_adaptors")
+    latest_name = _get_latest_nj_production_plan_name()
+    print("PP MR latest plan:=======", latest_name)
+    if not latest_name:
+        return
+
+    laptop_adaptor_serial_nos = get_laptop_adaptor_serial_nos(latest_name)
+    print("PP MR laptop adaptor serial nos count:", len(laptop_adaptor_serial_nos))
+    if not laptop_adaptor_serial_nos:
+        return
+
+    dp_stock =get_stock_from_department()
+    print("PP MR department stock count:", dp_stock)
+
+    shortage_items = _build_laptop_adaptor_shortage_items(
+        laptop_adaptor_serial_nos,
+        dp_stock,
+    )
+    print("PP MR laptop adaptor shortage items before existing MR adjustment:", len(shortage_items))
+    if not shortage_items:
+        return
+
+    shortage_items = _adjust_pp_shortage_qty_for_existing_mrs(
+        shortage_items,
+        material_request_type="Material Issue",
+    )
+    print("PP MR laptop adaptor shortage items after existing MR adjustment:", len(shortage_items))
+    if not shortage_items:
+        return
+
+    return _create_laptop_adaptor_mr(latest_name, shortage_items)
+
+
+
+# Section 1: collecting all purpose of Material Issue from MR doc and calculating them with store department stock 
+
+PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT = "Stores - NJ"
+
+
+def collect_all_purpose_material_issue(doc=None, method=None):
+
+    print("collect_all_purpose_material_issue")
+
+    stock_data = frappe.db.sql("""
+        SELECT
+            b.item_code,
+            b.actual_qty,
+            b.warehouse,
+            i.item_group
+        FROM `tabBin` b
+        INNER JOIN `tabItem` i
+            ON i.name = b.item_code
+        WHERE b.warehouse IN (
+            SELECT name
+            FROM `tabWarehouse`
+            WHERE department = %(stock_department)s
+        )
+        AND i.item_group = 'Laptop Adaptors'
+        AND b.actual_qty > 0
+    """, {
+        "stock_department": PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT,
+    }, as_dict=True)
+
+    print("stock_data===============", stock_data)
+
+    material_issues = frappe.db.sql("""
+        SELECT
+            mri.parent,
+            mri.item_code,
+            mri.qty,
+            mri.schedule_date,
+            mri.warehouse,
+            w.department AS source_department
+        FROM `tabMaterial Request Item` mri
+        INNER JOIN `tabMaterial Request` mr
+            ON mr.name = mri.parent
+        LEFT JOIN `tabWarehouse` w
+            ON w.name = mri.warehouse
+        WHERE mr.material_request_type = 'Material Issue'
+        AND mr.docstatus = 1
+        AND mr.status NOT IN ('Stopped', 'Cancelled', 'Completed')
+        AND mri.item_code IS NOT NULL
+        AND mri.item_code != ''
+    """, as_dict=True)
+
+    print("material_issues===============", material_issues)
+
+    stock_qty_by_item = defaultdict(float)
+    stock_warehouse_by_item = {}
+    for row in stock_data:
+        stock_qty_by_item[row.item_code] += flt(row.actual_qty)
+        stock_warehouse_by_item.setdefault(row.item_code, row.warehouse)
+
+    print("all purpose stock qty by item===============", dict(stock_qty_by_item))
+
+    issue_qty_by_item = defaultdict(float)
+    issue_mr_names_by_item = defaultdict(set)
+    issue_warehouse_by_item = {}
+    schedule_days_by_item = defaultdict(list)
+    for row in material_issues:
+        issue_qty_by_item[row.item_code] += flt(row.qty)
+        issue_mr_names_by_item[row.item_code].add(row.parent)
+        if row.get("warehouse"):
+            issue_warehouse_by_item.setdefault(row.item_code, row.warehouse)
+
+        if row.get("source_department") and PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT:
+            schedule_days = _get_pp_schedule_days(
+                row.source_department,
+                PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT,
+            )
+        else:
+            schedule_days = PP_MR_DEFAULT_SCHEDULE_DAYS
+
+        schedule_days_by_item[row.item_code].append(schedule_days)
+        print(
+            "all purpose schedule days source:",
+            "item_code:", row.item_code,
+            "material_issue:", row.parent,
+            "source_warehouse:", row.get("warehouse"),
+            "source_department:", row.get("source_department"),
+            "target_department:", PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT,
+            "schedule_days:", schedule_days,
+        )
+
+    print("all purpose material issue qty by item===============", dict(issue_qty_by_item))
+
+    default_target_warehouse = frappe.db.get_value(
+        "Warehouse",
+        {
+            "department": PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT,
+            "disabled": 0,
+        },
+        "name",
+    )
+    print("all purpose default target warehouse===============", default_target_warehouse)
+
+    shortage_items = []
+    for item_code, issue_qty in issue_qty_by_item.items():
+        skip_reason = _get_laptop_adaptor_item_skip_reason(item_code)
+        if skip_reason:
+            print(
+                "all purpose skipped purchase MR item:",
+                "item_code:", item_code,
+                "issue_qty:", issue_qty,
+                "reason:", skip_reason,
+            )
+            continue
+
+        stock_qty = flt(stock_qty_by_item.get(item_code))
+        shortage_qty = flt(issue_qty - stock_qty, 6)
+        issue_mr_names = ", ".join(sorted(issue_mr_names_by_item.get(item_code) or []))
+
+        print(
+            "all purpose compare:",
+            "item_code:", item_code,
+            "material_issue_qty:", issue_qty,
+            "department_stock_qty:", stock_qty,
+            "shortage_qty:", shortage_qty,
+            "material_issue_mrs:", issue_mr_names,
+        )
+
+        if shortage_qty <= PP_MR_MIN_QTY:
+            print(
+                "all purpose no Purchase MR required:",
+                "item_code:", item_code,
+                "stock_qty:", stock_qty,
+                "material_issue_qty:", issue_qty,
+            )
+            continue
+
+        shortage_items.append({
+            "item_code": item_code,
+            "qty": shortage_qty,
+            "warehouse": (
+                stock_warehouse_by_item.get(item_code)
+                or issue_warehouse_by_item.get(item_code)
+                or default_target_warehouse
+            ),
+            "material_issue_mrs": issue_mr_names,
+            "schedule_days": schedule_days_by_item.get(
+                item_code,
+                [PP_MR_DEFAULT_SCHEDULE_DAYS],
+            ),
+        })
+        print(
+            "all purpose creatable Purchase MR item:",
+            "item_code:", item_code,
+            "qty:", shortage_qty,
+            "schedule_days:", schedule_days_by_item.get(item_code, [PP_MR_DEFAULT_SCHEDULE_DAYS]),
+            "source_material_issue_mrs:", issue_mr_names,
+        )
+
+    print("all purpose Purchase MR shortage item count===============", len(shortage_items))
+    if not shortage_items:
+        return
+
+    shortage_items = _adjust_pp_shortage_qty_for_existing_mrs(
+        shortage_items,
+        material_request_type="Purchase",
+    )
+    print("all purpose Purchase MR shortage item count after existing Purchase adjustment===============", len(shortage_items))
+    if not shortage_items:
+        return
+
+    max_schedule_days = max(
+        days
+        for item in shortage_items
+        for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
+    )
+    schedule_date = add_days(nowdate(), max_schedule_days)
+    print("all purpose Purchase MR schedule days===============", max_schedule_days)
+    print("all purpose Purchase MR schedule date===============", schedule_date)
+    item_fru_map = {
+        d["name"]: d["fru_number"]
+        for d in frappe.get_all(
+            "Item",
+            filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+            fields=["name", "fru_number"],
+        )
+    }
+
+    mr = frappe.new_doc("Material Request")
+    mr.material_request_type = "Purchase"
+    mr.naming_series = "MREQ-.YYYY.-.MM.-"
+    mr.title = f"Purchase Against Material Issue - {nowdate()}"
+    mr.company = _get_pp_default_company()
+    mr.schedule_date = schedule_date
+    mr.post_order_status = ""
+
+    for item in shortage_items:
+        print(
+            "all purpose append Purchase MR item:",
+            "item_code:", item["item_code"],
+            "qty:", item["qty"],
+            "warehouse:", item.get("warehouse"),
+            "schedule_days:", item.get("schedule_days"),
+            "source_material_issue_mrs:", item.get("material_issue_mrs"),
+        )
+
+        item_row = {
+            "item_code": item["item_code"],
+            "qty": item["qty"],
+            "schedule_date": schedule_date,
+            "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+        }
+        if item.get("warehouse"):
+            item_row["warehouse"] = item.get("warehouse")
+
+        mr.append("items", item_row)
+
+    mr.insert(ignore_permissions=True)
+    mr.submit()
+    print("all purpose Purchase MR created:", mr.name, "items:", len(shortage_items))
+
+    frappe.msgprint(
+        _("Purchase Material Request Created against Material Issue shortage: {0}").format(
+            frappe.bold(mr.name),
+        )
+    )
+
+    return mr.name

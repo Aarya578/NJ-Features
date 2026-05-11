@@ -714,7 +714,7 @@ def awb_number_tracking_status():
 #         frappe.logger().error(f"[{dc_name}] Unexpected error: {str(e)}")
 def update_status_in_shopify():
     token = "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"
-    base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
+    base_url = "https://newjaisa.myshopify.com/admin/api/2025-07"
 
     BATCH_SIZE = 50
     ALREADY_DONE_STATUSES = {"delivered"}

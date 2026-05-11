@@ -71,36 +71,43 @@ def scan_serial_no_data_for_sales(serial_no):
         sales_channel = None
         is_cod = None
         serial_no_from_dn_query = """
-            SELECT dn.name as delivery_note, dn.status as dn_status, 
-                dni.against_sales_invoice AS sales_invoice, 
-                dni.against_sales_order AS sales_order,
-                so.is_cod AS so_is_cod, 
-                dni.item_code, 
-                si.status as si_status, si.approved, si.sales_channel
-            FROM `tabDelivery Note Item` dni
-            INNER JOIN `tabSales Invoice` si ON si.name = dni.against_sales_invoice
-            INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
-            INNER JOIN `tabSales Order` so ON so.name = dni.against_sales_order
-            LEFT JOIN `tabPacked Item` pi ON dn.name = pi.parent
-            WHERE (
-                dni.serial_no = {0}
-                OR dni.serial_no LIKE {1}
-                OR dni.serial_no LIKE {2}
-                OR dni.serial_no LIKE {3}
-                OR pi.serial_no = {0}
-                OR pi.serial_no LIKE {1}
-                OR pi.serial_no LIKE {2}
-                OR pi.serial_no LIKE {3}
-            ) AND dn.docstatus = 1
+            SELECT
+                dn.name AS delivery_note,
+                dn.status AS dn_status,
+                COALESCE(dni.against_sales_invoice, info_dni.against_sales_invoice) AS sales_invoice,
+                COALESCE(dni.against_sales_order, info_dni.against_sales_order) AS sales_order,
+                so.is_cod AS so_is_cod,
+                COALESCE(dni.item_code, pi.item_code, info_dni.item_code) AS item_code,
+                si.status AS si_status,
+                si.approved,
+                si.sales_channel
+            FROM `tabDelivery Note` dn
+            LEFT JOIN `tabDelivery Note Item` dni
+                ON dni.parent = dn.name
+                AND CONCAT('\n', REPLACE(IFNULL(dni.serial_no, ''), ',', '\n'), '\n')
+                    LIKE %(serial_no_pattern)s
+            LEFT JOIN `tabPacked Item` pi
+                ON pi.parent = dn.name
+                AND CONCAT('\n', REPLACE(IFNULL(pi.serial_no, ''), ',', '\n'), '\n')
+                    LIKE %(serial_no_pattern)s
+            LEFT JOIN `tabDelivery Note Item` info_dni
+                ON info_dni.parent = dn.name
+                AND info_dni.idx = 1
+            LEFT JOIN `tabSales Invoice` si
+                ON si.name = COALESCE(dni.against_sales_invoice, info_dni.against_sales_invoice)
+            LEFT JOIN `tabSales Order` so
+                ON so.name = COALESCE(dni.against_sales_order, info_dni.against_sales_order)
+            WHERE dn.docstatus = 1
+                AND (dni.name IS NOT NULL OR pi.name IS NOT NULL)
             ORDER BY dn.creation DESC, dn.modified DESC
-        """.format(
-            frappe.db.escape(serial_no),
-            frappe.db.escape("{}\n%".format(serial_no)),
-            frappe.db.escape("%\n{}".format(serial_no)),
-            frappe.db.escape("%\n{}\n%".format(serial_no)),
-        )
+            LIMIT 1
+        """
 
-        result = frappe.db.sql(serial_no_from_dn_query, as_dict=True)
+        result = frappe.db.sql(
+            serial_no_from_dn_query,
+            {"serial_no_pattern": "%\n{}\n%".format(serial_no)},
+            as_dict=True
+        )
         if not result:
             serial_no_from_dn_query = """
                 SELECT 
@@ -153,6 +160,70 @@ def scan_serial_no_data_for_sales(serial_no):
             approved = data.get('approved')
             sales_channel = data.get('sales_channel')
             is_cod = data.get('so_is_cod')
+
+            if delivery_note and not sales_invoice:
+                invoice_data = frappe.db.sql("""
+                    SELECT
+                        si.name AS sales_invoice,
+                        si.status AS si_status,
+                        sii.sales_order AS sales_order,
+                        so.is_cod AS so_is_cod,
+                        sii.item_code,
+                        si.approved,
+                        si.sales_channel
+                    FROM `tabSales Invoice Item` sii
+                    INNER JOIN `tabSales Invoice` si
+                        ON si.name = sii.parent
+                    LEFT JOIN `tabSales Order` so
+                        ON so.name = sii.sales_order
+                    WHERE sii.delivery_note = %s
+                        AND si.docstatus = 1
+                    ORDER BY si.creation DESC, si.modified DESC
+                    LIMIT 1
+                """, delivery_note, as_dict=True)
+
+                if invoice_data:
+                    invoice_data = invoice_data[0]
+                    sales_invoice = invoice_data.get('sales_invoice')
+                    sales_order = invoice_data.get('sales_order') or sales_order
+                    item_code = invoice_data.get('item_code') or item_code
+                    si_status = invoice_data.get('si_status')
+                    approved = invoice_data.get('approved')
+                    sales_channel = invoice_data.get('sales_channel')
+                    is_cod = invoice_data.get('so_is_cod')
+
+            if sales_order and not sales_invoice:
+                invoice_data = frappe.db.sql("""
+                    SELECT
+                        si.name AS sales_invoice,
+                        si.status AS si_status,
+                        sii.sales_order AS sales_order,
+                        so.is_cod AS so_is_cod,
+                        sii.item_code,
+                        si.approved,
+                        si.sales_channel
+                    FROM `tabSales Invoice Item` sii
+                    INNER JOIN `tabSales Invoice` si
+                        ON si.name = sii.parent
+                    LEFT JOIN `tabSales Order` so
+                        ON so.name = sii.sales_order
+                    WHERE sii.sales_order = %s
+                        AND si.docstatus = 1
+                    ORDER BY
+                        CASE WHEN sii.item_code = %s THEN 0 ELSE 1 END,
+                        si.creation DESC,
+                        si.modified DESC
+                    LIMIT 1
+                """, (sales_order, item_code), as_dict=True)
+
+                if invoice_data:
+                    invoice_data = invoice_data[0]
+                    sales_invoice = invoice_data.get('sales_invoice')
+                    item_code = invoice_data.get('item_code') or item_code
+                    si_status = invoice_data.get('si_status')
+                    approved = invoice_data.get('approved')
+                    sales_channel = invoice_data.get('sales_channel')
+                    is_cod = invoice_data.get('so_is_cod')
 
             if sales_invoice:
                 if sales_channel == 'Amazon' and (not sales_invoice or not delivery_note):

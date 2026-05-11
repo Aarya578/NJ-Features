@@ -853,7 +853,8 @@ class CustomDeliveryNote(DeliveryNote):
                         serial_no_doc,
                         item_wizard_doc,
                         self.doctype,
-                        self.name
+                        self.name,
+                        preserve_customer_details=(cause == "Repair")
                     )
             except Exception as e:
                 frappe.log_error(
@@ -901,7 +902,14 @@ class CustomDeliveryNote(DeliveryNote):
 
         return get_latest_item_wizard(item_template, item_code)
     
-    def _update_components(self, serial_no_doc, item_wizard_doc, reference_doctype, reference_name):
+    def _update_components(
+        self,
+        serial_no_doc,
+        item_wizard_doc,
+        reference_doctype,
+        reference_name,
+        preserve_customer_details=False
+    ):
         updated = False
 
         for item_component in item_wizard_doc.component:
@@ -924,7 +932,7 @@ class CustomDeliveryNote(DeliveryNote):
                             update_modified=False
                         )
 
-        if updated:
+        if updated and not preserve_customer_details:
             frappe.db.set_value(
                 "Serial No",
                 serial_no_doc.name,

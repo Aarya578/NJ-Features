@@ -129,6 +129,12 @@ doc_events = {
             # "nj_features.overrides.purchase_invoice.send_invoice_email",
         ],
     },
+    # =========================================================
+    # 🔹 Targeted Inventory Sync on Sales Order Submission
+    # =========================================================
+    "Sales Order": {
+        "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
+    },
 }
 
 # ========== Override Whitelisted Methods ==========

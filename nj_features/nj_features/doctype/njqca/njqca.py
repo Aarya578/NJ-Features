@@ -1400,6 +1400,57 @@ def get_repack_items(self):
 
     return get_repack_items_list
 
+def get_variant_for_grade(item_code, target_grade):
+    variant_of = frappe.db.get_value("Item", item_code, "variant_of")
+    if not variant_of:
+        return None
+        
+    attrs = frappe.get_all(
+        "Item Variant Attribute",
+        filters={"parent": item_code},
+        fields=["attribute", "attribute_value"],
+    )
+    
+    target_attrs = []
+    grade_found = False
+    for a in attrs:
+        if a.attribute.lower() == "grade":
+            target_attrs.append({"attribute": a.attribute, "attribute_value": target_grade})
+            grade_found = True
+        else:
+            target_attrs.append(a)
+            
+    if not grade_found:
+        return None
+        
+    joins = []
+    conditions = []
+    for i, attr in enumerate(target_attrs):
+        alias = f"a{i}"
+        joins.append(f"JOIN `tabItem Variant Attribute` {alias} ON v.name = {alias}.parent AND {alias}.attribute = %s AND {alias}.attribute_value = %s")
+        conditions.extend([attr['attribute'], attr['attribute_value']])
+        
+    query = f"SELECT v.name FROM `tabItem` v {' '.join(joins)} WHERE v.variant_of = %s AND v.disabled = 0 LIMIT 1"
+    conditions.append(variant_of)
+    
+    res = frappe.db.sql(query, tuple(conditions))
+    return res[0][0] if res else None
+
+def apply_previous_grades_to_components(serial_no_doc, previous_grades):
+    unk_grade = frappe.db.get_value('NJ Settings', {'parameter': 'unk_grade'}, 'value') or "UNKNOWN"
+    
+    for row in serial_no_doc.get("serial_no_component"):
+        # Only apply this to the new placeholders (those WITHOUT component_serial_no)
+        if not row.component_serial_no:
+            old_grade = previous_grades.get(row.item_group)
+            if old_grade and old_grade != unk_grade:
+                target_variant = get_variant_for_grade(row.item, old_grade)
+                if target_variant:
+                    row.item = target_variant
+                    row.grade = old_grade
+                else:
+                    frappe.throw(f"When changing the model, we don't have a variant for Grade <b>{old_grade}</b> for Item <b>{row.item}</b> (Item Group: <b>{row.item_group}</b>). Please contact NPD Team.")
+
 @frappe.whitelist()
 def model_change_for_serial_no(newmodel, serial_no):
     user = frappe.session.user
@@ -1424,6 +1475,7 @@ def model_change_for_serial_no(newmodel, serial_no):
     mr_exists_data = frappe.db.sql(mr_exists,serial_no,as_dict=1)
 
     serial_no_doc = frappe.get_doc('Serial No', serial_no)
+    previous_grades = {d.item_group: d.grade for d in serial_no_doc.serial_no_component}
 
     if qi_exists_data == [] and kitting_exists_data == [] and mpc_exists_data == [] and mr_exists_data == []:
         if new_item_wizard != [] or new_item_wizard is not None or new_item_wizard != '':
@@ -1431,8 +1483,9 @@ def model_change_for_serial_no(newmodel, serial_no):
             if item_wizard_doc.part_list_status != 'Completed':
                 return { "status": "failed" }
             if newmodel:
-                serial_no_doc.serial_no_component = []
+                serial_no_doc.serial_no_component = [d for d in serial_no_doc.serial_no_component if d.component_serial_no]
                 update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
+                apply_previous_grades_to_components(serial_no_doc, previous_grades)
                 serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
@@ -1463,8 +1516,9 @@ def model_change_for_serial_no(newmodel, serial_no):
                                     not_matched_item_groups.append(old.get('component_type'))
                 if not not_matched_item_groups:
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
-                    serial_no_doc.serial_no_component = []
+                    serial_no_doc.serial_no_component = [d for d in serial_no_doc.serial_no_component if d.component_serial_no]
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
+                    apply_previous_grades_to_components(serial_no_doc, previous_grades)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
                 
@@ -1484,8 +1538,9 @@ def model_change_for_serial_no(newmodel, serial_no):
                                 return { "status": "failed" }
                     
                     item_wizard_doc = frappe.get_doc("Item Wizards",new_item_wizard[0]['name'])
-                    serial_no_doc.serial_no_component = []
+                    serial_no_doc.serial_no_component = [d for d in serial_no_doc.serial_no_component if d.component_serial_no]
                     update_component_in_serial_no(item_wizard_doc, serial_no_doc, newmodel,db_insert=True)
+                    apply_previous_grades_to_components(serial_no_doc, previous_grades)
                     serial_no_doc.save(ignore_permissions=True)
                     return { "status": "success" }
             else:

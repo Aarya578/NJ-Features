@@ -3547,7 +3547,21 @@ def get_final_status_result(status_parameter, evaluation_results, item_group):
         "part_config_id": 0
     }
 
+def get_direct_status_result(status_parameter, status_value, item_group):
+    status_value = str(status_value or "").strip().upper()
 
+    evaluation_results = [{
+        "status": "Fail" if status_value == "FAIL" else "Pass"
+    }]
+
+    result = get_final_status_result(
+        status_parameter=status_parameter,
+        evaluation_results=evaluation_results,
+        item_group=item_group
+    )
+
+    result["value"] = "FAIL" if status_value == "FAIL" else "PASS"
+    return result
 def update_or_append_result_parameter(njqca_name, result):
     if not njqca_name or not result:
         return
@@ -5169,20 +5183,35 @@ def _collect_upserts():
     """
     changes_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
-    def add_change(item_group: str, parameter: str, value: Any, unit: str):
+    def add_change(
+        item_group: str,
+        parameter: str,
+        value: Any,
+        unit: str,
+        score=None,
+        part_config_id=0
+    ):
         k = (_key(item_group), _key(parameter))
-        changes_map[k] = {
+
+        change = {
             "item_group": item_group,
             "parameter": parameter,
             "value": value,
             "units": unit,
         }
 
+        if score not in (None, ""):
+            change["score"] = score
+
+        if part_config_id not in (None, ""):
+            change["part_config_id"] = part_config_id
+
+        changes_map[k] = change
+
     def flush_changes() -> List[Dict[str, Any]]:
         return list(changes_map.values())
 
     return add_change, flush_changes
-
 
 # ==========================================================
 # CSV parsing: Avg + Max Temperature
@@ -6067,7 +6096,19 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
 
             kv = _parse_ycruncher_content_to_kv(text)
             if not kv:
-                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", "FAIL", "")
+                y_result = get_direct_status_result(
+                    "y_cruncher_status",
+                    "FAIL",
+                    YCRUNCHER_TARGET_ITEM_GROUP
+                )
+                add_change(
+                    y_result.get("item_group"),
+                    y_result.get("parameter"),
+                    y_result.get("value"),
+                    "",
+                    y_result.get("score"),
+                    y_result.get("part_config_id")
+                )
                 add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", "No y-cruncher values parsed from report", "")
                 info["y_cruncher"] = {"status": "skip", "reason": "no whitelisted keys found"}
             else:
@@ -6075,7 +6116,19 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
                     add_change(YCRUNCHER_TARGET_ITEM_GROUP, k, v, "")
 
                 y_status, y_reason = _evaluate_ycruncher_status(kv)
-                add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", y_status, "")
+                y_result = get_direct_status_result(
+                    "y_cruncher_status",
+                    y_status,
+                    YCRUNCHER_TARGET_ITEM_GROUP
+                )
+                add_change(
+                    y_result.get("item_group"),
+                    y_result.get("parameter"),
+                    y_result.get("value"),
+                    "",
+                    y_result.get("score"),
+                    y_result.get("part_config_id")
+                )
                 add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", y_reason, "")
                 info["y_cruncher"] = {
                     "status": "ok",
@@ -6084,7 +6137,19 @@ def _apply_reliability_enrichment_no_mutation(doc: Document) -> dict:
                     "reason": y_reason
                 }
         except Exception as e:
-            add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_status", "FAIL", "")
+            y_result = get_direct_status_result(
+                "y_cruncher_status",
+                "FAIL",
+                YCRUNCHER_TARGET_ITEM_GROUP
+            )
+            add_change(
+                y_result.get("item_group"),
+                y_result.get("parameter"),
+                y_result.get("value"),
+                "",
+                y_result.get("score"),
+                y_result.get("part_config_id")
+            )
             add_change(YCRUNCHER_TARGET_ITEM_GROUP, "y_cruncher_result_reason", f"Error while parsing y-cruncher file: {str(e)}", "")
             info["y_cruncher"] = {"status": "error", "error": str(e)}
 

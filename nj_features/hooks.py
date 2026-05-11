@@ -74,10 +74,10 @@ doc_events = {
     "Purchase Receipt": {
         # "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
         # "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
-        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",       
+        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
     },
     "Purchase Order": {
-        "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",  # ← ADDED
+        "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",
         "validate": "nj_features.overrides.purchase_order.validate_mandatory_links",
         "on_submit": [
             "nj_features.overrides.purchase_order.validate_warranty_on_submit",
@@ -128,6 +128,12 @@ doc_events = {
             "nj_features.overrides.purchase_invoice.on_submit_purchase_invoice",
             # "nj_features.overrides.purchase_invoice.send_invoice_email",
         ],
+    },
+    # =========================================================
+    # 🔹 Targeted Inventory Sync on Sales Order Submission
+    # =========================================================
+    "Sales Order": {
+        "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
     },
 }
 
@@ -210,12 +216,15 @@ scheduler_events = {
 }
 
 # ========== Fixtures ==========
+# Workflow fixtures removed — approval flow handled via custom Python methods
 fixtures = [
     {
         "dt": "Custom Field",
-        "filters": [
-            ["name", "=", "Product Bundle-disable"]
-        ]
+        "filters": [["name", "=", "Product Bundle-disable"]]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [["name", "=", "Department-expense_credit_account"]]
     }
 ]
 

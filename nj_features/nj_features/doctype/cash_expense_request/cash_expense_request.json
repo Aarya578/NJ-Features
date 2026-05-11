@@ -18,7 +18,6 @@
   "vendor_name",
   "description_section",
   "reason",
-  "business_justification",
   "attachments_section",
   "receipt_upload",
   "multiple_receipts",
@@ -40,7 +39,8 @@
    "fieldname": "employee",
    "fieldtype": "Link",
    "label": "Employee",
-   "options": "Employee"
+   "options": "Employee",
+   "reqd": 1
   },
   {
    "fieldname": "department",
@@ -51,13 +51,15 @@
   {
    "fieldname": "expense_date",
    "fieldtype": "Date",
-   "label": "Expense Date"
+   "label": "Expense Date",
+   "reqd": 1
   },
   {
    "fieldname": "expense_category",
    "fieldtype": "Link",
    "label": "Expense Category",
-   "options": "Expense Category"
+   "options": "Expense Category",
+   "reqd": 1
   },
   {
    "fieldname": "project",
@@ -75,12 +77,14 @@
    "fieldname": "mode",
    "fieldtype": "Select",
    "label": "Mode",
-   "options": "Cash\nReimbursement"
+   "options": "Cash\nOnline\nBank Transfer\nUPI\nReimbursement",
+   "reqd": 1
   },
   {
    "fieldname": "amount",
    "fieldtype": "Currency",
-   "label": "Amount"
+   "label": "Amount",
+   "reqd": 1
   },
   {
    "default": "0",
@@ -102,11 +106,6 @@
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason"
-  },
-  {
-   "fieldname": "business_justification",
-   "fieldtype": "Text Editor",
-   "label": "Business Justification"
   },
   {
    "fieldname": "attachments_section",
@@ -183,9 +182,9 @@
   {
    "fieldname": "current_status",
    "fieldtype": "Select",
-   "label": "Current Status ",
+   "label": "Current Status",
    "options": "Draft\nSubmitted\nManager Approved\nAccounts Approved\nRejected\nPosted",
-   "read_only": 1
+   "read_only": 0
   },
   {
    "fieldname": "amended_from",
@@ -200,7 +199,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-07 14:12:54.282367",
+ "modified": "2026-05-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Cash Expense Request",
@@ -243,6 +242,7 @@
    "write": 1
   },
   {
+   "create": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -251,11 +251,14 @@
    "role": "Accounts User",
    "select": 1,
    "share": 1,
-   "write": 1
+   "write": 1,
+   "submit": 1,
+   "cancel": 1
   },
   {
    "amend": 1,
    "cancel": 1,
+   "create": 1,
    "email": 1,
    "export": 1,
    "print": 1,

@@ -742,6 +742,10 @@ frappe.ui.form.on("NJQCA", {
               return;
             }
 
+            if (!r.message.parameter) {
+              return;
+            }
+
             applyChangesNoDuplicates(frm, [r.message]);
             frm.refresh_field("njqca_result_parameters");
           },

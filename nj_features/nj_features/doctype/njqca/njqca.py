@@ -586,6 +586,100 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
         log_error(traceback.format_exc(), "Error in fill_nj_quality_reading_from_serial_or_itm_wizard in NJQCA")
         frappe.throw(f"Error in fill_nj_quality_reading_from_serial_or_itm_wizard {str(traceback.format_exc())}")
         return None
+def upsert_njqca_result_parameter_row(doc, change):
+    item_group = (change.get("item_group") or "").strip()
+    parameter = (change.get("parameter") or "").strip()
+
+    if not item_group or not parameter:
+        return
+
+    value = change.get("value")
+    if value is None:
+        value = ""
+
+    score = change.get("score") or ""
+    part_config_id = change.get("part_config_id") or 0
+
+    existing_row = None
+
+    # Use latest matching row if duplicate exists
+    for row in reversed(doc.get("njqca_result_parameters") or []):
+        if (
+            (row.get("item_group") or "").strip() == item_group
+            and (row.get("parameter") or "").strip() == parameter
+        ):
+            existing_row = row
+            break
+
+    if existing_row:
+        existing_row.item_group = item_group
+        existing_row.parameter = parameter
+        existing_row.value = str(value)
+        existing_row.score = score
+        existing_row.part_config_id = part_config_id
+    else:
+        doc.append("njqca_result_parameters", {
+            "item_group": item_group,
+            "parameter": parameter,
+            "value": str(value),
+            "score": score,
+            "part_config_id": part_config_id
+        })
+
+def _norm_njqca_param(value):
+    return re.sub(r"\s+", " ", str(value or "").strip()).lower()
+
+
+def has_njqca_param_value(doc, parameter_name):
+    target = _norm_njqca_param(parameter_name)
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = _norm_njqca_param(row.get("parameter"))
+        value = str(row.get("value") or "").strip()
+
+        if parameter == target and value:
+            return True
+
+    return False
+
+
+def has_actual_test_file(doc):
+    return (
+        has_njqca_param_value(doc, "heavy_load_File_Updated_name")
+        or has_njqca_param_value(doc, "performance_File_Updated_name")
+        or has_njqca_param_value(doc, "sensors_File_Updated_name")
+        or has_njqca_param_value(doc, "y_cruncher_File_Updated_name")
+    )
+
+
+def has_perf_or_heavyload_test_file(doc):
+    return (
+        has_njqca_param_value(doc, "heavy_load_File_Updated_name")
+        or has_njqca_param_value(doc, "performance_File_Updated_name")
+        or has_njqca_param_value(doc, "sensors_File_Updated_name")
+    )
+def apply_reliability_test_changes_to_doc(doc):
+    try:
+        inspection_type = (doc.get("inspection_type") or "").strip().lower()
+        is_reliability_test = inspection_type == "reliability test"
+        actual_test_file_present = has_actual_test_file(doc)
+
+        # Reliability Test always allowed.
+        # Other inspection types allowed only if actual test file exists.
+        if not is_reliability_test and not actual_test_file_present:
+            return
+
+        res = get_reliability_test_status(doc.as_dict())
+        changes = res.get("changes") or []
+
+        for change in changes:
+            upsert_njqca_result_parameter_row(doc, change)
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "apply_reliability_test_changes_to_doc failed"
+        )
 
 class NJQCA(Document):
     def onload(self):
@@ -649,6 +743,7 @@ class NJQCA(Document):
 
     def before_save(self):
         update_storage_type(self)
+        apply_reliability_test_changes_to_doc(self)
         set_fail_for_empty_reliability_params(self)
 
     def on_submit(self):
@@ -3628,6 +3723,18 @@ def update_performance_criteria(doc):
 
     if isinstance(doc, str):
         doc = json.loads(doc)
+
+    inspection_type = (doc.get("inspection_type") or "").strip().lower()
+    is_reliability_test = inspection_type == "reliability test"
+    perf_or_heavyload_file_present = has_perf_or_heavyload_test_file(doc)
+
+    # Reliability Test always allowed.
+    # Final QC / other inspection types allowed only when real performance/heavyload file exists.
+    if not is_reliability_test and not perf_or_heavyload_file_present:
+        return {
+            "skip": True,
+            "message": "Performance/HeavyLoad evaluation skipped because no actual test file is present"
+        }
 
     item_code = doc.get("manual_repack_item_code")  
 

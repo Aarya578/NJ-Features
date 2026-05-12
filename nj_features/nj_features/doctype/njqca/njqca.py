@@ -3715,6 +3715,11 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
 
     heavy_load_status checks only:
         NJ Settings -> heavy_load_status_parameters
+
+    Important:
+    Do not depend only on direct DB update here.
+    This function must return all changes to JS, so JS can add rows into
+    frm.doc.njqca_result_parameters before save.
     """
 
     performance_evaluation_results = evaluate_status_from_criteria(
@@ -3723,33 +3728,24 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         setting_parameter="performance_status_parameters"
     )
 
-    if performance_evaluation_results:
-        update_njqca_doc(doc.get("name"), performance_evaluation_results)
-
     performance_result = get_final_status_result(
         status_parameter="Performance_status",
         evaluation_results=performance_evaluation_results,
         item_group="Software Configuration"
     )
-    update_or_append_result_parameter(
-        doc.get("name"),
-        performance_result
-    )
+
     performance_reason = build_status_reason(
         performance_evaluation_results,
         "Performance_status"
     )
 
-    update_or_append_result_parameter(
-        doc.get("name"),
-        {
-            "parameter": "Performance_status_reason",
-            "value": performance_reason,
-            "score": performance_result.get("score"),
-            "item_group": "Software Configuration",
-            "part_config_id": 0
-        }
-    )
+    performance_reason_result = {
+        "parameter": "Performance_status_reason",
+        "value": performance_reason,
+        "score": performance_result.get("score"),
+        "item_group": "Software Configuration",
+        "part_config_id": 0
+    }
 
     heavyload_evaluation_results = evaluate_status_from_criteria(
         doc=doc,
@@ -3763,28 +3759,29 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         item_group="LAPTOP STORAGE"
     )
 
-    update_or_append_result_parameter(
-        doc.get("name"),
-        heavyload_result
-    )
-
     heavyload_reason = build_status_reason(
         heavyload_evaluation_results,
         "heavy_load_status"
     )
 
-    update_or_append_result_parameter(
-        doc.get("name"),
-        {
-            "parameter": "heavy_load_status_reason",
-            "value": heavyload_reason,
-            "score": heavyload_result.get("score"),
-            "item_group": "LAPTOP STORAGE",
-            "part_config_id": 0
-        }
-    )
+    heavyload_reason_result = {
+        "parameter": "heavy_load_status_reason",
+        "value": heavyload_reason,
+        "score": heavyload_result.get("score"),
+        "item_group": "LAPTOP STORAGE",
+        "part_config_id": 0
+    }
 
-    return performance_result
+    results = [
+        performance_result,
+        performance_reason_result,
+        heavyload_result,
+        heavyload_reason_result
+    ]
+
+    return {
+        "changes": results
+    }
 
 @frappe.whitelist()
 def update_performance_criteria(doc):
@@ -3853,7 +3850,7 @@ def update_performance_criteria(doc):
         if not criteria_doc_raw:
             return {"error": "NJ Settings not found for Performance Criteria."}
 
-        # ✅ Fix: decode only if it's a string
+        # Fix: decode only if it's a string
         try:
             if isinstance(criteria_doc_raw, str):
                 criteria_doc = json.loads(criteria_doc_raw)
@@ -5026,6 +5023,7 @@ PERFORMANCE_METRIC_UNITS = {
     "Browser close": "s",
     "Static server stop": "s",
     "URL load time": "s",
+    "tab_switching_time": "s",
 }
 
 
@@ -5726,6 +5724,15 @@ def _parse_performance_txt_metrics(text: str) -> dict:
 
     rx_static_stop = re.compile(r"^Static server stop\s*,.*Time taken\s*=\s*([0-9.]+)\s*s$", re.I)
     rx_url = re.compile(r"^url\s*,\s*(https?://[^,]+)\s*,\s*([0-9.]+)\s*$", re.I)
+    rx_tab_switching_1 = re.compile(
+    r"^tab_switching\s*,\s*Total time taken for switching tabs\s*,\s*([0-9.]+)\s*$",
+        re.I
+    )
+
+    rx_tab_switching_2 = re.compile(
+        r"^tab_switching_time\s*,\s*([0-9.]+)\s*(?:seconds?|s)?$",
+        re.I
+    )
 
     def _set_metric(param: str, value: Any, unit: str):
         metrics[param] = (value, unit)
@@ -5805,6 +5812,15 @@ def _parse_performance_txt_metrics(text: str) -> dict:
             url = (m.group(1) or "").strip()
             sec = float(m.group(2))
             _set_metric(f"({url})", sec, PERFORMANCE_METRIC_UNITS["URL load time"])
+            continue
+        m = rx_tab_switching_1.match(ln) or rx_tab_switching_2.match(ln)
+        if m:
+            sec = float(m.group(1))
+            _set_metric(
+                "tab_switching_time",
+                sec,
+                PERFORMANCE_METRIC_UNITS["tab_switching_time"]
+            )
             continue
 
     out: Dict[str, Any] = {}

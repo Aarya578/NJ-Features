@@ -727,10 +727,13 @@ frappe.ui.form.on("NJQCA", {
           method:
             "nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria",
           args: { doc: frm.doc },
+
           callback: function (r) {
             if (!r || !r.message) {
               return;
             }
+
+            console.log("update_performance_criteria response:", r.message);
 
             if (r.message.error) {
               frappe.msgprint({
@@ -742,13 +745,18 @@ frappe.ui.form.on("NJQCA", {
               return;
             }
 
-            if (!r.message.parameter) {
+            if (Array.isArray(r.message.changes)) {
+              applyChangesNoDuplicates(frm, r.message.changes);
+              frm.refresh_field("njqca_result_parameters");
               return;
             }
 
-            applyChangesNoDuplicates(frm, [r.message]);
-            frm.refresh_field("njqca_result_parameters");
+            if (r.message.parameter) {
+              applyChangesNoDuplicates(frm, [r.message]);
+              frm.refresh_field("njqca_result_parameters");
+            }
           },
+
           error: function (err) {
             console.error("Error while updating performance criteria:", err);
           },

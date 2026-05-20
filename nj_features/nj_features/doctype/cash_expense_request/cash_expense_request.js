@@ -177,16 +177,23 @@ function fetch_budget(frm) {
                 if (frm.__limit_dialog_shown === frm.doc.employee) return;
                 frm.__limit_dialog_shown = frm.doc.employee;
 
-                frappe.confirm(
-                    __("Expense Limit is not set for employee <b>{0}</b>.<br><br>Do you want to create one now?",
-                        [frm.doc.employee]),
-                    function() {
-                        frappe.new_doc("Employee Expense Limit", { employee: frm.doc.employee });
-                    },
-                    function() {
-                        frappe.show_alert({ message: __("Please set an Expense Limit before submitting."), indicator: "orange" }, 5);
-                    }
-                );
+                if (frappe.user.has_role("Accounts Manager") || frappe.user.has_role("Accounts User") || frappe.user.has_role("System Manager")) {
+                    frappe.confirm(
+                        __("Expense Limit is not set for employee <b>{0}</b>.<br><br>Do you want to create one now?",
+                            [frm.doc.employee]),
+                        function() {
+                            frappe.new_doc("Employee Expense Limit", { employee: frm.doc.employee });
+                        },
+                        function() {
+                            frappe.show_alert({ message: __("Please set an Expense Limit before submitting."), indicator: "orange" }, 5);
+                        }
+                    );
+                } else {
+                    frappe.show_alert({
+                        message: __("Expense Limit not set for this employee. Please contact the Accounts team."),
+                        indicator: "orange"
+                    }, 6);
+                }
                 return;
             }
 

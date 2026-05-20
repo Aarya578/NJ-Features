@@ -116,15 +116,13 @@ def update_so_quantity_check(settings):
 
                 Main_Data AS (
                     SELECT DISTINCT
-                        pb.shopify_variant_id,
+                        i.shopify_variant_id,
                         i.item_code, 
                         i.item_group,
                         i.variant_of AS parent,
                         ps.total_actual_qty_for_parent,
                         isq.total_actual_qty_for_itemcode
-                    FROM `tabProduct Bundle` pb
-                    LEFT JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-                    LEFT JOIN `tabItem` i ON pbi.item_code = i.item_code
+                    FROM `tabItem` i
                     LEFT JOIN Parent_Stock ps ON ps.parent = i.variant_of
                     LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
                     WHERE i.item_group IN ({item_group_placeholders})

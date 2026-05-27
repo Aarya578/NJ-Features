@@ -15,7 +15,11 @@ class CashExpenseRequest(Document):
         self.fetch_department()
         self.validate_receipt()
         if self.employee:
-            self.check_employee_limit()
+            user_roles = set(frappe.get_roles(frappe.session.user))
+            if not ACCOUNTS_ROLES.intersection(user_roles):
+                self.check_employee_limit()
+
+                
 
     def fetch_department(self):
         if self.employee:

@@ -23,6 +23,7 @@
   "warehouse",
   "data_attr",
   "rfq_id",
+  "linked_ext",
   "backup_duration_cycle_1",
   "backup_duration_cycle_2",
   "backup_duration_cycle_3",
@@ -418,6 +419,15 @@
    "fieldtype": "Link",
    "label": "RFQ ID",
    "options": "Request for Quotation"
+  },
+  {
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
+   "fieldname": "linked_ext",
+   "fieldtype": "Link",
+   "label": "Linked EXT Serial",
+   "no_copy": 1,
+   "options": "Serial No",
+   "read_only": 1
   },
   {
    "fieldname": "rapid_bdt",

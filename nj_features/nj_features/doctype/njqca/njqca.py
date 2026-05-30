@@ -3981,33 +3981,64 @@ def update_or_append_result_parameter(njqca_name, result):
         njqca_doc.save(ignore_permissions=True)
 
 def build_status_reason(evaluation_results, status_name):
+    """
+    Reason field should contain only failed parameter names.
+    No actual value. No expected value.
+    No prefix like Performance_status or heavy_load_status.
+    Keep under 140 chars because NJQCA Result Parameters.value is Data(140).
+    """
+
     MAX_LEN = 135
 
     if not evaluation_results:
-        return f"{status_name}: No criteria checked"[:MAX_LEN]
+        return "No criteria checked"[:MAX_LEN]
 
     failed_rows = [
         row for row in evaluation_results
-        if row.get("status") == "Fail"
+        if str(row.get("status") or "").strip().lower() == "fail"
     ]
 
     if not failed_rows:
-        return f"{status_name}: All checked params passed"[:MAX_LEN]
+        return "All checked passed"[:MAX_LEN]
 
-    first = failed_rows[0]
+    failed_params = []
 
-    parameter = str(first.get("parameter") or "")
-    actual = str(first.get("njqca_value") or "")
-    expected = str(first.get("expected_range") or "")
-    message = str(first.get("message") or "")
+    for row in failed_rows:
+        parameter = str(row.get("parameter") or "").strip()
+        message = str(row.get("message") or "").strip()
 
-    if "not found in NJQCA Result Parameters" in message:
-        reason = f"{parameter}: NJQCA value missing, expected={expected}"
-    else:
-        reason = f"{parameter} FAIL: actual={actual}, expected={expected}"
+        if not parameter:
+            continue
 
-    if len(failed_rows) > 1:
-        reason += f" +{len(failed_rows) - 1} more"
+        # If parameter itself is missing in NJQCA Result Parameters,
+        # show only parameter name with (missing)
+        if "not found in NJQCA Result Parameters" in message:
+            parameter = f"{parameter}(missing)"
+
+        failed_params.append(parameter)
+
+    if not failed_params:
+        return "Failed reason unavailable"[:MAX_LEN]
+
+    shown_params = []
+    total = len(failed_params)
+
+    for idx, param in enumerate(failed_params):
+        remaining_after_this = total - (idx + 1)
+        suffix = f" +{remaining_after_this} more" if remaining_after_this > 0 else ""
+
+        test_reason = ", ".join(shown_params + [param]) + suffix
+
+        if len(test_reason) <= MAX_LEN:
+            shown_params.append(param)
+        else:
+            break
+
+    reason = ", ".join(shown_params)
+
+    remaining = total - len(shown_params)
+    if remaining > 0:
+        reason += f" +{remaining} more"
 
     return reason[:MAX_LEN]
 
@@ -4086,6 +4117,81 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "changes": results
     }
 
+def get_criteria_child_rows_from_name(criteria_name):
+    """
+    Load Criteria Child rows from Performance Criteria doctype.
+    criteria_name is Performance Criteria doc name like Designer / Coding / Gamer.
+    """
+
+    criteria_name = (criteria_name or "").strip()
+
+    if not criteria_name:
+        return [], ""
+
+    if not frappe.db.exists("Performance Criteria", criteria_name):
+        frappe.log_error(
+            f"Performance Criteria not found: {criteria_name}",
+            "NJQCA Performance Criteria Lookup"
+        )
+        return [], criteria_name
+
+    criteria_doc = frappe.get_doc("Performance Criteria", criteria_name)
+    return criteria_doc.get("criteria_child") or [], criteria_name
+
+
+def get_performance_heavyload_criteria_rows(doc, item_code, transformed_data, item_wizard_doc):
+    """
+    Criteria lookup priority:
+    1. Shopify Item List: item_code -> performance_criteria
+    2. Performance Config Criteria: processor + ram + ssd -> criteria
+    3. NJ Settings fallback: performance_heavyload_fallback_criteria-> Performance Criteria
+    """
+
+    item_code = (item_code or "").strip()
+
+    # 1. First check Shopify Item List by exact item_code
+    for row in item_wizard_doc.get("shopify_item_list") or []:
+        row_item_code = (row.get("item_code") or "").strip()
+        criteria_name = (row.get("performance_criteria") or "").strip()
+
+        if row_item_code == item_code and criteria_name:
+            criteria_rows, criteria_name = get_criteria_child_rows_from_name(criteria_name)
+
+            if criteria_rows:
+                return criteria_rows, "shopify_item_list", criteria_name
+
+    # 2. Fallback to Performance Config Criteria by processor + ram + ssd
+    for row in item_wizard_doc.get("performance_config_criteria") or []:
+        row_data = {
+            "processor": (row.get("processor") or "").strip().lower(),
+            "ram": (row.get("ram") or "").strip().lower(),
+            "ssd": (row.get("ssd") or "").strip().lower()
+        }
+
+        if transformed_data == row_data:
+            criteria_name = (row.get("criteria") or "").strip()
+            criteria_rows, criteria_name = get_criteria_child_rows_from_name(criteria_name)
+
+            if criteria_rows:
+                return criteria_rows, "performance_config_criteria", criteria_name
+
+    # 3. Final fallback from NJ Settings
+    fallback_criteria_name = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "doc_type": "NJQCA",
+            "parameter": "performance_heavyload_fallback_criteria"
+        },
+        "value"
+    )
+
+    criteria_rows, criteria_name = get_criteria_child_rows_from_name(fallback_criteria_name)
+
+    if criteria_rows:
+        return criteria_rows, "nj_settings_fallback", criteria_name
+
+    return [], "not_found", ""
+
 @frappe.whitelist()
 def update_performance_criteria(doc):
     import json
@@ -4105,140 +4211,91 @@ def update_performance_criteria(doc):
             "message": "Performance/HeavyLoad evaluation skipped because no actual test file is present"
         }
 
-    item_code = doc.get("manual_repack_item_code")  
+    item_code = (doc.get("manual_repack_item_code") or "").strip()
 
     if not item_code:
         frappe.msgprint(_("Item code is missing."), alert=True)
-        return
+        return {
+            "error": "Item code is missing."
+        }
 
-    get_item_config = '''
+    # Get item config from Manual Repack Item Code
+    get_item_config = """
         SELECT 
             LOWER(iva.attribute) AS attribute,
             LOWER(iva.attribute_value) AS value
         FROM `tabItem Variant Attribute` iva
         WHERE iva.parent = %s
-    '''
+    """
+
     item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
     transformed_data = transform_item_config(item_config)
 
+    # Get latest completed Item Wizard for model + item_template
     item_wizard_list = frappe.db.sql(
         """
             SELECT `name`
             FROM `tabItem Wizards`
             WHERE `model` = %s
-            AND `item_template` = %s
-            AND `docstatus` = 1
-            AND `part_list_status` = 'Completed'
+              AND `item_template` = %s
+              AND `docstatus` = 1
+              AND `part_list_status` = 'Completed'
             ORDER BY `modified` DESC
             LIMIT 1
         """,
-        (doc.get("model"), doc.get("item_template")), as_dict=True
+        (doc.get("model"), doc.get("item_template")),
+        as_dict=True
     )
-
-    disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
-    disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
-
-    # if not disk_type:
-    #     return
 
     if not item_wizard_list:
         frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
-        return 
+        return {
+            "error": "No submitted Item Wizards found."
+        }
 
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
-    if not item_wizard_doc.get("performance_config_criteria"):
-        criteria_doc_raw = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+    # New criteria lookup order:
+    # 1. Shopify Item List
+    # 2. Performance Config Criteria
+    # 3. NJ Settings fallback criteria
+    criteria_rows, criteria_source, criteria_name = get_performance_heavyload_criteria_rows(
+        doc=doc,
+        item_code=item_code,
+        transformed_data=transformed_data,
+        item_wizard_doc=item_wizard_doc
+    )
 
-        if not criteria_doc_raw:
-            return {"error": "NJ Settings not found for Performance Criteria."}
-
-        # Fix: decode only if it's a string
-        try:
-            if isinstance(criteria_doc_raw, str):
-                criteria_doc = json.loads(criteria_doc_raw)
-            else:
-                criteria_doc = criteria_doc_raw
-        except json.JSONDecodeError as e:
-            frappe.log_error().error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
-            return {"error": "Invalid JSON format in NJ Settings."}
-        if disk_type:
-           disk_criteria_list = criteria_doc.get(disk_type)
-        else:
-           disk_criteria_list = criteria_doc.get("default")
-
-        if not disk_criteria_list:
-            return
-
-        return process_performance_and_heavyload_status(
-            doc,
-            disk_criteria_list
-        )
-
-        frappe.logger().info("\nEvaluation Results:")
-        for result in evaluation_results:
-            frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-
-        update_njqca_doc(doc.get("name"), evaluation_results)
-
-        for entry in evaluation_results:
-            if entry.get("status") == "Fail":
-                return {
-                    "parameter": "performance_status",
-                    "value": "FAIL",
-                    "score": 41,
-                    "item_group": "Software Configuration",
-                    "part_config_id": 0,
-                }
-
+    if not criteria_rows:
         return {
-            "parameter": "performance_status",
-            "value": "PASS",
-            "score": 0,
-            "item_group": "Software Configuration",
-            "part_config_id": 0
+            "error": (
+                "No Performance Criteria found from Shopify Item List, "
+                "Performance Config Criteria, or NJ Settings fallback."
+            ),
+            "debug": {
+                "item_code": item_code,
+                "transformed_data": transformed_data,
+                "item_wizard": item_wizard_doc.name,
+                "criteria_source": criteria_source,
+                "criteria_name": criteria_name
+            }
         }
 
-    else:
-        for row in item_wizard_doc.get("performance_config_criteria"):
-            row_data = {
-                "processor": row.get("processor", "").lower(),
-                "ram": row.get("ram", "").lower(),
-                "ssd": row.get("ssd", "").lower()
-            }
+    # Existing calculation logic remains same:
+    # criteria_rows -> NJ Settings parameter list -> NJQCA values -> compare -> final status/reason
+    result = process_performance_and_heavyload_status(
+        doc,
+        criteria_rows
+    )
 
-            if transformed_data == row_data:
-                criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
+    # Debug info for bench console
+    result["criteria_source"] = criteria_source
+    result["criteria_name"] = criteria_name
+    result["item_wizard"] = item_wizard_doc.name
+    result["item_code"] = item_code
+    result["transformed_data"] = transformed_data
 
-                return process_performance_and_heavyload_status(
-                    doc,
-                    criteria_doc.get("criteria_child")
-                )
-
-                # frappe.logger().info("\nEvaluation Results:")
-                # for result in evaluation_results:
-                #     frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-
-                update_njqca_doc(doc.get("name"), evaluation_results)
-
-                for entry in evaluation_results:
-                    if entry.get("status") == "Fail":
-                        return {
-                            "parameter": "performance_status",
-                            "value": "FAIL",
-                            "score": 41,
-                            "item_group": "Software Configuration",
-                            "part_config_id": 0,
-                        }
-
-                return {
-                    "parameter": "performance_status",
-                    "value": "PASS",
-                    "score": 0,
-                    "item_group": "Software Configuration",
-                    "part_config_id": 0
-                }
-
+    return result
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""
 

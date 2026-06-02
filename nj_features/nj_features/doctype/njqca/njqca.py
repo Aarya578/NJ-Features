@@ -2410,6 +2410,8 @@ def get_item_code_for_each_part(doc):
             for row in doc.get('njqca_item_component', []):
                 skip_ram, skip_memory = False, False
                 attribute_value, attribute_object = {}, {}
+
+            
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -2424,6 +2426,10 @@ def get_item_code_for_each_part(doc):
                                 last_variant_values[item_group] = last_variant_values.get(item_group, {})
                                 last_variant_values[item_group][variant] = row.get(variant)
                             attribute_value = last_variant_values.get(item_group, {})
+
+                            variant_7 = row.get('variant_7')
+
+                        
                             
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
@@ -2874,7 +2880,8 @@ def consolidate_storage(data):
 
     return result_data
                     
-def normalize_gen(cpu_value, model):
+def normalize_gen(cpu_value, model, variant_7=None):
+    
     match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
@@ -2884,7 +2891,14 @@ def normalize_gen(cpu_value, model):
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)  # Extract the generation number
+            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)
+            
+            # ---- NEW: compare with variant_7 and override if mismatch ----
+            if variant_7:
+                variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
+                if variant_7_digits and variant_7_digits != gen_number:
+                    gen_number = variant_7_digits
+            # --------------------------------------------------------------
             
             if gen_number == '1':
                 gen_number += 'st'
@@ -3999,7 +4013,6 @@ def update_or_append_result_parameter(njqca_name, result):
 def build_status_reason(evaluation_results, status_name):
     """
     Reason field should contain only failed parameter names.
-    No actual value. No expected value.
     No prefix like Performance_status or heavy_load_status.
     Keep under 140 chars because NJQCA Result Parameters.value is Data(140).
     """
@@ -4026,8 +4039,6 @@ def build_status_reason(evaluation_results, status_name):
         if not parameter:
             continue
 
-        # If parameter itself is missing in NJQCA Result Parameters,
-        # show only parameter name with (missing)
         if "not found in NJQCA Result Parameters" in message:
             parameter = f"{parameter}(missing)"
 
@@ -4037,22 +4048,20 @@ def build_status_reason(evaluation_results, status_name):
         return "Failed reason unavailable"[:MAX_LEN]
 
     shown_params = []
-    total = len(failed_params)
+    remaining = len(failed_params)
 
-    for idx, param in enumerate(failed_params):
-        remaining_after_this = total - (idx + 1)
-        suffix = f" +{remaining_after_this} more" if remaining_after_this > 0 else ""
+    for param in failed_params:
+        suffix = f" +{remaining - 1} more" if remaining > 1 else ""
+        test_value = ", ".join(shown_params + [param]) + suffix
 
-        test_reason = ", ".join(shown_params + [param]) + suffix
-
-        if len(test_reason) <= MAX_LEN:
+        if len(test_value) <= MAX_LEN:
             shown_params.append(param)
+            remaining -= 1
         else:
             break
 
     reason = ", ".join(shown_params)
 
-    remaining = total - len(shown_params)
     if remaining > 0:
         reason += f" +{remaining} more"
 

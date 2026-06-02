@@ -823,7 +823,34 @@ class NJQCA(Document):
                 frappe.msgprint("Error during submission: " + traceback.format_exc())
                 raise
 
+        # EXT-NJ Linkage: remove bios from EXT serial after NJQCA submit
+        self.remove_bios_from_linked_ext()
+
+    def remove_bios_from_linked_ext(self):
+        """
+        EXT-NJ Linkage: called at the end of on_submit.
+        If this NJQCA has a linked_ext serial, clear its bios_serial_no
+        so that future BIOS scans no longer match it.
+        """
+        if not self.linked_ext:
+            return
+        try:
+            frappe.db.set_value(
+                "Serial No",
+                self.linked_ext,
+                "bios_serial_no",
+                None,
+                update_modified=False,
+            )
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"EXT Linkage: failed to clear bios from {self.linked_ext}"
+            )
+
     def check_for_repack_access(self):
+
         user = frappe.session.user
         role_profile = frappe.db.get_value('Employee', {'user_id': user, 'status': 'Active'}, 'role_profile')
         
@@ -966,7 +993,8 @@ class NJQCA(Document):
 
         serial_no_doc.set("njqca_reference_name", self.name)
 
-        serial_no_doc.save()
+        serial_no_doc.flags.ignore_permissions = True
+        serial_no_doc.save(ignore_permissions=True)
 
     def battery_readings(self):
         if self.item_group != 'BATTERY':
@@ -1682,7 +1710,6 @@ def model_change_for_serial_no(newmodel, serial_no):
                     item_wizard_doc,
                     newmodel
                 )
-
                 serial_no_doc.save(ignore_permissions=True)
                 return { "status": "success" }
         else:
@@ -1767,6 +1794,7 @@ def model_change_for_serial_no(newmodel, serial_no):
         else:
             frappe.msgprint(f'Model not found in Serial No {serial_no}')
             return { "status": "failed" }
+
 
 
 def check_atrribute_data_is_matching_or_not(old_item_code,item_group,new_item_wizard):
@@ -2431,6 +2459,7 @@ def get_item_code_for_each_part(doc):
                             
                             storage_text = " ".join([
                                 str(row.get("variant_1") or ""),
+                                str(row.get("variant_2") or ""),
                                 str(row.get("variant_3") or ""),
                                 str(row.get("variant_5") or ""),
                                 str(row.get("variant_6") or ""),
@@ -2439,12 +2468,22 @@ def get_item_code_for_each_part(doc):
 
                             if "ssd" in storage_text or "nvme" in storage_text:
                                 variant_type = " SSD"
+                            elif "hdd" in storage_text or "hard disk" in storage_text or "harddisk" in storage_text:
+                                variant_type = " HDD"
 
                             if variant == 'variant_10':
                                 final_value = row.get(variant)
                                 numeric_value = 0
+
                                 if final_value and isinstance(final_value, str):
-                                    numeric_value = int(final_value.replace(' GB', ''))
+                                    numeric_value = int(final_value.replace(' GB', '').strip())
+
+                                # fallback when disk type is not detected from variant fields
+                                if not variant_type:
+                                    if numeric_value in [128, 256, 512]:
+                                        variant_type = " SSD"
+                                    elif numeric_value in [200, 320, 500]:
+                                        variant_type = " HDD"
 
                                 if numeric_value > 80:
                                     if numeric_value >= 1000:
@@ -2453,7 +2492,11 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         formatted_value = f"{numeric_value} GB"
 
-                                    if numeric_value == 300:
+                                    # FIX:
+                                    # For HDD, do not add "HDD" suffix.
+                                    # This allows mixed storage like 2 TB + 256 GB SSD
+                                    # to consolidate as 2 TB-256 GB SSD.
+                                    if numeric_value == 300 or str(variant_type).strip().upper() == "HDD":
                                         final_value = formatted_value
                                     else:
                                         final_value = formatted_value + variant_type
@@ -2463,9 +2506,8 @@ def get_item_code_for_each_part(doc):
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
 
-                                if row.get(variant) and int(row.get(variant).replace(' GB', '')) > 80:
+                                if row.get(variant) and int(row.get(variant).replace(' GB', '').strip()) > 80:
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
-                                    
                                 else:
                                     skip_memory = True
                                     continue
@@ -2601,12 +2643,51 @@ def process_variant(variant, row, mapping, attribute_object):
     return False
 
 def set_part_data(part_item_group, attribute_object, row, part_data, doc):
-    item_template = frappe.db.get_value('Item',
-        {'item_group': part_item_group, 'has_variants': 1, 'disabled': 0}, 'name' )
+    print(f"[part_item_group]: {part_item_group}\n[attribute_object]: {attribute_object}\n[row]: {row}\n[part_data before]: {part_data}\n[doc]: {doc}")
     
+    item_template = None
+    if doc.get('item_group') == "Desktops" and part_item_group in ("Laptop RAM", "LAPTOP STORAGE"):
+        component_types = []
+        if part_item_group == "Laptop RAM":
+            component_types = ["Laptop RAM", "Desktop RAM"]
+        elif part_item_group == "LAPTOP STORAGE":
+            component_types = ["LAPTOP STORAGE", "DESKTOP STORAGE"]
+            
+        if component_types:
+            templates = frappe.db.sql("""
+                select DISTINCT c.reference_template 
+                from `tabSerial No` sn 
+                inner join `tabItem` i on sn.item_code = i.name
+                inner join `tabItem Wizards` iw on i.variant_of = iw.item_template
+                inner join `tabComponent` c on iw.name = c.parent
+                where sn.name = %s and (c.component_type = %s or c.component_type = %s) 
+            """, (doc.get('serial_no'), component_types[0], component_types[1]), as_dict=True)
+            
+            if templates:
+                if len(templates) > 1:
+                    item_template = [t.reference_template for t in templates if t.reference_template]
+                elif len(templates) == 1:
+                    item_template = templates[0].reference_template
+
+    if not item_template:
+        item_template = frappe.db.get_value('Item',
+            {'item_group': part_item_group, 'has_variants': 1, 'disabled': 0}, 'name' )
+    
+    Grade = doc.get('grade')
     attribute_object['Grade'] = get_attribute_from_erp(Grade, "Grade")
 
     if len(attribute_object) > 1:
+        if isinstance(item_template, list):
+            part_data.append({
+                'name': row.get('name'),
+                'attr_data': attribute_object,
+                'part_item_code': "",
+                'item_group': part_item_group,
+                'item_template': item_template,
+                'response': 'error'
+            })
+            return part_data
+            
         part_item_code = get_variant_from_value(item_template, [attribute_object])
         if part_item_code and 'error' not in part_item_code:
             part_item_code_from_db = frappe.db.get_value("Item",
@@ -2631,11 +2712,6 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
                     'response': 'error'
                 })
         else:
-            # part_item_code = frappe.db.get_value('Serial No Component',
-            #                     {'parent': doc.get('serial_no'), 'item_group' : part_item_group},
-            #                     ['item'])
-            # item_template = frappe.db.get_value('Item', 
-            #                     {'item_code': part_item_code, 'has_variants': 0, 'disabled': 0}, ['variant_of'])
             part_data.append({
                 'name': row.get('name'),
                 'part_item_code': "",
@@ -3237,7 +3313,7 @@ def get_serial_no_attribute_data(serial_no, item_group, item_template):
             return adap_dis_item_code
         
         get_item_wizard = get_latest_item_wizard(item_template)
-        if get_item_wizard:
+        if get_item_wizard  :
             comp_item_template = frappe.db.get_value('Component', {'parent': get_item_wizard, 'component_type': item_group}, 'reference_template', as_dict=True)
         
         if comp_item_template:
@@ -4050,6 +4126,81 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "changes": results
     }
 
+def get_criteria_child_rows_from_name(criteria_name):
+    """
+    Load Criteria Child rows from Performance Criteria doctype.
+    criteria_name is Performance Criteria doc name like Designer / Coding / Gamer.
+    """
+
+    criteria_name = (criteria_name or "").strip()
+
+    if not criteria_name:
+        return [], ""
+
+    if not frappe.db.exists("Performance Criteria", criteria_name):
+        frappe.log_error(
+            f"Performance Criteria not found: {criteria_name}",
+            "NJQCA Performance Criteria Lookup"
+        )
+        return [], criteria_name
+
+    criteria_doc = frappe.get_doc("Performance Criteria", criteria_name)
+    return criteria_doc.get("criteria_child") or [], criteria_name
+
+
+def get_performance_heavyload_criteria_rows(doc, item_code, transformed_data, item_wizard_doc):
+    """
+    Criteria lookup priority:
+    1. Shopify Item List: item_code -> performance_criteria
+    2. Performance Config Criteria: processor + ram + ssd -> criteria
+    3. NJ Settings fallback: performance_heavyload_fallback_criteria-> Performance Criteria
+    """
+
+    item_code = (item_code or "").strip()
+
+    # 1. First check Shopify Item List by exact item_code
+    for row in item_wizard_doc.get("shopify_item_list") or []:
+        row_item_code = (row.get("item_code") or "").strip()
+        criteria_name = (row.get("performance_criteria") or "").strip()
+
+        if row_item_code == item_code and criteria_name:
+            criteria_rows, criteria_name = get_criteria_child_rows_from_name(criteria_name)
+
+            if criteria_rows:
+                return criteria_rows, "shopify_item_list", criteria_name
+
+    # 2. Fallback to Performance Config Criteria by processor + ram + ssd
+    for row in item_wizard_doc.get("performance_config_criteria") or []:
+        row_data = {
+            "processor": (row.get("processor") or "").strip().lower(),
+            "ram": (row.get("ram") or "").strip().lower(),
+            "ssd": (row.get("ssd") or "").strip().lower()
+        }
+
+        if transformed_data == row_data:
+            criteria_name = (row.get("criteria") or "").strip()
+            criteria_rows, criteria_name = get_criteria_child_rows_from_name(criteria_name)
+
+            if criteria_rows:
+                return criteria_rows, "performance_config_criteria", criteria_name
+
+    # 3. Final fallback from NJ Settings
+    fallback_criteria_name = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "doc_type": "NJQCA",
+            "parameter": "performance_heavyload_fallback_criteria"
+        },
+        "value"
+    )
+
+    criteria_rows, criteria_name = get_criteria_child_rows_from_name(fallback_criteria_name)
+
+    if criteria_rows:
+        return criteria_rows, "nj_settings_fallback", criteria_name
+
+    return [], "not_found", ""
+
 @frappe.whitelist()
 def update_performance_criteria(doc):
     import json
@@ -4069,140 +4220,91 @@ def update_performance_criteria(doc):
             "message": "Performance/HeavyLoad evaluation skipped because no actual test file is present"
         }
 
-    item_code = doc.get("manual_repack_item_code")  
+    item_code = (doc.get("manual_repack_item_code") or "").strip()
 
     if not item_code:
         frappe.msgprint(_("Item code is missing."), alert=True)
-        return
+        return {
+            "error": "Item code is missing."
+        }
 
-    get_item_config = '''
+    # Get item config from Manual Repack Item Code
+    get_item_config = """
         SELECT 
             LOWER(iva.attribute) AS attribute,
             LOWER(iva.attribute_value) AS value
         FROM `tabItem Variant Attribute` iva
         WHERE iva.parent = %s
-    '''
+    """
+
     item_config = frappe.db.sql(get_item_config, (item_code,), as_dict=True)
     transformed_data = transform_item_config(item_config)
 
+    # Get latest completed Item Wizard for model + item_template
     item_wizard_list = frappe.db.sql(
         """
             SELECT `name`
             FROM `tabItem Wizards`
             WHERE `model` = %s
-            AND `item_template` = %s
-            AND `docstatus` = 1
-            AND `part_list_status` = 'Completed'
+              AND `item_template` = %s
+              AND `docstatus` = 1
+              AND `part_list_status` = 'Completed'
             ORDER BY `modified` DESC
             LIMIT 1
         """,
-        (doc.get("model"), doc.get("item_template")), as_dict=True
+        (doc.get("model"), doc.get("item_template")),
+        as_dict=True
     )
-
-    disk_type = [row for row in doc.get("njqca_item_component") if row.get("item_group", "").lower() == "laptop storage"]
-    disk_type = disk_type[0].get("variant_5").upper() if disk_type else None
-
-    # if not disk_type:
-    #     return
 
     if not item_wizard_list:
         frappe.msgprint(_("No submitted Item Wizards found."), alert=True)
-        return 
+        return {
+            "error": "No submitted Item Wizards found."
+        }
 
     item_wizard_doc = frappe.get_doc("Item Wizards", item_wizard_list[0].name)
 
-    if not item_wizard_doc.get("performance_config_criteria"):
-        criteria_doc_raw = frappe.db.get_value("NJ Settings", {'parameter': 'performance_criteria'}, 'value')
+    # New criteria lookup order:
+    # 1. Shopify Item List
+    # 2. Performance Config Criteria
+    # 3. NJ Settings fallback criteria
+    criteria_rows, criteria_source, criteria_name = get_performance_heavyload_criteria_rows(
+        doc=doc,
+        item_code=item_code,
+        transformed_data=transformed_data,
+        item_wizard_doc=item_wizard_doc
+    )
 
-        if not criteria_doc_raw:
-            return {"error": "NJ Settings not found for Performance Criteria."}
-
-        # Fix: decode only if it's a string
-        try:
-            if isinstance(criteria_doc_raw, str):
-                criteria_doc = json.loads(criteria_doc_raw)
-            else:
-                criteria_doc = criteria_doc_raw
-        except json.JSONDecodeError as e:
-            frappe.log_error().error(f"JSON decode failed: {e}", "Performance Criteria Decode Error")
-            return {"error": "Invalid JSON format in NJ Settings."}
-        if disk_type:
-           disk_criteria_list = criteria_doc.get(disk_type)
-        else:
-           disk_criteria_list = criteria_doc.get("default")
-
-        if not disk_criteria_list:
-            return
-
-        return process_performance_and_heavyload_status(
-            doc,
-            disk_criteria_list
-        )
-
-        frappe.logger().info("\nEvaluation Results:")
-        for result in evaluation_results:
-            frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-
-        update_njqca_doc(doc.get("name"), evaluation_results)
-
-        for entry in evaluation_results:
-            if entry.get("status") == "Fail":
-                return {
-                    "parameter": "performance_status",
-                    "value": "FAIL",
-                    "score": 41,
-                    "item_group": "Software Configuration",
-                    "part_config_id": 0,
-                }
-
+    if not criteria_rows:
         return {
-            "parameter": "performance_status",
-            "value": "PASS",
-            "score": 0,
-            "item_group": "Software Configuration",
-            "part_config_id": 0
+            "error": (
+                "No Performance Criteria found from Shopify Item List, "
+                "Performance Config Criteria, or NJ Settings fallback."
+            ),
+            "debug": {
+                "item_code": item_code,
+                "transformed_data": transformed_data,
+                "item_wizard": item_wizard_doc.name,
+                "criteria_source": criteria_source,
+                "criteria_name": criteria_name
+            }
         }
 
-    else:
-        for row in item_wizard_doc.get("performance_config_criteria"):
-            row_data = {
-                "processor": row.get("processor", "").lower(),
-                "ram": row.get("ram", "").lower(),
-                "ssd": row.get("ssd", "").lower()
-            }
+    # Existing calculation logic remains same:
+    # criteria_rows -> NJ Settings parameter list -> NJQCA values -> compare -> final status/reason
+    result = process_performance_and_heavyload_status(
+        doc,
+        criteria_rows
+    )
 
-            if transformed_data == row_data:
-                criteria_doc = frappe.get_doc("Performance Criteria", {"name": row.get("criteria")})
+    # Debug info for bench console
+    result["criteria_source"] = criteria_source
+    result["criteria_name"] = criteria_name
+    result["item_wizard"] = item_wizard_doc.name
+    result["item_code"] = item_code
+    result["transformed_data"] = transformed_data
 
-                return process_performance_and_heavyload_status(
-                    doc,
-                    criteria_doc.get("criteria_child")
-                )
-
-                # frappe.logger().info("\nEvaluation Results:")
-                # for result in evaluation_results:
-                #     frappe.logger().info(f"{result['parameter']}: {result['status']} - {result['message']}")
-
-                update_njqca_doc(doc.get("name"), evaluation_results)
-
-                for entry in evaluation_results:
-                    if entry.get("status") == "Fail":
-                        return {
-                            "parameter": "performance_status",
-                            "value": "FAIL",
-                            "score": 41,
-                            "item_group": "Software Configuration",
-                            "part_config_id": 0,
-                        }
-
-                return {
-                    "parameter": "performance_status",
-                    "value": "PASS",
-                    "score": 0,
-                    "item_group": "Software Configuration",
-                    "part_config_id": 0
-                }
-
+    return result
 def transform_item_config(item_config):
     """Transforms item attribute data into a structured dictionary."""
 
@@ -6773,3 +6875,102 @@ def get_item_variant_attributes(item_code):
         fields=["attribute", "attribute_value"],
         ignore_permissions=True,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXT-NJ Serial Linkage: BIOS-based bridge functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def check_ext_serial_linkage(bios_serial_no, nj_serial_no):
+    """
+    Read-only check: does any EXT serial (rfq_id is set) carry this BIOS?
+    Returns a dict consumed by JS to decide whether to show the confirm dialog.
+
+    Possible outcomes:
+      { found: False }                          → no EXT serial has this BIOS
+      { found: True, already_linked: True, ... } → already linked to each other (idempotent)
+      { found: True, already_linked: False, ext_serial: "EXT-XXX" } → prompt user
+    Throws frappe error for conflict situations (Cases A and B).
+    """
+    if not bios_serial_no or not nj_serial_no:
+        return {"found": False}
+
+    # Look for an EXT serial with this BIOS (rfq_id IS NOT NULL means external)
+    ext_serial = frappe.db.get_value(
+        "Serial No",
+        {"bios_serial_no": bios_serial_no, "rfq_id": ["is", "set"]},
+        ["name", "linked_ext"],
+        as_dict=True,
+    )
+
+    if not ext_serial:
+        return {"found": False}
+
+    # CASE A: EXT already linked to a DIFFERENT NJ serial
+    if ext_serial.linked_ext and ext_serial.linked_ext != nj_serial_no:
+        frappe.throw(
+            f"EXT serial <b>{ext_serial.name}</b> is already linked to NJ serial "
+            f"<b>{ext_serial.linked_ext}</b>. Cannot link again."
+        )
+
+    # CASE B: NJ serial already linked to a different EXT serial
+    nj_linked_ext = frappe.db.get_value("Serial No", nj_serial_no, "linked_ext")
+    if nj_linked_ext and nj_linked_ext != ext_serial.name:
+        frappe.throw(
+            f"NJ Serial <b>{nj_serial_no}</b> is already linked to a different EXT serial "
+            f"<b>{nj_linked_ext}</b>. Cannot link again."
+        )
+
+    # CASE D: Already linked to each other (idempotent re-load)
+    if ext_serial.linked_ext == nj_serial_no and nj_linked_ext == ext_serial.name:
+        return {"found": True, "already_linked": True, "ext_serial": ext_serial.name}
+
+    # CASE C: EXT found and not yet linked — prompt the user
+    return {"found": True, "already_linked": False, "ext_serial": ext_serial.name}
+
+
+@frappe.whitelist()
+def link_ext_to_nj_serial(ext_serial_no, nj_serial_no, njqca_name):
+    """
+    Called when user confirms YES in the dialog.
+    - Copies serial_no_component rows from EXT serial → NJ serial (clears NJ first)
+    - Sets linked_ext on both Serial No documents
+    - Sets linked_ext on the NJQCA document for reference
+    Does NOT remove bios_serial_no from EXT (that happens on NJQCA submit).
+    """
+    ext_doc = frappe.get_doc("Serial No", ext_serial_no)
+    nj_doc  = frappe.get_doc("Serial No", nj_serial_no, for_update=True)
+
+    # Clear existing serial_no_component on NJ serial
+    nj_doc.set("serial_no_component", [])
+
+    # Copy all component rows from EXT serial to NJ serial
+    for row in ext_doc.serial_no_component:
+        nj_doc.append("serial_no_component", {
+            "item_group":           row.item_group,
+            "item":                 row.item,
+            "grade":                row.grade,
+            "is_available":         row.is_available,
+            "quantity":             row.quantity,
+            "component_serial_no":  row.component_serial_no,
+            "item_group_idx":       row.item_group_idx,
+            "reference_doctype":    row.reference_doctype,
+            "reference_doctype_no": row.reference_doctype_no,
+        })
+
+    # Link NJ serial → EXT serial
+    nj_doc.linked_ext = ext_serial_no
+    nj_doc.save(ignore_permissions=True)
+
+    # Link EXT serial → NJ serial
+    frappe.db.set_value(
+        "Serial No", ext_serial_no, "linked_ext", nj_serial_no, update_modified=False
+    )
+
+    # Set linked_ext on NJQCA doc for reference
+    frappe.db.set_value(
+        "NJQCA", njqca_name, "linked_ext", ext_serial_no, update_modified=False
+    )
+
+    return {"success": True}

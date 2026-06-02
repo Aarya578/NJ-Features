@@ -72,9 +72,9 @@ doc_events = {
     #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
     # },
     "Purchase Receipt": {
-        # "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
-        # "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
-        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
+        "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
+        "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
+        # "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
     },
     "Purchase Order": {
         "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",

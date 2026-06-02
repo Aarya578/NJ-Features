@@ -745,6 +745,22 @@ class NJQCA(Document):
         update_storage_type(self)
         apply_reliability_test_changes_to_doc(self)
         set_fail_for_empty_reliability_params(self)
+        
+        # EXT-NJ Linkage: Set linked_ext to self.serial_no for external QC docs
+        if self.rfq_id and self.serial_no:
+            self.linked_ext = self.serial_no
+
+    def on_update(self):
+        # EXT-NJ Linkage: Update reference_doctype_no on the created external Serial No
+        if self.rfq_id and self.serial_no:
+            if frappe.db.exists("Serial No", self.serial_no):
+                frappe.db.set_value(
+                    "Serial No",
+                    self.serial_no,
+                    "reference_doctype_no",
+                    self.name,
+                    update_modified=False
+                )
 
     def on_submit(self):
         try:
@@ -6888,12 +6904,13 @@ def check_ext_serial_linkage(bios_serial_no, nj_serial_no):
         return {"found": False}
 
     # Look for an EXT serial with this BIOS (rfq_id IS NOT NULL means external)
-    ext_serial = frappe.db.get_value(
+    ext_serials = frappe.get_all(
         "Serial No",
-        {"bios_serial_no": bios_serial_no, "rfq_id": ["is", "set"]},
-        ["name", "linked_ext"],
-        as_dict=True,
+        filters={"bios_serial_no": bios_serial_no, "rfq_id": ["is", "set"]},
+        fields=["name", "linked_ext"],
+        limit=1,
     )
+    ext_serial = ext_serials[0] if ext_serials else None
 
     if not ext_serial:
         return {"found": False}

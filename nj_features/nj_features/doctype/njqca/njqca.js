@@ -327,13 +327,19 @@ frappe.ui.form.on("NJQCA", {
         callback: function (r) {
           if (r.message) {
             frm.set_value("serial_no", r.message);
+            frm.set_value("linked_ext", r.message);
             frm.refresh_field("serial_no");
+            frm.refresh_field("linked_ext");
           }
         },
       });
     }
 
     if (frm.doc.rfq_id && frm.doc.serial_no) {
+      if (frm.doc.linked_ext !== frm.doc.serial_no) {
+        frm.set_value("linked_ext", frm.doc.serial_no);
+        frm.refresh_field("linked_ext");
+      }
       frappe.call({
         method:
           "nj_features.nj_features.doctype.njqca.njqca.create_serial_no_based_on_rfq",
@@ -717,51 +723,51 @@ frappe.ui.form.on("NJQCA", {
       });
 
       // Run Performance / HeavyLoad final status only after parsed rows are added
-      if (
-        selectedModel &&
-        selectedItemGroup == "Laptops" &&
-        !frm.doc.rfq_id &&
-        (isReliabilityTest || perfOrHeavyLoadFilePresent)
-      ) {
-        await frappe.call({
-          method:
-            "nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria",
-          args: { doc: frm.doc },
+      // if (
+      //   selectedModel &&
+      //   selectedItemGroup == "Laptops" &&
+      //   !frm.doc.rfq_id &&
+      //   (isReliabilityTest || perfOrHeavyLoadFilePresent)
+      // ) {
+      //   await frappe.call({
+      //     method:
+      //       "nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria",
+      //     args: { doc: frm.doc },
 
-          callback: function (r) {
-            if (!r || !r.message) {
-              return;
-            }
+      //     callback: function (r) {
+      //       if (!r || !r.message) {
+      //         return;
+      //       }
 
-            console.log("update_performance_criteria response:", r.message);
+      //       console.log("update_performance_criteria response:", r.message);
 
-            if (r.message.error) {
-              frappe.msgprint({
-                title: __("Error"),
-                message: r.message.error,
-                indicator: "red",
-              });
-              frappe.validated = false;
-              return;
-            }
+      //       if (r.message.error) {
+      //         frappe.msgprint({
+      //           title: __("Error"),
+      //           message: r.message.error,
+      //           indicator: "red",
+      //         });
+      //         frappe.validated = false;
+      //         return;
+      //       }
 
-            if (Array.isArray(r.message.changes)) {
-              applyChangesNoDuplicates(frm, r.message.changes);
-              frm.refresh_field("njqca_result_parameters");
-              return;
-            }
+      //       if (Array.isArray(r.message.changes)) {
+      //         applyChangesNoDuplicates(frm, r.message.changes);
+      //         frm.refresh_field("njqca_result_parameters");
+      //         return;
+      //       }
 
-            if (r.message.parameter) {
-              applyChangesNoDuplicates(frm, [r.message]);
-              frm.refresh_field("njqca_result_parameters");
-            }
-          },
+      //       if (r.message.parameter) {
+      //         applyChangesNoDuplicates(frm, [r.message]);
+      //         frm.refresh_field("njqca_result_parameters");
+      //       }
+      //     },
 
-          error: function (err) {
-            console.error("Error while updating performance criteria:", err);
-          },
-        });
-      }
+      //     error: function (err) {
+      //       console.error("Error while updating performance criteria:", err);
+      //     },
+      //   });
+      // }
     }
 
     // Check automated repack item code

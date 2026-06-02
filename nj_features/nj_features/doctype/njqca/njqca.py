@@ -6909,13 +6909,15 @@ def check_ext_serial_linkage(bios_serial_no, nj_serial_no):
       { found: True, already_linked: False, ext_serial: "EXT-XXX" } → prompt user
     Throws frappe error for conflict situations (Cases A and B).
     """
+    print("bios_serial_no >>>>>>", bios_serial_no)
+    print("nj_serial_no >>>>>>", nj_serial_no)
     if not bios_serial_no or not nj_serial_no:
         return {"found": False}
 
     # Look for an EXT serial with this BIOS (rfq_id IS NOT NULL means external)
     ext_serials = frappe.get_all(
         "Serial No",
-        filters={"bios_serial_no": bios_serial_no, "rfq_id": ["is", "set"]},
+        filters={"bios_serial_no": bios_serial_no},
         fields=["name", "linked_ext"],
         limit=1,
     )

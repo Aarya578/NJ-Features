@@ -11,6 +11,9 @@ from nj_lib.utils.common_utils import is_serialized
 
 @frappe.whitelist()        
 def generate_and_save_qrcode(data, format='png'):
+    
+    print("[Generating qrcode for serial no]", data)
+
     try:
         encoded_data = data
         template_item_code = frappe.db.exists('Item', encoded_data)
@@ -280,4 +283,3 @@ def get_attribute_prefix(item_code, item_group):
             result_parts.append(attribute_value.split()[0])
 
     return "-".join(result_parts) if result_parts else ""
-

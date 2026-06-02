@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe import _
 from datetime import datetime, date
+from frappe.utils import now_datetime
 from nj_lib.utils.common_utils import get_active_emp, get_active_user
 from nj_features.nj_features.doctype.department_change_log.department_change_log import update_department_change_logs
 
@@ -1082,3 +1083,11 @@ def check_pending_lms_courses(employee, role_profile, department):
 #     except Exception as e:
 #         print("MAIN ERROR:", str(e))
 #         frappe.throw(f"Error while updating skill experience table: {str(e)}")
+
+
+
+def updating_time_stamp(doc, method=None):
+    old_doc = doc.get_doc_before_save()
+    if doc.allow_qc and (not old_doc or not old_doc.allow_qc):
+        doc.qc_time_stamp = now_datetime()
+      

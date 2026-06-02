@@ -253,9 +253,10 @@ frappe.ui.form.on('Stock Movement', {
                             indicator: 'red'
                         });
 
-                        if (r.message.show_production_plan_prompt) {
-                            showProductionPlanningConfirmDialog();
-                        }
+                        // Disable the second Production Planning popup after the reconfiguration error.
+                        // if (r.message.show_production_plan_prompt) {
+                        //     showProductionPlanningConfirmDialog();
+                        // }
 
                         frappe.validated = false; 
                         return; 

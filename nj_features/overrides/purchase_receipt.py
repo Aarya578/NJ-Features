@@ -3,6 +3,7 @@
 
 import json
 import frappe
+import time
 from frappe.utils import nowdate, add_days
 from datetime import timedelta
 from frappe.utils import getdate, nowdate, flt
@@ -12,6 +13,13 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseRece
 from frappe import _
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 
+logger = frappe.logger("prtimelog", allow_site=True, file_count=1)
+
+
+def log_pr_time(label, docname, start):
+    logger.debug(f"[PR: {docname}] {label} took {time.perf_counter() - start:.4f} seconds")
+
+
 class CustomPurchaseReceipt(PurchaseReceipt):
 
     # ─────────────────────────────────────────────────────────────────────
@@ -19,7 +27,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
     # ─────────────────────────────────────────────────────────────────────
     def validate(self):
         super().validate()
-        self._restore_manual_conversion_factors()
+        # self._restore_manual_conversion_factors()
 
     def _restore_manual_conversion_factors(self):
         for item in self.items:
@@ -33,10 +41,27 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 item.stock_qty = flt(item.qty) * cf
     # ─────────────────────────────────────────────────────────────────────
 
+    def before_save(self):
+        generate_batch_no(self)
+
     def on_submit(self):
-        super(CustomPurchaseReceipt, self).on_submit()
-        self.set_registry_no_on_submit()
-        self.auto_create_debit_note()
+        total_start = time.perf_counter()
+        try:
+            start = time.perf_counter()
+            super(CustomPurchaseReceipt, self).on_submit()
+            log_pr_time("super().on_submit()", self.name, start)
+
+            start = time.perf_counter()
+            self.set_registry_no_on_submit()
+            log_pr_time("set_registry_no_on_submit", self.name, start)
+
+            start = time.perf_counter()
+            self.auto_create_debit_note()
+            log_pr_time("auto_create_debit_note", self.name, start)
+
+            get_batch(self)
+        finally:
+            log_pr_time("CustomPurchaseReceipt.on_submit total", self.name, total_start)
     
     def on_cancel(self):
         super(CustomPurchaseReceipt, self).on_cancel()
@@ -256,47 +281,55 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             raise
 
 def generate_batch_no(doc, method=None):
-    for item in doc.items:
-        set_registry_no(item)
+    start = time.perf_counter()
+    try:
+        for item in doc.items:
+            set_registry_no(item)
 
-        has_batch_no = frappe.db.get_value('Item', item.item_code, 'has_batch_no')
+            has_batch_no = frappe.db.get_value('Item', item.item_code, 'has_batch_no')
 
-        if has_batch_no and item.idx:
-            batch_id = f"{item.purchase_order}-{item.idx}"
-            item.batch_no = batch_id
+            if has_batch_no and item.idx:
+                batch_id = f"{item.purchase_order}-{item.idx}"
+                item.batch_no = batch_id
 
-            if frappe.db.exists('Batch', batch_id):
-                batch_doc = frappe.get_doc('Batch', batch_id)
-            else:
-                batch_doc = frappe.new_doc('Batch')
-                batch_doc.batch_id = batch_id
-                batch_doc.item = item.item_code
-                batch_doc.save()
+                if frappe.db.exists('Batch', batch_id):
+                    batch_doc = frappe.get_doc('Batch', batch_id)
+                else:
+                    batch_doc = frappe.new_doc('Batch')
+                    batch_doc.batch_id = batch_id
+                    batch_doc.item = item.item_code
+                    batch_doc.save()
+    finally:
+        log_pr_time("generate_batch_no", doc.name, start)
                                 
 def get_batch(doc, method=None):
-    for item in doc.items:
-        qr_code_mappings = []
+    start = time.perf_counter()
+    try:
+        for item in doc.items:
+            qr_code_mappings = []
 
-        if item.item_code and item.qty and is_serialized(item.item_code) == 1:
-            serial_nos = item.serial_no.split('\n') if item.serial_no else []
-            for serial_no in serial_nos:
-                if serial_no.strip():
-                    update_serial_no(serial_no.strip(), doc, item)
+            if item.item_code and item.qty and is_serialized(item.item_code) == 1:
+                serial_nos = item.serial_no.split('\n') if item.serial_no else []
+                for serial_no in serial_nos:
+                    if serial_no.strip():
+                        update_serial_no(serial_no.strip(), doc, item)
 
-        if item.serial_no:
-            for serial in item.serial_no.split('\n'):
-                serial = serial.strip()
-                if serial:
-                    qr_code_mappings.append(generate_and_save_qrcode(serial))
-        elif item.truncated_item_code:
-            generate_and_save_qrcode(item.truncated_item_code)
+            if item.serial_no:
+                for serial in item.serial_no.split('\n'):
+                    serial = serial.strip()
+                    if serial:
+                        qr_code_mappings.append(generate_and_save_qrcode(serial))
+            elif item.truncated_item_code:
+                generate_and_save_qrcode(item.truncated_item_code)
 
-        qr_code_mapping_str = '\n'.join(qr_code_mappings)
-        frappe.db.sql("""
-            UPDATE `tabPurchase Receipt Item` 
-            SET qr_code_mapping = %s 
-            WHERE name = %s
-        """, (qr_code_mapping_str, item.name))
+            qr_code_mapping_str = '\n'.join(qr_code_mappings)
+            frappe.db.sql("""
+                UPDATE `tabPurchase Receipt Item` 
+                SET qr_code_mapping = %s 
+                WHERE name = %s
+            """, (qr_code_mapping_str, item.name))
+    finally:
+        log_pr_time("get_batch", doc.name, start)
 
 def before_save_purchase_receipt(doc, method):
     if doc.doctype == "Purchase Receipt":
@@ -694,244 +727,245 @@ def get_mr_schedule_date_from_pr(core_item_codes, shortage_item_codes):
 
 #     frappe.msgprint(f"Material Request Created: {mr.name}")
 
-def mr_raise_from_pr(doc, method=None):
-    print("inside the function===================")
-    core_items = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
-    print("core_items=======================", core_items)
+# def mr_raise_from_pr(doc, method=None):
+#     return
+#     print("inside the function===================")
+#     core_items = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
+#     print("core_items=======================", core_items)
 
-    # 🔹 Step 1: Get PR item codes
-    item_codes = list({d.item_code for d in doc.items if d.item_code})
-    print("item_codes=======================", item_codes)
-    if not item_codes:
-        return
+#     # 🔹 Step 1: Get PR item codes
+#     item_codes = list({d.item_code for d in doc.items if d.item_code})
+#     print("item_codes=======================", item_codes)
+#     if not item_codes:
+#         return
 
-    # 🔹 Step 2: Filter core items
-    core_item_codes = frappe.get_all(
-        "Item",
-        filters={
-            "item_code": ["in", item_codes],
-            "item_group": ["in", core_items],
-        },
-        pluck="item_code",
-    )
-    print("core_item_codes=======================", core_item_codes)
+#     # 🔹 Step 2: Filter core items
+#     core_item_codes = frappe.get_all(
+#         "Item",
+#         filters={
+#             "item_code": ["in", item_codes],
+#             "item_group": ["in", core_items],
+#         },
+#         pluck="item_code",
+#     )
+#     print("core_item_codes=======================", core_item_codes)
 
-    if not core_item_codes:
-        return
+#     if not core_item_codes:
+#         return
 
-    # 🔹 Step 3: Fetch Consumables (SUM)
-    consumable_items = frappe.db.sql("""
-        SELECT 
-            c.item_code,
-            SUM(c.quantity * pri.qty) AS quantity
-        FROM 
-            `tabPurchase Receipt Item` pri
-        INNER JOIN 
-            `tabItem` i
-            ON i.name = pri.item_code
-        INNER JOIN 
-            `tabItem Wizards` iw 
-            ON iw.item_template = i.variant_of
-        INNER JOIN 
-            `tabConsumables` c 
-            ON c.parent = iw.name
-        INNER JOIN 
-            `tabItem` item_doc
-            ON item_doc.name = c.item_code
-        WHERE 
-            pri.parent = %(purchase_receipt)s
-            AND i.item_code IN %(core_item_codes)s
-            AND item_doc.in_stock = 1
-        GROUP BY 
-            c.item_code
-    """, {
-        "purchase_receipt": doc.name,
-        "core_item_codes": tuple(core_item_codes),
-    }, as_dict=1 , debug=1)
-    print("consumable_items=======================", consumable_items)
+#     # 🔹 Step 3: Fetch Consumables (SUM)
+#     consumable_items = frappe.db.sql("""
+#         SELECT 
+#             c.item_code,
+#             SUM(c.quantity * pri.qty) AS quantity
+#         FROM 
+#             `tabPurchase Receipt Item` pri
+#         INNER JOIN 
+#             `tabItem` i
+#             ON i.name = pri.item_code
+#         INNER JOIN 
+#             `tabItem Wizards` iw 
+#             ON iw.item_template = i.variant_of
+#         INNER JOIN 
+#             `tabConsumables` c 
+#             ON c.parent = iw.name
+#         INNER JOIN 
+#             `tabItem` item_doc
+#             ON item_doc.name = c.item_code
+#         WHERE 
+#             pri.parent = %(purchase_receipt)s
+#             AND i.item_code IN %(core_item_codes)s
+#             AND item_doc.in_stock = 1
+#         GROUP BY 
+#             c.item_code
+#     """, {
+#         "purchase_receipt": doc.name,
+#         "core_item_codes": tuple(core_item_codes),
+#     }, as_dict=1 , debug=1)
+#     print("consumable_items=======================", consumable_items)
 
-    if not consumable_items:
-        return
+#     if not consumable_items:
+#         return
 
-    # 🔹 Step 4: Extract item codes
-    consumable_item_codes = list({d["item_code"] for d in consumable_items})
-    print("consumable_item_codes=================", consumable_item_codes)
-    print("PR MR consumable_item_codes count=================", len(consumable_item_codes))
-    if not consumable_item_codes:
-        return
+#     # 🔹 Step 4: Extract item codes
+#     consumable_item_codes = list({d["item_code"] for d in consumable_items})
+#     print("consumable_item_codes=================", consumable_item_codes)
+#     print("PR MR consumable_item_codes count=================", len(consumable_item_codes))
+#     if not consumable_item_codes:
+#         return
 
-    # 🔹 Step 5: Warehouse stock (SUM)
-    warehouse_qty = frappe.db.sql("""
-        SELECT  
-            b.item_code,
-            SUM(b.actual_qty) AS actual_qty
-        FROM 
-            `tabBin` b 
-        WHERE 
-            b.warehouse IN (
-                SELECT name 
-                FROM `tabWarehouse`
-                WHERE department = 'Stores - NJ'
-            )
-            AND b.item_code IN %(consumable_item_codes)s
-        GROUP BY 
-            b.item_code
-    """, {
-        "consumable_item_codes": tuple(consumable_item_codes)
-    }, as_dict=1, debug=1)
-    print("warehouse_qty=======================", warehouse_qty)
-    print("PR MR warehouse_qty rows count=======================", len(warehouse_qty))
+#     # 🔹 Step 5: Warehouse stock (SUM)
+#     warehouse_qty = frappe.db.sql("""
+#         SELECT  
+#             b.item_code,
+#             SUM(b.actual_qty) AS actual_qty
+#         FROM 
+#             `tabBin` b 
+#         WHERE 
+#             b.warehouse IN (
+#                 SELECT name 
+#                 FROM `tabWarehouse`
+#                 WHERE department = 'Stores - NJ'
+#             )
+#             AND b.item_code IN %(consumable_item_codes)s
+#         GROUP BY 
+#             b.item_code
+#     """, {
+#         "consumable_item_codes": tuple(consumable_item_codes)
+#     }, as_dict=1, debug=1)
+#     print("warehouse_qty=======================", warehouse_qty)
+#     print("PR MR warehouse_qty rows count=======================", len(warehouse_qty))
 
-    # 🔹 Step 6: Convert to dict
-    bin_map = {d["item_code"]: d["actual_qty"] for d in warehouse_qty}
-    print("bin_map=======================", bin_map)
+#     # 🔹 Step 6: Convert to dict
+#     bin_map = {d["item_code"]: d["actual_qty"] for d in warehouse_qty}
+#     print("bin_map=======================", bin_map)
 
-    # 🔹 Step 7: Calculate shortage
-    shortage_items = []
-    for d in consumable_items:
-        item_code = d["item_code"]
-        print("item_code=======================", item_code)
-        required_qty = d["quantity"]
-        print("required_qty=======================", required_qty)
-        available_qty = bin_map.get(item_code, 0)
-        print("available_qty=======================", available_qty)
+#     # 🔹 Step 7: Calculate shortage
+#     shortage_items = []
+#     for d in consumable_items:
+#         item_code = d["item_code"]
+#         print("item_code=======================", item_code)
+#         required_qty = d["quantity"]
+#         print("required_qty=======================", required_qty)
+#         available_qty = bin_map.get(item_code, 0)
+#         print("available_qty=======================", available_qty)
 
-        shortage_qty = required_qty - available_qty
-        if shortage_qty > MR_MIN_QTY:
-            print("shortage_qty=======================", shortage_qty)
-            shortage_items.append({
-                "item_code": item_code,
-                "qty": flt(shortage_qty, 6)
-            })
+#         shortage_qty = required_qty - available_qty
+#         if shortage_qty > MR_MIN_QTY:
+#             print("shortage_qty=======================", shortage_qty)
+#             shortage_items.append({
+#                 "item_code": item_code,
+#                 "qty": flt(shortage_qty, 6)
+#             })
 
-    print("PR MR shortage_items before MR qty adjustment=======================", shortage_items)
-    print("PR MR shortage_items count before MR qty adjustment=======================", len(shortage_items))
+#     print("PR MR shortage_items before MR qty adjustment=======================", shortage_items)
+#     print("PR MR shortage_items count before MR qty adjustment=======================", len(shortage_items))
 
-    # 🔹 Step 8: Stop if no shortage
-    if not shortage_items:
-        return
+#     # 🔹 Step 8: Stop if no shortage
+#     if not shortage_items:
+#         return
 
-    # 🔹 Step 9: Adjust shortage qty by already raised active Manufacture MR qty
-    existing_mr_items = frappe.db.sql("""
-        SELECT
-            mri.item_code,
-            SUM(mri.qty) AS existing_qty
-        FROM
-            `tabMaterial Request Item` mri
-        INNER JOIN
-            `tabMaterial Request` mr
-            ON mr.name = mri.parent
-        WHERE
-            mr.material_request_type = 'Manufacture'
-            AND mr.docstatus < 2
-            AND mri.item_code IN %(item_codes)s
-        GROUP BY
-            mri.item_code
-    """, {
-        "item_codes": tuple(d["item_code"] for d in shortage_items)
-    }, as_dict=1)
-    print("PR MR existing Manufacture MR qty rows=======================", existing_mr_items)
-    print("PR MR existing Manufacture MR qty rows count=======================", len(existing_mr_items))
+#     # 🔹 Step 9: Adjust shortage qty by already raised active Manufacture MR qty
+#     existing_mr_items = frappe.db.sql("""
+#         SELECT
+#             mri.item_code,
+#             SUM(mri.qty) AS existing_qty
+#         FROM
+#             `tabMaterial Request Item` mri
+#         INNER JOIN
+#             `tabMaterial Request` mr
+#             ON mr.name = mri.parent
+#         WHERE
+#             mr.material_request_type = 'Manufacture'
+#             AND mr.docstatus < 2
+#             AND mri.item_code IN %(item_codes)s
+#         GROUP BY
+#             mri.item_code
+#     """, {
+#         "item_codes": tuple(d["item_code"] for d in shortage_items)
+#     }, as_dict=1)
+#     print("PR MR existing Manufacture MR qty rows=======================", existing_mr_items)
+#     print("PR MR existing Manufacture MR qty rows count=======================", len(existing_mr_items))
 
-    if existing_mr_items:
-        existing_qty_by_item = {}
-        for row in existing_mr_items:
-            existing_qty_by_item[row.item_code] = flt(row.existing_qty)
-        print("PR MR existing_qty_by_item=======================", existing_qty_by_item)
+#     if existing_mr_items:
+#         existing_qty_by_item = {}
+#         for row in existing_mr_items:
+#             existing_qty_by_item[row.item_code] = flt(row.existing_qty)
+#         print("PR MR existing_qty_by_item=======================", existing_qty_by_item)
 
-        adjusted_shortage_items = []
-        message_rows = []
+#         adjusted_shortage_items = []
+#         message_rows = []
 
-        for d in shortage_items:
-            existing_qty = existing_qty_by_item.get(d["item_code"], 0)
-            if existing_qty <= 0:
-                adjusted_shortage_items.append(d)
-                continue
+#         for d in shortage_items:
+#             existing_qty = existing_qty_by_item.get(d["item_code"], 0)
+#             if existing_qty <= 0:
+#                 adjusted_shortage_items.append(d)
+#                 continue
 
-            required_qty = flt(d["qty"])
-            pending_qty = required_qty - existing_qty
-            print(
-                "PR MR qty adjustment=======================",
-                d["item_code"],
-                "required:",
-                required_qty,
-                "existing_mr_qty:",
-                existing_qty,
-                "new_mr_qty:",
-                max(pending_qty, 0),
-            )
+#             required_qty = flt(d["qty"])
+#             pending_qty = required_qty - existing_qty
+#             print(
+#                 "PR MR qty adjustment=======================",
+#                 d["item_code"],
+#                 "required:",
+#                 required_qty,
+#                 "existing_mr_qty:",
+#                 existing_qty,
+#                 "new_mr_qty:",
+#                 max(pending_qty, 0),
+#             )
 
-            if pending_qty > MR_MIN_QTY:
-                adjusted_shortage_items.append({
-                    "item_code": d["item_code"],
-                    "qty": flt(pending_qty, 6),
-                })
+#             if pending_qty > MR_MIN_QTY:
+#                 adjusted_shortage_items.append({
+#                     "item_code": d["item_code"],
+#                     "qty": flt(pending_qty, 6),
+#                 })
 
-            message_rows.append(
-                _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | New MR Qty: {3}").format(
-                    frappe.bold(d["item_code"]),
-                    frappe.bold(required_qty),
-                    frappe.bold(existing_qty),
-                    frappe.bold(max(pending_qty, 0)),
-                )
-            )
+#             message_rows.append(
+#                 _("Item Code: {0} | Required: {1} | Existing MR Qty: {2} | New MR Qty: {3}").format(
+#                     frappe.bold(d["item_code"]),
+#                     frappe.bold(required_qty),
+#                     frappe.bold(existing_qty),
+#                     frappe.bold(max(pending_qty, 0)),
+#                 )
+#             )
 
-        frappe.msgprint(
-            _("Existing Manufacture Material Request qty adjusted:<br>{0}").format(
-                "<br>".join(message_rows)
-            ),
-            title=_("Material Request Qty Adjusted"),
-            indicator="orange",
-        )
+#         frappe.msgprint(
+#             _("Existing Manufacture Material Request qty adjusted:<br>{0}").format(
+#                 "<br>".join(message_rows)
+#             ),
+#             title=_("Material Request Qty Adjusted"),
+#             indicator="orange",
+#         )
 
-        shortage_items = adjusted_shortage_items
+#         shortage_items = adjusted_shortage_items
 
-    print("PR MR shortage_items after MR qty adjustment=======================", shortage_items)
-    print("PR MR shortage_items count after MR qty adjustment=======================", len(shortage_items))
+#     print("PR MR shortage_items after MR qty adjustment=======================", shortage_items)
+#     print("PR MR shortage_items count after MR qty adjustment=======================", len(shortage_items))
 
-    if not shortage_items:
-        return
+#     if not shortage_items:
+#         return
 
-    # 🔹 Step 10: Fetch FRU numbers in one go
-    item_fru_map = {
-        d["name"]: d["fru_number"]
-        for d in frappe.get_all(
-            "Item",
-            filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
-            fields=["name", "fru_number"]
-        )
-    }
-    print("item_fru_map=======================", item_fru_map)
+#     # 🔹 Step 10: Fetch FRU numbers in one go
+#     item_fru_map = {
+#         d["name"]: d["fru_number"]
+#         for d in frappe.get_all(
+#             "Item",
+#             filters={"name": ["in", [i["item_code"] for i in shortage_items]]},
+#             fields=["name", "fru_number"]
+#         )
+#     }
+#     print("item_fru_map=======================", item_fru_map)
 
-    # 🔹 Step 11: Create MR
-    mr = frappe.new_doc("Material Request")
-    mr.material_request_type = "Manufacture"
-    mr.purpose = "Purchase"
-    mr.naming_series = 'MREQ-.YYYY.-.MM.-'
-    mr.company = doc.company
-    mr.schedule_date = get_mr_schedule_date_from_pr(
-        core_item_codes,
-        [d["item_code"] for d in shortage_items],
-    )
-    print("PR MR schedule_date=======================", mr.schedule_date)
-    mr.post_order_status = ''
+#     # 🔹 Step 11: Create MR
+#     mr = frappe.new_doc("Material Request")
+#     mr.material_request_type = "Manufacture"
+#     mr.purpose = "Purchase"
+#     mr.naming_series = 'MREQ-.YYYY.-.MM.-'
+#     mr.company = doc.company
+#     mr.schedule_date = get_mr_schedule_date_from_pr(
+#         core_item_codes,
+#         [d["item_code"] for d in shortage_items],
+#     )
+#     print("PR MR schedule_date=======================", mr.schedule_date)
+#     mr.post_order_status = ''
 
-    # 🔹 Step 12: Append items
-    for d in shortage_items:
-        fru_number = item_fru_map.get(d["item_code"]) or "N/A"
-        print("PR MR append item=======================", d["item_code"], "qty:", d["qty"], "fru:", fru_number)
+#     # 🔹 Step 12: Append items
+#     for d in shortage_items:
+#         fru_number = item_fru_map.get(d["item_code"]) or "N/A"
+#         print("PR MR append item=======================", d["item_code"], "qty:", d["qty"], "fru:", fru_number)
 
-        mr.append("items", {
-            "item_code": d["item_code"],
-            "qty": d["qty"],
-            "schedule_date": mr.schedule_date,
-            "warehouse": "Stores - NJ",
-            "fru_number": fru_number
-        })
+#         mr.append("items", {
+#             "item_code": d["item_code"],
+#             "qty": d["qty"],
+#             "schedule_date": mr.schedule_date,
+#             "warehouse": "Stores - NJ",
+#             "fru_number": fru_number
+#         })
 
-    # 🔹 Step 13: Save & Submit
-    mr.insert(ignore_permissions=True)
-    mr.submit()
-    print("PR MR created=======================", mr.name, "items:", len(shortage_items))
+#     # 🔹 Step 13: Save & Submit
+#     mr.insert(ignore_permissions=True)
+#     mr.submit()
+#     print("PR MR created=======================", mr.name, "items:", len(shortage_items))
 
-    frappe.msgprint(f"Material Request Created: {mr.name}")
+#     frappe.msgprint(f"Material Request Created: {mr.name}")

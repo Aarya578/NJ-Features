@@ -1,25 +1,31 @@
 frappe.ui.form.on('Laptop Box', {
     onload: function(frm) {
-        handleScannerInput(frm, 'nj_barcode');
-        handleScannerInput(frm, 'nj_adaptor_barcode');
+        setupLaptopBoxScannerOnly(frm, 'nj_barcode');
+        setupLaptopBoxScannerOnly(frm, 'nj_adaptor_barcode');
         $('[data-fieldname="nj_barcode"]').focus();
     },
     refresh: function(frm) {
-        handleScannerInput(frm, 'nj_barcode');
-        handleScannerInput(frm, 'nj_adaptor_barcode');
+        setupLaptopBoxScannerOnly(frm, 'nj_barcode');
+        setupLaptopBoxScannerOnly(frm, 'nj_adaptor_barcode');
         $('[data-fieldname="nj_barcode"]').focus();
     },
 
     nj_barcode: function(frm) {
-		handleScannerInput(frm, 'nj_barcode');
+		setupLaptopBoxScannerOnly(frm, 'nj_barcode');
+        if (!isLaptopBoxValueFromScanner(frm, 'nj_barcode')) {
+            clearLaptopBoxScannerField(frm, 'nj_barcode');
+            showLaptopBoxScannerMessage(frm, 'nj_barcode');
+            return;
+        }
 		if (frm.doc.nj_barcode) { 
+            if (isLaptopBoxDuplicateScan(frm, 'nj_barcode')) return;
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
 				args: {  search_value: frm.doc.nj_barcode, raise_exp: true },
 				callback: function(r) {
 					if (r.message) {
 						if (r.message.serial_no) {
-							frm.set_value('barcode', r.message.serial_no);
+							setLaptopBoxSerialNoFromScan(frm, r.message.serial_no);
 						} else if (r.message.scan) {
 							frappe.msgprint("Please Scan the Serial No.");
 							frm.set_value('nj_barcode', '');
@@ -45,8 +51,14 @@ frappe.ui.form.on('Laptop Box', {
     },
 
     nj_adaptor_barcode: function(frm) {
-		handleScannerInput(frm, 'nj_adaptor_barcode');
+		setupLaptopBoxScannerOnly(frm, 'nj_adaptor_barcode');
+        if (!isLaptopBoxValueFromScanner(frm, 'nj_adaptor_barcode')) {
+            clearLaptopBoxScannerField(frm, 'nj_adaptor_barcode');
+            showLaptopBoxScannerMessage(frm, 'nj_adaptor_barcode');
+            return;
+        }
 		if (frm.doc.nj_adaptor_barcode) { 
+            if (isLaptopBoxDuplicateScan(frm, 'nj_adaptor_barcode')) return;
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
 				args: {  search_value: frm.doc.nj_adaptor_barcode, raise_exp: false },
@@ -249,3 +261,311 @@ frappe.ui.form.on('Laptop Box', {
         }
     }
 });
+
+const LAPTOP_BOX_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
+const LAPTOP_BOX_SCANNER_MIN_LENGTH = 3;
+const LAPTOP_BOX_SCANNER_MAX_SCAN_DURATION = 3000;
+const LAPTOP_BOX_SCANNER_MAX_KEY_GAP = 350;
+const LAPTOP_BOX_SCANNER_IDLE_DELAY = 600;
+
+function setLaptopBoxSerialNoFromScan(frm, serialNo) {
+    frappe.db.get_value("Laptop Box", { barcode: serialNo }, "name").then(function(r) {
+        const existingName = r.message && r.message.name;
+
+        if (existingName && existingName !== frm.doc.name) {
+            frappe.msgprint(
+                __(
+                    "Serial No <b>{0}</b> is already used in Laptop Box <b>{1}</b>.",
+                    [serialNo, existingName]
+                )
+            );
+            frm.set_value("nj_barcode", "");
+            frm.set_value("barcode", "");
+            frm.refresh_field("nj_barcode");
+            frm.refresh_field("barcode");
+            $('[data-fieldname="nj_barcode"]').focus();
+            return;
+        }
+
+        frm.set_value("barcode", serialNo);
+    });
+}
+
+function setupLaptopBoxScannerOnly(frm, fieldname) {
+    const field = frm.get_field(fieldname);
+    if (!field || !field.$input || frm.doc.docstatus !== 0) return;
+
+    const inputField = field.$input;
+    const stateKey = `__laptop_box_scanner_${fieldname}`;
+    let state = frm[stateKey];
+
+    if (!state) {
+        state = frm[stateKey] = {
+            chars: "",
+            firstKeyTime: 0,
+            lastKeyTime: 0,
+            manualTimer: null,
+            validValue: "",
+            validUntil: 0,
+            lastMessageAt: 0,
+            suppressManualCheck: false,
+        };
+    }
+
+    inputField.off(`.${stateKey}`);
+
+    inputField.on(`paste.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearLaptopBoxScannerField(frm, fieldname);
+        showLaptopBoxScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`beforeinput.${stateKey}`, function(event) {
+        const inputType = event.originalEvent && event.originalEvent.inputType;
+        if (inputType === "insertFromPaste" || inputType === "insertFromDrop") {
+            event.preventDefault();
+            clearLaptopBoxScannerField(frm, fieldname);
+            showLaptopBoxScannerMessage(frm, fieldname);
+            return false;
+        }
+    });
+
+    inputField.on(`drop.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearLaptopBoxScannerField(frm, fieldname);
+        showLaptopBoxScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`contextmenu.${stateKey}`, function(event) {
+        event.preventDefault();
+        showLaptopBoxScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`keydown.${stateKey}`, function(event) {
+        const now = Date.now();
+
+        if (state.validValue && now > state.validUntil) {
+            state.validValue = "";
+            state.validUntil = 0;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+            event.preventDefault();
+            clearLaptopBoxScannerField(frm, fieldname);
+            showLaptopBoxScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        if (event.key === "Enter") {
+            const value = inputField.val().trim();
+            const isScanner = isLaptopBoxScannerBurst(state, value, now);
+
+            window.clearTimeout(state.manualTimer);
+            state.manualTimer = null;
+
+            if (!isScanner) {
+                event.preventDefault();
+                resetLaptopBoxScannerState(state);
+                clearLaptopBoxScannerField(frm, fieldname);
+                showLaptopBoxScannerMessage(frm, fieldname);
+                return false;
+            }
+
+            event.preventDefault();
+            acceptLaptopBoxScannerValue(frm, fieldname, value, state);
+            return false;
+        }
+
+        if (isLaptopBoxScannerControlKey(event)) {
+            return true;
+        }
+
+        if (event.key.length !== 1) {
+            return true;
+        }
+
+        if (!state.firstKeyTime) {
+            state.firstKeyTime = now;
+        }
+
+        if (state.lastKeyTime && now - state.lastKeyTime > LAPTOP_BOX_SCANNER_MAX_KEY_GAP) {
+            event.preventDefault();
+            resetLaptopBoxScannerState(state);
+            clearLaptopBoxScannerField(frm, fieldname);
+            showLaptopBoxScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        state.lastKeyTime = now;
+        state.chars += event.key;
+
+        window.clearTimeout(state.manualTimer);
+        state.manualTimer = window.setTimeout(function() {
+            if (state.chars) {
+                const value = inputField.val().trim();
+                if (isLaptopBoxScannerBurst(state, value)) {
+                    acceptLaptopBoxScannerValue(frm, fieldname, value, state);
+                } else {
+                    resetLaptopBoxScannerState(state);
+                    clearLaptopBoxScannerField(frm, fieldname);
+                    showLaptopBoxScannerMessage(frm, fieldname);
+                }
+            }
+        }, LAPTOP_BOX_SCANNER_IDLE_DELAY);
+
+        return true;
+    });
+
+    inputField.on(`input.${stateKey}`, function() {
+        if (state.suppressManualCheck) return;
+
+        const value = inputField.val().trim();
+        if (!value) return;
+
+        if (state.validValue === value && Date.now() <= state.validUntil) {
+            return;
+        }
+
+        if (!state.chars) {
+            clearLaptopBoxScannerField(frm, fieldname);
+            showLaptopBoxScannerMessage(frm, fieldname);
+        }
+    });
+}
+
+function isLaptopBoxScannerBurst(state, value, now = Date.now()) {
+    if (!value || state.chars.length < LAPTOP_BOX_SCANNER_MIN_LENGTH) return false;
+
+    const lastKeyTime = state.lastKeyTime || now;
+    const totalDuration = lastKeyTime - state.firstKeyTime;
+    const lastKeyGap = now - lastKeyTime;
+
+    return (
+        totalDuration >= 0 &&
+        totalDuration <= LAPTOP_BOX_SCANNER_MAX_SCAN_DURATION &&
+        lastKeyGap <= LAPTOP_BOX_SCANNER_IDLE_DELAY
+    );
+}
+
+function acceptLaptopBoxScannerValue(frm, fieldname, value, state) {
+    state.validValue = value;
+    state.validUntil = Date.now() + 3000;
+    resetLaptopBoxScannerTyping(state);
+
+    const setValue = frm.set_value(fieldname, value);
+    const triggerField = function() {
+        frm.trigger(fieldname);
+    };
+
+    if (setValue && setValue.then) {
+        setValue.then(triggerField);
+    } else {
+        triggerField();
+    }
+}
+
+function isLaptopBoxValueFromScanner(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    const state = frm[`__laptop_box_scanner_${fieldname}`];
+    if (!value) return true;
+
+    return Boolean(
+        state &&
+        state.validValue === value &&
+        Date.now() <= state.validUntil
+    );
+}
+
+function isLaptopBoxDuplicateScan(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    if (!value) return false;
+
+    const stateKey = `__laptop_box_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastProcessedValue === value && now - state.lastProcessedAt < 1000) {
+        return true;
+    }
+
+    state.lastProcessedValue = value;
+    state.lastProcessedAt = now;
+    frm[stateKey] = state;
+    return false;
+}
+
+function clearLaptopBoxScannerField(frm, fieldname) {
+    const state = frm[`__laptop_box_scanner_${fieldname}`];
+    if (state) {
+        state.suppressManualCheck = true;
+        resetLaptopBoxScannerState(state);
+    }
+
+    frm.set_value(fieldname, "");
+    frm.refresh_field(fieldname);
+
+    const field = frm.get_field(fieldname);
+    if (field && field.$input) {
+        field.$input.val("");
+        field.$input.focus();
+    }
+
+    if (state) {
+        window.setTimeout(function() {
+            state.suppressManualCheck = false;
+        }, 0);
+    }
+}
+
+function showLaptopBoxScannerMessage(frm, fieldname) {
+    const stateKey = `__laptop_box_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastMessageAt && now - state.lastMessageAt < 1200) return;
+
+    state.lastMessageAt = now;
+    frm[stateKey] = state;
+    frappe.msgprint(__(LAPTOP_BOX_SCANNER_MESSAGE));
+}
+
+function isLaptopBoxScannerControlKey(event) {
+    return (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        [
+            "Tab",
+            "Shift",
+            "Control",
+            "Alt",
+            "Meta",
+            "Escape",
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Home",
+            "End",
+            "Backspace",
+            "Delete",
+        ].includes(event.key)
+    );
+}
+
+function resetLaptopBoxScannerState(state) {
+    window.clearTimeout(state.manualTimer);
+    state.manualTimer = null;
+    state.validValue = "";
+    state.validUntil = 0;
+    resetLaptopBoxScannerTyping(state);
+}
+
+function resetLaptopBoxScannerTyping(state) {
+    state.chars = "";
+    state.firstKeyTime = 0;
+    state.lastKeyTime = 0;
+}

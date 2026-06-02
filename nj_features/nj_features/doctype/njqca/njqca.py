@@ -21,7 +21,7 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
 
 frappe.utils.logger.set_log_level("DEBUG")
-logger = frappe.logger("njqca", allow_site=True, file_count=1)
+logger = frappe.logger("newjaisa_njqca", allow_site=True)
 
 
 def _is_desktop_item_group(item_group):
@@ -6490,3 +6490,239 @@ def get_item_variant_attributes(item_code):
         fields=["attribute", "attribute_value"],
         ignore_permissions=True,
     )
+
+
+def previous_njqca_failed_result_validation(doc, method=None):
+    log_prefix = "previous_njqca_failed_result_validation"
+    logger.info("%s: started %s", log_prefix, frappe.as_json({
+        'njqca_name': doc.name,
+        'created': doc.created,
+        'creation': doc.creation,
+        'inspection_type': doc.inspection_type,
+        'docstatus': doc.docstatus,
+    }))
+
+    disabled_qc_parameters = frappe.db.sql("""
+        SELECT DISTINCT
+            cl.name AS qc_name,
+            cl.parameter
+        FROM `tabNJQCA` AS nj
+        INNER JOIN `tabNJ Quality Checks` AS njq
+            ON njq.inspection_type = nj.inspection_type
+        INNER JOIN `tabNj QC Options` AS qco
+            ON qco.parent = njq.name
+        INNER JOIN `tabNJ QC Check List` AS cl
+            ON cl.name = qco.quality_check
+        WHERE
+            cl.disable_qc = 1
+            AND nj.inspection_type = %(inspection_type)s
+            AND nj.name = %(njqca_name)s
+    """, {
+        "inspection_type": doc.inspection_type,
+        "njqca_name": doc.name,
+    }, as_dict=True)
+    logger.info("%s: disabled_qc_parameters %s", log_prefix, frappe.as_json(disabled_qc_parameters))
+
+    disabled_parameters = [
+        row.parameter
+        for row in disabled_qc_parameters
+        if row.get("parameter")
+    ]
+
+    if not disabled_parameters:
+        logger.info("%s: skipped because no disabled QC parameters found", log_prefix)
+        return {
+            "disabled_qc_parameters": disabled_qc_parameters,
+            "failed_parameters": [],
+            "latest_njqca_records": [],
+        }
+
+    failed_parameter_map = {}
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = (row.get("parameter") or "").strip()
+        value = (row.get("value") or "").strip()
+
+        if parameter in disabled_parameters and value.upper() == "FAIL":
+            failed_parameter_map[parameter] = row
+
+    if not failed_parameter_map:
+        failed_parameter_rows = frappe.db.sql("""
+            SELECT parameter, value
+            FROM `tabNJQCA Result Parameters`
+            WHERE parent = %(njqca_name)s
+                AND value = 'FAIL'
+                AND parameter IN %(parameters)s
+        """, {
+            "njqca_name": doc.name,
+            "parameters": tuple(disabled_parameters),
+        }, as_dict=True)
+
+        failed_parameter_map = {
+            row.parameter: row
+            for row in failed_parameter_rows
+            if row.get("parameter")
+        }
+
+    failed_parameters = list(failed_parameter_map.keys())
+    logger.info("%s: current_failed_parameters %s", log_prefix, frappe.as_json(failed_parameters))
+
+    if not failed_parameters:
+        logger.info("%s: skipped because current NJQCA has no failed disabled parameters", log_prefix)
+        return {
+            "disabled_qc_parameters": disabled_qc_parameters,
+            "failed_parameters": [],
+            "latest_njqca_records": [],
+        }
+
+    employee_data = frappe.db.get_value(
+        "Employee",
+        {"user_id": doc.created},
+        ["name", "allow_qc", "qc_time_stamp"],
+        as_dict=True,
+    )
+    employee_qc_time_stamp = employee_data.get("qc_time_stamp") if employee_data else None
+    logger.info("%s: employee_data %s", log_prefix, frappe.as_json(employee_data or {}))
+
+    latest_njqca_filters = {
+        "created": doc.created,
+        "njqca_name": doc.name,
+    }
+    latest_njqca_creation_condition = ""
+
+    if employee_qc_time_stamp:
+        latest_njqca_filters["qc_time_stamp"] = employee_qc_time_stamp
+        latest_njqca_creation_condition = """
+            AND creation > %(qc_time_stamp)s
+        """
+
+    logger.info("%s: latest_njqca_query_filters %s", log_prefix, frappe.as_json({
+        'filters': latest_njqca_filters,
+        'qc_time_stamp_filter_applied': bool(employee_qc_time_stamp),
+    }))
+
+    latest_njqca_records = frappe.db.sql(f"""
+        SELECT
+            name,
+            inspection_type,
+            created,
+            docstatus,
+            creation
+        FROM `tabNJQCA`
+        WHERE created = %(created)s
+            AND name != %(njqca_name)s
+            {latest_njqca_creation_condition}
+        ORDER BY creation DESC
+        LIMIT 3
+    """, latest_njqca_filters, as_dict=True,debug=1)
+    logger.info("%s: latest_njqca_records %s", log_prefix, frappe.as_json(latest_njqca_records))
+
+    repeatedly_failed_parameters = []
+    latest_njqca_names = [
+        row.name
+        for row in latest_njqca_records
+        if row.get("name")
+    ]
+
+    if len(latest_njqca_names) >= 3:
+        logger.info("%s: checking_previous_failures %s", log_prefix, frappe.as_json({
+            'latest_njqca_names': latest_njqca_names,
+            'failed_parameters_to_check': failed_parameters,
+        }))
+        previous_failed_rows = frappe.db.sql("""
+            SELECT
+                parameter,
+                COUNT(DISTINCT parent) AS failed_count
+            FROM `tabNJQCA Result Parameters`
+            WHERE parent IN %(latest_njqca_names)s
+                AND parameter IN %(failed_parameters)s
+                AND UPPER(IFNULL(value, '')) = 'FAIL'
+            GROUP BY parameter
+        """, {
+            "latest_njqca_names": tuple(latest_njqca_names),
+            "failed_parameters": tuple(failed_parameters),
+        }, as_dict=True)
+        logger.info("%s: previous_failed_rows %s", log_prefix, frappe.as_json(previous_failed_rows))
+
+        repeatedly_failed_parameters = [
+            row.parameter
+            for row in previous_failed_rows
+            if row.get("parameter") and row.get("failed_count") == len(latest_njqca_names)
+        ]
+        logger.info("%s: repeatedly_failed_parameters %s", log_prefix, frappe.as_json(repeatedly_failed_parameters))
+    else:
+        logger.info("%s: skipped repeat-failure check because fewer than 3 NJQCA records were found %s", log_prefix, frappe.as_json({
+            'latest_njqca_count': len(latest_njqca_names),
+            'latest_njqca_names': latest_njqca_names,
+        }))
+
+    if repeatedly_failed_parameters:
+        employee_name = employee_data.get("name") if employee_data else None
+        employee_allow_qc = int(employee_data.get("allow_qc") or 0) if employee_data else 0
+        employee_qc_time = employee_data.get("qc_time_stamp") if employee_data else None
+        doc_creation = getattr(doc, "creation", None)
+
+        if employee_allow_qc and employee_qc_time and doc_creation:
+            employee_qc_time = frappe.utils.get_datetime(employee_qc_time)
+            doc_creation = frappe.utils.get_datetime(doc_creation)
+
+            if employee_qc_time >= doc_creation:
+                logger.info("%s: allow_qc_override_allowed %s", log_prefix, frappe.as_json({
+                    'employee': employee_name,
+                    'allow_qc': employee_allow_qc,
+                    'qc_time_stamp': employee_qc_time,
+                    'doc_creation': doc_creation,
+                    'repeatedly_failed_parameters': repeatedly_failed_parameters,
+                }))
+
+                return {
+                    "disabled_qc_parameters": disabled_qc_parameters,
+                    "failed_parameters": failed_parameters,
+                    "latest_njqca_records": latest_njqca_records,
+                    "repeatedly_failed_parameters": repeatedly_failed_parameters,
+                    "allow_qc_override": True,
+                }
+
+        if employee_name:
+            frappe.db.set_value(
+                "Employee",
+                employee_name,
+                "allow_qc",
+                0,
+                update_modified=False,
+            )
+            frappe.db.commit()
+            logger.info("%s: unchecked_employee_allow_qc %s", log_prefix, frappe.as_json({
+                'employee': employee_name,
+                'user_id': doc.created,
+                'repeatedly_failed_parameters': repeatedly_failed_parameters,
+            }))
+
+        logger.info("%s: blocking_submit %s", log_prefix, frappe.as_json({
+            'njqca_name': doc.name,
+            'employee': employee_name,
+            'latest_njqca_names': latest_njqca_names,
+            'repeatedly_failed_parameters': repeatedly_failed_parameters,
+        }))
+
+        frappe.throw(_(
+            "You are not allowed to submit this DOC because parameter {0} failed in Previous 3 NJQCA ({1}). Please Contact your Manager To submit this Doc"
+        ).format(
+            ", ".join(repeatedly_failed_parameters),
+            ", ".join(latest_njqca_names),
+        ))
+
+    logger.info("%s: validation_passed %s", log_prefix, frappe.as_json({
+        'njqca_name': doc.name,
+        'latest_njqca_count': len(latest_njqca_names),
+        'latest_njqca_names': latest_njqca_names,
+        'failed_parameters': failed_parameters,
+        'repeatedly_failed_parameters': repeatedly_failed_parameters,
+    }))
+
+    return {
+        "disabled_qc_parameters": disabled_qc_parameters,
+        "failed_parameters": failed_parameters,
+        "latest_njqca_records": latest_njqca_records,
+        "repeatedly_failed_parameters": repeatedly_failed_parameters,
+    }

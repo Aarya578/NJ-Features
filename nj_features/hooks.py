@@ -72,9 +72,9 @@ doc_events = {
     #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
     # },
     "Purchase Receipt": {
-        # "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
-        # "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
-        "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
+        "before_save": "nj_features.overrides.purchase_receipt.generate_batch_no",
+        "on_submit": "nj_features.overrides.purchase_receipt.get_batch",
+        # "validate": "nj_features.overrides.purchase_receipt.mr_raise_from_pr",
     },
     "Purchase Order": {
         "before_save": "nj_features.overrides.purchase_order.restore_manual_conversion_on_po",
@@ -86,7 +86,10 @@ doc_events = {
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
-        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "before_submit":[
+            "nj_features.nj_features.api.api_files.get_backup_duration",
+            "nj_features.nj_features.doctype.njqca.njqca.previous_njqca_failed_result_validation",
+        ] ,
     },
     "NJ Quality Inspection": {
         "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
@@ -118,7 +121,8 @@ doc_events = {
         ]
     },
     "Employee": {
-        "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
+        "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
+        "before_save": "nj_features.overrides.employee.updating_time_stamp",
     },
     # "Journal Entry": {
     #     "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
@@ -200,14 +204,20 @@ scheduler_events = {
         # "*/55 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_from_priduction_plan",
         # ],
-        # "*/55 * * * *": [
+        # "*/56 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_for_laptop_adaptors",
         # ],
-        # "*/55 * * * *": [
+        # "*/57 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.collect_all_purpose_material_issue",
         # ],
-        # "*/55 * * * *": [
+        # "*/58 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.cosumables_material_issue_mr",
+        # ],
+        # "*/59 * * * *": [
+        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_ram_mr_via_production_plan",
+        # ],
+        # "*/59 * * * *": [
+        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
         # ],
         "50 23 * * *": [
             "nj_features.overrides.product_bundle.update_variant_status",

@@ -9,6 +9,9 @@ import functools
 from frappe import _
 from frappe.utils import add_days, flt
 from typing import Dict, List, Optional, Union
+
+from frappe.utils import flt
+from typing import Dict, List, Optional, Union, Set
 from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
@@ -85,7 +88,8 @@ UPDATE_SERIAL_RESERVED_SO = True
 _ITEM_CORE: Dict[str, Dict] = {}
 _ITEM_ATTRS: Dict[str, Dict] = {}
 _ITEM_KEYS: Dict[str, Dict] = {}
-_SELLABLE_ITEM_CODES: set = set()
+_MODEL_TO_SELLABLE_ITEMS: Dict[tuple, List[str]] = defaultdict(list)
+_SELLABLE_ITEM_CODES: Set[str] = set()
 
 # =========================
 # Part allocation global state (virtual stock)
@@ -93,6 +97,7 @@ _SELLABLE_ITEM_CODES: set = set()
 _PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ (virtual snapshot)
 _PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
 _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
+_SERIAL_TO_MR_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
 
 
 # =========================
@@ -292,13 +297,21 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         max_seq=max_seq,
     )
 
+    _SELLABLE_ITEM_CODES.clear()
+    _MODEL_TO_SELLABLE_ITEMS.clear()
     sellable_items = _get_sellable_items()
-    if not sellable_items:
-        logger.warning("SELLABLE portfolio is empty. Check REQUIRE_SHOPIFY_IDS_FOR_SELLABLE and item groups.")
+    _prime_item_cache(list(_SELLABLE_ITEM_CODES))
+    
+    # Build reverse lookup map for O(1) matching
+    for ic in _SELLABLE_ITEM_CODES:
+        key = _ITEM_KEYS.get(ic, {}).get("model_key")
+        if key:
+            _MODEL_TO_SELLABLE_ITEMS[key].append(ic)
 
     sales_rate = _compute_recency_weighted_sales_rates_SO_union(sellable_items)
     if not sales_rate:
         logger.warning("No sales_rate computed.")
+
     random.seed(42)
 
     plan_date = frappe.utils.nowdate()
@@ -324,13 +337,46 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         forward_keys_per_seq[s] = _build_forward_keys(sellable_items, forward_grain, sales_rate)
 
     inward_serials_per_dept: Dict[str, List[Dict]] = {}
+    all_serial_ids = []
     for s in sequences:
         for d in depts_by_seq[s]:
             dept_name = d["name"]
             dept_doc = frappe.get_doc("Department", dept_name)
-            inward_serials_per_dept[dept_name] = _get_inward_serials_for_department(dept_doc)
-            # Log number of serials fetched from department
-            logger.debug(f"has taken {len(inward_serials_per_dept[dept_name])} serial no from the department {dept_name}")
+            rows = _get_inward_serials_for_department(dept_doc)
+            inward_serials_per_dept[dept_name] = rows
+            all_serial_ids.extend([r["name"] for r in rows])
+            logger.debug(f"has taken {len(rows)} serial no from the department {dept_name}")
+
+    # Batch fetch all MR items for all serials to avoid N+1 queries
+    _SERIAL_TO_MR_ITEMS.clear()
+    if all_serial_ids:
+        mr_rows = frappe.db.sql(
+            """
+            SELECT
+                MRI.item_code,
+                MRI.item_group,
+                MRI.creation,
+                MRI.parent AS material_request,
+                MRI.serial_no,
+                MRI.stock_qty,
+                MRI.qty AS mr_qty
+            FROM `tabMaterial Request Item` MRI
+            INNER JOIN `tabMaterial Request` MR
+                ON MR.name = MRI.parent
+                AND MR.status = 'Pending'
+                AND IFNULL(MR.post_order_status, '') != 'Completed'
+                AND MR.docstatus = 1
+            WHERE MRI.serial_no IN %(serial_list)s
+                AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
+                AND MRI.docstatus = 1
+                AND MRI.item_group IS NOT NULL
+            ORDER BY MRI.modified DESC
+            """,
+            {"serial_list": tuple(all_serial_ids)},
+            as_dict=True,
+        )
+        for row in mr_rows:
+            _SERIAL_TO_MR_ITEMS[row["serial_no"]].append(row)
 
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
@@ -372,13 +418,14 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     })
                     continue
                 
-                # 2. Check Part List Status (Incomplete Wizard)
-                if row.get("part_list_status") != "Completed":
+                # 2. Check Part List Status and Submission (Incomplete Wizard)
+                if row.get("part_list_status") != "Completed" or row.get("iw_docstatus") != 1:
+                    reason = "Item Wizard not Completed" if row.get("part_list_status") != "Completed" else "Item Wizard not Submitted"
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
                         "current_department": dept_name,
                         "current_warehouse": wh,
-                        "reason": "Item Wizard not Completed"
+                        "reason": reason
                     })
                     continue
                 
@@ -788,6 +835,8 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                     IFNULL(it_so.is_stock_item, 0) = 1
                     OR it_comp.item_group IN ('Laptops','Chromebooks')
                 )
+                AND IFNULL(it_so.disabled, 0) = 0
+                AND (IFNULL(it_so.is_stock_item, 0) = 1 OR IFNULL(it_comp.disabled, 0) = 0)
         ) AS so_data
 
         LEFT JOIN (
@@ -892,7 +941,8 @@ def _get_sellable_items() -> List[Dict]:
             f"""
             SELECT DISTINCT pbi.item_code AS item_code
             FROM `tabItem` i
-            INNER JOIN `tabProduct Bundle Item` pbi ON i.name = pbi.parent
+            INNER JOIN `tabProduct Bundle` pb ON i.name = pb.new_item_code
+            INNER JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
             INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
             WHERE
                 1=1
@@ -900,6 +950,9 @@ def _get_sellable_items() -> List[Dict]:
                 AND i.item_model IN ({",".join(["%s"] * len(placeholders_list))})
                 AND ci.item_group IN %s
                 AND i.has_variants = 0
+                AND i.disabled = 0
+                AND ci.disabled = 0
+                AND pb.disable = 0
             """,
             tuple(placeholders_list) + (tuple(SELLABLE_ITEM_GROUPS),),
             as_dict=True,
@@ -909,13 +962,17 @@ def _get_sellable_items() -> List[Dict]:
             f"""
             SELECT DISTINCT pbi.item_code AS item_code
             FROM `tabItem` i
-            INNER JOIN `tabProduct Bundle Item` pbi ON i.name = pbi.parent
+            INNER JOIN `tabProduct Bundle` pb ON i.name = pb.new_item_code
+            INNER JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
             INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
             WHERE
                 1=1
                 {where_shopify}
                 AND ci.item_group IN %(igroups)s
                 AND i.has_variants = 0
+                AND i.disabled = 0
+                AND ci.disabled = 0
+                AND pb.disable = 0
             """,
             {"igroups": tuple(SELLABLE_ITEM_GROUPS)},
             as_dict=True,
@@ -1450,7 +1507,8 @@ def _get_reconfig_serials_for_departments(
             sn.creation,
             sn.purchase_date,
             sn.item_wizard,
-            iw.part_list_status
+            iw.part_list_status,
+            iw.docstatus AS iw_docstatus
         FROM `tabSerial No` sn
         INNER JOIN `tabItem` it
             ON sn.item_code = it.name
@@ -1477,7 +1535,7 @@ def _get_reconfig_serials_for_departments(
     for r in rows:
         if not r.get("item_wizard"):
             continue
-        if r.get("part_list_status") != "Completed":
+        if r.get("part_list_status") != "Completed" or r.get("iw_docstatus") != 1:
             continue
         valid_rows.append(r)
 
@@ -1653,7 +1711,8 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             sn.creation,
             sn.purchase_date,
             sn.item_wizard,
-            iw.part_list_status
+            iw.part_list_status,
+            iw.docstatus AS iw_docstatus
         FROM `tabSerial No` sn
         INNER JOIN `tabItem` it
             ON sn.item_code = it.name
@@ -1816,12 +1875,12 @@ def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
     model_key = _ITEM_KEYS[item_code]["model_key"]
     config_key = _ITEM_KEYS[item_code]["config_key"]
 
-    candidates = []
-    for ic in (_SELLABLE_ITEM_CODES or set()):
-        if ic not in _ITEM_KEYS:
-            _prime_item_cache([ic])
-        if _ITEM_KEYS.get(ic, {}).get("model_key") == model_key:
-            candidates.append(ic)
+    candidates = _MODEL_TO_SELLABLE_ITEMS.get(model_key, [])
+    
+    # Ensure candidates are primed
+    unprimed = [ic for ic in candidates if ic not in _ITEM_KEYS]
+    if unprimed:
+        _prime_item_cache(unprimed)
 
     if not candidates:
         return None
@@ -1856,7 +1915,7 @@ def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
 def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> Union[str, None]:
     if not template_item or not attr_map:
         return None
-    variants = frappe.get_all("Item", filters={"variant_of": template_item}, pluck="name")
+    variants = frappe.get_all("Item", filters={"variant_of": template_item, "disabled": 0}, pluck="name")
     if not variants:
         return None
     _prime_item_cache(variants)
@@ -1986,31 +2045,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         )
         return True
 
-    mr_items = frappe.db.sql(
-        """
-        SELECT
-            MRI.item_code,
-            MRI.item_group,
-            MRI.creation,
-            MRI.parent AS material_request,
-            MRI.serial_no,
-            MRI.stock_qty,
-            MRI.qty AS mr_qty
-        FROM `tabMaterial Request Item` MRI
-        INNER JOIN `tabMaterial Request` MR
-            ON MR.name = MRI.parent
-            AND MR.status = 'Pending'
-            AND IFNULL(MR.post_order_status, '') != 'Completed'
-            AND MR.docstatus = 1
-        WHERE MRI.serial_no IN %(serial_list)s
-            AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
-            AND MRI.docstatus = 1
-            AND MRI.item_group IS NOT NULL
-        ORDER BY MRI.modified DESC
-        """,
-        {"serial_list": (serial_no,)},
-        as_dict=True,
-    )
+    mr_items = _SERIAL_TO_MR_ITEMS.get(serial_no, [])
 
     mr_names = sorted({row["material_request"] for row in mr_items}) if mr_items else []
     logger.debug(
@@ -2717,9 +2752,6 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
 
     shortage_items = _adjust_pp_shortage_qty_for_existing_mrs(shortage_items)
     print("PP MR shortage items after existing MR adjustment:", len(shortage_items))
-    if not shortage_items:
-        return
-
     item_skip_reasons = _get_pp_item_skip_reasons([item["item_code"] for item in shortage_items])
     if item_skip_reasons:
         valid_shortage_items = []
@@ -2737,6 +2769,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
             valid_shortage_items.append(item)
 
         shortage_items = valid_shortage_items
+
         print("PP MR shortage items after item lifecycle validation:", len(shortage_items))
         if not shortage_items:
             return

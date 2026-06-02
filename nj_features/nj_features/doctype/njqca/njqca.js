@@ -332,13 +332,19 @@ frappe.ui.form.on("NJQCA", {
         callback: function (r) {
           if (r.message) {
             frm.set_value("serial_no", r.message);
+            frm.set_value("linked_ext", r.message);
             frm.refresh_field("serial_no");
+            frm.refresh_field("linked_ext");
           }
         },
       });
     }
 
     if (frm.doc.rfq_id && frm.doc.serial_no) {
+      if (frm.doc.linked_ext !== frm.doc.serial_no) {
+        frm.set_value("linked_ext", frm.doc.serial_no);
+        frm.refresh_field("linked_ext");
+      }
       frappe.call({
         method:
           "nj_features.nj_features.doctype.njqca.njqca.create_serial_no_based_on_rfq",
@@ -722,43 +728,51 @@ frappe.ui.form.on("NJQCA", {
       });
 
       // Run Performance / HeavyLoad final status only after parsed rows are added
-      if (
-        selectedModel &&
-        selectedItemGroup == "Laptops" &&
-        !frm.doc.rfq_id &&
-        (isReliabilityTest || perfOrHeavyLoadFilePresent)
-      ) {
-        await frappe.call({
-          method:
-            "nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria",
-          args: { doc: frm.doc },
-          callback: function (r) {
-            if (!r || !r.message) {
-              return;
-            }
+      // if (
+      //   selectedModel &&
+      //   selectedItemGroup == "Laptops" &&
+      //   !frm.doc.rfq_id &&
+      //   (isReliabilityTest || perfOrHeavyLoadFilePresent)
+      // ) {
+      //   await frappe.call({
+      //     method:
+      //       "nj_features.nj_features.doctype.njqca.njqca.update_performance_criteria",
+      //     args: { doc: frm.doc },
 
-            if (r.message.error) {
-              frappe.msgprint({
-                title: __("Error"),
-                message: r.message.error,
-                indicator: "red",
-              });
-              frappe.validated = false;
-              return;
-            }
+      //     callback: function (r) {
+      //       if (!r || !r.message) {
+      //         return;
+      //       }
 
-            if (!r.message.parameter) {
-              return;
-            }
+      //       console.log("update_performance_criteria response:", r.message);
 
-            applyChangesNoDuplicates(frm, [r.message]);
-            frm.refresh_field("njqca_result_parameters");
-          },
-          error: function (err) {
-            console.error("Error while updating performance criteria:", err);
-          },
-        });
-      }
+      //       if (r.message.error) {
+      //         frappe.msgprint({
+      //           title: __("Error"),
+      //           message: r.message.error,
+      //           indicator: "red",
+      //         });
+      //         frappe.validated = false;
+      //         return;
+      //       }
+
+      //       if (Array.isArray(r.message.changes)) {
+      //         applyChangesNoDuplicates(frm, r.message.changes);
+      //         frm.refresh_field("njqca_result_parameters");
+      //         return;
+      //       }
+
+      //       if (r.message.parameter) {
+      //         applyChangesNoDuplicates(frm, [r.message]);
+      //         frm.refresh_field("njqca_result_parameters");
+      //       }
+      //     },
+
+      //     error: function (err) {
+      //       console.error("Error while updating performance criteria:", err);
+      //     },
+      //   });
+      // }
     }
 
     // Check automated repack item code
@@ -2263,6 +2277,9 @@ function trigger_serial_no(frm) {
           }
           syncDesktopManufacturerModelFlow(frm);
         }
+
+        // EXT-NJ Linkage: check if BIOS maps to an EXT serial
+        check_and_handle_ext_linkage(frm);
       },
       error: function (err) {
         console.error(err);
@@ -2415,11 +2432,20 @@ function processItemTemplate(frm) {
                 "item_group",
                 row.item_group,
               );
+              newRow._item_templates = row.item_template;
+              let initial_ram_template = "";
+              if (Array.isArray(row.item_template)) {
+                if (row.item_template.length === 1) {
+                  initial_ram_template = row.item_template[0];
+                }
+              } else if (typeof row.item_template === "string") {
+                initial_ram_template = row.item_template;
+              }
               frappe.model.set_value(
                 newRow.doctype,
                 newRow.name,
                 "item_template",
-                row.item_template,
+                initial_ram_template,
               );
               frappe.model.set_value(
                 newRow.doctype,
@@ -2553,11 +2579,20 @@ function processItemTemplate(frm) {
                 "fetched_item_code",
                 row.fetched_item_code,
               );
+              newRow._item_templates = row.item_template;
+              let initial_storage_template = "";
+              if (Array.isArray(row.item_template)) {
+                if (row.item_template.length === 1) {
+                  initial_storage_template = row.item_template[0];
+                }
+              } else if (typeof row.item_template === "string") {
+                initial_storage_template = row.item_template;
+              }
               frappe.model.set_value(
                 newRow.doctype,
                 newRow.name,
                 "item_template",
-                row.item_template,
+                initial_storage_template,
               );
               frappe.model.set_value(
                 newRow.doctype,
@@ -2626,6 +2661,31 @@ function processItemTemplate(frm) {
           frm.refresh_field("njqca_laptop_ram");
           frm.refresh_field("njqca_laptop_processors");
           frm.refresh_field("njqca_laptop_storage");
+
+          // Dynamically set row-specific properties for item_template dropdown/read-only
+          ["njqca_laptop_ram", "njqca_laptop_storage"].forEach((table_name) => {
+            let grid = frm.fields_dict[table_name].grid;
+            grid.grid_rows.forEach((grid_row) => {
+              let doc = grid_row.doc;
+              if (doc._item_templates) {
+                let templates = [];
+                if (Array.isArray(doc._item_templates)) {
+                  templates = doc._item_templates;
+                } else if (typeof doc._item_templates === "string" && doc._item_templates) {
+                  templates = [doc._item_templates];
+                }
+
+                if (templates.length > 1) {
+                  frm.set_df_property(table_name, "options", templates, frm.docname, "item_template", doc.name);
+                  frm.set_df_property(table_name, "read_only", 0, frm.docname, "item_template", doc.name);
+                } else if (templates.length === 1) {
+                  frm.set_df_property(table_name, "options", templates, frm.docname, "item_template", doc.name);
+                  frm.set_df_property(table_name, "read_only", 1, frm.docname, "item_template", doc.name);
+                }
+              }
+            });
+            grid.refresh();
+          });
         }
       },
       error: function (err) {
@@ -3437,6 +3497,66 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EXT-NJ Serial Linkage via BIOS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function check_and_handle_ext_linkage(frm) {
+  // Only run for non-EXT NJQCAs (skip if this NJQCA itself belongs to an EXT/RFQ serial)
+  if (!frm.doc.bios_serialno || !frm.doc.serial_no || frm.doc.rfq_id) return;
+
+  frappe.call({
+    method:
+      "nj_features.nj_features.doctype.njqca.njqca.check_ext_serial_linkage",
+    args: {
+      bios_serial_no: frm.doc.bios_serialno,
+      nj_serial_no: frm.doc.serial_no,
+    },
+    callback: function (r) {
+      if (!r.message || !r.message.found) return;
+      // CASE D: already linked to each other — silently skip
+      if (r.message.already_linked) return;
+
+      // CASE C: EXT found but not yet linked — ask the user
+      let ext_serial = r.message.ext_serial;
+      frappe.confirm(
+        __(
+          `BIOS <b>${frm.doc.bios_serialno}</b> is already mapped to EXT serial 
+          <b>${ext_serial}</b>.<br><br>
+          Do you want to link <b>${ext_serial}</b> component data to NJ serial 
+          <b>${frm.doc.serial_no}</b>?`
+        ),
+        // YES
+        function () {
+          frappe.call({
+            method:
+              "nj_features.nj_features.doctype.njqca.njqca.link_ext_to_nj_serial",
+            args: {
+              ext_serial_no: ext_serial,
+              nj_serial_no: frm.doc.serial_no,
+              njqca_name: frm.doc.name,
+            },
+            callback: function (r2) {
+              if (r2.message && r2.message.success) {
+                frm.set_value("linked_ext", ext_serial);
+                frm.refresh_field("linked_ext");
+                frappe.show_alert({
+                  message: __(
+                    `EXT serial <b>${ext_serial}</b> linked. Component data copied to <b>${frm.doc.serial_no}</b>.`
+                  ),
+                  indicator: "green",
+                }, 7);
+              }
+            },
+          });
+        },
+        // NO — do nothing, proceed normally
+        function () {}
+      );
+    },
+  });
+}
+
 frappe.ui.form.on("NJQCA Adaptor", {
   njqca_adaptor_add: function (frm, cdt, cdn) {
     setTimeout(() => show_checkbutton_for_field(frm, "njqca_adaptor"), 300);
@@ -3550,6 +3670,10 @@ frappe.ui.form.on("NJQCA Adaptor", {
 frappe.ui.form.on("NJQCA Laptop Storage", {
   check_button: async function (frm, cdt, cdn) {
     let child = locals[cdt][cdn];
+    if (!child.item_template) {
+      frappe.throw(__("Item Template is not defined. Please select an Item Template first."));
+      return;
+    }
     let item_group = child.item_group;
     let grid = frm.get_field(child.parentfield);
 
@@ -3812,6 +3936,10 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
       );
     }
   },
+  item_template: function (frm, cdt, cdn) {
+    let child = locals[cdt][cdn];
+    generateStorageItemCode(frm, cdt, cdn, child);
+  },
 });
 
 function shouldBeRequired(child) {
@@ -3851,6 +3979,10 @@ function validate_mandatory_fields(frm) {
 frappe.ui.form.on("NJQCA Laptop Ram", {
   check_button: async function (frm, cdt, cdn) {
     let child = locals[cdt][cdn];
+    if (!child.item_template) {
+      frappe.throw(__("Item Template is not defined. Please select an Item Template first."));
+      return;
+    }
     let item_group = child.item_group;
     let grid = frm.get_field(child.parentfield);
 
@@ -3951,6 +4083,10 @@ frappe.ui.form.on("NJQCA Laptop Ram", {
       }
     });
     d.show();
+  },
+  item_template: function (frm, cdt, cdn) {
+    let child = locals[cdt][cdn];
+    generateRamItemCode(frm, cdt, cdn, child);
   },
 });
 

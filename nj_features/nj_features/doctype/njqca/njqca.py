@@ -2366,6 +2366,8 @@ def get_item_code_for_each_part(doc):
             for row in doc.get('njqca_item_component', []):
                 skip_ram, skip_memory = False, False
                 attribute_value, attribute_object = {}, {}
+
+            
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -2380,6 +2382,10 @@ def get_item_code_for_each_part(doc):
                                 last_variant_values[item_group] = last_variant_values.get(item_group, {})
                                 last_variant_values[item_group][variant] = row.get(variant)
                             attribute_value = last_variant_values.get(item_group, {})
+
+                            variant_7 = row.get('variant_7')
+
+                        
                             
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
@@ -2423,10 +2429,16 @@ def get_item_code_for_each_part(doc):
                         elif item_group.lower() == storage.lower() and row.get('variant_10') and row.get('variant_3') != 'USB':
                             variant_type = ''
                             
-                            if (row.get('variant_1') is not None and 'ssd' in row.get('variant_1', '').lower()) or \
-                            (row.get('variant_6') is not None and ('nvme' in row.get('variant_6', '').lower())) or ('ssd' in row.get('variant_5', '').lower()) or \
-                            (row.get('variant_15') is not None and 'ssd' in row.get('variant_15', '').lower()):
-                                variant_type = ' SSD'
+                            storage_text = " ".join([
+                                str(row.get("variant_1") or ""),
+                                str(row.get("variant_3") or ""),
+                                str(row.get("variant_5") or ""),
+                                str(row.get("variant_6") or ""),
+                                str(row.get("variant_15") or ""),
+                            ]).lower()
+
+                            if "ssd" in storage_text or "nvme" in storage_text:
+                                variant_type = " SSD"
 
                             if variant == 'variant_10':
                                 final_value = row.get(variant)
@@ -2441,7 +2453,10 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         formatted_value = f"{numeric_value} GB"
 
-                                    final_value = formatted_value + variant_type
+                                    if numeric_value == 300:
+                                        final_value = formatted_value
+                                    else:
+                                        final_value = formatted_value + variant_type
 
                                 elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
                                     formatted_value = f"64 GB"
@@ -2773,7 +2788,8 @@ def consolidate_storage(data):
 
     return result_data
                     
-def normalize_gen(cpu_value, model):
+def normalize_gen(cpu_value, model, variant_7=None):
+    
     match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
@@ -2783,7 +2799,14 @@ def normalize_gen(cpu_value, model):
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)  # Extract the generation number
+            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)
+            
+            # ---- NEW: compare with variant_7 and override if mismatch ----
+            if variant_7:
+                variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
+                if variant_7_digits and variant_7_digits != gen_number:
+                    gen_number = variant_7_digits
+            # --------------------------------------------------------------
             
             if gen_number == '1':
                 gen_number += 'st'
@@ -3896,33 +3919,59 @@ def update_or_append_result_parameter(njqca_name, result):
         njqca_doc.save(ignore_permissions=True)
 
 def build_status_reason(evaluation_results, status_name):
+    """
+    Reason field should contain only failed parameter names.
+    No prefix like Performance_status or heavy_load_status.
+    Keep under 140 chars because NJQCA Result Parameters.value is Data(140).
+    """
+
     MAX_LEN = 135
 
     if not evaluation_results:
-        return f"{status_name}: No criteria checked"[:MAX_LEN]
+        return "No criteria checked"[:MAX_LEN]
 
     failed_rows = [
         row for row in evaluation_results
-        if row.get("status") == "Fail"
+        if str(row.get("status") or "").strip().lower() == "fail"
     ]
 
     if not failed_rows:
-        return f"{status_name}: All checked params passed"[:MAX_LEN]
+        return "All checked passed"[:MAX_LEN]
 
-    first = failed_rows[0]
+    failed_params = []
 
-    parameter = str(first.get("parameter") or "")
-    actual = str(first.get("njqca_value") or "")
-    expected = str(first.get("expected_range") or "")
-    message = str(first.get("message") or "")
+    for row in failed_rows:
+        parameter = str(row.get("parameter") or "").strip()
+        message = str(row.get("message") or "").strip()
 
-    if "not found in NJQCA Result Parameters" in message:
-        reason = f"{parameter}: NJQCA value missing, expected={expected}"
-    else:
-        reason = f"{parameter} FAIL: actual={actual}, expected={expected}"
+        if not parameter:
+            continue
 
-    if len(failed_rows) > 1:
-        reason += f" +{len(failed_rows) - 1} more"
+        if "not found in NJQCA Result Parameters" in message:
+            parameter = f"{parameter}(missing)"
+
+        failed_params.append(parameter)
+
+    if not failed_params:
+        return "Failed reason unavailable"[:MAX_LEN]
+
+    shown_params = []
+    remaining = len(failed_params)
+
+    for param in failed_params:
+        suffix = f" +{remaining - 1} more" if remaining > 1 else ""
+        test_value = ", ".join(shown_params + [param]) + suffix
+
+        if len(test_value) <= MAX_LEN:
+            shown_params.append(param)
+            remaining -= 1
+        else:
+            break
+
+    reason = ", ".join(shown_params)
+
+    if remaining > 0:
+        reason += f" +{remaining} more"
 
     return reason[:MAX_LEN]
 

@@ -2410,8 +2410,6 @@ def get_item_code_for_each_part(doc):
             for row in doc.get('njqca_item_component', []):
                 skip_ram, skip_memory = False, False
                 attribute_value, attribute_object = {}, {}
-
-            
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -2426,10 +2424,6 @@ def get_item_code_for_each_part(doc):
                                 last_variant_values[item_group] = last_variant_values.get(item_group, {})
                                 last_variant_values[item_group][variant] = row.get(variant)
                             attribute_value = last_variant_values.get(item_group, {})
-
-                            variant_7 = row.get('variant_7')
-
-                        
                             
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
@@ -2517,7 +2511,7 @@ def get_item_code_for_each_part(doc):
                                     else:
                                         final_value = formatted_value + variant_type
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
+                                elif numeric_value >= 60 and numeric_value <= 80 and "Chromebook" in doc.get("item_code") or "-CB-" in doc.get('serial_no'):
                                     formatted_value = f"64 GB"
                                     final_value = formatted_value + variant_type
                                     attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))

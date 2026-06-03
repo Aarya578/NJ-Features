@@ -1,14 +1,18 @@
 import frappe
 import pymysql
+import json
+import requests
+import time
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.api.shopify_inventory import (
     get_shopify_settings,
     get_shopify_variants,
     safe_float,
+    post_shopify_api,
 )
 
-logger = frappe.logger("InventoryTargetedLog", allow_site=True, file_count=2)
+logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
 
 
 # =============================================================================
@@ -73,6 +77,7 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     3. Run targeted parent and proportional qty updates.
     4. Stage affected variants into NJ Inventory Sync Main.
     5. Update inventory_item_id and shopify_quantity from Shopify API.
+    6. Push the staged quantities directly to Shopify.
     """
     logger.debug(f"[Targeted Sync] Started for SO={sales_order}, items={item_codes}")
 
@@ -82,13 +87,9 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
         return
 
     # Step 1: Resolve variant IDs
-    variant_ids = get_affected_variant_ids(item_codes)
+    variant_ids = get_affected_variant_ids(item_codes, sales_order)
     if not variant_ids:
-        log_error(
-            f"No affected Shopify Variant IDs found for items: {item_codes}",
-            "create_rq_doc_by_item_codes",
-            "Warning"
-        )
+        # Already logged in get_affected_variant_ids
         return
 
     logger.debug(f"[Targeted Sync] Affected variant IDs: {variant_ids}")
@@ -111,6 +112,9 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     # Step 5: Stage into NJ Inventory Sync Main
     stage_targeted_variants(variant_ids, settings)
 
+    # Step 6: Immediate Push to Shopify
+    push_targeted_variants_to_shopify(variant_ids, settings)
+
     log_error(
         f"[Targeted Sync] Completed for SO={sales_order}, variants={variant_ids}",
         "create_rq_doc_by_item_codes",
@@ -122,10 +126,11 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
 # 🔹 STEP 1: Resolve Affected Shopify Variant IDs
 # =============================================================================
 
-def get_affected_variant_ids(item_codes):
+def get_affected_variant_ids(item_codes, sales_order=None):
     """
     Given a list of ERP item codes, find all Shopify Variant IDs
     in Product Bundle that contain any of those item codes.
+    Logs missing mappings to sales_order_shopify_push.
     """
     try:
         if not item_codes:
@@ -133,7 +138,7 @@ def get_affected_variant_ids(item_codes):
 
         placeholders = ', '.join(['%s'] * len(item_codes))
         rows = frappe.db.sql(f"""
-            SELECT DISTINCT pb.shopify_variant_id
+            SELECT pb.shopify_variant_id, pbi.item_code
             FROM `tabProduct Bundle` pb
             INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
             WHERE
@@ -142,16 +147,22 @@ def get_affected_variant_ids(item_codes):
                 AND pb.shopify_variant_id != ''
         """, tuple(item_codes), as_dict=True)
 
-        variant_ids = [
+        found_item_codes = {row.get("item_code") for row in rows}
+        missing_item_codes = set(item_codes) - found_item_codes
+
+        if missing_item_codes:
+            log_error(
+                f"SO {sales_order}: No Shopify Variant mapping found for items: {list(missing_item_codes)}",
+                "sales_order_shopify_push",
+                "Info"
+            )
+
+        variant_ids = list(set(
             str(row.shopify_variant_id).strip()
             for row in rows
             if row.get("shopify_variant_id")
-        ]
-        log_error(
-            f"Found {len(variant_ids)} affected variant IDs for items: {item_codes}",
-            "get_affected_variant_ids",
-            "Info"
-        )
+        ))
+        
         return variant_ids
 
     except Exception:
@@ -615,7 +626,7 @@ def stage_targeted_variants(variant_ids, settings):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty
+                SELECT name, actual_qty, status, sync_error
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -626,15 +637,22 @@ def stage_targeted_variants(variant_ids, settings):
                 existing_doc = existing[0]
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
 
-                if float(row.total_actual_qty) != existing_qty:
-                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                        "is_active": 1,
-                        "sync_error": update_status,
-                        "status": "Queued",
-                        "actual_qty": row.total_actual_qty,
-                        "updated_qty": row.total_actual_qty,
-                        "modified": frappe.utils.now(),
-                    })
+                is_not_found = (
+                    existing_doc.status == "Error" 
+                    and existing_doc.sync_error 
+                    and "Not Found" in existing_doc.sync_error
+                )
+
+                if not is_not_found:
+                    if float(row.total_actual_qty) != existing_qty:
+                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
+                            "is_active": 1,
+                            "sync_error": update_status,
+                            "status": "Queued",
+                            "actual_qty": row.total_actual_qty,
+                            "updated_qty": row.total_actual_qty,
+                            "modified": frappe.utils.now(),
+                        })
             else:
                 new_doc = frappe.new_doc("NJ Inventory Sync Main")
                 qty = safe_float(row.total_actual_qty)
@@ -656,13 +674,24 @@ def stage_targeted_variants(variant_ids, settings):
 
         # Update inventory_item_id and shopify_quantity from Shopify API
         shopify_data = get_shopify_variants(variant_ids, settings["shop"], settings["token"])
+        found_variant_ids = set()
         if shopify_data:
             for data in shopify_data:
+                found_variant_ids.add(str(data["variant_id"]).strip())
                 frappe.db.sql("""
                     UPDATE `tabNJ Inventory Sync Main`
                     SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW()
                     WHERE shopify_variant_id = %s
                 """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
+
+        missing_variant_ids = set(variant_ids) - found_variant_ids
+        if missing_variant_ids:
+            for m_vid in missing_variant_ids:
+                frappe.db.sql("""
+                    UPDATE `tabNJ Inventory Sync Main`
+                    SET status = 'Error', sync_error = 'Variant ID not found in Shopify', modified = NOW()
+                    WHERE shopify_variant_id = %s AND status = 'Queued'
+                """, (m_vid,))
 
         frappe.db.commit()
         log_error(
@@ -673,3 +702,99 @@ def stage_targeted_variants(variant_ids, settings):
 
     except Exception:
         log_error(frappe.get_traceback(), "stage_targeted_variants")
+
+
+def push_targeted_variants_to_shopify(variant_ids, settings):
+    """
+    Step 6: Push the staged quantities for the affected variants directly to Shopify.
+    """
+    try:
+        if not variant_ids:
+            return
+
+        headers = {
+            "X-Shopify-Access-Token": settings["token"],
+            "Content-Type": "application/json"
+        }
+
+        # Fetch the staged records we just updated/inserted
+        vp = ', '.join(['%s'] * len(variant_ids))
+        queued = frappe.db.sql(f"""
+            SELECT name, updated_qty, inventory_item_id, shopify_variant_id
+            FROM `tabNJ Inventory Sync Main`
+            WHERE status = 'Queued' AND is_active = 1 
+            AND shopify_variant_id IN ({vp})
+        """, tuple(variant_ids), as_dict=True)
+
+        found_variants = {row.shopify_variant_id for row in queued}
+        
+        # Log variants that exist but are missing inventory_item_id or weren't staged
+        for vid in variant_ids:
+            if vid not in found_variants:
+                log_error(
+                    f"Variant {vid}: Skipping push. Reason: Missing inventory_item_id in Staging table.",
+                    "sales_order_shopify_push",
+                    "Info"
+                )
+
+        # Filter out records without inventory_item_id for the push loop
+        sync_ready = [r for r in queued if r.inventory_item_id]
+
+        if not sync_ready:
+            logger.debug(f"[Targeted Push] No variants ready for API push (missing inventory_item_ids).")
+            return
+
+        completed_docs = []
+        errored_docs = []
+
+        for row in sync_ready:
+            try:
+                available = int(safe_float(row.updated_qty) or 0)
+                update_url = f"{settings['shop']}/admin/api/2023-01/inventory_levels/set.json"
+                payload = {
+                    "location_id": settings["location_id"],
+                    "inventory_item_id": row.inventory_item_id,
+                    "available": available,
+                }
+
+                resp = post_shopify_api(update_url, headers, payload)
+                data = resp.json()
+
+                if resp.status_code == 200:
+                    frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                        "status": "Completed",
+                        "shopify_quantity": available,
+                        "sync_error": str(data.get("inventory_level", "Success")),
+                        "modified": frappe.utils.now()
+                    })
+                    completed_docs.append(row.name)
+                else:
+                    error_msg = data.get("error") or data.get("errors") or "Unknown error"
+                    frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                        "status": "Error",
+                        "sync_error": f"API Error: {error_msg}",
+                        "modified": frappe.utils.now()
+                    })
+                    log_error(
+                        f"Variant {row.shopify_variant_id}: Shopify API failed. Reason: {error_msg}",
+                        "sales_order_shopify_push",
+                        "Error"
+                    )
+                    errored_docs.append(row.name)
+                
+                # Small sleep to respect Shopify's leaky bucket (standard is 2 req/s)
+                time.sleep(0.5)
+
+            except Exception as e:
+                log_error(f"Variant {row.shopify_variant_id}: Exception during push. Reason: {str(e)}", "sales_order_shopify_push")
+                errored_docs.append(row.name)
+
+        frappe.db.commit()
+        log_error(
+            f"Targeted push complete: {len(completed_docs)} success, {len(errored_docs)} error.",
+            "push_targeted_variants_to_shopify",
+            "Info"
+        )
+
+    except Exception:
+        log_error(frappe.get_traceback(), "push_targeted_variants_to_shopify")

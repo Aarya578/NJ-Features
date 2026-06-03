@@ -106,6 +106,7 @@ def check_warehouse_qty(t_warehouse, required_qty=1):
             SELECT warehouse, COUNT(*) AS current_qty
             FROM `tabSerial No`
             WHERE warehouse = %(warehouse)s
+            AND item_group IN ('Laptops', 'Chromebooks', 'MacBooks')
             GROUP BY warehouse
         ) sn ON sn.warehouse = w.name
         WHERE w.name = %(warehouse)s

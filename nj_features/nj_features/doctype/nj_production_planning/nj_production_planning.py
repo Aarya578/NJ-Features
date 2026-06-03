@@ -2819,6 +2819,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
         mr.append("items", {
             "item_code": item["item_code"],
             "qty": item["qty"],
+            "create_reference": plan_name,
             "schedule_date": schedule_date,
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
@@ -3137,6 +3138,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
             item_row = {
                 "item_code": item["item_code"],
                 "qty": item["qty"],
+                "create_reference": "NJ Production Planning ALL Material Issue",
                 "schedule_date": schedule_date,
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
             }

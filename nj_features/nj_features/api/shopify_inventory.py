@@ -8,7 +8,7 @@ from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
-logger=frappe.logger("InventoryLog", allow_site=True, file_count=2)
+logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
@@ -32,6 +32,48 @@ def safe_float(value):
         return float(value)
     except (ValueError, TypeError):
         return None
+
+def post_shopify_api(url, headers, payload=None, json_payload=None, max_retries=5):
+    """
+    POST request helper for Shopify API that handles 429 Too Many Requests
+    rate limits with retry and backoff.
+    """
+    retry_count = 0
+    backoff_time = 1.0
+    while retry_count < max_retries:
+        try:
+            if json_payload is not None:
+                resp = requests.post(url, headers=headers, json=json_payload, timeout=200)
+            else:
+                resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=200)
+                
+            if resp.status_code == 429:
+                retry_after = float(resp.headers.get("Retry-After", backoff_time))
+                wait_time = max(retry_after, backoff_time)
+                time.sleep(wait_time)
+                retry_count += 1
+                backoff_time *= 2
+                continue
+            return resp
+        except requests.exceptions.Timeout as e:
+            if retry_count < max_retries - 1:
+                time.sleep(backoff_time)
+                retry_count += 1
+                backoff_time *= 2
+                continue
+            raise e
+        except Exception as e:
+            if retry_count < max_retries - 1:
+                time.sleep(backoff_time)
+                retry_count += 1
+                backoff_time *= 2
+                continue
+            raise e
+    
+    mock_resp = requests.Response()
+    mock_resp.status_code = 429
+    mock_resp._content = b'{"errors": "Exceeded 2 calls per second for api client. Max retries reached."}'
+    return mock_resp
 
 def nj_temp_shopify_session(func):
     def wrapper(*args, **kwargs):
@@ -300,7 +342,7 @@ def create_rq_doc():
         logger.debug(f"parent_qty_map================== {parent_qty_map}")
 
         parent_qty_dict = {
-            (row["parent1"], row["processor"]): safe_float(row["total_parent_qty"])
+            (row["parent1"], str(row["processor"]).strip().lower()): safe_float(row["total_parent_qty"])
             for row in parent_qty_map
         }
         logger.debug(f"parent_qty_dict================== {parent_qty_dict}")
@@ -327,7 +369,7 @@ def create_rq_doc():
                 flags["enable_parent_override"]
                 and row.total_actual_qty < flags["parent_threshold"]
             ):
-                parent_qty = parent_qty_dict.get((row.parent1, row.processor or ""))
+                parent_qty = parent_qty_dict.get((row.parent1, str(row.processor or "").strip().lower()))
                 logger.debug(f"parent_qty================== {parent_qty}")
 
                 if (
@@ -385,7 +427,7 @@ def create_rq_doc():
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty
+                SELECT name, actual_qty, status, sync_error
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s 
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -401,15 +443,22 @@ def create_rq_doc():
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
                 logger.debug(f"existing_qty================== {existing_qty}")
 
-                if float(row.total_actual_qty) != existing_qty:
-                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                        "is_active": 1,
-                        "sync_error": update_status,
-                        "status": "Queued",
-                        "actual_qty": row.total_actual_qty,
-                        "updated_qty": row.total_actual_qty,
-                        "modified": frappe.utils.now(),
-                    })
+                is_not_found = (
+                    existing_doc.status == "Error" 
+                    and existing_doc.sync_error 
+                    and "Not Found" in existing_doc.sync_error
+                )
+
+                if not is_not_found:
+                    if (float(row.total_actual_qty) != existing_qty) or (existing_doc.status != "Completed"):
+                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
+                            "is_active": 1,
+                            "sync_error": update_status,
+                            "status": "Queued",
+                            "actual_qty": row.total_actual_qty,
+                            "updated_qty": row.total_actual_qty,
+                            "modified": frappe.utils.now(),
+                        })
             else:
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 logger.debug(f"doc================== {doc}")
@@ -449,12 +498,24 @@ def create_rq_doc():
         shopify_data = get_shopify_variants(product_ids, settings["shop"], settings["token"])
         logger.debug(f"shopify_data================== {shopify_data}")
 
-        for data in shopify_data:
-            frappe.db.sql("""
-                UPDATE `tabNJ Inventory Sync Main`
-                SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW()
-                WHERE shopify_variant_id = %s
-            """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
+        found_variant_ids = set()
+        if shopify_data:
+            for data in shopify_data:
+                found_variant_ids.add(str(data["variant_id"]).strip())
+                frappe.db.sql("""
+                    UPDATE `tabNJ Inventory Sync Main`
+                    SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW()
+                    WHERE shopify_variant_id = %s
+                """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
+
+        missing_variant_ids = set(product_ids) - found_variant_ids
+        if missing_variant_ids:
+            for m_vid in missing_variant_ids:
+                frappe.db.sql("""
+                    UPDATE `tabNJ Inventory Sync Main`
+                    SET status = 'Error', sync_error = 'Variant ID not found in Shopify', modified = NOW()
+                    WHERE shopify_variant_id = %s AND status = 'Queued'
+                """, (m_vid,))
 
     except Exception:
         log_error(
@@ -489,14 +550,7 @@ def create_shopify_inventory_sync():
             "Content-Type": "application/json"
         }
 
-        total_records_query = """
-            SELECT COUNT(*) AS count FROM `tabNJ Inventory Sync Main` 
-            WHERE status = 'Queued' AND is_active = 1 
-            AND (inventory_item_id IS NOT NULL OR inventory_item_id != '')
-        """
-        total_records = frappe.db.sql(total_records_query, as_dict=True)[0].count
-
-        while start < total_records:
+        while True:
             completed_docs = []
             errored_docs = []
             skipped_docs = []
@@ -506,8 +560,11 @@ def create_shopify_inventory_sync():
                 FROM `tabNJ Inventory Sync Main`
                 WHERE status = 'Queued' AND is_active = 1 AND 
                 (inventory_item_id IS NOT NULL OR inventory_item_id != '') 
-                LIMIT %s OFFSET %s
-            """, (batch_size, start), as_dict=True)
+                LIMIT %s
+            """, (batch_size,), as_dict=True)
+
+            if not queued:
+                break
 
             for row in queued:
                 try:
@@ -530,7 +587,7 @@ def create_shopify_inventory_sync():
                     }
 
                     try:
-                        update_resp = requests.post(update_url, headers=headers, data=json.dumps(payload), timeout=200)
+                        update_resp = post_shopify_api(update_url, headers, payload)
                         variant_data = update_resp.json()
                         error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
                     except requests.exceptions.Timeout:
@@ -561,6 +618,7 @@ def create_shopify_inventory_sync():
                             frappe.db.set_value("NJ Inventory Sync Main", row.name, {
                                 "status": "Completed",
                                 "is_active": 1,
+                                "shopify_quantity": updated_available,
                                 "sync_error": str(variant_data["inventory_level"]),
                                 "modified": frappe.utils.now()
                             })
@@ -608,7 +666,7 @@ def create_shopify_inventory_sync():
                     "Info"
                 )
 
-            start += batch_size
+            # Batch complete
 
         return "Inventory sync batches processed1"
 
@@ -652,7 +710,7 @@ def get_shopify_variants(product_ids, shop, token):
             }}
             """
 
-            response = requests.post(url, json={"query": graphql_query}, headers=headers)
+            response = post_shopify_api(url, headers=headers, json_payload={"query": graphql_query})
 
             if response.status_code == 200:
                 data = response.json()
@@ -679,3 +737,5 @@ def get_shopify_variants(product_ids, shop, token):
     except Exception as e:
         log_error(f"Error in get_shopify_variants_method: {str(e)}\n{frappe.get_traceback()}", "Error in get_shopify_variants_method")
         return None
+
+

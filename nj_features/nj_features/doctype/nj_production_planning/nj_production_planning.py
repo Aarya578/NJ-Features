@@ -61,7 +61,7 @@ class NJProductionPlanning(Document):
 # =========================
 # Tunables / Constants
 # =========================
-SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes"}
+SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes", "MacBooks"}
 
 # Take only the last 15 days for sales rate calc
 RECENCY_WINDOW_DAYS = 15
@@ -239,6 +239,7 @@ def _get_forward_inventory_excluding_current_dept(
 @frappe.whitelist()
 @log_io
 def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) -> Dict:
+    # return {"message": "Unified production plan ran successfully", "status": "success"}
     print("Running unified production plan...=============")
     depts = frappe.get_all(
         "Department",
@@ -821,7 +822,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 AND so.docstatus = 1
                 AND so.creation > CURDATE() - INTERVAL %(lookback)s DAY
 
-                AND soi.item_group IN ('Laptops','Chromebooks')
+                AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks')
                 AND so.sale_type != 'Amazon'
                 AND so.sale_type in ('NJ-Website-B2C','NJ-Direct-B2C')
                 AND so.customer != 'King Technologies'
@@ -833,7 +834,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
                 AND (
                     IFNULL(it_so.is_stock_item, 0) = 1
-                    OR it_comp.item_group IN ('Laptops','Chromebooks')
+                    OR it_comp.item_group IN ('Laptops','Chromebooks', 'MacBooks')
                 )
                 AND IFNULL(it_so.disabled, 0) = 0
                 AND (IFNULL(it_so.is_stock_item, 0) = 1 OR IFNULL(it_comp.disabled, 0) = 0)

@@ -2410,8 +2410,6 @@ def get_item_code_for_each_part(doc):
             for row in doc.get('njqca_item_component', []):
                 skip_ram, skip_memory = False, False
                 attribute_value, attribute_object = {}, {}
-
-            
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -2426,10 +2424,6 @@ def get_item_code_for_each_part(doc):
                                 last_variant_values[item_group] = last_variant_values.get(item_group, {})
                                 last_variant_values[item_group][variant] = row.get(variant)
                             attribute_value = last_variant_values.get(item_group, {})
-
-                            variant_7 = row.get('variant_7')
-
-                        
                             
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
@@ -2492,38 +2486,39 @@ def get_item_code_for_each_part(doc):
                                 numeric_value = 0
 
                                 if final_value and isinstance(final_value, str):
-                                    numeric_value = int(final_value.replace(' GB', '').strip())
+                                    match = re.search(r'\d+', final_value)
+                                    if match:
+                                        numeric_value = int(match.group())
 
                                 # fallback when disk type is not detected from variant fields
+                                # /DEV/SDA will not tell SSD/HDD, so for 64/128/256/512 we treat as SSD
                                 if not variant_type:
-                                    if numeric_value in [128, 256, 512]:
+                                    if numeric_value in [61, 62, 64, 128, 256, 512]:
                                         variant_type = " SSD"
-                                    elif numeric_value in [200, 320, 500]:
+                                    elif numeric_value in [200, 300, 320, 500, 1000]:
                                         variant_type = " HDD"
 
-                                if numeric_value > 80:
+                                if numeric_value >= 60:
                                     if numeric_value >= 1000:
                                         tb_value = numeric_value // 1000
                                         formatted_value = f"{tb_value} TB"
+                                    elif numeric_value >= 60 and numeric_value <= 80:
+                                        formatted_value = "64 GB"
                                     else:
                                         formatted_value = f"{numeric_value} GB"
 
-                                    # FIX:
-                                    # For HDD, do not add "HDD" suffix.
-                                    # This allows mixed storage like 2 TB + 256 GB SSD
-                                    # to consolidate as 2 TB-256 GB SSD.
-                                    if numeric_value == 300 or str(variant_type).strip().upper() == "HDD":
+                                    # For HDD, do not add HDD suffix.
+                                    # Example: 500 GB HDD should remain 500 GB.
+                                    # For SSD, add SSD suffix.
+                                    if str(variant_type).strip().upper() == "HDD":
                                         final_value = formatted_value
                                     else:
-                                        final_value = formatted_value + variant_type
+                                        final_value = formatted_value + (variant_type or "")
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
-                                    formatted_value = f"64 GB"
-                                    final_value = formatted_value + variant_type
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
-
-                                if row.get(variant) and int(row.get(variant).replace(' GB', '').strip()) > 80:
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(
+                                        final_value,
+                                        mapping.get('attribute_name')
+                                    )
                                 else:
                                     skip_memory = True
                                     continue

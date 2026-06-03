@@ -477,7 +477,7 @@ class CustomDeliveryNote(DeliveryNote):
                     else:
                         end_date = posting_date_raw
 
-                    serial_no_doc.end_date = end_date + timedelta(days=365)
+                    serial_no_doc.end_date = end_date + timedelta(days=182)
                     # serial_no_doc.modified = now()
 
                     try:

@@ -13,7 +13,7 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseRece
 from frappe import _
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 
-logger = frappe.logger("prtimelog", allow_site=True, file_count=1)
+logger = frappe.logger("prtimelog", allow_site=True)
 
 
 def log_pr_time(label, docname, start):
@@ -50,6 +50,10 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             start = time.perf_counter()
             super(CustomPurchaseReceipt, self).on_submit()
             log_pr_time("super().on_submit()", self.name, start)
+
+            start = time.perf_counter()
+            self.auto_closure_mr_via_pr()
+            log_pr_time("auto_closure_mr_via_pr", self.name, start)
 
             start = time.perf_counter()
             self.set_registry_no_on_submit()
@@ -118,6 +122,174 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                             """, (item_qty, sir.get('sir_registry_no'), item.item_code, item.item_group), debug=0, explain=0)
                             item_qty -= sir.get('actual_qty')
 
+    def auto_closure_mr_via_pr(self):
+        allowed_references = get_pr_material_request_references()
+        logger.info(
+            "[PR MR Auto Closure] PR=%s allowed_references=%s",
+            self.name,
+            allowed_references,
+        )
+        if not allowed_references:
+            logger.info("[PR MR Auto Closure] PR=%s skipped: no NJ Settings value", self.name)
+            return
+
+        for item in self.items:
+            mr_names = get_pr_item_material_requests(item)
+            reference_filters = []
+            query_params = {
+                "mr_names": tuple(mr_names),
+                "item_code": item.item_code,
+            }
+            for idx, reference in enumerate(allowed_references):
+                exact_key = f"reference_{idx}"
+                like_key = f"reference_like_{idx}"
+                reference_filters.append(
+                    f"(mri.create_reference = %({exact_key})s OR mri.create_reference LIKE %({like_key})s)"
+                )
+                query_params[exact_key] = reference
+                query_params[like_key] = f"%{reference}%"
+
+            logger.info(
+                "[PR MR Auto Closure] PR=%s row=%s item_code=%s qty=%s material_requests=%s material_request_item=%s create_reference_filter=%s",
+                self.name,
+                item.idx,
+                item.item_code,
+                item.qty,
+                mr_names,
+                item.get("material_request_item"),
+                allowed_references,
+            )
+            if not mr_names or not item.item_code:
+                logger.info(
+                    "[PR MR Auto Closure] PR=%s row=%s skipped: missing material request or item_code",
+                    self.name,
+                    item.idx,
+                )
+                continue
+
+            material_request_items = frappe.db.sql(
+                """
+                SELECT
+                    mri.name,
+                    mri.parent,
+                    mri.qty,
+                    IFNULL(mri.received_qty, 0) AS received_qty
+                FROM `tabMaterial Request Item` mri
+                INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                WHERE
+                    mr.docstatus = 1
+                    AND mri.parent IN %(mr_names)s
+                    AND mri.item_code = %(item_code)s
+                    AND ({reference_condition})
+                    AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
+                ORDER BY mr.transaction_date ASC, mr.creation ASC, mri.idx ASC
+                """.format(reference_condition=" OR ".join(reference_filters)),
+                query_params,
+                as_dict=True,
+            )
+            logger.info(
+                "[PR MR Auto Closure] PR=%s row=%s matching_mr_items=%s",
+                self.name,
+                item.idx,
+                material_request_items,
+            )
+
+            linked_mr_item = item.get("material_request_item")
+            standard_updated_linked_item = bool(
+                linked_mr_item
+                and any(mr_item.name == linked_mr_item for mr_item in material_request_items)
+            )
+            remaining_qty = 0 if standard_updated_linked_item else flt(item.qty)
+            logger.info(
+                "[PR MR Auto Closure] PR=%s row=%s linked_mr_item=%s standard_updated_linked_item=%s remaining_qty=%s",
+                self.name,
+                item.idx,
+                linked_mr_item,
+                standard_updated_linked_item,
+                remaining_qty,
+            )
+
+            for mr_item in material_request_items:
+                if flt(mr_item.received_qty) >= flt(mr_item.qty):
+                    frappe.db.set_value(
+                        "Material Request Item",
+                        mr_item.name,
+                        "post_order_status",
+                        "Completed",
+                        update_modified=False,
+                    )
+                    logger.info(
+                        "[PR MR Auto Closure] PR=%s row=%s MR=%s MRI=%s marked Completed: received_qty=%s qty=%s",
+                        self.name,
+                        item.idx,
+                        mr_item.parent,
+                        mr_item.name,
+                        mr_item.received_qty,
+                        mr_item.qty,
+                    )
+
+                if mr_item.name == linked_mr_item:
+                    logger.info(
+                        "[PR MR Auto Closure] PR=%s row=%s MRI=%s skipped qty update: standard PR updater already handled linked MR item",
+                        self.name,
+                        item.idx,
+                        mr_item.name,
+                    )
+                    continue
+
+                if remaining_qty <= 0:
+                    logger.info(
+                        "[PR MR Auto Closure] PR=%s row=%s stopped: remaining_qty=%s",
+                        self.name,
+                        item.idx,
+                        remaining_qty,
+                    )
+                    break
+
+                pending_qty = flt(mr_item.qty) - flt(mr_item.received_qty)
+                if pending_qty <= 0:
+                    logger.info(
+                        "[PR MR Auto Closure] PR=%s row=%s MRI=%s skipped: pending_qty=%s",
+                        self.name,
+                        item.idx,
+                        mr_item.name,
+                        pending_qty,
+                    )
+                    continue
+
+                qty_to_update = min(remaining_qty, pending_qty)
+                new_received_qty = flt(mr_item.received_qty) + qty_to_update
+                values = {"received_qty": new_received_qty}
+
+                if new_received_qty >= flt(mr_item.qty):
+                    values["post_order_status"] = "Completed"
+
+                frappe.db.set_value(
+                    "Material Request Item",
+                    mr_item.name,
+                    values,
+                    update_modified=False,
+                )
+                logger.info(
+                    "[PR MR Auto Closure] PR=%s row=%s MR=%s MRI=%s qty_to_update=%s old_received_qty=%s new_received_qty=%s status=%s remaining_before=%s",
+                    self.name,
+                    item.idx,
+                    mr_item.parent,
+                    mr_item.name,
+                    qty_to_update,
+                    mr_item.received_qty,
+                    new_received_qty,
+                    values.get("post_order_status", "unchanged"),
+                    remaining_qty,
+                )
+                remaining_qty -= qty_to_update
+            logger.info(
+                "[PR MR Auto Closure] PR=%s row=%s completed with remaining_qty=%s",
+                self.name,
+                item.idx,
+                remaining_qty,
+            )
+            
     def set_registry_no_on_cancel(self):
         for item in self.items:
             if item.sir_registry_no:
@@ -279,6 +451,42 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 "Auto Debit Note Creation Failed"
             )
             raise
+
+def get_pr_material_request_references():
+    settings_value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "meterial_request_via_pr"},
+        "value",
+    )
+    if not settings_value:
+        settings_value = frappe.db.get_value(
+            "NJ Settings",
+            {"parameter": "material_request_via_pr"},
+            "value",
+        )
+
+    return [
+        reference.strip()
+        for reference in (settings_value or "").replace("\n", ",").split(",")
+        if reference.strip()
+    ]
+
+def get_pr_item_material_requests(item):
+    mr_names = []
+
+    if item.get("material_request"):
+        mr_names.append(item.material_request)
+
+    if item.get("material_request_item"):
+        material_request = frappe.db.get_value(
+            "Material Request Item",
+            item.material_request_item,
+            "parent",
+        )
+        if material_request:
+            mr_names.append(material_request)
+
+    return list(dict.fromkeys(mr_names))
 
 def generate_batch_no(doc, method=None):
     start = time.perf_counter()

@@ -283,4 +283,3 @@ def get_attribute_prefix(item_code, item_group):
             result_parts.append(attribute_value.split()[0])
 
     return "-".join(result_parts) if result_parts else ""
-

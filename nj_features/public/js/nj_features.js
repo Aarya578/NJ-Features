@@ -945,113 +945,208 @@ function popUpWorkInventory() {
         });
     }
 
-    // Improved manual entry prevention - Only prevent paste, allow scanner input
-    function preventManualEntry(dialog) {
+    const INVENTORY_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
+    const INVENTORY_SCANNER_MIN_LENGTH = 3;
+    const INVENTORY_SCANNER_MAX_SCAN_DURATION = 3000;
+    const INVENTORY_SCANNER_MAX_KEY_GAP = 350;
+    const INVENTORY_SCANNER_IDLE_DELAY = 600;
+
+    function handleBarcodeScanning(dialog) {
         const scanField = dialog.get_field('scan_barcode');
         if (scanField && scanField.$input) {
-            // Prevent paste
-            scanField.$input.on('paste', function (e) {
-                e.preventDefault();
-                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
-                $(this).val('');
-            });
+            const inputField = scanField.$input;
+            const state = {
+                chars: "",
+                firstKeyTime: 0,
+                lastKeyTime: 0,
+                manualTimer: null,
+                lastMessageAt: 0,
+                suppressManualCheck: false,
+            };
 
-            // Prevent context menu (right-click)
-            scanField.$input.on('contextmenu', function (e) {
+            inputField.off('.inventory_scanner');
+
+            inputField.on('paste.inventory_scanner', function(e) {
                 e.preventDefault();
+                clearInventoryScannerInput(inputField, state);
+                showInventoryScannerMessage(state);
                 return false;
             });
 
-            // Allow all keyboard input - scanner will work naturally
-            // Only show error if user tries to type slowly (manual entry)
-            let lastKeyTime = 0;
-            let manualEntryDetected = false;
-            
-            scanField.$input.on('keydown', function (e) {
-                // Allow Enter key (scanner termination)
+            inputField.on('beforeinput.inventory_scanner', function(e) {
+                const inputType = e.originalEvent && e.originalEvent.inputType;
+                if (inputType === "insertFromPaste" || inputType === "insertFromDrop") {
+                    e.preventDefault();
+                    clearInventoryScannerInput(inputField, state);
+                    showInventoryScannerMessage(state);
+                    return false;
+                }
+            });
+
+            inputField.on('drop.inventory_scanner', function(e) {
+                e.preventDefault();
+                clearInventoryScannerInput(inputField, state);
+                showInventoryScannerMessage(state);
+                return false;
+            });
+
+            inputField.on('contextmenu.inventory_scanner', function(e) {
+                e.preventDefault();
+                showInventoryScannerMessage(state);
+                return false;
+            });
+
+            inputField.on('keydown.inventory_scanner', function(e) {
+                const now = Date.now();
+
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+                    e.preventDefault();
+                    clearInventoryScannerInput(inputField, state);
+                    showInventoryScannerMessage(state);
+                    return false;
+                }
+
                 if (e.key === "Enter") {
-                    manualEntryDetected = false;
+                    const barcodeValue = inputField.val().trim();
+                    const isScanner = isInventoryScannerBurst(state, barcodeValue, now);
+
+                    window.clearTimeout(state.manualTimer);
+                    state.manualTimer = null;
+
+                    if (!isScanner) {
+                        e.preventDefault();
+                        resetInventoryScannerState(state);
+                        clearInventoryScannerInput(inputField, state);
+                        showInventoryScannerMessage(state);
+                        return false;
+                    }
+
+                    e.preventDefault();
+                    acceptInventoryScannerValue(dialog, inputField, state, barcodeValue);
+                    return false;
+                }
+
+                if (isInventoryScannerControlKey(e)) {
                     return true;
                 }
-                
-                // Allow navigation and control keys
-                if (e.ctrlKey || e.metaKey || 
-                    e.key === 'Tab' || e.key === 'ArrowLeft' || 
-                    e.key === 'ArrowRight' || e.key === 'ArrowUp' || 
-                    e.key === 'ArrowDown' || e.key === 'Delete' || 
-                    e.key === 'Backspace') {
+
+                if (e.key.length !== 1) {
                     return true;
                 }
-                
-                const currentTime = new Date().getTime();
-                
-                // If time between keystrokes is more than 200ms, it's likely manual typing
-                if (currentTime - lastKeyTime > 200 && lastKeyTime !== 0) {
-                    manualEntryDetected = true;
+
+                if (!state.firstKeyTime) {
+                    state.firstKeyTime = now;
                 }
-                
-                lastKeyTime = currentTime;
+
+                if (state.lastKeyTime && now - state.lastKeyTime > INVENTORY_SCANNER_MAX_KEY_GAP) {
+                    e.preventDefault();
+                    resetInventoryScannerState(state);
+                    clearInventoryScannerInput(inputField, state);
+                    showInventoryScannerMessage(state);
+                    return false;
+                }
+
+                state.lastKeyTime = now;
+                state.chars += e.key;
+
+                window.clearTimeout(state.manualTimer);
+                state.manualTimer = window.setTimeout(function() {
+                    if (state.chars) {
+                        const barcodeValue = inputField.val().trim();
+                        if (isInventoryScannerBurst(state, barcodeValue)) {
+                            acceptInventoryScannerValue(dialog, inputField, state, barcodeValue);
+                        } else {
+                            resetInventoryScannerState(state);
+                            clearInventoryScannerInput(inputField, state);
+                            showInventoryScannerMessage(state);
+                        }
+                    }
+                }, INVENTORY_SCANNER_IDLE_DELAY);
+
                 return true;
             });
 
-            scanField.$input.on('input', function () {
-                if (manualEntryDetected) {
-                    frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
-                    $(this).val('');
-                    manualEntryDetected = false;
+            inputField.on('input.inventory_scanner', function() {
+                if (state.suppressManualCheck) return;
+
+                const value = inputField.val().trim();
+                if (!value) return;
+
+                if (!state.chars) {
+                    clearInventoryScannerInput(inputField, state);
+                    showInventoryScannerMessage(state);
                 }
-                
-                lastKeyTime = 0;
             });
         }
     }
 
-    // Barcode scanning logic - Improved to handle scanner input properly
-    function handleBarcodeScanning(dialog) {
-        const scanField = dialog.get_field('scan_barcode');
-        if (scanField && scanField.$input) {
-            let barcodeBuffer = '';
-            let scannerTimeout;
+    function isInventoryScannerBurst(state, value, now = Date.now()) {
+        if (!value || state.chars.length < INVENTORY_SCANNER_MIN_LENGTH) return false;
 
-            scanField.$input.on('paste', function (e) {
-                e.preventDefault();
-                frappe.msgprint(__('❌ Paste is disabled. Please use a barcode scanner.'));
-                $(this).val('');
-            });
-            
-            scanField.$input.on('keydown', function (e) {
-                // Clear timeout on any key press
-                clearTimeout(scannerTimeout);
-                
-                // If Enter is pressed, process the barcode
-                if (e.key === "Enter") {
-                    e.preventDefault();
-                    
-                    const barcodeValue = barcodeBuffer.trim();
-                    if (barcodeValue) {
-                        processBarcode(barcodeValue, dialog);
-                        barcodeBuffer = '';
-                    }
-                    
-                    $(this).val('');
-                    return false;
-                }
-                
-                // Set timeout to detect manual entry (if typing is too slow)
-                scannerTimeout = setTimeout(() => {
-                    if (barcodeBuffer.length > 0) {
-                        frappe.msgprint(__('❌ Manual entry is not allowed. Please use a barcode scanner.'));
-                        $(this).val('');
-                        barcodeBuffer = '';
-                    }
-                }, 300);
-            });
-            
-            scanField.$input.on('input', function (e) {
-                // Build the barcode from input events
-                barcodeBuffer = $(this).val();
-            });
-        }
+        const lastKeyTime = state.lastKeyTime || now;
+        const totalDuration = lastKeyTime - state.firstKeyTime;
+        const lastKeyGap = now - lastKeyTime;
+
+        return (
+            totalDuration >= 0 &&
+            totalDuration <= INVENTORY_SCANNER_MAX_SCAN_DURATION &&
+            lastKeyGap <= INVENTORY_SCANNER_IDLE_DELAY
+        );
+    }
+
+    function acceptInventoryScannerValue(dialog, inputField, state, value) {
+        resetInventoryScannerState(state);
+        processBarcode(value, dialog);
+        clearInventoryScannerInput(inputField, state);
+    }
+
+    function clearInventoryScannerInput(inputField, state) {
+        state.suppressManualCheck = true;
+        inputField.val('');
+        inputField.focus();
+        window.setTimeout(function() {
+            state.suppressManualCheck = false;
+        }, 0);
+    }
+
+    function showInventoryScannerMessage(state) {
+        const now = Date.now();
+        if (state.lastMessageAt && now - state.lastMessageAt < 1200) return;
+
+        state.lastMessageAt = now;
+        frappe.msgprint(__(INVENTORY_SCANNER_MESSAGE));
+    }
+
+    function isInventoryScannerControlKey(event) {
+        return (
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            [
+                "Tab",
+                "Shift",
+                "Control",
+                "Alt",
+                "Meta",
+                "Escape",
+                "ArrowLeft",
+                "ArrowRight",
+                "ArrowUp",
+                "ArrowDown",
+                "Home",
+                "End",
+                "Backspace",
+                "Delete",
+            ].includes(event.key)
+        );
+    }
+
+    function resetInventoryScannerState(state) {
+        window.clearTimeout(state.manualTimer);
+        state.manualTimer = null;
+        state.chars = "";
+        state.firstKeyTime = 0;
+        state.lastKeyTime = 0;
     }
     
     function processBarcode(barcodeValue, dialog) {
@@ -1150,7 +1245,6 @@ function popUpWorkInventory() {
                 dialog.fields_dict.work_warehouse_inventory.grid.refresh();
 
                 setTimeout(function () {
-                    preventManualEntry(dialog);
                     handleBarcodeScanning(dialog);
                     dialog.get_field('scan_barcode').$input.focus();
                     makeCheckboxesReadOnly();

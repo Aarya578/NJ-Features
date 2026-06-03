@@ -19,7 +19,7 @@ frappe.ui.form.on('NJ Audit', {
     },
     
     refresh: function(frm) {
-		// handleScannerInput(frm, 'scan_serial_no');
+        setupNJAuditScannerOnly(frm, 'barcode');
         if (frm.doc.docstatus == 0) {
             $('[data-fieldname="barcode"]').focus();
         }
@@ -39,8 +39,14 @@ frappe.ui.form.on('NJ Audit', {
     },
 
     barcode: function(frm) {
-        // handleScannerInput(frm, 'barcode');
+        setupNJAuditScannerOnly(frm, 'barcode');
+        if (!isNJAuditValueFromScanner(frm, 'barcode')) {
+            clearNJAuditScannerField(frm, 'barcode');
+            showNJAuditScannerMessage(frm, 'barcode');
+            return;
+        }
         if (frm.doc.barcode) { 
+            if (isNJAuditDuplicateScan(frm, 'barcode')) return;
 			frappe.call({
 				method: "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
 				args: {  search_value: frm.doc.barcode },
@@ -197,6 +203,291 @@ function handleRowRemoval(frm) {
         let accept_rows_array = accept_rows.split(',').filter(idx => !selectedRows.some(row => row.idx.toString() === idx));
         frm.set_value('accept_rows', accept_rows_array.join(','));
     }
+}
+
+const NJ_AUDIT_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
+const NJ_AUDIT_SCANNER_MIN_LENGTH = 3;
+const NJ_AUDIT_SCANNER_MAX_SCAN_DURATION = 3000;
+const NJ_AUDIT_SCANNER_MAX_KEY_GAP = 350;
+const NJ_AUDIT_SCANNER_IDLE_DELAY = 600;
+
+function setupNJAuditScannerOnly(frm, fieldname) {
+    const field = frm.get_field(fieldname);
+    if (!field || !field.$input || frm.doc.docstatus !== 0) return;
+
+    const inputField = field.$input;
+    const stateKey = `__nj_audit_scanner_${fieldname}`;
+    let state = frm[stateKey];
+
+    if (!state) {
+        state = frm[stateKey] = {
+            chars: "",
+            firstKeyTime: 0,
+            lastKeyTime: 0,
+            manualTimer: null,
+            validValue: "",
+            validUntil: 0,
+            lastMessageAt: 0,
+            suppressManualCheck: false,
+        };
+    }
+
+    inputField.off(`.${stateKey}`);
+
+    inputField.on(`paste.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearNJAuditScannerField(frm, fieldname);
+        showNJAuditScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`beforeinput.${stateKey}`, function(event) {
+        const inputType = event.originalEvent && event.originalEvent.inputType;
+        if (inputType === "insertFromPaste" || inputType === "insertFromDrop") {
+            event.preventDefault();
+            clearNJAuditScannerField(frm, fieldname);
+            showNJAuditScannerMessage(frm, fieldname);
+            return false;
+        }
+    });
+
+    inputField.on(`drop.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearNJAuditScannerField(frm, fieldname);
+        showNJAuditScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`contextmenu.${stateKey}`, function(event) {
+        event.preventDefault();
+        showNJAuditScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`keydown.${stateKey}`, function(event) {
+        const now = Date.now();
+
+        if (state.validValue && now > state.validUntil) {
+            state.validValue = "";
+            state.validUntil = 0;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+            event.preventDefault();
+            clearNJAuditScannerField(frm, fieldname);
+            showNJAuditScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        if (event.key === "Enter") {
+            const value = inputField.val().trim();
+            const isScanner = isNJAuditScannerBurst(state, value, now);
+
+            window.clearTimeout(state.manualTimer);
+            state.manualTimer = null;
+
+            if (!isScanner) {
+                event.preventDefault();
+                resetNJAuditScannerState(state);
+                clearNJAuditScannerField(frm, fieldname);
+                showNJAuditScannerMessage(frm, fieldname);
+                return false;
+            }
+
+            event.preventDefault();
+            acceptNJAuditScannerValue(frm, fieldname, value, state);
+            return false;
+        }
+
+        if (isNJAuditScannerControlKey(event)) {
+            return true;
+        }
+
+        if (event.key.length !== 1) {
+            return true;
+        }
+
+        if (!state.firstKeyTime) {
+            state.firstKeyTime = now;
+        }
+
+        if (state.lastKeyTime && now - state.lastKeyTime > NJ_AUDIT_SCANNER_MAX_KEY_GAP) {
+            event.preventDefault();
+            resetNJAuditScannerState(state);
+            clearNJAuditScannerField(frm, fieldname);
+            showNJAuditScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        state.lastKeyTime = now;
+        state.chars += event.key;
+
+        window.clearTimeout(state.manualTimer);
+        state.manualTimer = window.setTimeout(function() {
+            if (state.chars) {
+                const value = inputField.val().trim();
+                if (isNJAuditScannerBurst(state, value)) {
+                    acceptNJAuditScannerValue(frm, fieldname, value, state);
+                } else {
+                    resetNJAuditScannerState(state);
+                    clearNJAuditScannerField(frm, fieldname);
+                    showNJAuditScannerMessage(frm, fieldname);
+                }
+            }
+        }, NJ_AUDIT_SCANNER_IDLE_DELAY);
+
+        return true;
+    });
+
+    inputField.on(`input.${stateKey}`, function() {
+        if (state.suppressManualCheck) return;
+
+        const value = inputField.val().trim();
+        if (!value) return;
+
+        if (state.validValue === value && Date.now() <= state.validUntil) {
+            return;
+        }
+
+        if (!state.chars) {
+            clearNJAuditScannerField(frm, fieldname);
+            showNJAuditScannerMessage(frm, fieldname);
+        }
+    });
+}
+
+function isNJAuditScannerBurst(state, value, now = Date.now()) {
+    if (!value || state.chars.length < NJ_AUDIT_SCANNER_MIN_LENGTH) return false;
+
+    const lastKeyTime = state.lastKeyTime || now;
+    const totalDuration = lastKeyTime - state.firstKeyTime;
+    const lastKeyGap = now - lastKeyTime;
+
+    return (
+        totalDuration >= 0 &&
+        totalDuration <= NJ_AUDIT_SCANNER_MAX_SCAN_DURATION &&
+        lastKeyGap <= NJ_AUDIT_SCANNER_IDLE_DELAY
+    );
+}
+
+function acceptNJAuditScannerValue(frm, fieldname, value, state) {
+    state.validValue = value;
+    state.validUntil = Date.now() + 3000;
+    resetNJAuditScannerTyping(state);
+
+    const setValue = frm.set_value(fieldname, value);
+    const triggerField = function() {
+        frm.trigger(fieldname);
+    };
+
+    if (setValue && setValue.then) {
+        setValue.then(triggerField);
+    } else {
+        triggerField();
+    }
+}
+
+function isNJAuditValueFromScanner(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    const state = frm[`__nj_audit_scanner_${fieldname}`];
+    if (!value) return true;
+
+    return Boolean(
+        state &&
+        state.validValue === value &&
+        Date.now() <= state.validUntil
+    );
+}
+
+function isNJAuditDuplicateScan(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    if (!value) return false;
+
+    const stateKey = `__nj_audit_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastProcessedValue === value && now - state.lastProcessedAt < 1000) {
+        return true;
+    }
+
+    state.lastProcessedValue = value;
+    state.lastProcessedAt = now;
+    frm[stateKey] = state;
+    return false;
+}
+
+function clearNJAuditScannerField(frm, fieldname) {
+    const state = frm[`__nj_audit_scanner_${fieldname}`];
+    if (state) {
+        state.suppressManualCheck = true;
+        resetNJAuditScannerState(state);
+    }
+
+    frm.set_value(fieldname, "");
+    frm.refresh_field(fieldname);
+
+    const field = frm.get_field(fieldname);
+    if (field && field.$input) {
+        field.$input.val("");
+        field.$input.focus();
+    }
+
+    if (state) {
+        window.setTimeout(function() {
+            state.suppressManualCheck = false;
+        }, 0);
+    }
+}
+
+function showNJAuditScannerMessage(frm, fieldname) {
+    const stateKey = `__nj_audit_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastMessageAt && now - state.lastMessageAt < 1200) return;
+
+    state.lastMessageAt = now;
+    frm[stateKey] = state;
+    frappe.msgprint(__(NJ_AUDIT_SCANNER_MESSAGE));
+}
+
+function isNJAuditScannerControlKey(event) {
+    return (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        [
+            "Tab",
+            "Shift",
+            "Control",
+            "Alt",
+            "Meta",
+            "Escape",
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Home",
+            "End",
+            "Backspace",
+            "Delete",
+        ].includes(event.key)
+    );
+}
+
+function resetNJAuditScannerState(state) {
+    window.clearTimeout(state.manualTimer);
+    state.manualTimer = null;
+    state.validValue = "";
+    state.validUntil = 0;
+    resetNJAuditScannerTyping(state);
+}
+
+function resetNJAuditScannerTyping(state) {
+    state.chars = "";
+    state.firstKeyTime = 0;
+    state.lastKeyTime = 0;
 }
 
 frappe.ui.form.on('NJ Audit Items', {

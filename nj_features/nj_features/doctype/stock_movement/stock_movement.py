@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from frappe.model.document import Document
 from nj_lib.utils.common_utils import get_active_emp
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
-from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
+# from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
 class StockMovement(Document):
@@ -298,163 +298,155 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
+    allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
+    print("allow_model_change=================",allow_reconfig )
+
+    if not allow_reconfig:
+        item_code = serial_doc.get("item_code")
+        print("item_code=================",item_code )
+        to_make = serial_doc.get("to_make")
+        print("to_make=================",to_make )
+        
+        item_code_model= frappe.db.get_value("Item", item_code, "item_model")
+        print("item_code_model=================",item_code_model )
+        to_make_model= frappe.db.get_value("Item", to_make, "item_model")
+        print("to_make_model=================",to_make_model )
+
+        if item_code_model and to_make_model and item_code_model != to_make_model:
+            model_mismatch_message = (
+                f"Reconfiguration not allowed for Department <b>{department}</b>. "
+                f"Item Code Model <b>{item_code_model}</b> and To Make Model <b>{to_make_model}</b> must be same."
+            )
+            error_messages.append(model_mismatch_message)
+            if model_mismatch_messages is not None:
+                model_mismatch_messages.append(model_mismatch_message)
+            return False
+
+        if item_code and to_make and item_code != to_make:
+            error_messages.append(
+                f"Reconfiguration not allowed for Department <b>{department}</b>. "
+                f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
+            )
+            return False
+
+
+    core_item_groups = get_warehouse_and_department_sla_core_item_groups()
+    sla_item_groups = get_warehouse_and_department_sla_item_groups()
+    row_item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group") if row.get("item_code") else None
+    should_validate_sla = row_item_group in core_item_groups
+    print("core_item_groups=================", core_item_groups)
+    print("sla_item_groups=================", sla_item_groups)
+    print("row_item_group=================", row_item_group)
+    print("should_validate_sla=================", should_validate_sla)
+
     if department and department != s_department:
         print("department and department != s_department=================",department and department != s_department )
-        allow_reconfig = frappe.db.get_value("Department", department, "allow_reconfig")
 
-        if not allow_reconfig:
-            item_code = serial_doc.get("item_code")
-            # print("item_code=================",item_code )
-            to_make = serial_doc.get("to_make")
-            # print("to_make=================",to_make )
-            
-            item_code_model= frappe.db.get_value("Item", item_code, "item_model")
-            # print("item_code_model=================",item_code_model )
-            to_make_model= frappe.db.get_value("Item", to_make, "item_model")
-            # print("to_make_model=================",to_make_model )
-
-            if item_code_model and to_make_model and item_code_model != to_make_model:
-                model_mismatch_message = (
-                    f"Reconfiguration not allowed for Department <b>{department}</b>. "
-                    f"Item Code Model <b>{item_code_model}</b> and To Make Model <b>{to_make_model}</b> must be same."
-                )
-                error_messages.append(model_mismatch_message)
-                if model_mismatch_messages is not None:
-                    model_mismatch_messages.append(model_mismatch_message)
-                return False
-
-
-            if item_code and to_make and item_code != to_make:
-                error_messages.append(
-                    f"Reconfiguration not allowed for Department <b>{department}</b>. "
-                    f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
-                )
-                return False
-        # department_sla = frappe.db.get_value("Department", department, "sla")
-        # print("department_sla=================",department_sla )
-        # if department_sla and t_warehouse:
-        #     warehouse_aging = frappe.db.sql(
-        #         """
-        #         SELECT
-        #             s.warehouse AS warehouse,
-        #             MAX(DATEDIFF(CURDATE(), s.purchase_date)) AS max_age_days
-        #         FROM `tabSerial No` s
-        #         WHERE s.warehouse = %s
-        #         """,
-        #         (t_warehouse,),
-        #         as_dict=True,
-        #     )
-        #     print("warehouse_aging=================",warehouse_aging )
-
-        #     max_age_days = warehouse_aging[0].get("max_age_days") if warehouse_aging else None
-        #     print("max_age_days=================",max_age_days )
-        #     if max_age_days is not None and int(max_age_days) > int(department_sla):
-        #         error_messages.append(
-        #             f"SLA exceeded for Department <b>{department}</b>. "
-        #             f"Department SLA is <b>{int(department_sla)}</b> days, "
-        #             f"but max aging in warehouse <b>{t_warehouse}</b> is <b>{int(max_age_days)}</b> days."
-        #         )
-        #         return False
         warehouse_sla = frappe.db.get_value("Department", department, "sla")
         department_sla = frappe.db.get_value("Department", department, "department_sla")
-        if warehouse_sla and t_warehouse:
+        if should_validate_sla and sla_item_groups:
+            sla_item_group_placeholders = ", ".join(["%s"] * len(sla_item_groups))
+        if should_validate_sla and sla_item_groups and warehouse_sla and t_warehouse:
             warehouse_sla_days = int(warehouse_sla)
             print("warehouse_sla_days=================",warehouse_sla_days )
             warehouse_aging = frappe.db.sql(
-                """
-                SELECT s.name,s.item_group,
-                    s.purchase_date,
-                    s.purchase_time,
+                f"""
+                SELECT
+                    s.name AS serial_no,
                     s.warehouse,
-
-                    MAX(
-                        FLOOR(
+                    FLOOR(
+                        (
+                            TIMESTAMPDIFF(
+                                HOUR,
+                                TIMESTAMP(s.purchase_date, s.purchase_time),
+                                NOW()
+                            )
+                            -
                             (
-                                TIMESTAMPDIFF(
-                                    HOUR,
-                                    TIMESTAMP(s.purchase_date, s.purchase_time),
-                                    NOW()
-                                )
-                                -
                                 (
-                                    (
-                                        DATEDIFF(CURDATE(), s.purchase_date)
-                                        + WEEKDAY(s.purchase_date) + 1
-                                    ) DIV 7
-                                ) * 24
-                            ) / 24
-                        )
-                    ) AS max_age_days_excluding_sundays
-
+                                    DATEDIFF(CURDATE(), s.purchase_date)
+                                    + WEEKDAY(s.purchase_date) + 1
+                                ) DIV 7
+                            ) * 24
+                        ) / 24
+                    ) AS max_age_days
                 FROM `tabSerial No` s
-                WHERE s.warehouse IS NOT NULL and s.item_group in ('Laptops','Chromebooks') and s.warehouse = %s
-                GROUP BY s.warehouse; 
+                WHERE s.warehouse = %s
+                    AND s.item_group IN ({sla_item_group_placeholders})
+                ORDER BY max_age_days DESC
+                LIMIT 1
                 """,
-                (t_warehouse,),
-                as_dict=True,debug=True
+                tuple([t_warehouse] + sla_item_groups),
+                as_dict=True
             )
 
             max_age_days = warehouse_aging[0].get("max_age_days") if warehouse_aging else None
+            max_age_serial_no = warehouse_aging[0].get("serial_no") if warehouse_aging else None
             print("max_age_days=================",max_age_days )
-            if max_age_days is not None and int(max_age_days) >= warehouse_sla_days:
+            if max_age_days is not None and int(max_age_days) > warehouse_sla_days:
                 error_messages.append(
                     f"SLA exceeded for Department <b>{department}</b>. "
                     f"Warehouse SLA is <b>{warehouse_sla_days}</b> days, "
+                    f"Serial No <b>{max_age_serial_no}</b> "
                     f"but max aging in warehouse <b>{t_warehouse}</b> is <b>{int(max_age_days)}</b> days."
                 )
-            elif department_sla:
-                department_sla_days = int(department_sla)
-                department_aging = frappe.db.sql(
-                    """
-                    WITH MaxAuditCreation AS (
-                        SELECT
-                            serial_no,
-                            MAX(creation) AS max_creation_date
-                        FROM `tabNJ Audit Items`
-                        WHERE docstatus = 1
-                        GROUP BY serial_no
-                    ),
-                    DeptEntry AS (
-                        SELECT
-                            serial_no,
-                            MIN(creation) AS department_entry_date
-                        FROM `tabStock Ledger Entry`
-                        WHERE warehouse IN (
-                            SELECT name FROM `tabWarehouse` WHERE department = %s
-                        )
-                        GROUP BY serial_no
+        if should_validate_sla and sla_item_groups and department_sla:
+            department_sla_days = int(department_sla)
+            department_aging = frappe.db.sql(
+                f"""
+                WITH 
+                StoresWarehouses AS (
+                    SELECT sn.name,w.department
+                    FROM `tabSerial No` sn inner join`tabWarehouse` w on w.name=sn.warehouse
+                    WHERE w.department = %s and sn.item_group in ({sla_item_group_placeholders})
+                )
+
+                ,SLEData AS (
+                    SELECT
+                        sle.serial_no,
+                        sle.creation,
+                        wr.department
+                    FROM `tabStock Ledger Entry` sle
+                    INNER JOIN StoresWarehouses w
+                        ON sle.serial_no = w.name
+                    Inner join `tabWarehouse` wr on wr.name=sle.warehouse
+                    WHERE sle.serial_no IS NOT NULL and sle.voucher_type='Stock Entry'
+                ),
+                LastExit AS (
+                    SELECT
+                        serial_no,
+                        MAX(creation) AS last_exit_date
+                    FROM SLEData
+                    WHERE department != %s
+                    GROUP BY serial_no
                     )
                     SELECT
-                        a.serial_no,
-                        a.item_group,
-                        a.item_code,
-                        a.warehouse,
-                        DATEDIFF(CURDATE(), a.creation) AS total_age,
-                        DATEDIFF(CURDATE(), a.purchase_date) AS current_warehouse_age,
-                        b.department,
-                        mac.max_creation_date AS last_audit_date,
-                        DATEDIFF(CURDATE(), d.department_entry_date) AS department_age
-                    FROM `tabSerial No` a
-                    JOIN `tabWarehouse` b ON a.warehouse = b.name
-                    LEFT JOIN MaxAuditCreation mac ON a.serial_no = mac.serial_no
-                    LEFT JOIN DeptEntry d ON a.serial_no = d.serial_no
-                    WHERE
-                        a.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'Full Set Desktops', 'AIO')
-                        AND b.department = %s
-                    ORDER BY d.department_entry_date ASC
-                    """,
-                    (department, department),
-                    as_dict=True,
-                )
-                department_age = department_aging[0].get("department_age") if department_aging else None
-                department_age_serial = department_aging[0].get("serial_no") if department_aging else None
-                if department_age is not None and int(department_age) >= department_sla_days:
-                    error_messages.append(
-                        f"SLA exceeded for Department <b>{department}</b>. "
-                        f"Department SLA is <b>{department_sla_days}</b> days, "
-                        f"but Serial No <b>{department_age_serial}</b> has department aging of <b>{int(department_age)}</b> days."
+                        s.serial_no,
+                        MIN(s.creation) AS department_entry_date,DATEDIFF(CURDATE(), MIN(s.creation)) AS department_age
+                    FROM SLEData s
+                    LEFT JOIN LastExit le
+                        ON s.serial_no = le.serial_no
+                    WHERE s.department = %s
+                    AND (
+                        le.last_exit_date IS NULL
+                        OR s.creation > le.last_exit_date
                     )
-                    return False
+                    GROUP BY s.serial_no
+                    ORDER BY department_age DESC
+                    LIMIT 1;
+                """,
+                tuple([department] + sla_item_groups + [department, department]),
+                as_dict=True
+            )
+            department_age = department_aging[0].get("department_age") if department_aging else None
+            department_age_serial = department_aging[0].get("serial_no") if department_aging else None
+            if department_age is not None and int(department_age) > department_sla_days:
+                error_messages.append(
+                    f"SLA exceeded for Department <b>{department}</b>. "
+                    f"Department SLA is <b>{department_sla_days}</b> days, "
+                    f"but Serial No <b>{department_age_serial}</b> has department aging of <b>{int(department_age)}</b> days."
+                )
+                return False
         # suggested_warehouse_validation(doc, t_warehouse, error_messages)             
         deparement_qty_check_for_validation(doc, department, t_warehouse, error_messages, qty_check_cache)
 
@@ -485,22 +477,40 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             check_bag_list_validation(serial_doc, error_messages, department_doc)
             one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse, error_messages)
 
-        if (
-                s_department and 
-                s_department != department and 
-                s_inspection_type and
-                s_inspection_type.get("inspection_types") and  
-                s_inspection_type.get("inspection_types") is not None and 
-                s_inspection_type.get("inspection_types") != [] and
-                s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
-                s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
-            ):
+        # if (
+        #         s_department and 
+        #         s_department != department and 
+        #         s_inspection_type and
+        #         s_inspection_type.get("inspection_types") and  
+        #         s_inspection_type.get("inspection_types") is not None and 
+        #         s_inspection_type.get("inspection_types") != [] and
+        #         s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
+        #         s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
+        #     ):
 
-            check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
-        else:
-            return True
+        #     check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
+        # else:
+        #     return True
 
     return True
+
+def get_warehouse_and_department_sla_core_item_groups():
+    return get_nj_settings_comma_separated_values("warehouse_and_department_sla_core_item_groups")
+
+def get_warehouse_and_department_sla_item_groups():
+    return get_nj_settings_comma_separated_values("warehouse_and_department_sla_item_groups")
+
+def get_nj_settings_comma_separated_values(parameter):
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": parameter},
+        "value",
+    )
+    return [
+        item_group.strip()
+        for item_group in (value or "").split(",")
+        if item_group and item_group.strip()
+    ]
 
 def suggested_warehouse_validation(doc, t_warehouse, error_messages):
 
@@ -688,7 +698,7 @@ def deparement_qty_check_for_validation(doc, department, t_warehouse, error_mess
 
     final_qty = current_qty_value + transfer_qty_value
     print("final_qty=================",final_qty)
-    if final_qty >= max_qty:
+    if final_qty > max_qty:
         error_messages.append(
             _(
                 "Warehouse qty is full for Department <b>{0}</b>. "

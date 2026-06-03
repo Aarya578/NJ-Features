@@ -264,15 +264,6 @@ class CustomDeliveryNote(DeliveryNote):
 
                         # Only trigger fulfillment if conditions are met
                         if order_type == "Sales" and sale_type == "NJ-Website-B2C":
-                            trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
-                        else:
-                            print(
-                                f"Skipping fulfillment trigger for DN {self.name} - "
-                                f"Order Type: {order_type}, Sale Type: {sale_type}"
-                            )
-
-                        # Only trigger fulfillment if conditions are met
-                        if order_type == "Sales" and sale_type == "NJ-Website-B2C":
                             with log_time("trigger_fulfillment", self.name):
                                 logger.debug(
                                     f"[DN: {self.name}] Triggering fulfillment "
@@ -972,7 +963,13 @@ class CustomDeliveryNote(DeliveryNote):
             if not email_id:
                 frappe.throw(f"No email_id found in address {self.shipping_address_name}")       
             self.email = email_id
-            self.save(ignore_permissions=True)
+            frappe.db.set_value(
+                "Delivery Note",
+                self.name,
+                "email",
+                email_id,
+                update_modified=False,
+            )
             return f"Email set to {email_id} for Delivery Note {self.name}"        
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_mail_from_address")
@@ -3992,4 +3989,3 @@ def deviding_tax_chargese_return_dn(doc, method=None):
             tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
-

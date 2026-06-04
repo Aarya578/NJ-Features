@@ -6889,6 +6889,7 @@ def get_item_variant_attributes(item_code):
 
 
 def previous_njqca_failed_result_validation(doc, method=None):
+
     log_prefix = "previous_njqca_failed_result_validation"
     logger.info("%s: started %s", log_prefix, frappe.as_json({
         'njqca_name': doc.name,
@@ -6897,6 +6898,21 @@ def previous_njqca_failed_result_validation(doc, method=None):
         'inspection_type': doc.inspection_type,
         'docstatus': doc.docstatus,
     }))
+
+    current_user_email = frappe.session.user
+    current_employee_data = frappe.db.get_value(
+        "Employee",
+        {"user_id": current_user_email, "status": "Active"},
+        ["name", "allow_qc"],
+        as_dict=True,
+    )
+    logger.info("%s: current_user_allow_qc_check %s", log_prefix, frappe.as_json({
+        "current_user_email": current_user_email,
+        "employee": current_employee_data,
+    }))
+
+    if current_employee_data and int(current_employee_data.get("allow_qc") or 0) == 0:
+        frappe.throw(_("You are not allowed to submit this DOC. Please contact your Manager."))
 
     disabled_qc_parameters = frappe.db.sql("""
         SELECT DISTINCT

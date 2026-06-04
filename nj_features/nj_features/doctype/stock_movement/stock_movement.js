@@ -50,21 +50,31 @@ function showProductionPlanningConfirmDialog() {
 
 frappe.ui.form.on('Stock Movement', {
     onload: function(frm) {
-        handleScannerInput(frm, 'scan_barcode');
+        setupStockMovementScannerOnly(frm, 'scan_barcode');
         $('.col-lg-2.layout-side-section').hide();
         frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
     },
 
     refresh: function(frm) {
-        handleScannerInput(frm, 'scan_barcode');
+        setupStockMovementScannerOnly(frm, 'scan_barcode');
 
         $('[data-fieldname="scan_barcode"]').focus();
         $("button[data-original-title=Print]").hide();
     },
 
     scan_barcode: function (frm) {
-        handleScannerInput(frm, 'scan_barcode');
-        cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
+        setupStockMovementScannerOnly(frm, 'scan_barcode');
+        if (!isStockMovementValueFromScanner(frm, 'scan_barcode')) {
+            clearStockMovementScannerField(frm, 'scan_barcode');
+            showStockMovementScannerMessage(frm, 'scan_barcode');
+            return;
+        }
+
+        if (cur_frm.doc.scan_barcode) {
+            cur_frm.set_value('scan_barcode', cur_frm.doc.scan_barcode.trim());
+            if (isStockMovementDuplicateScan(frm, 'scan_barcode')) return;
+        }
+
         if (cur_frm.doc.scan_barcode) {
             console.log("barcode triggered=================================");
             
@@ -719,4 +729,289 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
             frappe.model.set_value(doctype, item.name, warehouse_field, warehouse);
         });
     }
+}
+
+const STOCK_MOVEMENT_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
+const STOCK_MOVEMENT_SCANNER_MIN_LENGTH = 3;
+const STOCK_MOVEMENT_SCANNER_MAX_SCAN_DURATION = 3000;
+const STOCK_MOVEMENT_SCANNER_MAX_KEY_GAP = 350;
+const STOCK_MOVEMENT_SCANNER_IDLE_DELAY = 600;
+
+function setupStockMovementScannerOnly(frm, fieldname) {
+    const field = frm.get_field(fieldname);
+    if (!field || !field.$input || frm.doc.docstatus !== 0) return;
+
+    const inputField = field.$input;
+    const stateKey = `__stock_movement_scanner_${fieldname}`;
+    let state = frm[stateKey];
+
+    if (!state) {
+        state = frm[stateKey] = {
+            chars: "",
+            firstKeyTime: 0,
+            lastKeyTime: 0,
+            manualTimer: null,
+            validValue: "",
+            validUntil: 0,
+            lastMessageAt: 0,
+            suppressManualCheck: false,
+        };
+    }
+
+    inputField.off(`.${stateKey}`);
+
+    inputField.on(`paste.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearStockMovementScannerField(frm, fieldname);
+        showStockMovementScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`beforeinput.${stateKey}`, function(event) {
+        const inputType = event.originalEvent && event.originalEvent.inputType;
+        if (inputType === "insertFromPaste" || inputType === "insertFromDrop") {
+            event.preventDefault();
+            clearStockMovementScannerField(frm, fieldname);
+            showStockMovementScannerMessage(frm, fieldname);
+            return false;
+        }
+    });
+
+    inputField.on(`drop.${stateKey}`, function(event) {
+        event.preventDefault();
+        clearStockMovementScannerField(frm, fieldname);
+        showStockMovementScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`contextmenu.${stateKey}`, function(event) {
+        event.preventDefault();
+        showStockMovementScannerMessage(frm, fieldname);
+        return false;
+    });
+
+    inputField.on(`keydown.${stateKey}`, function(event) {
+        const now = Date.now();
+
+        if (state.validValue && now > state.validUntil) {
+            state.validValue = "";
+            state.validUntil = 0;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+            event.preventDefault();
+            clearStockMovementScannerField(frm, fieldname);
+            showStockMovementScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        if (event.key === "Enter") {
+            const value = inputField.val().trim();
+            const isScanner = isStockMovementScannerBurst(state, value, now);
+
+            window.clearTimeout(state.manualTimer);
+            state.manualTimer = null;
+
+            if (!isScanner) {
+                event.preventDefault();
+                resetStockMovementScannerState(state);
+                clearStockMovementScannerField(frm, fieldname);
+                showStockMovementScannerMessage(frm, fieldname);
+                return false;
+            }
+
+            event.preventDefault();
+            acceptStockMovementScannerValue(frm, fieldname, value, state);
+            return false;
+        }
+
+        if (isStockMovementScannerControlKey(event)) {
+            return true;
+        }
+
+        if (event.key.length !== 1) {
+            return true;
+        }
+
+        if (!state.firstKeyTime) {
+            state.firstKeyTime = now;
+        }
+
+        if (state.lastKeyTime && now - state.lastKeyTime > STOCK_MOVEMENT_SCANNER_MAX_KEY_GAP) {
+            event.preventDefault();
+            resetStockMovementScannerState(state);
+            clearStockMovementScannerField(frm, fieldname);
+            showStockMovementScannerMessage(frm, fieldname);
+            return false;
+        }
+
+        state.lastKeyTime = now;
+        state.chars += event.key;
+
+        window.clearTimeout(state.manualTimer);
+        state.manualTimer = window.setTimeout(function() {
+            if (state.chars) {
+                const value = inputField.val().trim();
+                if (isStockMovementScannerBurst(state, value)) {
+                    acceptStockMovementScannerValue(frm, fieldname, value, state);
+                } else {
+                    resetStockMovementScannerState(state);
+                    clearStockMovementScannerField(frm, fieldname);
+                    showStockMovementScannerMessage(frm, fieldname);
+                }
+            }
+        }, STOCK_MOVEMENT_SCANNER_IDLE_DELAY);
+
+        return true;
+    });
+
+    inputField.on(`input.${stateKey}`, function() {
+        if (state.suppressManualCheck) return;
+
+        const value = inputField.val().trim();
+        if (!value) return;
+
+        if (state.validValue === value && Date.now() <= state.validUntil) {
+            return;
+        }
+
+        if (!state.chars) {
+            clearStockMovementScannerField(frm, fieldname);
+            showStockMovementScannerMessage(frm, fieldname);
+        }
+    });
+}
+
+function isStockMovementScannerBurst(state, value, now = Date.now()) {
+    if (!value || state.chars.length < STOCK_MOVEMENT_SCANNER_MIN_LENGTH) return false;
+
+    const lastKeyTime = state.lastKeyTime || now;
+    const totalDuration = lastKeyTime - state.firstKeyTime;
+    const lastKeyGap = now - lastKeyTime;
+
+    return (
+        totalDuration >= 0 &&
+        totalDuration <= STOCK_MOVEMENT_SCANNER_MAX_SCAN_DURATION &&
+        lastKeyGap <= STOCK_MOVEMENT_SCANNER_IDLE_DELAY
+    );
+}
+
+function acceptStockMovementScannerValue(frm, fieldname, value, state) {
+    state.validValue = value;
+    state.validUntil = Date.now() + 3000;
+    resetStockMovementScannerTyping(state);
+
+    const setValue = frm.set_value(fieldname, value);
+    const triggerField = function() {
+        frm.trigger(fieldname);
+    };
+
+    if (setValue && setValue.then) {
+        setValue.then(triggerField);
+    } else {
+        triggerField();
+    }
+}
+
+function isStockMovementValueFromScanner(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    const state = frm[`__stock_movement_scanner_${fieldname}`];
+    if (!value) return true;
+
+    return Boolean(
+        state &&
+        state.validValue === value &&
+        Date.now() <= state.validUntil
+    );
+}
+
+function isStockMovementDuplicateScan(frm, fieldname) {
+    const value = (frm.doc[fieldname] || "").trim();
+    if (!value) return false;
+
+    const stateKey = `__stock_movement_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastProcessedValue === value && now - state.lastProcessedAt < 1000) {
+        return true;
+    }
+
+    state.lastProcessedValue = value;
+    state.lastProcessedAt = now;
+    frm[stateKey] = state;
+    return false;
+}
+
+function clearStockMovementScannerField(frm, fieldname) {
+    const state = frm[`__stock_movement_scanner_${fieldname}`];
+    if (state) {
+        state.suppressManualCheck = true;
+        resetStockMovementScannerState(state);
+    }
+
+    frm.set_value(fieldname, "");
+    frm.refresh_field(fieldname);
+
+    const field = frm.get_field(fieldname);
+    if (field && field.$input) {
+        field.$input.val("");
+        field.$input.focus();
+    }
+
+    if (state) {
+        window.setTimeout(function() {
+            state.suppressManualCheck = false;
+        }, 0);
+    }
+}
+
+function showStockMovementScannerMessage(frm, fieldname) {
+    const stateKey = `__stock_movement_scanner_${fieldname}`;
+    const state = frm[stateKey] || {};
+    const now = Date.now();
+
+    if (state.lastMessageAt && now - state.lastMessageAt < 1200) return;
+
+    state.lastMessageAt = now;
+    frm[stateKey] = state;
+    frappe.msgprint(__(STOCK_MOVEMENT_SCANNER_MESSAGE));
+}
+
+function isStockMovementScannerControlKey(event) {
+    return (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        [
+            "Tab",
+            "Shift",
+            "Control",
+            "Alt",
+            "Meta",
+            "Escape",
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Home",
+            "End",
+            "Backspace",
+            "Delete",
+        ].includes(event.key)
+    );
+}
+
+function resetStockMovementScannerState(state) {
+    window.clearTimeout(state.manualTimer);
+    state.manualTimer = null;
+    state.validValue = "";
+    state.validUntil = 0;
+    resetStockMovementScannerTyping(state);
+}
+
+function resetStockMovementScannerTyping(state) {
+    state.chars = "";
+    state.firstKeyTime = 0;
+    state.lastKeyTime = 0;
 }

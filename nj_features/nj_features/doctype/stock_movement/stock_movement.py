@@ -545,9 +545,12 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                 return False
         # suggested_warehouse_validation(doc, t_warehouse, error_messages)             
         deparement_qty_check_for_validation(doc, department, t_warehouse, error_messages, qty_check_cache)
-
-    if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
-        return False
+    
+    item_group_doc = frappe.get_doc('Item Group', serial_doc.get('item_group'), "is_component")
+    
+    if int(item_group_doc.get("is_component")):
+        if not check_if_serial_exists_in_active_bag_list(serial_no, error_messages, doc):
+            return False
 
     restriction_item = frappe.get_all("Item Group", {"check_restrictions": 1}, "name")
     restriction_item = [r.get("name") for r in restriction_item]
@@ -808,7 +811,7 @@ def deparement_qty_check_for_validation(doc, department, t_warehouse, error_mess
             )
         )
 
-def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
+def check_if_serial_exists_in_active_bag_list(serial_no, error_messages, doc=None):
     if not serial_no:
         return True
 
@@ -839,6 +842,18 @@ def check_if_serial_exists_in_active_bag_list(serial_no, error_messages):
     parent_serial = row.get("parent")
     item_group = row.get("item_group") or ""
     item_code = row.get("item") or ""
+
+    if doc and parent_serial:
+        all_doc_serials = set()
+        for item in doc.get("items", []):
+            row_serial_no = item.get("serial_no")
+            if row_serial_no:
+                for s in str(row_serial_no).split("\n"):
+                    s = s.strip()
+                    if s:
+                        all_doc_serials.add(s)
+        if parent_serial in all_doc_serials:
+            return True
 
     error_messages.append(
         f"Serial No <b>{serial_no}</b> cannot be transferred because it already exists "

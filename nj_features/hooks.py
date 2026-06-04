@@ -152,6 +152,7 @@ override_whitelisted_methods = {
     "ecommerce_integrations.shopify.product.create_items_if_not_exist": "nj_features.overrides.product.create_items_if_not_exist",
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
+    "frappe.desk.reportview.get_sidebar_stats": "nj_features.overrides.reportview.get_sidebar_stats",
 }
 
 

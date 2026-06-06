@@ -108,13 +108,18 @@ frappe.ui.form.on('Laptop Box', {
                     doctype: "Serial No",
                     name: frm.doc.barcode, 
                 },
-                callback: function(r) {
-                    if (r.message) {
-                        $('.primary-action').show();
-                        let serial_no_data = r.message;
+	                callback: function(r) {
+	                    if (r.message) {
+	                        $('.primary-action').show();
+	                        let serial_no_data = r.message;
+	                        console.log("[Laptop Box MRP] Serial No data", {
+	                            serial_no: frm.doc.barcode,
+	                            item_code: serial_no_data.item_code,
+	                            model: serial_no_data.model,
+	                        });
 
-                        frm.set_value("brand", serial_no_data.brand);  
-                        frm.set_value("model", serial_no_data.model);
+	                        frm.set_value("brand", serial_no_data.brand);  
+	                        frm.set_value("model", serial_no_data.model);
                         frm.set_value("bios_serial_no", serial_no_data.bios_serial_no);  
                         frm.set_value("warehouse", serial_no_data.warehouse);  
                         frm.set_value("item_code", serial_no_data.item_code);  
@@ -129,30 +134,54 @@ frappe.ui.form.on('Laptop Box', {
                                 doctype: "Item",
                                 name: serial_no_data.item_code,  
                             },
-                            callback: function(item_data) {
-                                if (item_data.message) {
-                                    let item = item_data.message;
+	                            callback: function(item_data) {
+	                                if (item_data.message) {
+	                                    let item = item_data.message;
+	                                    console.log("[Laptop Box MRP] Item data", {
+	                                        item_code: serial_no_data.item_code,
+	                                        attributes: item.attributes,
+	                                    });
 
-                                    if (item.attributes && item.attributes.length > 0) {
+	                                    if (item.attributes && item.attributes.length > 0) {
                                         let processor_type = '';
                                         let ram_capacity = '';
                                         let storage_capacity = '';
+                                        let laptop_mrp_attribute_map = {};
 
                                         item.attributes.forEach(function(attr) {
                                             if (attr.attribute == "Processor Type" || attr.attribute == "Processor Type1") {
                                                 processor_type = attr.attribute_value;
+                                                laptop_mrp_attribute_map.processor = attr;
                                             }
                                             if (attr.attribute == "RAM Capacity" || attr.attribute == "RAM") {
                                                 ram_capacity = attr.attribute_value;
+                                                laptop_mrp_attribute_map.ram = attr;
                                             }
                                             if (attr.attribute == "Storage Capacity") {
                                                 storage_capacity = attr.attribute_value;
+                                                laptop_mrp_attribute_map.storage = attr;
                                             }
                                         });
 
-                                        frm.set_value("processor_type", processor_type);
+	                                        if (serial_no_data.model) {
+	                                            laptop_mrp_attribute_map.model = {
+	                                                attribute: "Model",
+	                                                attribute_value: serial_no_data.model,
+	                                            };
+	                                        }
+
+	                                        console.log("[Laptop Box MRP] Selected attributes", {
+	                                            processor_type: processor_type,
+	                                            ram_capacity: ram_capacity,
+	                                            storage_capacity: storage_capacity,
+	                                            serial_no_model: serial_no_data.model,
+	                                            lookup_attributes: Object.values(laptop_mrp_attribute_map),
+	                                        });
+
+	                                        frm.set_value("processor_type", processor_type);
                                         frm.set_value("ram_capacity", ram_capacity);
                                         frm.set_value("storage_capacity", storage_capacity);
+                                        setLaptopBoxMRPFromAttributes(frm, Object.values(laptop_mrp_attribute_map));
                                     } else {
                                         frappe.throw("No attributes found in the Item Variant Attribute table.");
                                     }
@@ -233,33 +262,33 @@ frappe.ui.form.on('Laptop Box', {
 		})
 	},
 
-    before_save: async function(frm) {
-        if (frm.doc.barcode) {
-            frappe.validated=true
-            let serial_item_group = await frappe.db.get_value('Serial No', {'name': frm.doc.barcode}, 'item_group');
+    // before_save: async function(frm) {
+    //     if (frm.doc.barcode) {
+    //         frappe.validated=true
+    //         let serial_item_group = await frappe.db.get_value('Serial No', {'name': frm.doc.barcode}, 'item_group');
             
-            if(serial_item_group.message && serial_item_group.message.item_group && serial_item_group.message.item_group=='Laptops' || serial_item_group.message.item_group=='Chromebooks') {
-                console.log("adapter serial no",frm.doc.adapter_serial_no)
-                if(!frm.doc.adapter_serial_no) {
-                    frappe.validated=false
-                    frappe.throw("Please enter Adapter Serial No");
-                }
-            } else { return; }
+    //         if(serial_item_group.message && serial_item_group.message.item_group && serial_item_group.message.item_group=='Laptops' || serial_item_group.message.item_group=='Chromebooks') {
+    //             console.log("adapter serial no",frm.doc.adapter_serial_no)
+    //             if(!frm.doc.adapter_serial_no) {
+    //                 frappe.validated=false
+    //                 frappe.throw("Please enter Adapter Serial No");
+    //             }
+    //         } else { return; }
             
-            await frappe.call({
-                method:'nj_features.nj_features.api.qr_code.adapter_repacked_serial_no',
-                args: { "nj_serial_no": frm.doc.barcode },
-                callback: function(r) {
-                    if (r.message) {
-                        if(r.message!=frm.doc.adapter_serial_no) {
-                            frappe.validated=false
-                            frappe.throw("Repacked Adapter Serial No: '" + r.message + "' does not match with the scanned Serial No");
-                        }
-                    }
-                }
-            })
-        }
-    }
+    //         await frappe.call({
+    //             method:'nj_features.nj_features.api.qr_code.adapter_repacked_serial_no',
+    //             args: { "nj_serial_no": frm.doc.barcode },
+    //             callback: function(r) {
+    //                 if (r.message) {
+    //                     if(r.message!=frm.doc.adapter_serial_no) {
+    //                         frappe.validated=false
+    //                         frappe.throw("Repacked Adapter Serial No: '" + r.message + "' does not match with the scanned Serial No");
+    //                     }
+    //                 }
+    //             }
+    //         })
+    //     }
+    // }
 });
 
 const LAPTOP_BOX_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
@@ -269,26 +298,115 @@ const LAPTOP_BOX_SCANNER_MAX_KEY_GAP = 350;
 const LAPTOP_BOX_SCANNER_IDLE_DELAY = 600;
 
 function setLaptopBoxSerialNoFromScan(frm, serialNo) {
-    frappe.db.get_value("Laptop Box", { barcode: serialNo }, "name").then(function(r) {
-        const existingName = r.message && r.message.name;
+    // Duplicate Laptop Box serial validation is temporarily disabled to allow reuse.
+    // frappe.db.get_value("Laptop Box", { barcode: serialNo }, "name").then(function(r) {
+    //     const existingName = r.message && r.message.name;
 
-        if (existingName && existingName !== frm.doc.name) {
-            frappe.msgprint(
-                __(
-                    "Serial No <b>{0}</b> is already used in Laptop Box <b>{1}</b>.",
-                    [serialNo, existingName]
-                )
-            );
-            frm.set_value("nj_barcode", "");
-            frm.set_value("barcode", "");
-            frm.refresh_field("nj_barcode");
-            frm.refresh_field("barcode");
-            $('[data-fieldname="nj_barcode"]').focus();
-            return;
-        }
+    //     if (existingName && existingName !== frm.doc.name) {
+    //         frappe.msgprint(
+    //             __(
+    //                 "Serial No <b>{0}</b> is already used in Laptop Box <b>{1}</b>.",
+    //                 [serialNo, existingName]
+    //             )
+    //         );
+    //         frm.set_value("nj_barcode", "");
+    //         frm.set_value("barcode", "");
+    //         frm.refresh_field("nj_barcode");
+    //         frm.refresh_field("barcode");
+    //         $('[data-fieldname="nj_barcode"]').focus();
+    //         return;
+    //     }
 
-        frm.set_value("barcode", serialNo);
+    //     frm.set_value("barcode", serialNo);
+    // });
+    frm.set_value("barcode", serialNo);
+}
+
+function setLaptopBoxMRPFromAttributes(frm, attributes) {
+    const laptopMrpAttributes = (attributes || []).filter(function(attr) {
+        return attr.attribute && attr.attribute_value;
     });
+
+    console.log("[Laptop Box MRP] Starting laptop_value lookups", laptopMrpAttributes);
+
+    if (!laptopMrpAttributes.length) {
+        console.log("[Laptop Box MRP] No attributes available for MRP. Setting laptop_mrp to 0.");
+        frm.set_value("laptop_mrp", 0);
+        return;
+    }
+
+    const laptopValueCalls = laptopMrpAttributes.map(function(attr) {
+        return getLaptopBoxAttributeValue(attr).then(function(laptopValue) {
+            return flt(laptopValue);
+        });
+    });
+
+    Promise.all(laptopValueCalls).then(function(values) {
+        const totalLaptopValue = values.reduce(function(total, value) {
+            return total + value;
+        }, 0);
+        const laptopMrp = flt(totalLaptopValue * 2.1, getLaptopBoxCurrencyPrecision(frm));
+
+        console.log("[Laptop Box MRP] Final calculation", {
+            values: values,
+            total_laptop_value: totalLaptopValue,
+            multiplier: 2.1,
+            laptop_mrp: laptopMrp,
+        });
+
+        frm.set_value("laptop_mrp", laptopMrp);
+        frm.refresh_field("laptop_mrp");
+    }).catch(function(error) {
+        console.error("[Laptop Box MRP] Error while calculating laptop_mrp", error);
+        frappe.msgprint(__("Unable to calculate Laptop MRP. Please check Item Attribute Value laptop_value setup."));
+    });
+}
+
+function getLaptopBoxAttributeValue(attr) {
+    const parents = getLaptopBoxAttributeParents(attr.attribute);
+
+    return parents.reduce(function(promise, parent) {
+        return promise.then(function(value) {
+            if (value !== null && value !== undefined) {
+                return value;
+            }
+
+            return frappe.call({
+                method: "nj_features.nj_features.doctype.laptop_box.laptop_box.get_item_attribute_laptop_value",
+                args: {
+                    parent: parent,
+                    attribute_value: attr.attribute_value,
+                },
+            }).then(function(r) {
+                const laptopValue = r.message;
+                console.log("[Laptop Box MRP] laptop_value result", {
+                    parent: parent,
+                    attribute_value: attr.attribute_value,
+                    response: r,
+                    laptop_value: laptopValue,
+                });
+                return laptopValue !== null && laptopValue !== undefined ? laptopValue : null;
+            });
+        });
+    }, Promise.resolve(null));
+}
+
+function getLaptopBoxAttributeParents(attribute) {
+    const parentMap = {
+        "Processor Type": ["Processor Type1", "Processor Type"],
+        "Processor Type1": ["Processor Type1", "Processor Type"],
+        "RAM": ["RAM Capacity", "RAM"],
+        "RAM Capacity": ["RAM Capacity", "RAM"],
+        "Storage Capacity": ["Storage Capacity"],
+        "Model": ["Model"],
+    };
+
+    return parentMap[attribute] || [attribute];
+}
+
+function getLaptopBoxCurrencyPrecision(frm) {
+    const df = frappe.meta.get_docfield(frm.doctype, "laptop_mrp", frm.doc.name);
+    return parseInt(df && df.precision, 10) || 2;
 }
 
 function setupLaptopBoxScannerOnly(frm, fieldname) {

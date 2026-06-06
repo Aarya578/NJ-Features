@@ -2194,6 +2194,40 @@ PP_MR_DEFAULT_SCHEDULE_DAYS = 3
 PP_MR_STORES_DEPARTMENT = "Stores - NJ"
 PP_MR_CORE_ITEM_GROUPS = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
 PP_MR_MIN_QTY = 0.000001
+_PP_MR_WHOLE_NUMBER_UOM_BY_ITEM = {}
+
+
+def _round_pp_qty_for_item_uom(item_code, qty):
+    qty = flt(qty, 6)
+    if qty <= 0:
+        return qty
+
+    if item_code not in _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM:
+        stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+        must_be_whole_number = (
+            frappe.db.get_value("UOM", stock_uom, "must_be_whole_number")
+            if stock_uom else 0
+        )
+        _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM[item_code] = {
+            "stock_uom": stock_uom,
+            "must_be_whole_number": flt(must_be_whole_number),
+        }
+
+    uom_info = _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM.get(item_code) or {}
+    if not uom_info.get("must_be_whole_number"):
+        return qty
+
+    rounded_qty = math.ceil(qty - PP_MR_MIN_QTY)
+    if abs(rounded_qty - qty) > PP_MR_MIN_QTY:
+        print(
+            "PP MR rounded fractional qty for whole-number UOM:",
+            "item_code:", item_code,
+            "stock_uom:", uom_info.get("stock_uom"),
+            "original_qty:", qty,
+            "rounded_qty:", rounded_qty,
+        )
+
+    return rounded_qty
 
 
 def _split_pp_department_names(departments):
@@ -2818,7 +2852,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
         print("PP MR append item:", item["item_code"], "qty:", item["qty"])
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": item["qty"],
+            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
             "create_reference": plan_name,
             "schedule_date": schedule_date,
             "warehouse": PP_MR_STORES_DEPARTMENT,
@@ -2864,7 +2898,8 @@ def cosumables_material_issue_mr(doc=None, method=None):
         AND mr.status NOT IN ('Stopped', 'Cancelled', 'Completed')
         AND mri.item_code IS NOT NULL
         AND mri.item_code != ''
-    """, as_dict=True)
+        AND IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
+    """, as_dict=True , debug=True)
 
     print("material_issues===============", material_issues)
 
@@ -3137,7 +3172,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
 
             item_row = {
                 "item_code": item["item_code"],
-                "qty": item["qty"],
+                "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
                 "create_reference": "NJ Production Planning ALL Material Issue",
                 "schedule_date": schedule_date,
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
@@ -3646,8 +3681,9 @@ def _create_laptop_adaptor_mr(plan_name, shortage_items):
         print("PP MR laptop adaptor append item:", item["item_code"], "qty:", item["qty"])
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": item["qty"],
+            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
             "schedule_date": schedule_date,
+            "create_reference": "Laptop Adaptor NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
         })
@@ -4292,7 +4328,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
 
             item_row = {
                 "item_code": item["item_code"],
-                "qty": item["qty"],
+                "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
                 "schedule_date": schedule_date,
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
             }
@@ -5172,8 +5208,9 @@ def create_laptop_ram_material_issue_mr(plan_name, shortage_items):
         )
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": item["qty"],
+            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
             "schedule_date": schedule_date,
+            "create_reference": "Laptop RAM NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
         })
@@ -6088,8 +6125,9 @@ def create_laptop_storage_material_issue_mr(plan_name, shortage_items):
         )
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": item["qty"],
+            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
             "schedule_date": schedule_date,
+            "create_reference": "Laptop Storage NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
         })

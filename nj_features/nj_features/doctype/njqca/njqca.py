@@ -6952,10 +6952,10 @@ def previous_njqca_failed_result_validation(doc, method=None):
     failed_parameter_map = {}
 
     for row in doc.get("njqca_result_parameters") or []:
-        parameter = (row.get("parameter") or "").strip()
-        value = (row.get("value") or "").strip()
+        parameter = str(row.get("parameter") or "").strip()
+        value = str(row.get("value") or "").strip()
 
-        if parameter in disabled_parameters and value.upper() == "FAIL":
+        if parameter in disabled_parameters and "FAIL" in value.upper():
             failed_parameter_map[parameter] = row
 
     if not failed_parameter_map:
@@ -6963,10 +6963,11 @@ def previous_njqca_failed_result_validation(doc, method=None):
             SELECT parameter, value
             FROM `tabNJQCA Result Parameters`
             WHERE parent = %(njqca_name)s
-                AND value = 'FAIL'
+                AND UPPER(value) LIKE %(fail_value)s
                 AND parameter IN %(parameters)s
         """, {
             "njqca_name": doc.name,
+            "fail_value": "%FAIL%",
             "parameters": tuple(disabled_parameters),
         }, as_dict=True)
 

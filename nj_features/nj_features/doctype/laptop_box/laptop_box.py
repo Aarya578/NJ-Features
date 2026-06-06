@@ -9,6 +9,29 @@ class LaptopBox(Document):
 	pass
 
 @frappe.whitelist()
+def get_item_attribute_laptop_value(parent, attribute_value):
+	allowed_parents = {
+		"Processor Type",
+		"Processor Type1",
+		"RAM",
+		"RAM Capacity",
+		"Storage Capacity",
+		"Model",
+	}
+
+	if parent not in allowed_parents:
+		frappe.throw("Invalid Item Attribute for Laptop MRP calculation.")
+
+	return frappe.db.get_value(
+		"Item Attribute Value",
+		{
+			"parent": parent,
+			"attribute_value": attribute_value,
+		},
+		"laptop_value",
+	)
+
+@frappe.whitelist()
 def printing_barcode(doc, method):
 	encoded_data = doc.barcode
 	format = 'png'

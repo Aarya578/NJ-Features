@@ -764,18 +764,18 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
             LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0))         AS min_so_dn_qty,
 
-            (so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+            GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0))
                                                                 AS qty_pending,
 
             CONCAT(COALESCE(it2.variant_of, it2.name), ' ', COALESCE(proc.attribute_value, ''))
                                                                 AS variant_processor,
 
-            SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+            SUM(GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0)))
                 OVER (
                     PARTITION BY CONCAT(COALESCE(it2.variant_of, it2.name), ' ', COALESCE(proc.attribute_value, ''))
                 )                                               AS total_pending_by_variant,
 
-            SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)))
+            SUM(GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0)))
                 OVER (PARTITION BY so_data.pb_code)              AS total_pending_by_pb_code
 
         FROM (
@@ -856,6 +856,21 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             ON so_data.sales_order = dn_data.against_sales_order
            AND so_data.item_code   = dn_data.item_code
 
+        LEFT JOIN (
+            SELECT
+                reserved_sales_order    AS sales_order,
+                item_code,
+                COUNT(*)                AS reserved_qty
+            FROM `tabSerial No`
+            WHERE
+                reserved_sales_order IS NOT NULL
+                AND reserved_sales_order != ''
+                AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+            GROUP BY reserved_sales_order, item_code
+        ) AS res_data
+            ON so_data.sales_order = res_data.sales_order
+           AND so_data.item_code   = res_data.item_code
+
         LEFT JOIN `tabItem` it2
             ON it2.name = so_data.item_code
 
@@ -869,7 +884,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         ) proc
             ON proc.parent = it2.name
 
-        WHERE (so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0))) > 0
+        WHERE GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0)) > 0
         ORDER BY so_data.so_creation DESC, so_data.sales_order, so_data.item_code
         """,
         {"lookback": LOOKBACK_DAYS},
@@ -1722,6 +1737,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
         WHERE sn.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND it.item_group IN %(igroups)s
+          AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           {extra_where}
         """,
         params,

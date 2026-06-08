@@ -2223,6 +2223,31 @@
    "width": null
   },
   {
+ "allow_in_quick_entry": 0,
+ "allow_on_submit": 1,
+ "bold": 0,
+ "collapsible": 0,
+ "columns": 0,
+ "dt": "Sales Order",
+ "fetch_from": null,
+ "fetch_if_empty": 0,
+ "fieldname": "estimated_delivery_date",
+ "fieldtype": "Date",
+ "hidden": 0,
+ "idx": 23,
+ "in_global_search": 0,
+ "in_list_view": 0,
+ "in_standard_filter": 0,
+ "insert_after": "eta_for_dispatch",
+ "label": "Estimated Delivery Date",
+ "no_copy": 0,
+ "print_hide": 0,
+ "read_only": 1,
+ "reqd": 0,
+ "search_index": 0
+  }
+  ,
+  {
    "_assign": null,
    "_comments": null,
    "_liked_by": null,

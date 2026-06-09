@@ -701,30 +701,26 @@ def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
 
     What it changes:
     1. Part list grade UNKNOWN/blank -> Grade A
-    2. Part list item/item_code containing UNKNOWN -> GRADE A
+    2. Part list item/item_code -> matching Grade A Item
 
-    What it does NOT change:
-    - Existing valid grades like Grade B, Grade C, etc.
-    - Rows where item does not contain UNKNOWN
-    - Previous PR submit flow
+    If no valid Grade A Item exists in Item master, block the process.
     """
     if not is_purchase_order_grade_a(item):
         return
 
-    # Main child table field seen in Serial No part list
     part_rows = serial_no_doc.get("serial_no_component") or []
 
     if not part_rows:
         return
+
+    missing_grade_a_items = {}
 
     for part in part_rows:
         # Update Grade column only if blank/UNKNOWN
         if part.meta.get_field("grade") and is_unknown_value(part.get("grade")):
             part.grade = "Grade A"
 
-        # Update Item column only if it contains UNKNOWN
-        # Keeping both fieldnames for safety because some child tables use item,
-        # some use item_code.
+        # Update Item column to Grade A item
         for item_fieldname in ["item", "item_code"]:
             if not part.meta.get_field(item_fieldname):
                 continue
@@ -737,6 +733,12 @@ def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
                 updated_item_code = get_grade_a_item_for_part(serial_no_doc, part)
 
             if not updated_item_code:
+                item_group = part.get("item_group") or "Unknown Item Group"
+
+                missing_grade_a_items[item_group] = (
+                    "No valid existing Grade A Item Code found in Item master"
+                )
+
                 logger.warning(
                     "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Could not find Grade A item for item_group=%s",
                     serial_no_doc.name,
@@ -755,6 +757,12 @@ def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
             # This prevents Purchase Receipt submit from breaking.
             if field_df and field_df.fieldtype == "Link" and field_df.options == "Item":
                 if not frappe.db.exists("Item", updated_item_code):
+                    item_group = part.get("item_group") or "Unknown Item Group"
+
+                    missing_grade_a_items[item_group] = (
+                        f"Missing Item Code: {updated_item_code}"
+                    )
+
                     logger.warning(
                         "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Item does not exist: %s",
                         serial_no_doc.name,
@@ -765,6 +773,29 @@ def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
                     continue
 
             part.set(item_fieldname, updated_item_code)
+
+    if missing_grade_a_items:
+        message_rows = []
+
+        for item_group, reason in missing_grade_a_items.items():
+            message_rows.append(
+                f"<b>{item_group}</b>: {reason}"
+            )
+
+        # Clear earlier ERPNext success messages like "Serial No XYZ Created"
+        # because this validation is going to block the submit.
+        frappe.local.message_log = []
+
+        frappe.throw(
+            msg=(
+                f"Cannot continue because valid existing <b>Grade A Item Code</b> "
+                f"is missing for some part rows in Serial No <b>{serial_no_doc.name}</b>."
+                f"<br><br>"
+                + "<br>".join(message_rows)
+                + "<br><br>Please create/correct the Grade A Item Code in Item Master and try again."
+            ),
+            title="Grade A Item Code Missing"
+        )
 
 def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)

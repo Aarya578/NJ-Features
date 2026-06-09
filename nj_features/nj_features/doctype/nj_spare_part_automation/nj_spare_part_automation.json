@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-22 15:20:50.856268",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "brand",
+  "model",
+  "fru_number",
+  "item_group",
+  "generated_description",
+  "specifications",
+  "status",
+  "error_log",
+  "raw_response",
+  "scraped_fru_number",
+  "image_1",
+  "image_2",
+  "image_3",
+  "image_4",
+  "image_5"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Link",
+   "label": "Brand",
+   "options": "Brand",
+   "read_only": 1
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fru_number",
+   "fieldtype": "Data",
+   "label": "FRU Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "label": "Item Group",
+   "options": "Item Group",
+   "read_only": 1
+  },
+  {
+   "fieldname": "generated_description",
+   "fieldtype": "Text Editor",
+   "label": "Generated Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "specifications",
+   "fieldtype": "Long Text",
+   "label": "Specifications",
+   "read_only": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nGenerated\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_log",
+   "fieldtype": "Small Text",
+   "label": "Error Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_response",
+   "fieldtype": "Long Text",
+   "label": "Raw Response",
+   "read_only": 1
+  },
+  {
+   "fieldname": "image_1",
+   "fieldtype": "Data",
+   "label": "Image 1",
+   "options": "URL"
+  },
+  {
+   "fieldname": "image_2",
+   "fieldtype": "Data",
+   "label": "Image 2",
+   "options": "URL"
+  },
+  {
+   "fieldname": "image_3",
+   "fieldtype": "Data",
+   "label": "Image 3",
+   "options": "URL"
+  },
+  {
+   "fieldname": "image_4",
+   "fieldtype": "Data",
+   "label": "Image 4",
+   "options": "URL"
+  },
+  {
+   "fieldname": "image_5",
+   "fieldtype": "Data",
+   "label": "Image 5",
+   "options": "URL"
+  },
+  {
+   "fieldname": "scraped_fru_number",
+   "fieldtype": "Data",
+   "label": "Scraped FRU Number"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-09 10:56:32.945093",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Spare Part Automation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

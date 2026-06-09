@@ -681,6 +681,62 @@ def apply_reliability_test_changes_to_doc(doc):
             "apply_reliability_test_changes_to_doc failed"
         )
 
+def is_njqca_status_submit_validation_enabled():
+    """
+    NJ Settings:
+    Parameter: njqca_status_submit_validation
+    Doc Type: NJQCA
+
+    Value:
+        0 = Do not validate NJQCA_Status
+        1 = Validate NJQCA_Status before submit
+    """
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "parameter": "njqca_status_submit_validation",
+            "doc_type": "NJQCA"
+        },
+        "value"
+    )
+
+    return str(value or "0").strip() == "1"
+
+
+def validate_njqca_status_completed_before_submit(doc):
+    """
+    If enabled in NJ Settings, NJQCA submit is allowed only when
+    NJQCA Result Parameters has:
+
+        parameter = NJQCA_Status
+        value     = Completed
+
+    Skip validation for BATTERY item group.
+    """
+
+    # Skip validation for BATTERY
+    if str(doc.get("item_group") or "").strip().lower() == "battery":
+        return
+
+    # If setting is 0 or missing, skip validation
+    if not is_njqca_status_submit_validation_enabled():
+        return
+
+    status_completed = False
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = str(row.get("parameter") or "").strip().lower()
+        value = str(row.get("value") or "").strip().lower()
+
+        if parameter == "njqca_status" and value == "completed":
+            status_completed = True
+            break
+
+    if not status_completed:
+        frappe.throw(
+            _("NJQCA was not completed. Please re-run the script before submitting.")
+        )
+
 class NJQCA(Document):
     def onload(self):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
@@ -761,7 +817,9 @@ class NJQCA(Document):
                     self.name,
                     update_modified=False
                 )
-
+    def before_submit(self):
+        validate_njqca_status_completed_before_submit(self)
+    
     def on_submit(self):
         try:
             # self.performance_reports_update()

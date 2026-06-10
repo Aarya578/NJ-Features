@@ -317,6 +317,8 @@ def get_eligible_departments(departments, days_to_deliver):
     Determine eligible departments based on delivery date SLA
     Returns: (eligible_departments_reversed, remaining_departments)
     """
+    if days_to_deliver <= 0:
+        return list(departments), []
     eligible_depts = []
     cumulative_days = 0
 
@@ -430,12 +432,8 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
         WHERE
             reserved_sales_order = %s
             AND item_code = %s
-            AND NOT EXISTS (
-                SELECT 1
-                FROM `tabDelivery Note Item`
-                WHERE serial_no = `tabSerial No`.name
-                    AND docstatus = 1
-            )
+            AND status = 'Active'
+            AND warehouse IS NOT NULL
     """, (so_name, item_code))[0][0] or 0
 
     to_allocate = net_pending - allocated_count
@@ -488,6 +486,11 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 item_code = '{item_code}'
                 AND warehouse IN ({warehouses_str})
                 AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                AND status = 'Active'
+                AND NOT (
+                    (is_replace = 1 OR (return_reason IS NOT NULL AND return_reason != ''))
+                    AND (sales_order_id IS NULL OR sales_order_id = '')
+                )
                 AND NOT EXISTS (
                     SELECT 1
                     FROM `tabDelivery Note Item`
@@ -503,6 +506,8 @@ def assign_serials(so_name, item_code, to_allocate, departments):
 
         print(f"\n🔹 Department: {dept.name}, Found {count_in_dept} serials to allocate")
 
+        actually_reserved = 0
+
         for serial in available_serials:
             serial_name = serial.get("name")
             serial_doc = frappe.get_doc("Serial No", serial_name)
@@ -511,27 +516,37 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             print("return_reason:", serial_doc.return_reason)
 
             if serial_doc.is_replace or serial_doc.return_reason:
-                print("🧩 Updating (replacement case)")
                 sales_order_id = serial_doc.get("sales_order_id")
-                serial_doc.reserved_sales_order = sales_order_id
+                if sales_order_id:
+                    print("🧩 Updating (replacement case) → redirecting to", sales_order_id)
+                    serial_doc.reserved_sales_order = sales_order_id
+                else:
+                    print("⚠️ Ghost serial with no sales_order_id — skipping")
+                    continue
             else:
                 print("⚙️ Updating (normal case)")
                 print("so_name:", so_name)
                 print("serial_name:", serial_name)
                 serial_doc.reserved_sales_order = so_name
+                actually_reserved += 1
 
             so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
             aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
 
-            serial_doc.append("sales_order_details", {
-                "sales_order": so_name,
-                "aging_days": aging_days
-            })
+            already_logged = any(
+                row.sales_order == so_name
+                for row in serial_doc.get("sales_order_details", [])
+            )
+            if not already_logged:
+                serial_doc.append("sales_order_details", {
+                    "sales_order": so_name,
+                    "aging_days": aging_days
+                })
 
             serial_doc.save(ignore_permissions=True)
 
         frappe.db.commit()
-        allocated_count += count_in_dept
+        allocated_count += actually_reserved
 
     print("✅ Successfully returned from assign_serials()")
     return allocated_count
@@ -789,13 +804,15 @@ def get_sales_order_eta_breakdown(so_name):
 def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
     """Update eta_for_dispatch, estimated_delivery_date and breakdown text on Sales Orders."""
     breakdown_fieldname = get_eta_breakdown_fieldname()
+    has_eta_date_col = frappe.db.has_column("Sales Order", "estimated_delivery_date")
 
     for so_name, eta in so_eta_map.items():
         update_values = {}
 
         if eta is None:
             update_values["eta_for_dispatch"] = "No Stock"
-            update_values["estimated_delivery_date"] = None
+            if has_eta_date_col:
+                update_values["estimated_delivery_date"] = None
         else:
             try:
                 eta_days = int(eta) if eta is not None else 0
@@ -803,7 +820,8 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
                 eta_days = 0
 
             update_values["eta_for_dispatch"] = eta
-            update_values["estimated_delivery_date"] = add_days(nowdate(), eta_days)
+            if has_eta_date_col:
+                update_values["estimated_delivery_date"] = add_days(nowdate(), eta_days)
 
         if so_breakdown_map and breakdown_fieldname:
             update_values[breakdown_fieldname] = "\n\n".join(

@@ -1094,9 +1094,10 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
     # Load to_make_ratio from Shopify Item List for default rate calculation
     ratio_rows = frappe.db.sql(
         """
-        SELECT item_code, IFNULL(to_make_ratio, 0) AS to_make_ratio
+        SELECT item_code, MAX(IFNULL(to_make_ratio, 0)) AS to_make_ratio
         FROM `tabShopify Item List`
         WHERE item_code IS NOT NULL AND item_code != ''
+        GROUP BY item_code
         """,
         as_dict=True,
     )
@@ -1114,8 +1115,8 @@ def _compute_recency_weighted_sales_rates_SO_union(sellable_items: List[Dict]) -
         ratio = to_make_ratio_map.get(ic, 0)
         default_rate = max(1.0, 1.0 * ratio) if ratio > 0 else 1.0
 
-        rates.setdefault(km, default_rate)
-        rates.setdefault(kc, default_rate)
+        rates[km] = max(rates.get(km, 0.0), default_rate)
+        rates[kc] = max(rates.get(kc, 0.0), default_rate)
 
     return rates
 

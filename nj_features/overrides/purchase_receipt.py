@@ -550,6 +550,253 @@ def update_serial_no_on_pr_submit(doc, method=None):
             for serial_no in serial_nos:
                 update_serial_no(serial_no, doc, item)
 
+def get_po_grade_for_purchase_receipt_item(item):
+    """
+    Fetch grade from Purchase Order Item.
+    This function is intentionally PO-based because the requirement says:
+    run this only when Grade is Grade A in Purchase Order.
+    """
+    if not item.get("purchase_order"):
+        return None
+
+    # Best match: direct PO Item link from PR Item
+    if item.get("purchase_order_item"):
+        po_grade = frappe.db.get_value(
+            "Purchase Order Item",
+            item.purchase_order_item,
+            "grade"
+        )
+        if po_grade:
+            return str(po_grade).strip()
+
+    # Fallback match: same PO + same item_code
+    if item.get("item_code"):
+        po_grade = frappe.db.get_value(
+            "Purchase Order Item",
+            {
+                "parent": item.purchase_order,
+                "item_code": item.item_code
+            },
+            "grade"
+        )
+        if po_grade:
+            return str(po_grade).strip()
+
+    return None
+
+
+def is_purchase_order_grade_a(item):
+    po_grade = get_po_grade_for_purchase_receipt_item(item)
+    return po_grade and po_grade.strip().upper() == "GRADE A"
+
+
+def is_unknown_value(value):
+    return not value or str(value).strip().upper() == "UNKNOWN"
+
+
+def get_grade_a_item_value(value):
+    if not value:
+        return value
+
+    value = str(value).strip()
+    upper_value = value.upper()
+
+    # If already Grade A, no need to change
+    if upper_value.endswith("-GRADE A") or upper_value.endswith(" GRADE A"):
+        return value
+
+    # If item already ends with another grade, replace that grade with GRADE A
+    grade_suffixes = [
+        "-GRADE B", "-GRADE C", "-GRADE D",
+        " GRADE B", " GRADE C", " GRADE D",
+        "-UNKNOWN", " UNKNOWN"
+    ]
+
+    for suffix in grade_suffixes:
+        if upper_value.endswith(suffix):
+            return value[:len(value) - len(suffix)] + "-GRADE A"
+
+    # If UNKNOWN appears anywhere inside item code, replace it
+    if "UNKNOWN" in upper_value:
+        value = value.replace("UNKNOWN", "GRADE A")
+        value = value.replace("Unknown", "GRADE A")
+        value = value.replace("unknown", "GRADE A")
+        return value
+
+    # If no grade exists, append Grade A
+    return value + "-GRADE A"
+
+def get_grade_a_item_for_part(serial_no_doc, part):
+    item_group = part.get("item_group")
+
+    if not item_group:
+        return None
+
+    parent_item_code = serial_no_doc.get("item_code") or ""
+    parent_upper = parent_item_code.upper()
+
+    # Try to identify model from parent item code
+    model_keywords = []
+
+    for keyword in ["T480", "T470", "L14", "5430", "5420", "5410", "5400"]:
+        if keyword in parent_upper:
+            model_keywords.append(keyword)
+
+    candidates = frappe.get_all(
+        "Item",
+        filters={
+            "item_group": item_group,
+            "name": ["like", "%GRADE A%"]
+        },
+        fields=["name"],
+        limit=100
+    )
+
+    if not candidates:
+        return None
+
+    candidate_names = [c.name for c in candidates]
+
+    item_group_upper = item_group.upper()
+
+    for model in model_keywords:
+        matched = [
+            name for name in candidate_names
+            if model in name.upper()
+            and item_group_upper in name.upper()
+        ]
+
+        if matched:
+            matched = sorted(matched, key=len)
+            return matched[0]
+
+    # 2. Prefer generic S-<ITEM GROUP>-GRADE A item
+    generic_name = f"S-{item_group}-GRADE A"
+
+    for name in candidate_names:
+        if name.upper() == generic_name.upper():
+            return name
+
+    # 3. Prefer any candidate that ends with GRADE A and contains the item group text
+    matched = [
+        name for name in candidate_names
+        if item_group_upper in name.upper()
+        and name.upper().endswith("GRADE A")
+    ]
+
+    if matched:
+        matched = sorted(matched, key=len)
+        return matched[0]
+
+    # 4. Last fallback: only if exactly one candidate exists
+    if len(candidate_names) == 1:
+        return candidate_names[0]
+
+    return None
+
+
+def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
+    """
+    Updates Serial No part list only when linked Purchase Order Item Grade = Grade A.
+
+    What it changes:
+    1. Part list grade UNKNOWN/blank -> Grade A
+    2. Part list item/item_code -> matching Grade A Item
+
+    If no valid Grade A Item exists in Item master, block the process.
+    """
+    if not is_purchase_order_grade_a(item):
+        return
+
+    part_rows = serial_no_doc.get("serial_no_component") or []
+
+    if not part_rows:
+        return
+
+    missing_grade_a_items = {}
+
+    for part in part_rows:
+        # Update Grade column only if blank/UNKNOWN
+        if part.meta.get_field("grade") and is_unknown_value(part.get("grade")):
+            part.grade = "Grade A"
+
+        # Update Item column to Grade A item
+        for item_fieldname in ["item", "item_code"]:
+            if not part.meta.get_field(item_fieldname):
+                continue
+
+            current_item_code = part.get(item_fieldname)
+
+            if current_item_code:
+                updated_item_code = get_grade_a_item_value(current_item_code)
+            else:
+                updated_item_code = get_grade_a_item_for_part(serial_no_doc, part)
+
+            if not updated_item_code:
+                item_group = part.get("item_group") or "Unknown Item Group"
+
+                missing_grade_a_items[item_group] = (
+                    "No valid existing Grade A Item Code found in Item master"
+                )
+
+                logger.warning(
+                    "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Could not find Grade A item for item_group=%s",
+                    serial_no_doc.name,
+                    part.name,
+                    item_fieldname,
+                    part.get("item_group")
+                )
+                continue
+
+            if updated_item_code == part.get(item_fieldname):
+                continue
+
+            field_df = part.meta.get_field(item_fieldname)
+
+            # If field is linked to Item, update only if that Item exists.
+            # This prevents Purchase Receipt submit from breaking.
+            if field_df and field_df.fieldtype == "Link" and field_df.options == "Item":
+                if not frappe.db.exists("Item", updated_item_code):
+                    item_group = part.get("item_group") or "Unknown Item Group"
+
+                    missing_grade_a_items[item_group] = (
+                        f"Missing Item Code: {updated_item_code}"
+                    )
+
+                    logger.warning(
+                        "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Item does not exist: %s",
+                        serial_no_doc.name,
+                        part.name,
+                        item_fieldname,
+                        updated_item_code
+                    )
+                    continue
+
+            part.set(item_fieldname, updated_item_code)
+
+    if missing_grade_a_items:
+        message_rows = []
+
+        for item_group, reason in missing_grade_a_items.items():
+            message_rows.append(
+                f"<b>{item_group}</b>: {reason}"
+            )
+
+        # Clear earlier ERPNext success messages like "Serial No XYZ Created"
+        # because this validation is going to block the submit.
+        frappe.local.message_log = []
+
+        frappe.throw(
+            msg=(
+                f"Cannot continue because valid existing <b>Grade A Item Code</b> "
+                f"is missing for some part rows in Serial No <b>{serial_no_doc.name}</b>."
+                f"<br><br>"
+                + "<br>".join(message_rows)
+                + "<br><br>Please create/correct the Grade A Item Code in Item Master and try again."
+            ),
+            title="Grade A Item Code Missing"
+        )
+
 def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
@@ -567,6 +814,7 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
         serial_no_doc.grade = item.grade
+        update_serial_no_part_list_grade_a_from_po(serial_no_doc, item)
         serial_no_doc.supplier = doc.supplier
         serial_no_doc.purchase_warranty_days = get_purc_warranty_data.get('warranty_days') if get_purc_warranty_data.get('warranty_days') else doc.warranty_days
         serial_no_doc.purchase_order = item.purchase_order

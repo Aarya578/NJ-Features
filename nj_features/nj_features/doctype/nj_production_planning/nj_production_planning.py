@@ -2213,6 +2213,10 @@ PP_MR_MIN_QTY = 0.000001
 _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM = {}
 
 
+def _get_pp_default_mr_schedule_date():
+    return add_days(frappe.utils.nowdate(), PP_MR_DEFAULT_SCHEDULE_DAYS)
+
+
 def _round_pp_qty_for_item_uom(item_code, qty):
     qty = flt(qty, 6)
     if qty <= 0:
@@ -2268,18 +2272,16 @@ def _get_pp_previous_two_department_names(departments):
             `tabDepartment` base_dept
         INNER JOIN
             `tabDepartment` prev_dept
-            ON prev_dept.department_sequence IN (
-                base_dept.department_sequence - 1,
-                base_dept.department_sequence - 2
-            )
+            ON prev_dept.department_sequence > 1
+            AND prev_dept.department_sequence < base_dept.department_sequence
         WHERE
             base_dept.name IN %(departments)s
         ORDER BY
             base_dept.department_sequence,
-            prev_dept.department_sequence
+            prev_dept.department_sequence DESC
     """, {
         "departments": tuple(departments),
-    }, as_dict=True, debug=True)
+    }, as_dict=True)
 
     previous_departments = []
     seen = set()
@@ -2590,6 +2592,12 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
         for consumable in consumables_by_template.get(item_template, []):
             required_qty_by_item[consumable.item_code] += flt(consumable.quantity) * planned_qty
 
+            stock_target_departments = []
+            if current_department:
+                stock_target_departments = _get_pp_previous_two_department_names(current_department)
+                stock_target_departments.insert(0, current_department)
+                stock_departments.update(stock_target_departments)
+
             target_departments = _split_pp_department_names(consumable.departments)
             if not target_departments:
                 print(
@@ -2601,8 +2609,6 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
                 schedule_days_by_item[consumable.item_code].append(PP_MR_DEFAULT_SCHEDULE_DAYS)
 
             for target_department in target_departments:
-                stock_target_departments = _get_pp_previous_two_department_names(target_department)
-                stock_target_departments.insert(0, target_department)
                 print(
                     "PP MR consumable parsed department:",
                     "item_template:", item_template,
@@ -2611,7 +2617,6 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
                     "target_department:", target_department,
                     "stock_departments:", stock_target_departments,
                 )
-                stock_departments.update(stock_target_departments)
                 schedule_days_by_item[consumable.item_code].append(
                     _get_pp_schedule_days(current_department, target_department)
                 )
@@ -2825,13 +2830,8 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
         if not shortage_items:
             return
 
-    schedule_days = max(
-        days
-        for item in shortage_items
-        for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
-    )
-    schedule_date = add_days(frappe.utils.nowdate(), schedule_days)
-    print("PP MR schedule days:", schedule_days)
+    schedule_date = _get_pp_default_mr_schedule_date()
+    print("PP MR schedule days:", PP_MR_DEFAULT_SCHEDULE_DAYS)
     print("PP MR schedule date:", schedule_date)
 
     item_fru_map = {
@@ -3148,13 +3148,8 @@ def cosumables_material_issue_mr(doc=None, method=None):
         if not typed_shortage_items:
             continue
 
-        max_schedule_days = max(
-            days
-            for item in typed_shortage_items
-            for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
-        )
-        schedule_date = add_days(frappe.utils.nowdate(), max_schedule_days)
-        print("all purpose", material_request_type, "MR schedule days===============", max_schedule_days)
+        schedule_date = _get_pp_default_mr_schedule_date()
+        print("all purpose", material_request_type, "MR schedule days===============", PP_MR_DEFAULT_SCHEDULE_DAYS)
         print("all purpose", material_request_type, "MR schedule date===============", schedule_date)
 
         item_fru_map = {
@@ -3666,13 +3661,8 @@ def _create_laptop_adaptor_mr(plan_name, shortage_items):
 
     shortage_items = valid_shortage_items
 
-    schedule_days = max(
-        days
-        for item in shortage_items
-        for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
-    )
-    schedule_date = add_days(frappe.utils.nowdate(), schedule_days)
-    print("PP MR laptop adaptor schedule days:", schedule_days)
+    schedule_date = _get_pp_default_mr_schedule_date()
+    print("PP MR laptop adaptor schedule days:", PP_MR_DEFAULT_SCHEDULE_DAYS)
     print("PP MR laptop adaptor schedule date:", schedule_date)
 
     item_fru_map = {
@@ -4083,6 +4073,11 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         AND mri.item_code IS NOT NULL
         AND mri.item_code != ''
         AND mri.item_code LIKE '%%GRADE A%%'
+        AND (
+            IFNULL(mri.create_reference, '') LIKE 'Laptop Storage%%'
+            OR IFNULL(mri.create_reference, '') LIKE 'Laptop RAM%%'
+            OR IFNULL(mri.create_reference, '') LIKE 'Laptop Adaptor%%'
+        )
     """, as_dict=True)
 
     print("material_issues===============", material_issues)
@@ -4303,13 +4298,8 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         if not shortage_items:
             continue
 
-        max_schedule_days = max(
-            days
-            for item in shortage_items
-            for days in item.get("schedule_days", [PP_MR_DEFAULT_SCHEDULE_DAYS])
-        )
-        schedule_date = add_days(frappe.utils.nowdate(), max_schedule_days)
-        print("all purpose", material_request_type, "MR schedule days===============", max_schedule_days)
+        schedule_date = _get_pp_default_mr_schedule_date()
+        print("all purpose", material_request_type, "MR schedule days===============", PP_MR_DEFAULT_SCHEDULE_DAYS)
         print("all purpose", material_request_type, "MR schedule date===============", schedule_date)
 
         item_fru_map = {
@@ -4346,6 +4336,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 "item_code": item["item_code"],
                 "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
                 "schedule_date": schedule_date,
+                "create_reference": "SRA Item Group NJ Production",
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
             }
             if item.get("warehouse"):
@@ -4471,6 +4462,15 @@ def _format_laptop_ram_capacity(qty, ram_type):
     return f"{qty_display} {ram_type}".strip()
 
 
+def _is_standard_laptop_ram_capacity(value):
+    qty = _get_laptop_ram_capacity_qty(value)
+    if qty < 4 or not float(qty).is_integer():
+        return False
+
+    qty = int(qty)
+    return qty > 0 and (qty & (qty - 1)) == 0
+
+
 def _get_required_ram_capacity_diff(current_ram, to_make_ram):
     current_qty, current_type = _parse_laptop_ram_capacity(current_ram)
     to_make_qty, to_make_type = _parse_laptop_ram_capacity(to_make_ram)
@@ -4498,6 +4498,144 @@ def _get_required_ram_capacity_for_slots(current_ram, to_make_ram, ram_slots):
         return _get_required_ram_capacity_diff(current_ram, to_make_ram)
 
     return ""
+
+
+def _get_dual_slot_larger_ram_parts(current_ram, to_make_ram):
+    current_qty, current_type = _parse_laptop_ram_capacity(current_ram)
+    to_make_qty, to_make_type = _parse_laptop_ram_capacity(to_make_ram)
+    larger_qty = max(current_qty, to_make_qty)
+
+    if larger_qty <= 0:
+        return 0.0, ""
+
+    if to_make_qty >= current_qty:
+        ram_type = to_make_type or current_type
+    else:
+        ram_type = current_type or to_make_type
+
+    return larger_qty, ram_type
+
+
+def _get_dual_slot_ram_capacity_options(current_ram, to_make_ram):
+    """
+    Dual-slot RAM can be satisfied either by one full-size module or two half-size
+    modules. Include those real module sizes so the MR does not request fake
+    capacities such as 48 GB or 24 GB.
+    """
+    larger_qty, ram_type = _get_dual_slot_larger_ram_parts(current_ram, to_make_ram)
+    if larger_qty <= 0:
+        return []
+
+    options = []
+    half_qty = larger_qty / 2
+    if half_qty > 0:
+        options.append({
+            "required_ram_capacity": _format_laptop_ram_capacity(half_qty, ram_type),
+            "required_ram_qty": 2,
+            "choice": "dual_half",
+        })
+
+    options.append({
+        "required_ram_capacity": _format_laptop_ram_capacity(larger_qty, ram_type),
+        "required_ram_qty": 1,
+        "choice": "dual_full",
+    })
+
+    return [
+        option
+        for option in options
+        if option.get("required_ram_capacity")
+        and _is_standard_laptop_ram_capacity(option.get("required_ram_capacity"))
+    ]
+
+
+def _get_matching_laptop_ram_combinations(wizard_combo, required_ram_capacity):
+    return [
+        combination
+        for combination in (wizard_combo or {}).get("valid_combinations") or []
+        if _laptop_ram_combination_matches_required(combination, required_ram_capacity)
+    ]
+
+
+def _get_laptop_ram_matching_stock_qty(matching_combinations, stock_by_item_code):
+    stock_qty = 0.0
+    for combination in matching_combinations or []:
+        stock_qty += flt(stock_by_item_code.get(combination.get("item_code")))
+
+    return stock_qty
+
+
+def _resolve_dual_slot_laptop_ram_requirement(row, wizard_combo, stock_by_item_code):
+    original_required_ram_capacity = row.get("required_ram_capacity")
+    original_matches = _get_matching_laptop_ram_combinations(
+        wizard_combo,
+        original_required_ram_capacity,
+    )
+    if original_matches and _is_standard_laptop_ram_capacity(original_required_ram_capacity):
+        return {
+            "required_ram_capacity": original_required_ram_capacity,
+            "required_ram_qty": 1,
+            "choice": "dual_diff",
+        }
+
+    options = _get_dual_slot_ram_capacity_options(
+        row.get("current_ram_capacity"),
+        row.get("to_make_ram_capacity"),
+    )
+    if not options:
+        return {
+            "required_ram_capacity": original_required_ram_capacity,
+            "required_ram_qty": 1,
+            "choice": "dual_original",
+        }
+
+    valid_options = []
+    for option in options:
+        matching_combinations = _get_matching_laptop_ram_combinations(
+            wizard_combo,
+            option.get("required_ram_capacity"),
+        )
+        if not matching_combinations:
+            continue
+
+        valid_options.append({
+            **option,
+            "stock_qty": _get_laptop_ram_matching_stock_qty(
+                matching_combinations,
+                stock_by_item_code,
+            ),
+        })
+
+    if not valid_options:
+        return {
+            "required_ram_capacity": original_required_ram_capacity,
+            "required_ram_qty": 1,
+            "choice": "dual_original",
+        }
+
+    half_options = [
+        option
+        for option in valid_options
+        if option.get("choice") == "dual_half"
+    ]
+    full_options = [
+        option
+        for option in valid_options
+        if option.get("choice") == "dual_full"
+    ]
+
+    stocked_half_options = [
+        option
+        for option in half_options
+        if flt(option.get("stock_qty")) > 0
+    ]
+    if stocked_half_options:
+        return stocked_half_options[0]
+
+    if full_options:
+        return full_options[0]
+
+    return valid_options[0]
 
 
 def get_only_ram_diff_item_codes(serial_rows):
@@ -4888,11 +5026,27 @@ def build_laptop_ram_wizard_combinations(ram_diff_rows, ram_stock_rows):
             attr: _dedupe_laptop_ram_values(values)
             for attr, values in attributes_by_wizard.get(item_wizard, {}).items()
         }
-        required_ram_capacities = _dedupe_laptop_ram_values(
-            _get_laptop_ram_capacity_item_value(row.get("required_ram_capacity"))
-            for row in serial_rows
-            if row.get("required_ram_capacity")
-        )
+        required_ram_capacity_values = []
+        for row in serial_rows:
+            if row.get("required_ram_capacity") and (
+                row.get("ram_slots") != "Dual Slot"
+                or _is_standard_laptop_ram_capacity(row.get("required_ram_capacity"))
+            ):
+                required_ram_capacity_values.append(
+                    _get_laptop_ram_capacity_item_value(row.get("required_ram_capacity"))
+                )
+
+            if row.get("ram_slots") == "Dual Slot":
+                required_ram_capacity_values.extend(
+                    _get_laptop_ram_capacity_item_value(option.get("required_ram_capacity"))
+                    for option in _get_dual_slot_ram_capacity_options(
+                        row.get("current_ram_capacity"),
+                        row.get("to_make_ram_capacity"),
+                    )
+                    if option.get("required_ram_capacity")
+                )
+
+        required_ram_capacities = _dedupe_laptop_ram_values(required_ram_capacity_values)
         if required_ram_capacities:
             attributes["RAM Capacity"] = required_ram_capacities
         combinations = _get_laptop_ram_combinations(attributes)
@@ -4974,8 +5128,36 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
 
     print("Laptop RAM MR virtual stock by item:", dict(stock_by_item_code))
 
-    grouped_serials = defaultdict(list)
+    resolved_diff_ram_serials = []
     for row in diff_ram_serials:
+        resolved_row = dict(row)
+        resolved_row["required_ram_qty"] = flt(resolved_row.get("required_ram_qty") or 1)
+
+        if row.get("ram_slots") == "Dual Slot":
+            wizard_combo = wizard_combo_by_name.get(row.get("item_wizard")) or {}
+            resolved_requirement = _resolve_dual_slot_laptop_ram_requirement(
+                row,
+                wizard_combo,
+                stock_by_item_code,
+            )
+            resolved_row["required_ram_capacity"] = resolved_requirement.get("required_ram_capacity")
+            resolved_row["required_ram_qty"] = flt(resolved_requirement.get("required_ram_qty") or 1)
+            resolved_row["dual_slot_choice"] = resolved_requirement.get("choice")
+            print(
+                "Laptop RAM MR dual slot resolved:",
+                "serial_no:", row.get("serial_no"),
+                "current_ram:", row.get("current_ram_capacity"),
+                "to_make_ram:", row.get("to_make_ram_capacity"),
+                "original_required_ram_capacity:", row.get("required_ram_capacity"),
+                "resolved_required_ram_capacity:", resolved_row.get("required_ram_capacity"),
+                "required_ram_qty:", resolved_row.get("required_ram_qty"),
+                "choice:", resolved_row.get("dual_slot_choice"),
+            )
+
+        resolved_diff_ram_serials.append(resolved_row)
+
+    grouped_serials = defaultdict(list)
+    for row in resolved_diff_ram_serials:
         group_key = (
             row.get("ram_slots"),
             row.get("item_wizard"),
@@ -4995,14 +5177,13 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
         ),
     ):
         ram_slots, item_wizard, required_ram_capacity = group_key
-        required_qty = flt(len(serial_rows))
+        required_qty = flt(sum(flt(row.get("required_ram_qty") or 1) for row in serial_rows), 6)
         remaining_qty = required_qty
         wizard_combo = wizard_combo_by_name.get(item_wizard) or {}
-        matching_combinations = [
-            combination
-            for combination in wizard_combo.get("valid_combinations") or []
-            if _laptop_ram_combination_matches_required(combination, required_ram_capacity)
-        ]
+        matching_combinations = _get_matching_laptop_ram_combinations(
+            wizard_combo,
+            required_ram_capacity,
+        )
         matching_combinations.sort(
             key=lambda combination: (
                 0 if stock_by_item_code.get(combination.get("item_code"), 0) > 0 else 1,
@@ -5016,6 +5197,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "item_wizard:", item_wizard,
             "required_ram_capacity:", required_ram_capacity,
             "serial_count:", len(serial_rows),
+            "required_qty:", required_qty,
             "matching_combination_count:", len(matching_combinations),
             "serial_nos:", [row.get("serial_no") for row in serial_rows],
         )
@@ -5190,9 +5372,8 @@ def create_laptop_ram_material_issue_mr(plan_name, shortage_items):
     if not shortage_items:
         return None
 
-    schedule_days = _get_laptop_ram_schedule_days_from_shortage_items(shortage_items)
-    schedule_date = add_days(frappe.utils.nowdate(), schedule_days)
-    print("Laptop RAM MR schedule days:", schedule_days)
+    schedule_date = _get_pp_default_mr_schedule_date()
+    print("Laptop RAM MR schedule days:", PP_MR_DEFAULT_SCHEDULE_DAYS)
     print("Laptop RAM MR schedule date:", schedule_date)
     item_fru_map = {
         d["name"]: d["fru_number"]
@@ -6108,9 +6289,8 @@ def create_laptop_storage_material_issue_mr(plan_name, shortage_items):
     if not shortage_items:
         return None
 
-    schedule_days = _get_laptop_storage_schedule_days_from_shortage_items(shortage_items)
-    schedule_date = add_days(frappe.utils.nowdate(), schedule_days)
-    print("Laptop Storage MR schedule days:", schedule_days)
+    schedule_date = _get_pp_default_mr_schedule_date()
+    print("Laptop Storage MR schedule days:", PP_MR_DEFAULT_SCHEDULE_DAYS)
     print("Laptop Storage MR schedule date:", schedule_date)
     item_fru_map = {
         d["name"]: d["fru_number"]

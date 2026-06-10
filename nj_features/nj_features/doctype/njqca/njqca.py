@@ -21,7 +21,7 @@ from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_insp
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
 
 frappe.utils.logger.set_log_level("DEBUG")
-logger = frappe.logger("njqca", allow_site=True, file_count=1)
+logger = frappe.logger("newjaisa_njqca", allow_site=True)
 
 
 def _is_desktop_item_group(item_group):
@@ -681,6 +681,62 @@ def apply_reliability_test_changes_to_doc(doc):
             "apply_reliability_test_changes_to_doc failed"
         )
 
+def is_njqca_status_submit_validation_enabled():
+    """
+    NJ Settings:
+    Parameter: njqca_status_submit_validation
+    Doc Type: NJQCA
+
+    Value:
+        0 = Do not validate NJQCA_Status
+        1 = Validate NJQCA_Status before submit
+    """
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "parameter": "njqca_status_submit_validation",
+            "doc_type": "NJQCA"
+        },
+        "value"
+    )
+
+    return str(value or "0").strip() == "1"
+
+
+def validate_njqca_status_completed_before_submit(doc):
+    """
+    If enabled in NJ Settings, NJQCA submit is allowed only when
+    NJQCA Result Parameters has:
+
+        parameter = NJQCA_Status
+        value     = Completed
+
+    Skip validation for BATTERY item group.
+    """
+
+    # Skip validation for BATTERY
+    if str(doc.get("item_group") or "").strip().lower() == "battery":
+        return
+
+    # If setting is 0 or missing, skip validation
+    if not is_njqca_status_submit_validation_enabled():
+        return
+
+    status_completed = False
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = str(row.get("parameter") or "").strip().lower()
+        value = str(row.get("value") or "").strip().lower()
+
+        if parameter == "njqca_status" and value == "completed":
+            status_completed = True
+            break
+
+    if not status_completed:
+        frappe.throw(
+            _("NJQCA was not completed. Please re-run the script before submitting.")
+        )
+
 class NJQCA(Document):
     def onload(self):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
@@ -745,7 +801,25 @@ class NJQCA(Document):
         update_storage_type(self)
         apply_reliability_test_changes_to_doc(self)
         set_fail_for_empty_reliability_params(self)
+        
+        # EXT-NJ Linkage: Set linked_ext to self.serial_no for external QC docs
+        if self.rfq_id and self.serial_no:
+            self.linked_ext = self.serial_no
 
+    def on_update(self):
+        # EXT-NJ Linkage: Update reference_doctype_no on the created external Serial No
+        if self.rfq_id and self.serial_no:
+            if frappe.db.exists("Serial No", self.serial_no):
+                frappe.db.set_value(
+                    "Serial No",
+                    self.serial_no,
+                    "reference_doctype_no",
+                    self.name,
+                    update_modified=False
+                )
+    def before_submit(self):
+        validate_njqca_status_completed_before_submit(self)
+        
     def on_submit(self):
         try:
             # self.performance_reports_update()
@@ -875,19 +949,51 @@ class NJQCA(Document):
         stock_entry_using_nj_lib(stock_data_str)
 
     def validate_item_code_match(self):
-        if self.item_group != "Laptops":
-            return
+            if self.item_group != "Laptops":
+                return
+                
+            setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
             
-        setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
-        
-        if not setting_value:
-            return
+            if not setting_value:
+                return
+                
+            allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
             
-        allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
-        
-        if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
-            if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
-                frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+            if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
+                if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
+                    frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+
+            # RAM / SSD Item Wizard warning
+            item_wizard = frappe.db.get_value("Serial No", self.serial_no, "item_wizard") if self.serial_no else None
+            if not item_wizard:
+                return
+
+            bad_attributes = []
+
+            for row in self.get("njqca_laptop_ram") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of RAM is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            for row in self.get("njqca_laptop_storage") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of Storage is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            if bad_attributes:
+                frappe.msgprint(
+                    "<br>".join(bad_attributes),
+                    title="Item Wizard Mismatch",
+                    indicator="red"
+                )
     def updating_njqca_child_in_serial_no(self):
         # Only proceed for Core IQC and Laptops
         if self.inspection_type != "Final QC" or self.item_group != "Laptops":
@@ -1974,7 +2080,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     doc = frappe.get_doc("NJQCA", docname)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
-    if not ignore_part_validation:
+    if not int(ignore_part_validation):
         update_part_item_code_from_child(doc)
 
     if doc.bios_serialno:
@@ -2394,8 +2500,6 @@ def get_item_code_for_each_part(doc):
             for row in doc.get('njqca_item_component', []):
                 skip_ram, skip_memory = False, False
                 attribute_value, attribute_object = {}, {}
-
-            
                 
                 for mapping in part_mapping:
                     last_variant_values = {}
@@ -2410,10 +2514,6 @@ def get_item_code_for_each_part(doc):
                                 last_variant_values[item_group] = last_variant_values.get(item_group, {})
                                 last_variant_values[item_group][variant] = row.get(variant)
                             attribute_value = last_variant_values.get(item_group, {})
-
-                            variant_7 = row.get('variant_7')
-
-                        
                             
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
@@ -2476,38 +2576,39 @@ def get_item_code_for_each_part(doc):
                                 numeric_value = 0
 
                                 if final_value and isinstance(final_value, str):
-                                    numeric_value = int(final_value.replace(' GB', '').strip())
+                                    match = re.search(r'\d+', final_value)
+                                    if match:
+                                        numeric_value = int(match.group())
 
                                 # fallback when disk type is not detected from variant fields
+                                # /DEV/SDA will not tell SSD/HDD, so for 64/128/256/512 we treat as SSD
                                 if not variant_type:
-                                    if numeric_value in [128, 256, 512]:
+                                    if numeric_value in [61, 62, 64, 128, 256, 512]:
                                         variant_type = " SSD"
-                                    elif numeric_value in [200, 320, 500]:
+                                    elif numeric_value in [200, 300, 320, 500, 1000]:
                                         variant_type = " HDD"
 
-                                if numeric_value > 80:
+                                if numeric_value >= 60:
                                     if numeric_value >= 1000:
                                         tb_value = numeric_value // 1000
                                         formatted_value = f"{tb_value} TB"
+                                    elif numeric_value >= 60 and numeric_value <= 80:
+                                        formatted_value = "64 GB"
                                     else:
                                         formatted_value = f"{numeric_value} GB"
 
-                                    # FIX:
-                                    # For HDD, do not add "HDD" suffix.
-                                    # This allows mixed storage like 2 TB + 256 GB SSD
-                                    # to consolidate as 2 TB-256 GB SSD.
-                                    if numeric_value == 300 or str(variant_type).strip().upper() == "HDD":
+                                    # For HDD, do not add HDD suffix.
+                                    # Example: 500 GB HDD should remain 500 GB.
+                                    # For SSD, add SSD suffix.
+                                    if str(variant_type).strip().upper() == "HDD":
                                         final_value = formatted_value
                                     else:
-                                        final_value = formatted_value + variant_type
+                                        final_value = formatted_value + (variant_type or "")
 
-                                elif numeric_value >= 60 and numeric_value <= 80 and (doc.get('item_group') == 'Chromebooks' or "-CB-" in doc.get('serial_no')):
-                                    formatted_value = f"64 GB"
-                                    final_value = formatted_value + variant_type
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
-
-                                if row.get(variant) and int(row.get(variant).replace(' GB', '').strip()) > 80:
-                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(final_value, mapping.get('attribute_name'))
+                                    attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(
+                                        final_value,
+                                        mapping.get('attribute_name')
+                                    )
                                 else:
                                     skip_memory = True
                                     continue
@@ -2657,8 +2758,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
             templates = frappe.db.sql("""
                 select DISTINCT c.reference_template 
                 from `tabSerial No` sn 
-                inner join `tabItem` i on sn.item_code = i.name
-                inner join `tabItem Wizards` iw on i.variant_of = iw.item_template
+                inner join `tabItem Wizards` iw on sn.item_wizard = iw.name
                 inner join `tabComponent` c on iw.name = c.parent
                 where sn.name = %s and (c.component_type = %s or c.component_type = %s) 
             """, (doc.get('serial_no'), component_types[0], component_types[1]), as_dict=True)
@@ -6859,6 +6959,13 @@ def get_reliability_test_status(doc):
     if isinstance(doc, str):
         doc = json.loads(doc)
 
+    if isinstance(doc, dict):
+        for key in ("njqca_laptop_ram", "njqca_laptop_storage"):
+            if key in doc and isinstance(doc[key], list):
+                for row in doc[key]:
+                    if isinstance(row, dict) and "_item_templates" in row:
+                        del row["_item_templates"]
+
     d = frappe.get_doc(doc)
 
     res = _apply_reliability_enrichment_no_mutation(d)
@@ -6877,6 +6984,256 @@ def get_item_variant_attributes(item_code):
     )
 
 
+def previous_njqca_failed_result_validation(doc, method=None):
+
+    log_prefix = "previous_njqca_failed_result_validation"
+    logger.info("%s: started %s", log_prefix, frappe.as_json({
+        'njqca_name': doc.name,
+        'created': doc.created,
+        'creation': doc.creation,
+        'inspection_type': doc.inspection_type,
+        'docstatus': doc.docstatus,
+    }))
+
+    current_user_email = frappe.session.user
+    current_employee_data = frappe.db.get_value(
+        "Employee",
+        {"user_id": current_user_email, "status": "Active"},
+        ["name", "allow_qc"],
+        as_dict=True,
+    )
+    logger.info("%s: current_user_allow_qc_check %s", log_prefix, frappe.as_json({
+        "current_user_email": current_user_email,
+        "employee": current_employee_data,
+    }))
+
+    if current_employee_data and int(current_employee_data.get("allow_qc") or 0) == 0:
+        frappe.throw(_("You are not allowed to submit this DOC. Please contact your Manager."))
+
+    disabled_qc_parameters = frappe.db.sql("""
+        SELECT DISTINCT
+            cl.name AS qc_name,
+            cl.parameter
+        FROM `tabNJQCA` AS nj
+        INNER JOIN `tabNJ Quality Checks` AS njq
+            ON njq.inspection_type = nj.inspection_type
+        INNER JOIN `tabNj QC Options` AS qco
+            ON qco.parent = njq.name
+        INNER JOIN `tabNJ QC Check List` AS cl
+            ON cl.name = qco.quality_check
+        WHERE
+            cl.disable_qc = 1
+            AND nj.inspection_type = %(inspection_type)s
+            AND nj.name = %(njqca_name)s
+    """, {
+        "inspection_type": doc.inspection_type,
+        "njqca_name": doc.name,
+    }, as_dict=True)
+    logger.info("%s: disabled_qc_parameters %s", log_prefix, frappe.as_json(disabled_qc_parameters))
+
+    disabled_parameters = [
+        row.parameter
+        for row in disabled_qc_parameters
+        if row.get("parameter")
+    ]
+
+    if not disabled_parameters:
+        logger.info("%s: skipped because no disabled QC parameters found", log_prefix)
+        return {
+            "disabled_qc_parameters": disabled_qc_parameters,
+            "failed_parameters": [],
+            "latest_njqca_records": [],
+        }
+
+    failed_parameter_map = {}
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = (row.get("parameter") or "").strip()
+        value = (row.get("value") or "").strip()
+
+        if parameter in disabled_parameters and value.upper() == "FAIL":
+            failed_parameter_map[parameter] = row
+
+    if not failed_parameter_map:
+        failed_parameter_rows = frappe.db.sql("""
+            SELECT parameter, value
+            FROM `tabNJQCA Result Parameters`
+            WHERE parent = %(njqca_name)s
+                AND value = 'FAIL'
+                AND parameter IN %(parameters)s
+        """, {
+            "njqca_name": doc.name,
+            "parameters": tuple(disabled_parameters),
+        }, as_dict=True)
+
+        failed_parameter_map = {
+            row.parameter: row
+            for row in failed_parameter_rows
+            if row.get("parameter")
+        }
+
+    failed_parameters = list(failed_parameter_map.keys())
+    logger.info("%s: current_failed_parameters %s", log_prefix, frappe.as_json(failed_parameters))
+
+    if not failed_parameters:
+        logger.info("%s: skipped because current NJQCA has no failed disabled parameters", log_prefix)
+        return {
+            "disabled_qc_parameters": disabled_qc_parameters,
+            "failed_parameters": [],
+            "latest_njqca_records": [],
+        }
+
+    employee_data = frappe.db.get_value(
+        "Employee",
+        {"user_id": doc.created},
+        ["name", "allow_qc", "qc_time_stamp"],
+        as_dict=True,
+    )
+    employee_qc_time_stamp = employee_data.get("qc_time_stamp") if employee_data else None
+    logger.info("%s: employee_data %s", log_prefix, frappe.as_json(employee_data or {}))
+
+    latest_njqca_filters = {
+        "created": doc.created,
+        "njqca_name": doc.name,
+    }
+    latest_njqca_creation_condition = ""
+
+    if employee_qc_time_stamp:
+        latest_njqca_filters["qc_time_stamp"] = employee_qc_time_stamp
+        latest_njqca_creation_condition = """
+            AND creation > %(qc_time_stamp)s
+        """
+
+    logger.info("%s: latest_njqca_query_filters %s", log_prefix, frappe.as_json({
+        'filters': latest_njqca_filters,
+        'qc_time_stamp_filter_applied': bool(employee_qc_time_stamp),
+    }))
+
+    latest_njqca_records = frappe.db.sql(f"""
+        SELECT
+            name,
+            inspection_type,
+            created,
+            docstatus,
+            creation
+        FROM `tabNJQCA`
+        WHERE created = %(created)s
+            AND name != %(njqca_name)s
+            {latest_njqca_creation_condition}
+        ORDER BY creation DESC
+        LIMIT 3
+    """, latest_njqca_filters, as_dict=True,debug=1)
+    logger.info("%s: latest_njqca_records %s", log_prefix, frappe.as_json(latest_njqca_records))
+
+    repeatedly_failed_parameters = []
+    latest_njqca_names = [
+        row.name
+        for row in latest_njqca_records
+        if row.get("name")
+    ]
+
+    if len(latest_njqca_names) >= 3:
+        logger.info("%s: checking_previous_failures %s", log_prefix, frappe.as_json({
+            'latest_njqca_names': latest_njqca_names,
+            'failed_parameters_to_check': failed_parameters,
+        }))
+        previous_failed_rows = frappe.db.sql("""
+            SELECT
+                parameter,
+                COUNT(DISTINCT parent) AS failed_count
+            FROM `tabNJQCA Result Parameters`
+            WHERE parent IN %(latest_njqca_names)s
+                AND parameter IN %(failed_parameters)s
+                AND UPPER(IFNULL(value, '')) = 'FAIL'
+            GROUP BY parameter
+        """, {
+            "latest_njqca_names": tuple(latest_njqca_names),
+            "failed_parameters": tuple(failed_parameters),
+        }, as_dict=True)
+        logger.info("%s: previous_failed_rows %s", log_prefix, frappe.as_json(previous_failed_rows))
+
+        repeatedly_failed_parameters = [
+            row.parameter
+            for row in previous_failed_rows
+            if row.get("parameter") and row.get("failed_count") == len(latest_njqca_names)
+        ]
+        logger.info("%s: repeatedly_failed_parameters %s", log_prefix, frappe.as_json(repeatedly_failed_parameters))
+    else:
+        logger.info("%s: skipped repeat-failure check because fewer than 3 NJQCA records were found %s", log_prefix, frappe.as_json({
+            'latest_njqca_count': len(latest_njqca_names),
+            'latest_njqca_names': latest_njqca_names,
+        }))
+
+    if repeatedly_failed_parameters:
+        employee_name = employee_data.get("name") if employee_data else None
+        employee_allow_qc = int(employee_data.get("allow_qc") or 0) if employee_data else 0
+        employee_qc_time = employee_data.get("qc_time_stamp") if employee_data else None
+        doc_creation = getattr(doc, "creation", None)
+
+        if employee_allow_qc and employee_qc_time and doc_creation:
+            employee_qc_time = frappe.utils.get_datetime(employee_qc_time)
+            doc_creation = frappe.utils.get_datetime(doc_creation)
+
+            if employee_qc_time >= doc_creation:
+                logger.info("%s: allow_qc_override_allowed %s", log_prefix, frappe.as_json({
+                    'employee': employee_name,
+                    'allow_qc': employee_allow_qc,
+                    'qc_time_stamp': employee_qc_time,
+                    'doc_creation': doc_creation,
+                    'repeatedly_failed_parameters': repeatedly_failed_parameters,
+                }))
+
+                return {
+                    "disabled_qc_parameters": disabled_qc_parameters,
+                    "failed_parameters": failed_parameters,
+                    "latest_njqca_records": latest_njqca_records,
+                    "repeatedly_failed_parameters": repeatedly_failed_parameters,
+                    "allow_qc_override": True,
+                }
+
+        if employee_name:
+            frappe.db.set_value(
+                "Employee",
+                employee_name,
+                "allow_qc",
+                0,
+                update_modified=False,
+            )
+            frappe.db.commit()
+            logger.info("%s: unchecked_employee_allow_qc %s", log_prefix, frappe.as_json({
+                'employee': employee_name,
+                'user_id': doc.created,
+                'repeatedly_failed_parameters': repeatedly_failed_parameters,
+            }))
+
+        logger.info("%s: blocking_submit %s", log_prefix, frappe.as_json({
+            'njqca_name': doc.name,
+            'employee': employee_name,
+            'latest_njqca_names': latest_njqca_names,
+            'repeatedly_failed_parameters': repeatedly_failed_parameters,
+        }))
+
+        frappe.throw(_(
+            "You are not allowed to submit this DOC because parameter {0} failed in Previous 3 NJQCA ({1}). Please Contact your Manager To submit this Doc"
+        ).format(
+            ", ".join(repeatedly_failed_parameters),
+            ", ".join(latest_njqca_names),
+        ))
+
+    logger.info("%s: validation_passed %s", log_prefix, frappe.as_json({
+        'njqca_name': doc.name,
+        'latest_njqca_count': len(latest_njqca_names),
+        'latest_njqca_names': latest_njqca_names,
+        'failed_parameters': failed_parameters,
+        'repeatedly_failed_parameters': repeatedly_failed_parameters,
+    }))
+
+    return {
+        "disabled_qc_parameters": disabled_qc_parameters,
+        "failed_parameters": failed_parameters,
+        "latest_njqca_records": latest_njqca_records,
+        "repeatedly_failed_parameters": repeatedly_failed_parameters,
+    }
 # ─────────────────────────────────────────────────────────────────────────────
 # EXT-NJ Serial Linkage: BIOS-based bridge functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -6893,16 +7250,19 @@ def check_ext_serial_linkage(bios_serial_no, nj_serial_no):
       { found: True, already_linked: False, ext_serial: "EXT-XXX" } → prompt user
     Throws frappe error for conflict situations (Cases A and B).
     """
+    print("bios_serial_no >>>>>>", bios_serial_no)
+    print("nj_serial_no >>>>>>", nj_serial_no)
     if not bios_serial_no or not nj_serial_no:
         return {"found": False}
 
     # Look for an EXT serial with this BIOS (rfq_id IS NOT NULL means external)
-    ext_serial = frappe.db.get_value(
+    ext_serials = frappe.get_all(
         "Serial No",
-        {"bios_serial_no": bios_serial_no, "rfq_id": ["is", "set"]},
-        ["name", "linked_ext"],
-        as_dict=True,
+        filters={"bios_serial_no": bios_serial_no},
+        fields=["name", "linked_ext"],
+        limit=1,
     )
+    ext_serial = ext_serials[0] if ext_serials else None
 
     if not ext_serial:
         return {"found": False}

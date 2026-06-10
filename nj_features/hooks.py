@@ -86,7 +86,10 @@ doc_events = {
     },
     "NJQCA": {
         "onload": "nj_features.nj_features.api.api_files.get_backup_duration",
-        "before_submit": "nj_features.nj_features.api.api_files.get_backup_duration",
+        "before_submit":[
+            "nj_features.nj_features.api.api_files.get_backup_duration",
+            "nj_features.nj_features.doctype.njqca.njqca.previous_njqca_failed_result_validation",
+        ] ,
     },
     "NJ Quality Inspection": {
         "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
@@ -118,7 +121,8 @@ doc_events = {
         ]
     },
     "Employee": {
-        "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse"
+        "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
+        "before_save": "nj_features.overrides.employee.updating_time_stamp",
     },
     # "Journal Entry": {
     #     "before_save": "nj_features.overrides.journal_entry.duplicate_jv_validation"
@@ -148,7 +152,9 @@ override_whitelisted_methods = {
     "ecommerce_integrations.shopify.product.create_items_if_not_exist": "nj_features.overrides.product.create_items_if_not_exist",
     "erpnext.regional.india.e_invoice.utils.make_einvoice": "nj_features.overrides.sales_invoice.custom_make_einvoice",
     "erpnext.controllers.accounts_controller.validate_einvoice_fields": "nj_features.overrides.sales_invoice.validate_einvoice_fields",
+    "frappe.desk.reportview.get_sidebar_stats": "nj_features.overrides.reportview.get_sidebar_stats",
 }
+
 
 # ========== Scheduled Tasks ==========
 
@@ -159,56 +165,82 @@ scheduler_events = {
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
             "nj_features.nj_features.doctype.productivity.productivity.fetch_productivity_data",
         ],
+
         "45 7 * * *": [
             "nj_features.overrides.employee.update_employee_experience_table",
         ],
+
         "45 8 * * *": [
             "nj_features.overrides.employee.update_skill_experiance_table",
         ],
+
         "1 * * * *": [
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
+
         "45 9 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
+
         "05 10 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
+
         "25 10 * * *": [
-            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs"
+            "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],
+
         "10 * * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.get_department_details",
             "nj_features.overrides.sales_order.calculate_dispatch_eta_for_sales_order",
         ],
+
+        # Runs every hour
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
+        ],
+
+        # Runs every 12 hours: 12 AM and 12 PM server time
+        "0 */12 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
         ],
+
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync",
         ],
+
         "*/58 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.awb_number_tracking_status",
         ],
+
         "0 */2 * * *": [
-            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status"
+            "nj_features.nj_features.doctype.delivery_charges.delivery_charges.criticalog_awb_number_tracking_status",
         ],
+
         "*/59 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
         ],
-        # "*/55 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_from_priduction_plan",
-        # ],
-        # "*/55 * * * *": [
+        "30 23 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_from_priduction_plan",
+        ],
+        # "*/56 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_for_laptop_adaptors",
         # ],
-        # "*/55 * * * *": [
+
+        # "*/57 * * * *": [
         #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.collect_all_purpose_material_issue",
         # ],
-        # "*/55 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.cosumables_material_issue_mr",
+        "45 23 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.cosumables_material_issue_mr",
+        ],    
+        # "*/59 * * * *": [
+        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_ram_mr_via_production_plan",
         # ],
+
+        # "*/59 * * * *": [
+        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
+        # ],
+
         "50 23 * * *": [
             "nj_features.overrides.product_bundle.update_variant_status",
         ],

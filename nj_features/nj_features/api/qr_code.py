@@ -11,78 +11,139 @@ from nj_lib.utils.common_utils import is_serialized
 
 @frappe.whitelist()        
 def generate_and_save_qrcode(data, format='png'):
-    
-    print("[Generating qrcode for serial no]", data)
+    print(f"\n  {'*'*50}")
+    print(f"  [generate_and_save_qrcode] START")
+    print(f"  [generate_and_save_qrcode] Input data     : {repr(data)}")
+    print(f"  [generate_and_save_qrcode] Format         : {format}")
 
     try:
         encoded_data = data
-        template_item_code = frappe.db.exists('Item', encoded_data)
-        qr_code_item_name = frappe.db.exists('QR Code Mapping', {'item_code': encoded_data})
-        qr_code_serial_name = frappe.db.exists('QR Code Mapping', {'serial_no': encoded_data})
+        filename_key = data  # ← default filename = original input
 
+        # --- DB lookups ---
+        template_item_code   = frappe.db.exists('Item', encoded_data)
+        qr_code_item_name    = frappe.db.exists('QR Code Mapping', {'item_code': encoded_data})
+        qr_code_serial_name  = frappe.db.exists('QR Code Mapping', {'serial_no': encoded_data})
+
+        print(f"  [DB CHECK] template_item_code  (Item exists?)              : {template_item_code}")
+        print(f"  [DB CHECK] qr_code_item_name   (QR Mapping by item_code?)  : {qr_code_item_name}")
+        print(f"  [DB CHECK] qr_code_serial_name (QR Mapping by serial_no?)  : {qr_code_serial_name}")
+
+        # ── BRANCH 1: It's an Item ────────────────────────────────────────
         if template_item_code:
+            print(f"\n  [BRANCH 1] Data matches an ITEM in the system")
+
             if not qr_code_item_name:
+                print(f"  [BRANCH 1a] No existing QR Mapping for item — CREATING new QR Code Mapping")
                 qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
                 qr_code_mapping_doc.item_code = encoded_data
-                qr_code_mapping_doc.doctype1 = 'Item'
+                qr_code_mapping_doc.doctype1  = 'Item'
                 qr_code_mapping_doc.save(ignore_permissions=True)
+                print(f"  [BRANCH 1a] New QR Code Mapping created: {qr_code_mapping_doc.name}")
                 encoded_data = qr_code_mapping_doc.name
             else:
+                print(f"  [BRANCH 1b] QR Mapping already EXISTS for item: {qr_code_item_name} — reusing")
                 encoded_data = qr_code_item_name
-        # elif not qr_code_serial_name:
 
-        #     sn_creation = frappe.db.get_value('Serial No', encoded_data, 'creation')
-        #     if sn_creation:
-        #         threshold_date = datetime(2025, 7, 24, 0, 0, 0)
-        #         if sn_creation < threshold_date:
-        #             return encoded_data
-            
-        #     qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
-        #     qr_code_mapping_doc.serial_no = encoded_data
-        #     qr_code_mapping_doc.doctype1 = 'Serial No'
-        #     qr_code_mapping_doc.save(ignore_permissions=True)
+            filename_key = encoded_data  # ← for items, use mapping name as filename
+            print(f"  [BRANCH 1] encoded_data after branch : {encoded_data}")
 
-        #     frappe.db.set_value('Serial No', encoded_data, 
-        #         {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name}, update_modified=False)
-        #     encoded_data = qr_code_mapping_doc.name
+        # ── BRANCH 2: It's a Serial No (not an Item) ─────────────────────
         elif frappe.db.exists("Serial No", encoded_data):
+            print(f"\n  [BRANCH 2] Data matches a SERIAL NO in the system")
 
-            sn_creation = frappe.db.get_value('Serial No', encoded_data, 'creation')
+            # STEP A: Check if QR mapping already exists on Serial No field
+            existing_qr_mapping = frappe.db.get_value("Serial No", encoded_data, "qr_code_mapping")
+            print(f"  [BRANCH 2] existing_qr_mapping from Serial No field : {existing_qr_mapping}")
 
-            threshold_date = datetime(2025, 7, 24, 0, 0, 0)
+            # STEP B: If not on Serial No, check QR Code Mapping doctype directly
+            if not existing_qr_mapping:
+                existing_qr_mapping = frappe.db.get_value(
+                    "QR Code Mapping", {"serial_no": encoded_data}, "name"
+                )
+                print(f"  [BRANCH 2] existing_qr_mapping from QR Code Mapping : {existing_qr_mapping}")
 
-            if sn_creation and sn_creation < threshold_date:
-                return encoded_data
+            # STEP C: If mapping found — just reuse it, skip threshold check
+            if existing_qr_mapping:
+                print(f"  [BRANCH 2] ✅ Existing mapping found — reusing: {existing_qr_mapping}")
+                encoded_data = existing_qr_mapping
 
-            qr_code_mapping_doc = frappe.new_doc('QR Code Mapping')
-            qr_code_mapping_doc.serial_no = encoded_data
-            qr_code_mapping_doc.doctype1 = 'Serial No'
-            qr_code_mapping_doc.save(ignore_permissions=True)
+            else:
+                # STEP D: No mapping exists — now apply threshold check
+                sn_creation    = frappe.db.get_value('Serial No', encoded_data, 'creation')
+                threshold_date = datetime(2025, 7, 24, 0, 0, 0)
 
-            frappe.db.set_value(
-                'Serial No',
-                encoded_data,
-                {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name},
-                update_modified=False
-            )
+                print(f"  [BRANCH 2] Serial No creation date : {sn_creation}")
+                print(f"  [BRANCH 2] Threshold date          : {threshold_date}")
 
-            encoded_data = qr_code_mapping_doc.name  
+                if sn_creation and sn_creation < threshold_date:
+                    print(f"  [BRANCH 2] ⚠️  Old serial, no mapping — SKIPPING QR generation")
+                    print(f"  [generate_and_save_qrcode] END (early return — old serial)\n  {'*'*50}")
+                    return encoded_data
+
+                # STEP E: New serial — create a fresh QR mapping
+                print(f"  [BRANCH 2] New serial — CREATING QR Code Mapping")
+                qr_code_mapping_doc           = frappe.new_doc('QR Code Mapping')
+                qr_code_mapping_doc.serial_no = encoded_data
+                qr_code_mapping_doc.doctype1  = 'Serial No'
+                qr_code_mapping_doc.save(ignore_permissions=True)
+                print(f"  [BRANCH 2] QR Code Mapping created : {qr_code_mapping_doc.name}")
+
+                frappe.db.set_value(
+                    'Serial No',
+                    encoded_data,
+                    {'is_encrypted': True, 'qr_code_mapping': qr_code_mapping_doc.name},
+                    update_modified=False
+                )
+                print(f"  [BRANCH 2] Serial No updated with is_encrypted=True, qr_code_mapping={qr_code_mapping_doc.name}")
+                encoded_data = qr_code_mapping_doc.name
+
+            filename_key = data  # ← for serials, always use original serial no as filename
+            print(f"  [BRANCH 2] encoded_data after branch : {encoded_data}")
+            print(f"  [BRANCH 2] filename_key              : {filename_key}")
+
+        # ── BRANCH 3: QR Mapping already exists for this serial ──────────
         elif qr_code_serial_name:
+            print(f"\n  [BRANCH 3] No Item, No Serial No found — but QR Mapping EXISTS for serial: {qr_code_serial_name}")
             encoded_data = qr_code_serial_name
-        
-        url = pyqrcode.create(encoded_data)
-        filename = f"{encoded_data}.{format}"
-        
+            filename_key = data  # ← use original serial no as filename
+            print(f"  [BRANCH 3] encoded_data after branch : {encoded_data}")
+            print(f"  [BRANCH 3] filename_key              : {filename_key}")
+
+        # ── BRANCH 4: Nothing matched ────────────────────────────────────
+        else:
+            print(f"\n  [BRANCH 4] ❌ NO MATCH FOUND — using raw input")
+            filename_key = data
+
+        # ── QR File Generation ───────────────────────────────────────────
+        print(f"\n  [QR FILE] Preparing to generate QR code")
+        print(f"  [QR FILE] Final encoded_data (QR content) : {repr(encoded_data)}")
+        print(f"  [QR FILE] Final filename_key  (file name) : {repr(filename_key)}")
+
+        url            = pyqrcode.create(encoded_data)        # ← QR content = mapping name
+        filename       = f"{filename_key}.{format}"           # ← file name  = serial no
         base_directory = frappe.get_site_path("public", "files")
-        file_path = os.path.join(base_directory, filename)
+        file_path      = os.path.join(base_directory, filename)
+
+        print(f"  [QR FILE] filename      : {filename}")
+        print(f"  [QR FILE] full file_path: {file_path}")
 
         if os.path.exists(file_path):
+            print(f"  [QR FILE] ✅ File ALREADY EXISTS — skipping PNG generation")
+            print(f"  [generate_and_save_qrcode] END (file existed)\n  {'*'*50}")
             return encoded_data
 
         url.png(file_path, scale=8)
+        print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk: {file_path}")
+        print(f"  [generate_and_save_qrcode] END — returning: {encoded_data}\n  {'*'*50}")
         return encoded_data
-    
+
     except Exception as e:
+        import traceback
+        print(f"\n  [generate_and_save_qrcode] ❌ EXCEPTION CAUGHT")
+        print(f"  [generate_and_save_qrcode] Error message : {str(e)}")
+        print(f"  [generate_and_save_qrcode] Traceback     :\n{traceback.format_exc()}")
+        print(f"  [generate_and_save_qrcode] END (with error)\n  {'*'*50}")
         return f"Error in generating QR code: {str(e)}"
     
 @frappe.whitelist()

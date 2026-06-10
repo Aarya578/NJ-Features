@@ -1,4 +1,5 @@
 import frappe
+import time
 from frappe import _
 from frappe.utils import flt, cint
 from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import PurchaseInvoice
@@ -6,6 +7,14 @@ from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import PurchaseI
 #     reconcile_dr_cr_note,
 # )
 from nj_lib.nj_lib.doctype.nj_refund.nj_refund import supplier_payment_reconcile
+
+logger = frappe.logger("pitimelog", allow_site=True, file_count=1)
+
+
+def log_pi_time(label, docname, start):
+    logger.debug(f"[PI: {docname}] {label} took {time.perf_counter() - start:.4f} seconds")
+
+
 # class CustomPurchaseInvoice(PurchaseInvoice):
 #     pass
 # def on_submit_purchase_invoice(doc, method):
@@ -16,43 +25,59 @@ from nj_lib.nj_lib.doctype.nj_refund.nj_refund import supplier_payment_reconcile
 #     supplier_payment_reconcile(doc.supplier)
 class CustomPurchaseInvoice(PurchaseInvoice):
     def before_submit(self):
-        self.email_field_filling()
+        start = time.perf_counter()
+        try:
+            self.email_field_filling()
+        finally:
+            log_pi_time("before_submit", self.name, start)
 
     def email_field_filling(self):
-        print("inside email_field_filling=================")
-        if not self.customer_address:
-            frappe.throw(_("Please select Customer Address"))
+        start = time.perf_counter()
+        try:
+            print("inside email_field_filling=================")
+            if not self.shipping_address:
+                frappe.throw(_("Please select Customer Address"))
 
-        # Fetch email_id from Address doctype
-        email_id = frappe.db.get_value("Address", self.customer_address, "email_id")
-        print("email_id===================", email_id)
+            # Fetch email_id from Address doctype
+            email_id = frappe.db.get_value("Address", self.shipping_address, "email_id")
+            print("email_id===================", email_id)
 
-        if email_id:
-            self.email = email_id
-            print("self.email===================", self.email)
-        else:
-            frappe.throw(_("Please enter Email ID in Customer Address"))  
+            if email_id:
+                self.email = email_id
+                print("self.email===================", self.email)
+            else:
+                frappe.throw(_("Please enter Email ID in Customer Address"))
+        finally:
+            log_pi_time("email_field_filling", self.name, start)
 
 
 def _reconcile_supplier_with_elevated_access(supplier):
-    current_user = frappe.session.user
+    start = time.perf_counter()
     previous_ignore_permissions = getattr(frappe.flags, "ignore_permissions", False)
+    previous_ignore_account_permission = getattr(
+        frappe.flags, "ignore_account_permission", False
+    )
 
     try:
-        frappe.set_user("Administrator")
         frappe.flags.ignore_permissions = True
+        frappe.flags.ignore_account_permission = True
         supplier_payment_reconcile(supplier)
     finally:
         frappe.flags.ignore_permissions = previous_ignore_permissions
-        frappe.set_user(current_user)
+        frappe.flags.ignore_account_permission = previous_ignore_account_permission
+        log_pi_time("_reconcile_supplier_with_elevated_access", supplier, start)
 
 
 def on_submit_purchase_invoice(doc, method):
-    if cint(doc.is_return) != 1:
-        return
+    start = time.perf_counter()
+    try:
+        if cint(doc.is_return) != 1:
+            return
 
-    frappe.logger().info(f"Calling reconcile for supplier: {doc.supplier}")
-    _reconcile_supplier_with_elevated_access(doc.supplier)
+        frappe.logger().info(f"Calling reconcile for supplier: {doc.supplier}")
+        _reconcile_supplier_with_elevated_access(doc.supplier)
+    finally:
+        log_pi_time("on_submit_purchase_invoice", doc.name, start)
 
 
 def send_invoice_email(doc, method=None):

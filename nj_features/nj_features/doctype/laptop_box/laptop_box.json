@@ -19,6 +19,7 @@
   "nj_barcode",
   "barcode",
   "qr_code_mapping",
+  "laptop_mrp",
   "column_break_j2lg9",
   "nj_adaptor_barcode",
   "adapter_serial_no",
@@ -107,7 +108,6 @@
    "read_only": 1
   },
   {
-   "default": "49,999",
    "fieldname": "mrp",
    "fieldtype": "Data",
    "label": "MRP",
@@ -202,11 +202,16 @@
    "label": "QR Code Mapping",
    "options": "QR Code Mapping",
    "print_hide": 1
+  },
+  {
+   "fieldname": "laptop_mrp",
+   "fieldtype": "Currency",
+   "label": "Laptop MRP"
   }
  ],
  "hide_toolbar": 1,
  "links": [],
- "modified": "2025-07-29 15:16:26.543978",
+ "modified": "2026-06-06 12:47:29.624427",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Laptop Box",

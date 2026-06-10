@@ -3,9 +3,17 @@
 
 import frappe
 import json
+import time
 import traceback
 from frappe.utils import flt
 from frappe.model.mapper import get_mapped_doc
+
+logger = frappe.logger("potimelog", allow_site=True, file_count=1)
+
+
+def log_po_time(label, docname, start):
+    logger.debug(f"[PO: {docname}] {label} took {time.perf_counter() - start:.4f} seconds")
+
 
 def create_batch(doc, method=None):
     for item in doc.items:
@@ -21,15 +29,19 @@ def create_batch(doc, method=None):
 # MANUAL CONVERSION OVERRIDE — server-side guard
 # ─────────────────────────────────────────────────────────────────────────────
 def restore_manual_conversion_on_po(doc, method=None):
-    for item in doc.items:
-        if item.get("manual_conversion_override"):
-            cf = flt(item.conversion_factor)
-            if cf <= 0:
-                frappe.throw(
-                    f"Row {item.idx} ({item.item_code}): Conversion Factor must be "
-                    f"greater than 0 when Manual Conversion Override is enabled."
-                )
-            item.stock_qty = flt(item.qty) * cf
+    start = time.perf_counter()
+    try:
+        for item in doc.items:
+            if item.get("manual_conversion_override"):
+                cf = flt(item.conversion_factor)
+                if cf <= 0:
+                    frappe.throw(
+                        f"Row {item.idx} ({item.item_code}): Conversion Factor must be "
+                        f"greater than 0 when Manual Conversion Override is enabled."
+                    )
+                item.stock_qty = flt(item.qty) * cf
+    finally:
+        log_po_time("restore_manual_conversion_on_po", doc.name, start)
 
 
 @frappe.whitelist()
@@ -120,53 +132,63 @@ def make_purchase_receipt(source_name, target_doc=None, sir_name=None):
     
 
 def validate_mandatory_links(doc, method=None):
+    start = time.perf_counter()
+    try:
 
-    core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
-    requires_links = False
+        core_item_groups = ['Laptops', 'Chromeboxes', 'Chromebooks', 'Desktops']
+        requires_links = False
 
-     # Add email validation here
-    email_id = (doc.get("contact_email") or "").strip()
+         # Add email validation here
+        email_id = (doc.get("contact_email") or "").strip()
 
-    # fallback to Supplier master email, if needed
-    if not email_id and doc.get("supplier"):
-        email_id = (frappe.db.get_value("Supplier", doc.supplier, "email_id") or "").strip()
+        # fallback to Supplier master email, if needed
+        if not email_id and doc.get("supplier"):
+            email_id = (frappe.db.get_value("Supplier", doc.supplier, "email_id") or "").strip()
 
-    if not email_id:
-        frappe.throw("Email ID is mandatory for invoicing.")
+        if not email_id:
+            frappe.throw("Email ID is mandatory for invoicing.")
 
-    
-    if doc.is_sample:
-        return
+        
+        if doc.is_sample:
+            return
 
-    for item in doc.items:
-        item_group = frappe.db.get_value('Item', item.item_code, 'item_group')
-        if item_group in core_item_groups:
-            requires_links = True
-            break 
-    
-    if requires_links:
-        if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:
-            frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
+        for item in doc.items:
+            item_group = frappe.db.get_value('Item', item.item_code, 'item_group')
+            if item_group in core_item_groups:
+                requires_links = True
+                break 
+        
+        if requires_links:
+            if not doc.qc_link or not doc.pricing_link or not doc.npd_approval_:
+                frappe.throw("QC Link,Pricing Link and NPD Approval is mandatory when core products are included in the Purchase Order.")
+    finally:
+        log_po_time("validate_mandatory_links", doc.name, start)
 
 
 def validate_warranty_on_submit(doc, method=None):
-    doc = frappe.get_doc(frappe.parse_json(doc))
-    
-    if not doc.get("part_warranty"):
-        return {"status": "skipped", "message": "Part warranty not enabled"}
+    start = time.perf_counter()
+    docname = doc.name if hasattr(doc, "name") else None
+    try:
+        doc = frappe.get_doc(frappe.parse_json(doc))
+        docname = doc.name
+        
+        if not doc.get("part_warranty"):
+            return {"status": "skipped", "message": "Part warranty not enabled"}
 
-    for row in doc.get("purchase_order_warrenty_for_specific_parts"):
-        if not row.item_group:
-            continue
+        for row in doc.get("purchase_order_warrenty_for_specific_parts"):
+            if not row.item_group:
+                continue
 
-        standard_days = frappe.get_value("Item Group", row.item_group, "warranty_days") or 0
-        user_days = row.warranty_days or 0
+            standard_days = frappe.get_value("Item Group", row.item_group, "warranty_days") or 0
+            user_days = row.warranty_days or 0
 
-        if user_days < standard_days:
-            frappe.throw(
-                f"Cannot submit.<br>Warranty days for <b>{row.item_group}</b> are too low.<br>"
-                f"Entered: <b>{user_days}</b>, Required Above: <b>{standard_days}</b>"
-            )
+            if user_days < standard_days:
+                frappe.throw(
+                    f"Cannot submit.<br>Warranty days for <b>{row.item_group}</b> are too low.<br>"
+                    f"Entered: <b>{user_days}</b>, Required Above: <b>{standard_days}</b>"
+                )
+    finally:
+        log_po_time("validate_warranty_on_submit", docname, start)
       
 def set_missing_values(source, target):
 	target.run_method("set_missing_values")
@@ -298,6 +320,8 @@ def fetch_unique_records(doc):
 
 @frappe.whitelist()
 def create_pr_on_submit(doc, method):
+    start = time.perf_counter()
+    log_po_time("create_pr_on_submit", doc.name, start)
     return
 
 

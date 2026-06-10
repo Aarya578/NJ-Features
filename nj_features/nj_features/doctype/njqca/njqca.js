@@ -92,6 +92,9 @@ frappe.ui.form.on("NJQCA", {
   },
 
   refresh: function (frm) {
+    promptNJQCATransferForCreatedUser(frm);
+    triggerNJQCAWarehouseValidationForDifferentWarehouse(frm);
+
     $(".col-lg-2.layout-side-section").hide();
     $(frm.layout.wrapper).find(".form-message.red").remove();
     frm.set_value("merged_ram_item_code", 0);
@@ -109,7 +112,9 @@ frappe.ui.form.on("NJQCA", {
     frm.refresh_field("njqca_result_parameters");
 
     if (frm.doc.docstatus == 0) {
-      if (frm.doc.__islocal) {
+      console.log("Document is in draft state.", frm.doc.serial_no);
+      if (!frm.doc.serial_no) {
+        console.log("New document loaded, skipping serial no trigger.");
         trigger_serial_no(frm);
       }
       applyDesktopFieldState(frm);
@@ -118,6 +123,7 @@ frappe.ui.form.on("NJQCA", {
       }
       frm.events.power_on();
       handleScannerInput(frm, "serial_no");
+      setupNJQCABarcodeScannerOnly(frm);
       show_checkbutton_for_field(frm, "njqca_laptop_processors");
       show_checkbutton_for_field(frm, "njqca_laptop_ram");
       show_checkbutton_for_field(frm, "njqca_laptop_storage");
@@ -1060,8 +1066,28 @@ frappe.ui.form.on("NJQCA", {
   },
 
   barcode: function (frm) {
-    handleScannerInput(frm, "barcode");
+    setupNJQCABarcodeScannerOnly(frm);
+    if (!isNJQCABarcodeFromScanner(frm)) {
+      clearNJQCABarcodeField(frm);
+      showNJQCABarcodeScannerMessage(frm);
+      return;
+    }
+
     if (frm.doc.barcode) {
+      const scannerState = frm.__njqca_barcode_scanner_state || {};
+      const now = Date.now();
+
+      if (
+        scannerState.lastProcessedValue === frm.doc.barcode &&
+        now - scannerState.lastProcessedAt < 1000
+      ) {
+        return;
+      }
+
+      scannerState.lastProcessedValue = frm.doc.barcode;
+      scannerState.lastProcessedAt = now;
+      frm.__njqca_barcode_scanner_state = scannerState;
+
       frappe.call({
         method:
           "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
@@ -1191,15 +1217,31 @@ frappe.ui.form.on("NJQCA", {
   },
 
   warehouse: async function (frm) {
+    if (isNJQCACreatedByCurrentUser(frm)) {
+      promptNJQCATransferForCreatedUser(frm);
+      return;
+    }
+
+    const promptKey = getNJQCAWarehouseTransferPromptKey(frm);
+    if (
+      isNJQCATransferDialogActive(frm) ||
+      frm.__warehouse_transfer_prompt_running ||
+      frm.__warehouse_transfer_prompted_for === promptKey
+    ) {
+      return;
+    }
+
     if (
       frm.doc.warehouse &&
       (frm.doc.serial_no || frm.doc.component_serial_no) &&
       !frm.doc.rfq_id
     ) {
       let ware = frm.doc.warehouse;
+      const currentUserEmail = getNJQCACurrentUserEmail();
+      frm.__warehouse_transfer_prompt_running = true;
       let employeeData = await frappe.db.get_value(
         "Employee",
-        { user_id: frappe.session.user_email, status: "Active" },
+        { user_id: currentUserEmail, status: "Active" },
         "work_warehouse",
       );
       let item_group_data = await frappe.db.get_value(
@@ -1208,13 +1250,35 @@ frappe.ui.form.on("NJQCA", {
         "is_component",
       );
       const isComponent = item_group_data?.message?.is_component;
+      const frmSerialNo =
+        Number(isComponent) === 1
+          ? frm.doc.component_serial_no
+          : frm.doc.serial_no;
+      const serialWarehouse = await getNJQCASerialWarehouse(frmSerialNo);
 
       const workWarehouse = employeeData?.message?.work_warehouse;
+      frm.__warehouse_transfer_prompt_running = false;
       if (!workWarehouse) {
+        frm.__warehouse_transfer_prompted_for = promptKey;
         frappe.msgprint(
-          `Work Warehouse is not set for employee: ${frappe.session.user_email}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`,
+          `Work Warehouse is not set for employee: ${currentUserEmail}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`,
         );
-      } else if (workWarehouse !== ware) {
+      } else {
+        const shouldPromptTransfer = serialWarehouse
+          ? !isSameNJQCAWarehouse(serialWarehouse, workWarehouse)
+          : !isSameNJQCAWarehouse(ware, workWarehouse);
+
+        if (!shouldPromptTransfer) {
+          frm.__warehouse_transfer_prompted_for = promptKey;
+          await syncNJQCAFormWarehouse(frm, serialWarehouse || workWarehouse);
+          return;
+        }
+
+        if (isNJQCATransferDialogActive(frm)) {
+          return;
+        }
+
+        frm.__warehouse_transfer_prompted_for = promptKey;
         let dialog = new frappe.ui.Dialog({
           title: "Confirm Stock Transfer",
           fields: [
@@ -1234,12 +1298,7 @@ frappe.ui.form.on("NJQCA", {
           primary_action_label: "Yes, Transfer",
           primary_action: function () {
             let scannedSerialNo = dialog.get_value("serial_num");
-            let frm_serial_no = "";
-            if (isComponent == "0") {
-              frm_serial_no = frm.doc.serial_no;
-            } else {
-              frm_serial_no = frm.doc.component_serial_no;
-            }
+            let frm_serial_no = frmSerialNo;
 
             if (scannedSerialNo) {
               frappe.call({
@@ -1267,7 +1326,7 @@ frappe.ui.form.on("NJQCA", {
                             serial_no: frm_serial_no,
                             item_code: frm.doc.item_code,
                             t_warehouse: workWarehouse,
-                            s_warehouse: frm.doc.warehouse,
+                            s_warehouse: serialWarehouse || frm.doc.warehouse,
                           },
                         ];
 
@@ -1311,10 +1370,11 @@ frappe.ui.form.on("NJQCA", {
           },
           secondary_action_label: "Cancel",
           secondary_action: function () {
-            $(".primary-action").hide();
+            dismissNJQCATransferDialog(dialog);
             dialog.hide();
           },
         });
+        bindNJQCATransferDialogEscape(frm, dialog);
         dialog.show();
       }
     }
@@ -1555,6 +1615,291 @@ frappe.ui.form.on("NJQCA", {
   },
 });
 
+function getNJQCACurrentUserEmail() {
+  return (frappe.session.user_email || frappe.session.user || "")
+    .trim()
+    .toLowerCase();
+}
+
+function getNJQCACreatedUserEmail(frm) {
+  return (frm.doc.created || frm.doc.owner || "").trim().toLowerCase();
+}
+
+function isNJQCACreatedByCurrentUser(frm) {
+  const currentUserEmail = getNJQCACurrentUserEmail();
+  const createdUserEmail = getNJQCACreatedUserEmail(frm);
+
+  return Boolean(
+    currentUserEmail &&
+      createdUserEmail &&
+      currentUserEmail === createdUserEmail,
+  );
+}
+
+function getNJQCAWarehouseTransferPromptKey(frm) {
+  return [
+    frm.doc.name,
+    frm.doc.serial_no || frm.doc.component_serial_no || "",
+    frm.doc.warehouse || "",
+  ].join("::");
+}
+
+function normalizeNJQCAWarehouse(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+function isSameNJQCAWarehouse(first, second) {
+  return (
+    normalizeNJQCAWarehouse(first) &&
+    normalizeNJQCAWarehouse(first) === normalizeNJQCAWarehouse(second)
+  );
+}
+
+async function getNJQCASerialWarehouse(serialNo) {
+  if (!serialNo) return "";
+
+  const serialData = await frappe.db.get_value(
+    "Serial No",
+    serialNo,
+    "warehouse",
+  );
+
+  return serialData?.message?.warehouse || "";
+}
+
+async function syncNJQCAFormWarehouse(frm, warehouse) {
+  if (!warehouse || isSameNJQCAWarehouse(frm.doc.warehouse, warehouse)) {
+    return;
+  }
+
+  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+  await frm.set_value("warehouse", warehouse);
+  frm.refresh_field("warehouse");
+  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+}
+
+async function triggerNJQCAWarehouseValidationForDifferentWarehouse(frm) {
+  if (
+    frm.doc.__islocal ||
+    frm.doc.docstatus === 1 ||
+    isNJQCACreatedByCurrentUser(frm) ||
+    isNJQCATransferDialogActive(frm) ||
+    !frm.doc.warehouse ||
+    !(frm.doc.serial_no || frm.doc.component_serial_no) ||
+    frm.doc.rfq_id
+  ) {
+    return;
+  }
+
+  const promptKey = getNJQCAWarehouseTransferPromptKey(frm);
+  if (
+    frm.__warehouse_transfer_prompt_running ||
+    frm.__warehouse_transfer_prompted_for === promptKey
+  ) {
+    return;
+  }
+
+  frm.__warehouse_transfer_prompt_running = true;
+  const employeeData = await frappe.db.get_value(
+    "Employee",
+    { user_id: getNJQCACurrentUserEmail(), status: "Active" },
+    "work_warehouse",
+  );
+  const workWarehouse = employeeData?.message?.work_warehouse;
+  frm.__warehouse_transfer_prompt_running = false;
+
+  frm.events.warehouse(frm);
+}
+
+async function promptNJQCATransferForCreatedUser(frm) {
+  const currentTransferPromptKey = getNJQCAWarehouseTransferPromptKey(frm);
+
+  if (
+    frm.__created_user_transfer_running ||
+    isNJQCATransferDialogActive(frm) ||
+    frm.__created_user_transfer_prompted_for === currentTransferPromptKey ||
+    frm.doc.__islocal ||
+    frm.doc.docstatus === 1
+  ) {
+    return;
+  }
+
+  const currentUserEmail = getNJQCACurrentUserEmail();
+  const createdUserEmail = getNJQCACreatedUserEmail(frm);
+
+  if (
+    !currentUserEmail ||
+    !createdUserEmail ||
+    currentUserEmail !== createdUserEmail ||
+    !frm.doc.warehouse ||
+    !(frm.doc.serial_no || frm.doc.component_serial_no) ||
+    frm.doc.rfq_id
+  ) {
+    return;
+  }
+
+  frm.__created_user_transfer_running = true;
+
+  const employeeData = await frappe.db.get_value(
+    "Employee",
+    { user_id: currentUserEmail, status: "Active" },
+    "work_warehouse",
+  );
+  const workWarehouse = employeeData?.message?.work_warehouse;
+
+  if (!workWarehouse) {
+    frm.__created_user_transfer_prompted_for = currentTransferPromptKey;
+    frm.__created_user_transfer_running = false;
+    frappe.msgprint(
+      `Work Warehouse is not set for employee: ${currentUserEmail}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`,
+    );
+    return;
+  }
+
+  const itemGroupData = await frappe.db.get_value(
+    "Item Group",
+    { name: frm.doc.item_group },
+    "is_component",
+  );
+  const isComponent = Number(itemGroupData?.message?.is_component) === 1;
+  const serialNo = isComponent ? frm.doc.component_serial_no : frm.doc.serial_no;
+
+  if (!serialNo) {
+    frm.__created_user_transfer_running = false;
+    return;
+  }
+
+  const serialWarehouse = await getNJQCASerialWarehouse(serialNo);
+  const shouldPromptTransfer = serialWarehouse
+    ? !isSameNJQCAWarehouse(serialWarehouse, workWarehouse)
+    : !isSameNJQCAWarehouse(frm.doc.warehouse, workWarehouse);
+
+  if (!shouldPromptTransfer) {
+    frm.__created_user_transfer_prompted_for = currentTransferPromptKey;
+    await syncNJQCAFormWarehouse(frm, serialWarehouse || workWarehouse);
+    frm.__created_user_transfer_prompted_for =
+      getNJQCAWarehouseTransferPromptKey(frm);
+    frm.__created_user_transfer_running = false;
+    return;
+  }
+
+  if (isNJQCATransferDialogActive(frm)) {
+    frm.__created_user_transfer_running = false;
+    return;
+  }
+
+  frm.__created_user_transfer_prompted_for = currentTransferPromptKey;
+
+  let dialog = new frappe.ui.Dialog({
+    title: "Confirm Stock Transfer",
+    fields: [
+      {
+        fieldtype: "HTML",
+        fieldname: "message",
+        options: `Do you want to transfer stock to your Work Warehouse: ${workWarehouse}?`,
+      },
+    ],
+    static: true,
+    primary_action_label: "Yes",
+    primary_action: function () {
+      const materialTransferItems = [
+        {
+          serial_no: serialNo,
+          item_code: frm.doc.item_code,
+          t_warehouse: workWarehouse,
+          s_warehouse: serialWarehouse || frm.doc.warehouse,
+        },
+      ];
+
+      const data = {
+        doctype: frm.doc.doctype,
+        serial_no: serialNo,
+        t_warehouse: workWarehouse,
+        stock_entry_type: "Material Transfer",
+        reference_serial_no: serialNo,
+        material_transfer_items: materialTransferItems,
+      };
+
+      frappe.call({
+        method: "nj_lib.utils.stock_entry.stock_entry_using_nj_lib",
+        args: { data: JSON.stringify(data) },
+        freeze: true,
+        freeze_message: `<div style="text-align: center;">
+          <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i>
+          <br>Transferring Stock... Please Wait
+        </div>`,
+        callback: function (response) {
+          if (response && response.message) {
+            $(".primary-action").show();
+            frm.set_value("warehouse", workWarehouse);
+            frm.refresh_field("warehouse");
+          }
+        },
+        error: function (err) {
+          console.error("[NJQCA Created User Transfer] Stock transfer error", err);
+          $(".primary-action").hide();
+        },
+      });
+
+      dialog.hide();
+    },
+    secondary_action_label: "No",
+    secondary_action: function () {
+      dismissNJQCATransferDialog(dialog);
+      dialog.hide();
+    },
+  });
+
+  bindNJQCATransferDialogEscape(frm, dialog);
+  frm.__created_user_transfer_running = false;
+  dialog.show();
+}
+
+function isNJQCATransferDialogActive(frm) {
+  return Boolean(frm && frm.__njqca_transfer_dialog_active);
+}
+
+function dismissNJQCATransferDialog(dialog) {
+  if (dialog) {
+    dialog.__njqca_transfer_dismissed = true;
+  }
+
+  $(".primary-action").hide();
+}
+
+function bindNJQCATransferDialogEscape(frm, dialog) {
+  if (!dialog || !dialog.$wrapper) return;
+
+  frm.__njqca_transfer_dialog_active = true;
+  frm.__njqca_transfer_dialog = dialog;
+
+  const namespace =
+    ".njqca_transfer_dialog_" +
+    Date.now() +
+    "_" +
+    Math.floor(Math.random() * 100000);
+
+  $(document).on("keydown" + namespace, function (event) {
+    if (event.key !== "Escape" || !dialog.$wrapper.is(":visible")) return;
+
+    dismissNJQCATransferDialog(dialog);
+    dialog.hide();
+  });
+
+  dialog.$wrapper.on("hidden.bs.modal", function () {
+    if (dialog.__njqca_transfer_dismissed) {
+      $(".primary-action").hide();
+    }
+
+    if (frm.__njqca_transfer_dialog === dialog) {
+      frm.__njqca_transfer_dialog_active = false;
+      frm.__njqca_transfer_dialog = null;
+    }
+
+    $(document).off(namespace);
+  });
+}
+
 function isDesktopNJQCA(doc) {
   return (doc.item_group || "").trim().toLowerCase() === "desktops";
 }
@@ -1631,9 +1976,6 @@ function trigger_serial_no(frm) {
           }
           syncDesktopManufacturerModelFlow(frm);
         }
-
-        // EXT-NJ Linkage: check if BIOS maps to an EXT serial
-        check_and_handle_ext_linkage(frm);
       },
       error: function (err) {
         console.error(err);
@@ -2851,66 +3193,6 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EXT-NJ Serial Linkage via BIOS
-// ─────────────────────────────────────────────────────────────────────────────
-
-function check_and_handle_ext_linkage(frm) {
-  // Only run for non-EXT NJQCAs (skip if this NJQCA itself belongs to an EXT/RFQ serial)
-  if (!frm.doc.bios_serialno || !frm.doc.serial_no || frm.doc.rfq_id) return;
-
-  frappe.call({
-    method:
-      "nj_features.nj_features.doctype.njqca.njqca.check_ext_serial_linkage",
-    args: {
-      bios_serial_no: frm.doc.bios_serialno,
-      nj_serial_no: frm.doc.serial_no,
-    },
-    callback: function (r) {
-      if (!r.message || !r.message.found) return;
-      // CASE D: already linked to each other — silently skip
-      if (r.message.already_linked) return;
-
-      // CASE C: EXT found but not yet linked — ask the user
-      let ext_serial = r.message.ext_serial;
-      frappe.confirm(
-        __(
-          `BIOS <b>${frm.doc.bios_serialno}</b> is already mapped to EXT serial 
-          <b>${ext_serial}</b>.<br><br>
-          Do you want to link <b>${ext_serial}</b> component data to NJ serial 
-          <b>${frm.doc.serial_no}</b>?`
-        ),
-        // YES
-        function () {
-          frappe.call({
-            method:
-              "nj_features.nj_features.doctype.njqca.njqca.link_ext_to_nj_serial",
-            args: {
-              ext_serial_no: ext_serial,
-              nj_serial_no: frm.doc.serial_no,
-              njqca_name: frm.doc.name,
-            },
-            callback: function (r2) {
-              if (r2.message && r2.message.success) {
-                frm.set_value("linked_ext", ext_serial);
-                frm.refresh_field("linked_ext");
-                frappe.show_alert({
-                  message: __(
-                    `EXT serial <b>${ext_serial}</b> linked. Component data copied to <b>${frm.doc.serial_no}</b>.`
-                  ),
-                  indicator: "green",
-                }, 7);
-              }
-            },
-          });
-        },
-        // NO — do nothing, proceed normally
-        function () {}
-      );
-    },
-  });
-}
-
 frappe.ui.form.on("NJQCA Adaptor", {
   njqca_adaptor_add: function (frm, cdt, cdn) {
     setTimeout(() => show_checkbutton_for_field(frm, "njqca_adaptor"), 300);
@@ -4007,4 +4289,263 @@ function dedupeChildTable(frm) {
 
   kept.reverse();
   frm.doc.njqca_result_parameters = kept;
+}
+
+const NJQCA_BARCODE_SCANNER_MESSAGE =
+  "Please use the scanner to scan barcode.";
+
+function setupNJQCABarcodeScannerOnly(frm) {
+  const fieldname = "barcode";
+  const field = frm.get_field(fieldname);
+  if (!field || !field.$input || frm.doc.docstatus !== 0) return;
+
+  const inputField = field.$input;
+  let state = frm.__njqca_barcode_scanner_state;
+
+  if (!state) {
+    state = frm.__njqca_barcode_scanner_state = {
+      chars: "",
+      firstKeyTime: 0,
+      lastKeyTime: 0,
+      manualTimer: null,
+      validValue: "",
+      validUntil: 0,
+      lastMessageAt: 0,
+      suppressManualCheck: false,
+    };
+  }
+
+  inputField.off(".njqca_barcode_scanner");
+
+  inputField.on("paste.njqca_barcode_scanner", function (event) {
+    event.preventDefault();
+    clearNJQCABarcodeField(frm);
+    showNJQCABarcodeScannerMessage(frm);
+    return false;
+  });
+
+  inputField.on("beforeinput.njqca_barcode_scanner", function (event) {
+    const inputType = event.originalEvent && event.originalEvent.inputType;
+    if (inputType === "insertFromPaste" || inputType === "insertFromDrop") {
+      event.preventDefault();
+      clearNJQCABarcodeField(frm);
+      showNJQCABarcodeScannerMessage(frm);
+      return false;
+    }
+  });
+
+  inputField.on("drop.njqca_barcode_scanner", function (event) {
+    event.preventDefault();
+    clearNJQCABarcodeField(frm);
+    showNJQCABarcodeScannerMessage(frm);
+    return false;
+  });
+
+  inputField.on("contextmenu.njqca_barcode_scanner", function (event) {
+    event.preventDefault();
+    showNJQCABarcodeScannerMessage(frm);
+    return false;
+  });
+
+  inputField.on("keydown.njqca_barcode_scanner", function (event) {
+    const now = Date.now();
+
+    if (state.validValue && now > state.validUntil) {
+      state.validValue = "";
+      state.validUntil = 0;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      clearNJQCABarcodeField(frm);
+      showNJQCABarcodeScannerMessage(frm);
+      return false;
+    }
+
+    if (event.key === "Enter") {
+      const value = inputField.val().trim();
+      const isScanner = isNJQCABarcodeScannerBurst(state, value, now);
+
+      window.clearTimeout(state.manualTimer);
+      state.manualTimer = null;
+
+      if (!isScanner) {
+        event.preventDefault();
+        resetNJQCABarcodeScannerState(state);
+        clearNJQCABarcodeField(frm);
+        showNJQCABarcodeScannerMessage(frm);
+        return false;
+      }
+
+      event.preventDefault();
+      acceptNJQCABarcodeScannerValue(frm, value, state);
+      return false;
+    }
+
+    if (isNJQCABarcodeControlKey(event)) {
+      return true;
+    }
+
+    if (event.key.length !== 1) {
+      return true;
+    }
+
+    if (!state.firstKeyTime) {
+      state.firstKeyTime = now;
+    }
+
+    if (state.lastKeyTime && now - state.lastKeyTime > 350) {
+      event.preventDefault();
+      resetNJQCABarcodeScannerState(state);
+      clearNJQCABarcodeField(frm);
+      showNJQCABarcodeScannerMessage(frm);
+      return false;
+    }
+
+    state.lastKeyTime = now;
+    state.chars += event.key;
+
+    window.clearTimeout(state.manualTimer);
+    state.manualTimer = window.setTimeout(function () {
+      if (state.chars) {
+        const value = inputField.val().trim();
+        if (isNJQCABarcodeScannerBurst(state, value)) {
+          acceptNJQCABarcodeScannerValue(frm, value, state);
+        } else {
+          resetNJQCABarcodeScannerState(state);
+          clearNJQCABarcodeField(frm);
+          showNJQCABarcodeScannerMessage(frm);
+        }
+      }
+    }, 600);
+
+    return true;
+  });
+
+  inputField.on("input.njqca_barcode_scanner", function () {
+    if (state.suppressManualCheck) return;
+
+    const value = inputField.val().trim();
+    if (!value) return;
+
+    if (state.validValue === value && Date.now() <= state.validUntil) {
+      return;
+    }
+
+    if (!state.chars) {
+      clearNJQCABarcodeField(frm);
+      showNJQCABarcodeScannerMessage(frm);
+    }
+  });
+}
+
+function isNJQCABarcodeScannerBurst(state, value, now = Date.now()) {
+  if (!value || state.chars.length < 3) return false;
+
+  const lastKeyTime = state.lastKeyTime || now;
+  const totalDuration = lastKeyTime - state.firstKeyTime;
+  const lastKeyGap = now - lastKeyTime;
+
+  return totalDuration >= 0 && totalDuration <= 3000 && lastKeyGap <= 600;
+}
+
+function acceptNJQCABarcodeScannerValue(frm, value, state) {
+  state.validValue = value;
+  state.validUntil = Date.now() + 3000;
+  resetNJQCABarcodeScannerTyping(state);
+
+  const setValue = frm.set_value("barcode", value);
+  const triggerBarcode = function () {
+    frm.trigger("barcode");
+  };
+
+  if (setValue && setValue.then) {
+    setValue.then(triggerBarcode);
+  } else {
+    triggerBarcode();
+  }
+}
+
+function isNJQCABarcodeFromScanner(frm) {
+  const value = (frm.doc.barcode || "").trim();
+  const state = frm.__njqca_barcode_scanner_state;
+  if (!value) return true;
+
+  return Boolean(
+    state &&
+    state.validValue === value &&
+    Date.now() <= state.validUntil,
+  );
+}
+
+function clearNJQCABarcodeField(frm) {
+  const state = frm.__njqca_barcode_scanner_state;
+  if (state) {
+    state.suppressManualCheck = true;
+    resetNJQCABarcodeScannerState(state);
+  }
+
+  frm.set_value("barcode", "");
+  frm.refresh_field("barcode");
+
+  const field = frm.get_field("barcode");
+  if (field && field.$input) {
+    field.$input.val("");
+    field.$input.focus();
+  }
+
+  if (state) {
+    window.setTimeout(function () {
+      state.suppressManualCheck = false;
+    }, 0);
+  }
+}
+
+function showNJQCABarcodeScannerMessage(frm) {
+  const state = frm.__njqca_barcode_scanner_state || {};
+  const now = Date.now();
+
+  if (state.lastMessageAt && now - state.lastMessageAt < 1200) return;
+
+  state.lastMessageAt = now;
+  frm.__njqca_barcode_scanner_state = state;
+  frappe.msgprint(__(NJQCA_BARCODE_SCANNER_MESSAGE));
+}
+
+function isNJQCABarcodeControlKey(event) {
+  return (
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    [
+      "Tab",
+      "Shift",
+      "Control",
+      "Alt",
+      "Meta",
+      "Escape",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+      "Backspace",
+      "Delete",
+    ].includes(event.key)
+  );
+}
+
+function resetNJQCABarcodeScannerState(state) {
+  window.clearTimeout(state.manualTimer);
+  state.manualTimer = null;
+  state.validValue = "";
+  state.validUntil = 0;
+  resetNJQCABarcodeScannerTyping(state);
+}
+
+function resetNJQCABarcodeScannerTyping(state) {
+  state.chars = "";
+  state.firstKeyTime = 0;
+  state.lastKeyTime = 0;
 }

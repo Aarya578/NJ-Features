@@ -264,15 +264,6 @@ class CustomDeliveryNote(DeliveryNote):
 
                         # Only trigger fulfillment if conditions are met
                         if order_type == "Sales" and sale_type == "NJ-Website-B2C":
-                            trigger_fulfillment(order_id, raw_order_id, shopify_order_no, self.name)
-                        else:
-                            print(
-                                f"Skipping fulfillment trigger for DN {self.name} - "
-                                f"Order Type: {order_type}, Sale Type: {sale_type}"
-                            )
-
-                        # Only trigger fulfillment if conditions are met
-                        if order_type == "Sales" and sale_type == "NJ-Website-B2C":
                             with log_time("trigger_fulfillment", self.name):
                                 logger.debug(
                                     f"[DN: {self.name}] Triggering fulfillment "
@@ -348,8 +339,8 @@ class CustomDeliveryNote(DeliveryNote):
                 # with log_time("qi_mandatory_checks_on_dn_submit", self.name):
                 #     qi_mandatory_checks_on_dn_submit(self)
 
-                # with log_time("qc_nj_of_days_checking", self.name):
-                #     self.qc_nj_of_days_checking()
+                with log_time("qc_nj_of_days_checking", self.name):
+                    self.qc_nj_of_days_checking()
 
                 # ------------------------------------------------------------------
                 # Post-processing based on return/non-return
@@ -486,7 +477,7 @@ class CustomDeliveryNote(DeliveryNote):
                     else:
                         end_date = posting_date_raw
 
-                    serial_no_doc.end_date = end_date + timedelta(days=365)
+                    serial_no_doc.end_date = end_date + timedelta(days=182)
                     # serial_no_doc.modified = now()
 
                     try:
@@ -972,7 +963,13 @@ class CustomDeliveryNote(DeliveryNote):
             if not email_id:
                 frappe.throw(f"No email_id found in address {self.shipping_address_name}")       
             self.email = email_id
-            self.save(ignore_permissions=True)
+            frappe.db.set_value(
+                "Delivery Note",
+                self.name,
+                "email",
+                email_id,
+                update_modified=False,
+            )
             return f"Email set to {email_id} for Delivery Note {self.name}"        
         except Exception as e:
             frappe.log_error(frappe.get_traceback(), "Error in update_mail_from_address")
@@ -1184,45 +1181,130 @@ class CustomDeliveryNote(DeliveryNote):
         is_active = frappe.db.get_value('NJ Settings', {'parameter': 'dn_qc_active_status'}, 'value')
         if is_active != "Active":
             return 
-        
+
+        allowed_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'allowed_item_groups'}, 'value')
+        if not allowed_item_groups:
+            allowed_item_groups = frappe.db.get_value('NJ Settings', {'parameter': 'dn_no_of_days_item_groups'}, 'value')
+
         allowed_inspection_types = frappe.db.get_value('NJ Settings', {'parameter': 'inspection_type'}, 'value')
         inspection_days = frappe.db.get_value('NJ Settings', {'parameter': 'no_of_days'}, 'value')
+
+        allowed_item_groups_list = [
+            group.strip()
+            for group in (allowed_item_groups or "").split(",")
+            if group.strip()
+        ]
         
-        allowed_inspection_types_list = [t.strip() for t in allowed_inspection_types.split(",")]
+        allowed_inspection_types_list = [
+            inspection_type.strip()
+            for inspection_type in (allowed_inspection_types).split(",")
+            if inspection_type.strip()
+        ]
+
+        if not allowed_item_groups_list or not allowed_inspection_types_list or not inspection_days:
+            return
         
-        serial_nos_raw = frappe.get_all(
-            'Delivery Note Item',
-            filters={'parent': self.name},
-            fields=['serial_no', 'name', 'item_code']  # Added more fields for debugging
-        )
+        serial_nos_raw = frappe.db.sql("""
+            SELECT serial_no
+            FROM `tabDelivery Note Item`
+            WHERE parent = %s
+            UNION ALL
+            SELECT serial_no
+            FROM `tabPacked Item`
+            WHERE parent = %s
+        """, (self.name, self.name), as_dict=True)
         
         serial_nos = set()
         for row in serial_nos_raw:
             if row.serial_no:
-                for s in row.serial_no.split('\n'):
-                    if s.strip():  
-                        serial_nos.add(s.strip())
+                for serial_no in self.get_serial_list(row.serial_no):
+                    serial_nos.add(serial_no)
         
         error_messages = []
+        current_dn_creation = get_datetime(self.creation) if self.creation else now_datetime()
+
+        def get_latest_return_dn_creation(serial_no):
+            return_dn_rows = frappe.db.sql("""
+                SELECT dn.name, dn.creation, dni.serial_no
+                FROM `tabDelivery Note` dn
+                INNER JOIN `tabDelivery Note Item` dni ON dni.parent = dn.name
+                WHERE dn.docstatus = 1
+                    AND dn.is_return = 1
+                    AND dn.name != %s
+                    AND dn.creation < %s
+                    AND dni.serial_no LIKE %s
+                UNION ALL
+                SELECT dn.name, dn.creation, pi.serial_no
+                FROM `tabDelivery Note` dn
+                INNER JOIN `tabPacked Item` pi ON pi.parent = dn.name
+                WHERE dn.docstatus = 1
+                    AND dn.is_return = 1
+                    AND dn.name != %s
+                    AND dn.creation < %s
+                    AND pi.serial_no LIKE %s
+                ORDER BY creation DESC
+            """, (
+                self.name,
+                current_dn_creation,
+                f"%{serial_no}%",
+                self.name,
+                current_dn_creation,
+                f"%{serial_no}%",
+            ), as_dict=True)
+
+            for row in return_dn_rows:
+                if serial_no in self.get_serial_list(row.serial_no):
+                    return row.creation
+
+            return None
+
+        inspection_types = tuple(allowed_inspection_types_list)
         
         for serial_no in serial_nos:       
-            # 5. Fetch all QI for this serial no (barcode)
-            qi_records = frappe.db.sql("""
-                SELECT name, creation, inspection_type
-                FROM `tabNJ Quality Inspection`
-                WHERE barcode = %s AND docstatus = 1
-                ORDER BY creation DESC
-            """, serial_no, as_dict=True)
-            
-            
+            serial_item_code = frappe.db.get_value("Serial No", serial_no, "item_code")
+            item_group = frappe.db.get_value("Item", serial_item_code, "item_group") if serial_item_code else None
+
+            if item_group not in allowed_item_groups_list:
+                continue
+
+            latest_return_dn_creation = get_latest_return_dn_creation(serial_no)
+
+            if latest_return_dn_creation:
+                qi_records = frappe.db.sql("""
+                    SELECT name, creation, inspection_type
+                    FROM `tabNJ Quality Inspection`
+                    WHERE barcode = %(serial_no)s
+                        AND docstatus = 1
+                        AND inspection_type IN %(inspection_types)s
+                        AND creation > %(latest_return_dn_creation)s
+                        AND creation <= %(current_dn_creation)s
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """, {
+                    "serial_no": serial_no,
+                    "inspection_types": inspection_types,
+                    "latest_return_dn_creation": latest_return_dn_creation,
+                    "current_dn_creation": current_dn_creation,
+                }, as_dict=True)
+            else:
+                qi_records = frappe.db.sql("""
+                    SELECT name, creation, inspection_type
+                    FROM `tabNJ Quality Inspection`
+                    WHERE barcode = %(serial_no)s
+                        AND docstatus = 1
+                        AND inspection_type IN %(inspection_types)s
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """, {
+                    "serial_no": serial_no,
+                    "inspection_types": inspection_types,
+                }, as_dict=True)
+
             if not qi_records:
+                error_messages.append(f"No Final QC QI found for Serial No {serial_no}")
                 continue
             
             latest_qi = qi_records[0]
-            qi_type = latest_qi.inspection_type.strip()
-            
-            if qi_type not in allowed_inspection_types_list:
-                continue 
             
             # 7. Check if QI creation is within the allowed number of days
             creation_date = get_datetime(latest_qi.creation)
@@ -3992,4 +4074,3 @@ def deviding_tax_chargese_return_dn(doc, method=None):
             tax_amount = -abs(flt(allocated_tax_by_account[tax.account_head]))
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
-

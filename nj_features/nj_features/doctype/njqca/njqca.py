@@ -819,11 +819,7 @@ class NJQCA(Document):
                 )
     def before_submit(self):
         validate_njqca_status_completed_before_submit(self)
-<<<<<<< HEAD
         
-=======
-    
->>>>>>> 5db7681f92f6676c6ea3178e854172515cc173d4
     def on_submit(self):
         try:
             # self.performance_reports_update()
@@ -2522,7 +2518,7 @@ def get_item_code_for_each_part(doc):
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
-                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'))
+                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'),row.get('variant_7'))
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(normalize_cpu, mapping.get('attribute_name'))
 
@@ -2984,7 +2980,7 @@ def normalize_gen(cpu_value, model, variant_7=None):
             # ---- NEW: compare with variant_7 and override if mismatch ----
             if variant_7:
                 variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
-                if variant_7_digits and variant_7_digits != gen_number:
+                if variant_7_digits and variant_7_digits != gen_number and int(variant_7_digits) > 0:
                     gen_number = variant_7_digits
             # --------------------------------------------------------------
             
@@ -7052,17 +7048,10 @@ def previous_njqca_failed_result_validation(doc, method=None):
     failed_parameter_map = {}
 
     for row in doc.get("njqca_result_parameters") or []:
-<<<<<<< HEAD
         parameter = (row.get("parameter") or "").strip()
         value = (row.get("value") or "").strip()
 
-        if parameter in disabled_parameters and value.upper() == "FAIL":
-=======
-        parameter = str(row.get("parameter") or "").strip()
-        value = str(row.get("value") or "").strip()
-
         if parameter in disabled_parameters and "FAIL" in value.upper():
->>>>>>> 5db7681f92f6676c6ea3178e854172515cc173d4
             failed_parameter_map[parameter] = row
 
     if not failed_parameter_map:
@@ -7070,18 +7059,10 @@ def previous_njqca_failed_result_validation(doc, method=None):
             SELECT parameter, value
             FROM `tabNJQCA Result Parameters`
             WHERE parent = %(njqca_name)s
-<<<<<<< HEAD
-                AND value = 'FAIL'
-                AND parameter IN %(parameters)s
-        """, {
-            "njqca_name": doc.name,
-=======
                 AND UPPER(value) LIKE %(fail_value)s
                 AND parameter IN %(parameters)s
         """, {
             "njqca_name": doc.name,
-            "fail_value": "%FAIL%",
->>>>>>> 5db7681f92f6676c6ea3178e854172515cc173d4
             "parameters": tuple(disabled_parameters),
         }, as_dict=True)
 

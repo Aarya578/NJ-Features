@@ -2965,25 +2965,34 @@ def consolidate_storage(data):
     return result_data
                     
 def normalize_gen(cpu_value, model, variant_7=None):
-    
     match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
-        
+
         if match:
             core = 'Core ' + match.group(1).lower()
             alphanumeric_part = match.group(2)
-            
+
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)
-            
-            # ---- NEW: compare with variant_7 and override if mismatch ----
+
+            # check if generation is mentioned in cpu string directly
+            gen_from_string = None
+            gen_match = re.search(r'(\d+)\s*(?:th|st|nd|rd)?\s*gen', cpu_value, re.IGNORECASE)
+            if gen_match:
+                gen_from_string = gen_match.group(1)
+
+            # use gen from string if found, else auto calculate
+            if gen_from_string and int(gen_from_string) > 0:
+                gen_number = gen_from_string
+            else:
+                gen_number = str(int(numeric_part) // 1000)
+
+            # variant_7 overrides if filled and valid
             if variant_7:
                 variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
                 if variant_7_digits and variant_7_digits != gen_number and int(variant_7_digits) > 0:
                     gen_number = variant_7_digits
-            # --------------------------------------------------------------
-            
+
             if gen_number == '1':
                 gen_number += 'st'
             elif gen_number == '2':
@@ -2992,20 +3001,19 @@ def normalize_gen(cpu_value, model, variant_7=None):
                 gen_number += 'rd'
             else:
                 gen_number += 'th'
-            
+
             return [f"{core} - {gen_number} Gen"]
 
     if 'ryzen' in cpu_value.lower():
         match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
         if match:
             return [match.group(1).upper()]
-        
+
     if 'amd' in cpu_value.lower() and 'ryzen' not in cpu_value.lower():
         match = re.match(r"([\w\s]+)-([\w\d]+)", cpu_value, re.IGNORECASE)
-    
         if match:
             return [match.group(1).upper()]
-        
+
     cpu_value_upper = cpu_value.upper()
     if not match:
         for cpu_type in ['XEON', 'PENTIUM', 'ATOM']:

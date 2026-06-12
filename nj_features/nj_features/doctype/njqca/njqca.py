@@ -819,7 +819,7 @@ class NJQCA(Document):
                 )
     def before_submit(self):
         validate_njqca_status_completed_before_submit(self)
-    
+        
     def on_submit(self):
         try:
             # self.performance_reports_update()
@@ -949,19 +949,51 @@ class NJQCA(Document):
         stock_entry_using_nj_lib(stock_data_str)
 
     def validate_item_code_match(self):
-        if self.item_group != "Laptops":
-            return
+            if self.item_group != "Laptops":
+                return
+                
+            setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
             
-        setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
-        
-        if not setting_value:
-            return
+            if not setting_value:
+                return
+                
+            allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
             
-        allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
-        
-        if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
-            if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
-                frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+            if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
+                if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
+                    frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+
+            # RAM / SSD Item Wizard warning
+            item_wizard = frappe.db.get_value("Serial No", self.serial_no, "item_wizard") if self.serial_no else None
+            if not item_wizard:
+                return
+
+            bad_attributes = []
+
+            for row in self.get("njqca_laptop_ram") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of RAM is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            for row in self.get("njqca_laptop_storage") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of Storage is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            if bad_attributes:
+                frappe.msgprint(
+                    "<br>".join(bad_attributes),
+                    title="Item Wizard Mismatch",
+                    indicator="red"
+                )
     def updating_njqca_child_in_serial_no(self):
         # Only proceed for Core IQC and Laptops
         if self.inspection_type != "Final QC" or self.item_group != "Laptops":
@@ -2048,7 +2080,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     doc = frappe.get_doc("NJQCA", docname)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
-    if not ignore_part_validation:
+    if not int(ignore_part_validation):
         update_part_item_code_from_child(doc)
 
     if doc.bios_serialno:
@@ -2486,7 +2518,7 @@ def get_item_code_for_each_part(doc):
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
-                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'))
+                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'),row.get('variant_7'))
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(normalize_cpu, mapping.get('attribute_name'))
 
@@ -2726,8 +2758,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
             templates = frappe.db.sql("""
                 select DISTINCT c.reference_template 
                 from `tabSerial No` sn 
-                inner join `tabItem` i on sn.item_code = i.name
-                inner join `tabItem Wizards` iw on i.variant_of = iw.item_template
+                inner join `tabItem Wizards` iw on sn.item_wizard = iw.name
                 inner join `tabComponent` c on iw.name = c.parent
                 where sn.name = %s and (c.component_type = %s or c.component_type = %s) 
             """, (doc.get('serial_no'), component_types[0], component_types[1]), as_dict=True)
@@ -2934,25 +2965,34 @@ def consolidate_storage(data):
     return result_data
                     
 def normalize_gen(cpu_value, model, variant_7=None):
-    
     match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
-        
+
         if match:
             core = 'Core ' + match.group(1).lower()
             alphanumeric_part = match.group(2)
-            
+
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)
-            
-            # ---- NEW: compare with variant_7 and override if mismatch ----
+
+            # check if generation is mentioned in cpu string directly
+            gen_from_string = None
+            gen_match = re.search(r'(\d+)\s*(?:th|st|nd|rd)?\s*gen', cpu_value, re.IGNORECASE)
+            if gen_match:
+                gen_from_string = gen_match.group(1)
+
+            # use gen from string if found, else auto calculate
+            if gen_from_string and int(gen_from_string) > 0:
+                gen_number = gen_from_string
+            else:
+                gen_number = str(int(numeric_part) // 1000)
+
+            # variant_7 overrides if filled and valid
             if variant_7:
                 variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
-                if variant_7_digits and variant_7_digits != gen_number:
+                if variant_7_digits and variant_7_digits != gen_number and int(variant_7_digits) > 0:
                     gen_number = variant_7_digits
-            # --------------------------------------------------------------
-            
+
             if gen_number == '1':
                 gen_number += 'st'
             elif gen_number == '2':
@@ -2961,20 +3001,19 @@ def normalize_gen(cpu_value, model, variant_7=None):
                 gen_number += 'rd'
             else:
                 gen_number += 'th'
-            
+
             return [f"{core} - {gen_number} Gen"]
 
     if 'ryzen' in cpu_value.lower():
         match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
         if match:
             return [match.group(1).upper()]
-        
+
     if 'amd' in cpu_value.lower() and 'ryzen' not in cpu_value.lower():
         match = re.match(r"([\w\s]+)-([\w\d]+)", cpu_value, re.IGNORECASE)
-    
         if match:
             return [match.group(1).upper()]
-        
+
     cpu_value_upper = cpu_value.upper()
     if not match:
         for cpu_type in ['XEON', 'PENTIUM', 'ATOM']:
@@ -6928,6 +6967,13 @@ def get_reliability_test_status(doc):
     if isinstance(doc, str):
         doc = json.loads(doc)
 
+    if isinstance(doc, dict):
+        for key in ("njqca_laptop_ram", "njqca_laptop_storage"):
+            if key in doc and isinstance(doc[key], list):
+                for row in doc[key]:
+                    if isinstance(row, dict) and "_item_templates" in row:
+                        del row["_item_templates"]
+
     d = frappe.get_doc(doc)
 
     res = _apply_reliability_enrichment_no_mutation(d)
@@ -7010,8 +7056,8 @@ def previous_njqca_failed_result_validation(doc, method=None):
     failed_parameter_map = {}
 
     for row in doc.get("njqca_result_parameters") or []:
-        parameter = str(row.get("parameter") or "").strip()
-        value = str(row.get("value") or "").strip()
+        parameter = (row.get("parameter") or "").strip()
+        value = (row.get("value") or "").strip()
 
         if parameter in disabled_parameters and "FAIL" in value.upper():
             failed_parameter_map[parameter] = row
@@ -7025,7 +7071,6 @@ def previous_njqca_failed_result_validation(doc, method=None):
                 AND parameter IN %(parameters)s
         """, {
             "njqca_name": doc.name,
-            "fail_value": "%FAIL%",
             "parameters": tuple(disabled_parameters),
         }, as_dict=True)
 

@@ -494,7 +494,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                 StoresWarehouses AS (
                     SELECT sn.name,w.department
                     FROM `tabSerial No` sn inner join`tabWarehouse` w on w.name=sn.warehouse
-                    WHERE w.department = %s and sn.item_group in ({sla_item_group_placeholders})
+                    WHERE w.department = %s and w.warehouse_type='Employee Personal Warehouse' and sn.item_group in ({sla_item_group_placeholders})
                 )
 
                 ,SLEData AS (

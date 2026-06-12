@@ -3,6 +3,7 @@
 
 import json
 import frappe
+import re
 import time
 from frappe.utils import nowdate, add_days
 from datetime import timedelta
@@ -1427,3 +1428,194 @@ def get_mr_schedule_date_from_pr(core_item_codes, shortage_item_codes):
 #     print("PR MR created=======================", mr.name, "items:", len(shortage_items))
 
 #     frappe.msgprint(f"Material Request Created: {mr.name}")
+
+
+@frappe.whitelist()
+def fetch_unique_records(doc):
+    doc = json.loads(doc) if isinstance(doc, str) else doc
+
+    items = doc.get("items", [])
+    summary = {}
+
+    for row in items:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        qty = flt(row.get("qty") or 0)
+        rate = flt(row.get("rate") or 0)
+
+        if item_code not in summary:
+            summary[item_code] = {
+                "item_code": item_code,
+                "qty": qty,
+                "rate": rate,
+                "amount": qty * rate,
+                "serial_no": row.get("serial_no") or "",
+            }
+            continue
+
+        summary[item_code]["qty"] += qty
+        summary[item_code]["rate"] = rate
+        summary[item_code]["amount"] = summary[item_code]["qty"] * rate
+        if row.get("serial_no"):
+            existing_serial_no = summary[item_code].get("serial_no")
+            summary[item_code]["serial_no"] = "\n".join(
+                filter(None, [existing_serial_no, row.get("serial_no")])
+            )
+
+    return list(summary.values())
+
+
+@frappe.whitelist()
+def uppeding_item_to_items(doc):
+    doc = json.loads(doc) if isinstance(doc, str) else doc
+    if not doc or not doc.get("is_return"):
+        return []
+
+    filtered_items = doc.get("filtered_table") or []
+    if not filtered_items:
+        frappe.throw(_("No rows found in Filtered Table."))
+
+    source_items = doc.get("items") or []
+    source_by_serial = {}
+    source_by_item_code = {}
+    for item in source_items:
+        item_code = item.get("item_code")
+        if item_code and item_code not in source_by_item_code:
+            source_by_item_code[item_code] = item
+
+        for serial_no in _split_return_serial_nos(item.get("serial_no")):
+            source_by_serial[(item_code, serial_no)] = item
+
+    item_codes = [row.get("item_code") for row in filtered_items if row.get("item_code")]
+    serialized_item_map = {
+        item.name: item.has_serial_no
+        for item in frappe.get_all(
+            "Item",
+            filters={"name": ["in", item_codes]},
+            fields=["name", "has_serial_no"],
+        )
+    }
+
+    return_items = []
+    for row in filtered_items:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        qty = flt(row.get("qty"))
+        serial_nos = _split_return_serial_nos(row.get("serial_no"))
+        if not qty and not serial_nos:
+            frappe.throw(
+                _(
+                    "Row {0}: Qty and Serial No not found in this row. "
+                    "Kindly delete the row or add Qty and Serial No."
+                ).format(row.get("idx"))
+            )
+
+        if not qty:
+            frappe.throw(_("Row {0}: Qty is required for item {1}.").format(row.get("idx"), item_code))
+
+        if not serialized_item_map.get(item_code):
+            source_item = source_by_item_code.get(item_code) or {}
+            return_items.append(_make_return_item_row(source_item, row, "", qty))
+            continue
+
+        abs_qty = abs(qty)
+        if abs_qty != int(abs_qty):
+            frappe.throw(_("Row {0}: Qty must be a whole number for serialized item {1}.").format(row.get("idx"), item_code))
+
+        if int(abs_qty) != len(serial_nos):
+            frappe.throw(
+                _(
+                    "Row {0}: Qty count and Serial No count are different for item {1}. "
+                    "Qty is {2}, but Serial No count is {3}."
+                ).format(row.get("idx"), frappe.bold(item_code), int(abs_qty), len(serial_nos))
+            )
+
+        unit_qty = -1 if qty < 0 else 1
+        for serial_no in serial_nos:
+            source_item = source_by_serial.get((item_code, serial_no)) or source_by_item_code.get(item_code) or {}
+            return_items.append(_make_return_item_row(source_item, row, serial_no, unit_qty))
+
+    return return_items
+
+
+def _split_return_serial_nos(serial_no):
+    if not serial_no:
+        return []
+
+    return [serial.strip() for serial in re.split(r"[\n,]+", serial_no) if serial.strip()]
+
+
+def _make_return_item_row(source_item, filtered_row, serial_no, qty):
+    item_code = filtered_row.get("item_code") or source_item.get("item_code")
+    rate = flt(filtered_row.get("rate") if filtered_row.get("rate") is not None else source_item.get("rate"))
+    base_rate = rate
+    net_rate = rate
+    base_net_rate = rate
+    conversion_factor = flt(source_item.get("conversion_factor") or 1)
+    stock_qty = qty * conversion_factor
+    uom = source_item.get("uom") or source_item.get("stock_uom") or "Nos"
+    stock_uom = source_item.get("stock_uom") or uom or "Nos"
+
+    ignored_fields = {
+        "name",
+        "owner",
+        "creation",
+        "modified",
+        "modified_by",
+        "docstatus",
+        "idx",
+        "parent",
+        "parentfield",
+        "parenttype",
+        "doctype",
+        "__islocal",
+        "__unsaved",
+    }
+    item_row = {key: value for key, value in source_item.items() if key not in ignored_fields}
+
+    if not item_row.get("item_name") or not item_row.get("description") or not item_row.get("stock_uom"):
+        item_defaults = frappe.db.get_value(
+            "Item",
+            item_code,
+            ["item_name", "description", "stock_uom", "item_group"],
+            as_dict=True,
+        ) or {}
+        item_row.setdefault("item_name", item_defaults.get("item_name"))
+        item_row.setdefault("description", item_defaults.get("description"))
+        item_row.setdefault("stock_uom", item_defaults.get("stock_uom"))
+        item_row.setdefault("item_group", item_defaults.get("item_group"))
+        stock_uom = stock_uom or item_defaults.get("stock_uom") or "Nos"
+        uom = uom or stock_uom
+
+    item_row.update({
+        "item_code": item_code,
+        "uom": uom,
+        "stock_uom": stock_uom,
+        "conversion_factor": conversion_factor,
+        "qty": qty,
+        "received_qty": qty,
+        "stock_qty": stock_qty,
+        "received_stock_qty": stock_qty,
+        "rejected_qty": 0,
+        "serial_no": serial_no,
+        "price_list_rate": rate,
+        "base_price_list_rate": rate,
+        "stock_uom_rate": rate,
+        "rate_with_margin": rate,
+        "base_rate_with_margin": rate,
+        "rate": rate,
+        "amount": rate * qty,
+        "base_rate": base_rate,
+        "base_amount": base_rate * qty,
+        "net_rate": net_rate,
+        "net_amount": net_rate * qty,
+        "base_net_rate": base_net_rate,
+        "base_net_amount": base_net_rate * qty,
+        "billed_amt": net_rate * qty,
+    })
+
+    return item_row

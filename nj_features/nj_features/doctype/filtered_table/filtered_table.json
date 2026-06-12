@@ -9,6 +9,7 @@
   "item_code",
   "qty",
   "rate",
+  "serial_no",
   "amount"
  ],
  "fields": [
@@ -38,12 +39,17 @@
    "in_list_view": 1,
    "label": "Amount",
    "options": "currency"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Small Text",
+   "label": "Serial No"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-24 10:19:58.909206",
+ "modified": "2026-06-11 11:55:37.261524",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Filtered Table",

@@ -2259,6 +2259,7 @@ def _split_pp_department_names(departments):
 
 
 def _get_pp_previous_two_department_names(departments):
+    
     departments = _split_pp_department_names(departments)
     if not departments:
         return []
@@ -2273,7 +2274,7 @@ def _get_pp_previous_two_department_names(departments):
             `tabDepartment` base_dept
         INNER JOIN
             `tabDepartment` prev_dept
-            ON prev_dept.department_sequence > 1
+            ON prev_dept.department_sequence > 0
             AND prev_dept.department_sequence < base_dept.department_sequence
         WHERE
             base_dept.name IN %(departments)s
@@ -2851,6 +2852,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
     mr.naming_series = "MREQ-.YYYY.-.MM.-"
     mr.title = f"Production Plan - {plan_name}"
     mr.company = _get_pp_default_company()
+    mr.mr_mr_create_reference = plan_name
     mr.schedule_date = schedule_date
     mr.post_order_status = ""
     fully_consumed_qty_departments = sorted({
@@ -2893,6 +2895,12 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
 
 
 STOCK_DEPARTMENT_NAME = "Stores - NJ"
+PP_MR_ALWAYS_EXCLUDED_STOCK_DEPARTMENTS = {
+    "Inward  - NJ",
+    "BG -Spare IQC  - NJ",
+}
+
+
 def cosumables_material_issue_mr(doc=None, method=None):
     print("collect_all_purpose_material_issue")
 
@@ -2907,7 +2915,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
             mr.fully_consumed_qty_departments
         FROM `tabMaterial Request Item` mri
         INNER JOIN `tabMaterial Request` mr
-            ON mr.name = mri.parent
+            ON mr.name = mri.parentin
         LEFT JOIN `tabWarehouse` w
             ON w.name = mri.warehouse
         WHERE mr.material_request_type = 'Material Issue'
@@ -2920,12 +2928,14 @@ def cosumables_material_issue_mr(doc=None, method=None):
 
     print("material_issues===============", material_issues)
 
-    excluded_stock_departments = sorted({
+    excluded_stock_departments = {
         department
         for row in material_issues
         for department in _split_pp_department_names(row.get("fully_consumed_qty_departments"))
         if department
-    })
+    }
+    excluded_stock_departments.update(PP_MR_ALWAYS_EXCLUDED_STOCK_DEPARTMENTS)
+    excluded_stock_departments = sorted(excluded_stock_departments)
     print("all purpose excluded fully consumed stock departments===============", excluded_stock_departments)
 
     stock_query = """
@@ -3168,6 +3178,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
         mr.title = f"{material_request_type} Against Material Issue - {frappe.utils.nowdate()}"
         mr.company = _get_pp_default_company()
         mr.schedule_date = schedule_date
+        mr.mr_create_reference = "NJ Production Planning ALL Material Issue"
         mr.post_order_status = ""
 
         for item in typed_shortage_items:
@@ -3410,6 +3421,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
 
     stock_by_key = defaultdict(float)
     stock_item_by_key = {}
+    stock_details_by_key = defaultdict(list)
     for row in department_stock:
         skip_reason = _get_laptop_adaptor_item_skip_reason(row.item_code, row)
         if skip_reason:
@@ -3425,12 +3437,18 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
         key = _get_laptop_adaptor_item_key_from_code(row.item_code)
         stock_by_key[key] += flt(row.stock_qty)
         stock_item_by_key[key] = row.item_code
+        stock_details_by_key[key].append({
+            "department": row.department,
+            "warehouse": row.warehouse,
+            "stock_qty": flt(row.stock_qty),
+        })
         print(
             "PP MR laptop adaptor stock mapping:",
             "key:", key,
             "item_code:", row.item_code,
             "stock_qty:", flt(row.stock_qty),
             "warehouse:", row.warehouse,
+            "department:", row.department,
         )
 
     shortage_by_item = {}
@@ -3515,6 +3533,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
         required_qty = flt(wizard_row.get("serial_no_count"))
         remaining_qty = required_qty
         stock_usage = []
+        stock_used_departments = set()
 
         for combination in sorted_combinations:
             key = combination["key"]
@@ -3532,6 +3551,27 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
             remaining_qty = flt(remaining_qty - used_qty, 6)
             stock_after = flt(stock_by_key.get(key), 6)
             remaining_required_qty = flt(remaining_qty, 6)
+            detail_remaining_qty = flt(used_qty)
+            stock_used_department_details = []
+            for stock_detail in stock_details_by_key.get(key, []):
+                if detail_remaining_qty <= 0:
+                    break
+
+                detail_stock_qty = flt(stock_detail.get("stock_qty"))
+                if detail_stock_qty <= 0:
+                    continue
+
+                detail_used_qty = min(detail_stock_qty, detail_remaining_qty)
+                stock_detail["stock_qty"] = flt(detail_stock_qty - detail_used_qty, 6)
+                detail_remaining_qty = flt(detail_remaining_qty - detail_used_qty, 6)
+                if stock_detail.get("department"):
+                    stock_used_departments.add(stock_detail.get("department"))
+                stock_used_department_details.append({
+                    "department": stock_detail.get("department"),
+                    "warehouse": stock_detail.get("warehouse"),
+                    "used_qty": flt(detail_used_qty, 6),
+                })
+
             stock_usage.append({
                 "item_code": item_code,
                 "combination": combination["values"],
@@ -3540,6 +3580,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
                 "stock_before": flt(available_qty, 6),
                 "stock_after": stock_after,
                 "remaining_required_qty": remaining_required_qty,
+                "department_details": stock_used_department_details,
             })
             print(
                 "PP MR laptop adaptor stock consumed:",
@@ -3553,6 +3594,8 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
                 "consume_qty:", flt(used_qty, 6),
                 "stock_after:", stock_after,
                 "remaining_required_qty:", remaining_required_qty,
+                "stock_used_department_details:", stock_used_department_details,
+                "stock_used_departments:", sorted(stock_used_departments),
             )
 
         if not stock_usage:
@@ -3599,13 +3642,16 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
                 "item_code": shortage_item_code,
                 "qty": 0,
                 "schedule_days": [],
+                "mr_rised_departments": set(),
             })
             shortage_item["qty"] = flt(shortage_item["qty"] + shortage_qty, 6)
+            shortage_item["mr_rised_departments"].update(stock_used_departments)
             print(
                 "PP MR laptop adaptor creatable MR item:",
                 "item_wizard:", wizard_row.get("item_wizard"),
                 "item_code:", shortage_item_code,
                 "qty_to_raise:", flt(shortage_qty, 6),
+                "mr_rised_departments:", sorted(shortage_item["mr_rised_departments"]),
             )
         else:
             print(
@@ -3626,6 +3672,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
             item["item_code"],
             [PP_MR_DEFAULT_SCHEDULE_DAYS],
         )
+        item["mr_rised_departments"] = ", ".join(sorted(item.get("mr_rised_departments") or []))
 
     print("PP MR laptop adaptor shortage items count:", len(shortage_items))
     for item in shortage_items:
@@ -3634,6 +3681,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
             "item_code:", item["item_code"],
             "qty:", item["qty"],
             "schedule_days:", item.get("schedule_days"),
+            "mr_rised_departments:", item.get("mr_rised_departments"),
         )
     return shortage_items
 
@@ -3681,6 +3729,13 @@ def _create_laptop_adaptor_mr(plan_name, shortage_items):
     mr.naming_series = "MREQ-.YYYY.-.MM.-"
     mr.title = f"Laptop Adaptors - {plan_name}"
     mr.company = _get_pp_default_company()
+    mr.mr_create_reference = "Laptop Adaptor NJ Production"
+    mr.mr_rised_departments = ", ".join(sorted({
+        department
+        for item in shortage_items
+        for department in _split_pp_department_names(item.get("mr_rised_departments"))
+        if department
+    }))
     mr.schedule_date = schedule_date
     mr.post_order_status = ""
 
@@ -3717,7 +3772,8 @@ def get_stock_from_department():
             i.disabled,
             i.end_of_life,
             SUM(b.actual_qty) AS stock_qty,
-            b.warehouse
+            b.warehouse,
+            w.department
         FROM `tabBin` AS b
         INNER JOIN `tabWarehouse` AS w
             ON w.name = b.warehouse
@@ -3730,7 +3786,7 @@ def get_stock_from_department():
             AND iva.attribute = 'Grade'
             AND iva.attribute_value = %(grade)s
             AND b.actual_qty > 0
-        GROUP BY b.item_code, i.item_name, i.item_group, i.disabled, i.end_of_life, b.warehouse
+        GROUP BY b.item_code, i.item_name, i.item_group, i.disabled, i.end_of_life, b.warehouse, w.department
         ORDER BY b.item_code
     """, {
         "department": PP_MR_LAPTOP_ADAPTOR_DEPARTMENT,
@@ -4318,6 +4374,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         mr.title = f"{material_request_type} Against Material Issue - {frappe.utils.nowdate()}"
         mr.company = _get_pp_default_company()
         mr.schedule_date = schedule_date
+        mr.mr_create_reference = "SRA Item Group NJ Production"
         mr.post_order_status = ""
 
         for item in shortage_items:
@@ -4982,6 +5039,7 @@ def build_laptop_ram_wizard_combinations(ram_diff_rows, ram_stock_rows):
     }
 
     stock_by_key = defaultdict(float)
+    stock_details_by_key = defaultdict(list)
     for row in ram_stock_rows or []:
         key = stock_item_to_key.get(row.item_code) or _get_laptop_ram_key_from_item_code(row.item_code)
         if not key:
@@ -4995,6 +5053,11 @@ def build_laptop_ram_wizard_combinations(ram_diff_rows, ram_stock_rows):
 
         grade_a_items_by_key.setdefault(key, row.item_code)
         stock_by_key[key] += flt(row.stock_qty)
+        stock_details_by_key[key].append({
+            "department": row.department,
+            "warehouse": row.warehouse,
+            "stock_qty": flt(row.stock_qty),
+        })
 
     wizard_attr_rows = frappe.db.sql("""
         SELECT
@@ -5079,6 +5142,7 @@ def build_laptop_ram_wizard_combinations(ram_diff_rows, ram_stock_rows):
                     "key": combination["key"],
                     "item_code": item_code,
                     "stock_qty": stock_qty,
+                    "stock_details": stock_details_by_key.get(combination["key"], []),
                 })
 
         print(
@@ -5117,6 +5181,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
     }
 
     stock_by_item_code = defaultdict(float)
+    stock_details_by_item_code = {}
     for wizard_row in ram_wizard_combinations or []:
         for combination in wizard_row.get("valid_combinations") or []:
             item_code = combination.get("item_code")
@@ -5126,6 +5191,10 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
                 stock_by_item_code[item_code],
                 flt(combination.get("stock_qty")),
             )
+            stock_details_by_item_code.setdefault(item_code, [
+                dict(detail)
+                for detail in combination.get("stock_details") or []
+            ])
 
     print("Laptop RAM MR virtual stock by item:", dict(stock_by_item_code))
 
@@ -5180,6 +5249,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
         ram_slots, item_wizard, required_ram_capacity = group_key
         required_qty = flt(sum(flt(row.get("required_ram_qty") or 1) for row in serial_rows), 6)
         remaining_qty = required_qty
+        group_stock_used_departments = set()
         wizard_combo = wizard_combo_by_name.get(item_wizard) or {}
         matching_combinations = _get_matching_laptop_ram_combinations(
             wizard_combo,
@@ -5215,6 +5285,26 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             consumed_qty = min(available_qty, remaining_qty)
             stock_by_item_code[item_code] = flt(available_qty - consumed_qty, 6)
             remaining_qty = flt(remaining_qty - consumed_qty, 6)
+            detail_remaining_qty = flt(consumed_qty)
+            stock_used_department_details = []
+            for stock_detail in stock_details_by_item_code.get(item_code, []):
+                if detail_remaining_qty <= 0:
+                    break
+
+                detail_stock_qty = flt(stock_detail.get("stock_qty"))
+                if detail_stock_qty <= 0:
+                    continue
+
+                detail_consumed_qty = min(detail_stock_qty, detail_remaining_qty)
+                stock_detail["stock_qty"] = flt(detail_stock_qty - detail_consumed_qty, 6)
+                detail_remaining_qty = flt(detail_remaining_qty - detail_consumed_qty, 6)
+                if stock_detail.get("department"):
+                    group_stock_used_departments.add(stock_detail.get("department"))
+                stock_used_department_details.append({
+                    "department": stock_detail.get("department"),
+                    "warehouse": stock_detail.get("warehouse"),
+                    "deducted_qty": flt(detail_consumed_qty, 6),
+                })
 
             print(
                 "Laptop RAM MR stock consumed:",
@@ -5226,6 +5316,8 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
                 "consume_qty:", consumed_qty,
                 "stock_after:", stock_by_item_code[item_code],
                 "remaining_required_qty:", remaining_qty,
+                "stock_used_department_details:", stock_used_department_details,
+                "stock_used_departments:", sorted(group_stock_used_departments),
             )
 
         if remaining_qty <= 0:
@@ -5256,12 +5348,14 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "required_ram_capacities": set(),
             "serial_nos": [],
             "department_serial_counts": Counter(),
+            "mr_rised_departments": set(),
         })
         shortage_item["qty"] = flt(shortage_item["qty"] + remaining_qty, 6)
         shortage_item["ram_slots"].add(ram_slots)
         shortage_item["item_wizards"].add(item_wizard)
         shortage_item["required_ram_capacities"].add(required_ram_capacity)
         shortage_item["serial_nos"].extend(row.get("serial_no") for row in serial_rows)
+        shortage_item["mr_rised_departments"].update(group_stock_used_departments)
         for row in serial_rows:
             current_department = row.get("current_department")
             if current_department:
@@ -5294,6 +5388,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "serial_nos": ", ".join(sorted(set(item["serial_nos"]))),
             "schedule_departments": ", ".join(sorted(department_serial_counts)),
             "department_serial_counts": department_serial_counts,
+            "mr_rised_departments": ", ".join(sorted(item["mr_rised_departments"])),
         })
 
     print("Laptop RAM MR shortage item count:", len(shortage_items))
@@ -5308,6 +5403,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "serial_nos:", item["serial_nos"],
             "schedule_departments:", item.get("schedule_departments"),
             "department_serial_counts:", item.get("department_serial_counts"),
+            "mr_rised_departments:", item.get("mr_rised_departments"),
         )
 
     return shortage_items
@@ -5392,6 +5488,13 @@ def create_laptop_ram_material_issue_mr(plan_name, shortage_items):
     mr.title = f"Laptop RAM - {plan_name}"
     mr.company = _get_pp_default_company()
     mr.schedule_date = schedule_date
+    mr.mr_create_reference = "Laptop RAM NJ Production"
+    mr.mr_rised_departments = ", ".join(sorted({
+        department
+        for item in shortage_items
+        for department in _split_pp_department_names(item.get("mr_rised_departments"))
+        if department
+    }))
     mr.post_order_status = ""
 
     for item in shortage_items:
@@ -5435,7 +5538,8 @@ def get_laptop_ram_stock_from_reconfig_departments():
             i.disabled,
             i.end_of_life,
             SUM(b.actual_qty) AS stock_qty,
-            b.warehouse
+            b.warehouse,
+            w.department
         FROM `tabBin` AS b
         INNER JOIN `tabWarehouse` AS w
             ON w.name = b.warehouse
@@ -5458,7 +5562,8 @@ def get_laptop_ram_stock_from_reconfig_departments():
             i.item_group,
             i.disabled,
             i.end_of_life,
-            b.warehouse
+            b.warehouse,
+            w.department
         ORDER BY b.item_code
     """, as_dict=True)
 
@@ -5473,6 +5578,7 @@ def get_laptop_ram_stock_from_reconfig_departments():
             "end_of_life:", row.end_of_life,
             "stock_qty:", flt(row.stock_qty),
             "warehouse:", row.warehouse,
+            "department:", row.department,
         )
 
     return stock_rows
@@ -5874,7 +5980,8 @@ def get_laptop_storage_stock_from_reconfig_departments():
             i.disabled,
             i.end_of_life,
             SUM(b.actual_qty) AS stock_qty,
-            b.warehouse
+            b.warehouse,
+            w.department
         FROM `tabBin` AS b
         INNER JOIN `tabWarehouse` AS w
             ON w.name = b.warehouse
@@ -5897,7 +6004,8 @@ def get_laptop_storage_stock_from_reconfig_departments():
             i.item_group,
             i.disabled,
             i.end_of_life,
-            b.warehouse
+            b.warehouse,
+            w.department
         ORDER BY b.item_code
     """, {
         "item_group": PP_MR_LAPTOP_STORAGE_ITEM_GROUP,
@@ -5915,6 +6023,7 @@ def get_laptop_storage_stock_from_reconfig_departments():
             "end_of_life:", row.end_of_life,
             "stock_qty:", flt(row.stock_qty),
             "warehouse:", row.warehouse,
+            "department:", row.department,
         )
 
     return stock_rows
@@ -5942,6 +6051,7 @@ def build_laptop_storage_wizard_combinations(storage_diff_rows, storage_stock_ro
     }
 
     stock_by_key = defaultdict(float)
+    stock_details_by_key = defaultdict(list)
     for row in storage_stock_rows or []:
         key = stock_item_to_key.get(row.item_code) or _get_laptop_storage_key_from_item_code(row.item_code)
         if not key:
@@ -5955,6 +6065,11 @@ def build_laptop_storage_wizard_combinations(storage_diff_rows, storage_stock_ro
 
         grade_a_items_by_key.setdefault(key, row.item_code)
         stock_by_key[key] += flt(row.stock_qty)
+        stock_details_by_key[key].append({
+            "department": row.department,
+            "warehouse": row.warehouse,
+            "stock_qty": flt(row.stock_qty),
+        })
 
     wizard_attr_rows = frappe.db.sql("""
         SELECT
@@ -6024,6 +6139,7 @@ def build_laptop_storage_wizard_combinations(storage_diff_rows, storage_stock_ro
                     "key": combination["key"],
                     "item_code": item_code,
                     "stock_qty": stock_qty,
+                    "stock_details": stock_details_by_key.get(combination["key"], []),
                 })
 
         print(
@@ -6057,6 +6173,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
     }
 
     stock_by_item_code = defaultdict(float)
+    stock_details_by_item_code = {}
     for wizard_row in storage_wizard_combinations or []:
         for combination in wizard_row.get("valid_combinations") or []:
             item_code = combination.get("item_code")
@@ -6066,6 +6183,10 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
                 stock_by_item_code[item_code],
                 flt(combination.get("stock_qty")),
             )
+            stock_details_by_item_code.setdefault(item_code, [
+                dict(detail)
+                for detail in combination.get("stock_details") or []
+            ])
 
     print("Laptop Storage MR virtual stock by item:", dict(stock_by_item_code))
     initial_stock_by_item_code = dict(stock_by_item_code)
@@ -6122,6 +6243,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
         remaining_qty = flt(len(serial_rows))
         group_stock_deducted_qty = 0.0
         group_stock_used_items = []
+        group_stock_used_departments = set()
 
         print(
             "Laptop Storage MR demand group:",
@@ -6145,11 +6267,33 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
             stock_by_item_code[item_code] = flt(available_qty - consumed_qty, 6)
             remaining_qty = flt(remaining_qty - consumed_qty, 6)
             group_stock_deducted_qty = flt(group_stock_deducted_qty + consumed_qty, 6)
+            detail_remaining_qty = flt(consumed_qty)
+            stock_used_department_details = []
+            for stock_detail in stock_details_by_item_code.get(item_code, []):
+                if detail_remaining_qty <= 0:
+                    break
+
+                detail_stock_qty = flt(stock_detail.get("stock_qty"))
+                if detail_stock_qty <= 0:
+                    continue
+
+                detail_consumed_qty = min(detail_stock_qty, detail_remaining_qty)
+                stock_detail["stock_qty"] = flt(detail_stock_qty - detail_consumed_qty, 6)
+                detail_remaining_qty = flt(detail_remaining_qty - detail_consumed_qty, 6)
+                if stock_detail.get("department"):
+                    group_stock_used_departments.add(stock_detail.get("department"))
+                stock_used_department_details.append({
+                    "department": stock_detail.get("department"),
+                    "warehouse": stock_detail.get("warehouse"),
+                    "deducted_qty": flt(detail_consumed_qty, 6),
+                })
+
             group_stock_used_items.append({
                 "item_code": item_code,
                 "stock_before": available_qty,
                 "deducted_qty": consumed_qty,
                 "stock_after": stock_by_item_code[item_code],
+                "department_details": stock_used_department_details,
             })
 
             print(
@@ -6161,6 +6305,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
                 "consume_qty:", consumed_qty,
                 "stock_after:", stock_by_item_code[item_code],
                 "remaining_required_qty:", remaining_qty,
+                "stock_used_departments:", sorted(group_stock_used_departments),
             )
 
         if remaining_qty <= 0:
@@ -6197,6 +6342,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
             "required_storage_capacities": set(),
             "serial_nos": [],
             "department_serial_counts": Counter(),
+            "mr_rised_departments": set(),
         })
         shortage_item["qty"] = flt(shortage_item["qty"] + remaining_qty, 6)
         shortage_item["required_serial_count"] += required_serial_count
@@ -6213,6 +6359,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
         shortage_item["item_wizards"].add(item_wizard)
         shortage_item["required_storage_capacities"].add(required_storage_capacity)
         shortage_item["serial_nos"].extend(row.get("serial_no") for row in serial_rows)
+        shortage_item["mr_rised_departments"].update(group_stock_used_departments)
         for row in serial_rows:
             current_department = row.get("current_department")
             if current_department:
@@ -6251,6 +6398,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
             "serial_nos": ", ".join(sorted(set(item["serial_nos"]))),
             "schedule_departments": ", ".join(sorted(department_serial_counts)),
             "department_serial_counts": department_serial_counts,
+            "mr_rised_departments": ", ".join(sorted(item["mr_rised_departments"])),
         })
 
     print("Laptop Storage MR shortage item count:", len(shortage_items))
@@ -6268,6 +6416,7 @@ def build_laptop_storage_shortage_items(diff_storage_serials, storage_wizard_com
             "serial_nos:", item["serial_nos"],
             "schedule_departments:", item.get("schedule_departments"),
             "department_serial_counts:", item.get("department_serial_counts"),
+            "mr_rised_departments:", item.get("mr_rised_departments"),
         )
 
     return shortage_items
@@ -6309,6 +6458,13 @@ def create_laptop_storage_material_issue_mr(plan_name, shortage_items):
     mr.title = f"Laptop Storage - {plan_name}"
     mr.company = _get_pp_default_company()
     mr.schedule_date = schedule_date
+    mr.mr_create_reference = "Laptop Storage NJ Production"
+    mr.mr_rised_departments = ", ".join(sorted({
+        department
+        for item in shortage_items
+        for department in _split_pp_department_names(item.get("mr_rised_departments"))
+        if department
+    }))
     mr.post_order_status = ""
 
     for item in shortage_items:

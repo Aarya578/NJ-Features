@@ -1,7 +1,7 @@
 import json
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 from collections import defaultdict
 from datetime import datetime, timedelta
 from frappe.model.document import Document
@@ -10,11 +10,20 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 # from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
+
+def _split_department_names(departments):
+    if not departments:
+        return []
+
+    return [department.strip() for department in str(departments).split(",") if department.strip()]
+
+
 class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
             check_warehouse_qty(self.name)
+            self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
             else:
@@ -51,6 +60,19 @@ class StockMovement(Document):
             frappe.log_error(frappe.get_traceback(), "Stock Movement Submit Failed")
             frappe.throw(f"Error while submitting Stock Entry: {e}")
 
+    def time_stamp_update(self):
+        current_time = now_datetime()
+        for item in self.items:
+            if not item.s_warehouse or not item.t_warehouse or item.s_warehouse == item.t_warehouse:
+                continue
+
+            if not item.serial_no:
+                continue
+
+            for serial_no in item.serial_no.split('\n'):
+                serial_no = serial_no.strip()
+                if serial_no:
+                    frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', current_time)
 
     def validate_supplier_return(self):
         """
@@ -82,6 +104,7 @@ class StockMovement(Document):
     def updating_mr_qty_with_status(self):
         print("updating_mr_qty_with_status started for Stock Movement:", self.name)
         for item in self.items:
+            target_department = frappe.db.get_value("Warehouse", item.t_warehouse, "department") if item.t_warehouse else None
             print(
                 "Checking Stock Movement item:",
                 item.item_code,
@@ -89,88 +112,171 @@ class StockMovement(Document):
                 item.qty,
                 "target warehouse:",
                 item.t_warehouse,
+                "target department:",
+                target_department,
             )
-            if item.t_warehouse != "BG - Consumables Paint - NJ":
-                print("Skipping item because target warehouse is not BG - Consumables Paint - NJ")
-                continue
 
             remaining_qty = flt(item.qty)
             if not item.item_code or remaining_qty <= 0:
                 print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
                 continue
 
-            material_request_items = frappe.db.sql(
-                """
-                SELECT
-                    mri.name,
-                    mri.parent,
-                    mri.qty,
-                    IFNULL(mri.received_qty, 0) AS received_qty
-                FROM `tabMaterial Request Item` mri
-                INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
-                WHERE
-                    mr.docstatus = 1
-                    AND mr.material_request_type = 'Material Issue'
-                    AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
-                    AND mri.item_code = %s
-                    AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
-                    AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
-                ORDER BY mr.transaction_date ASC, mr.creation ASC, mri.idx ASC
-                """,
-                (item.item_code,),
-                as_dict=True,
+            if item.t_warehouse == "BG - Consumables Paint - NJ":
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type = 'Material Issue'
+                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
+                        AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
+                    ORDER BY mr.transaction_date ASC, mr.creation ASC, mri.idx ASC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                    debug=True,
+                )
+                self._update_mr_items_received_qty(item, material_request_items)
+                continue
+
+            if target_department == "Stores - NJ":
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type IN ('Manufacture', 'Purchase')
+                        AND (
+                            IFNULL(mr.mr_create_reference, '') LIKE 'NJ Production Planning%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'SRA Item Group NJ Production%%'
+                        )
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
+                        AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
+                    ORDER BY mr.transaction_date ASC, mr.creation ASC, mri.idx ASC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                    debug=True,
+                )
+                self._update_mr_items_received_qty(item, material_request_items)
+                continue
+
+            if target_department:
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        mr.mr_rised_departments,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type = 'Material Issue'
+                        AND (
+                            IFNULL(mr.mr_create_reference, '') LIKE 'Laptop Adaptor NJ Production%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'Laptop RAM NJ Production%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'Laptop Storage NJ Production%%'
+                        )
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
+                        AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
+                    ORDER BY mr.transaction_date ASC, mr.creation ASC, mri.idx ASC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                    debug=True,
+                )
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("mr_rised_departments"))
+                ]
+                print(
+                    "Laptop component MR items after mr_rised_departments match:",
+                    "target_department:",
+                    target_department,
+                    "count:",
+                    len(matching_department_items),
+                )
+                self._update_mr_items_received_qty(item, matching_department_items)
+                continue
+
+            print("Skipping item because target is not Paint warehouse, Stores - NJ department, or MR raised department")
+
+    def _update_mr_items_received_qty(self, item, material_request_items):
+        remaining_qty = flt(item.qty)
+        print("Matching Material Request Items found:", material_request_items)
+
+        for mr_item in material_request_items:
+            if remaining_qty <= 0:
+                print("No remaining qty left for item:", item.item_code)
+                break
+
+            pending_qty = flt(mr_item.qty) - flt(mr_item.received_qty)
+            print(
+                "Processing MR Item:",
+                mr_item.name,
+                "MR:",
+                mr_item.parent,
+                "MR qty:",
+                mr_item.qty,
+                "current received_qty:",
+                mr_item.received_qty,
+                "pending_qty:",
+                pending_qty,
+                "remaining SM qty:",
+                remaining_qty,
             )
-            print("Matching Material Request Items found:", material_request_items)
+            if pending_qty <= 0:
+                print("Skipping MR Item because pending qty is zero:", mr_item.name)
+                continue
 
-            for mr_item in material_request_items:
-                if remaining_qty <= 0:
-                    print("No remaining qty left for item:", item.item_code)
-                    break
+            qty_to_update = min(remaining_qty, pending_qty)
+            new_received_qty = flt(mr_item.received_qty) + qty_to_update
+            values = {"received_qty": new_received_qty}
 
-                pending_qty = flt(mr_item.qty) - flt(mr_item.received_qty)
-                print(
-                    "Processing MR Item:",
-                    mr_item.name,
-                    "MR:",
-                    mr_item.parent,
-                    "MR qty:",
-                    mr_item.qty,
-                    "current received_qty:",
-                    mr_item.received_qty,
-                    "pending_qty:",
-                    pending_qty,
-                    "remaining SM qty:",
-                    remaining_qty,
-                )
-                if pending_qty <= 0:
-                    print("Skipping MR Item because pending qty is zero:", mr_item.name)
-                    continue
+            if new_received_qty >= flt(mr_item.qty):
+                values["post_order_status"] = "Completed"
 
-                qty_to_update = min(remaining_qty, pending_qty)
-                new_received_qty = flt(mr_item.received_qty) + qty_to_update
-                values = {"received_qty": new_received_qty}
-
-                if new_received_qty >= flt(mr_item.qty):
-                    values["post_order_status"] = "Completed"
-
-                frappe.db.set_value(
-                    "Material Request Item",
-                    mr_item.name,
-                    values,
-                    update_modified=False,
-                )
-                print(
-                    "Updated MR Item:",
-                    mr_item.name,
-                    "qty_to_update:",
-                    qty_to_update,
-                    "new_received_qty:",
-                    new_received_qty,
-                    "status:",
-                    values.get("post_order_status", "unchanged"),
-                )
-                remaining_qty -= qty_to_update
-            print("Remaining qty after MR updates for item", item.item_code, ":", remaining_qty)
+            frappe.db.set_value(
+                "Material Request Item",
+                mr_item.name,
+                values,
+                update_modified=False,
+            )
+            print(
+                "Updated MR Item:",
+                mr_item.name,
+                "qty_to_update:",
+                qty_to_update,
+                "new_received_qty:",
+                new_received_qty,
+                "status:",
+                values.get("post_order_status", "unchanged"),
+            )
+            remaining_qty -= qty_to_update
+        print("Remaining qty after MR updates for item", item.item_code, ":", remaining_qty)
 
 
     def get_matching_purchase_item(self, purchase_receipt, serial_no, serial_item_code):
@@ -393,7 +499,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
-
+    current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
+    if current_doctype != "Stock Movement" and s_warehouse and t_warehouse and s_warehouse != t_warehouse:
+        frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
     allow_model_change = frappe.db.get_value("Department", department, "allow_model_change")
     print("allow_model_change=================",allow_model_change )
 

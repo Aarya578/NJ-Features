@@ -3302,7 +3302,6 @@ def normalize_gen(cpu_value, model, variant_7=None):
 #         return None
 
 #     except Exception as e:
-#         return None
 
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):

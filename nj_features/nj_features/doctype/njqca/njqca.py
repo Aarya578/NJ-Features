@@ -6127,7 +6127,7 @@ def _parse_heavyload_summary_from_csv_bytes(
 
     after_rows = [rr for rr in rows if (rr["_elapsed_s"] is not None and rr["_elapsed_s"] >= min_after_minutes * 60)]
     after_load_rows = [rr for rr in after_rows if (_to_float(rr.get(cpu_col)) is not None and _to_float(rr.get(cpu_col)) >= load_threshold)]
-
+ 
     cpu_avg = statistics.mean(cpu_all_num)
 
     cpu_last_avg = None

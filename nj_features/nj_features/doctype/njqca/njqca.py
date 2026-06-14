@@ -23,6 +23,29 @@ from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,che
 frappe.utils.logger.set_log_level("DEBUG")
 logger = frappe.logger("newjaisa_njqca", allow_site=True)
 
+def njqca_qi_trace(step, docname=None, data=None, error=False):
+    """
+    Temporary debug logger for finding why QI is not created from NJQCA.
+    Writes to frappe logger and also NJ Log/Error Log for important failures.
+    """
+    try:
+        payload = {
+            "step": step,
+            "docname": docname,
+            "user": frappe.session.user,
+            "data": data or {}
+        }
+
+        message = json.dumps(payload, default=str, indent=2)
+
+        logger.debug("[NJQCA_QI_TRACE] " + message)
+
+        # Only create visible log records for important checkpoints/errors
+        if error:
+            log_error(message, "NJQCA_QI_TRACE - " + step)
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "NJQCA_QI_TRACE logger failed")
 
 def _is_desktop_item_group(item_group):
     return str(item_group or '').strip().lower() == 'desktops'
@@ -197,6 +220,20 @@ def get_inspection_type():
     
 def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_defective=None, re_check=None):
     try:
+        njqca_qi_trace("open_draft_qi_start", self.name, {
+            "serial_no": self.serial_no,
+            "component_serial_no": self.component_serial_no,
+            "passed_component_serial_no": component_serial_no,
+            "bios_serialno": self.bios_serialno,
+            "item_group": self.item_group,
+            "inspection_type": self.inspection_type,
+            "brand": brand,
+            "model": model,
+            "is_defective": is_defective,
+            "re_check": re_check,
+            "power_on": self.power_on
+        })
+
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
         if is_component is not None and is_component == 1:
             serial_num=self.component_serial_no
@@ -216,6 +253,19 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             serial_num = frappe.db.get_value('Serial No', {'bios_serial_no': self.bios_serialno}, 'name')
         elif (self.component_serial_no is None or self.component_serial_no == "") and component_serial_no is not None and is_component is not None and is_component == 1:
             serial_num = component_serial_no
+        njqca_qi_trace("open_draft_qi_serial_resolved", self.name, {
+            "is_component": is_component,
+            "resolved_serial_num": serial_num,
+            "inspection_type": inspection_type
+        })
+
+        if not serial_num:
+            njqca_qi_trace("open_draft_qi_serial_missing", self.name, {
+                "serial_no": self.serial_no,
+                "component_serial_no": self.component_serial_no,
+                "passed_component_serial_no": component_serial_no,
+                "bios_serialno": self.bios_serialno
+            }, error=True)
 
         create_new_qi = True
         new_qi = None
@@ -237,6 +287,13 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
         )
         log_error(str(sync_njqca_qis),f"sync_njqca_qis for serial no {serial_num} {inspection_type} {self.created} in open draft qi")
 
+        njqca_qi_trace("sync_njqca_qis_result", self.name, {
+            "serial_num": serial_num,
+            "inspection_type": inspection_type,
+            "created": self.created,
+            "sync_njqca_qis": sync_njqca_qis
+        })
+
         if not sync_njqca_qis:
             existing_qis = frappe.get_list(
                 'NJ Quality Inspection',
@@ -253,6 +310,14 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                 fields=['name', 'creation'],
                 order_by='creation desc'
             )
+
+            njqca_qi_trace("existing_qis_result", self.name, {
+                "serial_num": serial_num,
+                "inspection_type": inspection_type,
+                "brand": brand,
+                "model": model,
+                "existing_qis": existing_qis
+            })
 
         if sync_njqca_qis:
             latest_qi = sync_njqca_qis[0]
@@ -273,6 +338,14 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         if create_new_qi:
             log_error(str(create_new_qi),"create_new_qi for serial no "+str(serial_num)+" in open draft qi")
+            njqca_qi_trace("creating_new_qi", self.name, {
+                "serial_num": serial_num,
+                "inspection_type": inspection_type,
+                "brand": brand,
+                "model": model,
+                "warehouse": self.warehouse,
+                "manual_repack_item_code": self.manual_repack_item_code
+            })
             new_qi = frappe.new_doc('NJ Quality Inspection')
             new_qi.inspection_type = inspection_type
             new_qi.barcode = serial_num
@@ -285,12 +358,47 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
             new_qi.warehouse = self.warehouse
             if self.manual_repack_item_code:
                 new_qi.item_code = self.manual_repack_item_code
+            njqca_qi_trace("before_get_itm_code_on_barcode", self.name, {
+                "qi_barcode": new_qi.barcode
+            })
+
             new_qi = get_itm_code_on_barcode(new_qi)
+
+            njqca_qi_trace("after_get_itm_code_on_barcode", self.name, {
+                "new_qi_type": str(type(new_qi)),
+                "disable_save": new_qi.get("disable_save") if isinstance(new_qi, dict) else None,
+                "item_code": new_qi.get("item_code") if hasattr(new_qi, "get") else None,
+                "warehouse": new_qi.get("warehouse") if hasattr(new_qi, "get") else None
+            })
+
+            if isinstance(new_qi, dict) and new_qi.get("disable_save"):
+                njqca_qi_trace("qi_creation_stopped_disable_save", self.name, {
+                    "reason": "get_itm_code_on_barcode returned disable_save",
+                    "barcode": serial_num
+                }, error=True)
+
+                frappe.throw(
+                    f"QI not created because Serial No <b>{serial_num}</b> has no warehouse."
+                )
+            
+            njqca_qi_trace("before_fill_nj_quality_reading", self.name, {
+                "barcode": new_qi.barcode,
+                "inspection_type": inspection_type,
+                "is_defective": is_defective,
+                "re_check": re_check
+            })
+
             new_qi = fill_nj_quality_reading_from_serial_or_itm_wizard(
                 new_qi, inspection_type,
                 is_defective="1" if is_defective else "0",
                 re_check="1" if re_check else "0"
             )
+
+            njqca_qi_trace("after_fill_nj_quality_reading", self.name, {
+                "nj_quality_readings_count": len(new_qi.get("nj_quality_readings") or []),
+                "mandatory_rows_count": len(new_qi.get("mandatory_rows") or []),
+                "item_wizard": new_qi.get("item_wizard")
+            })
 
         # config_data_2_qi = frappe.db.get_value("NJ Settings", {"doc_type": "NJQCA", "parameter": "config"}, "value")
         # config_data_2_qi = json.loads(config_data_2_qi) if config_data_2_qi else {}
@@ -468,7 +576,22 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     child.score = resolved_score
                     child.item_group_idx = item_group_idx
 
+        njqca_qi_trace("before_new_qi_save", self.name, {
+            "qi_name_before_save": new_qi.name,
+            "barcode": new_qi.barcode,
+            "inspection_type": new_qi.inspection_type,
+            "item_code": new_qi.item_code,
+            "warehouse": new_qi.warehouse,
+            "nj_quality_readings_count": len(new_qi.get("nj_quality_readings") or []),
+            "nj_quality_checks_count": len(new_qi.get("nj_quality_checks") or [])
+        })
+
         new_qi.save()
+
+        njqca_qi_trace("after_new_qi_save", self.name, {
+            "qi_name": new_qi.name,
+            "barcode": new_qi.barcode
+        }, error=not bool(new_qi.name))
 
         base_url = frappe.get_value("NJ Settings", {'parameter': 'njpluse_url_for_qi'}, "value")
         if not base_url:
@@ -479,6 +602,11 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
 
         if new_qi.name:
             frappe.db.set_value("NJQCA", self.name, "qi_name", new_qi.name)
+
+            njqca_qi_trace("qi_name_set_in_njqca", self.name, {
+                "qi_name": new_qi.name
+            })
+
             frappe.db.commit()  # commit only if outside request cycle
 
         return {
@@ -821,6 +949,17 @@ class NJQCA(Document):
         validate_njqca_status_completed_before_submit(self)
         
     def on_submit(self):
+        njqca_qi_trace("on_submit_start", self.name, {
+            "serial_no": self.serial_no,
+            "component_serial_no": self.component_serial_no,
+            "bios_serialno": self.bios_serialno,
+            "power_on": self.power_on,
+            "inspection_type": self.inspection_type,
+            "item_group": self.item_group,
+            "qi_name": self.qi_name,
+            "note": "Current on_submit does not create QI because open_draft_qi block is commented"
+        })
+
         try:
             # self.performance_reports_update()
             self.check_for_repack_access()
@@ -949,19 +1088,51 @@ class NJQCA(Document):
         stock_entry_using_nj_lib(stock_data_str)
 
     def validate_item_code_match(self):
-        if self.item_group != "Laptops":
-            return
+            if self.item_group != "Laptops":
+                return
+                
+            setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
             
-        setting_value = frappe.db.get_value('NJ Settings', {'parameter': 'njqca_validate_item_code'}, 'value')
-        
-        if not setting_value:
-            return
+            if not setting_value:
+                return
+                
+            allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
             
-        allowed_inspection_types = [val.strip() for val in setting_value.split(",")]
-        
-        if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
-            if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
-                frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+            if hasattr(self, 'inspection_type') and self.inspection_type in allowed_inspection_types:
+                if self.item_code and self.repack_item_code and self.item_code.strip() != self.repack_item_code.strip():
+                    frappe.throw("Item Code and Repack Item Code do not match. Please correct them before submitting.")
+
+            # RAM / SSD Item Wizard warning
+            item_wizard = frappe.db.get_value("Serial No", self.serial_no, "item_wizard") if self.serial_no else None
+            if not item_wizard:
+                return
+
+            bad_attributes = []
+
+            for row in self.get("njqca_laptop_ram") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of RAM is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            for row in self.get("njqca_laptop_storage") or []:
+                calculated = (row.get("calculated_item_code") or "").strip()
+                fetched = (row.get("fetched_item_code") or "").strip()
+                if calculated and fetched and calculated != fetched:
+                    bad_attributes.append(
+                        "<b>{}</b> Attribute of Storage is NOT as Per Item Wizard. "
+                        "MAKE SURE to USE MPC to Replace the same.".format(calculated)
+                    )
+
+            if bad_attributes:
+                frappe.msgprint(
+                    "<br>".join(bad_attributes),
+                    title="Item Wizard Mismatch",
+                    indicator="red"
+                )
     def updating_njqca_child_in_serial_no(self):
         # Only proceed for Core IQC and Laptops
         if self.inspection_type != "Final QC" or self.item_group != "Laptops":
@@ -2045,27 +2216,124 @@ def get_info_from_component_serial_no(doc=None):
 
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
-    doc = frappe.get_doc("NJQCA", docname)
+    njqca_qi_trace("after_save_njqca_start", docname, {
+        "component_serial_no": component_serial_no,
+        "brand": brand,
+        "model": model,
+        "qi_type": qi_type
+    })
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
     if not int(ignore_part_validation):
         update_part_item_code_from_child(doc)
+    try:
+        doc = frappe.get_doc("NJQCA", docname)
 
-    if doc.bios_serialno:
-        if doc.power_on == 'Yes' and (qi_type==None or not qi_type):
-            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model)
-            return qi_draft_data
-        elif doc.power_on == 'Yes' and qi_type=='is_defective':
-            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model,is_defective="1")
-            return qi_draft_data
-        elif doc.power_on == 'Yes' and qi_type=='re_check':
-            qi_draft_data = open_draft_qi(doc,component_serial_no,brand,model,re_check="1")
-            return qi_draft_data
-        elif doc.power_on == 'No':
-            frappe.msgprint(f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b>.")
+        njqca_qi_trace("after_save_doc_loaded", docname, {
+            "docstatus": doc.docstatus,
+            "serial_no": doc.serial_no,
+            "component_serial_no": doc.component_serial_no,
+            "bios_serialno": doc.bios_serialno,
+            "power_on": doc.power_on,
+            "inspection_type": doc.inspection_type,
+            "item_group": doc.item_group,
+            "manual_repack_item_code": doc.manual_repack_item_code,
+            "existing_qi_name": doc.qi_name
+        })
 
-    else:
-        frappe.throw(f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>.")
+        ignore_part_validation = frappe.db.get_value(
+            "Inspection Type",
+            doc.inspection_type,
+            "ignore_part_validation"
+        )
+
+        njqca_qi_trace("ignore_part_validation_value", docname, {
+            "inspection_type": doc.inspection_type,
+            "ignore_part_validation": ignore_part_validation
+        })
+
+        # Safer than int(ignore_part_validation), because None / "" can crash
+        if not int(ignore_part_validation or 0):
+            njqca_qi_trace("before_update_part_item_code_from_child", docname)
+            update_part_item_code_from_child(doc)
+            njqca_qi_trace("after_update_part_item_code_from_child", docname)
+        else:
+            njqca_qi_trace("skip_update_part_item_code_from_child", docname, {
+                "reason": "Inspection Type has ignore_part_validation enabled"
+            })
+
+        if not doc.bios_serialno:
+            njqca_qi_trace("qi_not_created_bios_missing", docname, {
+                "serial_no": doc.serial_no,
+                "power_on": doc.power_on
+            }, error=True)
+
+            frappe.throw(
+                f"BIOS Serial No is not found for Serial No: <b>{doc.serial_no}</b>."
+            )
+
+        if doc.power_on != "Yes":
+            njqca_qi_trace("qi_not_created_power_on_not_yes", docname, {
+                "power_on": doc.power_on,
+                "serial_no": doc.serial_no,
+                "bios_serialno": doc.bios_serialno
+            }, error=True)
+
+            frappe.msgprint(
+                f"QI Draft is not created for Serial No: <b>{doc.serial_no}</b> because Power On is <b>{doc.power_on}</b>."
+            )
+            return {
+                "status": "skipped",
+                "reason": "Power On is not Yes",
+                "power_on": doc.power_on
+            }
+
+        njqca_qi_trace("before_open_draft_qi", docname, {
+            "qi_type": qi_type,
+            "serial_no": doc.serial_no,
+            "component_serial_no": component_serial_no,
+            "brand": brand,
+            "model": model
+        })
+
+        if qi_type == "is_defective":
+            qi_draft_data = open_draft_qi(
+                doc,
+                component_serial_no,
+                brand,
+                model,
+                is_defective="1"
+            )
+
+        elif qi_type == "re_check":
+            qi_draft_data = open_draft_qi(
+                doc,
+                component_serial_no,
+                brand,
+                model,
+                re_check="1"
+            )
+
+        else:
+            qi_draft_data = open_draft_qi(
+                doc,
+                component_serial_no,
+                brand,
+                model
+            )
+
+        njqca_qi_trace("after_open_draft_qi", docname, {
+            "qi_draft_data": qi_draft_data
+        }, error=not bool((qi_draft_data or {}).get("qi_name")))
+
+        return qi_draft_data
+
+    except Exception:
+        njqca_qi_trace("after_save_njqca_exception", docname, {
+            "traceback": frappe.get_traceback()
+        }, error=True)
+
+        frappe.throw(f"Error in after_save_njqca: {frappe.get_traceback()}")
 
 from frappe.utils import cint
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
@@ -2496,7 +2764,7 @@ def get_item_code_for_each_part(doc):
                         if item_group.lower() == cpu.lower():
                             any_undefined = any(value is None for value in attribute_value.values())
                             cpu_value = unk_cpu if any_undefined else list(attribute_value.values())[0]
-                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'))
+                            normalize_cpu = normalize_gen(cpu_value, doc.get('model'),row.get('variant_7'))
                             if normalize_cpu and len(normalize_cpu) > 0:
                                 attribute_object[mapping.get('attribute_name')] = get_attribute_from_erp(normalize_cpu, mapping.get('attribute_name'))
 
@@ -2943,25 +3211,31 @@ def consolidate_storage(data):
     return result_data
                     
 def normalize_gen(cpu_value, model, variant_7=None):
-    
     match = None
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
-        
+
         if match:
             core = 'Core ' + match.group(1).lower()
             alphanumeric_part = match.group(2)
-            
+
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430', '5430(40 PIN NT)(IR)') else str(int(numeric_part) // 1000)
-            
-            # ---- NEW: compare with variant_7 and override if mismatch ----
+            # check if generation is mentioned in cpu string directly
+            gen_from_string = None
+            gen_match = re.search(r'(\d+)\s*(?:th|st|nd|rd)?\s*gen', cpu_value, re.IGNORECASE)
+            if gen_match:
+                gen_from_string = gen_match.group(1)
+
+            # use gen from string if found, else auto calculate
+            if gen_from_string and int(gen_from_string) > 0:
+                gen_number = gen_from_string
+            else:
+                gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430', '5430(40 PIN NT)(IR)') else str(int(numeric_part) // 1000)
             if variant_7:
                 variant_7_digits = ''.join(filter(str.isdigit, str(variant_7)))
-                if variant_7_digits and variant_7_digits != gen_number:
+                if variant_7_digits and variant_7_digits != gen_number and int(variant_7_digits) > 0:
                     gen_number = variant_7_digits
-            # --------------------------------------------------------------
-            
+
             if gen_number == '1':
                 gen_number += 'st'
             elif gen_number == '2':
@@ -2970,20 +3244,19 @@ def normalize_gen(cpu_value, model, variant_7=None):
                 gen_number += 'rd'
             else:
                 gen_number += 'th'
-            
+
             return [f"{core} - {gen_number} Gen"]
 
     if 'ryzen' in cpu_value.lower():
         match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
         if match:
             return [match.group(1).upper()]
-        
+
     if 'amd' in cpu_value.lower() and 'ryzen' not in cpu_value.lower():
         match = re.match(r"([\w\s]+)-([\w\d]+)", cpu_value, re.IGNORECASE)
-    
         if match:
             return [match.group(1).upper()]
-        
+
     cpu_value_upper = cpu_value.upper()
     if not match:
         for cpu_type in ['XEON', 'PENTIUM', 'ATOM']:
@@ -3036,7 +3309,6 @@ def normalize_gen(cpu_value, model, variant_7=None):
 #         return None
 
 #     except Exception as e:
-#         return None
 
 @frappe.whitelist()
 def get_variant_from_value(item_template=None, args=None):
@@ -5861,7 +6133,7 @@ def _parse_heavyload_summary_from_csv_bytes(
 
     after_rows = [rr for rr in rows if (rr["_elapsed_s"] is not None and rr["_elapsed_s"] >= min_after_minutes * 60)]
     after_load_rows = [rr for rr in after_rows if (_to_float(rr.get(cpu_col)) is not None and _to_float(rr.get(cpu_col)) >= load_threshold)]
-
+ 
     cpu_avg = statistics.mean(cpu_all_num)
 
     cpu_last_avg = None
@@ -7029,7 +7301,7 @@ def previous_njqca_failed_result_validation(doc, method=None):
         parameter = (row.get("parameter") or "").strip()
         value = (row.get("value") or "").strip()
 
-        if parameter in disabled_parameters and value.upper() == "FAIL":
+        if parameter in disabled_parameters and "FAIL" in value.upper():
             failed_parameter_map[parameter] = row
 
     if not failed_parameter_map:
@@ -7037,7 +7309,7 @@ def previous_njqca_failed_result_validation(doc, method=None):
             SELECT parameter, value
             FROM `tabNJQCA Result Parameters`
             WHERE parent = %(njqca_name)s
-                AND value = 'FAIL'
+                AND UPPER(value) LIKE %(fail_value)s
                 AND parameter IN %(parameters)s
         """, {
             "njqca_name": doc.name,

@@ -3,6 +3,7 @@
 
 import json
 import frappe
+import re
 import time
 from frappe.utils import nowdate, add_days
 from datetime import timedelta
@@ -550,6 +551,253 @@ def update_serial_no_on_pr_submit(doc, method=None):
             for serial_no in serial_nos:
                 update_serial_no(serial_no, doc, item)
 
+def get_po_grade_for_purchase_receipt_item(item):
+    """
+    Fetch grade from Purchase Order Item.
+    This function is intentionally PO-based because the requirement says:
+    run this only when Grade is Grade A in Purchase Order.
+    """
+    if not item.get("purchase_order"):
+        return None
+
+    # Best match: direct PO Item link from PR Item
+    if item.get("purchase_order_item"):
+        po_grade = frappe.db.get_value(
+            "Purchase Order Item",
+            item.purchase_order_item,
+            "grade"
+        )
+        if po_grade:
+            return str(po_grade).strip()
+
+    # Fallback match: same PO + same item_code
+    if item.get("item_code"):
+        po_grade = frappe.db.get_value(
+            "Purchase Order Item",
+            {
+                "parent": item.purchase_order,
+                "item_code": item.item_code
+            },
+            "grade"
+        )
+        if po_grade:
+            return str(po_grade).strip()
+
+    return None
+
+
+def is_purchase_order_grade_a(item):
+    po_grade = get_po_grade_for_purchase_receipt_item(item)
+    return po_grade and po_grade.strip().upper() == "GRADE A"
+
+
+def is_unknown_value(value):
+    return not value or str(value).strip().upper() == "UNKNOWN"
+
+
+def get_grade_a_item_value(value):
+    if not value:
+        return value
+
+    value = str(value).strip()
+    upper_value = value.upper()
+
+    # If already Grade A, no need to change
+    if upper_value.endswith("-GRADE A") or upper_value.endswith(" GRADE A"):
+        return value
+
+    # If item already ends with another grade, replace that grade with GRADE A
+    grade_suffixes = [
+        "-GRADE B", "-GRADE C", "-GRADE D",
+        " GRADE B", " GRADE C", " GRADE D",
+        "-UNKNOWN", " UNKNOWN"
+    ]
+
+    for suffix in grade_suffixes:
+        if upper_value.endswith(suffix):
+            return value[:len(value) - len(suffix)] + "-GRADE A"
+
+    # If UNKNOWN appears anywhere inside item code, replace it
+    if "UNKNOWN" in upper_value:
+        value = value.replace("UNKNOWN", "GRADE A")
+        value = value.replace("Unknown", "GRADE A")
+        value = value.replace("unknown", "GRADE A")
+        return value
+
+    # If no grade exists, append Grade A
+    return value + "-GRADE A"
+
+def get_grade_a_item_for_part(serial_no_doc, part):
+    item_group = part.get("item_group")
+
+    if not item_group:
+        return None
+
+    parent_item_code = serial_no_doc.get("item_code") or ""
+    parent_upper = parent_item_code.upper()
+
+    # Try to identify model from parent item code
+    model_keywords = []
+
+    for keyword in ["T480", "T470", "L14", "5430", "5420", "5410", "5400"]:
+        if keyword in parent_upper:
+            model_keywords.append(keyword)
+
+    candidates = frappe.get_all(
+        "Item",
+        filters={
+            "item_group": item_group,
+            "name": ["like", "%GRADE A%"]
+        },
+        fields=["name"],
+        limit=100
+    )
+
+    if not candidates:
+        return None
+
+    candidate_names = [c.name for c in candidates]
+
+    item_group_upper = item_group.upper()
+
+    for model in model_keywords:
+        matched = [
+            name for name in candidate_names
+            if model in name.upper()
+            and item_group_upper in name.upper()
+        ]
+
+        if matched:
+            matched = sorted(matched, key=len)
+            return matched[0]
+
+    # 2. Prefer generic S-<ITEM GROUP>-GRADE A item
+    generic_name = f"S-{item_group}-GRADE A"
+
+    for name in candidate_names:
+        if name.upper() == generic_name.upper():
+            return name
+
+    # 3. Prefer any candidate that ends with GRADE A and contains the item group text
+    matched = [
+        name for name in candidate_names
+        if item_group_upper in name.upper()
+        and name.upper().endswith("GRADE A")
+    ]
+
+    if matched:
+        matched = sorted(matched, key=len)
+        return matched[0]
+
+    # 4. Last fallback: only if exactly one candidate exists
+    if len(candidate_names) == 1:
+        return candidate_names[0]
+
+    return None
+
+
+def update_serial_no_part_list_grade_a_from_po(serial_no_doc, item):
+    """
+    Updates Serial No part list only when linked Purchase Order Item Grade = Grade A.
+
+    What it changes:
+    1. Part list grade UNKNOWN/blank -> Grade A
+    2. Part list item/item_code -> matching Grade A Item
+
+    If no valid Grade A Item exists in Item master, block the process.
+    """
+    if not is_purchase_order_grade_a(item):
+        return
+
+    part_rows = serial_no_doc.get("serial_no_component") or []
+
+    if not part_rows:
+        return
+
+    missing_grade_a_items = {}
+
+    for part in part_rows:
+        # Update Grade column only if blank/UNKNOWN
+        if part.meta.get_field("grade") and is_unknown_value(part.get("grade")):
+            part.grade = "Grade A"
+
+        # Update Item column to Grade A item
+        for item_fieldname in ["item", "item_code"]:
+            if not part.meta.get_field(item_fieldname):
+                continue
+
+            current_item_code = part.get(item_fieldname)
+
+            if current_item_code:
+                updated_item_code = get_grade_a_item_value(current_item_code)
+            else:
+                updated_item_code = get_grade_a_item_for_part(serial_no_doc, part)
+
+            if not updated_item_code:
+                item_group = part.get("item_group") or "Unknown Item Group"
+
+                missing_grade_a_items[item_group] = (
+                    "No valid existing Grade A Item Code found in Item master"
+                )
+
+                logger.warning(
+                    "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Could not find Grade A item for item_group=%s",
+                    serial_no_doc.name,
+                    part.name,
+                    item_fieldname,
+                    part.get("item_group")
+                )
+                continue
+
+            if updated_item_code == part.get(item_fieldname):
+                continue
+
+            field_df = part.meta.get_field(item_fieldname)
+
+            # If field is linked to Item, update only if that Item exists.
+            # This prevents Purchase Receipt submit from breaking.
+            if field_df and field_df.fieldtype == "Link" and field_df.options == "Item":
+                if not frappe.db.exists("Item", updated_item_code):
+                    item_group = part.get("item_group") or "Unknown Item Group"
+
+                    missing_grade_a_items[item_group] = (
+                        f"Missing Item Code: {updated_item_code}"
+                    )
+
+                    logger.warning(
+                        "[PR Grade A Part List Update] Serial No=%s Row=%s skipped %s update. Item does not exist: %s",
+                        serial_no_doc.name,
+                        part.name,
+                        item_fieldname,
+                        updated_item_code
+                    )
+                    continue
+
+            part.set(item_fieldname, updated_item_code)
+
+    if missing_grade_a_items:
+        message_rows = []
+
+        for item_group, reason in missing_grade_a_items.items():
+            message_rows.append(
+                f"<b>{item_group}</b>: {reason}"
+            )
+
+        # Clear earlier ERPNext success messages like "Serial No XYZ Created"
+        # because this validation is going to block the submit.
+        frappe.local.message_log = []
+
+        frappe.throw(
+            msg=(
+                f"Cannot continue because valid existing <b>Grade A Item Code</b> "
+                f"is missing for some part rows in Serial No <b>{serial_no_doc.name}</b>."
+                f"<br><br>"
+                + "<br>".join(message_rows)
+                + "<br><br>Please create/correct the Grade A Item Code in Item Master and try again."
+            ),
+            title="Grade A Item Code Missing"
+        )
+
 def update_serial_no(serial_no, doc, item):
     serial_no_doc = frappe.get_doc('Serial No', serial_no, for_update=True)
     supplier_name = frappe.db.get_value('Supplier', {'name': doc.supplier}, 'supplier_name')
@@ -567,10 +815,13 @@ def update_serial_no(serial_no, doc, item):
         serial_no_doc.current_price = item.base_rate
         serial_no_doc.barcode = serial_no
         serial_no_doc.grade = item.grade
+        update_serial_no_part_list_grade_a_from_po(serial_no_doc, item)
         serial_no_doc.supplier = doc.supplier
         serial_no_doc.purchase_warranty_days = get_purc_warranty_data.get('warranty_days') if get_purc_warranty_data.get('warranty_days') else doc.warranty_days
         serial_no_doc.purchase_order = item.purchase_order
-        serial_no_doc.reference_doctype_no = doc.name
+        if not doc.is_return:
+            serial_no_doc.item_source = "Purchase Receipt"
+            serial_no_doc.reference_doctype_no = doc.name
         serial_no_doc.supplier_name = supplier_name
         serial_no_doc.purchase_receipt = doc.name
         serial_no_doc.save()
@@ -1177,3 +1428,194 @@ def get_mr_schedule_date_from_pr(core_item_codes, shortage_item_codes):
 #     print("PR MR created=======================", mr.name, "items:", len(shortage_items))
 
 #     frappe.msgprint(f"Material Request Created: {mr.name}")
+
+
+@frappe.whitelist()
+def fetch_unique_records(doc):
+    doc = json.loads(doc) if isinstance(doc, str) else doc
+
+    items = doc.get("items", [])
+    summary = {}
+
+    for row in items:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        qty = flt(row.get("qty") or 0)
+        rate = flt(row.get("rate") or 0)
+
+        if item_code not in summary:
+            summary[item_code] = {
+                "item_code": item_code,
+                "qty": qty,
+                "rate": rate,
+                "amount": qty * rate,
+                "serial_no": row.get("serial_no") or "",
+            }
+            continue
+
+        summary[item_code]["qty"] += qty
+        summary[item_code]["rate"] = rate
+        summary[item_code]["amount"] = summary[item_code]["qty"] * rate
+        if row.get("serial_no"):
+            existing_serial_no = summary[item_code].get("serial_no")
+            summary[item_code]["serial_no"] = "\n".join(
+                filter(None, [existing_serial_no, row.get("serial_no")])
+            )
+
+    return list(summary.values())
+
+
+@frappe.whitelist()
+def uppeding_item_to_items(doc):
+    doc = json.loads(doc) if isinstance(doc, str) else doc
+    if not doc or not doc.get("is_return"):
+        return []
+
+    filtered_items = doc.get("filtered_table") or []
+    if not filtered_items:
+        frappe.throw(_("No rows found in Filtered Table."))
+
+    source_items = doc.get("items") or []
+    source_by_serial = {}
+    source_by_item_code = {}
+    for item in source_items:
+        item_code = item.get("item_code")
+        if item_code and item_code not in source_by_item_code:
+            source_by_item_code[item_code] = item
+
+        for serial_no in _split_return_serial_nos(item.get("serial_no")):
+            source_by_serial[(item_code, serial_no)] = item
+
+    item_codes = [row.get("item_code") for row in filtered_items if row.get("item_code")]
+    serialized_item_map = {
+        item.name: item.has_serial_no
+        for item in frappe.get_all(
+            "Item",
+            filters={"name": ["in", item_codes]},
+            fields=["name", "has_serial_no"],
+        )
+    }
+
+    return_items = []
+    for row in filtered_items:
+        item_code = row.get("item_code")
+        if not item_code:
+            continue
+
+        qty = flt(row.get("qty"))
+        serial_nos = _split_return_serial_nos(row.get("serial_no"))
+        if not qty and not serial_nos:
+            frappe.throw(
+                _(
+                    "Row {0}: Qty and Serial No not found in this row. "
+                    "Kindly delete the row or add Qty and Serial No."
+                ).format(row.get("idx"))
+            )
+
+        if not qty:
+            frappe.throw(_("Row {0}: Qty is required for item {1}.").format(row.get("idx"), item_code))
+
+        if not serialized_item_map.get(item_code):
+            source_item = source_by_item_code.get(item_code) or {}
+            return_items.append(_make_return_item_row(source_item, row, "", qty))
+            continue
+
+        abs_qty = abs(qty)
+        if abs_qty != int(abs_qty):
+            frappe.throw(_("Row {0}: Qty must be a whole number for serialized item {1}.").format(row.get("idx"), item_code))
+
+        if int(abs_qty) != len(serial_nos):
+            frappe.throw(
+                _(
+                    "Row {0}: Qty count and Serial No count are different for item {1}. "
+                    "Qty is {2}, but Serial No count is {3}."
+                ).format(row.get("idx"), frappe.bold(item_code), int(abs_qty), len(serial_nos))
+            )
+
+        unit_qty = -1 if qty < 0 else 1
+        for serial_no in serial_nos:
+            source_item = source_by_serial.get((item_code, serial_no)) or source_by_item_code.get(item_code) or {}
+            return_items.append(_make_return_item_row(source_item, row, serial_no, unit_qty))
+
+    return return_items
+
+
+def _split_return_serial_nos(serial_no):
+    if not serial_no:
+        return []
+
+    return [serial.strip() for serial in re.split(r"[\n,]+", serial_no) if serial.strip()]
+
+
+def _make_return_item_row(source_item, filtered_row, serial_no, qty):
+    item_code = filtered_row.get("item_code") or source_item.get("item_code")
+    rate = flt(filtered_row.get("rate") if filtered_row.get("rate") is not None else source_item.get("rate"))
+    base_rate = rate
+    net_rate = rate
+    base_net_rate = rate
+    conversion_factor = flt(source_item.get("conversion_factor") or 1)
+    stock_qty = qty * conversion_factor
+    uom = source_item.get("uom") or source_item.get("stock_uom") or "Nos"
+    stock_uom = source_item.get("stock_uom") or uom or "Nos"
+
+    ignored_fields = {
+        "name",
+        "owner",
+        "creation",
+        "modified",
+        "modified_by",
+        "docstatus",
+        "idx",
+        "parent",
+        "parentfield",
+        "parenttype",
+        "doctype",
+        "__islocal",
+        "__unsaved",
+    }
+    item_row = {key: value for key, value in source_item.items() if key not in ignored_fields}
+
+    if not item_row.get("item_name") or not item_row.get("description") or not item_row.get("stock_uom"):
+        item_defaults = frappe.db.get_value(
+            "Item",
+            item_code,
+            ["item_name", "description", "stock_uom", "item_group"],
+            as_dict=True,
+        ) or {}
+        item_row.setdefault("item_name", item_defaults.get("item_name"))
+        item_row.setdefault("description", item_defaults.get("description"))
+        item_row.setdefault("stock_uom", item_defaults.get("stock_uom"))
+        item_row.setdefault("item_group", item_defaults.get("item_group"))
+        stock_uom = stock_uom or item_defaults.get("stock_uom") or "Nos"
+        uom = uom or stock_uom
+
+    item_row.update({
+        "item_code": item_code,
+        "uom": uom,
+        "stock_uom": stock_uom,
+        "conversion_factor": conversion_factor,
+        "qty": qty,
+        "received_qty": qty,
+        "stock_qty": stock_qty,
+        "received_stock_qty": stock_qty,
+        "rejected_qty": 0,
+        "serial_no": serial_no,
+        "price_list_rate": rate,
+        "base_price_list_rate": rate,
+        "stock_uom_rate": rate,
+        "rate_with_margin": rate,
+        "base_rate_with_margin": rate,
+        "rate": rate,
+        "amount": rate * qty,
+        "base_rate": base_rate,
+        "base_amount": base_rate * qty,
+        "net_rate": net_rate,
+        "net_amount": net_rate * qty,
+        "base_net_rate": base_net_rate,
+        "base_net_amount": base_net_rate * qty,
+        "billed_amt": net_rate * qty,
+    })
+
+    return item_row

@@ -220,26 +220,26 @@ scheduler_events = {
         "*/59 * * * *": [
             "nj_features.nj_features.doctype.delivery_charges.delivery_charges.update_status_in_shopify",
         ],
-        "30 23 * * *": [
+        "25 23 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_from_priduction_plan",
         ],
-        # "*/56 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_for_laptop_adaptors",
-        # ],
+        "35 23 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_for_laptop_adaptors",
+        ],
 
-        # "*/57 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.collect_all_purpose_material_issue",
-        # ],
-        "45 23 * * *": [
+        "50 23 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.collect_all_purpose_material_issue",
+        ],
+        "30 23 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.cosumables_material_issue_mr",
         ],    
-        # "*/59 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_ram_mr_via_production_plan",
-        # ],
+        "40 23 * * *":[
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_ram_mr_via_production_plan",
+        ],
 
-        # "*/59 * * * *": [
-        #     "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
-        # ],
+        "45 23 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
+        ],
 
         "50 23 * * *": [
             "nj_features.overrides.product_bundle.update_variant_status",

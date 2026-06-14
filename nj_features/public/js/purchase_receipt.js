@@ -48,7 +48,7 @@ frappe.ui.form.on("Purchase Receipt", {
 
     fetch_unique_records: function(frm) {
         frappe.call({
-            method: "nj_features.overrides.purchase_order.fetch_unique_records",
+            method: "nj_features.overrides.purchase_receipt.fetch_unique_records",
             args: { doc: frm.doc },
             freeze: true,
             freeze_message: "Fetching Unique Records...",
@@ -61,8 +61,42 @@ frappe.ui.form.on("Purchase Receipt", {
                     child.qty = row.qty;
                     child.rate = row.rate;
                     child.amount = row.amount;
+                    child.serial_no = row.serial_no;
                 });
                 frm.refresh_field("filtered_table");
+            }
+        });
+    },
+
+    return_items: function(frm) {
+        frappe.call({
+            method: "nj_features.overrides.purchase_receipt.uppeding_item_to_items",
+            args: { doc: frm.doc },
+            freeze: true,
+            freeze_message: "Updating Return Items...",
+            callback: function(r) {
+                if (!r.message) return;
+
+                frm.clear_table("items");
+
+                r.message.forEach(row => {
+                    let child = frm.add_child("items");
+                    Object.keys(row).forEach(fieldname => {
+                        child[fieldname] = row[fieldname];
+                    });
+                });
+
+                frm.refresh_field("items");
+
+                if (frm.cscript && frm.cscript.calculate_taxes_and_totals) {
+                    frm.cscript.calculate_taxes_and_totals();
+                }
+
+                frm.dirty();
+                frappe.show_alert({
+                    message: __("Return items updated"),
+                    indicator: "green"
+                });
             }
         });
     },
@@ -102,6 +136,21 @@ frappe.ui.form.on("Purchase Receipt", {
         if (frm.__pr_scan_done_for === frm.doc.proof_image) return;
 
         _run_pr_invoice_scan(frm);
+    }
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FILTERED TABLE — keep amount in sync when qty/rate is edited manually
+// ─────────────────────────────────────────────────────────────────────────────
+
+frappe.ui.form.on("Filtered Table", {
+    qty: function(frm, cdt, cdn) {
+        nj_pr_recalc_filtered_amount(frm, cdt, cdn);
+    },
+
+    rate: function(frm, cdt, cdn) {
+        nj_pr_recalc_filtered_amount(frm, cdt, cdn);
     }
 });
 
@@ -192,6 +241,12 @@ function nj_pr_apply_uom_and_cf(frm, cdt, cdn, row, selected_uom, cf) {
     frappe.model.set_value(cdt, cdn, 'uom', selected_uom);
     frappe.model.set_value(cdt, cdn, 'conversion_factor', cf);
     frappe.model.set_value(cdt, cdn, 'stock_qty', flt(row.qty || 0) * cf);
+}
+
+function nj_pr_recalc_filtered_amount(frm, cdt, cdn) {
+    var row = locals[cdt][cdn];
+    frappe.model.set_value(cdt, cdn, "amount", flt(row.qty || 0) * flt(row.rate || 0));
+    frm.refresh_field("filtered_table");
 }
 
 function nj_pr_set_conversion_factor(frm, cdt, cdn, row, selected_uom) {

@@ -309,6 +309,13 @@ frappe.ui.form.on("NJQCA", {
   },
 
   validate: async function (frm) {
+    (frm.doc.njqca_laptop_ram || []).forEach((row) => {
+      delete row._item_templates;
+    });
+    (frm.doc.njqca_laptop_storage || []).forEach((row) => {
+      delete row._item_templates;
+    });
+
     if (
       frm.doc.manual_repack_item_code &&
       frm.doc.manual_repack_item_code !== frm.doc.repack_item_code
@@ -1250,6 +1257,11 @@ frappe.ui.form.on("NJQCA", {
         "is_component",
       );
       const isComponent = item_group_data?.message?.is_component;
+      const frmSerialNo =
+        Number(isComponent) === 1
+          ? frm.doc.component_serial_no
+          : frm.doc.serial_no;
+      const serialWarehouse = await getNJQCASerialWarehouse(frmSerialNo);
 
       const workWarehouse = employeeData?.message?.work_warehouse;
       frm.__warehouse_transfer_prompt_running = false;
@@ -1258,7 +1270,17 @@ frappe.ui.form.on("NJQCA", {
         frappe.msgprint(
           `Work Warehouse is not set for employee: ${currentUserEmail}. Please mail to <b>IT Infra Team</b> at <strong><a href="mailto:itinfra@newjaisa.com">itinfra@newjaisa.com</a></strong> to create an employee.`,
         );
-      } else if (workWarehouse !== ware) {
+      } else {
+        const shouldPromptTransfer = serialWarehouse
+          ? !isSameNJQCAWarehouse(serialWarehouse, workWarehouse)
+          : !isSameNJQCAWarehouse(ware, workWarehouse);
+
+        if (!shouldPromptTransfer) {
+          frm.__warehouse_transfer_prompted_for = promptKey;
+          await syncNJQCAFormWarehouse(frm, serialWarehouse || workWarehouse);
+          return;
+        }
+
         if (isNJQCATransferDialogActive(frm)) {
           return;
         }
@@ -1283,12 +1305,7 @@ frappe.ui.form.on("NJQCA", {
           primary_action_label: "Yes, Transfer",
           primary_action: function () {
             let scannedSerialNo = dialog.get_value("serial_num");
-            let frm_serial_no = "";
-            if (isComponent == "0") {
-              frm_serial_no = frm.doc.serial_no;
-            } else {
-              frm_serial_no = frm.doc.component_serial_no;
-            }
+            let frm_serial_no = frmSerialNo;
 
             if (scannedSerialNo) {
               frappe.call({
@@ -1316,7 +1333,7 @@ frappe.ui.form.on("NJQCA", {
                             serial_no: frm_serial_no,
                             item_code: frm.doc.item_code,
                             t_warehouse: workWarehouse,
-                            s_warehouse: frm.doc.warehouse,
+                            s_warehouse: serialWarehouse || frm.doc.warehouse,
                           },
                         ];
 
@@ -1366,8 +1383,6 @@ frappe.ui.form.on("NJQCA", {
         });
         bindNJQCATransferDialogEscape(frm, dialog);
         dialog.show();
-      } else {
-        frm.__warehouse_transfer_prompted_for = promptKey;
       }
     }
   },
@@ -1515,6 +1530,13 @@ frappe.ui.form.on("NJQCA", {
   },
 
   before_save: function (frm) {
+    (frm.doc.njqca_laptop_ram || []).forEach((row) => {
+      delete row._item_templates;
+    });
+    (frm.doc.njqca_laptop_storage || []).forEach((row) => {
+      delete row._item_templates;
+    });
+
     if (
       frm.doc.name &&
       frm.doc.item_template &&
@@ -1636,6 +1658,40 @@ function getNJQCAWarehouseTransferPromptKey(frm) {
   ].join("::");
 }
 
+function normalizeNJQCAWarehouse(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+function isSameNJQCAWarehouse(first, second) {
+  return (
+    normalizeNJQCAWarehouse(first) &&
+    normalizeNJQCAWarehouse(first) === normalizeNJQCAWarehouse(second)
+  );
+}
+
+async function getNJQCASerialWarehouse(serialNo) {
+  if (!serialNo) return "";
+
+  const serialData = await frappe.db.get_value(
+    "Serial No",
+    serialNo,
+    "warehouse",
+  );
+
+  return serialData?.message?.warehouse || "";
+}
+
+async function syncNJQCAFormWarehouse(frm, warehouse) {
+  if (!warehouse || isSameNJQCAWarehouse(frm.doc.warehouse, warehouse)) {
+    return;
+  }
+
+  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+  await frm.set_value("warehouse", warehouse);
+  frm.refresh_field("warehouse");
+  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+}
+
 async function triggerNJQCAWarehouseValidationForDifferentWarehouse(frm) {
   if (
     frm.doc.__islocal ||
@@ -1665,11 +1721,6 @@ async function triggerNJQCAWarehouseValidationForDifferentWarehouse(frm) {
   );
   const workWarehouse = employeeData?.message?.work_warehouse;
   frm.__warehouse_transfer_prompt_running = false;
-
-  if (workWarehouse && workWarehouse === frm.doc.warehouse) {
-    frm.__warehouse_transfer_prompted_for = promptKey;
-    return;
-  }
 
   frm.events.warehouse(frm);
 }
@@ -1719,12 +1770,6 @@ async function promptNJQCATransferForCreatedUser(frm) {
     return;
   }
 
-  if (workWarehouse === frm.doc.warehouse) {
-    frm.__created_user_transfer_prompted_for = currentTransferPromptKey;
-    frm.__created_user_transfer_running = false;
-    return;
-  }
-
   const itemGroupData = await frappe.db.get_value(
     "Item Group",
     { name: frm.doc.item_group },
@@ -1733,7 +1778,26 @@ async function promptNJQCATransferForCreatedUser(frm) {
   const isComponent = Number(itemGroupData?.message?.is_component) === 1;
   const serialNo = isComponent ? frm.doc.component_serial_no : frm.doc.serial_no;
 
-  if (!serialNo || isNJQCATransferDialogActive(frm)) {
+  if (!serialNo) {
+    frm.__created_user_transfer_running = false;
+    return;
+  }
+
+  const serialWarehouse = await getNJQCASerialWarehouse(serialNo);
+  const shouldPromptTransfer = serialWarehouse
+    ? !isSameNJQCAWarehouse(serialWarehouse, workWarehouse)
+    : !isSameNJQCAWarehouse(frm.doc.warehouse, workWarehouse);
+
+  if (!shouldPromptTransfer) {
+    frm.__created_user_transfer_prompted_for = currentTransferPromptKey;
+    await syncNJQCAFormWarehouse(frm, serialWarehouse || workWarehouse);
+    frm.__created_user_transfer_prompted_for =
+      getNJQCAWarehouseTransferPromptKey(frm);
+    frm.__created_user_transfer_running = false;
+    return;
+  }
+
+  if (isNJQCATransferDialogActive(frm)) {
     frm.__created_user_transfer_running = false;
     return;
   }
@@ -1757,7 +1821,7 @@ async function promptNJQCATransferForCreatedUser(frm) {
           serial_no: serialNo,
           item_code: frm.doc.item_code,
           t_warehouse: workWarehouse,
-          s_warehouse: frm.doc.warehouse,
+          s_warehouse: serialWarehouse || frm.doc.warehouse,
         },
       ];
 
@@ -2186,7 +2250,7 @@ function processItemTemplate(frm) {
                 );
               }
               if (row.fetched_item_code) {
-                frm.set_value("fetched_processor_item_code", 1);
+                frm.set_value("fetched_processor_item_code", 0);
                 frm.refresh_field("fetched_processor_item_code");
               }
               show_checkbutton_for_field(frm, "njqca_laptop_processors");
@@ -2777,7 +2841,7 @@ function generateProcessorItemCode(frm, cdt, cdn, child) {
           } else {
             frappe.model.set_value(cdt, cdn, "calculated_item_code", r.message);
             if (r.message) {
-              frm.set_value("fetched_processor_item_code", 1);
+              frm.set_value("fetched_processor_item_code", 0);
               frm.refresh_field("fetched_processor_item_code");
             }
           }
@@ -3021,22 +3085,22 @@ frappe.ui.form.on("NJQCA Display", {
 
         frm.refresh_field(grid.df.fieldname);
 
-        fetch_item_template_disp_adp(
-          frm,
-          item_group,
-          function (item_template_data) {
-            frappe.model.set_value(
-              cdt,
-              cdn,
-              "item_template",
-              item_template_data,
-            );
+        // fetch_item_template_disp_adp(
+        //   frm,
+        //   item_group,
+        //   function (item_template_data) {
+        //     frappe.model.set_value(
+        //       cdt,
+        //       cdn,
+        //       "item_template",
+        //       item_template_data,
+        //     );
 
-            frm.refresh_field(grid.df.fieldname);
+        //     frm.refresh_field(grid.df.fieldname);
 
-            generateDisplayItemCode(frm, cdt, cdn, child);
-          },
-        );
+        //     generateDisplayItemCode(frm, cdt, cdn, child);
+        //   },
+        // );
 
         d.hide();
       },
@@ -3209,7 +3273,7 @@ frappe.ui.form.on("NJQCA Adaptor", {
         fetch_item_template_disp_adp(
           frm,
           item_group,
-          function (item_template_data) {
+           function (item_template_data) {
             frappe.model.set_value(
               cdt,
               cdn,
@@ -3628,20 +3692,7 @@ frappe.ui.form.on("NJQCA Laptop Ram", {
 
         frm.refresh_field(grid.df.fieldname);
 
-        fetch_item_template_disp_adp(
-          frm,
-          item_group,
-          function (item_template_data) {
-            frappe.model.set_value(
-              cdt,
-              cdn,
-              "item_template",
-              item_template_data,
-            );
-            frm.refresh_field(grid.df.fieldname);
-            generateRamItemCode(frm, cdt, cdn, child);
-          },
-        );
+        generateRamItemCode(frm, cdt, cdn, child);
 
         d.hide();
       },

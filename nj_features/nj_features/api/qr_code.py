@@ -128,11 +128,7 @@ def generate_and_save_qrcode(data, format='png'):
         print(f"  [QR FILE] filename      : {filename}")
         print(f"  [QR FILE] full file_path: {file_path}")
 
-        if os.path.exists(file_path):
-            print(f"  [QR FILE] ✅ File ALREADY EXISTS — skipping PNG generation")
-            print(f"  [generate_and_save_qrcode] END (file existed)\n  {'*'*50}")
-            return encoded_data
-
+        # Always write the QR code PNG to ensure the image on disk is in sync with the mapping in the database
         url.png(file_path, scale=8)
         print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk: {file_path}")
         print(f"  [generate_and_save_qrcode] END — returning: {encoded_data}\n  {'*'*50}")

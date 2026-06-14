@@ -1,7 +1,7 @@
 import json
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 from collections import defaultdict
 from datetime import datetime, timedelta
 from frappe.model.document import Document
@@ -15,6 +15,7 @@ class StockMovement(Document):
         try:
             # self.deparement_qty_check()
             check_warehouse_qty(self.name)
+            self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
             else:
@@ -51,6 +52,19 @@ class StockMovement(Document):
             frappe.log_error(frappe.get_traceback(), "Stock Movement Submit Failed")
             frappe.throw(f"Error while submitting Stock Entry: {e}")
 
+    def time_stamp_update(self):
+        current_time = now_datetime()
+        for item in self.items:
+            if not item.s_warehouse or not item.t_warehouse or item.s_warehouse == item.t_warehouse:
+                continue
+
+            if not item.serial_no:
+                continue
+
+            for serial_no in item.serial_no.split('\n'):
+                serial_no = serial_no.strip()
+                if serial_no:
+                    frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', current_time)
 
     def validate_supplier_return(self):
         """
@@ -393,7 +407,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
-
+    current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
+    if current_doctype != "Stock Movement" and s_warehouse and t_warehouse and s_warehouse != t_warehouse:
+        frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
     allow_model_change = frappe.db.get_value("Department", department, "allow_model_change")
     print("allow_model_change=================",allow_model_change )
 
@@ -486,54 +502,64 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     f"Serial No <b>{max_age_serial_no}</b> "
                     f"but max aging in warehouse <b>{t_warehouse}</b> is <b>{int(max_age_days)}</b> days."
                 )
-        if should_validate_sla and sla_item_groups and department_sla:
-            department_sla_days = int(department_sla)
-            department_aging = frappe.db.sql(
-                f"""
-                WITH 
-                StoresWarehouses AS (
-                    SELECT sn.name,w.department
-                    FROM `tabSerial No` sn inner join`tabWarehouse` w on w.name=sn.warehouse
-                    WHERE w.department = %s and sn.item_group in ({sla_item_group_placeholders})
-                )
+        try:
+            department_sla_days = int(department_sla) if department_sla else 0
+        except ValueError:
+            department_sla_days = 0
 
-                ,SLEData AS (
-                    SELECT
-                        sle.serial_no,
-                        sle.creation,
-                        wr.department
-                    FROM `tabStock Ledger Entry` sle
-                    INNER JOIN StoresWarehouses w
-                        ON sle.serial_no = w.name
-                    Inner join `tabWarehouse` wr on wr.name=sle.warehouse
-                    WHERE sle.serial_no IS NOT NULL and sle.voucher_type='Stock Entry'
-                ),
-                LastExit AS (
-                    SELECT
-                        serial_no,
-                        MAX(creation) AS last_exit_date
-                    FROM SLEData
-                    WHERE department != %s
-                    GROUP BY serial_no
+        if should_validate_sla and sla_item_groups and department_sla_days > 0:
+            dept_aging_cache = (qty_check_cache or {}).setdefault("department_aging_cache", {})
+            if department in dept_aging_cache:
+                department_aging = dept_aging_cache[department]
+            else:
+                department_aging = frappe.db.sql(
+                    f"""
+                    WITH 
+                    StoresWarehouses AS (
+                        SELECT sn.name,w.department
+                        FROM `tabSerial No` sn inner join`tabWarehouse` w on w.name=sn.warehouse
+                        WHERE w.department = %s and w.warehouse_type='Employee Personal Warehouse' and sn.item_group in ({sla_item_group_placeholders})
                     )
-                    SELECT
-                        s.serial_no,
-                        MIN(s.creation) AS department_entry_date,DATEDIFF(CURDATE(), MIN(s.creation)) AS department_age
-                    FROM SLEData s
-                    LEFT JOIN LastExit le
-                        ON s.serial_no = le.serial_no
-                    WHERE s.department = %s
-                    AND (
-                        le.last_exit_date IS NULL
-                        OR s.creation > le.last_exit_date
-                    )
-                    GROUP BY s.serial_no
-                    ORDER BY department_age DESC
-                    LIMIT 1;
-                """,
-                tuple([department] + sla_item_groups + [department, department]),
-                as_dict=True
-            )
+
+                    ,SLEData AS (
+                        SELECT
+                            sle.serial_no,
+                            sle.creation,
+                            wr.department
+                        FROM `tabStock Ledger Entry` sle
+                        INNER JOIN StoresWarehouses w
+                            ON sle.serial_no = w.name
+                        Inner join `tabWarehouse` wr on wr.name=sle.warehouse
+                        WHERE sle.serial_no IS NOT NULL and sle.voucher_type='Stock Entry'
+                    ),
+                    LastExit AS (
+                        SELECT
+                            serial_no,
+                            MAX(creation) AS last_exit_date
+                        FROM SLEData
+                        WHERE department != %s
+                        GROUP BY serial_no
+                        )
+                        SELECT
+                            s.serial_no,
+                            MIN(s.creation) AS department_entry_date,DATEDIFF(CURDATE(), MIN(s.creation)) AS department_age
+                        FROM SLEData s
+                        LEFT JOIN LastExit le
+                            ON s.serial_no = le.serial_no
+                        WHERE s.department = %s
+                        AND (
+                            le.last_exit_date IS NULL
+                            OR s.creation > le.last_exit_date
+                        )
+                        GROUP BY s.serial_no
+                        ORDER BY department_age DESC
+                        LIMIT 1;
+                    """,
+                    tuple([department] + sla_item_groups + [department, department]),
+                    as_dict=True
+                )
+                if qty_check_cache is not None:
+                    dept_aging_cache[department] = department_aging
             department_age = department_aging[0].get("department_age") if department_aging else None
             department_age_serial = department_aging[0].get("serial_no") if department_aging else None
             if department_age is not None and int(department_age) > department_sla_days:

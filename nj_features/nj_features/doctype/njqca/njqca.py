@@ -681,6 +681,62 @@ def apply_reliability_test_changes_to_doc(doc):
             "apply_reliability_test_changes_to_doc failed"
         )
 
+def is_njqca_status_submit_validation_enabled():
+    """
+    NJ Settings:
+    Parameter: njqca_status_submit_validation
+    Doc Type: NJQCA
+
+    Value:
+        0 = Do not validate NJQCA_Status
+        1 = Validate NJQCA_Status before submit
+    """
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {
+            "parameter": "njqca_status_submit_validation",
+            "doc_type": "NJQCA"
+        },
+        "value"
+    )
+
+    return str(value or "0").strip() == "1"
+
+
+def validate_njqca_status_completed_before_submit(doc):
+    """
+    If enabled in NJ Settings, NJQCA submit is allowed only when
+    NJQCA Result Parameters has:
+
+        parameter = NJQCA_Status
+        value     = Completed
+
+    Skip validation for BATTERY item group.
+    """
+
+    # Skip validation for BATTERY
+    if str(doc.get("item_group") or "").strip().lower() == "battery":
+        return
+
+    # If setting is 0 or missing, skip validation
+    if not is_njqca_status_submit_validation_enabled():
+        return
+
+    status_completed = False
+
+    for row in doc.get("njqca_result_parameters") or []:
+        parameter = str(row.get("parameter") or "").strip().lower()
+        value = str(row.get("value") or "").strip().lower()
+
+        if parameter == "njqca_status" and value == "completed":
+            status_completed = True
+            break
+
+    if not status_completed:
+        frappe.throw(
+            _("NJQCA was not completed. Please re-run the script before submitting.")
+        )
+
 class NJQCA(Document):
     def onload(self):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
@@ -761,7 +817,9 @@ class NJQCA(Document):
                     self.name,
                     update_modified=False
                 )
-
+    def before_submit(self):
+        validate_njqca_status_completed_before_submit(self)
+        
     def on_submit(self):
         try:
             # self.performance_reports_update()
@@ -1990,7 +2048,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     doc = frappe.get_doc("NJQCA", docname)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
-    if not ignore_part_validation:
+    if not int(ignore_part_validation):
         update_part_item_code_from_child(doc)
 
     if doc.bios_serialno:
@@ -2020,6 +2078,13 @@ def update_part_item_code_from_child(doc):
         "njqca_laptop_storage": "NJQCA Laptop Storage"
     }
 
+    if doc.item_group == "Desktops":
+            child_table_map = {
+                "njqca_laptop_ram": "NJQCA Desktop Ram",
+                "njqca_laptop_storage": "NJQCA Desktop Storage",
+                "njqca_laptop_processors": "NJQCA PROCESSOR",
+            }       
+
     serial_no_doc = frappe.get_doc("Serial No", doc.serial_no)
     updated = False
 
@@ -2030,6 +2095,9 @@ def update_part_item_code_from_child(doc):
     # rows from Serial No, but keep rows having component_serial_no
     # ---------------------------------------------------------
     target_item_groups = set()
+
+    if doc.item_group == "Desktops":
+        target_item_groups.update(["Desktop Processors"])
 
     for table_field in child_table_map:
         for child in (doc.get(table_field) or []):
@@ -2668,8 +2736,7 @@ def set_part_data(part_item_group, attribute_object, row, part_data, doc):
             templates = frappe.db.sql("""
                 select DISTINCT c.reference_template 
                 from `tabSerial No` sn 
-                inner join `tabItem` i on sn.item_code = i.name
-                inner join `tabItem Wizards` iw on i.variant_of = iw.item_template
+                inner join `tabItem Wizards` iw on sn.item_wizard = iw.name
                 inner join `tabComponent` c on iw.name = c.parent
                 where sn.name = %s and (c.component_type = %s or c.component_type = %s) 
             """, (doc.get('serial_no'), component_types[0], component_types[1]), as_dict=True)
@@ -2886,7 +2953,7 @@ def normalize_gen(cpu_value, model, variant_7=None):
             alphanumeric_part = match.group(2)
             
             numeric_part = ''.join(filter(str.isdigit, alphanumeric_part))
-            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430') else str(int(numeric_part) // 1000)
+            gen_number = str(int(numeric_part) // 100) if model in ('5430 TOUCH(IR)', '5430', '5430(40 PIN NT)(IR)') else str(int(numeric_part) // 1000)
             
             # ---- NEW: compare with variant_7 and override if mismatch ----
             if variant_7:
@@ -6869,6 +6936,13 @@ def get_reliability_test_status(doc):
     """
     if isinstance(doc, str):
         doc = json.loads(doc)
+
+    if isinstance(doc, dict):
+        for key in ("njqca_laptop_ram", "njqca_laptop_storage"):
+            if key in doc and isinstance(doc[key], list):
+                for row in doc[key]:
+                    if isinstance(row, dict) and "_item_templates" in row:
+                        del row["_item_templates"]
 
     d = frappe.get_doc(doc)
 

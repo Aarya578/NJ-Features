@@ -930,9 +930,10 @@ class NJQCA(Document):
         apply_reliability_test_changes_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         
-        # EXT-NJ Linkage: Set linked_ext to self.serial_no for external QC docs
-        if self.rfq_id and self.serial_no:
-            self.linked_ext = self.serial_no
+        # External RFQ NJQCA should not self-link.
+        # linked_ext should be used only when internal NJ serial is linked to external serial.
+        if self.rfq_id and self.linked_ext == self.serial_no:
+            self.linked_ext = ""
 
     def on_update(self):
         # EXT-NJ Linkage: Update reference_doctype_no on the created external Serial No
@@ -1036,8 +1037,10 @@ class NJQCA(Document):
                 frappe.msgprint("Error during submission: " + traceback.format_exc())
                 raise
 
-        # EXT-NJ Linkage: remove bios from EXT serial after NJQCA submit
-        self.remove_bios_from_linked_ext()
+        # Clear EXT BIOS only when company/internal NJQCA is submitted.
+        # Do not clear BIOS when external RFQ NJQCA is submitted.
+        if not self.rfq_id:
+            self.remove_bios_from_linked_ext()
 
     def remove_bios_from_linked_ext(self):
         """
@@ -2085,6 +2088,10 @@ def get_info_from_serial_no(doc=None):
             WHERE bios_serial_no = %s"""
 
         sle = frappe.db.sql(sql_query, (bios_serial_no_in_ui), as_dict=1)
+
+        # If it's a standard NJQCA (no rfq_id), filter out any external/EXT serial numbers
+        if not doc_json.get('rfq_id') and sle:
+            sle = [s for s in sle if not s.get('name', '').startswith('EXT-')]
 
         if 'serial_no' in doc_json and not sle:
             serial_no = doc_json['serial_no']

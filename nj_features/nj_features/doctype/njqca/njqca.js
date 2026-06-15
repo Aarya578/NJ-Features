@@ -1645,8 +1645,8 @@ function isNJQCACreatedByCurrentUser(frm) {
 
   return Boolean(
     currentUserEmail &&
-      createdUserEmail &&
-      currentUserEmail === createdUserEmail,
+    createdUserEmail &&
+    currentUserEmail === createdUserEmail,
   );
 }
 
@@ -1686,10 +1686,12 @@ async function syncNJQCAFormWarehouse(frm, warehouse) {
     return;
   }
 
-  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+  frm.__warehouse_transfer_prompted_for =
+    getNJQCAWarehouseTransferPromptKey(frm);
   await frm.set_value("warehouse", warehouse);
   frm.refresh_field("warehouse");
-  frm.__warehouse_transfer_prompted_for = getNJQCAWarehouseTransferPromptKey(frm);
+  frm.__warehouse_transfer_prompted_for =
+    getNJQCAWarehouseTransferPromptKey(frm);
 }
 
 async function triggerNJQCAWarehouseValidationForDifferentWarehouse(frm) {
@@ -1776,7 +1778,9 @@ async function promptNJQCATransferForCreatedUser(frm) {
     "is_component",
   );
   const isComponent = Number(itemGroupData?.message?.is_component) === 1;
-  const serialNo = isComponent ? frm.doc.component_serial_no : frm.doc.serial_no;
+  const serialNo = isComponent
+    ? frm.doc.component_serial_no
+    : frm.doc.serial_no;
 
   if (!serialNo) {
     frm.__created_user_transfer_running = false;
@@ -1850,7 +1854,10 @@ async function promptNJQCATransferForCreatedUser(frm) {
           }
         },
         error: function (err) {
-          console.error("[NJQCA Created User Transfer] Stock transfer error", err);
+          console.error(
+            "[NJQCA Created User Transfer] Stock transfer error",
+            err,
+          );
           $(".primary-action").hide();
         },
       });
@@ -1990,6 +1997,9 @@ function trigger_serial_no(frm) {
           }
           syncDesktopManufacturerModelFlow(frm);
         }
+
+        // EXT-NJ Linkage: check if BIOS maps to an EXT serial
+        check_and_handle_ext_linkage(frm);
       },
       error: function (err) {
         console.error(err);
@@ -2381,16 +2391,47 @@ function processItemTemplate(frm) {
                 let templates = [];
                 if (Array.isArray(doc._item_templates)) {
                   templates = doc._item_templates;
-                } else if (typeof doc._item_templates === "string" && doc._item_templates) {
+                } else if (
+                  typeof doc._item_templates === "string" &&
+                  doc._item_templates
+                ) {
                   templates = [doc._item_templates];
                 }
 
                 if (templates.length > 1) {
-                  frm.set_df_property(table_name, "options", templates, frm.docname, "item_template", doc.name);
-                  frm.set_df_property(table_name, "read_only", 0, frm.docname, "item_template", doc.name);
+                  frm.set_df_property(
+                    table_name,
+                    "options",
+                    templates,
+                    frm.docname,
+                    "item_template",
+                    doc.name,
+                  );
+                  frm.set_df_property(
+                    table_name,
+                    "read_only",
+                    0,
+                    frm.docname,
+                    "item_template",
+                    doc.name,
+                  );
                 } else if (templates.length === 1) {
-                  frm.set_df_property(table_name, "options", templates, frm.docname, "item_template", doc.name);
-                  frm.set_df_property(table_name, "read_only", 1, frm.docname, "item_template", doc.name);
+                  frm.set_df_property(
+                    table_name,
+                    "options",
+                    templates,
+                    frm.docname,
+                    "item_template",
+                    doc.name,
+                  );
+                  frm.set_df_property(
+                    table_name,
+                    "read_only",
+                    1,
+                    frm.docname,
+                    "item_template",
+                    doc.name,
+                  );
                 }
               }
             });
@@ -3207,6 +3248,69 @@ function fetch_item_template_disp_adp(frm, item_group, callback) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EXT-NJ Serial Linkage via BIOS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function check_and_handle_ext_linkage(frm) {
+  // Only run for non-EXT NJQCAs (skip if this NJQCA itself belongs to an EXT/RFQ serial)
+  if (!frm.doc.bios_serialno || !frm.doc.serial_no || frm.doc.rfq_id) return;
+
+  frappe.call({
+    method:
+      "nj_features.nj_features.doctype.njqca.njqca.check_ext_serial_linkage",
+    args: {
+      bios_serial_no: frm.doc.bios_serialno,
+      nj_serial_no: frm.doc.serial_no,
+    },
+    callback: function (r) {
+      if (!r.message || !r.message.found) return;
+      // CASE D: already linked to each other — silently skip
+      if (r.message.already_linked) return;
+
+      // CASE C: EXT found but not yet linked — ask the user
+      let ext_serial = r.message.ext_serial;
+      frappe.confirm(
+        __(
+          `BIOS <b>${frm.doc.bios_serialno}</b> is already mapped to EXT serial 
+          <b>${ext_serial}</b>.<br><br>
+          Do you want to link <b>${ext_serial}</b> component data to NJ serial 
+          <b>${frm.doc.serial_no}</b>?`,
+        ),
+        // YES
+        function () {
+          frappe.call({
+            method:
+              "nj_features.nj_features.doctype.njqca.njqca.link_ext_to_nj_serial",
+            args: {
+              ext_serial_no: ext_serial,
+              nj_serial_no: frm.doc.serial_no,
+              njqca_name: frm.doc.name,
+            },
+            callback: function (r2) {
+              if (r2.message && r2.message.success) {
+                frm.set_value("linked_ext", ext_serial);
+                frm.refresh_field("linked_ext");
+                frappe.show_alert(
+                  {
+                    message: __(
+                      `EXT serial <b>${ext_serial}</b> linked. Component data copied to <b>${frm.doc.serial_no}</b>.`,
+                    ),
+                    indicator: "green",
+                  },
+                  7,
+                );
+              }
+            },
+          });
+        },
+        // NO — do nothing, proceed normally
+        function () {},
+      );
+    },
+  });
+}
+
 frappe.ui.form.on("NJQCA Adaptor", {
   njqca_adaptor_add: function (frm, cdt, cdn) {
     setTimeout(() => show_checkbutton_for_field(frm, "njqca_adaptor"), 300);
@@ -3273,7 +3377,7 @@ frappe.ui.form.on("NJQCA Adaptor", {
         fetch_item_template_disp_adp(
           frm,
           item_group,
-           function (item_template_data) {
+          function (item_template_data) {
             frappe.model.set_value(
               cdt,
               cdn,
@@ -3321,7 +3425,11 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
   check_button: async function (frm, cdt, cdn) {
     let child = locals[cdt][cdn];
     if (!child.item_template) {
-      frappe.throw(__("Item Template is not defined. Please select an Item Template first."));
+      frappe.throw(
+        __(
+          "Item Template is not defined. Please select an Item Template first.",
+        ),
+      );
       return;
     }
     let item_group = child.item_group;
@@ -3630,7 +3738,11 @@ frappe.ui.form.on("NJQCA Laptop Ram", {
   check_button: async function (frm, cdt, cdn) {
     let child = locals[cdt][cdn];
     if (!child.item_template) {
-      frappe.throw(__("Item Template is not defined. Please select an Item Template first."));
+      frappe.throw(
+        __(
+          "Item Template is not defined. Please select an Item Template first.",
+        ),
+      );
       return;
     }
     let item_group = child.item_group;
@@ -4292,8 +4404,7 @@ function dedupeChildTable(frm) {
   frm.doc.njqca_result_parameters = kept;
 }
 
-const NJQCA_BARCODE_SCANNER_MESSAGE =
-  "Please use the scanner to scan barcode.";
+const NJQCA_BARCODE_SCANNER_MESSAGE = "Please use the scanner to scan barcode.";
 
 function setupNJQCABarcodeScannerOnly(frm) {
   const fieldname = "barcode";
@@ -4473,9 +4584,7 @@ function isNJQCABarcodeFromScanner(frm) {
   if (!value) return true;
 
   return Boolean(
-    state &&
-    state.validValue === value &&
-    Date.now() <= state.validUntil,
+    state && state.validValue === value && Date.now() <= state.validUntil,
   );
 }
 

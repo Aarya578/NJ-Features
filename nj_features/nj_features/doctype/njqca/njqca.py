@@ -2222,10 +2222,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         "model": model,
         "qi_type": qi_type
     })
-
-    ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
-    if not int(ignore_part_validation):
-        update_part_item_code_from_child(doc)
+    
     try:
         doc = frappe.get_doc("NJQCA", docname)
 

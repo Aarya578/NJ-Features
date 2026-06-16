@@ -4767,9 +4767,15 @@ def compare_parameter(param_name, actual_value, expected_range):
         param_type = get_parameter_type(param_name)
         
         if param_type == 'time':
-            actual_seconds = convert_to_seconds(actual_value,param_name)
+            expected_text = str(expected_range or "").strip()
+
+            # Handle operator-based time criteria like <150, <=150, >60, >=60
+            if expected_text.startswith((">", "<")):
+                return compare_operator_condition(actual_value, expected_range)
+
+            actual_seconds = convert_to_seconds(actual_value, param_name)
             min_sec, max_sec = parse_time_range(expected_range)
-            
+
             if min_sec <= actual_seconds <= max_sec:
                 return True, f"{actual_value} is within range {expected_range}"
             return False, f"{actual_value} is outside range {expected_range}"

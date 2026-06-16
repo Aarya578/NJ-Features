@@ -700,7 +700,18 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'depends_on_linked_item_group': nj_readings_data.get('depends_on_linked_item_group'),
                     })
             new_qi.set('nj_quality_readings', [])
+            
             for reading in nj_quality_readings:
+                reading = reading.copy()
+
+                # Only remove Frappe system identity fields if they exist.
+                # This does not change item_group, quality_check, item, grade, qty, etc.
+                reading.pop("name", None)
+                reading.pop("parent", None)
+                reading.pop("parenttype", None)
+                reading.pop("parentfield", None)
+                reading.pop("idx", None)
+
                 new_qi.append('nj_quality_readings', reading)
         
         if response.get('initial_mandatory_rows'):

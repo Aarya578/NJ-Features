@@ -131,6 +131,45 @@ class CustomSalesOrder(SalesOrder):
             if not self.payment_id:
                 frappe.throw("Payment ID is mandatory for Sale Type: {0}".format(self.sale_type))
 
+    def update_status(self, status):
+        super().update_status(status)
+        if status in ("Closed", "Cancelled"):
+            _release_serial_reservations(self.name)
+
+    def on_update_after_submit(self):
+        if self.status in ("Closed", "Cancelled"):
+            _release_serial_reservations(self.name)
+
+
+def _release_serial_reservations(so_name):
+    """Clear reserved_sales_order on serials tied to a Closed/Cancelled SO,
+    skipping any that already have a submitted Delivery Note (already shipped)."""
+    reserved_serials = frappe.db.sql_list("""
+        SELECT name
+        FROM `tabSerial No`
+        WHERE reserved_sales_order = %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM `tabDelivery Note Item`
+                WHERE serial_no = `tabSerial No`.name
+                    AND docstatus = 1
+            )
+    """, so_name)
+
+    if not reserved_serials:
+        return
+
+    frappe.db.sql("""
+        UPDATE `tabSerial No`
+        SET reserved_sales_order = NULL
+        WHERE name IN %(serials)s
+    """, {"serials": reserved_serials})
+    frappe.db.commit()
+
+    frappe.log_error(
+        title=f"Serial reservations released — SO Closed: {so_name}",
+        message=f"Released {len(reserved_serials)} serial(s): {', '.join(reserved_serials)}"
+    )    
 
 @frappe.whitelist(allow_guest=True)
 def trigger_fulfillment(order_id):

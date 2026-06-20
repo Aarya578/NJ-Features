@@ -499,13 +499,17 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     except frappe.DoesNotExistError:
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
+
+    if not validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
+        return False
+
     current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
     if current_doctype != "Stock Movement" and s_warehouse and t_warehouse and s_warehouse != t_warehouse:
         frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
     allow_model_change = frappe.db.get_value("Department", department, "allow_model_change")
     print("allow_model_change=================",allow_model_change )
 
-    if not allow_model_change:
+    if department != s_department and not allow_model_change:
         item_code = serial_doc.get("item_code")
         print("item_code=================",item_code )
         to_make = serial_doc.get("to_make")
@@ -517,14 +521,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         print("to_make_model=================",to_make_model )
 
         if item_code_model and to_make_model and item_code_model != to_make_model:
-            model_mismatch_message = (
-                f"Reconfiguration not allowed for Department <b>{department}</b>. "
-                f"Item Code Model <b>{item_code_model}</b> and To Make Model <b>{to_make_model}</b> must be same."
-            )
-            error_messages.append(model_mismatch_message)
-            if model_mismatch_messages is not None:
-                model_mismatch_messages.append(model_mismatch_message)
-            return False
+            frappe.db.set_value("Serial No", serial_no, "to_make", item_code)
+            to_make = item_code
+            to_make_model = item_code_model
 
         if item_code and to_make and item_code != to_make:
             error_messages.append(
@@ -602,7 +601,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                 StoresWarehouses AS (
                     SELECT sn.name,w.department
                     FROM `tabSerial No` sn inner join`tabWarehouse` w on w.name=sn.warehouse
-                    WHERE w.department = %s and w.warehouse_type='Employee Personal Warehouse' and sn.item_group in ({sla_item_group_placeholders})
+                    WHERE w.department = %s and w.warehouse_type !='Employee Personal Warehouse' and sn.item_group in ({sla_item_group_placeholders})
                 )
 
                 ,SLEData AS (
@@ -719,6 +718,61 @@ def get_nj_settings_comma_separated_values(parameter):
         if item_group and item_group.strip()
     ]
 
+def validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
+    nj_value = frappe.db.get_value('NJ Settings', {'parameter': 'stock_movement_function_restriction'}, 'value')
+    if (nj_value or "").strip().lower() != "enable":
+        return True
+
+    dept_restriction = frappe.db.get_value('Department', s_department, 'run_production_planning') if s_department else 0
+    if not int(dept_restriction or 0):
+        return True
+
+    stock_movement_item_groups = get_nj_settings_comma_separated_values("stock_movement_item_groups")
+    print("stock_movement_item_groups ===================", stock_movement_item_groups)
+    serial_item_group = serial_doc.get("item_group")
+    print("serial_item_group ===================", serial_item_group)
+
+    if not stock_movement_item_groups or serial_item_group not in stock_movement_item_groups:
+        return True
+
+    nj_production_name = _get_latest_nj_production_plan_name()
+    print("nj_production_name ===================", nj_production_name)
+    if not nj_production_name:
+        error_messages.append(
+            "Latest NJ Production Planning not found. "
+            f"Serial No <b>{serial_no}</b> cannot be validated."
+        )
+        return False
+
+    serial_exists = frappe.db.exists(
+        "Final Production Planning Data",
+        {
+            "parent": nj_production_name,
+            "parenttype": "NJ Production Planning",
+            "parentfield": "lines",
+            "serial_no": serial_no,
+        },
+    )
+
+    if not serial_exists:
+        error_messages.append(
+            f"Serial No <b>{serial_no}</b> does not exist in Latest NJ Production Planning "
+            f"<b>{nj_production_name}</b>."
+        )
+        return False
+
+    return True
+
+def _get_latest_nj_production_plan_name():
+    latest_plan = frappe.get_all(
+        "NJ Production Planning",
+        filters={"docstatus": ["!=", 2]},
+        fields=["name"],
+        order_by="creation desc",
+        limit=1,
+    )
+    print("latest_plan=====================", latest_plan)
+    return latest_plan[0].name if latest_plan else None
 def suggested_warehouse_validation(doc, t_warehouse, error_messages):
 
     if not t_warehouse:

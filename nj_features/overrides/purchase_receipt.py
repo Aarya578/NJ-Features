@@ -52,9 +52,9 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             super(CustomPurchaseReceipt, self).on_submit()
             log_pr_time("super().on_submit()", self.name, start)
 
-            start = time.perf_counter()
-            self.auto_closure_mr_via_pr()
-            log_pr_time("auto_closure_mr_via_pr", self.name, start)
+            # start = time.perf_counter()
+            # self.auto_closure_mr_via_pr()
+            # log_pr_time("auto_closure_mr_via_pr", self.name, start)
 
             start = time.perf_counter()
             self.set_registry_no_on_submit()

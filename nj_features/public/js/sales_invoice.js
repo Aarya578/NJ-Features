@@ -1,5 +1,6 @@
 frappe.ui.form.on('Sales Invoice', {
     refresh: function(frm) {   
+        disable_taxes_manual_delete(frm);
         // remove "Update Items" button from UI
         frm.remove_custom_button('Update Items');     
         // Ensure the button is shown even if update_stock == 1
@@ -18,6 +19,7 @@ frappe.ui.form.on('Sales Invoice', {
         }
     },
      onload(frm) {
+        disable_taxes_manual_delete(frm);
         if (Number(frm.doc.docstatus || 0) === 0 && Number(frm.doc.is_debit_note || 0) === 0) {
             update_gst_tax_type_from_nj_settings(frm);
         }
@@ -110,14 +112,36 @@ frappe.ui.form.on('Sales Invoice', {
 
     },
     before_save(frm) {
+        disable_taxes_manual_delete(frm);
         apply_allocated(frm);
     },
 
     grand_total(frm) {
+        disable_taxes_manual_delete(frm);
         apply_allocated(frm);
     }
     
 });
+
+function disable_taxes_manual_delete(frm) {
+    const grid = frm.get_field("taxes") && frm.get_field("taxes").grid;
+    if (!grid) return;
+
+    grid.cannot_delete_rows = true;
+
+    const hide_delete_controls = () => {
+        const wrapper = grid.wrapper;
+        if (!wrapper) return;
+
+        wrapper.find(".grid-remove-rows, .grid-delete-row").hide();
+        wrapper.find(".grid-row-check, .row-check").hide();
+        wrapper.find(".grid-row").removeClass("grid-row-open");
+        wrapper.find("input[type='checkbox']").prop("checked", false);
+    };
+
+    hide_delete_controls();
+    setTimeout(hide_delete_controls, 100);
+}
 // function update_gst_tax_type_from_nj_settings(frm) {
 //     console.log("updating============================");
 

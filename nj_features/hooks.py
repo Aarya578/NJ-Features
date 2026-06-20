@@ -227,7 +227,7 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.mr_raise_for_laptop_adaptors",
         ],
 
-        "50 23 * * *": [
+        "55 23 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.collect_all_purpose_material_issue",
         ],
         "30 23 * * *": [

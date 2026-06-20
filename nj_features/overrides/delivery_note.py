@@ -301,7 +301,7 @@ class CustomDeliveryNote(DeliveryNote):
                 # Other operations (each timed)
                 # ------------------------------------------------------------------
                    
-                # self.validate_dn_vs_si()
+                self.validate_dn_vs_si()
 
                 with log_time("delete_department_history", self.name):
                     self.delete_department_history()
@@ -339,8 +339,8 @@ class CustomDeliveryNote(DeliveryNote):
                 # with log_time("qi_mandatory_checks_on_dn_submit", self.name):
                 #     qi_mandatory_checks_on_dn_submit(self)
 
-                with log_time("qc_nj_of_days_checking", self.name):
-                    self.qc_nj_of_days_checking()
+                # with log_time("qc_nj_of_days_checking", self.name):
+                #     self.qc_nj_of_days_checking()
 
                 # ------------------------------------------------------------------
                 # Post-processing based on return/non-return
@@ -376,6 +376,7 @@ class CustomDeliveryNote(DeliveryNote):
 
 
     def _process_customer_details(self):
+        
         try:
             serial_nos = set()
             dn_items = frappe.db.sql("""

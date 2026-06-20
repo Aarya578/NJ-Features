@@ -2583,6 +2583,7 @@ def _get_pp_fully_consumed_departments(consumed_stock_details):
 def _get_pp_shortage_items(template_department_qty, consumables_by_template):
     required_qty_by_item = defaultdict(float)
     schedule_days_by_item = defaultdict(list)
+    item_templates_by_item = defaultdict(set)
     stock_departments = set()
     fully_consumed_qty_departments = set()
 
@@ -2593,6 +2594,8 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
 
         for consumable in consumables_by_template.get(item_template, []):
             required_qty_by_item[consumable.item_code] += flt(consumable.quantity) * planned_qty
+            if item_template:
+                item_templates_by_item[consumable.item_code].add(item_template)
 
             stock_target_departments = []
             if current_department:
@@ -2675,6 +2678,7 @@ def _get_pp_shortage_items(template_department_qty, consumables_by_template):
             shortage_items.append({
                 "item_code": item_code,
                 "qty": flt(shortage_qty, 6),
+                "item_template": ", ".join(sorted(item_templates_by_item.get(item_code) or [])),
                 "schedule_days": schedule_days_by_item.get(
                     item_code,
                     [PP_MR_DEFAULT_SCHEDULE_DAYS],
@@ -2868,7 +2872,14 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
     )
 
     for item in shortage_items:
-        print("PP MR append item:", item["item_code"], "qty:", item["qty"])
+        print(
+            "PP MR append item:",
+            item["item_code"],
+            "qty:",
+            item["qty"],
+            "item_template:",
+            item.get("item_template"),
+        )
         mr.append("items", {
             "item_code": item["item_code"],
             "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
@@ -2876,6 +2887,7 @@ def mr_raise_from_priduction_plan(doc=None, method=None):
             "schedule_date": schedule_date,
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+            "mavni_comments": item.get("item_template"),
         })
 
     mr.insert(ignore_permissions=True)
@@ -2911,11 +2923,12 @@ def cosumables_material_issue_mr(doc=None, method=None):
             mri.qty,
             mri.schedule_date,
             mri.warehouse,
+            mri.mavni_comments,
             w.department AS source_department,
             mr.fully_consumed_qty_departments
         FROM `tabMaterial Request Item` mri
         INNER JOIN `tabMaterial Request` mr
-            ON mr.name = mri.parentin
+            ON mr.name = mri.parent
         LEFT JOIN `tabWarehouse` w
             ON w.name = mri.warehouse
         WHERE mr.material_request_type = 'Material Issue'
@@ -3009,10 +3022,13 @@ def cosumables_material_issue_mr(doc=None, method=None):
     issue_qty_by_item = defaultdict(float)
     issue_mr_names_by_item = defaultdict(set)
     issue_warehouse_by_item = {}
+    item_templates_by_item = defaultdict(set)
     schedule_days_by_item = defaultdict(list)
     for row in material_issues:
         issue_qty_by_item[row.item_code] += flt(row.qty)
         issue_mr_names_by_item[row.item_code].add(row.parent)
+        for item_template in _split_pp_department_names(row.get("mavni_comments")):
+            item_templates_by_item[row.item_code].add(item_template)
         if row.get("warehouse"):
             issue_warehouse_by_item.setdefault(row.item_code, row.warehouse)
 
@@ -3095,6 +3111,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
                 or default_target_warehouse
             ),
             "material_issue_mrs": issue_mr_names,
+            "item_template": ", ".join(sorted(item_templates_by_item.get(item_code) or [])),
             "schedule_days": schedule_days_by_item.get(
                 item_code,
                 [PP_MR_DEFAULT_SCHEDULE_DAYS],
@@ -3189,6 +3206,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
                 "item_code:", item["item_code"],
                 "qty:", item["qty"],
                 "warehouse:", item.get("warehouse"),
+                "item_template:", item.get("item_template"),
                 "schedule_days:", item.get("schedule_days"),
                 "source_material_issue_mrs:", item.get("material_issue_mrs"),
             )
@@ -3199,6 +3217,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
                 "create_reference": "NJ Production Planning ALL Material Issue",
                 "schedule_date": schedule_date,
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+                "mavni_comments": item.get("item_template"),
             }
             if item.get("warehouse"):
                 item_row["warehouse"] = item.get("warehouse")
@@ -3355,6 +3374,17 @@ def _get_laptop_adaptor_item_skip_reason(item_code, item_doc=None):
 
     return None
 
+
+def _get_laptop_adaptor_mr_serial_nos(serial_nos, qty):
+    if isinstance(serial_nos, str):
+        serial_nos = [
+            serial_no.strip()
+            for serial_no in serial_nos.split(",")
+            if serial_no.strip()
+        ]
+
+    qty = max(int(flt(qty)), 0)
+    return list(serial_nos or [])[:qty]
 
 
 def _get_laptop_adaptor_grade_a_items():
@@ -3638,19 +3668,27 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
         )
 
         if shortage_qty > PP_MR_MIN_QTY:
+            stock_consumed_qty = flt(required_qty - shortage_qty, 6)
+            serial_no_list = list(wizard_row.get("serial_nos") or [])
+            shortage_serial_nos = serial_no_list[
+                int(stock_consumed_qty):int(stock_consumed_qty + shortage_qty)
+            ]
             shortage_item = shortage_by_item.setdefault(shortage_item_code, {
                 "item_code": shortage_item_code,
                 "qty": 0,
                 "schedule_days": [],
+                "serial_nos": [],
                 "mr_rised_departments": set(),
             })
             shortage_item["qty"] = flt(shortage_item["qty"] + shortage_qty, 6)
+            shortage_item["serial_nos"].extend(shortage_serial_nos)
             shortage_item["mr_rised_departments"].update(stock_used_departments)
             print(
                 "PP MR laptop adaptor creatable MR item:",
                 "item_wizard:", wizard_row.get("item_wizard"),
                 "item_code:", shortage_item_code,
                 "qty_to_raise:", flt(shortage_qty, 6),
+                "serial_nos:", shortage_serial_nos,
                 "mr_rised_departments:", sorted(shortage_item["mr_rised_departments"]),
             )
         else:
@@ -3672,6 +3710,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
             item["item_code"],
             [PP_MR_DEFAULT_SCHEDULE_DAYS],
         )
+        item["serial_nos"] = ", ".join(item.get("serial_nos") or [])
         item["mr_rised_departments"] = ", ".join(sorted(item.get("mr_rised_departments") or []))
 
     print("PP MR laptop adaptor shortage items count:", len(shortage_items))
@@ -3681,6 +3720,7 @@ def _build_laptop_adaptor_shortage_items(item_wizard_data, department_stock):
             "item_code:", item["item_code"],
             "qty:", item["qty"],
             "schedule_days:", item.get("schedule_days"),
+            "serial_nos:", item.get("serial_nos"),
             "mr_rised_departments:", item.get("mr_rised_departments"),
         )
     return shortage_items
@@ -3740,14 +3780,24 @@ def _create_laptop_adaptor_mr(plan_name, shortage_items):
     mr.post_order_status = ""
 
     for item in shortage_items:
-        print("PP MR laptop adaptor append item:", item["item_code"], "qty:", item["qty"])
+        mr_qty = _round_pp_qty_for_item_uom(item["item_code"], item["qty"])
+        mr_serial_nos = _get_laptop_adaptor_mr_serial_nos(item.get("serial_nos"), mr_qty)
+        print(
+            "PP MR laptop adaptor append item:",
+            item["item_code"],
+            "qty:",
+            item["qty"],
+            "serial_nos:",
+            mr_serial_nos,
+        )
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
+            "qty": mr_qty,
             "schedule_date": schedule_date,
             "create_reference": "Laptop Adaptor NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+            "mavni_comments": ", ".join(mr_serial_nos),
         })
 
     mr.insert(ignore_permissions=True)
@@ -3824,7 +3874,7 @@ def get_laptop_adaptor_serial_nos(production_plan):
     serial_nos = frappe.db.sql("""
         SELECT
             fppd.parent,
-            GROUP_CONCAT(fppd.serial_no) AS serial_nos,
+            GROUP_CONCAT(fppd.serial_no ORDER BY fppd.serial_no) AS serial_nos,
             GROUP_CONCAT(fppd.current_department) AS current_departments,
             sn.item_wizard,
             COUNT(*) AS serial_no_count
@@ -4102,6 +4152,10 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         AND (
             b.item_code LIKE '%%GRADE A%%'
             OR b.item_code LIKE '%%GRADE D%%'
+            OR (
+                i.item_group = 'Laptop Adaptors'
+                AND b.item_code LIKE '%%GRADE B%%'
+            )
         )
     """, as_dict=True)
 
@@ -4150,7 +4204,9 @@ def collect_all_purpose_material_issue(doc=None, method=None):
     stock_qty_by_item = defaultdict(float)
     stock_warehouse_by_item = {}
     grade_a_stock_by_key = defaultdict(float)
+    grade_b_stock_by_key = defaultdict(float)
     grade_d_stock_by_key = defaultdict(float)
+    grade_b_item_by_key = {}
     grade_d_item_by_key = {}
     for row in stock_data:
         stock_qty_by_item[row.item_code] += flt(row.actual_qty)
@@ -4169,12 +4225,16 @@ def collect_all_purpose_material_issue(doc=None, method=None):
 
         if grade == "A":
             grade_a_stock_by_key[item_key] += flt(row.actual_qty)
+        elif grade == "B":
+            grade_b_stock_by_key[item_key] += flt(row.actual_qty)
+            grade_b_item_by_key.setdefault(item_key, row.item_code)
         elif grade == "D":
             grade_d_stock_by_key[item_key] += flt(row.actual_qty)
             grade_d_item_by_key.setdefault(item_key, row.item_code)
 
     print("all purpose stock qty by item===============", dict(stock_qty_by_item))
     print("all purpose GRADE A stock by key===============", dict(grade_a_stock_by_key))
+    print("all purpose GRADE B stock by key===============", dict(grade_b_stock_by_key))
     print("all purpose GRADE D stock by key===============", dict(grade_d_stock_by_key))
 
     issue_qty_by_item = defaultdict(float)
@@ -4246,10 +4306,18 @@ def collect_all_purpose_material_issue(doc=None, method=None):
 
         grade_a_stock_qty = flt(grade_a_stock_by_key.get(item_key))
         remaining_after_grade_a = flt(issue_qty - grade_a_stock_qty, 6)
+        is_laptop_adaptor = (
+            _normalize_laptop_storage_value(issue_item_group_by_item.get(item_code))
+            == _normalize_laptop_storage_value(PP_MR_LAPTOP_ADAPTOR_ITEM_GROUP)
+        )
         grade_d_item_code = grade_d_item_by_key.get(item_key)
         grade_d_stock_qty = flt(grade_d_stock_by_key.get(item_key))
-        manufacture_qty = min(max(remaining_after_grade_a, 0), grade_d_stock_qty)
-        purchase_qty = flt(max(remaining_after_grade_a - manufacture_qty, 0), 6)
+        grade_b_item_code = grade_b_item_by_key.get(item_key) if is_laptop_adaptor else None
+        grade_b_stock_qty = flt(grade_b_stock_by_key.get(item_key)) if is_laptop_adaptor else 0
+        manufacture_qty_from_grade_d = min(max(remaining_after_grade_a, 0), grade_d_stock_qty)
+        remaining_after_grade_d = flt(remaining_after_grade_a - manufacture_qty_from_grade_d, 6)
+        manufacture_qty_from_grade_b = min(max(remaining_after_grade_d, 0), grade_b_stock_qty)
+        purchase_qty = flt(max(remaining_after_grade_d - manufacture_qty_from_grade_b, 0), 6)
         issue_mr_names = sorted(issue_mr_names_by_item.get(item_code) or [])
         schedule_days = schedule_days_by_item.get(item_code, [PP_MR_DEFAULT_SCHEDULE_DAYS])
 
@@ -4263,7 +4331,10 @@ def collect_all_purpose_material_issue(doc=None, method=None):
             "remaining_after_grade_a:", remaining_after_grade_a,
             "grade_d_item_code:", grade_d_item_code,
             "grade_d_stock_qty:", grade_d_stock_qty,
-            "manufacture_qty_from_grade_d:", manufacture_qty,
+            "manufacture_qty_from_grade_d:", manufacture_qty_from_grade_d,
+            "grade_b_item_code:", grade_b_item_code,
+            "grade_b_stock_qty:", grade_b_stock_qty,
+            "manufacture_qty_from_grade_b:", manufacture_qty_from_grade_b,
             "purchase_qty_for_grade_a:", purchase_qty,
             "material_issue_mrs:", ", ".join(issue_mr_names),
         )
@@ -4278,11 +4349,11 @@ def collect_all_purpose_material_issue(doc=None, method=None):
             )
             continue
 
-        if manufacture_qty > PP_MR_MIN_QTY and grade_d_item_code:
+        if manufacture_qty_from_grade_d > PP_MR_MIN_QTY and grade_d_item_code:
             _add_all_purpose_shortage_item(
                 manufacture_shortage_by_item,
                 grade_d_item_code,
-                manufacture_qty,
+                manufacture_qty_from_grade_d,
                 stock_warehouse_by_item.get(grade_d_item_code) or default_target_warehouse,
                 item_code,
                 issue_mr_names,
@@ -4293,7 +4364,27 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 "source_grade_a_item_code:", item_code,
                 "item_group:", issue_item_group_by_item.get(item_code),
                 "grade_d_item_code:", grade_d_item_code,
-                "qty:", manufacture_qty,
+                "qty:", manufacture_qty_from_grade_d,
+                "schedule_days:", schedule_days,
+                "source_material_issue_mrs:", ", ".join(issue_mr_names),
+            )
+
+        if manufacture_qty_from_grade_b > PP_MR_MIN_QTY and grade_b_item_code:
+            _add_all_purpose_shortage_item(
+                manufacture_shortage_by_item,
+                grade_b_item_code,
+                manufacture_qty_from_grade_b,
+                stock_warehouse_by_item.get(grade_b_item_code) or default_target_warehouse,
+                item_code,
+                issue_mr_names,
+                schedule_days,
+            )
+            print(
+                "all purpose creatable Manufacture MR item from GRADE B:",
+                "source_grade_a_item_code:", item_code,
+                "item_group:", issue_item_group_by_item.get(item_code),
+                "grade_b_item_code:", grade_b_item_code,
+                "qty:", manufacture_qty_from_grade_b,
                 "schedule_days:", schedule_days,
                 "source_material_issue_mrs:", ", ".join(issue_mr_names),
             )
@@ -5354,7 +5445,20 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
         shortage_item["ram_slots"].add(ram_slots)
         shortage_item["item_wizards"].add(item_wizard)
         shortage_item["required_ram_capacities"].add(required_ram_capacity)
-        shortage_item["serial_nos"].extend(row.get("serial_no") for row in serial_rows)
+        required_serial_nos = []
+        for row in serial_rows:
+            serial_no = row.get("serial_no")
+            if not serial_no:
+                continue
+
+            required_ram_qty = max(int(flt(row.get("required_ram_qty") or 1)), 1)
+            required_serial_nos.extend([serial_no] * required_ram_qty)
+
+        stock_consumed_qty = flt(required_qty - remaining_qty, 6)
+        shortage_serial_nos = required_serial_nos[
+            int(stock_consumed_qty):int(stock_consumed_qty + remaining_qty)
+        ]
+        shortage_item["serial_nos"].extend(shortage_serial_nos)
         shortage_item["mr_rised_departments"].update(group_stock_used_departments)
         for row in serial_rows:
             current_department = row.get("current_department")
@@ -5374,6 +5478,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "ram_slots:", ram_slots,
             "item_wizard:", item_wizard,
             "required_ram_capacity:", required_ram_capacity,
+            "serial_nos:", shortage_serial_nos,
         )
 
     shortage_items = []
@@ -5385,7 +5490,7 @@ def build_laptop_ram_shortage_items(diff_ram_serials, ram_wizard_combinations):
             "ram_slots": ", ".join(sorted(item["ram_slots"])),
             "item_wizards": ", ".join(sorted(item["item_wizards"])),
             "required_ram_capacities": ", ".join(sorted(item["required_ram_capacities"])),
-            "serial_nos": ", ".join(sorted(set(item["serial_nos"]))),
+            "serial_nos": ", ".join(item["serial_nos"]),
             "schedule_departments": ", ".join(sorted(department_serial_counts)),
             "department_serial_counts": department_serial_counts,
             "mr_rised_departments": ", ".join(sorted(item["mr_rised_departments"])),
@@ -5498,22 +5603,25 @@ def create_laptop_ram_material_issue_mr(plan_name, shortage_items):
     mr.post_order_status = ""
 
     for item in shortage_items:
+        mr_qty = _round_pp_qty_for_item_uom(item["item_code"], item["qty"])
+        mr_serial_nos = _get_laptop_adaptor_mr_serial_nos(item.get("serial_nos"), mr_qty)
         print(
             "Laptop RAM MR append item:",
             "item_code:", item["item_code"],
-            "qty:", item["qty"],
+            "qty:", mr_qty,
             "ram_slots:", item.get("ram_slots"),
             "item_wizards:", item.get("item_wizards"),
             "required_ram_capacities:", item.get("required_ram_capacities"),
-            "serial_nos:", item.get("serial_nos"),
+            "serial_nos:", mr_serial_nos,
         )
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
+            "qty": mr_qty,
             "schedule_date": schedule_date,
             "create_reference": "Laptop RAM NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+            "mavni_comments": ", ".join(mr_serial_nos),
         })
 
     mr.insert(ignore_permissions=True)
@@ -6468,21 +6576,24 @@ def create_laptop_storage_material_issue_mr(plan_name, shortage_items):
     mr.post_order_status = ""
 
     for item in shortage_items:
+        mr_qty = _round_pp_qty_for_item_uom(item["item_code"], item["qty"])
+        mr_serial_nos = _get_laptop_adaptor_mr_serial_nos(item.get("serial_nos"), mr_qty)
         print(
             "Laptop Storage MR append item:",
             "item_code:", item["item_code"],
-            "qty:", item["qty"],
+            "qty:", mr_qty,
             "item_wizards:", item.get("item_wizards"),
             "required_storage_capacities:", item.get("required_storage_capacities"),
-            "serial_nos:", item.get("serial_nos"),
+            "serial_nos:", mr_serial_nos,
         )
         mr.append("items", {
             "item_code": item["item_code"],
-            "qty": _round_pp_qty_for_item_uom(item["item_code"], item["qty"]),
+            "qty": mr_qty,
             "schedule_date": schedule_date,
             "create_reference": "Laptop Storage NJ Production",
             "warehouse": PP_MR_STORES_DEPARTMENT,
             "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
+            "mavni_comments": ", ".join(mr_serial_nos),
         })
 
     mr.insert(ignore_permissions=True)

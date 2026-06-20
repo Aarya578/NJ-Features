@@ -5021,6 +5021,28 @@ def update_performance_criteria(doc):
         criteria_rows
     )
 
+    # Save which Performance Criteria was used into NJQCA Result Parameters
+    criteria_source_label_map = {
+        "shopify_item_list": "Shopify Item List",
+        "performance_config_criteria": "Performance Config Criteria",
+        "nj_settings_fallback": "NJ Settings Fallback",
+        "not_found": "Not Found"
+    }
+
+    result.setdefault("changes", [])
+
+    result["changes"].append({
+        "item_group": "Software Configuration",
+        "parameter": "Performance_Criteria_Name",
+        "value": criteria_name or ""
+    })
+
+    result["changes"].append({
+        "item_group": "Software Configuration",
+        "parameter": "Performance_Criteria_Source",
+        "value": criteria_source_label_map.get(criteria_source, criteria_source or "")
+    })
+
     # Debug info for bench console
     result["criteria_source"] = criteria_source
     result["criteria_name"] = criteria_name

@@ -736,7 +736,9 @@ def upsert_njqca_result_parameter_row(doc, change):
     if value is None:
         value = ""
 
-    score = change.get("score") or ""
+    score = change.get("score")
+    if score is None:
+        score = ""
     part_config_id = change.get("part_config_id") or 0
 
     existing_row = None
@@ -764,6 +766,159 @@ def upsert_njqca_result_parameter_row(doc, change):
             "score": score,
             "part_config_id": part_config_id
         })
+AUTOPILOT_FILE_PARAM = "Autopilot_File_Uploaded"
+AUTOPILOT_STATUS_PARAM = "Autopilot_status"
+
+
+def _decode_autopilot_file_text(file_bytes):
+    """
+    Decode Autopilot result file.
+    Handles UTF-8 and UTF-16 LE files.
+    Example UTF-16 issue:
+        P\x00A\x00S\x00S\x00
+    """
+    if not file_bytes:
+        return ""
+
+    # UTF-16 with BOM
+    if file_bytes.startswith(b"\xff\xfe") or file_bytes.startswith(b"\xfe\xff"):
+        return file_bytes.decode("utf-16", errors="ignore").replace("\ufeff", "").strip()
+
+    # UTF-16 LE without BOM
+    # Example: P\x00A\x00S\x00S\x00
+    if b"\x00" in file_bytes[:200]:
+        return file_bytes.decode("utf-16-le", errors="ignore").replace("\ufeff", "").strip()
+
+    # Normal UTF-8
+    return file_bytes.decode("utf-8-sig", errors="ignore").replace("\x00", "").strip()
+
+
+def _parse_autopilot_status_from_text(text):
+    """
+    Reads Autopilot text and returns PASS or FAIL.
+    Expected:
+        PASS - Device is clean
+        FAIL - Device is not clean
+    """
+    text = str(text or "").replace("\ufeff", "").replace("\x00", "").strip()
+
+    if not text:
+        return "FAIL"
+
+    first_line = ""
+
+    for line in text.splitlines():
+        line = str(line or "").replace("\x00", "").strip()
+        if line:
+            first_line = line
+            break
+
+    if not first_line:
+        return "FAIL"
+
+    first_word = first_line.split()[0].strip().upper()
+
+    if first_word == "PASS":
+        return "PASS"
+
+    if first_word == "FAIL":
+        return "FAIL"
+
+    upper_text = text.upper()
+
+    if "PASS" in upper_text and "DEVICE IS CLEAN" in upper_text:
+        return "PASS"
+
+    if (
+        "FAIL" in upper_text
+        or "FAILED" in upper_text
+        or "NOT CLEAN" in upper_text
+        or "DEVICE IS NOT CLEAN" in upper_text
+    ):
+        return "FAIL"
+
+    return "FAIL"
+
+
+def _get_file_doc_from_autopilot_value(file_value):
+    """
+    file_value can be:
+    1. File docname like e1e5233f7b
+    2. file_url like /files/Autopilot_Check_Result.txt
+    3. file_name like Autopilot_Check_Result.txt
+    """
+    file_value = str(file_value or "").strip()
+
+    if not file_value:
+        return None
+
+    if frappe.db.exists("File", file_value):
+        return frappe.get_doc("File", file_value)
+
+    file_docname = frappe.db.get_value("File", {"file_url": file_value}, "name")
+    if file_docname:
+        return frappe.get_doc("File", file_docname)
+
+    file_docname = frappe.db.get_value("File", {"file_name": file_value}, "name")
+    if file_docname:
+        return frappe.get_doc("File", file_docname)
+
+    return None
+
+
+def apply_autopilot_status_to_doc(doc):
+    """
+    Reads Autopilot_File_Uploaded file,
+    parses PASS / FAIL,
+    and saves Autopilot_status in NJQCA Result Parameters.
+    """
+    try:
+        autopilot_file_value = ""
+        autopilot_item_group = "Laptop Adaptors"
+
+        # Take latest Autopilot_File_Uploaded row
+        for row in reversed(doc.get("njqca_result_parameters") or []):
+            parameter = str(row.get("parameter") or "").strip()
+
+            if parameter.lower() == AUTOPILOT_FILE_PARAM.lower():
+                autopilot_file_value = str(row.get("value") or "").strip()
+                autopilot_item_group = row.get("item_group") or "Laptop Adaptors"
+                break
+
+        if not autopilot_file_value:
+            return
+
+        file_doc = _get_file_doc_from_autopilot_value(autopilot_file_value)
+
+        if not file_doc:
+            upsert_njqca_result_parameter_row(doc, {
+                "item_group": autopilot_item_group,
+                "parameter": AUTOPILOT_STATUS_PARAM,
+                "value": "FAIL",
+                "score": 41,
+                "part_config_id": 0
+            })
+            return
+
+        file_bytes = _read_file_bytes_from_filedoctype(file_doc)
+        file_text = _decode_autopilot_file_text(file_bytes)
+
+        status = _parse_autopilot_status_from_text(file_text)
+        score = 0 if status == "PASS" else 41
+
+        upsert_njqca_result_parameter_row(doc, {
+            "item_group": autopilot_item_group,
+            "parameter": AUTOPILOT_STATUS_PARAM,
+            "value": status,
+            "score": score,
+            "part_config_id": 0
+        })
+
+    except Exception:
+        log_error(
+            frappe.get_traceback(),
+            "Error in apply_autopilot_status_to_doc"
+        )
 
 def _norm_njqca_param(value):
     return re.sub(r"\s+", " ", str(value or "").strip()).lower()
@@ -939,6 +1094,8 @@ class NJQCA(Document):
     def before_save(self):
         update_storage_type(self)
         apply_reliability_test_changes_to_doc(self)
+         # Read Autopilot file and save Autopilot_status = PASS / FAIL
+        apply_autopilot_status_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
         

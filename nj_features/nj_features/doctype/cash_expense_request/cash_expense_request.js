@@ -3,8 +3,19 @@ frappe.ui.form.on('Cash Expense Request', {
     refresh: function(frm) {
         console.log("Cash Expense Request JS Loaded");
 
+        // ── Hide Frappe's native Submit button ────────────────────────────────
+        if (frm.doc.docstatus === 0 && !frm.is_new()) {
+            frm.page.btn_primary.hide();
+        }
+
+        // Only non-group ledger accounts are valid
+        frm.set_query('expense_credit_account', function() {
+            return { filters: { is_group: 0 } };
+        });
+
         if (frm.doc.employee) {
             fetch_budget(frm);
+            fetch_credit_account(frm);
         }
 
         if (frm.doc.docstatus === 1 && !frm.__alert_shown) {
@@ -18,15 +29,26 @@ frappe.ui.form.on('Cash Expense Request', {
         setup_action_buttons(frm);
     },
 
+    // Safety net: intercept any native submit attempt that slips through
+    before_submit: function(frm) {
+        frappe.validated = false;
+        frappe.show_alert({
+            message: __("Please use the 'Submit & Create Journal Entry' button to post this expense."),
+            indicator: "orange"
+        }, 5);
+    },
+
     employee: function(frm) {
         if (!frm.doc.employee) {
             frm.set_value("department", null);
             frm.set_value("cost_center", null);
+            frm.set_value("expense_credit_account", null);
             frm.set_value("monthly_budget", 0);
             frm.set_value("used_this_month", 0);
             frm.set_value("remaining_budget", 0);
             frm.set_value("budget_exceeded", 0);
-            frm.__limit_dialog_shown = null;
+            frm.__limit_dialog_shown          = null;
+            frm.__credit_account_dialog_shown = null;
             return;
         }
 
@@ -41,6 +63,7 @@ frappe.ui.form.on('Cash Expense Request', {
         });
 
         fetch_budget(frm);
+        fetch_credit_account(frm);
     },
 
     amount: function(frm) {
@@ -53,14 +76,6 @@ frappe.ui.form.on('Cash Expense Request', {
 
 // ─────────────────────────────────────────────────────────────
 //  ACTION BUTTONS
-//
-//  Employee flow:
-//    Draft     → [Submit for Approval]
-//    Rejected  → [Resubmit]
-//
-//  Accounts flow:
-//    Submitted → [Submit & Create Journal Entry] + [Reject]
-//    Rejected  → [Resubmit]
 // ─────────────────────────────────────────────────────────────
 
 function setup_action_buttons(frm) {
@@ -97,7 +112,6 @@ function setup_action_buttons(frm) {
     // ── Submitted → Submit & Create JE + Reject (Accounts only) ──
     if (status === "Submitted" && is_accounts && frm.doc.docstatus === 0) {
 
-        // Primary action — post and create JE
         frm.add_custom_button(__("Submit & Create Journal Entry"), function() {
             frappe.confirm(
                 __("Submit this expense and create the Journal Entry? This cannot be undone."),
@@ -106,17 +120,27 @@ function setup_action_buttons(frm) {
                         method: MODULE + ".post_request",
                         args: { docname: frm.doc.name },
                         callback: function(r) {
-                            if (r.message) {
-                                frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
-                                frm.reload_doc();
+                            if (!r.message) return;
+
+                            // Credit account missing on the form — point user to the field
+                            if (r.message.missing_credit_account) {
+                                frappe.msgprint({
+                                    title: __("Credit Account Missing"),
+                                    message: __("Please set the <b>Expense Credit Account</b> field on this form before posting."),
+                                    indicator: "orange"
+                                });
+                                return;
                             }
+
+                            // Success
+                            frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
+                            frm.reload_doc();
                         }
                     });
                 }
             );
         }).addClass("btn-primary");
 
-        // Reject alongside
         frm.add_custom_button(__("Reject"), function() {
             frappe.prompt(
                 { fieldtype: "Small Text", fieldname: "reason", label: "Rejection Reason", reqd: 1 },
@@ -219,6 +243,46 @@ function fetch_budget(frm) {
                 frappe.show_alert({ message: __("Amount exceeds remaining budget of \u20b9{0}", [remaining]), indicator: "red" }, 4);
             } else {
                 frm.set_value("budget_exceeded", 0);
+            }
+        }
+    });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+//  FETCH & AUTO-FILL CREDIT ACCOUNT
+//
+//  On employee select:
+//    • If Employee.expense_credit_account is set → auto-fill the field on this doc
+//    • If not set → show orange alert pointing to the field so user can fill manually
+//  Field remains editable at all times for manual override.
+// ─────────────────────────────────────────────────────────────
+
+function fetch_credit_account(frm) {
+    if (!frm.doc.employee) return;
+    if (frm.doc.docstatus === 1) return;
+
+    // Already set (saved doc or manual entry) — nothing to do
+    if (frm.doc.expense_credit_account) return;
+
+    frappe.call({
+        method: "nj_features.nj_features.doctype.cash_expense_request.cash_expense_request.get_employee_credit_account",
+        args: { employee: frm.doc.employee },
+        callback: function(r) {
+            if (!r.message) return;
+
+            if (r.message.credit_account) {
+                // Auto-fill from Employee record
+                frm.set_value("expense_credit_account", r.message.credit_account);
+            } else {
+                // Not set on Employee — alert user to fill the field manually
+                if (frm.__credit_account_dialog_shown === frm.doc.employee) return;
+                frm.__credit_account_dialog_shown = frm.doc.employee;
+
+                frappe.show_alert({
+                    message: __("Expense Credit Account not set for this employee. Please fill in the <b>Expense Credit Account</b> field."),
+                    indicator: "orange"
+                }, 6);
             }
         }
     });

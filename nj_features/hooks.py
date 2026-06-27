@@ -34,6 +34,7 @@ doctype_js = {
     "Quotation": "public/js/quotation.js",
     "Purchase Invoice": "public/js/purchase_invoice_override.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
+    "Item Attribute": "public/js/item_attribute.js"
 }
 
 doctype_list_js = {
@@ -164,6 +165,10 @@ scheduler_events = {
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
             "nj_features.nj_features.doctype.productivity.productivity.fetch_productivity_data",
+        ],
+
+        "0 0 */30 * *": [
+            "nj_features.overrides.item_attribute_scheduler.uncheck_item_attribute_is_valid",
         ],
 
         "45 7 * * *": [

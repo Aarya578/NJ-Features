@@ -88,6 +88,10 @@ frappe.ui.form.on('Serial No', {
             get_report_data(frm);
         }).addClass('btn-primary');
 
+        frm.add_custom_button(__('Print QR Code'), function() {
+            printQRCode(frm);
+        });
+
         if (frappe.user.has_role(["Item Wizard Manager"]) || frappe.user.has_role(["Item Manager"])) {
             frm.set_df_property('serial_no_component', 'read_only', 0);
             frm.set_df_property('model', 'read_only', 0);

@@ -92,6 +92,7 @@ frappe.ui.form.on("NJQCA", {
   },
 
   refresh: function (frm) {
+    resetNJQCATransferPromptState(frm);
     promptNJQCATransferForCreatedUser(frm);
     triggerNJQCAWarehouseValidationForDifferentWarehouse(frm);
 
@@ -1692,6 +1693,15 @@ async function syncNJQCAFormWarehouse(frm, warehouse) {
   frm.refresh_field("warehouse");
   frm.__warehouse_transfer_prompted_for =
     getNJQCAWarehouseTransferPromptKey(frm);
+}
+
+function resetNJQCATransferPromptState(frm) {
+  if (isNJQCATransferDialogActive(frm)) {
+    return;
+  }
+
+  frm.__warehouse_transfer_prompted_for = "";
+  frm.__created_user_transfer_prompted_for = "";
 }
 
 async function triggerNJQCAWarehouseValidationForDifferentWarehouse(frm) {

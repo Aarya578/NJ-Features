@@ -19,8 +19,6 @@ class CashExpenseRequest(Document):
             if not ACCOUNTS_ROLES.intersection(user_roles):
                 self.check_employee_limit()
 
-                
-
     def fetch_department(self):
         if self.employee:
             department = frappe.db.get_value("Employee", self.employee, "department")
@@ -110,31 +108,27 @@ class CashExpenseRequest(Document):
                 f"{category.expense_account} is a Group Account. Please select a Ledger Account."
             )
 
+        # Fetch company — try session default first, then from Employee record
         company = frappe.defaults.get_user_default("Company")
         if not company:
-            frappe.throw("Default Company is not set")
+            company = frappe.db.get_value("Employee", self.employee, "company")
+        if not company:
+            frappe.throw("Default Company is not set. Please set a Default Company for your user or on the Employee record.")
 
-        company_doc = frappe.get_doc("Company", company)
-
-        credit_account = None
-
-        if self.department:
-            credit_account = frappe.db.get_value(
-                "Department", self.department, "expense_credit_account"
-            )
-
-        if not credit_account:
-            credit_account = self._get_mode_credit_account(company, company_doc)
+        # Credit account: use the field on this document (auto-filled from Employee or manually set)
+        credit_account = self.expense_credit_account
 
         if not credit_account:
             frappe.throw(
-                "No valid credit ledger account found. "
-                "Set 'Expense Credit Account' on the Department or configure company defaults."
+                "Expense Credit Account is not set. "
+                "Please set it on this Cash Expense Request before posting.",
+                title="Credit Account Missing"
             )
 
         if frappe.db.get_value("Account", credit_account, "is_group"):
             frappe.throw(
-                f"{credit_account} is a Group Account. Please select a Ledger Account."
+                f"The Expense Credit Account <b>{credit_account}</b> is a Group Account. "
+                "Please select a Ledger (non-group) Account."
             )
 
         je = frappe.get_doc({
@@ -158,46 +152,6 @@ class CashExpenseRequest(Document):
         je.insert(ignore_permissions=True)
         je.submit()
         self.db_set("accounts_entry", je.name)
-
-    def _get_mode_credit_account(self, company, company_doc):
-        mode = self.mode or ""
-
-        if mode == "Cash":
-            account = company_doc.default_cash_account
-            if not account:
-                account = frappe.db.get_value(
-                    "Account",
-                    {"company": company, "account_type": "Cash", "is_group": 0},
-                    "name"
-                )
-            return account
-
-        if mode in ("Online", "Bank Transfer", "UPI"):
-            account = company_doc.default_bank_account
-            if not account:
-                account = frappe.db.get_value(
-                    "Account",
-                    {"company": company, "account_type": "Bank", "is_group": 0},
-                    "name"
-                )
-            return account
-
-        if mode == "Reimbursement":
-            account = company_doc.default_payable_account
-            if not account:
-                account = frappe.db.get_value(
-                    "Account",
-                    {
-                        "company": company,
-                        "root_type": "Liability",
-                        "is_group": 0,
-                        "account_type": ["!=", "Receivable"]
-                    },
-                    "name"
-                )
-            return account
-
-        return None
 
 
 # ============================================================
@@ -281,6 +235,18 @@ def get_employee_budget(employee):
 
 
 # ============================================================
+# API — FETCH EMPLOYEE CREDIT ACCOUNT FOR UI
+# ============================================================
+
+@frappe.whitelist()
+def get_employee_credit_account(employee):
+    if not employee:
+        return {}
+    account = frappe.db.get_value("Employee", employee, "expense_credit_account")
+    return {"credit_account": account or None}
+
+
+# ============================================================
 # ACTION — SUBMIT (Draft → Submitted)
 # Employee + Accounts
 # ============================================================
@@ -335,7 +301,9 @@ def reject_request(docname, reason=""):
 
 # ============================================================
 # ACTION — POST (Submitted → Posted)
-# Creates JE via on_submit, Accounts only
+# Creates JE via on_submit. Accounts only.
+# Pre-checks expense_credit_account on the doc itself
+# (auto-filled from Employee or manually set on the form).
 # ============================================================
 
 @frappe.whitelist()
@@ -347,7 +315,11 @@ def post_request(docname):
     if doc.current_status != "Submitted":
         frappe.throw(f"Cannot post. Current status is {doc.current_status}.")
 
-    # Set approver details before submitting
+    # Pre-check: expense_credit_account must be set on the document itself.
+    # Return structured response so JS shows a targeted message instead of raw throw.
+    if not doc.expense_credit_account:
+        return {"missing_credit_account": True}
+
     doc.approved_by   = frappe.session.user
     doc.approval_date = nowdate()
     doc.flags.ignore_permissions = True

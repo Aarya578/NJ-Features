@@ -19,6 +19,11 @@ frappe.ui.form.on('Employee', {
         frm.set_query('employee_asset_warehouse', function() {
             return { filters: { warehouse_owner: frm.doc.user_id ? frm.doc.user_id : frm.doc.prefered_email, disabled: 0, warehouse_type: "Employee Personal Warehouse" } };
         });
+
+        // Only non-group ledger accounts are valid as the expense credit account
+        frm.set_query('expense_credit_account', function() {
+            return { filters: { is_group: 0 } };
+        });
     },
 
     after_save: function(frm) {

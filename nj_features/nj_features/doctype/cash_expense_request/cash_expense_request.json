@@ -12,6 +12,7 @@
   "expense_category",
   "project",
   "cost_center",
+  "expense_credit_account",
   "mode",
   "amount",
   "gst_included",
@@ -55,7 +56,7 @@
    "fieldtype": "Date",
    "label": "Expense Date",
    "reqd": 1,
-   "in_list_view": 1 
+   "in_list_view": 1
   },
   {
    "fieldname": "expense_category",
@@ -77,6 +78,13 @@
    "options": "Cost Center"
   },
   {
+   "fieldname": "expense_credit_account",
+   "fieldtype": "Link",
+   "label": "Expense Credit Account",
+   "options": "Account",
+   "in_list_view": 0
+  },
+  {
    "fieldname": "mode",
    "fieldtype": "Select",
    "label": "Mode",
@@ -88,7 +96,7 @@
    "fieldtype": "Currency",
    "label": "Amount",
    "reqd": 1,
-   "in_list_view": 1 
+   "in_list_view": 1
   },
   {
    "default": "0",
@@ -191,7 +199,6 @@
    "read_only": 0,
    "in_standard_filter": 1,
    "in_list_view": 1
-
   },
   {
    "fieldname": "amended_from",

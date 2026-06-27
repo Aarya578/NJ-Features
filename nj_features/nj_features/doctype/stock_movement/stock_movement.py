@@ -10,6 +10,8 @@ from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 # from nj_p1_features.nj_p1_features.doctype.machine_part_changes.machine_part_changes import get_part_ledger_entry
 logger = frappe.logger('Shopifys', allow_site=True, file_count=1)
 
+DEPARTMENT_SLA_HOLIDAY_LIST = "Holiday List 2026"
+
 
 def _split_department_names(departments):
     if not departments:
@@ -64,6 +66,11 @@ class StockMovement(Document):
         current_time = now_datetime()
         for item in self.items:
             if not item.s_warehouse or not item.t_warehouse or item.s_warehouse == item.t_warehouse:
+                continue
+
+            s_department = frappe.db.get_value('Warehouse', item.s_warehouse, 'department')
+            t_department = frappe.db.get_value('Warehouse', item.t_warehouse, 'department')
+            if s_department == t_department:
                 continue
 
             if not item.serial_no:
@@ -504,7 +511,13 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         return False
 
     current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
-    if current_doctype != "Stock Movement" and s_warehouse and t_warehouse and s_warehouse != t_warehouse:
+    if (
+        current_doctype != "Stock Movement"
+        and s_warehouse
+        and t_warehouse
+        and s_warehouse != t_warehouse
+        and department != s_department
+    ):
         frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
     allow_model_change = frappe.db.get_value("Department", department, "allow_model_change")
     print("allow_model_change=================",allow_model_change )

@@ -273,7 +273,7 @@ def create_rq_doc():
 
     flags = {
         "enable_parent_override": getattr(rule_config, "enable_parent_override", 1),
-        "parent_threshold": getattr(rule_config, "parent_override_threshold", 2) or 2,
+        "parent_threshold": getattr(rule_config, "parent_override_threshold", 0) or 0,
         "enable_warranty": getattr(rule_config, "enable_warranty_rule", 1),
         "warranty_threshold": getattr(rule_config, "warranty_threshold", 2) or 2,
     }
@@ -427,7 +427,7 @@ def create_rq_doc():
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error
+                SELECT name, actual_qty, status, sync_error, shopify_quantity
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s 
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -441,7 +441,8 @@ def create_rq_doc():
                 updated_doc_names.add(existing_doc.name)
 
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
-                logger.debug(f"existing_qty================== {existing_qty}")
+                shopify_qty = safe_float(existing_doc.shopify_quantity)
+                logger.debug(f"existing_qty================== {existing_qty}, shopify_qty================== {shopify_qty}")
 
                 is_not_found = (
                     existing_doc.status == "Error" 
@@ -450,7 +451,11 @@ def create_rq_doc():
                 )
 
                 if not is_not_found:
-                    if (float(row.total_actual_qty) != existing_qty) or (existing_doc.status != "Completed"):
+                    if (
+                        (float(row.total_actual_qty) != existing_qty)
+                        or (existing_doc.status != "Completed")
+                        or (shopify_qty is not None and float(row.total_actual_qty) != shopify_qty)
+                    ):
                         frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                             "is_active": 1,
                             "sync_error": update_status,
@@ -737,5 +742,3 @@ def get_shopify_variants(product_ids, shop, token):
     except Exception as e:
         log_error(f"Error in get_shopify_variants_method: {str(e)}\n{frappe.get_traceback()}", "Error in get_shopify_variants_method")
         return None
-
-

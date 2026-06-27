@@ -2419,7 +2419,7 @@ def _get_pp_template_department_qty(plan_name):
         WHERE
             f.parent = %(plan_name)s
             AND f.item_code IS NOT NULL
-            AND IFNULL(w.used_for_consumables_stock, 0) = 1
+           
             AND i.item_group IN %(core_item_groups)s
         GROUP BY
             IFNULL(NULLIF(i.variant_of, ''), i.name),
@@ -2428,7 +2428,7 @@ def _get_pp_template_department_qty(plan_name):
         "plan_name": plan_name,
         "core_item_groups": tuple(PP_MR_CORE_ITEM_GROUPS),
     }, as_dict=1 ,debug=1)
-
+     # AND IFNULL(w.used_for_consumables_stock, 0) = 1
     print("PP MR template_department_qty count:", len(rows))
     return rows
 

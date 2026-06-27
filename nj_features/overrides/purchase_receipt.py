@@ -49,6 +49,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
         total_start = time.perf_counter()
         try:
             start = time.perf_counter()
+            frappe.flags.in_purchase_receipt = True
             super(CustomPurchaseReceipt, self).on_submit()
             log_pr_time("super().on_submit()", self.name, start)
 
@@ -66,6 +67,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
 
             get_batch(self)
         finally:
+            frappe.flags.in_purchase_receipt = False
             log_pr_time("CustomPurchaseReceipt.on_submit total", self.name, total_start)
     
     def on_cancel(self):

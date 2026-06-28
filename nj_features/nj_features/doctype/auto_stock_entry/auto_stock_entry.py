@@ -19,13 +19,15 @@ def submit_ste(t_warehouse, serial_no):
         if nj_serial_no and nj_serial_no.get('serial_no') is None:
             frappe.throw(f"Serial No <b>{serial_no}</b> not found.")
         serial_no = nj_serial_no.get('serial_no')
-        sn_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['item_code', 'warehouse', 'status'], as_dict=1)
+        sn_data = frappe.db.get_value('Serial No', {'name': serial_no}, ['item_code', 'warehouse', 'status'], as_dict=1, for_update=True)
         
         if sn_data is None:
             frappe.throw(f"Serial No <b>{serial_no}</b> not found.")
         else:
             if sn_data.get('status') != 'Active':
                 frappe.throw(f"Serial No <b>{serial_no}</b> is not Active.")
+            if sn_data.get('warehouse') == t_warehouse:
+                frappe.throw(f"Serial No <b>{serial_no}</b> is already in target warehouse <b>{t_warehouse}</b>.")
 
         check_validation_for_auto_stock_entry(t_warehouse, serial_no)
 

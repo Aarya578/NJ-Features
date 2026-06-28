@@ -129,8 +129,23 @@ def generate_and_save_qrcode(data, format='png'):
         print(f"  [QR FILE] full file_path: {file_path}")
 
         # Always write the QR code PNG to ensure the image on disk is in sync with the mapping in the database
-        url.png(file_path, scale=8)
-        print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk: {file_path}")
+        try:
+            url.png(file_path, scale=8)
+            print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk: {file_path}")
+        except (OSError, IOError) as e:
+            import errno
+            if e.errno == errno.EACCES and os.path.exists(file_path):
+                print(f"  [QR FILE] Permission denied on existing file. Attempting to delete and recreate: {file_path}")
+                try:
+                    os.remove(file_path)
+                    url.png(file_path, scale=8)
+                    print(f"  [QR FILE] ✅ QR PNG successfully WRITTEN to disk after recreation: {file_path}")
+                except Exception as sub_e:
+                    print(f"  [QR FILE] ❌ Failed to recreate and write QR PNG: {str(sub_e)}")
+                    raise
+            else:
+                raise
+
         print(f"  [generate_and_save_qrcode] END — returning: {encoded_data}\n  {'*'*50}")
         return encoded_data
 

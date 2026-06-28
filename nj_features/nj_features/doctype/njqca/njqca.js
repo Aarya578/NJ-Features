@@ -328,7 +328,7 @@ frappe.ui.form.on("NJQCA", {
       frm.set_value("merged_storage_item_code", 0);
       frm.refresh_field("merged_ram_item_code");
       frm.refresh_field("merged_storage_item_code");
-      processItemTemplate(frm);
+      // processItemTemplate(frm);
     }
     var selectedModel = frm.doc.model;
     var selectedBrand = frm.doc.brand;
@@ -2208,6 +2208,7 @@ function processItemTemplate(frm) {
               row.item_group === "Laptop Processors" &&
               frm.doc.fetched_processor_item_code == 0
             ) {
+              console.log("Adding Laptop Processor Row:", row);
               let newRow = frappe.model.add_child(
                 frm.doc,
                 "njqca_laptop_processors",
@@ -2231,10 +2232,10 @@ function processItemTemplate(frm) {
                 row.fetched_item_code,
               );
               frappe.model.set_value(
-                newRow.doctype,
-                newRow.name,
-                "item_template",
-                row.item_template,
+                  newRow.doctype,
+                  newRow.name,
+                  "item_template",
+                  frm.doc.item_group === "Desktops" ? "Desktop Processors" : "LAPTOP PROCESSOR"
               );
               frappe.model.set_value(
                 newRow.doctype,
@@ -3447,7 +3448,7 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
 
     const relationshipMap = {
       interfaces: {
-        SATA: ['2.5"'],
+        SATA: ['2.5"', "2280", "2242", "2230"],
         "M.2 NVME": ["2242", "2280"],
         "M.2 SATA": ["2242", "2230"],
         "M.2 PCI": ["2280"],
@@ -3464,11 +3465,11 @@ frappe.ui.form.on("NJQCA Laptop Storage", {
     const storage_filters = {
       SSD: {
         interfaces: ["SATA", "M.2 NVME", "M.2 SATA", "M.2 PCI", "M.SATA"],
-        lengths: ["2280", "2242", "22110", '2.5"'],
+        lengths: ["2280", "2242", "22110", '2.5"', '3.5"'],
       },
       HDD: {
         interfaces: ["SATA"],
-        lengths: ['2.5"'],
+        lengths: ['2.5"', "2280", "2242", "2230", '3.5"'],
       },
     };
 
@@ -3894,7 +3895,7 @@ frappe.ui.form.on("NJQCA PROCESSOR", {
 
         frm.refresh_field(grid.df.fieldname);
 
-        frappe.model.set_value(cdt, cdn, "item_template", "LAPTOP PROCESSOR");
+        // frappe.model.set_value(cdt, cdn, "item_template", "LAPTOP PROCESSOR");
         frm.refresh_field(grid.df.fieldname);
         generateProcessorItemCode(frm, cdt, cdn, child);
 

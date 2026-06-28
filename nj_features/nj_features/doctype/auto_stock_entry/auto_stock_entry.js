@@ -37,7 +37,12 @@ serial_no: function(frm) {
 	}
 
     if (frm.doc.serial_no) {
+		if (frm.is_submitting) {
+			frm.set_value('serial_no', '');
+			return;
+		}
 		if (isAutoStockEntryDuplicateScan(frm, 'serial_no')) return;
+		frm.is_submitting = true;
         frappe.call({
             method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.submit_ste',
             args: { serial_no: frm.doc.serial_no, t_warehouse: frm.doc.default_target_warehouse },
@@ -47,11 +52,13 @@ serial_no: function(frm) {
                 <br>Transferring Stock... Please Wait
             </div>`,
             callback: function(r) {
+				frm.is_submitting = false;
                 if (r && r.message) {
                     frappe.utils.play_sound('submit')
                 }
             },
             error: function(err) {
+				frm.is_submitting = false;
                 frappe.utils.play_sound('error')
             }
         })

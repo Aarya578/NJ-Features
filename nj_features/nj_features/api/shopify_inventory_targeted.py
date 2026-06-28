@@ -626,7 +626,7 @@ def stage_targeted_variants(variant_ids, settings):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error
+                SELECT name, actual_qty, status, sync_error, shopify_quantity
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -636,6 +636,7 @@ def stage_targeted_variants(variant_ids, settings):
             if existing:
                 existing_doc = existing[0]
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
+                shopify_qty = safe_float(existing_doc.shopify_quantity)
 
                 is_not_found = (
                     existing_doc.status == "Error" 
@@ -644,7 +645,10 @@ def stage_targeted_variants(variant_ids, settings):
                 )
 
                 if not is_not_found:
-                    if float(row.total_actual_qty) != existing_qty:
+                    if (
+                        float(row.total_actual_qty) != existing_qty
+                        or (shopify_qty is not None and float(row.total_actual_qty) != shopify_qty)
+                    ):
                         frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
                             "is_active": 1,
                             "sync_error": update_status,

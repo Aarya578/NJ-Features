@@ -700,18 +700,7 @@ def fill_nj_quality_reading_from_serial_or_itm_wizard(new_qi, inspection_type, i
                         'depends_on_linked_item_group': nj_readings_data.get('depends_on_linked_item_group'),
                     })
             new_qi.set('nj_quality_readings', [])
-            
             for reading in nj_quality_readings:
-                reading = reading.copy()
-
-                # Only remove Frappe system identity fields if they exist.
-                # This does not change item_group, quality_check, item, grade, qty, etc.
-                reading.pop("name", None)
-                reading.pop("parent", None)
-                reading.pop("parenttype", None)
-                reading.pop("parentfield", None)
-                reading.pop("idx", None)
-
                 new_qi.append('nj_quality_readings', reading)
         
         if response.get('initial_mandatory_rows'):
@@ -768,6 +757,8 @@ def upsert_njqca_result_parameter_row(doc, change):
         })
 AUTOPILOT_FILE_PARAM = "Autopilot_File_Uploaded"
 AUTOPILOT_STATUS_PARAM = "Autopilot_status"
+AUTOPILOT_PASS_SCORE = 0
+AUTOPILOT_FAIL_SCORE = 1
 
 
 def _decode_autopilot_file_text(file_bytes):
@@ -895,7 +886,7 @@ def apply_autopilot_status_to_doc(doc):
                 "item_group": autopilot_item_group,
                 "parameter": AUTOPILOT_STATUS_PARAM,
                 "value": "FAIL",
-                "score": 41,
+                "score": AUTOPILOT_FAIL_SCORE,
                 "part_config_id": 0
             })
             return
@@ -904,7 +895,7 @@ def apply_autopilot_status_to_doc(doc):
         file_text = _decode_autopilot_file_text(file_bytes)
 
         status = _parse_autopilot_status_from_text(file_text)
-        score = 0 if status == "PASS" else 41
+        score = AUTOPILOT_PASS_SCORE if status == "PASS" else AUTOPILOT_FAIL_SCORE
 
         upsert_njqca_result_parameter_row(doc, {
             "item_group": autopilot_item_group,
@@ -1094,15 +1085,14 @@ class NJQCA(Document):
     def before_save(self):
         update_storage_type(self)
         apply_reliability_test_changes_to_doc(self)
-         # Read Autopilot file and save Autopilot_status = PASS / FAIL
+        # Read Autopilot file and save Autopilot_status = PASS / FAIL
         apply_autopilot_status_to_doc(self)
         set_fail_for_empty_reliability_params(self)
-        apply_latest_reliability_status_to_doc(self)
         
-        # External RFQ NJQCA should not self-link.
-        # linked_ext should be used only when internal NJ serial is linked to external serial.
-        if self.rfq_id and self.linked_ext == self.serial_no:
-            self.linked_ext = ""
+         # External/RFQ NJQCA should never self-link.
+        # linked_ext should only be set on internal NJQCA after linking to EXT serial.
+        if self.rfq_id and self.serial_no and self.linked_ext == self.serial_no:
+            self.linked_ext = None
 
     def on_update(self):
         # EXT-NJ Linkage: Update reference_doctype_no on the created external Serial No
@@ -1206,8 +1196,8 @@ class NJQCA(Document):
                 frappe.msgprint("Error during submission: " + traceback.format_exc())
                 raise
 
-        # Clear EXT BIOS only when company/internal NJQCA is submitted.
-        # Do not clear BIOS when external RFQ NJQCA is submitted.
+        # Clear EXT BIOS only when internal/company NJQCA is submitted.
+        # Do not clear BIOS when external/RFQ NJQCA is submitted.
         if not self.rfq_id:
             self.remove_bios_from_linked_ext()
 
@@ -2258,10 +2248,6 @@ def get_info_from_serial_no(doc=None):
 
         sle = frappe.db.sql(sql_query, (bios_serial_no_in_ui), as_dict=1)
 
-        # If it's a standard NJQCA (no rfq_id), filter out any external/EXT serial numbers
-        if not doc_json.get('rfq_id') and sle:
-            sle = [s for s in sle if not s.get('name', '').startswith('EXT-')]
-
         if 'serial_no' in doc_json and not sle:
             serial_no = doc_json['serial_no']
 
@@ -2399,6 +2385,11 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         "qi_type": qi_type
     })
     
+    doc = frappe.get_doc("NJQCA", docname)
+
+    ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
+    if not int(ignore_part_validation):
+        update_part_item_code_from_child(doc)
     try:
         doc = frappe.get_doc("NJQCA", docname)
 
@@ -3013,6 +3004,8 @@ def get_item_code_for_each_part(doc):
                                         formatted_value = f"{tb_value} TB"
                                     elif numeric_value >= 60 and numeric_value <= 80:
                                         formatted_value = "64 GB"
+                                    elif numeric_value >= 120 and numeric_value <= 130:
+                                        formatted_value = "128 GB"
                                     else:
                                         formatted_value = f"{numeric_value} GB"
 
@@ -3604,6 +3597,8 @@ def construct_item_code(item_template, args_list):
 
             if variant and variant[0]['parent']:
                 return variant[0]['parent']
+        
+        print(f"Constructed item code: {concatenated_string} for item template: {item_template} and args: {args_list}")
 
         item_code = frappe.db.sql(query, (concatenated_string,), as_dict=True)
 
@@ -4335,364 +4330,6 @@ def get_status_parameter_list(setting_parameter):
 
     return [x.strip() for x in raw_value.replace("\n", ",").split(",") if x.strip()]
 
-# ==========================================================
-# RELIABILITY FINAL STATUS
-# ==========================================================
-
-RELIABILITY_STATUS_SETTING = "reliability_status_parameters"
-RELIABILITY_STATUS_PARAM = "Reliability_status"
-RELIABILITY_STATUS_REASON_PARAM = "Reliability_status_reason"
-RELIABILITY_STATUS_ITEM_GROUP = "Software Configuration"
-RELIABILITY_SOURCE_PARAM = "Latest_reliability_record_name"
-
-RAM_STORAGE_REPACK_ITEM_GROUPS = (
-    "laptop ram",
-    "laptop storage",
-)
-
-
-def _short_reliability_reason(value, max_len=135):
-    value = str(value or "").strip()
-    if len(value) <= max_len:
-        return value
-    return value[:max_len - 3] + "..."
-
-
-def _is_reliability_pass(value=None, score=None):
-    """
-    PASS condition:
-    1. score == 0
-    OR
-    2. value is PASS / PASSED / GOOD / OK
-    """
-    if score not in (None, ""):
-        try:
-            return float(score) == 0
-        except Exception:
-            pass
-
-    value = str(value or "").strip().upper()
-
-    if value in ("PASS", "PASSED", "GOOD", "OK"):
-        return True
-
-    if value.startswith("PASS"):
-        return True
-
-    return False
-
-
-def _get_result_parameter_map(rows):
-    result_map = {}
-
-    for row in rows or []:
-        parameter = str(row.get("parameter") or "").strip()
-        if not parameter:
-            continue
-
-        result_map[_norm_njqca_param(parameter)] = row
-
-    return result_map
-
-
-def _get_current_reliability_doc_source(doc):
-    """
-    If current NJQCA itself is Reliability Test,
-    use current child table data.
-    """
-    inspection_type = str(doc.get("inspection_type") or "").strip().lower()
-
-    if inspection_type != "reliability test":
-        return None
-
-    return {
-        "name": doc.get("name"),
-        "creation": doc.get("creation"),
-        "rows": doc.get("njqca_result_parameters") or [],
-        "source": "current_doc",
-    }
-
-
-def _get_latest_submitted_reliability_doc_source(doc):
-    """
-    For non-Reliability NJQCA records:
-    get latest submitted Reliability Test NJQCA for same serial/bios.
-    """
-    serial_no = str(doc.get("serial_no") or "").strip()
-    bios_serialno = str(doc.get("bios_serialno") or "").strip()
-    current_name = str(doc.get("name") or "").strip()
-
-    if not serial_no and not bios_serialno:
-        return None
-
-    filters = {
-        "serial_no": serial_no,
-        "bios_serialno": bios_serialno,
-        "current_name": current_name,
-    }
-
-    current_name_condition = ""
-    if current_name:
-        current_name_condition = "AND name != %(current_name)s"
-
-    if serial_no and bios_serialno:
-        match_condition = """
-            AND (
-                serial_no = %(serial_no)s
-                OR bios_serialno = %(bios_serialno)s
-            )
-        """
-    elif serial_no:
-        match_condition = "AND serial_no = %(serial_no)s"
-    else:
-        match_condition = "AND bios_serialno = %(bios_serialno)s"
-
-    latest = frappe.db.sql(f"""
-        SELECT name, creation
-        FROM `tabNJQCA`
-        WHERE docstatus = 1
-          AND inspection_type = 'Reliability Test'
-          AND item_group = 'Laptops'
-          {current_name_condition}
-          {match_condition}
-        ORDER BY creation DESC
-        LIMIT 1
-    """, filters, as_dict=True)
-
-    if not latest:
-        return None
-
-    latest_doc = latest[0]
-
-    rows = frappe.db.sql("""
-        SELECT parameter, value, score, item_group, part_config_id
-        FROM `tabNJQCA Result Parameters`
-        WHERE parent = %s
-    """, latest_doc.name, as_dict=True)
-
-    return {
-        "name": latest_doc.name,
-        "creation": latest_doc.creation,
-        "rows": rows,
-        "source": "latest_submitted",
-    }
-
-
-def _stock_entry_serial_condition(alias):
-    """
-    Stock Entry Detail serial_no can contain:
-    1. NJ serial no
-    2. BIOS serial no
-    3. newline separated serials
-
-    So we check both serial_no and bios_serialno.
-    """
-    return f"""
-        (
-            (
-                IFNULL(%(serial_no)s, '') != ''
-                AND (
-                    {alias}.serial_no = %(serial_no)s
-                    OR {alias}.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%')
-                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(serial_no)s)
-                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')
-                )
-            )
-            OR
-            (
-                IFNULL(%(bios_serialno)s, '') != ''
-                AND (
-                    {alias}.serial_no = %(bios_serialno)s
-                    OR {alias}.serial_no LIKE CONCAT(%(bios_serialno)s, '\\n%%')
-                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(bios_serialno)s)
-                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(bios_serialno)s, '\\n%%')
-                )
-            )
-        )
-    """
-
-
-def _get_latest_ram_storage_repack_after_reliability(serial_no, bios_serialno, reliability_creation):
-    """
-    Find latest submitted Repack Stock Entry after Reliability NJQCA
-    where same laptop serial/bios is present and Stock Entry has RAM/Storage item.
-    """
-    if not reliability_creation:
-        return None
-
-    if not serial_no and not bios_serialno:
-        return None
-
-    serial_condition = _stock_entry_serial_condition("machine_sed")
-
-    rows = frappe.db.sql(f"""
-        SELECT
-            se.name,
-            se.creation,
-            se.posting_date,
-            se.posting_time,
-            GROUP_CONCAT(DISTINCT item.item_group) AS changed_item_groups
-        FROM `tabStock Entry` se
-        INNER JOIN `tabStock Entry Detail` machine_sed
-            ON machine_sed.parent = se.name
-        INNER JOIN `tabStock Entry Detail` part_sed
-            ON part_sed.parent = se.name
-        INNER JOIN `tabItem` item
-            ON item.name = part_sed.item_code
-        WHERE se.docstatus = 1
-          AND (
-                LOWER(IFNULL(se.stock_entry_type, '')) = 'repack'
-                OR LOWER(IFNULL(se.purpose, '')) = 'repack'
-          )
-          AND {serial_condition}
-          AND LOWER(IFNULL(item.item_group, '')) IN %(part_item_groups)s
-          AND se.creation > %(reliability_creation)s
-        GROUP BY se.name, se.creation, se.posting_date, se.posting_time
-        ORDER BY se.creation DESC
-        LIMIT 1
-    """, {
-        "serial_no": serial_no or "",
-        "bios_serialno": bios_serialno or "",
-        "reliability_creation": reliability_creation,
-        "part_item_groups": RAM_STORAGE_REPACK_ITEM_GROUPS,
-    }, as_dict=True)
-
-    return rows[0] if rows else None
-
-
-def get_latest_reliability_status_result(doc):
-    """
-    Final Reliability_status logic.
-
-    PASS only when:
-    1. All parameters from NJ Settings reliability_status_parameters are PASS
-    2. No RAM/Storage Repack happened after latest Reliability Test
-    """
-    required_parameters = get_status_parameter_list(RELIABILITY_STATUS_SETTING)
-
-    if not required_parameters:
-        return None
-
-    serial_no = str(doc.get("serial_no") or "").strip()
-    bios_serialno = str(doc.get("bios_serialno") or "").strip()
-
-    source = _get_current_reliability_doc_source(doc)
-
-    if not source:
-        source = _get_latest_submitted_reliability_doc_source(doc)
-
-    if not source:
-        return {
-            "status": "FAIL",
-            "score": 41,
-            "reason": "No submitted Reliability Test NJQCA found",
-            "source_njqca": "",
-        }
-
-    result_map = _get_result_parameter_map(source.get("rows") or [])
-
-    failed_params = []
-    missing_params = []
-
-    for parameter in required_parameters:
-        key = _norm_njqca_param(parameter)
-        row = result_map.get(key)
-
-        if not row:
-            missing_params.append(parameter)
-            continue
-
-        if not _is_reliability_pass(row.get("value"), row.get("score")):
-            value = str(row.get("value") or row.get("score") or "").strip()
-            failed_params.append(f"{parameter}={value}")
-
-    if missing_params or failed_params:
-        reason_parts = []
-
-        if failed_params:
-            reason_parts.append("Failed: " + ", ".join(failed_params))
-
-        if missing_params:
-            reason_parts.append("Missing: " + ", ".join(missing_params))
-
-        return {
-            "status": "FAIL",
-            "score": 41,
-            "reason": _short_reliability_reason(" | ".join(reason_parts)),
-            "source_njqca": source.get("name") or "",
-        }
-
-    latest_repack = _get_latest_ram_storage_repack_after_reliability(
-        serial_no=serial_no,
-        bios_serialno=bios_serialno,
-        reliability_creation=source.get("creation"),
-    )
-
-    if latest_repack:
-        return {
-            "status": "FAIL",
-            "score": 41,
-            "reason": _short_reliability_reason(
-                "No Reliability NJQCA after RAM/Storage Repack "
-                f"{latest_repack.name} at {latest_repack.creation}"
-            ),
-            "source_njqca": source.get("name") or "",
-        }
-
-    return {
-        "status": "PASS",
-        "score": 0,
-        "reason": "All Reliability checks passed",
-        "source_njqca": source.get("name") or "",
-    }
-
-
-def apply_latest_reliability_status_to_doc(doc):
-    """
-    Adds/updates:
-    1. Reliability_status
-    2. Reliability_status_reason
-    """
-    try:
-        if str(doc.get("item_group") or "").strip().lower() != "laptops":
-            return
-
-        if doc.get("rfq_id"):
-            return
-
-        result = get_latest_reliability_status_result(doc)
-
-        if not result:
-            return
-
-        upsert_njqca_result_parameter_row(doc, {
-            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
-            "parameter": RELIABILITY_STATUS_PARAM,
-            "value": result.get("status"),
-            "score": result.get("score"),
-            "part_config_id": 0,
-        })
-
-        upsert_njqca_result_parameter_row(doc, {
-            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
-            "parameter": RELIABILITY_STATUS_REASON_PARAM,
-            "value": result.get("reason"),
-            "score": result.get("score"),
-            "part_config_id": 0,
-        })
-        upsert_njqca_result_parameter_row(doc, {
-            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
-            "parameter": RELIABILITY_SOURCE_PARAM,
-            "value": result.get("source_njqca") or "NOT FOUND",
-            "score": result.get("score"),
-            "part_config_id": 0,
-        })
-
-    except Exception:
-        log_error(
-            frappe.get_traceback(),
-            "Error in apply_latest_reliability_status_to_doc"
-        )
 
 def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
     allowed_parameters = get_status_parameter_list(setting_parameter)
@@ -5177,28 +4814,6 @@ def update_performance_criteria(doc):
         doc,
         criteria_rows
     )
-
-    # Save which Performance Criteria was used into NJQCA Result Parameters
-    criteria_source_label_map = {
-        "shopify_item_list": "Shopify Item List",
-        "performance_config_criteria": "Performance Config Criteria",
-        "nj_settings_fallback": "NJ Settings Fallback",
-        "not_found": "Not Found"
-    }
-
-    result.setdefault("changes", [])
-
-    result["changes"].append({
-        "item_group": "Software Configuration",
-        "parameter": "Performance_Criteria_Name",
-        "value": criteria_name or ""
-    })
-
-    result["changes"].append({
-        "item_group": "Software Configuration",
-        "parameter": "Performance_Criteria_Source",
-        "value": criteria_source_label_map.get(criteria_source, criteria_source or "")
-    })
 
     # Debug info for bench console
     result["criteria_source"] = criteria_source
@@ -8065,12 +7680,16 @@ def check_ext_serial_linkage(bios_serial_no, nj_serial_no):
         return {"found": False}
 
     # Look for an EXT serial with this BIOS (rfq_id IS NOT NULL means external)
-    ext_serials = frappe.get_all(
-        "Serial No",
-        filters={"bios_serial_no": bios_serial_no},
-        fields=["name", "linked_ext"],
-        limit=1,
-    )
+    # Look for only real EXT/RFQ serial with this BIOS
+    ext_serials = frappe.db.sql("""
+        SELECT name, linked_ext
+        FROM `tabSerial No`
+        WHERE bios_serial_no = %s
+        AND IFNULL(rfq_id, '') != ''
+        AND name != %s
+        ORDER BY creation DESC
+        LIMIT 1
+    """, (bios_serial_no, nj_serial_no), as_dict=True)
     ext_serial = ext_serials[0] if ext_serials else None
 
     if not ext_serial:
@@ -8108,8 +7727,20 @@ def link_ext_to_nj_serial(ext_serial_no, nj_serial_no, njqca_name):
     - Sets linked_ext on the NJQCA document for reference
     Does NOT remove bios_serial_no from EXT (that happens on NJQCA submit).
     """
+    if not ext_serial_no or not nj_serial_no:
+        frappe.throw("EXT serial and NJ serial are required.")
+
+    if ext_serial_no == nj_serial_no:
+        frappe.throw("EXT serial and NJ serial cannot be the same.")
+
     ext_doc = frappe.get_doc("Serial No", ext_serial_no)
     nj_doc  = frappe.get_doc("Serial No", nj_serial_no, for_update=True)
+
+    if not ext_doc.rfq_id:
+        frappe.throw(f"Serial No <b>{ext_serial_no}</b> is not an EXT/RFQ serial. Cannot link.")
+
+    if nj_doc.rfq_id:
+        frappe.throw(f"Serial No <b>{nj_serial_no}</b> is RFQ serial. Cannot use it as internal NJ serial.")
 
     # Clear existing serial_no_component on NJ serial
     nj_doc.set("serial_no_component", [])

@@ -21,6 +21,64 @@ def _split_department_names(departments):
 
 
 class StockMovement(Document):
+    def before_submit(self):
+        pass
+        # self.prevent_duplicate_stock_movements()
+
+    def prevent_duplicate_stock_movements(self):
+        current_items = sorted([
+            (row.item_code, row.qty, row.s_warehouse, row.t_warehouse)
+            for row in self.items
+        ])
+        
+        if not current_items:
+            return
+
+        total_qty = sum(row.qty for row in self.items)
+        num_items = len(self.items)
+
+        # Decide time limit based on size of the movement
+        from frappe.utils import add_to_date, now_datetime
+        if num_items > 1 or total_qty > 5:
+            # Large transfer - check 24 hours
+            time_limit = add_to_date(now_datetime(), hours=-24)
+        else:
+            # Small transfer - check 15 minutes to avoid blocking legitimate repeats
+            time_limit = add_to_date(now_datetime(), minutes=-15)
+
+        recent_movements = frappe.get_all(
+            "Stock Movement",
+            filters={
+                "docstatus": 1,
+                "creation": (">", time_limit),
+                "name": ("!=", self.name)
+            },
+            pluck="name"
+        )
+        if not recent_movements:
+            return
+
+        # Get all details for these recent movements
+        recent_details = frappe.get_all(
+            "Stock Movement Detail",
+            filters={"parent": ("in", recent_movements)},
+            fields=["parent", "item_code", "qty", "s_warehouse", "t_warehouse"]
+        )
+
+        from collections import defaultdict
+        grouped_items = defaultdict(list)
+        for detail in recent_details:
+            grouped_items[detail.parent].append(
+                (detail.item_code, detail.qty, detail.s_warehouse, detail.t_warehouse)
+            )
+
+        for parent_name, items in grouped_items.items():
+            if current_items == sorted(items):
+                frappe.throw(
+                    f"Duplicate Stock Movement detected: A submitted Stock Movement (<b><a href='/app/stock-movement/{parent_name}'>{parent_name}</a></b>) "
+                    f"with the exact same items, quantities, and warehouses was already submitted recently."
+                )
+
     def on_submit(self):
         try:
             # self.deparement_qty_check()
@@ -394,6 +452,159 @@ class StockMovement(Document):
                 return_unpack_items_data.append(unpack_item)
 
         return return_unpack_items_data
+
+    def on_cancel(self):
+        try:
+            self.revert_mr_qty_with_status()
+
+            # Find and cancel the linked Stock Entry
+            linked_stock_entries = frappe.get_all(
+                "Stock Entry",
+                filters={
+                    "reference": self.name,
+                    "reference_type": self.doctype,
+                    "docstatus": 1
+                },
+                pluck="name"
+            )
+            for se_name in linked_stock_entries:
+                se_doc = frappe.get_doc("Stock Entry", se_name)
+                se_doc.flags.ignore_permissions = True
+                se_doc.cancel()
+
+        except Exception as e:
+            frappe.db.rollback()
+            frappe.log_error(frappe.get_traceback(), "Stock Movement Cancel Failed")
+            frappe.throw(f"Error while cancelling Stock Entry: {e}")
+
+    def revert_mr_qty_with_status(self):
+        print("revert_mr_qty_with_status started for Stock Movement:", self.name)
+        for item in self.items:
+            target_department = frappe.db.get_value("Warehouse", item.t_warehouse, "department") if item.t_warehouse else None
+            print(
+                "Reverting Stock Movement item:",
+                item.item_code,
+                "qty:",
+                item.qty,
+                "target warehouse:",
+                item.t_warehouse,
+                "target department:",
+                target_department,
+            )
+
+            remaining_qty = flt(item.qty)
+            if not item.item_code or remaining_qty <= 0:
+                print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
+                continue
+
+            if item.t_warehouse == "BG - Consumables Paint - NJ":
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type = 'Material Issue'
+                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.received_qty, 0) > 0
+                    ORDER BY mr.transaction_date DESC, mr.creation DESC, mri.idx DESC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                )
+                self._revert_mr_items_received_qty(item, material_request_items)
+                continue
+
+            if target_department == "Stores - NJ":
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type IN ('Manufacture', 'Purchase')
+                        AND (
+                            IFNULL(mr.mr_create_reference, '') LIKE 'NJ Production Planning%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'SRA Item Group NJ Production%%'
+                        )
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.received_qty, 0) > 0
+                    ORDER BY mr.transaction_date DESC, mr.creation DESC, mri.idx DESC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                )
+                self._revert_mr_items_received_qty(item, material_request_items)
+                continue
+
+            if target_department:
+                material_request_items = frappe.db.sql(
+                    """
+                    SELECT
+                        mri.name,
+                        mri.parent,
+                        mri.qty,
+                        mr.mr_rised_departments,
+                        IFNULL(mri.received_qty, 0) AS received_qty
+                    FROM `tabMaterial Request Item` mri
+                    INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+                    WHERE
+                        mr.docstatus = 1
+                        AND mr.material_request_type = 'Material Issue'
+                        AND (
+                            IFNULL(mr.mr_create_reference, '') LIKE 'Laptop Adaptor NJ Production%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'Laptop RAM NJ Production%%'
+                            OR IFNULL(mr.mr_create_reference, '') LIKE 'Laptop Storage NJ Production%%'
+                        )
+                        AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                        AND mri.item_code = %s
+                        AND IFNULL(mri.received_qty, 0) > 0
+                    ORDER BY mr.transaction_date DESC, mr.creation DESC, mri.idx DESC
+                    """,
+                    (item.item_code,),
+                    as_dict=True,
+                )
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("mr_rised_departments"))
+                ]
+                self._revert_mr_items_received_qty(item, matching_department_items)
+                continue
+
+    def _revert_mr_items_received_qty(self, item, material_request_items):
+        remaining_qty = flt(item.qty)
+        for mr_item in material_request_items:
+            if remaining_qty <= 0:
+                break
+
+            qty_to_revert = min(remaining_qty, flt(mr_item.received_qty))
+            new_received_qty = flt(mr_item.received_qty) - qty_to_revert
+            values = {"received_qty": new_received_qty}
+
+            if new_received_qty < flt(mr_item.qty):
+                values["post_order_status"] = "Not Completed"
+
+            frappe.db.set_value(
+                "Material Request Item",
+                mr_item.name,
+                values,
+                update_modified=False,
+            )
+            remaining_qty -= qty_to_revert
 
 @frappe.whitelist()
 def get_all_emp_warehouse(user):
@@ -1747,6 +1958,7 @@ def check_warehouse_qty(name):
                 SELECT warehouse, COUNT(*) AS current_qty
                 FROM `tabSerial No`
                 WHERE warehouse = %(warehouse)s
+                AND item_group IN ('Laptops', 'Chromebooks', 'MacBooks')
                 GROUP BY warehouse
             ) AS sn
                 ON sn.warehouse = w.name

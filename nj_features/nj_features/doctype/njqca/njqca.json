@@ -73,7 +73,9 @@
   "event_trigger_section",
   "njqca_event_trigger",
   "pwd",
-  "amended_from"
+  "amended_from",
+  "execution_check_status_section",
+  "execution_check_status"
  ],
  "fields": [
   {
@@ -509,17 +511,29 @@
    "label": "Fetched Adaptor Item Code"
   },
   {
+   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "fieldname": "linked_ext",
    "fieldtype": "Link",
    "label": "Linked EXT Serial",
-   "depends_on": "eval:doc.item_group != \"BATTERY\";",
    "options": "Serial No",
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "execution_check_status_section",
+   "fieldtype": "Section Break",
+   "label": "Execution Check Status"
+  },
+  {
+   "fieldname": "execution_check_status",
+   "fieldtype": "Table",
+   "label": "Execution Check Status",
+   "options": "NJQCA Execution Check Status"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-02 10:26:00.000000",
+ "modified": "2026-06-29 13:19:09.055454",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

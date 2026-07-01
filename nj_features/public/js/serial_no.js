@@ -2,6 +2,13 @@ frappe.ui.form.on('Serial No', {
     refresh: function(frm) {
         applyReadOnlyStyling(frm);
 
+        console.log('Current user roles:', frappe.user_roles);
+        // to make field edit accessible for specific roles
+        if (frappe.user_roles.includes('NPD Manager')) {
+            console.log('User has NPD Manager role, making to_make field editable.');
+            frm.set_df_property('to_make', 'read_only', 0);
+        }
+
         // Get the current user id from the session
         const current_user_id = frappe.session.user;
 

@@ -273,7 +273,7 @@ def create_rq_doc():
 
     flags = {
         "enable_parent_override": getattr(rule_config, "enable_parent_override", 1),
-        "parent_threshold": getattr(rule_config, "parent_override_threshold", 0) or 0,
+        "parent_threshold": getattr(rule_config, "parent_override_threshold", 1) or 1,
         "enable_warranty": getattr(rule_config, "enable_warranty_rule", 1),
         "warranty_threshold": getattr(rule_config, "warranty_threshold", 2) or 2,
     }

@@ -241,6 +241,24 @@ def _get_forward_inventory_excluding_current_dept(
 def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) -> Dict:
     # return {"message": "Unified production plan ran successfully", "status": "success"}
     print("Running unified production plan...=============")
+
+    # -------------------------------------------------------
+    # CLEANUP: Clear stale reserved_sales_order on Serial Nos
+    # where the linked Sales Order is Closed/Cancelled/Completed.
+    # This prevents serials from being permanently invisible to
+    # the planner after their SO closes without clearing the field.
+    # -------------------------------------------------------
+    stale_cleared = frappe.db.sql("""
+        UPDATE `tabSerial No` sn
+        INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
+        SET sn.reserved_sales_order = NULL
+        WHERE so.status IN ('Closed', 'Cancelled', 'Completed')
+          AND sn.reserved_sales_order IS NOT NULL
+          AND sn.reserved_sales_order != ''
+    """)
+    frappe.db.commit()
+    logger.debug("[CLEANUP] Cleared stale reserved_sales_order for serials linked to Closed/Cancelled/Completed SOs.")
+
     depts = frappe.get_all(
         "Department",
         filters=[["sla", ">", 0], ["run_production_planning", "=", 1]],
@@ -402,6 +420,87 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             serial_rows = inward_serials_per_dept.get(dept_name, [])
             initial_serial_count = len(serial_rows)
             initial_serial_lookup = {sn['name']: sn for sn in serial_rows} # For warehouse info
+
+            # -------------------------------------------------------
+            # RESERVED SERIALS: Serials already committed to active SOs.
+            # These bypass normal match/forecast logic. We add them
+            # directly to plan lines with reason='Order'.
+            # to_make item code = sn.to_make (set by previous plan run)
+            # or fallback Product Bundle. Reserved SO is NOT cleared.
+            # -------------------------------------------------------
+            reserved_rows = _get_reserved_serials_for_department(dept_name)
+            _today = frappe.utils.getdate(frappe.utils.nowdate())
+            for res_row in reserved_rows:
+                sn_id = res_row['name']
+                wh = res_row['warehouse']
+
+                # Validate Item Wizard
+                if not res_row.get("item_wizard"):
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": "Reserved for SO - Item Wizard not found"
+                    })
+                    continue
+
+                if res_row.get("part_list_status") != "Completed" or res_row.get("iw_docstatus") != 1:
+                    reason = (
+                        "Reserved for SO - Item Wizard not Completed"
+                        if res_row.get("part_list_status") != "Completed"
+                        else "Reserved for SO - Item Wizard not Submitted"
+                    )
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": reason
+                    })
+                    continue
+
+                # Determine item_code_to_make:
+                # Use sn.to_make (set by previous plan run) or fallback PB
+                item_code_to_make = res_row.get("to_make") or _get_fallback_pb_item_code(res_row["item_code"])
+                if not item_code_to_make:
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn_id,
+                        "current_department": dept_name,
+                        "current_warehouse": wh,
+                        "reason": "Reserved for SO - Product Bundle not found"
+                    })
+                    continue
+
+                # Compute age_days
+                purchase_date = res_row.get("purchase_date")
+                creation = res_row.get("creation")
+                base_date = frappe.utils.getdate(purchase_date or creation or frappe.utils.nowdate())
+                age_days = (_today - base_date).days if base_date else 0
+
+                # Append directly to plan — do NOT clear reserved_sales_order
+                _update_serial_to_make(sn_id, item_code_to_make)
+                plan_doc.append(
+                    "lines",
+                    {
+                        "serial_no": sn_id,
+                        "current_warehouse": wh,
+                        "current_department": dept_name,
+                        "sales_rate": 1.0,
+                        "doi": 0,
+                        "sales_order_no": res_row["reserved_sales_order"],
+                        "delivery_date": res_row.get("delivery_date"),
+                        "item_code": item_code_to_make,
+                        "reason": "Order",
+                        "priority_rank": int(priority_per_dept[dept_name]),
+                        "serial_age_days": age_days,
+                        "allocate_parts": 1,
+                    },
+                )
+                priority_per_dept[dept_name] += 1
+                logger.debug(
+                    f"[RESERVED] serial_no={sn_id}, so={res_row['reserved_sales_order']}, "
+                    f"to_make={item_code_to_make}, dept={dept_name}"
+                )
+
 
             # Pre-Planning Validation
             healthy_serials = []
@@ -1747,6 +1846,54 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
 
     _prime_item_cache([r["item_code"] for r in rows])
     return rows
+
+
+@log_io
+def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
+    """
+    Fetch serials in this department that are already reserved against
+    an active Sales Order (status NOT Closed/Cancelled/Completed).
+    These bypass normal allocation logic and are added directly to the plan.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT
+            sn.name,
+            sn.item_code,
+            sn.warehouse,
+            sn.department,
+            sn.creation,
+            sn.purchase_date,
+            sn.reserved_sales_order,
+            sn.to_make,
+            sn.item_wizard,
+            iw.part_list_status,
+            iw.docstatus AS iw_docstatus,
+            (
+                SELECT MIN(soi.delivery_date)
+                FROM `tabSales Order Item` soi
+                WHERE soi.parent = sn.reserved_sales_order
+            ) AS delivery_date
+        FROM `tabSerial No` sn
+        INNER JOIN `tabItem` it ON it.name = sn.item_code
+        INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
+        LEFT JOIN `tabItem Wizards` iw ON sn.item_wizard = iw.name
+        WHERE sn.department = %(dept)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND it.item_group IN %(igroups)s
+          AND sn.reserved_sales_order IS NOT NULL
+          AND sn.reserved_sales_order != ''
+          AND so.status NOT IN ('Closed', 'Cancelled', 'Completed')
+        """,
+        {
+            "dept": dept_name,
+            "igroups": tuple(SELLABLE_ITEM_GROUPS),
+        },
+        as_dict=True,
+    )
+    _prime_item_cache([r["item_code"] for r in rows])
+    return rows
+
 
 
 # =========================

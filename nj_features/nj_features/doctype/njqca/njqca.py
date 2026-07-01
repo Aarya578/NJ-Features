@@ -1088,6 +1088,7 @@ class NJQCA(Document):
         # Read Autopilot file and save Autopilot_status = PASS / FAIL
         apply_autopilot_status_to_doc(self)
         set_fail_for_empty_reliability_params(self)
+        apply_latest_reliability_status_to_doc(self)
         
          # External/RFQ NJQCA should never self-link.
         # linked_ext should only be set on internal NJQCA after linking to EXT serial.
@@ -4330,6 +4331,366 @@ def get_status_parameter_list(setting_parameter):
 
     return [x.strip() for x in raw_value.replace("\n", ",").split(",") if x.strip()]
 
+
+# ==========================================================
+# RELIABILITY FINAL STATUS
+# ==========================================================
+
+RELIABILITY_STATUS_SETTING = "reliability_status_parameters"
+RELIABILITY_STATUS_PARAM = "Reliability_status"
+RELIABILITY_STATUS_REASON_PARAM = "Reliability_status_reason"
+RELIABILITY_STATUS_ITEM_GROUP = "Software Configuration"
+RELIABILITY_SOURCE_PARAM = "Latest_reliability_record_name"
+
+RAM_STORAGE_REPACK_ITEM_GROUPS = (
+    "laptop ram",
+    "laptop storage",
+)
+
+
+def _short_reliability_reason(value, max_len=135):
+    value = str(value or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[:max_len - 3] + "..."
+
+
+def _is_reliability_pass(value=None, score=None):
+    """
+    PASS condition:
+    1. score == 0
+    OR
+    2. value is PASS / PASSED / GOOD / OK
+    """
+    if score not in (None, ""):
+        try:
+            return float(score) == 0
+        except Exception:
+            pass
+
+    value = str(value or "").strip().upper()
+
+    if value in ("PASS", "PASSED", "GOOD", "OK"):
+        return True
+
+    if value.startswith("PASS"):
+        return True
+
+    return False
+
+
+def _get_result_parameter_map(rows):
+    result_map = {}
+
+    for row in rows or []:
+        parameter = str(row.get("parameter") or "").strip()
+        if not parameter:
+            continue
+
+        result_map[_norm_njqca_param(parameter)] = row
+
+    return result_map
+
+
+def _get_current_reliability_doc_source(doc):
+    """
+    If current NJQCA itself is Reliability Test,
+    use current child table data.
+    """
+    inspection_type = str(doc.get("inspection_type") or "").strip().lower()
+
+    if inspection_type != "reliability test":
+        return None
+
+    return {
+        "name": doc.get("name"),
+        "creation": doc.get("creation"),
+        "rows": doc.get("njqca_result_parameters") or [],
+        "source": "current_doc",
+    }
+
+
+def _get_latest_submitted_reliability_doc_source(doc):
+    """
+    For non-Reliability NJQCA records:
+    get latest submitted Reliability Test NJQCA for same serial/bios.
+    """
+    serial_no = str(doc.get("serial_no") or "").strip()
+    bios_serialno = str(doc.get("bios_serialno") or "").strip()
+    current_name = str(doc.get("name") or "").strip()
+
+    if not serial_no and not bios_serialno:
+        return None
+
+    filters = {
+        "serial_no": serial_no,
+        "bios_serialno": bios_serialno,
+        "current_name": current_name,
+    }
+
+    current_name_condition = ""
+    if current_name:
+        current_name_condition = "AND name != %(current_name)s"
+
+    if serial_no and bios_serialno:
+        match_condition = """
+            AND (
+                serial_no = %(serial_no)s
+                OR bios_serialno = %(bios_serialno)s
+            )
+        """
+    elif serial_no:
+        match_condition = "AND serial_no = %(serial_no)s"
+    else:
+        match_condition = "AND bios_serialno = %(bios_serialno)s"
+
+    latest = frappe.db.sql(f"""
+        SELECT name, creation
+        FROM `tabNJQCA`
+        WHERE docstatus = 1
+          AND inspection_type = 'Reliability Test'
+          AND item_group = 'Laptops'
+          {current_name_condition}
+          {match_condition}
+        ORDER BY creation DESC
+        LIMIT 1
+    """, filters, as_dict=True)
+
+    if not latest:
+        return None
+
+    latest_doc = latest[0]
+
+    rows = frappe.db.sql("""
+        SELECT parameter, value, score, item_group, part_config_id
+        FROM `tabNJQCA Result Parameters`
+        WHERE parent = %s
+    """, latest_doc.name, as_dict=True)
+
+    return {
+        "name": latest_doc.name,
+        "creation": latest_doc.creation,
+        "rows": rows,
+        "source": "latest_submitted",
+    }
+
+
+def _stock_entry_serial_condition(alias):
+    """
+    Stock Entry Detail serial_no can contain:
+    1. NJ serial no
+    2. BIOS serial no
+    3. newline separated serials
+
+    So we check both serial_no and bios_serialno.
+    """
+    return f"""
+        (
+            (
+                IFNULL(%(serial_no)s, '') != ''
+                AND (
+                    {alias}.serial_no = %(serial_no)s
+                    OR {alias}.serial_no LIKE CONCAT(%(serial_no)s, '\\n%%')
+                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(serial_no)s)
+                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(serial_no)s, '\\n%%')
+                )
+            )
+            OR
+            (
+                IFNULL(%(bios_serialno)s, '') != ''
+                AND (
+                    {alias}.serial_no = %(bios_serialno)s
+                    OR {alias}.serial_no LIKE CONCAT(%(bios_serialno)s, '\\n%%')
+                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(bios_serialno)s)
+                    OR {alias}.serial_no LIKE CONCAT('%%\\n', %(bios_serialno)s, '\\n%%')
+                )
+            )
+        )
+    """
+
+
+def _get_latest_ram_storage_repack_after_reliability(serial_no, bios_serialno, reliability_creation):
+    """
+    Find latest submitted Repack Stock Entry after Reliability NJQCA
+    where same laptop serial/bios is present and Stock Entry has RAM/Storage item.
+    """
+    if not reliability_creation:
+        return None
+
+    if not serial_no and not bios_serialno:
+        return None
+
+    serial_condition = _stock_entry_serial_condition("machine_sed")
+
+    rows = frappe.db.sql(f"""
+        SELECT
+            se.name,
+            se.creation,
+            se.posting_date,
+            se.posting_time,
+            GROUP_CONCAT(DISTINCT item.item_group) AS changed_item_groups
+        FROM `tabStock Entry` se
+        INNER JOIN `tabStock Entry Detail` machine_sed
+            ON machine_sed.parent = se.name
+        INNER JOIN `tabStock Entry Detail` part_sed
+            ON part_sed.parent = se.name
+        INNER JOIN `tabItem` item
+            ON item.name = part_sed.item_code
+        WHERE se.docstatus = 1
+          AND (
+                LOWER(IFNULL(se.stock_entry_type, '')) = 'repack'
+                OR LOWER(IFNULL(se.purpose, '')) = 'repack'
+          )
+          AND {serial_condition}
+          AND LOWER(IFNULL(item.item_group, '')) IN %(part_item_groups)s
+          AND se.creation > %(reliability_creation)s
+        GROUP BY se.name, se.creation, se.posting_date, se.posting_time
+        ORDER BY se.creation DESC
+        LIMIT 1
+    """, {
+        "serial_no": serial_no or "",
+        "bios_serialno": bios_serialno or "",
+        "reliability_creation": reliability_creation,
+        "part_item_groups": RAM_STORAGE_REPACK_ITEM_GROUPS,
+    }, as_dict=True)
+
+    return rows[0] if rows else None
+
+
+def get_latest_reliability_status_result(doc):
+    """
+    Final Reliability_status logic.
+
+    PASS only when:
+    1. All parameters from NJ Settings reliability_status_parameters are PASS
+    2. No RAM/Storage Repack happened after latest Reliability Test
+    """
+    required_parameters = get_status_parameter_list(RELIABILITY_STATUS_SETTING)
+
+    if not required_parameters:
+        return None
+
+    serial_no = str(doc.get("serial_no") or "").strip()
+    bios_serialno = str(doc.get("bios_serialno") or "").strip()
+
+    source = _get_current_reliability_doc_source(doc)
+
+    if not source:
+        source = _get_latest_submitted_reliability_doc_source(doc)
+
+    if not source:
+        return {
+            "status": "FAIL",
+            "score": 41,
+            "reason": "No submitted Reliability Test NJQCA found",
+            "source_njqca": "",
+        }
+
+    result_map = _get_result_parameter_map(source.get("rows") or [])
+
+    failed_params = []
+    missing_params = []
+
+    for parameter in required_parameters:
+        key = _norm_njqca_param(parameter)
+        row = result_map.get(key)
+
+        if not row:
+            missing_params.append(parameter)
+            continue
+
+        if not _is_reliability_pass(row.get("value"), row.get("score")):
+            value = str(row.get("value") or row.get("score") or "").strip()
+            failed_params.append(f"{parameter}={value}")
+
+    if missing_params or failed_params:
+        reason_parts = []
+
+        if failed_params:
+            reason_parts.append("Failed: " + ", ".join(failed_params))
+
+        if missing_params:
+            reason_parts.append("Missing: " + ", ".join(missing_params))
+
+        return {
+            "status": "FAIL",
+            "score": 41,
+            "reason": _short_reliability_reason(" | ".join(reason_parts)),
+            "source_njqca": source.get("name") or "",
+        }
+
+    latest_repack = _get_latest_ram_storage_repack_after_reliability(
+        serial_no=serial_no,
+        bios_serialno=bios_serialno,
+        reliability_creation=source.get("creation"),
+    )
+
+    if latest_repack:
+        return {
+            "status": "FAIL",
+            "score": 41,
+            "reason": _short_reliability_reason(
+                "No Reliability NJQCA after RAM/Storage Repack "
+                f"{latest_repack.name} at {latest_repack.creation}"
+            ),
+            "source_njqca": source.get("name") or "",
+        }
+
+    return {
+        "status": "PASS",
+        "score": 0,
+        "reason": "All Reliability checks passed",
+        "source_njqca": source.get("name") or "",
+    }
+
+
+def apply_latest_reliability_status_to_doc(doc):
+    """
+    Adds/updates:
+    1. Reliability_status
+    2. Reliability_status_reason
+    3. Latest_reliability_record_name
+    """
+    try:
+        if str(doc.get("item_group") or "").strip().lower() != "laptops":
+            return
+
+        if doc.get("rfq_id"):
+            return
+
+        result = get_latest_reliability_status_result(doc)
+
+        if not result:
+            return
+
+        upsert_njqca_result_parameter_row(doc, {
+            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
+            "parameter": RELIABILITY_STATUS_PARAM,
+            "value": result.get("status"),
+            "score": result.get("score"),
+            "part_config_id": 0,
+        })
+
+        upsert_njqca_result_parameter_row(doc, {
+            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
+            "parameter": RELIABILITY_STATUS_REASON_PARAM,
+            "value": result.get("reason"),
+            "score": result.get("score"),
+            "part_config_id": 0,
+        })
+        upsert_njqca_result_parameter_row(doc, {
+            "item_group": RELIABILITY_STATUS_ITEM_GROUP,
+            "parameter": RELIABILITY_SOURCE_PARAM,
+            "value": result.get("source_njqca") or "NOT FOUND",
+            "score": result.get("score"),
+            "part_config_id": 0,
+        })
+
+    except Exception:
+        log_error(
+            frappe.get_traceback(),
+            "Error in apply_latest_reliability_status_to_doc"
+        )
 
 def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
     allowed_parameters = get_status_parameter_list(setting_parameter)

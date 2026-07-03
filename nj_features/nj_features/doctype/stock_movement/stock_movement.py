@@ -1287,77 +1287,114 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
 
 def check_qi_validation(serial_no, error_messages, s_warehouse, s_department, t_department):
     try:
+        print("========== INSIDE check_qi_validation ==========")
+        print("serial_no:", serial_no)
+        print("s_warehouse:", s_warehouse)
+        print("s_department:", s_department)
+        print("t_department:", t_department)
+
         serial_no_doc = frappe.get_doc('Serial No', serial_no)
+        print("serial exists:", bool(serial_no_doc))
+        print("serial item_group:", serial_no_doc.get("item_group"))
+        print("serial creation:", serial_no_doc.creation)
 
-        if serial_no_doc.get("item_group") in ['Laptops']:
-            s_department = frappe.db.get_value('Warehouse', {'name': s_warehouse}, 'department')
-            s_inspection_type = frappe.get_doc('Department', s_department)
-            inspection_types = [row.get('inspection_type') for row in s_inspection_type.get("inspection_types")]
+        s_inspection_type = frappe.get_doc('Department', s_department)
+        print("department doc:", s_inspection_type.name)
 
-            query = """
-                SELECT se.creation, se.name
-                FROM `tabStock Entry Detail` sed
-                JOIN `tabStock Entry` se ON sed.parent = se.name
-                WHERE se.stock_entry_type = "Material Transfer"
-                AND sed.source_department != sed.target_department
-                AND sed.serial_no = %s
-                AND se.docstatus = 1
-                ORDER BY se.creation DESC
-                LIMIT 1
+        inspection_types = [
+            row.get('inspection_type')
+            for row in s_inspection_type.get("inspection_types")
+            if row.get('inspection_type')
+        ]
+
+        print("inspection_types list:", inspection_types)
+
+        if not inspection_types:
+            print("NO inspection_types configured, returning without QI check")
+            return
+
+        result = frappe.db.sql(
             """
-            result = frappe.db.sql(query, (serial_no,), as_dict=True)
+            SELECT se.creation, se.name
+            FROM `tabStock Entry Detail` sed
+            JOIN `tabStock Entry` se ON sed.parent = se.name
+            WHERE se.stock_entry_type = "Material Transfer"
+              AND sed.source_department != sed.target_department
+              AND sed.serial_no = %s
+              AND se.docstatus = 1
+            ORDER BY se.creation DESC
+            LIMIT 1
+            """,
+            (serial_no,),
+            as_dict=True
+        )
 
-            if result and inspection_types:
-                creation_time = result[0]["creation"]
-                formatted_time = creation_time.strftime("%Y-%m-%d %H:%M:%S")
+        print("latest previous stock entry result:", result)
 
-                current_time = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+        if result:
+            formatted_time = result[0]["creation"].strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            formatted_time = serial_no_doc.creation.strftime("%Y-%m-%d %H:%M:%S")
 
-                qi_query = """
-                    SELECT name
-                    FROM `tabNJ Quality Inspection`
-                    WHERE inspection_type IN %s
-                    AND docstatus = 1
-                    AND barcode = %s
-                    AND modified BETWEEN %s AND %s
-                    ORDER BY creation DESC
-                    LIMIT 1
-                """
-                qi_result = frappe.db.sql(
-                    qi_query,
-                    (tuple(inspection_types), serial_no, formatted_time, current_time),
-                    as_dict=True
-                )
+        current_time = (datetime.now() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
 
-                t_inspection_type = frappe.get_doc('Department', t_department)
+        print("QI search from:", formatted_time)
+        print("QI search to:", current_time)
 
-                if qi_result:
-                    qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+        qi_result = frappe.db.sql(
+            """
+            SELECT name, inspection_type, status, barcode, docstatus, creation, modified
+            FROM `tabNJ Quality Inspection`
+            WHERE inspection_type IN %s
+              AND docstatus = 1
+              AND barcode = %s
+              AND modified BETWEEN %s AND %s
+            ORDER BY creation DESC
+            LIMIT 1
+            """,
+            (tuple(inspection_types), serial_no, formatted_time, current_time),
+            as_dict=True
+        )
 
-                    if qi_doc and s_inspection_type.get("quality_inspection_status_for_stock_movement"):
-                        allowed_statuses = [
-                            status.strip() for status in s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
-                        ]
+        print("QI query result:", qi_result)
 
-                        if qi_doc.get("status") not in allowed_statuses:
-                            expected_status = ",".join(allowed_statuses)
-                            actual_status = qi_doc.get("status")
+        if not qi_result:
+            print("QI NOT FOUND, APPENDING ERROR")
+            error_messages.append(
+                f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> "
+                f"in warehouse <b>{s_warehouse}</b> between <b>{formatted_time}</b> and <b>{current_time}</b>."
+            )
+            print("error_messages after QI missing:", error_messages)
+            return
 
-                            error_messages.append(
-                                f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> "
-                                f"in warehouse <b>{s_warehouse}</b> has status <b>{actual_status}</b>, "
-                                f"but target department <b>{t_department}</b> only allows status: <b>{expected_status}</b>."
-                            )
-                else:
-                    error_messages.append(
-                        f"NJ Quality Inspection not found for serial no <b>{serial_no}</b> in warehouse <b>{s_warehouse}</b> "
-                        f"between <b>{formatted_time}</b> and <b>{current_time}</b>."
-                    )
+        qi_doc = frappe.get_doc('NJ Quality Inspection', qi_result[0]["name"])
+        print("QI doc found:", qi_doc.name)
+        print("QI status:", qi_doc.get("status"))
+
+        allowed_statuses = [
+            status.strip()
+            for status in s_inspection_type.get("quality_inspection_status_for_stock_movement").split(",")
+            if status.strip()
+        ]
+
+        print("allowed_statuses:", allowed_statuses)
+
+        if qi_doc.get("status") not in allowed_statuses:
+            print("QI STATUS NOT ALLOWED, APPENDING ERROR")
+            error_messages.append(
+                f"NJ Quality Inspection <b>{qi_doc.name}</b> for serial no <b>{serial_no}</b> "
+                f"has status <b>{qi_doc.get('status')}</b>, but allowed statuses are "
+                f"<b>{', '.join(allowed_statuses)}</b>."
+            )
+            print("error_messages after status failed:", error_messages)
+        else:
+            print("QI PASSED")
 
     except Exception as e:
+        print("EXCEPTION IN QI VALIDATION:", str(e))
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Error in check_qi_validation")
-        error_messages.append(f"An error occurred during Quality Inspection validation. Please check logs. Error: {str(e)}")
+        error_messages.append(f"An error occurred during Quality Inspection validation. Error: {str(e)}")
 
 def check_warranty_expiry(serial_doc, error_messages):
     try:

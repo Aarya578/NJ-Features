@@ -379,6 +379,12 @@ def custom_validate_mandatory_fields(doc):
             title=_("Missing Fields"),
         )
 
+    if not (doc.get("shipping_address_name") or "").strip():
+        frappe.throw(
+            _("Kindly Select Shipping Address Name"),
+            title=_("Missing Fields"),
+        )
+
     company_gstin = frappe.db.get_value("Address", doc.company_address, "gstin")
     if not company_gstin:
         frappe.throw(

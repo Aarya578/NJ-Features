@@ -53,6 +53,10 @@ class RFQQCDashboard {
 			}
 		});
 
+		this.page.add_inner_button(__("Create RFQ Engine"), () => {
+			this.create_rfq_engine();
+		});
+
 		this.page.set_primary_action(__("Refresh"), () => {
 			const supplier = this.supplier_field.get_value();
 			const rfq = this.rfq_field.get_value();
@@ -214,6 +218,35 @@ class RFQQCDashboard {
 			args: { supplier, rfq },
 			callback: (response) => {
 				this.render_dashboard(response.message || {});
+			}
+		});
+	}
+
+	create_rfq_engine() {
+		const supplier = this.supplier_field.get_value();
+		const rfq = this.rfq_field.get_value();
+
+		if (!supplier) {
+			frappe.msgprint(__("Please select a supplier first."));
+			return;
+		}
+
+		if (!rfq) {
+			this.show_rfq_mandatory_state();
+			frappe.msgprint(__("Please select RFQ name."));
+			return;
+		}
+
+		frappe.call({
+			method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.create_rfq_price_estimation_engine",
+			args: { supplier, rfq },
+			freeze: true,
+			freeze_message: __("Creating RFQ Price Estimation Engine..."),
+			callback: (response) => {
+				const data = response.message || {};
+				if (data.name) {
+					frappe.set_route("Form", "RFQ Price Estimation Engine", data.name);
+				}
 			}
 		});
 	}

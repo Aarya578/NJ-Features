@@ -353,6 +353,13 @@ function update_gst_tax_type_from_nj_settings(frm) {
         }
     });
 }
+function validate_shipping_address_for_irn(frm) {
+    const shipping_address_name = (frm.doc.shipping_address_name || '').trim();
+    if (!shipping_address_name) {
+        frappe.throw(__('Kindly Select Shipping Address Name'));
+    }
+}
+
 function setup_custom_einvoice_actions(frm) {
 
     if (frm.doc.docstatus == 2) return;    
@@ -735,6 +742,7 @@ function setup_custom_einvoice_actions(frm) {
                     if (frm.doc.__unsaved) {
                         frappe.throw(__('Please save the document to generate IRN.'));
                     }
+                    validate_shipping_address_for_irn(frm);
                     
                     // Mark that IRN button was clicked
                     frm.doc.__irn_button_clicked = true;

@@ -167,3 +167,96 @@ def get_supplier_quality_summary(rfq):
         {"rfq": rfq},
         as_dict=True,
     )
+
+
+@frappe.whitelist()
+def create_rfq_price_estimation_engine(supplier, rfq):
+    if not supplier:
+        frappe.throw(_("Please select a supplier."))
+
+    if not rfq:
+        frappe.throw(_("Please select an RFQ."))
+
+    if not is_supplier_rfq(supplier, rfq):
+        frappe.throw(_("RFQ {0} was not found for supplier {1}.").format(
+            frappe.bold(rfq),
+            frappe.bold(supplier),
+        ))
+
+    rfq_creation = frappe.db.get_value("Request for Quotation", rfq, "creation")
+    serial_rows = get_rfq_serial_qi_status_rows(rfq)
+
+    doc = frappe.get_doc({
+        "doctype": "RFQ Price Estimation Engine",
+        "supplier": supplier,
+        "rfq": rfq,
+        "system_count": len(serial_rows),
+        "rfq_creation": rfq_creation,
+        "serial_no_qi_status": serial_rows,
+    })
+    doc.insert()
+
+    return {
+        "name": doc.name,
+        "route": "/app/rfq-price-estimation-engine/{0}".format(doc.name),
+    }
+
+
+def get_rfq_serial_qi_status_rows(rfq):
+    serial_rows = frappe.db.sql(
+        """
+        SELECT DISTINCT
+            nq.serial_no,
+            nq.qi_name AS njqca_qi_name
+        FROM `tabNJQCA` nq
+        WHERE
+            nq.docstatus = 1
+            AND nq.rfq_id = %(rfq)s
+            AND IFNULL(nq.serial_no, '') != ''
+        ORDER BY nq.serial_no
+        """,
+        {"rfq": rfq},
+        as_dict=True,
+    )
+
+    rows = []
+    for serial_row in serial_rows:
+        serial_no = serial_row.serial_no
+        qi = get_latest_qi_for_serial(serial_no)
+
+        rows.append({
+            "serial_no": serial_no,
+            "qi_status": get_docstatus_label(qi.docstatus) if qi else "",
+            "est_value": qi.preferred_purchase_price if qi else 0,
+            "item_code": qi.item_code if qi else frappe.db.get_value("Serial No", serial_no, "item_code"),
+        })
+
+    return rows
+
+
+def get_latest_qi_for_serial(serial_no):
+    qi_rows = frappe.db.sql(
+        """
+        SELECT
+            name,
+            docstatus,
+            preferred_purchase_price,
+            item_code
+        FROM `tabNJ Quality Inspection`
+        WHERE barcode = %(serial_no)s
+        ORDER BY creation DESC
+        LIMIT 1
+        """,
+        {"serial_no": serial_no},
+        as_dict=True,
+    )
+    return qi_rows[0] if qi_rows else None
+
+
+def get_docstatus_label(docstatus):
+    docstatus = int(docstatus or 0)
+    if docstatus == 1:
+        return "Submitted"
+    if docstatus == 2:
+        return "Cancelled"
+    return "Draft"

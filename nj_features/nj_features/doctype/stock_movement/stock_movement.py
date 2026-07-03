@@ -888,20 +888,20 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             check_bag_list_validation(serial_doc, error_messages, department_doc)
             one_of_these_component_grades_must_be_true(serial_doc, department_doc, t_warehouse, error_messages)
 
-        # if (
-        #         s_department and 
-        #         s_department != department and 
-        #         s_inspection_type and
-        #         s_inspection_type.get("inspection_types") and  
-        #         s_inspection_type.get("inspection_types") is not None and 
-        #         s_inspection_type.get("inspection_types") != [] and
-        #         s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
-        #         s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
-        #     ):
+        if (
+                s_department and 
+                s_department != department and 
+                s_inspection_type and
+                s_inspection_type.get("inspection_types") and  
+                s_inspection_type.get("inspection_types") is not None and 
+                s_inspection_type.get("inspection_types") != [] and
+                s_inspection_type.get("quality_inspection_status_for_stock_movement") and 
+                s_inspection_type.get("quality_inspection_status_for_stock_movement") is not None
+            ):
 
-        #     check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
-        # else:
-        #     return True
+            check_qi_validation(serial_no, error_messages, s_warehouse, s_department, department)
+        else:
+            return True
 
     return True
 

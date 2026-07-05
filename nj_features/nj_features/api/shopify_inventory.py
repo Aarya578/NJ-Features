@@ -33,6 +33,28 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
+def get_inventory_sync_flags():
+    """
+    Safely retrieves the inventory sync rule configuration flags from NJ Settings.
+    Falls back to consistent default values.
+    """
+    def get_setting_int(parameter, default):
+        try:
+            val = frappe.db.get_value("NJ Settings", {"parameter": parameter}, "value")
+            if val is not None and str(val).strip() != "":
+                return int(float(str(val).strip()))
+        except Exception:
+            pass
+        return default
+
+    return {
+        "enable_parent_override": get_setting_int("enable_parent_override", 1),
+        "parent_threshold": get_setting_int("parent_override_threshold", 1),
+        "enable_warranty": get_setting_int("enable_warranty_rule", 1),
+        "warranty_threshold": get_setting_int("warranty_threshold", 2),
+    }
+
+
 def post_shopify_api(url, headers, payload=None, json_payload=None, max_retries=5):
     """
     POST request helper for Shopify API that handles 429 Too Many Requests
@@ -271,12 +293,7 @@ def create_rq_doc():
         )
         return
 
-    flags = {
-        "enable_parent_override": getattr(rule_config, "enable_parent_override", 1),
-        "parent_threshold": getattr(rule_config, "parent_override_threshold", 1) or 1,
-        "enable_warranty": getattr(rule_config, "enable_warranty_rule", 1),
-        "warranty_threshold": getattr(rule_config, "warranty_threshold", 2) or 2,
-    }
+    flags = get_inventory_sync_flags()
     logger.debug(f"flags================== {flags}")
 
     # =========================================================
@@ -398,7 +415,8 @@ def create_rq_doc():
                         WHERE pd.shopify_variant_id = %s
                         GROUP BY pdi.parent HAVING COUNT(pdi.parent) > 0
                     )
-                    AND item_code LIKE '%%additional%%';
+                    AND item_code LIKE '%%additional%%'
+                    AND item_code != 'Additional 6 Months warranty';
                 """
                 logger.debug(f"add_item_code_available_query================== {add_item_code_available_query}")
 
@@ -528,6 +546,7 @@ def create_rq_doc():
             "Inventory Sync Error"
         )
         return
+        
 @frappe.whitelist()
 @nj_temp_shopify_session
 def start_shopify_inventory_sync():
@@ -624,7 +643,7 @@ def create_shopify_inventory_sync():
                                 "status": "Completed",
                                 "is_active": 1,
                                 "shopify_quantity": updated_available,
-                                "sync_error": str(variant_data["inventory_level"]),
+                                "sync_error": f"{row.sync_error or ''} {str(variant_data['inventory_level'])}".strip(),
                                 "modified": frappe.utils.now()
                             })
                             completed_docs.append(row.name)

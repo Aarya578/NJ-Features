@@ -10,6 +10,7 @@ from nj_features.nj_features.api.shopify_inventory import (
     get_shopify_variants,
     safe_float,
     post_shopify_api,
+    get_inventory_sync_flags,
 )
 
 logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
@@ -580,13 +581,7 @@ def stage_targeted_variants(variant_ids, settings):
             for row in parent_qty_map
         }
 
-        # Same flags/thresholds as current hourly sync defaults
-        flags = {
-            "enable_parent_override": 1,
-            "parent_threshold": 2,
-            "enable_warranty": 1,
-            "warranty_threshold": 2,
-        }
+        flags = get_inventory_sync_flags()
 
         for row in results:
             update_status = ''
@@ -611,7 +606,8 @@ def stage_targeted_variants(variant_ids, settings):
                         LEFT JOIN `tabProduct Bundle Item` pdi ON pdi.parent = pd.name
                         WHERE pd.shopify_variant_id = %s
                         GROUP BY pdi.parent HAVING COUNT(pdi.parent) > 0
-                    ) AND item_code LIKE '%%additional%%';
+                    ) AND item_code LIKE '%%additional%%'
+                    AND item_code != 'Additional 6 Months warranty';
                 """, (row.shopify_variant_id,), as_dict=True)
 
                 if add_item:
@@ -768,7 +764,7 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
                     frappe.db.set_value("NJ Inventory Sync Main", row.name, {
                         "status": "Completed",
                         "shopify_quantity": available,
-                        "sync_error": str(data.get("inventory_level", "Success")),
+                        "sync_error": f"{row.sync_error or ''} {str(data.get('inventory_level', 'Success'))}".strip(),
                         "modified": frappe.utils.now()
                     })
                     completed_docs.append(row.name)

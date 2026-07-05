@@ -60,6 +60,11 @@ frappe.ui.form.on('Stock Movement', {
 
         $('[data-fieldname="scan_barcode"]').focus();
         $("button[data-original-title=Print]").hide();
+
+        // Hide duplicate menu option for all users
+        frm.page.menu.find('span.menu-item-label').filter(function() {
+            return $(this).text().trim() === __('Duplicate');
+        }).closest('li').remove();
     },
 
     scan_barcode: function (frm) {

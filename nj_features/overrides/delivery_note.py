@@ -722,6 +722,39 @@ class CustomDeliveryNote(DeliveryNote):
             cause = (self.cause_of_return or "").strip()
 
             if cause == "Repair":
+                against_sales_order = None
+                item_code = None
+
+                for item in self.get("items") or []:
+                    item_serials = [s.strip() for s in (item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                    if sn in item_serials:
+                        against_sales_order = item.against_sales_order
+                        item_code = item.item_code
+                        break
+
+                if not against_sales_order:
+                    for p_item in self.get("packed_items") or []:
+                        p_serials = [s.strip() for s in (p_item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                        if sn in p_serials:
+                            item_code = p_item.item_code
+                            parent_item_code = p_item.parent_item
+                            for item in self.get("items") or []:
+                                if item.item_code == parent_item_code:
+                                    against_sales_order = item.against_sales_order
+                                    break
+                            break
+
+                if against_sales_order and item_code:
+                    frappe.db.set_value(
+                        "Serial No",
+                        sn,
+                        {
+                            "reserved_sales_order": against_sales_order,
+                            "to_make": item_code
+                        },
+                        update_modified=True
+                    )
+
                 warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
 
                 if not warehouse:
@@ -764,6 +797,54 @@ class CustomDeliveryNote(DeliveryNote):
                 )
 
             elif cause in ["Replace", "Refund"]:
+                if cause == "Replace":
+                    against_sales_order = None
+                    item_code = None
+
+                    for item in self.get("items") or []:
+                        item_serials = [s.strip() for s in (item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                        if sn in item_serials:
+                            against_sales_order = item.against_sales_order
+                            item_code = item.item_code
+                            break
+
+                    if not against_sales_order:
+                        for p_item in self.get("packed_items") or []:
+                            p_serials = [s.strip() for s in (p_item.serial_no or "").replace(",", "\n").split("\n") if s.strip()]
+                            if sn in p_serials:
+                                item_code = p_item.item_code
+                                parent_item_code = p_item.parent_item
+                                for item in self.get("items") or []:
+                                    if item.item_code == parent_item_code:
+                                        against_sales_order = item.against_sales_order
+                                        break
+                                break
+
+                    if against_sales_order and item_code:
+                        available_serials = frappe.db.sql("""
+                            SELECT sn.name
+                            FROM `tabSerial No` sn
+                            LEFT JOIN `tabDepartment` dept ON sn.department = dept.name
+                            WHERE sn.item_code = %s
+                              AND sn.name != %s
+                              AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+                              AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+                            ORDER BY IFNULL(dept.department_sequence, 0) DESC, sn.creation ASC
+                            LIMIT 1
+                        """, (item_code, sn), as_dict=True)
+
+                        if available_serials:
+                            replacement_sn = available_serials[0]["name"]
+                            frappe.db.set_value(
+                                "Serial No",
+                                replacement_sn,
+                                {
+                                    "reserved_sales_order": against_sales_order,
+                                    "to_make": item_code
+                                },
+                                update_modified=True
+                            )
+
                 warehouse = frappe.db.get_value("Serial No", sn, "warehouse")
 
                 if not warehouse:

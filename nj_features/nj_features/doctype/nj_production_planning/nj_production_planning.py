@@ -843,7 +843,8 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     No filtering on soi.delivery_date.
     """
-    LOOKBACK_DAYS = 50
+    LOOKBACK_DAYS_B2C = 50
+    LOOKBACK_DAYS_B2B = 100
 
     rows = frappe.db.sql(
         """
@@ -919,11 +920,13 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
-                AND so.creation > CURDATE() - INTERVAL %(lookback)s DAY
+                AND (
+                    (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
+                    OR
+                    (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
+                )
 
                 AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks')
-                AND so.sale_type != 'Amazon'
-                AND so.sale_type in ('NJ-Website-B2C','NJ-Direct-B2C')
                 AND so.customer != 'King Technologies'
 
                 AND (
@@ -948,7 +951,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 dni.docstatus = 1
                 AND dni.qty > 0
-                AND dni.creation >= CURDATE() - INTERVAL %(lookback)s DAY
+                AND dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
                 AND dni.item_group IN ('Laptops', 'Chromebooks')
             GROUP BY dni.against_sales_order, dni.item_code
         ) AS dn_data
@@ -986,7 +989,11 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         WHERE GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0)) > 0
         ORDER BY so_data.delivery_date ASC, so_data.so_creation ASC, so_data.sales_order, so_data.item_code
         """,
-        {"lookback": LOOKBACK_DAYS},
+        {
+            "lookback_b2c": LOOKBACK_DAYS_B2C,
+            "lookback_b2b": LOOKBACK_DAYS_B2B,
+            "lookback_max": max(LOOKBACK_DAYS_B2C, LOOKBACK_DAYS_B2B),
+        },
         as_dict=True,
     )
 
@@ -6813,3 +6820,4 @@ def laptop_storage_mr_via_production_plan(doc=None, method=None):
         "storage_shortage_items": storage_shortage_items,
         "laptop_storage_mr": laptop_storage_mr,
     }
+

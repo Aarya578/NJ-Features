@@ -365,6 +365,30 @@ def custom_bulk_update_approved(names, approved_value):
         "status": "success"
     }
 
+def get_shipping_address_gstin(doc):
+    if not doc.get("shipping_address_name"):
+        return ""
+
+    return frappe.db.get_value("Address", doc.get("shipping_address_name"), "gstin") or ""
+
+
+def get_customer_address_gstin(doc):
+    if not doc.get("customer_address"):
+        return ""
+
+    return frappe.db.get_value("Address", doc.get("customer_address"), "gstin") or ""
+
+
+def get_ship_to_gstin(doc):
+    return (doc.get("customer_gstin") or get_shipping_address_gstin(doc) or "URP").strip()
+
+
+def should_send_shipping_and_dispatch_details(doc):
+    customer_gstin = (get_customer_address_gstin(doc) or "").strip()
+    ship_to_gstin = get_ship_to_gstin(doc)
+    return customer_gstin != ship_to_gstin
+
+
 # ✅ Used inside validate()
 def custom_validate_mandatory_fields(doc):
     if not doc.company_address:
@@ -392,22 +416,9 @@ def custom_validate_mandatory_fields(doc):
             title=_("Missing Fields"),
         )
 
-    # ✅ Use shipping address GSTIN instead of customer address
-    shipping_gstin = (
-    frappe.db.get_value("Address", doc.customer_address, "gstin")
-    if doc.customer_address else None
-    )
-
     # Only skip GSTIN check if total is <= 50000
     if flt(doc.get("grand_total")) <= 50000:
         return
-
-    # Now for invoices above 50,000
-    if doc.gst_category != "Overseas" and not shipping_gstin:
-        frappe.throw(
-            _("GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
-            title=_("Missing GSTIN in Shipping Address"),
-        )
 
     # shipping_gstin = (
     #     frappe.db.get_value("Address", doc.customer_address, "gstin")
@@ -450,14 +461,16 @@ def custom_make_einvoice(invoice):
     buyer_details.update(dict(legal_name=invoice.customer_name or invoice.customer))
 
     shipping_details = payment_details = prev_doc_details = eway_bill_details = frappe._dict({})
-    if invoice.shipping_address_name and invoice.customer_address != invoice.shipping_address_name:
+    send_shipping_and_dispatch_details = should_send_shipping_and_dispatch_details(invoice)
+    if invoice.shipping_address_name and send_shipping_and_dispatch_details:
         if invoice.gst_category == "Overseas":
             shipping_details = get_overseas_address_details(invoice.shipping_address_name)
         else:
             shipping_details = get_party_details(invoice.shipping_address_name, skip_gstin_validation=True)
+            shipping_details.gstin = get_ship_to_gstin(invoice)
 
     dispatch_details = frappe._dict({})
-    if invoice.dispatch_address_name:
+    if send_shipping_and_dispatch_details and invoice.dispatch_address_name:
         dispatch_details = get_party_details(invoice.dispatch_address_name, skip_gstin_validation=True)
 
     if invoice.is_pos and invoice.base_paid_amount:

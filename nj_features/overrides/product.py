@@ -412,7 +412,9 @@ def get_item_code(shopify_item):
             INNER JOIN `tabProduct Bundle` AS pb
             ON i.shopify_product_id = pb.shopify_variant_id
             WHERE i.shopify_product_id = %s
-            ORDER BY pb.quantity DESC, pb.name
+            ORDER BY CAST(
+                COALESCE(NULLIF(TRIM(pb.quantity), ''), '0') AS SIGNED
+            ) DESC, pb.name
         """, variant_id, as_dict=1)
 
         logger.info(f"==========product_bundles=========={product_bundles}")

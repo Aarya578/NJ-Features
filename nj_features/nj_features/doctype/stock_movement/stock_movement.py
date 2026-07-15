@@ -186,20 +186,29 @@ class StockMovement(Document):
                 print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
                 continue
 
-            if item.t_warehouse == "BG - Consumables Paint - NJ":
+            is_consumables_warehouse = frappe.db.get_value(
+                "Warehouse",
+                item.t_warehouse,
+                "used_for_consumables_stock",
+            ) if item.t_warehouse else 0
+
+            if int(is_consumables_warehouse or 0):
                 material_request_items = frappe.db.sql(
                     """
                     SELECT
                         mri.name,
                         mri.parent,
                         mri.qty,
+                        mr.fully_consumed_qty_departments,
                         IFNULL(mri.received_qty, 0) AS received_qty
                     FROM `tabMaterial Request Item` mri
                     INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
                     WHERE
                         mr.docstatus = 1
                         AND mr.material_request_type = 'Material Issue'
-                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND (
+                             IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
+                        )
                         AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
                         AND mri.item_code = %s
                         AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
@@ -210,7 +219,19 @@ class StockMovement(Document):
                     as_dict=True,
                     debug=True,
                 )
-                self._update_mr_items_received_qty(item, material_request_items)
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("fully_consumed_qty_departments"))
+                ]
+                print(
+                    "Consumables MR items after fully_consumed_qty_departments match:",
+                    "target_department:",
+                    target_department,
+                    "count:",
+                    len(matching_department_items),
+                )
+                self._update_mr_items_received_qty(item, matching_department_items)
                 continue
 
             if target_department == "Stores - NJ":
@@ -497,20 +518,29 @@ class StockMovement(Document):
                 print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
                 continue
 
-            if item.t_warehouse == "BG - Consumables Paint - NJ":
+            is_consumables_warehouse = frappe.db.get_value(
+                "Warehouse",
+                item.t_warehouse,
+                "used_for_consumables_stock",
+            ) if item.t_warehouse else 0
+
+            if int(is_consumables_warehouse or 0):
                 material_request_items = frappe.db.sql(
                     """
                     SELECT
                         mri.name,
                         mri.parent,
                         mri.qty,
+                        mr.fully_consumed_qty_departments,
                         IFNULL(mri.received_qty, 0) AS received_qty
                     FROM `tabMaterial Request Item` mri
                     INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
                     WHERE
                         mr.docstatus = 1
                         AND mr.material_request_type = 'Material Issue'
-                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND (
+                             IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
+                        )
                         AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
                         AND mri.item_code = %s
                         AND IFNULL(mri.received_qty, 0) > 0
@@ -519,7 +549,12 @@ class StockMovement(Document):
                     (item.item_code,),
                     as_dict=True,
                 )
-                self._revert_mr_items_received_qty(item, material_request_items)
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("fully_consumed_qty_departments"))
+                ]
+                self._revert_mr_items_received_qty(item, matching_department_items)
                 continue
 
             if target_department == "Stores - NJ":
@@ -720,7 +755,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
 
     if not validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
         return False
-    if not validate_serial_no_gen_wise(serial_no, serial_doc, department, error_messages):
+    if not validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
         return False
 
     current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
@@ -2034,15 +2069,18 @@ def item_item_group(item):
 
 
 
-def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_messages):
+def validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
+    gen_item_groups = get_nj_settings_comma_separated_values("gen_item_groups")
+    serial_item_group = frappe.db.get_value("Item", serial_doc.get("item_code"), "item_group")
+    sellable_dept = "Inward Salable - NJ"
+
+    if not gen_item_groups or serial_item_group not in gen_item_groups:
+        return True
+
     parent_qty = flt(serial_doc.get("parent_qty"))
-    print("parent_qty==============", parent_qty)
     is_above_gen = bool(serial_doc.get("laptop_gen"))
-    print("is_above_gen==============", is_above_gen)
     parameter = "above_8th_gen" if is_above_gen else "below_8th_gen"
-    print("parameter==============", parameter)
     gen_label = "above 8th gen" if is_above_gen else "below 8th gen"
-    print("gen_label==============", gen_label)
 
     gen_settings = frappe.db.get_value(
         "NJ Settings",
@@ -2050,7 +2088,6 @@ def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_message
         ["value", "value_rp"],
         as_dict=True,
     )
-    print("gen_settings==============", gen_settings)
 
     if not gen_settings:
         error_messages.append(
@@ -2058,12 +2095,47 @@ def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_message
         )
         return False
 
-    threshold_qty = flt(gen_settings.get("value_rp"))
-    if parent_qty > threshold_qty:
-        return True
-
     allowed_departments = _split_department_names(gen_settings.get("value"))
     if department in allowed_departments:
+        return True
+
+    threshold_qty = flt(gen_settings.get("value_rp"))
+    if is_above_gen and parent_qty > threshold_qty:
+        return True
+
+    if not is_above_gen:
+        dept_wise_settings = frappe.db.get_value(
+            "NJ Settings",
+            {"doc_type": "Stock Movement", "parameter": "below_gen_restriction_dept_wise"},
+            ["value", "value_rp"],
+            as_dict=True,
+        )
+
+        restricted_source_departments = _split_department_names(
+            dept_wise_settings.get("value") if dept_wise_settings else None
+        )
+        dept_wise_threshold_qty = flt(
+            dept_wise_settings.get("value_rp") if dept_wise_settings else 0
+        )
+
+        if restricted_source_departments:
+            if (
+                s_department in restricted_source_departments
+                and parent_qty <= dept_wise_threshold_qty
+            ):
+                restricted_departments_text = ", ".join(restricted_source_departments)
+                error_messages.append(
+                    f"Serial No <b>{serial_no}</b> parent qty <b>{parent_qty}</b> is less than or equal to "
+                    f"<b>{dept_wise_threshold_qty}</b> for <b>below 8th gen</b>. You cannot move this serial no "
+                    f"from source department <b>{s_department}</b>. Restricted source departments: "
+                    f"<b>{restricted_departments_text}</b>."
+                    f"Kindly Move this serial no from source department<b> {sellable_dept} </b>. "
+                )
+                return False
+
+            return True
+
+    if parent_qty > threshold_qty:
         return True
 
     allowed_departments_text = ", ".join(allowed_departments) if allowed_departments else "not configured"

@@ -16,6 +16,33 @@ SHOPIFY_API_VERSION = "2025-07"
 class CustomProductBundle(ProductBundle):
 	def validate(self):
 		self.deleting_rerord__if_table_modified()
+		self.validating_pd_shopify_variant_id_and_item_shopify_variant_id()
+
+
+
+	def validating_pd_shopify_variant_id_and_item_shopify_variant_id(self):
+		item_code = self.new_item_code or self.name
+		item_shopify_product_id = frappe.db.get_value(
+			"Item", item_code, "shopify_product_id"
+		)
+
+		item_shopify_product_id = str(item_shopify_product_id or "").strip()
+		product_bundle_shopify_variant_id = str(
+			self.shopify_variant_id or ""
+		).strip()
+
+		if item_shopify_product_id != product_bundle_shopify_variant_id:
+			frappe.throw(
+				_(
+					"Shopify ID mismatch for Item {0}: Item Shopify Product ID "
+					"is {1}, but Product Bundle Shopify Variant ID is {2}."
+				).format(
+					frappe.bold(item_code),
+					frappe.bold(item_shopify_product_id or _("Not Set")),
+					frappe.bold(product_bundle_shopify_variant_id or _("Not Set")),
+				),
+				title=_("Shopify ID Mismatch"),
+			)
 
 	def deleting_rerord__if_table_modified(self):
 		import re

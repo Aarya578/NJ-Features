@@ -2008,7 +2008,8 @@ def rebuild_serial_no_components_for_model_change(serial_no_doc, item_wizard_doc
         processed_item_groups.add(item_group)
 
         default_item_code = component.get("default_item_code")
-        component_qty = component.get("quantity") or 1
+        component_qty = 1
+
 
         old_rows_for_group = previous_rows.get(item_group) or []
 
@@ -4331,7 +4332,6 @@ def get_status_parameter_list(setting_parameter):
 
     return [x.strip() for x in raw_value.replace("\n", ",").split(",") if x.strip()]
 
-
 # ==========================================================
 # RELIABILITY FINAL STATUS
 # ==========================================================
@@ -4691,7 +4691,6 @@ def apply_latest_reliability_status_to_doc(doc):
             frappe.get_traceback(),
             "Error in apply_latest_reliability_status_to_doc"
         )
-
 def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
     allowed_parameters = get_status_parameter_list(setting_parameter)
 

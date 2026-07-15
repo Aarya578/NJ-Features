@@ -61,7 +61,7 @@ class NJProductionPlanning(Document):
 # =========================
 # Tunables / Constants
 # =========================
-SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "Chromeboxes", "MacBooks"}
+SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "MacBooks"}
 
 # Take only the last 15 days for sales rate calc
 RECENCY_WINDOW_DAYS = 15
@@ -843,7 +843,8 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     No filtering on soi.delivery_date.
     """
-    LOOKBACK_DAYS = 50
+    LOOKBACK_DAYS_B2C = 50
+    LOOKBACK_DAYS_B2B = 100
 
     rows = frappe.db.sql(
         """
@@ -919,11 +920,13 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
-                AND so.creation > CURDATE() - INTERVAL %(lookback)s DAY
+                AND (
+                    (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
+                    OR
+                    (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
+                )
 
                 AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks')
-                AND so.sale_type != 'Amazon'
-                AND so.sale_type in ('NJ-Website-B2C','NJ-Direct-B2C')
                 AND so.customer != 'King Technologies'
 
                 AND (
@@ -948,7 +951,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 dni.docstatus = 1
                 AND dni.qty > 0
-                AND dni.creation >= CURDATE() - INTERVAL %(lookback)s DAY
+                AND dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
                 AND dni.item_group IN ('Laptops', 'Chromebooks')
             GROUP BY dni.against_sales_order, dni.item_code
         ) AS dn_data
@@ -958,14 +961,14 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         LEFT JOIN (
             SELECT
                 reserved_sales_order    AS sales_order,
-                item_code,
+                COALESCE(NULLIF(to_make, ''), item_code) AS item_code,
                 COUNT(*)                AS reserved_qty
             FROM `tabSerial No`
             WHERE
                 reserved_sales_order IS NOT NULL
                 AND reserved_sales_order != ''
                 AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-            GROUP BY reserved_sales_order, item_code
+            GROUP BY reserved_sales_order, COALESCE(NULLIF(to_make, ''), item_code)
         ) AS res_data
             ON so_data.sales_order = res_data.sales_order
            AND so_data.item_code   = res_data.item_code
@@ -984,9 +987,13 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             ON proc.parent = it2.name
 
         WHERE GREATEST(0, so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.dn_qty, 0)) - IFNULL(res_data.reserved_qty, 0)) > 0
-        ORDER BY so_data.so_creation DESC, so_data.sales_order, so_data.item_code
+        ORDER BY so_data.delivery_date ASC, so_data.so_creation ASC, so_data.sales_order, so_data.item_code
         """,
-        {"lookback": LOOKBACK_DAYS},
+        {
+            "lookback_b2c": LOOKBACK_DAYS_B2C,
+            "lookback_b2b": LOOKBACK_DAYS_B2B,
+            "lookback_max": max(LOOKBACK_DAYS_B2C, LOOKBACK_DAYS_B2B),
+        },
         as_dict=True,
     )
 
@@ -1289,7 +1296,7 @@ def _match_inventory_to_order_queues_for_sequence(
 
     for key, ref_list in sorted(list(seq_order_queues.items()), key=lambda kv: len(kv[1]), reverse=True):
         while ref_list:
-            order_ref = ref_list[-1]
+            order_ref = ref_list[0]
 
             target_cfg_tuple = None
             if order_ref.get("order_item_code"):
@@ -1336,10 +1343,26 @@ def _match_inventory_to_order_queues_for_sequence(
             pb_fallback = chosen.get("fallback_pb_item_code")
 
             if key and key[0] == "CONFIG":
-                target_item_code = _resolve_target_item_code(
-                    key,
-                    fallback_pb_code=order_ref.get("pb_code") or pb_fallback,
+                # Check if this is a reconfig match (serial config differs from SO config)
+                is_reconfig_match = (
+                    allow_reconfig
+                    and target_cfg_tuple
+                    and not _same_config(chosen, target_cfg_tuple)
                 )
+                if is_reconfig_match:
+                    # Use the SO's actual item code as the target (technician must reconfigure)
+                    target_item_code = (
+                        order_ref.get("order_item_code")
+                        or _resolve_target_item_code(
+                            key,
+                            fallback_pb_code=order_ref.get("pb_code") or pb_fallback,
+                        )
+                    )
+                else:
+                    target_item_code = _resolve_target_item_code(
+                        key,
+                        fallback_pb_code=order_ref.get("pb_code") or pb_fallback,
+                    )
             else:
                 target_item_code = pb_fallback
 
@@ -1361,7 +1384,7 @@ def _match_inventory_to_order_queues_for_sequence(
                     logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
                     continue
 
-            ref_list.pop()
+            ref_list.pop(0)
 
             allocations.append(
                 {

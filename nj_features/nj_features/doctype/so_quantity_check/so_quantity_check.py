@@ -58,12 +58,15 @@ def update_so_quantity_check(settings):
         query = f"""
                WITH Parent_Stock AS (
                     SELECT 
-                        i.variant_of AS parent,
+                        TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
                         COUNT(b.serial_no) AS total_actual_qty_for_parent
                     FROM `tabItem` i
                     LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
                     LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                     LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
+                    LEFT JOIN `tabItem Variant Attribute` proc
+                        ON proc.parent = i.item_code
+                        AND proc.attribute = 'Processor Type1'
                     WHERE 
                         b.item_group IN ({item_group_placeholders})
                         AND w.department IN ({department_placeholders})
@@ -82,7 +85,7 @@ def update_so_quantity_check(settings):
                             )
                         )
                         {warehouse_clause}
-                    GROUP BY i.variant_of
+                    GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
                 ),
 
                 Item_Stock AS (
@@ -119,11 +122,14 @@ def update_so_quantity_check(settings):
                         i.shopify_variant_id,
                         i.item_code, 
                         i.item_group,
-                        i.variant_of AS parent,
+                        TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
                         ps.total_actual_qty_for_parent,
                         isq.total_actual_qty_for_itemcode
                     FROM `tabItem` i
-                    LEFT JOIN Parent_Stock ps ON ps.parent = i.variant_of
+                    LEFT JOIN `tabItem Variant Attribute` proc
+                        ON proc.parent = i.item_code
+                        AND proc.attribute = 'Processor Type1'
+                    LEFT JOIN Parent_Stock ps ON ps.parent = TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, '')))
                     LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
                     WHERE i.item_group IN ({item_group_placeholders})
                 )
@@ -244,54 +250,65 @@ def update_so_quantity_check(settings):
         frappe.db.sql("DELETE FROM `tabSO Quantity Check`")
         frappe.db.commit()
 
-        # Step 4: Insert ONLY items from inventory data 
+        # Step 4: Insert ONLY items from inventory data
         # If they have pending SO, include that quantity
         count = 0
+        now_time = frappe.utils.now()
+        user = frappe.session.user or "Administrator"
+
+        fields = [
+            "name", "creation", "modified", "modified_by", "owner",
+            "docstatus", "idx", "item_code", "parent1", "actual_qty",
+            "so_quantity", "remaining_qty", "update_qty", "need_to_reduce",
+            "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla"
+        ]
+
+        values = []
         for item_code, data in stock_map.items():
             parent1 = data.get('parent1', '')
-            
+
             # Ensure we have numeric values for calculation
             actual_qty = data.get('actual_qty', 0) or 0
             so_quantity = pending_qty_by_item.get(item_code, 0) or 0
-            
+
             # Calculate remaining quantity after pending sales orders
             remaining_qty = actual_qty - so_quantity
-            
+
             # Calculate update_qty as MAX(remaining_qty, 0)
             update_qty = max(remaining_qty, 0)
-            
+
             # Calculate need_to_reduce as IF(remaining_qty<0, ABS(remaining_qty), 0)
             need_to_reduce = abs(remaining_qty) if remaining_qty < 0 else 0
-            
+
             # Since fields are of type "Data", convert values to string
             remaining_qty_str = str(remaining_qty)
             update_qty_str = str(update_qty)
             need_to_reduce_str = str(need_to_reduce)
-            
-            doc = frappe.get_doc({
-                "doctype": "SO Quantity Check",
-                "item_code": item_code,
-                "parent1": parent1,
-                "actual_qty": actual_qty,
-                "so_quantity": so_quantity,
-                "remaining_qty": remaining_qty_str,
-                "update_qty": update_qty_str,
-                "need_to_reduce": need_to_reduce_str
-            })
-            doc.insert(ignore_permissions=True)
+
+            name = frappe.generate_hash(length=10)
+
+            values.append((
+                name, now_time, now_time, user, user,
+                0, 0, item_code, parent1, str(actual_qty),
+                str(so_quantity), remaining_qty_str, update_qty_str, need_to_reduce_str,
+                "0", "0", None, 0
+            ))
             count += 1
-        
+
+        if values:
+            frappe.db.bulk_insert("SO Quantity Check", fields, values)
+
         frappe.db.commit()
         log_error(f"SO Quantity Check updated for {count} items", "update_so_quantity_check", "Info")
-        
+
         return True
-    
+
     except pymysql.err.OperationalError as e:
         if e.args[0] == 2013:
             return False
         else:
             return False
-    
+
     except Exception:
         log_error(frappe.get_traceback(), "update_so_quantity_check")
         return False
@@ -415,32 +432,23 @@ def updting_sla_department():
 
 def update_parent_quantity():
     try:
-        result = frappe.db.sql("""
-            SELECT parent1, SUM(need_to_reduce)
-            FROM `tabSO Quantity Check`
-            WHERE need_to_reduce > 0
-            GROUP BY parent1
-        """, as_dict=True)
-
-        for row in result:
-            parent1 = row.parent1
-            total = row["SUM(need_to_reduce)"]
-
-            # Find all matching child rows to update
-            child_rows = frappe.get_all(
-                "SO Quantity Check",
-                filters={"parent1": parent1},
-                fields=["name"]
-            )
-
-            for child in child_rows:
-                frappe.db.set_value("SO Quantity Check", child.name, "remove_parent_qty", total)
+        # Update remove_parent_qty for all rows using a single joined UPDATE query
+        frappe.db.sql("""
+            UPDATE `tabSO Quantity Check` t
+            INNER JOIN (
+                SELECT parent1, SUM(CAST(need_to_reduce AS DECIMAL(10,2))) AS total
+                FROM `tabSO Quantity Check`
+                WHERE CAST(need_to_reduce AS DECIMAL(10,2)) > 0
+                GROUP BY parent1
+            ) s ON t.parent1 = s.parent1
+            SET t.remove_parent_qty = CAST(s.total AS CHAR)
+        """)
 
         frappe.db.commit()
         log_error("SO Quantity Check parent quantity updated", "update_parent_quantity", "Info")
 
         return True
-    
+
     except pymysql.err.OperationalError as e:
         if e.args[0] == 2013:
             return False
@@ -453,85 +461,48 @@ def update_parent_quantity():
 
 def update_proportional_qty_and_updt_qty():
     try:
-        # Step 1: Fetch grouped total_update_qty for parent1 having more than one row
-        # Handle NULL values in SQL query itself
-        parent_totals = frappe.db.sql("""
-            SELECT parent1, 
-                SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
-            FROM `tabSO Quantity Check`
-            WHERE COALESCE(NULLIF(update_qty, ''), '0') != '0'
-            GROUP BY parent1
-        """, as_dict=True)
-        
-        for row in parent_totals:
-            parent1 = row.parent1
-            # Safely convert to float with default 0
-            total_update_qty = float(row.total_update_qty or 0)
-            
-            # Step 2: Get individual records for this parent1
-            items = frappe.get_all("SO Quantity Check",
-                filters={"parent1": parent1},
-                fields=["name", "update_qty", "remove_parent_qty", "remaining_qty", 
-                       "proportional_remove_qty", "update_qty2"]
-            )
-            
-            for item in items:
-                def safe_float(value, default=0.0):
-                    """Convert value to float, handling None, empty string, and invalid values"""
-                    if value is None or value == '' or value == 'None':
-                        return default
-                    try:
-                        return float(str(value).strip())
-                    except (ValueError, TypeError):
-                        return default
-                
-                try:
-                    update_qty = safe_float(item.update_qty, 0.0)
-                    remove_parent_qty = safe_float(item.remove_parent_qty, 0.0)
-                    # remaining_qty = safe_float(item.remaining_qty, 0.0)
-                    
-                    if total_update_qty > 0:
-                        proportional_remove_qty_raw = (update_qty / total_update_qty) * remove_parent_qty
-                    else:
-                        proportional_remove_qty_raw = 0.0
-                    
-                    proportional_remove_qty_int = 0
-                    if proportional_remove_qty_raw is not None and proportional_remove_qty_raw != 0:
-                        proportional_remove_qty_int = round(proportional_remove_qty_raw)
-                    proportional_remove_qty_int = int(proportional_remove_qty_int or 0)
-                    
-                    update_qty_int = int(float(update_qty or 0))
-                    update_qty2 = max(update_qty_int - proportional_remove_qty_int, 0)
-                    
-                    if update_qty <= 0:
-                        update_qty2 = 0
-                    
-                    # Step 3: Update the record - ensure values are stored as strings and not empty
-                    update_values = {
-                        "proportional_remove_qty": str(int(proportional_remove_qty_int)),
-                        "update_qty2": str(int(update_qty2))
-                    }
-                    
-                    frappe.db.set_value("SO Quantity Check", item.name, update_values)
+        frappe.db.sql("""
+            UPDATE `tabSO Quantity Check` t
+            INNER JOIN (
+                SELECT parent1, 
+                    SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
+                FROM `tabSO Quantity Check`
+                GROUP BY parent1
+            ) s ON t.parent1 = s.parent1
+            SET 
+                t.proportional_remove_qty = CAST(
+                    IF(s.total_update_qty > 0, 
+                        ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))), 
+                        0
+                    ) AS SIGNED
+                ),
+                t.update_qty2 = CAST(
+                    IF(CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) <= 0,
+                        0,
+                        GREATEST(
+                            CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) - 
+                            CAST(
+                                IF(s.total_update_qty > 0, 
+                                    ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))), 
+                                    0
+                                ) AS SIGNED
+                            ),
+                            0
+                        )
+                    ) AS SIGNED
+                )
+        """)
 
-                except (ValueError, TypeError, ZeroDivisionError) as e:
-                    frappe.db.set_value("SO Quantity Check", item.name, {
-                        "proportional_remove_qty": "0",
-                        "update_qty2": "0"
-                    })
-                    continue
-            
-            frappe.db.commit()
-        
+        frappe.db.commit()
         log_error("SO Quantity Check proportional quantity and update quantity updated", "update_proportional_qty_and_updt_qty", "Info")
         return True
-    
+
     except pymysql.err.OperationalError as e:
         if e.args[0] == 2013:
             return False
         else:
             return False
-        
+
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
         return False

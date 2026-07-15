@@ -1,5 +1,6 @@
 frappe.require("/assets/nj_features/js/nj_features.js", function() {
     extend_listview_settings('Serial No', {
+        hide_sidebar: true,
         onload: function(listview) {
             listview.page.add_inner_button(__('Update Inventory'), function() {
                 

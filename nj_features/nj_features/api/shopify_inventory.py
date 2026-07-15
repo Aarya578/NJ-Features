@@ -348,18 +348,14 @@ def create_rq_doc():
         parent_qty_map = frappe.db.sql("""
             SELECT
                 sqc.parent1,
-                COALESCE(iva.attribute_value, '') AS processor,
                 SUM(sqc.update_qty2) AS total_parent_qty
             FROM `tabSO Quantity Check` sqc
-            LEFT JOIN `tabItem Variant Attribute` iva
-                ON iva.parent = sqc.item_code
-                AND iva.attribute = 'Processor Type1'
-            GROUP BY sqc.parent1, COALESCE(iva.attribute_value, '')
+            GROUP BY sqc.parent1
         """, as_dict=True)
         logger.debug(f"parent_qty_map================== {parent_qty_map}")
 
         parent_qty_dict = {
-            (row["parent1"], str(row["processor"]).strip().lower()): safe_float(row["total_parent_qty"])
+            str(row["parent1"]).strip().lower(): safe_float(row["total_parent_qty"])
             for row in parent_qty_map
         }
         logger.debug(f"parent_qty_dict================== {parent_qty_dict}")
@@ -386,7 +382,8 @@ def create_rq_doc():
                 flags["enable_parent_override"]
                 and row.total_actual_qty < flags["parent_threshold"]
             ):
-                parent_qty = parent_qty_dict.get((row.parent1, str(row.processor or "").strip().lower()))
+                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
+                parent_qty = parent_qty_dict.get(combined_key)
                 logger.debug(f"parent_qty================== {parent_qty}")
 
                 if (

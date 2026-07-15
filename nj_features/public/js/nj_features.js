@@ -18,6 +18,17 @@ function extend_listview_settings(doctype, custom_settings) {
     frappe.listview_settings[doctype] = existing;
 }
 
+// Global patch to respect hide_sidebar in listview_settings
+if (frappe.views.BaseList) {
+    const original_setup_defaults = frappe.views.BaseList.prototype.setup_defaults;
+    frappe.views.BaseList.prototype.setup_defaults = function() {
+        original_setup_defaults.call(this);
+        if (this.settings && this.settings.hide_sidebar) {
+            this.hide_sidebar = this.settings.hide_sidebar;
+        }
+    };
+}
+
 document.addEventListener('keydown', function(event) {
     if ((event.ctrlKey && event.shiftKey && (event.key === 'I' || event.key === 'J')) || event.key === 'F12') {
         event.preventDefault(); 

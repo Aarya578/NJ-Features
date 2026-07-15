@@ -205,12 +205,15 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
         query = f"""
             WITH Parent_Stock AS (
                 SELECT
-                    i.variant_of AS parent,
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
                     COUNT(b.serial_no) AS total_actual_qty_for_parent
                 FROM `tabItem` i
                 LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
                 LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                 LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
+                LEFT JOIN `tabItem Variant Attribute` proc
+                    ON proc.parent = i.item_code
+                    AND proc.attribute = 'Processor Type1'
                 WHERE
                     b.item_group IN ({item_group_placeholders})
                     AND w.department IN ({department_placeholders})
@@ -223,7 +226,7 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                         ))
                     )
                     {warehouse_clause}
-                GROUP BY i.variant_of
+                GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
             ),
             Item_Stock AS (
                 SELECT
@@ -252,13 +255,16 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     pb.shopify_variant_id,
                     i.item_code,
                     i.item_group,
-                    i.variant_of AS parent,
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
                     ps.total_actual_qty_for_parent,
                     isq.total_actual_qty_for_itemcode
                 FROM `tabProduct Bundle` pb
                 LEFT JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
                 LEFT JOIN `tabItem` i ON pbi.item_code = i.item_code
-                LEFT JOIN Parent_Stock ps ON ps.parent = i.variant_of
+                LEFT JOIN `tabItem Variant Attribute` proc
+                    ON proc.parent = i.item_code
+                    AND proc.attribute = 'Processor Type1'
+                LEFT JOIN Parent_Stock ps ON ps.parent = TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, '')))
                 LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
                 WHERE
                     i.item_group IN ({item_group_placeholders})
@@ -341,27 +347,32 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
             frappe.db.sql(f"DELETE FROM `tabSO Quantity Check` WHERE item_code IN ({ip})", tuple(affected_item_codes))
             frappe.db.commit()
 
-        # Re-insert for affected items only
+        # Re-insert for affected items only using bulk_insert
         count = 0
-        for item_code, data in stock_map.items():
-            actual_qty = data.get('actual_qty', 0) or 0
-            so_quantity = pending_qty_by_item.get(item_code, 0) or 0
-            remaining_qty = actual_qty - so_quantity
-            update_qty = max(remaining_qty, 0)
-            need_to_reduce = abs(remaining_qty) if remaining_qty < 0 else 0
-
-            doc = frappe.get_doc({
-                "doctype": "SO Quantity Check",
-                "item_code": item_code,
-                "parent1": data.get('parent1', ''),
-                "actual_qty": actual_qty,
-                "so_quantity": so_quantity,
-                "remaining_qty": str(remaining_qty),
-                "update_qty": str(update_qty),
-                "need_to_reduce": str(need_to_reduce)
-            })
-            doc.insert(ignore_permissions=True)
-            count += 1
+        if stock_map:
+            now_time = frappe.utils.now()
+            user = frappe.session.user or "Administrator"
+            fields = [
+                "name", "creation", "modified", "modified_by", "owner",
+                "docstatus", "idx", "item_code", "parent1", "actual_qty",
+                "so_quantity", "remaining_qty", "update_qty", "need_to_reduce",
+                "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla"
+            ]
+            values = []
+            for item_code, data in stock_map.items():
+                actual_qty = data.get('actual_qty', 0) or 0
+                so_quantity = pending_qty_by_item.get(item_code, 0) or 0
+                remaining_qty = actual_qty - so_quantity
+                update_qty = max(remaining_qty, 0)
+                need_to_reduce = abs(remaining_qty) if remaining_qty < 0 else 0
+                values.append((
+                    frappe.generate_hash(length=10), now_time, now_time, user, user,
+                    0, 0, item_code, data.get('parent1', ''), str(actual_qty),
+                    str(so_quantity), str(remaining_qty), str(update_qty), str(need_to_reduce),
+                    "0", "0", None, 0
+                ))
+                count += 1
+            frappe.db.bulk_insert("SO Quantity Check", fields, values)
 
         frappe.db.commit()
         log_error(
@@ -390,10 +401,13 @@ def _get_affected_parent1_list(variant_ids):
         return []
     vp = ', '.join(['%s'] * len(variant_ids))
     rows = frappe.db.sql(f"""
-        SELECT DISTINCT i.variant_of AS parent1
+        SELECT DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent1
         FROM `tabProduct Bundle` pb
         INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
         INNER JOIN `tabItem` i ON i.item_code = pbi.item_code
+        LEFT JOIN `tabItem Variant Attribute` proc
+            ON proc.parent = i.item_code
+            AND proc.attribute = 'Processor Type1'
         WHERE pb.shopify_variant_id IN ({vp})
         AND i.variant_of IS NOT NULL AND i.variant_of != ''
     """, tuple(variant_ids), as_dict=True)
@@ -411,21 +425,18 @@ def update_parent_quantity_for_variant_ids(variant_ids):
             return True
 
         pp = ', '.join(['%s'] * len(parent1_list))
-        result = frappe.db.sql(f"""
-            SELECT parent1, SUM(need_to_reduce) AS total
-            FROM `tabSO Quantity Check`
-            WHERE need_to_reduce > 0 AND parent1 IN ({pp})
-            GROUP BY parent1
-        """, tuple(parent1_list), as_dict=True)
-
-        for row in result:
-            child_rows = frappe.get_all(
-                "SO Quantity Check",
-                filters={"parent1": row.parent1},
-                fields=["name"]
-            )
-            for child in child_rows:
-                frappe.db.set_value("SO Quantity Check", child.name, "remove_parent_qty", row.total)
+        # Single joined UPDATE - no N+1 loop needed
+        frappe.db.sql(f"""
+            UPDATE `tabSO Quantity Check` t
+            INNER JOIN (
+                SELECT parent1, SUM(CAST(need_to_reduce AS DECIMAL(10,2))) AS total
+                FROM `tabSO Quantity Check`
+                WHERE CAST(need_to_reduce AS DECIMAL(10,2)) > 0
+                AND parent1 IN ({pp})
+                GROUP BY parent1
+            ) s ON t.parent1 = s.parent1
+            SET t.remove_parent_qty = CAST(s.total AS CHAR)
+        """, tuple(parent1_list))
 
         frappe.db.commit()
         log_error(
@@ -457,62 +468,41 @@ def update_proportional_qty_and_updt_qty_for_variant_ids(variant_ids):
             return True
 
         pp = ', '.join(['%s'] * len(parent1_list))
-        parent_totals = frappe.db.sql(f"""
-            SELECT parent1,
-                SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
-            FROM `tabSO Quantity Check`
-            WHERE COALESCE(NULLIF(update_qty, ''), '0') != '0'
-            AND parent1 IN ({pp})
-            GROUP BY parent1
-        """, tuple(parent1_list), as_dict=True)
+        # Single joined UPDATE - replaces N+1 loop
+        frappe.db.sql(f"""
+            UPDATE `tabSO Quantity Check` t
+            INNER JOIN (
+                SELECT parent1,
+                    SUM(CAST(COALESCE(NULLIF(update_qty, ''), '0') AS DECIMAL(10,2))) AS total_update_qty
+                FROM `tabSO Quantity Check`
+                WHERE parent1 IN ({pp})
+                GROUP BY parent1
+            ) s ON t.parent1 = s.parent1
+            SET
+                t.proportional_remove_qty = CAST(
+                    IF(s.total_update_qty > 0,
+                        ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
+                        0
+                    ) AS SIGNED
+                ),
+                t.update_qty2 = CAST(
+                    IF(CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) <= 0,
+                        0,
+                        GREATEST(
+                            CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
+                            CAST(
+                                IF(s.total_update_qty > 0,
+                                    ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
+                                    0
+                                ) AS SIGNED
+                            ),
+                            0
+                        )
+                    ) AS SIGNED
+                )
+        """, tuple(parent1_list))
 
-        def _sf(value, default=0.0):
-            if value is None or value == '' or value == 'None':
-                return default
-            try:
-                return float(str(value).strip())
-            except Exception:
-                return default
-
-        for row in parent_totals:
-            parent1 = row.parent1
-            total_update_qty = float(row.total_update_qty or 0)
-
-            items = frappe.get_all(
-                "SO Quantity Check",
-                filters={"parent1": parent1},
-                fields=["name", "update_qty", "remove_parent_qty"]
-            )
-
-            for item in items:
-                try:
-                    update_qty = _sf(item.update_qty)
-                    remove_parent_qty = _sf(item.remove_parent_qty)
-
-                    if total_update_qty > 0:
-                        proportional_raw = (update_qty / total_update_qty) * remove_parent_qty
-                    else:
-                        proportional_raw = 0.0
-
-                    proportional_int = int(round(proportional_raw)) if proportional_raw else 0
-                    update_qty2 = max(int(float(update_qty or 0)) - proportional_int, 0)
-
-                    if update_qty <= 0:
-                        update_qty2 = 0
-
-                    frappe.db.set_value("SO Quantity Check", item.name, {
-                        "proportional_remove_qty": str(proportional_int),
-                        "update_qty2": str(update_qty2)
-                    })
-
-                except (ValueError, TypeError, ZeroDivisionError):
-                    frappe.db.set_value("SO Quantity Check", item.name, {
-                        "proportional_remove_qty": "0",
-                        "update_qty2": "0"
-                    })
-
-            frappe.db.commit()
-
+        frappe.db.commit()
         log_error(
             f"Targeted proportional qty updated for parents: {parent1_list}",
             "update_proportional_qty_and_updt_qty_for_variant_ids",
@@ -568,16 +558,13 @@ def stage_targeted_variants(variant_ids, settings):
         parent_qty_map = frappe.db.sql("""
             SELECT
                 sqc.parent1,
-                COALESCE(iva.attribute_value, '') AS processor,
                 SUM(sqc.update_qty2) AS total_parent_qty
             FROM `tabSO Quantity Check` sqc
-            LEFT JOIN `tabItem Variant Attribute` iva
-                ON iva.parent = sqc.item_code AND iva.attribute = 'Processor Type1'
-            GROUP BY sqc.parent1, COALESCE(iva.attribute_value, '')
+            GROUP BY sqc.parent1
         """, as_dict=True)
 
         parent_qty_dict = {
-            (row["parent1"], row["processor"]): safe_float(row["total_parent_qty"])
+            str(row["parent1"]).strip().lower(): safe_float(row["total_parent_qty"])
             for row in parent_qty_map
         }
 
@@ -592,7 +579,8 @@ def stage_targeted_variants(variant_ids, settings):
 
             # Rule 1: Parent Override
             if flags["enable_parent_override"] and row.total_actual_qty < flags["parent_threshold"]:
-                parent_qty = parent_qty_dict.get((row.parent1, row.processor or ""))
+                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
+                parent_qty = parent_qty_dict.get(combined_key)
                 if parent_qty is not None and parent_qty > flags["parent_threshold"]:
                     row.total_actual_qty = parent_qty
                     update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "

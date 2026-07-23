@@ -82,7 +82,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            check_warehouse_qty(self.name)
+            # check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -2071,9 +2071,13 @@ def item_item_group(item):
 
 def validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
     gen_item_groups = get_nj_settings_comma_separated_values("gen_item_groups")
+    repair_system = get_nj_settings_comma_separated_values("repair_systems_for_gen_wise")
     serial_item_group = frappe.db.get_value("Item", serial_doc.get("item_code"), "item_group")
+    serial_no_return_reason = frappe.db.get_value("Serial No", serial_no, "return_reason")
     sellable_dept = "Inward Salable - NJ"
 
+    if repair_system and serial_no_return_reason in repair_system:
+        return True
     if not gen_item_groups or serial_item_group not in gen_item_groups:
         return True
 
@@ -2129,7 +2133,7 @@ def validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department,
                     f"<b>{dept_wise_threshold_qty}</b> for <b>below 8th gen</b>. You cannot move this serial no "
                     f"from source department <b>{s_department}</b>. Restricted source departments: "
                     f"<b>{restricted_departments_text}</b>."
-                    f"Kindly Move this serial no from source department<b> {sellable_dept} </b>. "
+                    f"Kindly Move this serial no to department<b> {sellable_dept} </b>. "
                 )
                 return False
 

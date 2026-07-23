@@ -106,7 +106,7 @@ def nj_temp_shopify_session(func):
         if not settings:
             log_error("Shopify settings not found", "nj_temp_shopify_session")
             return
-        with Session.temp(settings["shop"], "2025-07", settings["token"]):
+        with Session.temp(settings["shop"], "2026-10", settings["token"]):
             return func(*args, **kwargs)
     return wrapper
 

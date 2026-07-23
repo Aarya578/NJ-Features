@@ -152,6 +152,9 @@ class CustomDeliveryNote(DeliveryNote):
             with log_time("super().on_submit()", self.name):
                 super().on_submit()
 
+            with log_time("update_parent_qty_and_laptop_gen", self.name):
+                self.update_parent_qty_and_laptop_gen()
+
             # ------------------------------------------------------------------
             # Get against_sales_order
             # ------------------------------------------------------------------
@@ -373,7 +376,19 @@ class CustomDeliveryNote(DeliveryNote):
             # Raise a clean error message to user
             frappe.throw(f"Error in on_submit: {frappe.as_unicode(e)}")
 
+    def update_parent_qty_and_laptop_gen(self):
+        if not self.is_return:
+            return
 
+        from nj_p1_features.overrides.serial_no import qty_update_based_on_parent_item
+
+        serial_nos = set()
+        for child_table in ("items", "packed_items"):
+            for row in self.get(child_table) or []:
+                serial_nos.update(self.get_serial_list(row.get("serial_no")))
+
+        for serial_no in serial_nos:
+            qty_update_based_on_parent_item(serial_no=serial_no)
 
     def _process_customer_details(self):
         
@@ -2581,18 +2596,13 @@ def update_item_details(self):
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
-    print("against_sales_order=======================", against_sales_order)
     
     if against_sales_order:
         sales_order = frappe.get_doc("Sales Order", against_sales_order)
-        print("sales_order=======================", sales_order )
         
         cod_amt = sales_order.total_outstanding
-        print("cod_amt=======================", cod_amt)
         is_cod = sales_order.is_cod
-        print("is_cod=======================", is_cod)
         payment_received = sales_order.payment_received  
-        print("payment_received=======================", payment_received)  
         
         return {
             'cod_amount': cod_amt,
@@ -2608,7 +2618,6 @@ def fetch_cod_amount(doc_name):
 
 @frappe.whitelist()
 def set_cod_details_critical(doc, method=None):
-    print("345678------------------")
     """
     Automatically fetch COD amount and set mode_of_transfer
     when Delivery Note is saved.

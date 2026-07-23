@@ -246,6 +246,50 @@ def update_product_bundle_quantities():
 		# Step 6: Update and save Product Bundle quantity
 		frappe.db.set_value("Product Bundle", pb.name, "quantity", total_count, update_modified=False)
 
+
+@frappe.whitelist()
+def update_zero_quantity_product_bundles():
+	"""Update enabled bundles using SO Quantity Check parent totals."""
+	bundle_items = frappe.db.sql(
+		"""
+		SELECT pb.name AS bundle_name, pbi.item_code
+		FROM `tabProduct Bundle` AS pb
+		INNER JOIN `tabProduct Bundle Item` AS pbi ON pbi.parent = pb.name
+		WHERE COALESCE(pb.disable, 0) = 0
+			AND COALESCE(pbi.item_code, '') != ''
+		""",
+		as_dict=True,
+	)
+
+	bundle_items_map = {}
+	for row in bundle_items:
+		bundle_items_map.setdefault(row.bundle_name, set()).add(row.item_code)
+
+	for bundle_name, bundle_item_codes in bundle_items_map.items():
+		item_codes = sorted(bundle_item_codes)
+		placeholders = ", ".join(["%s"] * len(item_codes))
+		total_qty = frappe.db.sql(
+			f"""
+			SELECT COALESCE(SUM(so.update_qty2), 0) AS total_qty
+			FROM `tabSO Quantity Check` AS so
+			WHERE so.parent1 IN (
+				SELECT DISTINCT matched_so.parent1
+				FROM `tabSO Quantity Check` AS matched_so
+				WHERE matched_so.item_code IN ({placeholders})
+			)
+			""",
+			tuple(item_codes),
+			as_dict=True,
+		)[0].total_qty
+
+		frappe.db.set_value(
+			"Product Bundle",
+			bundle_name,
+			"quantity",
+			total_qty,
+			update_modified=False,
+		)
+
 @frappe.whitelist()
 def update_variant_status(run_now=False):
 	"""Queue Product Bundle shopify_status sync from Shopify product status."""

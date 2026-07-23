@@ -4,11 +4,47 @@
 import json
 import frappe
 from frappe.model.document import Document
+from frappe.utils import now_datetime
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 
 class NJAudit(Document):
     def on_submit(self):
+        self.time_stamp_update()
         move_all_stock(self)
+
+    def time_stamp_update(self):
+        current_time = now_datetime()
+
+        for item in self.get('nj_audit_items', []):
+            source_warehouse = item.get('s_warehouse')
+            target_warehouse = item.get('t_rack_warehouse')
+
+            if (
+                not source_warehouse
+                or not target_warehouse
+                or source_warehouse == target_warehouse
+            ):
+                continue
+
+            source_department = frappe.db.get_value(
+                'Warehouse', source_warehouse, 'department'
+            )
+            target_department = frappe.db.get_value(
+                'Warehouse', target_warehouse, 'department'
+            )
+
+            if source_department == target_department or not item.get('serial_no'):
+                continue
+
+            for serial_no in item.get('serial_no').split('\n'):
+                serial_no = serial_no.strip()
+                if serial_no:
+                    frappe.db.set_value(
+                        'Serial No',
+                        serial_no,
+                        'stock_enty_date_and_time',
+                        current_time,
+                    )
         
 @frappe.whitelist()
 def move_all_stock(self):

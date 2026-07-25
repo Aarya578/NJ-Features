@@ -82,7 +82,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            # check_warehouse_qty(self.name)
+            check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -898,7 +898,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     AND h.holiday_date <= CURDATE()
                 WHERE
                     w.department = %s
-                    AND w.warehouse_type != 'Employee Personal Warehouse'
+                    AND (w.warehouse_type IS NULL
+                        OR w.warehouse_type = ''
+                        OR w.warehouse_type != 'Employee Personal Warehouse')
                     AND sn.item_group IN ({sla_item_group_placeholders})
                     AND sn.stock_enty_date_and_time IS NOT NULL
                 GROUP BY
@@ -1130,8 +1132,9 @@ def validate_all_item_groups_sla(
                 AND holiday.holiday_date <= CURDATE()
             WHERE
                 warehouse.department = %s
-                AND warehouse.warehouse_type !=
-                    'Employee Personal Warehouse'
+                AND (w.warehouse_type IS NULL
+                    OR w.warehouse_type = ''
+                    OR w.warehouse_type != 'Employee Personal Warehouse')
                 AND sn.item_group = %s
                 AND sn.status = 'Active'
                 AND sn.stock_enty_date_and_time IS NOT NULL

@@ -205,11 +205,21 @@ def update_so_quantity_check(settings):
                     so.status NOT IN ('Closed', 'Completed', 'Cancelled')
                     AND so.docstatus = 1
                     AND so.creation > CURDATE() - INTERVAL 50 DAY
-                    AND soi.item_group IN ('Laptops','Chromebooks')
+                    AND soi.item_group IN ('Laptops(Bundle)',
+                                        'Chromebooks(Bundle)',
+                                        'MacBooks(Bundle)',
+                                        'MacBooks',
+                                        'Laptops',
+                                        'Chromebooks')
                     AND so.sale_type != 'Amazon'
                     AND (
                         pb.item_code IS NULL 
-                        OR it.item_group IN ('Laptops', 'Chromebooks')
+                        OR it.item_group IN ('Laptops(Bundle)',
+                                        'Chromebooks(Bundle)',
+                                        'MacBooks(Bundle)',
+                                        'MacBooks',
+                                        'Laptops',
+                                        'Chromebooks')
                     )
             ) AS so_data
 
@@ -221,7 +231,12 @@ def update_so_quantity_check(settings):
                 WHERE 
                     dni.docstatus = 1 AND dni.qty > 0
                     AND dni.creation >= CURDATE() - INTERVAL 50 DAY
-                    AND dni.item_group IN ('Laptops', 'Chromebooks')
+                    AND dni.item_group IN ('Laptops(Bundle)',
+                                        'Chromebooks(Bundle)',
+                                        'MacBooks(Bundle)',
+                                        'MacBooks',
+                                        'Laptops',
+                                        'Chromebooks')
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 

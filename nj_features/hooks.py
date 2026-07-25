@@ -102,6 +102,7 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
+            "nj_features.overrides.sales_invoice.add_missing_sales_order_tax_accounts",
         ],
         # "on_submit": [
         #     "nj_features.overrides.sales_invoice.send_invoice_email",

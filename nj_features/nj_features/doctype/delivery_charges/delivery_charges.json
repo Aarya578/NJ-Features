@@ -16,6 +16,7 @@
   "delivery_note",
   "pickup_scheduled_date",
   "remark_status",
+  "shopify_status_synced",
   "courier_service",
   "shiprocket_order_id",
   "shiprocket_shipment_id",
@@ -121,6 +122,13 @@
    "fieldname": "remark_status",
    "fieldtype": "Data",
    "label": "Remark Status"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "shopify_status_synced",
+   "fieldtype": "Check",
+   "label": "Shopify Status Synced"
   },
   {
    "allow_on_submit": 1,

@@ -133,27 +133,20 @@ class CustomSalesOrder(SalesOrder):
 
     def update_status(self, status):
         super().update_status(status)
-        if status in ("Closed", "Cancelled"):
+        if status in ("Closed", "Cancelled", "Completed"):
             _release_serial_reservations(self.name)
 
     def on_update_after_submit(self):
-        if self.status in ("Closed", "Cancelled"):
+        if self.status in ("Closed", "Cancelled", "Completed"):
             _release_serial_reservations(self.name)
 
 
 def _release_serial_reservations(so_name):
-    """Clear reserved_sales_order on serials tied to a Closed/Cancelled SO,
-    skipping any that already have a submitted Delivery Note (already shipped)."""
+    """Clear reserved_sales_order on serials tied to a Closed/Cancelled/Completed SO."""
     reserved_serials = frappe.db.sql_list("""
         SELECT name
         FROM `tabSerial No`
         WHERE reserved_sales_order = %s
-            AND NOT EXISTS (
-                SELECT 1
-                FROM `tabDelivery Note Item`
-                WHERE serial_no = `tabSerial No`.name
-                    AND docstatus = 1
-            )
     """, so_name)
 
     if not reserved_serials:
@@ -167,7 +160,7 @@ def _release_serial_reservations(so_name):
     frappe.db.commit()
 
     frappe.log_error(
-        title=f"Serial reservations released — SO Closed: {so_name}",
+        title=f"Serial reservations released — SO Closed/Cancelled/Completed: {so_name}",
         message=f"Released {len(reserved_serials)} serial(s): {', '.join(reserved_serials)}"
     )    
 
@@ -242,6 +235,178 @@ def trigger_fulfillment(order_id):
 """Laptop Allocations Functions - Modified with Delivery Date Logic"""
 
 
+def trim_over_allocated_serials():
+    """Safety net: find all SOs where reserved serial count > net pending qty, and release excess.
+
+    This prevents over-allocation caused by any race condition or mismatch between
+    the hourly allocator and the production planner. It runs at the start of every
+    hourly allocation cycle. Runs very fast by targeting only active reserved Sales Orders.
+    """
+    try:
+        # CLEANUP: Release reservations for any serials in sequence 0 departments
+        # or Employee Personal Warehouses
+        invalid_serials = frappe.db.sql_list("""
+            SELECT sn.name
+            FROM `tabSerial No` sn
+            INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+            WHERE sn.reserved_sales_order IS NOT NULL
+              AND sn.reserved_sales_order != ''
+              AND sn.status = 'Active'
+              AND (
+                  IFNULL(dp.department_sequence, 0) = 0
+                  OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
+              )
+        """)
+        if invalid_serials:
+            frappe.db.sql("""
+                UPDATE `tabSerial No`
+                SET reserved_sales_order = NULL,
+                    to_make = NULL
+                WHERE name IN %s
+            """, (tuple(invalid_serials),))
+            frappe.db.commit()
+            logger.info("Released %s invalid serials in sequence 0 departments or Employee Personal Warehouses", len(invalid_serials))
+
+        # Get active reserved Sales Orders to avoid querying the whole system history
+        active_reserved_sos = frappe.db.sql_list("""
+            SELECT DISTINCT reserved_sales_order 
+            FROM `tabSerial No` 
+            WHERE reserved_sales_order IS NOT NULL 
+              AND reserved_sales_order != ''
+              AND status = 'Active'
+        """)
+        if not active_reserved_sos:
+            return
+
+        so_list_str = ", ".join(f"'{so}'" for so in active_reserved_sos)
+
+        # Get all SOs that have serial reservations, with their ordered & delivered qtys
+        over_allocated = frappe.db.sql(f"""
+            SELECT
+                res.reserved_sales_order AS so_name,
+                res.item_code            AS item_code,
+                res.reserved_count,
+                IFNULL(soi_data.so_qty, 0)   AS so_qty,
+                IFNULL(dn_data.dn_qty, 0)    AS dn_qty,
+                GREATEST(0, CASE WHEN so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0 ELSE IFNULL(soi_data.so_qty, 0) - IFNULL(dn_data.dn_qty, 0) END) AS net_pending
+            FROM (
+                SELECT
+                    sn.reserved_sales_order,
+                    COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
+                    COUNT(*) AS reserved_count
+                FROM `tabSerial No` sn
+                INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+                INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+                WHERE sn.reserved_sales_order IN ({so_list_str})
+                  AND sn.status = 'Active'
+                  AND IFNULL(dp.department_sequence, 0) != 0
+                  AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+                GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
+            ) res
+            LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
+            LEFT JOIN (
+                SELECT
+                    soi.parent AS sales_order,
+                    CASE
+                        WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                        ELSE pbi.item_code
+                    END AS item_code,
+                    SUM(
+                        CASE
+                            WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty
+                            ELSE IFNULL(pbi.qty, 0) * soi.qty
+                        END
+                    ) AS so_qty
+                FROM `tabSales Order Item` soi
+                INNER JOIN `tabSales Order` so ON so.name = soi.parent
+                INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+                LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+                    AND IFNULL(it_so.is_stock_item, 0) = 0
+                LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                WHERE so.name IN ({so_list_str})
+                GROUP BY soi.parent,
+                    CASE
+                        WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                        ELSE pbi.item_code
+                    END
+            ) soi_data
+                ON soi_data.sales_order = res.reserved_sales_order
+               AND soi_data.item_code   = res.item_code
+
+            LEFT JOIN (
+                SELECT
+                    dni.against_sales_order AS sales_order,
+                    CASE 
+                        WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                        ELSE pbi.item_code
+                    END AS item_code,
+                    SUM(dni.qty) AS dn_qty
+                FROM `tabDelivery Note Item` dni
+                INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+                INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+                LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+                    AND IFNULL(it_so.is_stock_item, 0) = 0
+                LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                    AND pbi.item_code = dni.item_code
+                WHERE dni.docstatus = 1 AND dni.against_sales_order IN ({so_list_str})
+                GROUP BY dni.against_sales_order, 
+                    CASE 
+                        WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                        ELSE pbi.item_code
+                    END
+            ) dn_data
+                ON dn_data.sales_order = res.reserved_sales_order
+               AND dn_data.item_code   = res.item_code
+
+            HAVING res.reserved_count > net_pending
+        """, as_dict=True)
+
+        total_released = 0
+        for row in over_allocated:
+            excess = int(row["reserved_count"] - row["net_pending"])
+            if excess <= 0:
+                continue
+
+            # Release excess serials (prefer releasing exact-match serials first,
+            # keep reconfig serials since they have production plan work orders)
+            excess_serials = frappe.db.sql_list("""
+                SELECT name
+                FROM `tabSerial No`
+                WHERE reserved_sales_order = %s
+                  AND (item_code = %s OR (to_make IS NOT NULL AND to_make != '' AND to_make = %s))
+                  AND status = 'Active'
+                ORDER BY
+                    CASE WHEN (to_make IS NULL OR to_make = '' OR to_make = item_code) THEN 0 ELSE 1 END ASC,
+                    creation DESC
+                LIMIT %s
+            """, (row["so_name"], row["item_code"], row["item_code"], excess))
+
+            if excess_serials:
+                frappe.db.sql("""
+                    UPDATE `tabSerial No`
+                    SET reserved_sales_order = NULL
+                    WHERE name IN %(serials)s
+                """, {"serials": excess_serials})
+                total_released += len(excess_serials)
+                logger.info(
+                    "Trimmed %d excess serials from SO %s / item %s (had %d, need %d)",
+                    len(excess_serials), row["so_name"], row["item_code"],
+                    int(row["reserved_count"]), int(row["net_pending"])
+                )
+
+        if total_released:
+            frappe.db.commit()
+            logger.info("trim_over_allocated_serials: released %d excess serials total", total_released)
+
+    except Exception:
+        frappe.log_error(
+            title="trim_over_allocated_serials failed",
+            message=frappe.get_traceback()
+        )
+
+
+
 @frappe.whitelist(allow_guest=True)
 def calculate_dispatch_eta_for_sales_order(so_name=None):
     """Calculate dispatch ETA.
@@ -253,6 +418,10 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
     using full pending quantity, not on whether the order is already reserved /
     allocated. Allocation is still executed for reservation side effects.
     """
+    # Safety net: trim any over-allocated serials before processing
+    if not so_name:
+        trim_over_allocated_serials()
+
     departments = get_departments()
     open_orders = get_open_sales_orders(so_name=so_name)
 
@@ -408,7 +577,7 @@ def get_open_sales_orders(so_name=None):
                 AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
                 {condition_direct}
             GROUP BY
                 so.name, soi.item_code, so.delivery_date
@@ -438,7 +607,7 @@ def get_open_sales_orders(so_name=None):
                 AND soi_item.is_stock_item = 0
                 AND i.is_stock_item = 1
                 AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes')
-                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 20 DAY)
+                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
                 {condition_bundle}
         ) AS combined
         ORDER BY combined.delivery_date ASC
@@ -455,30 +624,47 @@ def get_delivered_quantity(so_name, item_code):
         SELECT SUM(dni.qty)
         FROM `tabDelivery Note Item` dni
         INNER JOIN `tabDelivery Note` dn ON dni.parent = dn.name
-        WHERE dni.against_sales_order = %s
-            AND dni.item_code = %s
+        INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+        WHERE soi.parent = %s
+            AND (soi.item_code = %s OR dni.item_code = %s)
             AND dn.docstatus = 1
-    """, (so_name, item_code))
+    """, (so_name, item_code, item_code))
 
     return result[0][0] if result and result[0][0] else 0
 
 
 def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, remaining_depts):
-    """Adjust serial allocations and return unallocated quantity"""
+    """Adjust serial allocations and return unallocated quantity.
+
+    Counts ALL serials reserved for this SO + item, including reconfig serials
+    where to_make matches the target item_code (consistent with the production
+    planner's COALESCE(NULLIF(to_make, ''), item_code) logic).
+    """
+    # Count serials where either the current item_code matches OR the
+    # serial is being reconfigured into this item (to_make = item_code).
+    # This prevents over-allocation when the production planner has already
+    # reserved reconfig serials for this Sales Order.
     allocated_count = frappe.db.sql("""
         SELECT COUNT(*)
-        FROM `tabSerial No`
+        FROM `tabSerial No` sn
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         WHERE
-            reserved_sales_order = %s
-            AND item_code = %s
-            AND status = 'Active'
-            AND warehouse IS NOT NULL
-    """, (so_name, item_code))[0][0] or 0
+            sn.reserved_sales_order = %s
+            AND (
+                sn.item_code = %s
+                OR (sn.to_make IS NOT NULL AND sn.to_make != '' AND sn.to_make = %s)
+            )
+            AND sn.status = 'Active'
+            AND IFNULL(dp.department_sequence, 0) != 0
+            AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+    """, (so_name, item_code, item_code))[0][0] or 0
 
     to_allocate = net_pending - allocated_count
     unallocated_qty = 0
 
     if to_allocate < 0:
+        # Only unassign exact-match serials (don't touch production planner reconfigs)
         unassign_serials(so_name, item_code, abs(to_allocate))
 
     elif to_allocate > 0:
@@ -509,7 +695,9 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             break
 
         warehouses = frappe.db.sql_list("""
-            SELECT name FROM `tabWarehouse` WHERE department = %s
+            SELECT name FROM `tabWarehouse` 
+            WHERE department = %s
+              AND IFNULL(warehouse_type, '') != 'Employee Personal Warehouse'
         """, dept.name)
 
         if not warehouses:
@@ -519,24 +707,28 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
 
         query = f"""
-            SELECT name
-            FROM `tabSerial No`
+            SELECT sn.name
+            FROM `tabSerial No` sn
+            INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
             WHERE
-                item_code = '{item_code}'
-                AND warehouse IN ({warehouses_str})
-                AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
-                AND status = 'Active'
+                sn.item_code = '{item_code}'
+                AND sn.warehouse IN ({warehouses_str})
+                AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+                AND sn.status = 'Active'
+                AND IFNULL(dp.department_sequence, 0) != 0
+                AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
                 AND NOT (
-                    (is_replace = 1 OR (return_reason IS NOT NULL AND return_reason != ''))
-                    AND (sales_order_id IS NULL OR sales_order_id = '')
+                    (sn.is_replace = 1 OR (sn.return_reason IS NOT NULL AND sn.return_reason != ''))
+                    AND (sn.sales_order_id IS NULL OR sn.sales_order_id = '')
                 )
                 AND NOT EXISTS (
                     SELECT 1
                     FROM `tabDelivery Note Item`
-                    WHERE serial_no = `tabSerial No`.name
+                    WHERE serial_no = sn.name
                         AND docstatus = 1
                 )
-            ORDER BY creation ASC
+            ORDER BY sn.creation ASC
             LIMIT {remaining}
         """
 
@@ -554,20 +746,11 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             print("is_replace:", serial_doc.is_replace)
             print("return_reason:", serial_doc.return_reason)
 
-            if serial_doc.is_replace or serial_doc.return_reason:
-                sales_order_id = serial_doc.get("sales_order_id")
-                if sales_order_id:
-                    print("🧩 Updating (replacement case) → redirecting to", sales_order_id)
-                    serial_doc.reserved_sales_order = sales_order_id
-                else:
-                    print("⚠️ Ghost serial with no sales_order_id — skipping")
-                    continue
-            else:
-                print("⚙️ Updating (normal case)")
-                print("so_name:", so_name)
-                print("serial_name:", serial_name)
-                serial_doc.reserved_sales_order = so_name
-                actually_reserved += 1
+            print("⚙️ Updating (normal case)")
+            print("so_name:", so_name)
+            print("serial_name:", serial_name)
+            serial_doc.reserved_sales_order = so_name
+            actually_reserved += 1
 
             so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
             aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0

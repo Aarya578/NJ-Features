@@ -2835,7 +2835,7 @@ function generateStorageItemCode(frm, cdt, cdn, child) {
           } else {
             frappe.model.set_value(cdt, cdn, "calculated_item_code", r.message);
             if (r.message) {
-              frm.set_value("merged_storage_item_code", 1);
+              frm.set_value("merged_storage_item_code", 0);
               frm.refresh_field("merged_storage_item_code");
             }
           }
@@ -3032,7 +3032,7 @@ function generateRamItemCode(frm, cdt, cdn, child) {
           } else {
             frappe.model.set_value(cdt, cdn, "calculated_item_code", r.message);
             if (r.message) {
-              frm.set_value("merged_ram_item_code", 1);
+              frm.set_value("merged_ram_item_code", 0);
               frm.refresh_field("merged_ram_item_code");
             }
           }
@@ -4229,11 +4229,11 @@ async function handle_merge(frm, selected_rows, child_name) {
   );
 
   if (child_name == "njqca_laptop_ram") {
-    frm.set_value("merged_ram_item_code", 1);
+    frm.set_value("merged_ram_item_code", 0);
     frm.refresh_field("merged_ram_item_code");
   }
   if (child_name == "njqca_laptop_storage") {
-    frm.set_value("merged_storage_item_code", 1);
+    frm.set_value("merged_storage_item_code", );
     frm.refresh_field("merged_storage_item_code");
   }
 }

@@ -61,7 +61,7 @@ class NJProductionPlanning(Document):
 # =========================
 # Tunables / Constants
 # =========================
-SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "MacBooks"}
+SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "MacBooks", "Laptops(Bundle)", "Chromebooks(Bundle)", "MacBooks(Bundle)"}
 
 # Take only the last 15 days for sales rate calc
 RECENCY_WINDOW_DAYS = 15
@@ -258,6 +258,31 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     """)
     frappe.db.commit()
     logger.debug("[CLEANUP] Cleared stale reserved_sales_order for serials linked to Closed/Cancelled/Completed SOs.")
+
+    # CLEANUP 2: Release reservations for any serials in sequence 0 departments
+    # or Employee Personal Warehouses
+    invalid_serials = frappe.db.sql_list("""
+        SELECT sn.name
+        FROM `tabSerial No` sn
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+        WHERE sn.reserved_sales_order IS NOT NULL
+          AND sn.reserved_sales_order != ''
+          AND sn.status = 'Active'
+          AND (
+              (IFNULL(dp.department_sequence, 0) = 0)
+              OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
+          )
+    """)
+    if invalid_serials:
+        frappe.db.sql("""
+            UPDATE `tabSerial No`
+            SET reserved_sales_order = NULL,
+                to_make = NULL
+            WHERE name IN %s
+        """, (tuple(invalid_serials),))
+        frappe.db.commit()
+        logger.info("[CLEANUP] Released %s invalid serials in sequence 0 departments or Employee Personal Warehouses", len(invalid_serials))
 
     depts = frappe.get_all(
         "Department",
@@ -923,10 +948,10 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 AND (
                     (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
                     OR
-                    (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
+                    (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B', 'Distributor', 'Franchisee', 'Educational Institutes') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
                 )
 
-                AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks')
+                AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks', 'Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)')
                 AND so.customer != 'King Technologies'
 
                 AND (
@@ -945,30 +970,69 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
         LEFT JOIN (
             SELECT
                 dni.against_sales_order       AS against_sales_order,
-                dni.item_code                 AS item_code,
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END                           AS item_code,
                 SUM(dni.qty)                  AS dn_qty
             FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+            INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+                AND IFNULL(it_so.is_stock_item, 0) = 0
+            LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                AND pbi.item_code = dni.item_code
             WHERE
                 dni.docstatus = 1
-                AND dni.qty > 0
                 AND dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
-                AND dni.item_group IN ('Laptops', 'Chromebooks')
-            GROUP BY dni.against_sales_order, dni.item_code
+            GROUP BY dni.against_sales_order, 
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END
         ) AS dn_data
             ON so_data.sales_order = dn_data.against_sales_order
            AND so_data.item_code   = dn_data.item_code
 
         LEFT JOIN (
             SELECT
-                reserved_sales_order    AS sales_order,
-                COALESCE(NULLIF(to_make, ''), item_code) AS item_code,
-                COUNT(*)                AS reserved_qty
-            FROM `tabSerial No`
+                sn.reserved_sales_order    AS sales_order,
+                -- Robustly resolve the stock item code from to_make.
+                -- If to_make is a Product Bundle code, resolve it to the component stock item code.
+                -- Otherwise, use to_make (which is a stock item) or fallback to sn.item_code.
+                COALESCE(
+                    (
+                        SELECT pbi.item_code 
+                        FROM `tabProduct Bundle Item` pbi 
+                        INNER JOIN `tabProduct Bundle` pb ON pbi.parent = pb.name 
+                        WHERE pb.new_item_code = sn.to_make 
+                        LIMIT 1
+                    ),
+                    NULLIF(sn.to_make, ''),
+                    sn.item_code
+                )                          AS item_code,
+                COUNT(*)                   AS reserved_qty
+            FROM `tabSerial No` sn
+            INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
             WHERE
-                reserved_sales_order IS NOT NULL
-                AND reserved_sales_order != ''
-                AND (status IS NULL OR status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
-            GROUP BY reserved_sales_order, COALESCE(NULLIF(to_make, ''), item_code)
+                sn.reserved_sales_order IS NOT NULL
+                AND sn.reserved_sales_order != ''
+                AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+                AND IFNULL(dp.department_sequence, 0) != 0
+                AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+            GROUP BY sn.reserved_sales_order, 
+                COALESCE(
+                    (
+                        SELECT pbi.item_code 
+                        FROM `tabProduct Bundle Item` pbi 
+                        INNER JOIN `tabProduct Bundle` pb ON pbi.parent = pb.name 
+                        WHERE pb.new_item_code = sn.to_make 
+                        LIMIT 1
+                    ),
+                    NULLIF(sn.to_make, ''),
+                    sn.item_code
+                )
         ) AS res_data
             ON so_data.sales_order = res_data.sales_order
            AND so_data.item_code   = res_data.item_code
@@ -1278,6 +1342,8 @@ def _match_inventory_to_order_queues_for_sequence(
     forward_grain,
     current_department: str,
 ):
+    # Reconfiguration is always allowed for Sales Order allocations
+    allow_reconfig = True
     allocations = []
     remaining = serial_map[:]
     if not seq_order_queues:
@@ -1370,19 +1436,7 @@ def _match_inventory_to_order_queues_for_sequence(
                 target_item_code = order_ref.get("pb_code") or pb_fallback
 
             if _DEPT_ALLOCATE_PARTS.get(current_department):
-                ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-                if not ok:
-                    _update_serial_to_make(chosen["serial_no"], target_item_code)
-
-                    remaining = [x for x in remaining if x["serial_no"] != chosen["serial_no"]]
-                    by_model[chosen["forward_key_model"]] = [
-                        x for x in by_model[chosen["forward_key_model"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    by_config[chosen["forward_key_config"]] = [
-                        x for x in by_config[chosen["forward_key_config"]] if x["serial_no"] != chosen["serial_no"]
-                    ]
-                    logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Order Match)")
-                    continue
+                _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
 
             ref_list.pop(0)
 
@@ -1653,9 +1707,13 @@ def _get_reconfig_serials_for_departments(
             ON sn.item_code = it.name
         LEFT JOIN `tabItem Wizards` iw
             ON sn.item_wizard = iw.name
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         WHERE sn.department IN %(depts)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND it.item_group IN %(igroups)s
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         """,
         {"depts": dept_tuple, "igroups": igroup_tuple},
         as_dict=True,
@@ -1857,10 +1915,14 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
             ON sn.item_code = it.name
         LEFT JOIN `tabItem Wizards` iw
             ON sn.item_wizard = iw.name
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         WHERE sn.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND it.item_group IN %(igroups)s
           AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
           {extra_where}
         """,
         params,
@@ -1901,12 +1963,16 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
         INNER JOIN `tabItem` it ON it.name = sn.item_code
         INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
         LEFT JOIN `tabItem Wizards` iw ON sn.item_wizard = iw.name
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
         WHERE sn.department = %(dept)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
           AND it.item_group IN %(igroups)s
           AND sn.reserved_sales_order IS NOT NULL
           AND sn.reserved_sales_order != ''
           AND so.status NOT IN ('Closed', 'Cancelled', 'Completed')
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         """,
         {
             "dept": dept_name,
@@ -1969,9 +2035,14 @@ def _prime_item_cache(item_codes: List[str]):
         ram = attrs.get(RAM_ATTR)
         sto = attrs.get(STORAGE_ATTR)
 
+        proc_clean = proc.strip().upper() if isinstance(proc, str) else proc
+        template_clean = template.strip() if isinstance(template, str) else template
+        ram_clean = ram.strip().upper() if isinstance(ram, str) else ram
+        sto_clean = sto.strip().upper() if isinstance(sto, str) else sto
+
         _ITEM_KEYS[ic] = {
-            "model_key": ("MODEL", template, proc),
-            "config_key": ("CONFIG", template, proc, ram, sto),
+            "model_key": ("MODEL", template_clean, proc_clean),
+            "config_key": ("CONFIG", template_clean, proc_clean, ram_clean, sto_clean),
         }
 
 
@@ -2349,8 +2420,6 @@ def _append_plan_row(
 
     if reason == "Order" and sales_order_number:
         _update_serial_reserved_sales_order(serial_no, sales_order_number)
-    else:
-        _update_serial_reserved_sales_order(serial_no, None)
 
     plan_doc.append(
         "lines",
@@ -2379,7 +2448,7 @@ def _append_plan_row(
 
 PP_MR_DEFAULT_SCHEDULE_DAYS = 3
 PP_MR_STORES_DEPARTMENT = "Stores - NJ"
-PP_MR_CORE_ITEM_GROUPS = ["Laptops", "Chromeboxes", "Chromebooks", "Desktops", "Macbooks"]
+PP_MR_CORE_ITEM_GROUPS = ["Laptops", "Chromebooks", "Desktops", "Macbooks"]
 PP_MR_MIN_QTY = 0.000001
 _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM = {}
 
@@ -7134,3 +7203,427 @@ def laptop_storage_mr_via_production_plan(doc=None, method=None):
         "storage_shortage_items": storage_shortage_items,
         "laptop_storage_mr": laptop_storage_mr,
     }
+
+
+@frappe.whitelist()
+def nj_clear_stale_reservations():
+    """Clear stale reserved_sales_order on Serial Nos linked to Closed/Cancelled/Completed Sales Orders."""
+    stale_cleared = frappe.db.sql("""
+        UPDATE `tabSerial No` sn
+        INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
+        SET sn.reserved_sales_order = NULL
+        WHERE so.status IN ('Closed', 'Cancelled', 'Completed')
+          AND sn.reserved_sales_order IS NOT NULL
+          AND sn.reserved_sales_order != ''
+    """)
+    frappe.db.commit()
+    print(f"Stale cleared count: {stale_cleared}")
+    return stale_cleared
+
+
+@frappe.whitelist()
+def nj_check_stale_reservations():
+    """Check for remaining stale reserved_sales_order on Serial Nos."""
+    results = frappe.db.sql("""
+        select sn.name, sn.reserved_sales_order, so.status 
+        from `tabSerial No` sn 
+        inner join `tabSales Order` so on sn.reserved_sales_order = so.name  
+        where so.status in ('Closed', 'Cancelled', 'Completed')
+    """, as_dict=True)
+    print("STALE RESERVATIONS REMAINING:", results)
+    return results
+
+
+@frappe.whitelist()
+def nj_inspect_so_allocations(so_name):
+    """Inspect items and serial reservations for a specific Sales Order."""
+    so_items = frappe.db.sql("""
+        select item_code, qty from `tabSales Order Item` where parent = %s
+    """, (so_name,), as_dict=True)
+
+    serials = frappe.db.sql("""
+        select name, item_code, status, warehouse from `tabSerial No` where reserved_sales_order = %s
+    """, (so_name,), as_dict=True)
+
+    return {
+        "so_items": so_items,
+        "serials": serials
+    }
+
+
+@frappe.whitelist()
+def nj_clear_mismatching_reservations():
+    """Find and clear serial reservations where the Serial No's item code 
+    does not match any item or bundle component in the reserved Sales Order."""
+    reservations = frappe.db.sql("""
+        SELECT name, item_code, reserved_sales_order 
+        FROM `tabSerial No` 
+        WHERE reserved_sales_order IS NOT NULL 
+          AND reserved_sales_order != ''
+    """, as_dict=True)
+
+    cleared_count = 0
+    cleared_details = []
+
+    for r in reservations:
+        sn_name = r["name"]
+        sn_item = r["item_code"]
+        so_name = r["reserved_sales_order"]
+
+        so_exists = frappe.db.exists("Sales Order", so_name)
+        if not so_exists:
+            frappe.db.set_value("Serial No", sn_name, "reserved_sales_order", None)
+            cleared_count += 1
+            cleared_details.append(f"{sn_name}: SO {so_name} does not exist")
+            continue
+
+        direct_match = frappe.db.exists("Sales Order Item", {"parent": so_name, "item_code": sn_item})
+        if direct_match:
+            continue
+
+        bundle_match = frappe.db.sql("""
+            SELECT 1 
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            WHERE soi.parent = %s AND pbi.item_code = %s
+            LIMIT 1
+        """, (so_name, sn_item))
+
+        if bundle_match:
+            continue
+
+        # If we got here, it's a mismatch!
+        frappe.db.set_value("Serial No", sn_name, "reserved_sales_order", None)
+        cleared_count += 1
+        cleared_details.append(f"{sn_name} ({sn_item}): Mismatch for SO {so_name}")
+
+    frappe.db.commit()
+    print(f"Cleared {cleared_count} mismatching reservations.")
+    for detail in cleared_details:
+        print(" -", detail)
+    
+    return cleared_details
+
+
+@frappe.whitelist()
+def nj_trim_over_allocations():
+    """Run the trim_over_allocated_serials safety net from sales_order.py."""
+    from nj_features.overrides.sales_order import trim_over_allocated_serials
+    trim_over_allocated_serials()
+    print("Done.")
+
+
+@frappe.whitelist()
+def nj_check_over_allocations():
+    """Check ALL Sales Orders system-wide for over-allocation."""
+    results = frappe.db.sql("""
+        SELECT
+            res.reserved_sales_order AS so_name,
+            res.item_code,
+            res.reserved_count,
+            IFNULL(soi_data.so_qty, 0) AS so_qty,
+            IFNULL(dn_data.dn_qty, 0) AS dn_qty,
+            GREATEST(0, CASE WHEN so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0 ELSE IFNULL(soi_data.so_qty, 0) - IFNULL(dn_data.dn_qty, 0) END) AS net_pending,
+            (res.reserved_count - GREATEST(0, CASE WHEN so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0 ELSE IFNULL(soi_data.so_qty, 0) - IFNULL(dn_data.dn_qty, 0) END)) AS excess
+        FROM (
+            SELECT sn.reserved_sales_order,
+                COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
+                COUNT(*) AS reserved_count
+            FROM `tabSerial No` sn
+            INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+            WHERE sn.reserved_sales_order IS NOT NULL AND sn.reserved_sales_order != '' AND sn.status = 'Active'
+              AND IFNULL(dp.department_sequence, 0) != 0
+              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+            GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
+        ) res
+        LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
+        LEFT JOIN (
+            SELECT soi.parent AS sales_order,
+                CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END AS item_code,
+                SUM(CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty ELSE IFNULL(pbi.qty, 0) * soi.qty END) AS so_qty
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabSales Order` so ON so.name = soi.parent
+            INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code AND IFNULL(it_so.is_stock_item, 0) = 0
+            LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            WHERE so.docstatus = 1
+            GROUP BY soi.parent, CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END
+        ) soi_data ON soi_data.sales_order = res.reserved_sales_order AND soi_data.item_code = res.item_code
+        LEFT JOIN (
+            SELECT 
+                dni.against_sales_order AS sales_order, 
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END AS item_code,
+                SUM(dni.qty) AS dn_qty
+            FROM `tabDelivery Note Item` dni 
+            INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+            INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+                AND IFNULL(it_so.is_stock_item, 0) = 0
+            LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                AND pbi.item_code = dni.item_code
+            WHERE dni.docstatus = 1
+            GROUP BY dni.against_sales_order, 
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END
+        ) dn_data ON dn_data.sales_order = res.reserved_sales_order AND dn_data.item_code = res.item_code
+        HAVING reserved_count > net_pending
+        ORDER BY excess DESC
+    """, as_dict=True)
+
+    if results:
+        print(f"OVER-ALLOCATED SOs FOUND: {len(results)}")
+        for r in results:
+            print(f"  SO: {r['so_name']} | Item: {r['item_code'][:50]} | Reserved: {int(r['reserved_count'])} | Net Pending: {int(r['net_pending'])} | EXCESS: {int(r['excess'])}")
+    else:
+        print("✅ NO over-allocated SOs found. All clean!")
+
+    return results
+
+
+@frappe.whitelist()
+def nj_check_over_allocations_fast():
+    """Rapid check for over-allocated SOs, focusing only on active reserved SOs."""
+    active_reserved_sos = frappe.db.sql_list("""
+        SELECT DISTINCT reserved_sales_order 
+        FROM `tabSerial No` 
+        WHERE reserved_sales_order IS NOT NULL 
+          AND reserved_sales_order != ''
+          AND status = 'Active'
+    """)
+    if not active_reserved_sos:
+        print("✅ NO active reservations found in the system.")
+        return []
+
+    so_list_str = ", ".join(f"'{so}'" for so in active_reserved_sos)
+
+    results = frappe.db.sql(f"""
+        SELECT
+            res.reserved_sales_order AS so_name,
+            res.item_code,
+            res.reserved_count,
+            IFNULL(soi_data.so_qty, 0) AS so_qty,
+            IFNULL(dn_data.dn_qty, 0) AS dn_qty,
+            GREATEST(0, CASE WHEN so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0 ELSE IFNULL(soi_data.so_qty, 0) - IFNULL(dn_data.dn_qty, 0) END) AS net_pending,
+            (res.reserved_count - GREATEST(0, CASE WHEN so.name IS NULL OR so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0 ELSE IFNULL(soi_data.so_qty, 0) - IFNULL(dn_data.dn_qty, 0) END)) AS excess
+        FROM (
+            SELECT sn.reserved_sales_order,
+                COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
+                COUNT(*) AS reserved_count
+            FROM `tabSerial No` sn
+            INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+            WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
+              AND IFNULL(dp.department_sequence, 0) != 0
+              AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+            GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
+        ) res
+        LEFT JOIN `tabSales Order` so ON so.name = res.reserved_sales_order
+        LEFT JOIN (
+            SELECT soi.parent AS sales_order,
+                CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END AS item_code,
+                SUM(CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty ELSE IFNULL(pbi.qty, 0) * soi.qty END) AS so_qty
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabSales Order` so ON so.name = soi.parent
+            INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code AND IFNULL(it_so.is_stock_item, 0) = 0
+            LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            WHERE so.name IN ({so_list_str})
+            GROUP BY soi.parent, CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END
+        ) soi_data ON soi_data.sales_order = res.reserved_sales_order AND soi_data.item_code = res.item_code
+        LEFT JOIN (
+            SELECT 
+                dni.against_sales_order AS sales_order, 
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END AS item_code,
+                SUM(dni.qty) AS dn_qty
+            FROM `tabDelivery Note Item` dni 
+            INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+            INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+                AND IFNULL(it_so.is_stock_item, 0) = 0
+            LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                AND pbi.item_code = dni.item_code
+            WHERE dni.docstatus = 1 AND dni.against_sales_order IN ({so_list_str})
+            GROUP BY dni.against_sales_order, 
+                CASE 
+                    WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                    ELSE pbi.item_code
+                END
+        ) dn_data ON dn_data.sales_order = res.reserved_sales_order AND dn_data.item_code = res.item_code
+        HAVING reserved_count > net_pending
+        ORDER BY excess DESC
+    """, as_dict=True)
+
+    if results:
+        print(f"OVER-ALLOCATED SOs FOUND: {len(results)}")
+        for r in results:
+            print(f"  SO: {r['so_name']} | Item: {r['item_code'][:50]} | Reserved: {int(r['reserved_count'])} | Net Pending: {int(r['net_pending'])} | EXCESS: {int(r['excess'])}")
+    else:
+        print("✅ NO over-allocated SOs found. All clean!")
+
+    return results
+
+
+@frappe.whitelist()
+def nj_detailed_allocation_audit():
+    """Perform a detailed audit of allocations for all active reserved Sales Orders."""
+    active_reserved_sos = frappe.db.sql_list("""
+        SELECT DISTINCT reserved_sales_order 
+        FROM `tabSerial No` 
+        WHERE reserved_sales_order IS NOT NULL 
+          AND reserved_sales_order != ''
+          AND status = 'Active'
+    """)
+    if not active_reserved_sos:
+        print("✅ No active reservations in the system.")
+        return []
+
+    so_list_str = ", ".join(f"'{so}'" for so in active_reserved_sos)
+
+    # Fetch SO items
+    so_items = frappe.db.sql(f"""
+        SELECT 
+            soi.parent AS so_name,
+            CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END AS item_code,
+            SUM(CASE WHEN so.status IN ('Closed', 'Cancelled', 'Completed') THEN 0
+                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.qty 
+                     ELSE IFNULL(pbi.qty, 0) * soi.qty 
+                END) AS so_qty
+        FROM `tabSales Order Item` soi
+        INNER JOIN `tabSales Order` so ON so.name = soi.parent
+        INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+        LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code AND IFNULL(it_so.is_stock_item, 0) = 0
+        LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+        WHERE so.name IN ({so_list_str})
+        GROUP BY soi.parent, CASE WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code ELSE pbi.item_code END
+    """, as_dict=True)
+
+    # Fetch DN deliveries
+    dn_items = frappe.db.sql(f"""
+        SELECT 
+            dni.against_sales_order AS so_name, 
+            CASE 
+                WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                ELSE pbi.item_code
+            END AS item_code,
+            SUM(dni.qty) AS dn_qty
+        FROM `tabDelivery Note Item` dni 
+        INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
+        INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
+        LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            AND IFNULL(it_so.is_stock_item, 0) = 0
+        LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+            AND pbi.item_code = dni.item_code
+        WHERE dni.docstatus = 1 AND dni.against_sales_order IN ({so_list_str})
+        GROUP BY dni.against_sales_order, 
+            CASE 
+                WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
+                ELSE pbi.item_code
+            END
+    """, as_dict=True)
+
+    # Fetch Serial Reservations (including to_make)
+    serial_reservations = frappe.db.sql(f"""
+        SELECT 
+            sn.reserved_sales_order AS so_name,
+            COALESCE(NULLIF(sn.to_make, ''), sn.item_code) AS item_code,
+            COUNT(*) AS reserved_count
+        FROM `tabSerial No` sn
+        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+        WHERE sn.reserved_sales_order IN ({so_list_str}) AND sn.status = 'Active'
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+        GROUP BY sn.reserved_sales_order, COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
+    """, as_dict=True)
+
+    # Map the results
+    so_map = {}
+    for item in so_items:
+        so_map.setdefault(item["so_name"], {})[item["item_code"]] = {
+            "so_qty": float(item["so_qty"]),
+            "dn_qty": 0.0,
+            "reserved_count": 0
+        }
+
+    for item in dn_items:
+        if item["so_name"] in so_map and item["item_code"] in so_map[item["so_name"]]:
+            so_map[item["so_name"]][item["item_code"]]["dn_qty"] = float(item["dn_qty"])
+
+    for item in serial_reservations:
+        if item["so_name"] in so_map and item["item_code"] in so_map[item["so_name"]]:
+            so_map[item["so_name"]][item["item_code"]]["reserved_count"] = int(item["reserved_count"])
+        else:
+            # Reservation for an item that is NOT in the SO (mismatch)
+            so_map.setdefault(item["so_name"], {}).setdefault(item["item_code"], {
+                "so_qty": 0.0,
+                "dn_qty": 0.0,
+                "reserved_count": int(item["reserved_count"])
+            })
+
+    # Generate audit report
+    print(f"\n========================================================")
+    print(f"📊 SYSTEM-WIDE ALLOCATION AUDIT REPORT (ACTIVE SOs)")
+    print(f"========================================================")
+    
+    total_sos = len(so_map)
+    clean_sos = 0
+    mismatches_count = 0
+    over_allocated_count = 0
+    under_allocated_count = 0
+
+    for so_name, items in sorted(so_map.items()):
+        so_is_clean = True
+        so_summary_lines = []
+        
+        for item_code, data in items.items():
+            net_pending = max(0.0, data["so_qty"] - data["dn_qty"])
+            res_count = data["reserved_count"]
+            diff = res_count - net_pending
+
+            status_str = "OK"
+            if data["so_qty"] == 0.0 and res_count > 0:
+                status_str = "❌ MISMATCH (Item not in SO)"
+                so_is_clean = False
+                mismatches_count += 1
+            elif diff > 0:
+                status_str = f"⚠️ OVER-ALLOCATED (Excess: +{int(diff)})"
+                so_is_clean = False
+                over_allocated_count += 1
+            elif diff < 0:
+                status_str = f"ℹ️ Under-allocated (Pending: {int(abs(diff))} more needed)"
+                under_allocated_count += 1
+                so_is_clean = False
+
+            item_str = str(item_code or '')
+            so_summary_lines.append(
+                f"    - Item: {item_str[:45]:<45} | Net Pending: {int(net_pending):<3} | Reserved: {res_count:<3} | {status_str}"
+            )
+
+        if so_is_clean:
+            clean_sos += 1
+            print(f"✅ {so_name}: Fully & Correctly Allocated")
+        else:
+            print(f"🔍 {so_name}: Action Required")
+            for line in so_summary_lines:
+                print(line)
+
+    print(f"\n========================================================")
+    print(f"AUDIT SUMMARY:")
+    print(f"  Total Active Reserved SOs: {total_sos}")
+    print(f"  Perfect / Correctly Allocated SOs: {clean_sos}")
+    print(f"  Mismatching Reservations (Item not in SO): {mismatches_count}")
+    print(f"  Over-allocated Items: {over_allocated_count}")
+    print(f"  Under-allocated Items (still waiting for stock): {under_allocated_count}")
+    print(f"========================================================\n")
+
+    return so_map

@@ -178,6 +178,10 @@ scheduler_events = {
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
 
+        "2 * * * *": [
+            "nj_features.overrides.product_bundle.update_zero_quantity_product_bundles",
+        ],
+
         "45 9 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",
         ],

@@ -8,7 +8,7 @@ from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
-logger = frappe.logger("NEW SHOPIFY INVENTORY SYNC LOG", allow_site=True, file_count=10)
+logger = frappe.logger("new_shopify_inv_sync", allow_site=True, file_count=10)
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
@@ -106,19 +106,23 @@ def nj_temp_shopify_session(func):
         if not settings:
             log_error("Shopify settings not found", "nj_temp_shopify_session")
             return
-        with Session.temp(settings["shop"], "2025-07", settings["token"]):
+        with Session.temp(settings["shop"], "2026-10", settings["token"]):
             return func(*args, **kwargs)
     return wrapper
 
 @frappe.whitelist()
 @nj_temp_shopify_session
 def fetch_and_stage_inventory_sync():
-    enqueue(
+    job = enqueue(
         method=create_rq_doc,
         queue="long",
         timeout=1200,
         job_name=f"shopify_inventory_sync_batch_erp"
     )
+    logger.info(
+        f"create_rq_doc queued on long queue; rq_job_id={getattr(job, 'id', 'unknown')} timeout=1200s"
+    )
+    return {"queued": True, "job_id": getattr(job, "id", None)}
 
 # def create_rq_doc():
 #     settings = get_shopify_settings()
@@ -271,42 +275,73 @@ def fetch_and_stage_inventory_sync():
 #                     log_error(f"Error in fetching & staging inventory sync: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
 #                     return str(traceback.format_exc())
 def create_rq_doc():
-    logger.debug(f"create_rq_doc called======iniside============")
+    run_id = frappe.generate_hash(length=8)
+    started_at = time.monotonic()
+    stats = {
+        "total": 0,
+        "processed": 0,
+        "inserted": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 0,
+        "failed": 0,
+        "shopify_found": 0,
+        "shopify_missing": 0,
+    }
+    logger.info(f"[{run_id}] create_rq_doc started")
+
     settings = get_shopify_settings()
-    logger.debug(f"settings================== {settings}")
+    if not settings:
+        logger.error(f"[{run_id}] stopped: Shopify settings are missing or disabled")
+        return {"run_id": run_id, "status": "failed", "reason": "missing_settings"}
+    logger.info(f"[{run_id}] Shopify settings loaded for shop={settings.get('shop')}")
+
+    def run_stage(stage_number, stage_name, method):
+        logger.info(f"[{run_id}] stage {stage_number}/3 started: {stage_name}")
+        try:
+            stage_result = method()
+        except Exception:
+            logger.exception(f"[{run_id}] stage {stage_number}/3 raised an exception: {stage_name}")
+            return False
+        if not stage_result:
+            logger.error(f"[{run_id}] stage {stage_number}/3 returned false: {stage_name}")
+            return False
+        logger.info(f"[{run_id}] stage {stage_number}/3 completed: {stage_name}")
+        return True
 
     # =========================================================
     # 🔹 Fetch Rule Config (Flags)
     # =========================================================
     try:
         rule_config = frappe.db.get_value("NJ Settings", {"parameter": "reconfigsync"}, "value")
-        logger.debug(f"rule_config================== {rule_config}")
     except Exception:
+        logger.exception(f"[{run_id}] failed to read reconfigsync")
         rule_config = 0
 
     # Continue only when reconfigsync is enabled.
     if str(rule_config).strip() != "1":
+        logger.warning(f"[{run_id}] skipped: reconfigsync is disabled or missing")
         log_error(
             "Skipped create_rq_doc because reconfigsync is 0 or missing",
             "Inventory Sync Config",
             "Info",
         )
-        return
+        return {"run_id": run_id, "status": "skipped", "reason": "reconfigsync_disabled"}
 
     flags = get_inventory_sync_flags()
-    logger.debug(f"flags================== {flags}")
+    logger.info(f"[{run_id}] inventory sync flags loaded: {flags}")
 
     # =========================================================
     # 🔹 Run Pre-Processing
     # =========================================================
-    if not update_so_quantity_check(settings):
-        return
+    if not run_stage(1, "update_so_quantity_check", lambda: update_so_quantity_check(settings)):
+        return {"run_id": run_id, "status": "failed", "stage": "update_so_quantity_check"}
 
-    if not update_parent_quantity():
-        return
+    if not run_stage(2, "update_parent_quantity", update_parent_quantity):
+        return {"run_id": run_id, "status": "failed", "stage": "update_parent_quantity"}
 
-    if not update_proportional_qty_and_updt_qty():
-        return
+    if not run_stage(3, "update_proportional_qty_and_updt_qty", update_proportional_qty_and_updt_qty):
+        return {"run_id": run_id, "status": "failed", "stage": "update_proportional_qty_and_updt_qty"}
 
     try:
         # =========================================================
@@ -340,7 +375,8 @@ def create_rq_doc():
         logger.debug(f"query================== {query}")
 
         results = frappe.db.sql(query, as_dict=True)
-        logger.debug(f"results================== {results}")
+        stats["total"] = len(results)
+        logger.info(f"[{run_id}] aggregation completed: {stats['total']} variants to process")
 
         # =========================================================
         # 🔹 Preload Parent Quantities (IMPORTANT)
@@ -367,12 +403,16 @@ def create_rq_doc():
         # =========================================================
         # 🔁 MAIN LOOP
         # =========================================================
-        for row in results:
+        for row_number, row in enumerate(results, start=1):
+            stats["processed"] = row_number
             update_status = ''
             row.total_actual_qty = safe_float(row.total_actual_qty)
-            logger.debug(f"row================== {row}")
 
             if row.total_actual_qty is None:
+                stats["skipped"] += 1
+                logger.warning(
+                    f"[{run_id}] skipped variant={row.shopify_variant_id}: invalid total quantity"
+                )
                 continue
 
             # =====================================================
@@ -479,6 +519,11 @@ def create_rq_doc():
                             "updated_qty": row.total_actual_qty,
                             "modified": frappe.utils.now(),
                         })
+                        stats["updated"] += 1
+                    else:
+                        stats["unchanged"] += 1
+                else:
+                    stats["skipped"] += 1
             else:
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 logger.debug(f"doc================== {doc}")
@@ -506,11 +551,25 @@ def create_rq_doc():
                 try:
                     doc.insert()
                     updated_doc_names.add(doc.name)
+                    stats["inserted"] += 1
                 except Exception:
+                    stats["failed"] += 1
+                    logger.exception(
+                        f"[{run_id}] failed to insert variant={row.shopify_variant_id}"
+                    )
                     log_error(
                         f"Insertion error for {row.item_codes}, variant {row.shopify_variant_id}: {frappe.get_traceback()}",
                         "Inventory Sync Insert Error"
                     )
+
+            if row_number % 100 == 0 or row_number == stats["total"]:
+                elapsed = time.monotonic() - started_at
+                logger.info(
+                    f"[{run_id}] progress {row_number}/{stats['total']} variants; "
+                    f"inserted={stats['inserted']}, updated={stats['updated']}, "
+                    f"unchanged={stats['unchanged']}, skipped={stats['skipped']}, "
+                    f"failed={stats['failed']}, elapsed={elapsed:.1f}s"
+                )
 
         # =========================================================
         # 🔹 Shopify Variant Sync (unchanged)
@@ -529,6 +588,12 @@ def create_rq_doc():
                 """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
 
         missing_variant_ids = set(product_ids) - found_variant_ids
+        stats["shopify_found"] = len(found_variant_ids)
+        stats["shopify_missing"] = len(missing_variant_ids)
+        logger.info(
+            f"[{run_id}] Shopify lookup completed: found={stats['shopify_found']}, "
+            f"missing={stats['shopify_missing']}"
+        )
         if missing_variant_ids:
             for m_vid in missing_variant_ids:
                 frappe.db.sql("""
@@ -537,12 +602,22 @@ def create_rq_doc():
                     WHERE shopify_variant_id = %s AND status = 'Queued'
                 """, (m_vid,))
 
+        elapsed = time.monotonic() - started_at
+        logger.info(
+            f"[{run_id}] create_rq_doc completed successfully in {elapsed:.1f}s; stats={stats}"
+        )
+        return {"run_id": run_id, "status": "completed", "elapsed_seconds": round(elapsed, 1), **stats}
+
     except Exception:
+        elapsed = time.monotonic() - started_at
+        logger.exception(
+            f"[{run_id}] create_rq_doc failed after {elapsed:.1f}s; stats={stats}"
+        )
         log_error(
             f"Error in create_rq_doc: {frappe.get_traceback()}",
             "Inventory Sync Error"
         )
-        return
+        return {"run_id": run_id, "status": "failed", "elapsed_seconds": round(elapsed, 1), **stats}
         
 @frappe.whitelist()
 @nj_temp_shopify_session

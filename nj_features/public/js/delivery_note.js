@@ -214,8 +214,14 @@ frappe.ui.form.on('Delivery Note', {
             method: 'nj_features.overrides.delivery_note.update_item_details',
             args: { self: frm.doc },
             callback: function(r) {
+                console.log("inside the function============");
+                
                 if (r.message) {
+                    console.log("inside the function============");
+
                     const { weight, height, length, breadth } = r.message;
+                    console.log("inside the function============");
+
 
                     // Only set values if they are not null or undefined
                     if (weight !== null && weight !== undefined) {

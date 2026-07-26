@@ -56,7 +56,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             # start = time.perf_counter()
             # self.auto_closure_mr_via_pr()
             # log_pr_time("auto_closure_mr_via_pr", self.name, start)
-
+            self.updating_parent_qty_for_new_generated_serial_no()
             start = time.perf_counter()
             self.set_registry_no_on_submit()
             log_pr_time("set_registry_no_on_submit", self.name, start)
@@ -70,6 +70,22 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             frappe.flags.in_purchase_receipt = False
             log_pr_time("CustomPurchaseReceipt.on_submit total", self.name, total_start)
     
+
+
+    def updating_parent_qty_for_new_generated_serial_no(self):
+        print("updating_parent_qty_for_new_generated_serial_no")
+        from nj_p1_features.overrides.serial_no import qty_update_based_on_parent_item
+
+        serial_nos = {
+            serial_no.strip()
+            for item in self.items
+            for serial_no in re.split(r"[\n,]+", item.serial_no or "")
+            if serial_no.strip()
+        }
+
+        for serial_no in serial_nos:
+            qty_update_based_on_parent_item(serial_no=serial_no)
+
     def on_cancel(self):
         super(CustomPurchaseReceipt, self).on_cancel()
         self.set_registry_no_on_cancel()

@@ -1,0 +1,44 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("RFQ QC Dashboard") }}{% endblock %}
+
+{% block head_include %}
+{{ super() }}
+<link rel="stylesheet" href="/assets/nj_features/css/rfq_dashboard_shared.css">
+{% endblock %}
+
+{% block page_content %}
+<div class="public-rfq-dashboard">
+	<div class="dashboard-header">
+		<div>
+			<h1>{{ _("RFQ QC Dashboard") }}</h1>
+			<p class="text-muted">{{ _("Read-only supplier quality dashboard") }}</p>
+		</div>
+		<button class="btn btn-primary" id="refresh-dashboard" type="button">
+			{{ _("Refresh") }}
+		</button>
+	</div>
+
+	<div class="dashboard-filters">
+		<div class="form-group">
+			<label for="dashboard-supplier">{{ _("Supplier") }}</label>
+			<select class="form-control" id="dashboard-supplier" disabled>
+				<option value="">{{ _("Loading...") }}</option>
+			</select>
+		</div>
+		<div class="form-group">
+			<label for="dashboard-rfq">{{ _("RFQ") }}</label>
+			<select class="form-control" id="dashboard-rfq" disabled>
+				<option value="">{{ _("Select RFQ") }}</option>
+			</select>
+		</div>
+	</div>
+
+	<div class="dashboard-message" id="dashboard-message">
+		{{ _("Validating dashboard link...") }}
+	</div>
+
+	<div class="dashboard-content d-none" id="dashboard-content"></div>
+</div>
+<script src="/assets/nj_features/js/rfq_dashboard_renderer.js"></script>
+{% endblock %}

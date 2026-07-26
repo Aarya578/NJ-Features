@@ -1,0 +1,53 @@
+.public-rfq-dashboard {
+	margin: 24px auto 48px;
+	max-width: 1600px;
+}
+
+.dashboard-header,
+.quality-header {
+	align-items: center;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+}
+
+.dashboard-header h1 {
+	font-size: 28px;
+	margin-bottom: 4px;
+}
+
+.dashboard-filters {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	display: grid;
+	gap: 16px;
+	grid-template-columns: repeat(2, minmax(220px, 360px));
+	margin: 20px 0 16px;
+	padding: 16px;
+}
+
+.dashboard-filters .form-group,
+.quality-header .form-group {
+	margin: 0;
+}
+
+.dashboard-message {
+	border: 1px dashed var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	color: var(--text-muted, #6c7680);
+	margin-top: 16px;
+	padding: 28px;
+	text-align: center;
+}
+
+@media (max-width: 767px) {
+	.dashboard-header {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.dashboard-filters {
+		grid-template-columns: 1fr;
+	}
+}

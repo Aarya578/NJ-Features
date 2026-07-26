@@ -152,6 +152,9 @@ class CustomDeliveryNote(DeliveryNote):
             with log_time("super().on_submit()", self.name):
                 super().on_submit()
 
+            with log_time("update_parent_qty_and_laptop_gen", self.name):
+                self.update_parent_qty_and_laptop_gen()
+
             # ------------------------------------------------------------------
             # Get against_sales_order
             # ------------------------------------------------------------------
@@ -301,7 +304,7 @@ class CustomDeliveryNote(DeliveryNote):
                 # Other operations (each timed)
                 # ------------------------------------------------------------------
                    
-                self.validate_dn_vs_si()
+                #self.validate_dn_vs_si()
 
                 with log_time("delete_department_history", self.name):
                     self.delete_department_history()
@@ -373,7 +376,19 @@ class CustomDeliveryNote(DeliveryNote):
             # Raise a clean error message to user
             frappe.throw(f"Error in on_submit: {frappe.as_unicode(e)}")
 
+    def update_parent_qty_and_laptop_gen(self):
+        if not self.is_return:
+            return
 
+        from nj_p1_features.overrides.serial_no import qty_update_based_on_parent_item
+
+        serial_nos = set()
+        for child_table in ("items", "packed_items"):
+            for row in self.get(child_table) or []:
+                serial_nos.update(self.get_serial_list(row.get("serial_no")))
+
+        for serial_no in serial_nos:
+            qty_update_based_on_parent_item(serial_no=serial_no)
 
     def _process_customer_details(self):
         
@@ -603,7 +618,7 @@ class CustomDeliveryNote(DeliveryNote):
                     f"the forward DN taxes {forward_dn.total_taxes_and_charges}")
                 )
     def couse_of_return_validation(self):
-        if not self.is_return:
+        if not self.is_return and self.docstatus != 2:
             return
 
         against_sales_order = frappe.db.get_value(
@@ -2581,18 +2596,13 @@ def update_item_details(self):
 @frappe.whitelist()
 def fetch_cod_amount(doc_name):
     against_sales_order = frappe.get_value("Delivery Note Item", {"parent": doc_name}, "against_sales_order")
-    print("against_sales_order=======================", against_sales_order)
     
     if against_sales_order:
         sales_order = frappe.get_doc("Sales Order", against_sales_order)
-        print("sales_order=======================", sales_order )
         
         cod_amt = sales_order.total_outstanding
-        print("cod_amt=======================", cod_amt)
         is_cod = sales_order.is_cod
-        print("is_cod=======================", is_cod)
         payment_received = sales_order.payment_received  
-        print("payment_received=======================", payment_received)  
         
         return {
             'cod_amount': cod_amt,
@@ -2608,7 +2618,6 @@ def fetch_cod_amount(doc_name):
 
 @frappe.whitelist()
 def set_cod_details_critical(doc, method=None):
-    print("345678------------------")
     """
     Automatically fetch COD amount and set mode_of_transfer
     when Delivery Note is saved.
@@ -2657,6 +2666,12 @@ def send_consignement_data(doc):
         doc = frappe._dict(json.loads(doc))
         # sales_order_doc = frappe.get_doc("Sales Order", doc.name)
         delivery_note = frappe.get_doc("Delivery Note", doc.name)
+        doc.shipping_address_name = delivery_note.shipping_address_name
+        print(f"DEBUG Critical Log send_consignement_data started for DN={doc.name}, shipping_address_name={doc.shipping_address_name}")
+        frappe.log_error(
+            f"send_consignement_data started for DN={doc.name}, shipping_address_name={doc.shipping_address_name}",
+            "Critical Log Pincode Debug"
+        )
         against_sales_order = frappe.get_value(
             "Delivery Note Item", {"parent": delivery_note.name}, "against_sales_order"
         )
@@ -2683,12 +2698,25 @@ def send_consignement_data(doc):
             else:
                 print("Missing item_charges or quantity for item:", item.get("item_code"))
         pincode = frappe.db.get_value("Address", doc.shipping_address_name, "pincode")
+        pincode = (pincode or "").strip()
+        print(f"DEBUG Critical Log address pincode for DN={doc.name}: {pincode}")
+        frappe.log_error(
+            f"DN={doc.name}, shipping_address_name={doc.shipping_address_name}, address_pincode={pincode}",
+            "Critical Log Pincode Debug"
+        )
         if not pincode:
             frappe.throw("Pincode not found in the shipping address.")
         
-        pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod"], as_dict=True)
+        pincode_doc = frappe.db.get_value("Pincode", {"pincode_no": pincode}, ["rate", "cod", "service_type"], as_dict=True)
+        print(f"DEBUG Critical Log Pincode master lookup for DN={doc.name}, pincode={pincode}: {pincode_doc}")
+        frappe.log_error(
+            f"DN={doc.name}, pincode={pincode}, pincode_doc={pincode_doc}",
+            "Critical Log Pincode Debug"
+        )
         if not pincode_doc:
             frappe.throw(f"Pincode {pincode} not found in Pincode master.")
+        if (pincode_doc.service_type or "").strip().upper() != "SERVICEABLE":
+            frappe.throw(f"Pincode {pincode} is not serviceable.")
         
         if not doc.weight:
             frappe.throw("Weight is not set in Delivery Note.")
@@ -2903,6 +2931,11 @@ def send_consignement_data(doc):
         # url = "https://testing.ecritica.co/eFreightLive/api/con_generation.php"
         # url = "https://www.ecritica.co/eFreightLive/api/con_generation.php"
         headers = {"Content-Type": "application/json"}
+        print(f"DEBUG Critical Log API call allowed for DN={doc.name}, pincode={pincode}, service_type={pincode_doc.service_type}")
+        frappe.log_error(
+            f"Criticalog API call allowed for DN={doc.name}, pincode={pincode}, service_type={pincode_doc.service_type}",
+            "Critical Log Pincode Debug"
+        )
         # print("headers=======================",headers)
         response = requests.post(url, headers=headers, json=data)
         # print("response=======================",response)

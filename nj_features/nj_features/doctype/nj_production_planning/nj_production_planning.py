@@ -4638,7 +4638,7 @@ def _get_all_purpose_item_match_keys(item_codes):
     return match_key_by_item
 
 
-def _add_all_purpose_shortage_item(shortage_by_item, item_code, qty, warehouse, source_item_code, material_issue_mrs, schedule_days):
+def _add_all_purpose_shortage_item(shortage_by_item, item_code, qty, warehouse, source_item_code, material_issue_mrs, schedule_days, stock_warehouses=None):
     if flt(qty) <= PP_MR_MIN_QTY:
         return
 
@@ -4649,6 +4649,7 @@ def _add_all_purpose_shortage_item(shortage_by_item, item_code, qty, warehouse, 
         "source_item_codes": set(),
         "material_issue_mrs": set(),
         "schedule_days": [],
+        "stock_warehouses": set(),
     })
     item["qty"] = flt(item["qty"] + qty, 6)
     if warehouse and not item.get("warehouse"):
@@ -4657,6 +4658,36 @@ def _add_all_purpose_shortage_item(shortage_by_item, item_code, qty, warehouse, 
         item["source_item_codes"].add(source_item_code)
     item["material_issue_mrs"].update(material_issue_mrs or [])
     item["schedule_days"].extend(schedule_days or [PP_MR_DEFAULT_SCHEDULE_DAYS])
+    item["stock_warehouses"].update(stock_warehouses or [])
+
+
+def _get_all_purpose_manufacture_serial_nos(item_code, warehouses, qty):
+    serial_qty = int(flt(qty))
+    if not item_code or not warehouses or serial_qty <= 0:
+        return []
+
+    serial_rows = frappe.db.sql("""
+        SELECT sn.name
+        FROM `tabSerial No` sn
+        WHERE sn.item_code = %(item_code)s
+        AND sn.warehouse IN %(warehouses)s
+        AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+        ORDER BY sn.creation, sn.name
+    """, {
+        "item_code": item_code,
+        "warehouses": tuple(sorted(set(warehouses))),
+    }, as_dict=True)
+
+    serial_nos = [row.name for row in serial_rows[:serial_qty]]
+    print(
+        "all purpose Manufacture MR selected serial nos:",
+        "item_code:", item_code,
+        "qty:", qty,
+        "warehouses:", ", ".join(sorted(set(warehouses))),
+        "serial_nos:", ", ".join(serial_nos),
+        "serial_count:", len(serial_nos),
+    )
+    return serial_nos
 
 
 def collect_all_purpose_material_issue(doc=None, method=None):
@@ -4756,6 +4787,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
 
     stock_qty_by_item = defaultdict(float)
     stock_warehouse_by_item = {}
+    stock_warehouses_by_item = defaultdict(set)
     grade_a_stock_by_key = defaultdict(float)
     grade_b_stock_by_key = defaultdict(float)
     grade_d_stock_by_key = defaultdict(float)
@@ -4764,6 +4796,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
     for row in stock_data:
         stock_qty_by_item[row.item_code] += flt(row.actual_qty)
         stock_warehouse_by_item.setdefault(row.item_code, row.warehouse)
+        stock_warehouses_by_item[row.item_code].add(row.warehouse)
         item_key = match_key_by_item.get(row.item_code)
         grade = _get_all_purpose_adaptor_grade(row.item_code)
         if not item_key:
@@ -4911,6 +4944,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 item_code,
                 issue_mr_names,
                 schedule_days,
+                stock_warehouses_by_item.get(grade_d_item_code),
             )
             print(
                 "all purpose creatable Manufacture MR item from GRADE D:",
@@ -4931,6 +4965,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 item_code,
                 issue_mr_names,
                 schedule_days,
+                stock_warehouses_by_item.get(grade_b_item_code),
             )
             print(
                 "all purpose creatable Manufacture MR item from GRADE B:",
@@ -5041,6 +5076,13 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 "create_reference": "SRA Item Group NJ Production",
                 "fru_number": item_fru_map.get(item["item_code"]) or "N/A",
             }
+            if material_request_type == "Manufacture":
+                serial_nos = _get_all_purpose_manufacture_serial_nos(
+                    item["item_code"],
+                    item.get("stock_warehouses"),
+                    item_row["qty"],
+                )
+                item_row["mavni_comments"] = ", ".join(serial_nos)
             if item.get("warehouse"):
                 item_row["warehouse"] = item.get("warehouse")
 

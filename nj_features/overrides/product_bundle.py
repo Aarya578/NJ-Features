@@ -16,6 +16,33 @@ SHOPIFY_API_VERSION = "2025-07"
 class CustomProductBundle(ProductBundle):
 	def validate(self):
 		self.deleting_rerord__if_table_modified()
+		self.validating_pd_shopify_variant_id_and_item_shopify_variant_id()
+
+
+
+	def validating_pd_shopify_variant_id_and_item_shopify_variant_id(self):
+		item_code = self.new_item_code or self.name
+		item_shopify_product_id = frappe.db.get_value(
+			"Item", item_code, "shopify_product_id"
+		)
+
+		item_shopify_product_id = str(item_shopify_product_id or "").strip()
+		product_bundle_shopify_variant_id = str(
+			self.shopify_variant_id or ""
+		).strip()
+
+		if item_shopify_product_id != product_bundle_shopify_variant_id:
+			frappe.throw(
+				_(
+					"Shopify ID mismatch for Item {0}: Item Shopify Product ID "
+					"is {1}, but Product Bundle Shopify Variant ID is {2}."
+				).format(
+					frappe.bold(item_code),
+					frappe.bold(item_shopify_product_id or _("Not Set")),
+					frappe.bold(product_bundle_shopify_variant_id or _("Not Set")),
+				),
+				title=_("Shopify ID Mismatch"),
+			)
 
 	def deleting_rerord__if_table_modified(self):
 		import re
@@ -218,6 +245,50 @@ def update_product_bundle_quantities():
 
 		# Step 6: Update and save Product Bundle quantity
 		frappe.db.set_value("Product Bundle", pb.name, "quantity", total_count, update_modified=False)
+
+
+@frappe.whitelist()
+def update_zero_quantity_product_bundles():
+	"""Update enabled bundles using SO Quantity Check parent totals."""
+	bundle_items = frappe.db.sql(
+		"""
+		SELECT pb.name AS bundle_name, pbi.item_code
+		FROM `tabProduct Bundle` AS pb
+		INNER JOIN `tabProduct Bundle Item` AS pbi ON pbi.parent = pb.name
+		WHERE COALESCE(pb.disable, 0) = 0
+			AND COALESCE(pbi.item_code, '') != ''
+		""",
+		as_dict=True,
+	)
+
+	bundle_items_map = {}
+	for row in bundle_items:
+		bundle_items_map.setdefault(row.bundle_name, set()).add(row.item_code)
+
+	for bundle_name, bundle_item_codes in bundle_items_map.items():
+		item_codes = sorted(bundle_item_codes)
+		placeholders = ", ".join(["%s"] * len(item_codes))
+		total_qty = frappe.db.sql(
+			f"""
+			SELECT COALESCE(SUM(so.update_qty2), 0) AS total_qty
+			FROM `tabSO Quantity Check` AS so
+			WHERE so.parent1 IN (
+				SELECT DISTINCT matched_so.parent1
+				FROM `tabSO Quantity Check` AS matched_so
+				WHERE matched_so.item_code IN ({placeholders})
+			)
+			""",
+			tuple(item_codes),
+			as_dict=True,
+		)[0].total_qty
+
+		frappe.db.set_value(
+			"Product Bundle",
+			bundle_name,
+			"quantity",
+			total_qty,
+			update_modified=False,
+		)
 
 @frappe.whitelist()
 def update_variant_status(run_now=False):

@@ -186,20 +186,29 @@ class StockMovement(Document):
                 print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
                 continue
 
-            if item.t_warehouse == "BG - Consumables Paint - NJ":
+            is_consumables_warehouse = frappe.db.get_value(
+                "Warehouse",
+                item.t_warehouse,
+                "used_for_consumables_stock",
+            ) if item.t_warehouse else 0
+
+            if int(is_consumables_warehouse or 0):
                 material_request_items = frappe.db.sql(
                     """
                     SELECT
                         mri.name,
                         mri.parent,
                         mri.qty,
+                        mr.fully_consumed_qty_departments,
                         IFNULL(mri.received_qty, 0) AS received_qty
                     FROM `tabMaterial Request Item` mri
                     INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
                     WHERE
                         mr.docstatus = 1
                         AND mr.material_request_type = 'Material Issue'
-                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND (
+                             IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
+                        )
                         AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
                         AND mri.item_code = %s
                         AND IFNULL(mri.post_order_status, 'Not Completed') != 'Completed'
@@ -210,7 +219,19 @@ class StockMovement(Document):
                     as_dict=True,
                     debug=True,
                 )
-                self._update_mr_items_received_qty(item, material_request_items)
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("fully_consumed_qty_departments"))
+                ]
+                print(
+                    "Consumables MR items after fully_consumed_qty_departments match:",
+                    "target_department:",
+                    target_department,
+                    "count:",
+                    len(matching_department_items),
+                )
+                self._update_mr_items_received_qty(item, matching_department_items)
                 continue
 
             if target_department == "Stores - NJ":
@@ -497,20 +518,29 @@ class StockMovement(Document):
                 print("Skipping item because item_code is missing or qty is zero:", item.item_code, remaining_qty)
                 continue
 
-            if item.t_warehouse == "BG - Consumables Paint - NJ":
+            is_consumables_warehouse = frappe.db.get_value(
+                "Warehouse",
+                item.t_warehouse,
+                "used_for_consumables_stock",
+            ) if item.t_warehouse else 0
+
+            if int(is_consumables_warehouse or 0):
                 material_request_items = frappe.db.sql(
                     """
                     SELECT
                         mri.name,
                         mri.parent,
                         mri.qty,
+                        mr.fully_consumed_qty_departments,
                         IFNULL(mri.received_qty, 0) AS received_qty
                     FROM `tabMaterial Request Item` mri
                     INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
                     WHERE
                         mr.docstatus = 1
                         AND mr.material_request_type = 'Material Issue'
-                        AND IFNULL(mr.mr_create_reference, '') LIKE 'All Departments%%'
+                        AND (
+                             IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
+                        )
                         AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
                         AND mri.item_code = %s
                         AND IFNULL(mri.received_qty, 0) > 0
@@ -519,7 +549,12 @@ class StockMovement(Document):
                     (item.item_code,),
                     as_dict=True,
                 )
-                self._revert_mr_items_received_qty(item, material_request_items)
+                matching_department_items = [
+                    mr_item
+                    for mr_item in material_request_items
+                    if target_department in _split_department_names(mr_item.get("fully_consumed_qty_departments"))
+                ]
+                self._revert_mr_items_received_qty(item, matching_department_items)
                 continue
 
             if target_department == "Stores - NJ":
@@ -675,7 +710,7 @@ def validate_stock_movement_for_grade(doc):
 
         error_messages = []
         model_mismatch_messages = []
-        qty_check_cache = {"checked_keys": set(), "item_group_cache": {}}
+        qty_check_cache = {"checked_keys": set(), "item_group_cache": {}, "all_item_group_sla_checked": set(),}
 
         for row in doc.get('items', []):
             if not validate_serial_no_and_department(row, doc, error_messages, model_mismatch_messages, qty_check_cache):
@@ -720,7 +755,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
 
     if not validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
         return False
-    if not validate_serial_no_gen_wise(serial_no, serial_doc, department, error_messages):
+    if not validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
         return False
 
     current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
@@ -759,6 +794,36 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     row_item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group") if row.get("item_code") else None
     should_validate_sla = row_item_group in core_item_groups
 
+
+    all_item_group_sla_checked = (
+        qty_check_cache or {}
+    ).setdefault(
+        "all_item_group_sla_checked",
+        set(),
+    )
+
+    sla_cache_key = (
+        department,
+        t_warehouse,
+        row_item_group,
+    )
+
+    if (
+        department
+        and department != s_department
+        and row_item_group not in core_item_groups
+        and sla_cache_key not in all_item_group_sla_checked
+    ):
+        all_item_group_sla_checked.add(sla_cache_key)
+
+        if not validate_all_item_groups_sla(
+            department=department,
+            source_department=s_department,
+            target_warehouse=t_warehouse,
+            item_group=row_item_group,
+            error_messages=error_messages,
+        ):
+            return False
 
     if department and department != s_department:
         print("department and department != s_department=================",department and department != s_department )
@@ -833,7 +898,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     AND h.holiday_date <= CURDATE()
                 WHERE
                     w.department = %s
-                    AND w.warehouse_type != 'Employee Personal Warehouse'
+                    AND (w.warehouse_type IS NULL
+                        OR w.warehouse_type = ''
+                        OR w.warehouse_type != 'Employee Personal Warehouse')
                     AND sn.item_group IN ({sla_item_group_placeholders})
                     AND sn.stock_enty_date_and_time IS NOT NULL
                 GROUP BY
@@ -910,6 +977,207 @@ def get_warehouse_and_department_sla_core_item_groups():
 
 def get_warehouse_and_department_sla_item_groups():
     return get_nj_settings_comma_separated_values("warehouse_and_department_sla_item_groups")
+
+def get_component_sla_for_department(
+    department,
+    item_group,
+):
+    if not department or not item_group:
+        return None
+
+    return frappe.db.get_value(
+        "Department Component SLA",
+        {
+            "parent": department,
+            "parenttype": "Department",
+            "parentfield": "component_sla",
+            "item_group": item_group,
+            "enabled": 1,
+        },
+        [
+            "warehouse_sla",
+            "department_sla",
+        ],
+        as_dict=True,
+    )
+
+def validate_all_item_groups_sla(
+    department,
+    source_department,
+    target_warehouse,
+    item_group,
+    error_messages,
+):
+    """
+    Apply warehouse and department SLA to any serialized item group.
+
+    Each movement checks SLA only against existing Serial Nos belonging
+    to the same item group.
+    """
+
+    if not department or department == source_department:
+        return True
+
+    if not target_warehouse or not item_group:
+        return True
+
+    component_sla = get_component_sla_for_department(
+        department=department,
+        item_group=item_group,
+    )
+
+    # No component SLA row configured for this department/item group
+    if not component_sla:
+        return True
+
+    warehouse_sla = component_sla.get("warehouse_sla")
+    department_sla = component_sla.get("department_sla")
+
+    # Warehouse SLA
+    if warehouse_sla is not None:
+        warehouse_sla_days = int(warehouse_sla)
+
+        warehouse_aging = frappe.db.sql(
+            """
+            SELECT
+                sn.name AS serial_no,
+                sn.warehouse,
+                FLOOR(
+                    (
+                        TIMESTAMPDIFF(
+                            HOUR,
+                            TIMESTAMP(
+                                sn.purchase_date,
+                                COALESCE(sn.purchase_time, '00:00:00')
+                            ),
+                            NOW()
+                        )
+                        -
+                        (
+                            (
+                                DATEDIFF(CURDATE(), sn.purchase_date)
+                                + WEEKDAY(sn.purchase_date)
+                                + 1
+                            ) DIV 7
+                        ) * 24
+                    ) / 24
+                ) AS max_age_days
+            FROM `tabSerial No` sn
+            WHERE
+                sn.warehouse = %s
+                AND sn.item_group = %s
+                AND sn.status = 'Active'
+                AND sn.purchase_date IS NOT NULL
+            ORDER BY max_age_days DESC
+            LIMIT 1
+            """,
+            (
+                target_warehouse,
+                item_group,
+            ),
+            as_dict=True,
+        )
+
+        max_age_days = (
+            warehouse_aging[0].get("max_age_days")
+            if warehouse_aging
+            else None
+        )
+
+        max_age_serial_no = (
+            warehouse_aging[0].get("serial_no")
+            if warehouse_aging
+            else None
+        )
+
+        if (
+            max_age_days is not None
+            and int(max_age_days) > warehouse_sla_days
+        ):
+            error_messages.append(
+                f"SLA exceeded for Item Group <b>{item_group}</b> "
+                f"in Department <b>{department}</b>. "
+                f"Warehouse SLA is <b>{warehouse_sla_days}</b> days, "
+                f"but Serial No <b>{max_age_serial_no}</b> has aging of "
+                f"<b>{int(max_age_days)}</b> days in warehouse "
+                f"<b>{target_warehouse}</b>."
+            )
+            return False
+
+    # Department SLA
+    if department_sla is not None:
+        department_sla_days = int(department_sla)
+
+        department_aging = frappe.db.sql(
+            """
+            SELECT
+                sn.name AS serial_no,
+                sn.stock_enty_date_and_time AS department_entry_date,
+                GREATEST(
+                    TIMESTAMPDIFF(
+                        DAY,
+                        sn.stock_enty_date_and_time,
+                        DATE_ADD(NOW(), INTERVAL 330 MINUTE)
+                    )
+                    - COUNT(DISTINCT holiday.holiday_date),
+                    0
+                ) AS department_age
+            FROM `tabSerial No` sn
+            INNER JOIN `tabWarehouse` warehouse
+                ON warehouse.name = sn.warehouse
+            LEFT JOIN `tabHoliday` holiday
+                ON holiday.parent = %s
+                AND holiday.holiday_date >
+                    DATE(sn.stock_enty_date_and_time)
+                AND holiday.holiday_date <= CURDATE()
+            WHERE
+                warehouse.department = %s
+                AND (w.warehouse_type IS NULL
+                    OR w.warehouse_type = ''
+                    OR w.warehouse_type != 'Employee Personal Warehouse')
+                AND sn.item_group = %s
+                AND sn.status = 'Active'
+                AND sn.stock_enty_date_and_time IS NOT NULL
+            GROUP BY
+                sn.name,
+                sn.stock_enty_date_and_time
+            ORDER BY department_age DESC
+            LIMIT 1
+            """,
+            (
+                DEPARTMENT_SLA_HOLIDAY_LIST,
+                department,
+                item_group,
+            ),
+            as_dict=True,
+        )
+
+        department_age = (
+            department_aging[0].get("department_age")
+            if department_aging
+            else None
+        )
+
+        department_age_serial = (
+            department_aging[0].get("serial_no")
+            if department_aging
+            else None
+        )
+
+        if (
+            department_age is not None
+            and int(department_age) > department_sla_days
+        ):
+            error_messages.append(
+                f"SLA exceeded for Item Group <b>{item_group}</b> "
+                f"in Department <b>{department}</b>. "
+                f"Department SLA is <b>{department_sla_days}</b> days, "
+                f"but Serial No <b>{department_age_serial}</b> has "
+                f"department aging of <b>{int(department_age)}</b> days."
+            )
+            return False
+
+    return True
 
 def get_nj_settings_comma_separated_values(parameter):
     value = frappe.db.get_value(
@@ -2034,15 +2302,22 @@ def item_item_group(item):
 
 
 
-def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_messages):
+def validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
+    gen_item_groups = get_nj_settings_comma_separated_values("gen_item_groups")
+    repair_system = get_nj_settings_comma_separated_values("repair_systems_for_gen_wise")
+    serial_item_group = frappe.db.get_value("Item", serial_doc.get("item_code"), "item_group")
+    serial_no_return_reason = frappe.db.get_value("Serial No", serial_no, "return_reason")
+    sellable_dept = "Inward Salable - NJ"
+
+    if repair_system and serial_no_return_reason in repair_system:
+        return True
+    if not gen_item_groups or serial_item_group not in gen_item_groups:
+        return True
+
     parent_qty = flt(serial_doc.get("parent_qty"))
-    print("parent_qty==============", parent_qty)
     is_above_gen = bool(serial_doc.get("laptop_gen"))
-    print("is_above_gen==============", is_above_gen)
     parameter = "above_8th_gen" if is_above_gen else "below_8th_gen"
-    print("parameter==============", parameter)
     gen_label = "above 8th gen" if is_above_gen else "below 8th gen"
-    print("gen_label==============", gen_label)
 
     gen_settings = frappe.db.get_value(
         "NJ Settings",
@@ -2050,7 +2325,6 @@ def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_message
         ["value", "value_rp"],
         as_dict=True,
     )
-    print("gen_settings==============", gen_settings)
 
     if not gen_settings:
         error_messages.append(
@@ -2058,12 +2332,47 @@ def validate_serial_no_gen_wise(serial_no, serial_doc, department, error_message
         )
         return False
 
-    threshold_qty = flt(gen_settings.get("value_rp"))
-    if parent_qty > threshold_qty:
-        return True
-
     allowed_departments = _split_department_names(gen_settings.get("value"))
     if department in allowed_departments:
+        return True
+
+    threshold_qty = flt(gen_settings.get("value_rp"))
+    if is_above_gen and parent_qty > threshold_qty:
+        return True
+
+    if not is_above_gen:
+        dept_wise_settings = frappe.db.get_value(
+            "NJ Settings",
+            {"doc_type": "Stock Movement", "parameter": "below_gen_restriction_dept_wise"},
+            ["value", "value_rp"],
+            as_dict=True,
+        )
+
+        restricted_source_departments = _split_department_names(
+            dept_wise_settings.get("value") if dept_wise_settings else None
+        )
+        dept_wise_threshold_qty = flt(
+            dept_wise_settings.get("value_rp") if dept_wise_settings else 0
+        )
+
+        if restricted_source_departments:
+            if (
+                s_department in restricted_source_departments
+                and parent_qty <= dept_wise_threshold_qty
+            ):
+                restricted_departments_text = ", ".join(restricted_source_departments)
+                error_messages.append(
+                    f"Serial No <b>{serial_no}</b> parent qty <b>{parent_qty}</b> is less than or equal to "
+                    f"<b>{dept_wise_threshold_qty}</b> for <b>below 8th gen</b>. You cannot move this serial no "
+                    f"from source department <b>{s_department}</b>. Restricted source departments: "
+                    f"<b>{restricted_departments_text}</b>."
+                    f"Kindly Move this serial no to department<b> {sellable_dept} </b>. "
+                )
+                return False
+
+            return True
+
+    if parent_qty > threshold_qty:
         return True
 
     allowed_departments_text = ", ".join(allowed_departments) if allowed_departments else "not configured"

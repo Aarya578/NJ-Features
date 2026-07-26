@@ -1,0 +1,115 @@
+.rfq-shared-dashboard {
+	padding: 16px 0;
+}
+
+.rfq-dashboard-summary {
+	display: grid;
+	gap: 12px;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	margin-bottom: 16px;
+}
+
+.rfq-dashboard-card {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	padding: 14px;
+}
+
+.rfq-dashboard-card-label {
+	color: var(--text-muted, #6c7680);
+	font-size: 12px;
+	margin-bottom: 6px;
+}
+
+.rfq-dashboard-card-value {
+	font-size: 24px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+.rfq-dashboard-items .table,
+.rfq-dashboard-quality .table {
+	background: var(--card-bg, #fff);
+	min-width: 760px;
+}
+
+.rfq-dashboard-quality {
+	margin-top: 24px;
+}
+
+.rfq-dashboard-section-header {
+	align-items: center;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	margin-bottom: 12px;
+}
+
+.rfq-dashboard-section-header h3 {
+	font-size: 16px;
+	font-weight: 600;
+	margin: 0;
+}
+
+.rfq-dashboard-group-control {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.rfq-dashboard-group-control label {
+	color: var(--text-muted, #6c7680);
+	font-size: 12px;
+	margin: 0;
+	white-space: nowrap;
+}
+
+.rfq-dashboard-group-by {
+	min-width: 180px;
+}
+
+.rfq-dashboard-progress-wrap {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.rfq-dashboard-progress {
+	background: var(--bg-light-gray, #e9ecef);
+	border-radius: 999px;
+	height: 8px;
+	min-width: 120px;
+	overflow: hidden;
+}
+
+.rfq-dashboard-progress-bar {
+	background: var(--primary, #2490ef);
+	height: 100%;
+}
+
+.rfq-dashboard-message {
+	border: 1px dashed var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	color: var(--text-muted, #6c7680);
+	padding: 28px;
+	text-align: center;
+}
+
+.rfq-dashboard-small {
+	color: var(--text-muted, #6c7680);
+	font-size: 12px;
+	max-width: 360px;
+	white-space: normal;
+}
+
+@media (max-width: 767px) {
+	.rfq-dashboard-section-header {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.rfq-dashboard-group-control {
+		justify-content: space-between;
+	}
+}

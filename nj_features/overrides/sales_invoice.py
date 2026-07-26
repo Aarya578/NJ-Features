@@ -77,6 +77,7 @@ class CustomSalesInvoice(SalesInvoice):
                 frappe.msgprint(f"Sales Order {so.name} is closed as full qty refunded.")
 
     def validate(self):
+        self.set_linked_sales_order_advances()
         super(CustomSalesInvoice, self).validate()
         # if self.is_return==1 and frappe.db.get_value("Sales Invoice",self.return_against,"status")!="Paid":
         #     frappe.throw(f"Sales Invoice:{self.return_against} is not paid")
@@ -86,6 +87,53 @@ class CustomSalesInvoice(SalesInvoice):
             self.validate_einvoice_fields()
         else:
             return  # Skip validation if e-invoicing is not enabled
+
+    def set_linked_sales_order_advances(self):
+        """Fetch submitted advances linked to the Sales Orders in this invoice."""
+        if self.is_return or self.is_pos:
+            return
+
+        sales_orders = {item.sales_order for item in self.items if item.sales_order}
+        if not sales_orders:
+            return
+
+        advance_entries = self.get_advance_entries(include_unallocated=False)
+        if not advance_entries:
+            return
+
+        existing_rows = {
+            (row.reference_type, row.reference_name, row.reference_row)
+            for row in self.advances
+        }
+        allocated_amount = sum(flt(row.allocated_amount) for row in self.advances)
+        if self.party_account_currency == self.company_currency:
+            invoice_amount = flt(self.base_rounded_total or self.base_grand_total)
+        else:
+            invoice_amount = flt(self.rounded_total or self.grand_total)
+
+        for entry in advance_entries:
+            entry_key = (entry.reference_type, entry.reference_name, entry.reference_row)
+            if entry.against_order not in sales_orders or entry_key in existing_rows:
+                continue
+
+            remaining_amount = max(invoice_amount - allocated_amount, 0)
+            if not remaining_amount:
+                break
+
+            amount = flt(entry.amount)
+            amount_to_allocate = min(amount, remaining_amount)
+            self.append("advances", {
+                "reference_type": entry.reference_type,
+                "reference_name": entry.reference_name,
+                "reference_row": entry.reference_row,
+                "remarks": entry.remarks,
+                "advance_amount": amount,
+                "allocated_amount": amount_to_allocate,
+                "ref_exchange_rate": flt(entry.exchange_rate),
+            })
+            existing_rows.add(entry_key)
+            allocated_amount += amount_to_allocate
+
     def before_submit(self):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
@@ -365,6 +413,30 @@ def custom_bulk_update_approved(names, approved_value):
         "status": "success"
     }
 
+def get_shipping_address_gstin(doc):
+    if not doc.get("shipping_address_name"):
+        return ""
+
+    return frappe.db.get_value("Address", doc.get("shipping_address_name"), "gstin") or ""
+
+
+def get_customer_address_gstin(doc):
+    if not doc.get("customer_address"):
+        return ""
+
+    return frappe.db.get_value("Address", doc.get("customer_address"), "gstin") or ""
+
+
+def get_ship_to_gstin(doc):
+    return (doc.get("customer_gstin") or get_shipping_address_gstin(doc) or "URP").strip()
+
+
+def should_send_shipping_and_dispatch_details(doc):
+    customer_gstin = (get_customer_address_gstin(doc) or "").strip()
+    ship_to_gstin = get_ship_to_gstin(doc)
+    return customer_gstin != ship_to_gstin
+
+
 # ✅ Used inside validate()
 def custom_validate_mandatory_fields(doc):
     if not doc.company_address:
@@ -392,22 +464,9 @@ def custom_validate_mandatory_fields(doc):
             title=_("Missing Fields"),
         )
 
-    # ✅ Use shipping address GSTIN instead of customer address
-    shipping_gstin = (
-    frappe.db.get_value("Address", doc.customer_address, "gstin")
-    if doc.customer_address else None
-    )
-
     # Only skip GSTIN check if total is <= 50000
     if flt(doc.get("grand_total")) <= 50000:
         return
-
-    # Now for invoices above 50,000
-    if doc.gst_category != "Overseas" and not shipping_gstin:
-        frappe.throw(
-            _("GSTIN is not found in selected *Shipping Address* Please Create 'E-Way Bill' Directly."),
-            title=_("Missing GSTIN in Shipping Address"),
-        )
 
     # shipping_gstin = (
     #     frappe.db.get_value("Address", doc.customer_address, "gstin")
@@ -450,14 +509,16 @@ def custom_make_einvoice(invoice):
     buyer_details.update(dict(legal_name=invoice.customer_name or invoice.customer))
 
     shipping_details = payment_details = prev_doc_details = eway_bill_details = frappe._dict({})
-    if invoice.shipping_address_name and invoice.customer_address != invoice.shipping_address_name:
+    send_shipping_and_dispatch_details = should_send_shipping_and_dispatch_details(invoice)
+    if invoice.shipping_address_name and send_shipping_and_dispatch_details:
         if invoice.gst_category == "Overseas":
             shipping_details = get_overseas_address_details(invoice.shipping_address_name)
         else:
             shipping_details = get_party_details(invoice.shipping_address_name, skip_gstin_validation=True)
+            shipping_details.gstin = get_ship_to_gstin(invoice)
 
     dispatch_details = frappe._dict({})
-    if invoice.dispatch_address_name:
+    if send_shipping_and_dispatch_details and invoice.dispatch_address_name:
         dispatch_details = get_party_details(invoice.dispatch_address_name, skip_gstin_validation=True)
 
     if invoice.is_pos and invoice.base_paid_amount:
@@ -1033,6 +1094,64 @@ def deviding_tax_chargese(doc, method=None):
             tax_amount = flt(allocated_tax_by_account[tax.account_head])
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+
+
+SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE = (
+    "Standard Shipping - NJ",
+    "PG Surcharge - NJ",
+)
+
+
+def add_missing_sales_order_tax_accounts(doc, method=None):
+    """Restore selected tax rows that are present in a linked SO but missing in the SI."""
+    if cint(doc.is_return):
+        return
+
+    sales_orders = list(dict.fromkeys(
+        item.sales_order for item in doc.items if item.sales_order
+    ))
+    if not sales_orders:
+        return
+
+    existing_accounts = {
+        tax.account_head for tax in doc.taxes if tax.account_head
+    }
+    missing_accounts = set(SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE) - existing_accounts
+    if not missing_accounts:
+        return
+
+    rows_to_add = {}
+    for sales_order in sales_orders:
+        for tax in frappe.get_doc("Sales Order", sales_order).taxes:
+            if tax.account_head in missing_accounts and tax.account_head not in rows_to_add:
+                rows_to_add[tax.account_head] = tax
+
+        if missing_accounts.issubset(rows_to_add):
+            break
+
+    if not rows_to_add:
+        return
+
+    child_table_fields = frappe.get_meta("Sales Invoice").get_field("taxes").options
+    valid_fields = set(frappe.get_meta(child_table_fields).get_valid_columns())
+    excluded_fields = {
+        "name", "owner", "creation", "modified", "modified_by",
+        "parent", "parentfield", "parenttype", "idx", "docstatus",
+    }
+
+    for account_head in SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE:
+        source_tax = rows_to_add.get(account_head)
+        if not source_tax:
+            continue
+
+        tax_values = {
+            fieldname: value
+            for fieldname, value in source_tax.as_dict().items()
+            if fieldname in valid_fields and fieldname not in excluded_fields
+        }
+        doc.append("taxes", tax_values)
+
+    doc.calculate_taxes_and_totals()
 
 
 def send_invoice_email(doc, method=None):

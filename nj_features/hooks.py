@@ -32,6 +32,7 @@ doctype_js = {
     "Address": "public/js/address.js",
     "Sales Order": "public/js/sales_order.js",
     "Quotation": "public/js/quotation.js",
+    "Request for Quotation": "public/js/request_for_quotation.js",
     "Purchase Invoice": "public/js/purchase_invoice_override.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
 }
@@ -60,6 +61,7 @@ override_doctype_class = {
     "Purchase Receipt": "nj_features.overrides.purchase_receipt.CustomPurchaseReceipt",
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
+    "Request for Quotation": "nj_features.overrides.request_for_quotation.CustomRequestForQuotation",
     # "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
     "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
@@ -100,6 +102,7 @@ doc_events = {
         "before_save": [
             "nj_features.overrides.sales_invoice.approve_validation",
             "nj_features.overrides.sales_invoice.deviding_tax_chargese",
+            "nj_features.overrides.sales_invoice.add_missing_sales_order_tax_accounts",
         ],
         # "on_submit": [
         #     "nj_features.overrides.sales_invoice.send_invoice_email",

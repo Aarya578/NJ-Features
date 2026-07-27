@@ -539,6 +539,7 @@ def stage_targeted_variants(variant_ids, settings):
                 pb.shopify_variant_id,
                 MAX(i.variant_of) AS parent1,
                 MAX(COALESCE(iva.attribute_value, '')) AS processor,
+                GROUP_CONCAT(DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) SEPARATOR '||') AS parent_keys,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
@@ -578,12 +579,12 @@ def stage_targeted_variants(variant_ids, settings):
                 continue
 
             # Rule 1: Parent Override
-            if flags["enable_parent_override"] and row.total_actual_qty < flags["parent_threshold"]:
-                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
-                parent_qty = parent_qty_dict.get(combined_key)
-                if parent_qty is not None and parent_qty > flags["parent_threshold"]:
-                    row.total_actual_qty = parent_qty
-                    update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "
+            if flags["enable_parent_override"] and row.total_actual_qty <= flags["parent_threshold"]:
+                parent_keys = [k.strip().lower() for k in (getattr(row, "parent_keys", "") or "").split("||") if k.strip()]
+                combined_parent_qty = sum(parent_qty_dict.get(k, 0.0) or 0.0 for k in set(parent_keys))
+                if combined_parent_qty > flags["parent_threshold"]:
+                    row.total_actual_qty = combined_parent_qty
+                    update_status += f"[ParentOverride<={flags['parent_threshold']}→{combined_parent_qty}] "
 
             # Rule 2: Warranty Rule
             if flags["enable_warranty"] and 0 <= row.total_actual_qty <= flags["warranty_threshold"]:

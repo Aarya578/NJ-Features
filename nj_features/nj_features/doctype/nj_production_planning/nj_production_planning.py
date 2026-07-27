@@ -103,11 +103,43 @@ _SERIAL_TO_MR_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
 # =========================
 # Helpers
 # =========================
+def _get_stock_item_code_from_to_make(item_code_or_pb: str) -> str:
+    """If item_code_or_pb is a Product Bundle (pb.name or pb.new_item_code), resolve to component stock item_code."""
+    if not item_code_or_pb:
+        return item_code_or_pb
+
+    stock_item = frappe.db.sql(
+        """
+        SELECT pbi.item_code
+        FROM `tabProduct Bundle Item` pbi
+        INNER JOIN `tabProduct Bundle` pb ON pbi.parent = pb.name
+        LEFT JOIN `tabItem` i ON pbi.item_code = i.name
+        WHERE pb.name = %s OR pb.new_item_code = %s
+        ORDER BY
+            CASE
+                WHEN i.item_group IN %s THEN 0
+                WHEN pbi.item_code LIKE 'S-%%' THEN 1
+                ELSE 2
+            END,
+            pbi.idx ASC
+        LIMIT 1
+        """,
+        (item_code_or_pb, item_code_or_pb, tuple(SELLABLE_ITEM_GROUPS)),
+        as_dict=False,
+    )
+    if stock_item and stock_item[0][0]:
+        return stock_item[0][0]
+
+    return item_code_or_pb
+
+
 @log_io
 def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
     """Update Serial No.to_make (lightweight db write)."""
-    if not UPDATE_SERIAL_TO_MAKE:
+    if not UPDATE_SERIAL_TO_MAKE or not item_code_to_make:
         return
+
+    item_code_to_make = _get_stock_item_code_from_to_make(item_code_to_make)
     try:
         frappe.db.set_value(
             "Serial No",
@@ -118,6 +150,7 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
         )
     except Exception as e:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
+
 
 
 @log_io

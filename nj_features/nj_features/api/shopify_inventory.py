@@ -352,6 +352,7 @@ def create_rq_doc():
                 pb.shopify_variant_id,
                 MAX(i.variant_of) AS parent1,
                 MAX(COALESCE(iva.attribute_value, '')) AS processor,
+                GROUP_CONCAT(DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) SEPARATOR '||') AS parent_keys,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
@@ -420,19 +421,16 @@ def create_rq_doc():
             # =====================================================
             if (
                 flags["enable_parent_override"]
-                and row.total_actual_qty < flags["parent_threshold"]
+                and row.total_actual_qty <= flags["parent_threshold"]
             ):
-                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
-                parent_qty = parent_qty_dict.get(combined_key)
-                logger.debug(f"parent_qty================== {parent_qty}")
+                parent_keys = [k.strip().lower() for k in (getattr(row, "parent_keys", "") or "").split("||") if k.strip()]
+                combined_parent_qty = sum(parent_qty_dict.get(k, 0.0) or 0.0 for k in set(parent_keys))
+                logger.debug(f"parent_keys================== {parent_keys}, combined_parent_qty================== {combined_parent_qty}")
 
-                if (
-                    parent_qty is not None
-                    and parent_qty > flags["parent_threshold"]
-                ):
-                    row.total_actual_qty = parent_qty
+                if combined_parent_qty > flags["parent_threshold"]:
+                    row.total_actual_qty = combined_parent_qty
                     logger.debug(f"row.total_actual_qty================== {row.total_actual_qty}")
-                    update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "
+                    update_status += f"[ParentOverride<={flags['parent_threshold']}→{combined_parent_qty}] "
                     logger.debug(f"update_status================== {update_status}")
 
             # =====================================================

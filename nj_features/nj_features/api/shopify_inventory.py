@@ -452,8 +452,7 @@ def create_rq_doc():
                         WHERE pd.shopify_variant_id = %s
                         GROUP BY pdi.parent HAVING COUNT(pdi.parent) > 0
                     )
-                    AND item_code LIKE '%%additional%%'
-                    AND item_code != 'Additional 6 Months warranty';
+                    AND item_code LIKE '%%additional%%';
                 """
                 logger.debug(f"add_item_code_available_query================== {add_item_code_available_query}")
 

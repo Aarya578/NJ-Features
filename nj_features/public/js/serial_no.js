@@ -107,9 +107,30 @@ frappe.ui.form.on('Serial No', {
         }
 
         frm.get_field('past_part_list').grid.cannot_add_rows = true;
-        frm.get_field('bag_list').grid.cannot_add_rows = true;
         frm.refresh_field('past_part_list');
-        frm.refresh_field('bag_list');
+
+        // frappe.db.get_value('User', frappe.session.user, 'role_profile_name', (r) => {
+        //     let role_profile = r ? r.role_profile_name : '';
+        //     let is_admin_profile = (role_profile === 'Administrator')
+        //         || frappe.session.user === 'Administrator'
+        //         || frappe.user.has_role('Administrator')
+        //         || frappe.user.has_role('System Manager');
+
+        //     if (!is_admin_profile) {
+        //         frm.set_df_property('bag_list', 'read_only', 1);
+        //         if (frm.get_field('bag_list') && frm.get_field('bag_list').grid) {
+        //             frm.get_field('bag_list').grid.cannot_add_rows = true;
+        //             frm.get_field('bag_list').grid.cannot_delete_rows = true;
+        //         }
+        //     } else {
+        //         frm.set_df_property('bag_list', 'read_only', 0);
+        //         if (frm.get_field('bag_list') && frm.get_field('bag_list').grid) {
+        //             frm.get_field('bag_list').grid.cannot_add_rows = false;
+        //             frm.get_field('bag_list').grid.cannot_delete_rows = false;
+        //         }
+        //     }
+        //     frm.refresh_field('bag_list');
+        // });
 
         let update_features_table = frm.add_custom_button(__('Fetch Features Table'), function() {
             frappe.show_alert({

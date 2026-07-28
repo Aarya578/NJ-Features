@@ -55,8 +55,8 @@ def trigger_inventory_sync_from_sales_order(doc, method=None):
 
         enqueue(
             method=create_rq_doc_by_item_codes,
-            queue="long",
-            timeout=1200,
+            queue="short",
+            timeout=300,
             job_name=f"shopify_inventory_sync_so_{doc.name}",
             item_codes=list(item_codes),
             sales_order=doc.name

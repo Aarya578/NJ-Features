@@ -109,6 +109,9 @@ frappe.ui.form.on('Serial No', {
         frm.get_field('past_part_list').grid.cannot_add_rows = true;
         frm.refresh_field('past_part_list');
 
+        frm.get_field('bag_list').grid.cannot_add_rows = true;
+        frm.refresh_field('bag_list');
+
         // frappe.db.get_value('User', frappe.session.user, 'role_profile_name', (r) => {
         //     let role_profile = r ? r.role_profile_name : '';
         //     let is_admin_profile = (role_profile === 'Administrator')

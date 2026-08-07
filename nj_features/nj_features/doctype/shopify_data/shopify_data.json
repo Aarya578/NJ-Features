@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-06 10:50:57.998729",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "collections",
+  "tags",
+  "publishing",
+  "image1",
+  "image2",
+  "image3",
+  "image4",
+  "image5",
+  "image6"
+ ],
+ "fields": [
+  {
+   "fieldname": "collections",
+   "fieldtype": "Data",
+   "label": "Collections"
+  },
+  {
+   "fieldname": "tags",
+   "fieldtype": "Data",
+   "label": "Tags"
+  },
+  {
+   "default": "0",
+   "fieldname": "publishing",
+   "fieldtype": "Check",
+   "label": "Publishing"
+  },
+  {
+   "fieldname": "image1",
+   "fieldtype": "Attach Image",
+   "label": "image1"
+  },
+  {
+   "fieldname": "image2",
+   "fieldtype": "Attach Image",
+   "label": "image2"
+  },
+  {
+   "fieldname": "image3",
+   "fieldtype": "Attach Image",
+   "label": "image3"
+  },
+  {
+   "fieldname": "image4",
+   "fieldtype": "Attach Image",
+   "label": "image4"
+  },
+  {
+   "fieldname": "image5",
+   "fieldtype": "Attach Image",
+   "label": "image5"
+  },
+  {
+   "fieldname": "image6",
+   "fieldtype": "Attach Image",
+   "label": "image6"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-06 14:55:25.011898",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Shopify Data",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

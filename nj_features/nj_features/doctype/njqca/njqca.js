@@ -1329,6 +1329,10 @@ frappe.ui.form.on("NJQCA", {
                         dialog.hide();
                         return;
                       } else {
+                        let btn = dialog.get_primary_btn();
+                        if (btn) btn.prop('disabled', true);
+                        dialog.hide();
+
                         let material_transfer_items = [
                           {
                             serial_no: frm_serial_no,
@@ -1361,14 +1365,18 @@ frappe.ui.form.on("NJQCA", {
                               $(".primary-action").show();
                               frm.set_value("warehouse", workWarehouse);
                               frm.refresh_field("warehouse");
+                            } else {
+                              if (btn) btn.prop('disabled', false);
+                              dialog.show();
                             }
                           },
                           error: function (err) {
                             console.error(err);
                             $(".primary-action").hide();
+                            if (btn) btn.prop('disabled', false);
+                            dialog.show();
                           },
                         });
-                        dialog.hide();
                       }
                     }
                   }
@@ -1830,6 +1838,10 @@ async function promptNJQCATransferForCreatedUser(frm) {
     static: true,
     primary_action_label: "Yes",
     primary_action: function () {
+      let btn = dialog.get_primary_btn();
+      if (btn) btn.prop('disabled', true);
+      dialog.hide();
+
       const materialTransferItems = [
         {
           serial_no: serialNo,
@@ -1861,6 +1873,9 @@ async function promptNJQCATransferForCreatedUser(frm) {
             $(".primary-action").show();
             frm.set_value("warehouse", workWarehouse);
             frm.refresh_field("warehouse");
+          } else {
+            if (btn) btn.prop('disabled', false);
+            dialog.show();
           }
         },
         error: function (err) {
@@ -1869,10 +1884,10 @@ async function promptNJQCATransferForCreatedUser(frm) {
             err,
           );
           $(".primary-action").hide();
+          if (btn) btn.prop('disabled', false);
+          dialog.show();
         },
       });
-
-      dialog.hide();
     },
     secondary_action_label: "No",
     secondary_action: function () {

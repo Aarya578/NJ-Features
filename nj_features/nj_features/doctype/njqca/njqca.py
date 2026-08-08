@@ -533,6 +533,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     ORDER BY idx
                 """, check_name, as_dict=True)
 
+                option_found = False
                 if check_options and score not in (None, ""):
                     try:
                         score_value = float(score)
@@ -541,9 +542,13 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                             if opt_score not in (None, "") and score_value == float(opt_score):
                                 resolved_option = opt.get("check_options") or value
                                 resolved_score = float(opt_score)
+                                option_found = True
                                 break
                     except Exception:
                         pass
+
+                if check_options and not option_found:
+                    continue
 
                 # Get all QI reading rows for this item group.
                 # This is the important fix for repeated Laptop RAM / LAPTOP STORAGE rows.
@@ -572,7 +577,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     child.item_group = target_item_group
                     child.check_name = check_name
                     child.options = resolved_option
-                    child.automated_check_name = resolved_option
+                    child.automated_check_name = value if value else resolved_option
                     child.score = resolved_score
                     child.item_group_idx = item_group_idx
 

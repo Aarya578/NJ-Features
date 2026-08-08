@@ -668,15 +668,8 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
         unassign_serials(so_name, item_code, abs(to_allocate))
 
     elif to_allocate > 0:
-        allocated_in_eligible = assign_serials(so_name, item_code, to_allocate, eligible_depts)
-
-        if allocated_in_eligible < to_allocate:
-            remaining_to_allocate = to_allocate - allocated_in_eligible
-            allocated_in_remaining = assign_serials(so_name, item_code, remaining_to_allocate, remaining_depts)
-            total_allocated = allocated_in_eligible + allocated_in_remaining
-        else:
-            total_allocated = allocated_in_eligible
-
+        search_order = (eligible_depts or []) + (remaining_depts or [])
+        total_allocated = assign_serials(so_name, item_code, to_allocate, search_order)
         unallocated_qty = to_allocate - total_allocated
 
         if unallocated_qty > 0:
@@ -686,34 +679,61 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
 
 
 def assign_serials(so_name, item_code, to_allocate, departments):
-    """Assign serial numbers from given departments"""
-    print("\n\n⚙️ Assigning serial numbers for {}".format(so_name))
+    """Assign serial numbers using multi-pass priority across search_order departments."""
+    if to_allocate <= 0 or not departments:
+        return 0
+
+    from nj_features.nj_features.doctype.nj_production_planning.nj_production_planning import (
+        _get_shopify_variant_id,
+        _get_variant_bundle_item_codes,
+        _cfg_tuple_from_item,
+    )
+
     allocated_count = 0
+    needed_qty = to_allocate
 
+    def _do_assign(sn_name):
+        nonlocal allocated_count, needed_qty
+        try:
+            sdoc = frappe.get_doc("Serial No", sn_name)
+            sdoc.reserved_sales_order = so_name
+            sdoc.to_make = item_code
+            so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
+            aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
+            already_logged = any(
+                row.sales_order == so_name
+                for row in sdoc.get("sales_order_details", [])
+            )
+            if not already_logged:
+                sdoc.append("sales_order_details", {
+                    "sales_order": so_name,
+                    "aging_days": aging_days
+                })
+            sdoc.save(ignore_permissions=True)
+            allocated_count += 1
+            needed_qty -= 1
+        except Exception as e:
+            frappe.log_error(title=f"Serial reservation failed {sn_name}", message=str(e))
+
+    dept_candidates = {}
     for dept in departments:
-        if allocated_count >= to_allocate:
-            break
-
-        warehouses = frappe.db.sql_list("""
+        dept_name = getattr(dept, "name", str(dept))
+        wh_list = frappe.db.sql_list("""
             SELECT name FROM `tabWarehouse` 
             WHERE department = %s
               AND IFNULL(warehouse_type, '') != 'Employee Personal Warehouse'
-        """, dept.name)
-
-        if not warehouses:
+        """, dept_name)
+        if not wh_list:
+            dept_candidates[dept_name] = []
             continue
 
-        remaining = int(to_allocate - allocated_count)
-        warehouses_str = ', '.join(f"'{w}'" for w in warehouses)
-
-        query = f"""
-            SELECT sn.name
+        serials = frappe.db.sql("""
+            SELECT sn.name, sn.item_code, sn.to_make, sn.creation, sn.purchase_date
             FROM `tabSerial No` sn
             INNER JOIN `tabDepartment` dp ON sn.department = dp.name
             INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
             WHERE
-                sn.item_code = '{item_code}'
-                AND sn.warehouse IN ({warehouses_str})
+                sn.warehouse IN %s
                 AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
                 AND sn.status = 'Active'
                 AND IFNULL(dp.department_sequence, 0) != 0
@@ -728,49 +748,76 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                     WHERE serial_no = sn.name
                         AND docstatus = 1
                 )
-            ORDER BY sn.creation ASC
-            LIMIT {remaining}
-        """
+            ORDER BY COALESCE(sn.purchase_date, sn.creation) ASC, sn.name ASC
+        """, (tuple(wh_list),), as_dict=True)
+        dept_candidates[dept_name] = serials or []
 
-        available_serials = frappe.db.sql(query, as_dict=1)
-        count_in_dept = len(available_serials)
+    # --- Priority 1: Exact Item Code Match across search_order ---
+    for dept in departments:
+        if needed_qty <= 0:
+            break
+        dept_name = getattr(dept, "name", str(dept))
+        pool = dept_candidates.get(dept_name, [])
+        matches = [s for s in pool if s.get("item_code") == item_code or s.get("to_make") == item_code]
+        for s in matches[:needed_qty]:
+            pool.remove(s)
+            _do_assign(s["name"])
 
-        print(f"\n🔹 Department: {dept.name}, Found {count_in_dept} serials to allocate")
+    # --- Priority 2: Same Shopify Variant ID Item Codes across search_order ---
+    variant_id = _get_shopify_variant_id(item_code)
+    p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {item_code} if variant_id else set()
+    if needed_qty > 0 and p2_codes:
+        for dept in departments:
+            if needed_qty <= 0:
+                break
+            dept_name = getattr(dept, "name", str(dept))
+            pool = dept_candidates.get(dept_name, [])
+            matches = [s for s in pool if s.get("item_code") in p2_codes or s.get("to_make") in p2_codes]
+            for s in matches[:needed_qty]:
+                pool.remove(s)
+                _do_assign(s["name"])
 
-        actually_reserved = 0
+    # --- Priority 3: Same Parent Reconfiguration (Model + Processor) across search_order ---
+    if needed_qty > 0:
+        try:
+            target_cfg_tuple = _cfg_tuple_from_item(item_code)
+            target_model = (target_cfg_tuple[0], target_cfg_tuple[1])
+            for dept in departments:
+                if needed_qty <= 0:
+                    break
+                dept_name = getattr(dept, "name", str(dept))
+                pool = dept_candidates.get(dept_name, [])
+                p3_matches = []
+                for s in pool:
+                    try:
+                        scfg = _cfg_tuple_from_item(s.get("item_code"))
+                        if (scfg[0], scfg[1]) == target_model:
+                            p3_matches.append(s)
+                    except Exception:
+                        pass
+                for s in p3_matches[:needed_qty]:
+                    pool.remove(s)
+                    _do_assign(s["name"])
+        except Exception:
+            pass
 
-        for serial in available_serials:
-            serial_name = serial.get("name")
-            serial_doc = frappe.get_doc("Serial No", serial_name)
+    # --- Priority 4: Parent's Shopify Variant ID Item Codes across search_order ---
+    if needed_qty > 0:
+        parent_variant_id = _get_shopify_variant_id(item_code)
+        if parent_variant_id:
+            p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {item_code} - p2_codes
+            if p4_codes:
+                for dept in departments:
+                    if needed_qty <= 0:
+                        break
+                    dept_name = getattr(dept, "name", str(dept))
+                    pool = dept_candidates.get(dept_name, [])
+                    matches = [s for s in pool if s.get("item_code") in p4_codes or s.get("to_make") in p4_codes]
+                    for s in matches[:needed_qty]:
+                        pool.remove(s)
+                        _do_assign(s["name"])
 
-            print("is_replace:", serial_doc.is_replace)
-            print("return_reason:", serial_doc.return_reason)
-
-            print("⚙️ Updating (normal case)")
-            print("so_name:", so_name)
-            print("serial_name:", serial_name)
-            serial_doc.reserved_sales_order = so_name
-            actually_reserved += 1
-
-            so_creation = frappe.db.get_value("Sales Order", so_name, "creation")
-            aging_days = (getdate() - getdate(so_creation)).days if so_creation else 0
-
-            already_logged = any(
-                row.sales_order == so_name
-                for row in serial_doc.get("sales_order_details", [])
-            )
-            if not already_logged:
-                serial_doc.append("sales_order_details", {
-                    "sales_order": so_name,
-                    "aging_days": aging_days
-                })
-
-            serial_doc.save(ignore_permissions=True)
-
-        frappe.db.commit()
-        allocated_count += actually_reserved
-
-    print("✅ Successfully returned from assign_serials()")
+    frappe.db.commit()
     return allocated_count
 
 

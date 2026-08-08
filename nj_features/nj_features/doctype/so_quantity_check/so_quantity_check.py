@@ -10,6 +10,20 @@ logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 class SOQuantityCheck(Document):
         pass
 
+SOQC_ITEM_GROUPS = [
+    'Laptops(Bundle)',
+    'Chromebooks(Bundle)',
+    'MacBooks(Bundle)',
+    'MacBooks',
+    'Laptops',
+    'Chromebooks',
+    'Full Set Desktops',
+    'Desktops',
+    'AIO',
+    'Chromeboxes'
+]
+
+
 
 def _safe_int(v, default=0) -> int:
     if v is None:
@@ -45,14 +59,16 @@ def update_so_quantity_check(settings):
 
         if warehouses is not None:
             warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
-        item_groups_list = [i.strip() for i in item_groups.split(',') if i.strip()]
+        settings_item_groups = [i.strip() for i in item_groups.split(',') if i.strip()]
+        item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
         departments_list = [d.strip() for d in departments.split(',') if d.strip()]
 
         warehouse_placeholders = ', '.join(['%s'] * len(warehouses_list))
         item_group_placeholders = ', '.join(['%s'] * len(item_groups_list))
         department_placeholders = ', '.join(['%s'] * len(departments_list))
 
-        warehouse_clause = f"OR b.warehouse IN item_group_placeholders({warehouse_placeholders})" if warehouses_list else ""
+        parent_warehouse_clause = f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
+        item_warehouse_clause = f"OR s.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
         # Step 1: Get inventory data from first query
 
         query = f"""
@@ -84,7 +100,7 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {warehouse_clause}
+                        {parent_warehouse_clause}
                     GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
                 ),
 
@@ -113,7 +129,7 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {warehouse_clause}
+                        {item_warehouse_clause}
                     GROUP BY s.item_code
                 ),
 
@@ -210,7 +226,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                     AND so.sale_type != 'Amazon'
                     AND (
                         pb.item_code IS NULL 
@@ -219,7 +239,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                     )
             ) AS so_data
 
@@ -236,7 +260,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 
@@ -279,7 +307,9 @@ def update_so_quantity_check(settings):
         ]
 
         values = []
-        for item_code, data in stock_map.items():
+        all_item_codes = set(stock_map.keys()) | set(pending_qty_by_item.keys())
+        for item_code in all_item_codes:
+            data = stock_map.get(item_code, {})
             parent1 = data.get('parent1', '')
 
             # Ensure we have numeric values for calculation
@@ -380,70 +410,6 @@ def updting_sla_department():
         return False
 
 
-# @frappe.whitelist()
-# def updating_sla_department():
-#     try:
-#         # Get NJ Inventory Settings document
-#         nj_settings = frappe.get_single("NJ Inventory Settings")
-
-#         departments_list = nj_settings.departments if nj_settings.departments else []
-        
-#         if not departments_list:
-#             frappe.throw("No departments found in NJ Inventory Settings.")
-        
-#         # Extract department names from child table (assuming it's a table field)
-#         department_names = [dept.department if hasattr(dept, 'department') else dept.name for dept in departments_list]
-        
-#         # Get all SO Quantity Check documents that need SLA update
-#         so_quantity_checks = frappe.get_all("SO Quantity Check", 
-#                                           fields=["name", "item_code"],
-#                                           filters={"docstatus": ["!=", 2]})  # Not cancelled
-#         updated_count = 0
-        
-#         for so_check in so_quantity_checks:
-#             so_quantity_check_name = so_check.name
-#             item_code = so_check.item_code
-            
-#             if not item_code:
-#                 continue
-            
-#             # Create placeholders for departments
-#             department_placeholders = ', '.join(['%s'] * len(department_names))
-            
-#             qry = f"""
-#                 SELECT SUM(sla) as total_sla FROM `tabDepartment`
-#                 WHERE department_sequence >= (
-#                     SELECT department_sequence FROM `tabDepartment` WHERE name = (
-#                         SELECT w.department 
-#                         FROM `tabSerial No` s 
-#                         INNER JOIN `tabWarehouse` w ON w.name = s.warehouse 
-#                         INNER JOIN `tabDepartment` d ON d.name = w.department 
-#                         WHERE 
-#                             w.department IN ({department_placeholders})
-#                             AND s.item_code = %s
-#                         ORDER BY d.department_sequence DESC 
-#                         LIMIT 1
-#                     )
-#                 )
-#             """
-#             # Combine department names and item_code for parameterized query
-#             query_params = department_names + [item_code]
-            
-#             # Execute the query
-#             result = frappe.db.sql(qry, query_params, as_dict=True)
-#             sla_value = result[0].total_sla if result and result[0].total_sla else 0
-            
-#             # Set the SLA value back into the SO Quantity Check document
-#             frappe.db.set_value("SO Quantity Check", so_quantity_check_name, "sla", sla_value)
-#             updated_count += 1
-        
-#         frappe.db.commit()
-#         return f"Updated {updated_count} records"
-        
-#     except Exception as e:
-#         frappe.log_error(frappe.get_traceback(), "updating_sla_department")
-#         return False
-
 
 def update_parent_quantity():
     try:
@@ -491,6 +457,23 @@ def update_proportional_qty_and_updt_qty():
                         0
                     ) AS SIGNED
                 ),
+                t.pending_allocation_qty = IF(
+                    CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
+                    CAST(
+                        IF(s.total_update_qty > 0,
+                            ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
+                            0
+                        ) AS SIGNED
+                    ) < 0,
+                    CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS SIGNED) -
+                    CAST(
+                        IF(s.total_update_qty > 0,
+                            ROUND((CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) / s.total_update_qty) * CAST(COALESCE(NULLIF(t.remove_parent_qty, ''), '0') AS DECIMAL(10,2))),
+                            0
+                        ) AS SIGNED
+                    ),
+                    t.pending_allocation_qty
+                ),
                 t.update_qty2 = CAST(
                     IF(CAST(COALESCE(NULLIF(t.update_qty, ''), '0') AS DECIMAL(10,2)) <= 0,
                         0,
@@ -520,6 +503,168 @@ def update_proportional_qty_and_updt_qty():
 
     except Exception:
         log_error(frappe.get_traceback(), "update_proportional_qty_and_updt_qty")
+        return False
+
+
+def update_pre_order_qty(settings):
+    """Update pre-order quantities from inventory available in FQC-NJ."""
+    try:
+        warehouses = settings.get("warehouses") or ""
+        item_groups = settings.get("item_groups") or ""
+
+        warehouses_list = [value.strip() for value in warehouses.split(",") if value.strip()]
+        settings_item_groups = [value.strip() for value in item_groups.split(",") if value.strip()]
+        item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
+
+        if not item_groups_list:
+            log_error(
+                "Item groups are required to update pre-order quantities",
+                "update_pre_order_qty",
+                "Warning",
+            )
+            return False
+
+        item_group_placeholders = ", ".join(["%s"] * len(item_groups_list))
+        warehouse_placeholders = ", ".join(["%s"] * len(warehouses_list))
+        parent_warehouse_clause = (
+            f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
+        )
+        item_warehouse_clause = (
+            f"OR s.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
+        )
+
+        query = f"""
+            WITH Parent_Stock AS (
+                SELECT
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
+                    COUNT(b.serial_no) AS total_actual_qty_for_parent
+                FROM `tabItem` i
+                LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+                LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
+                LEFT JOIN `tabItem Variant Attribute` proc
+                    ON proc.parent = i.item_code
+                    AND proc.attribute = 'Processor Type1'
+                WHERE
+                    b.item_group IN ({item_group_placeholders})
+                    AND (w.department = 'FQC-NJ' {parent_warehouse_clause})
+                    AND b.is_replace = 0
+                    AND (
+                        b.return_reason IS NULL
+                        OR b.return_reason = ''
+                        OR b.return_reason != 'Repair'
+                        OR (
+                            b.return_reason = 'Repair'
+                            AND (
+                                so.name IS NULL
+                                OR so.status = 'Closed'
+                                OR so.per_delivered = 100
+                            )
+                        )
+                    )
+                GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
+            ),
+
+            Item_Stock AS (
+                SELECT
+                    s.item_code,
+                    COUNT(s.serial_no) AS total_actual_qty_for_itemcode
+                FROM `tabSerial No` s
+                INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
+                INNER JOIN `tabItem` i ON s.item_code = i.item_code
+                LEFT JOIN `tabSales Order` so ON s.sales_order_id = so.name
+                WHERE
+                    i.item_group IN ({item_group_placeholders})
+                    AND (w.department = 'FQC-NJ' {item_warehouse_clause})
+                    AND s.is_replace = 0
+                    AND (
+                        s.return_reason IS NULL
+                        OR s.return_reason = ''
+                        OR s.return_reason != 'Repair'
+                        OR (
+                            s.return_reason = 'Repair'
+                            AND (
+                                so.name IS NULL
+                                OR so.status = 'Closed'
+                                OR so.per_delivered = 100
+                            )
+                        )
+                    )
+                GROUP BY s.item_code
+            ),
+
+            Main_Data AS (
+                SELECT DISTINCT
+                    i.shopify_variant_id,
+                    i.item_code,
+                    i.item_group,
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
+                    ps.total_actual_qty_for_parent,
+                    isq.total_actual_qty_for_itemcode
+                FROM `tabItem` i
+                LEFT JOIN `tabItem Variant Attribute` proc
+                    ON proc.parent = i.item_code
+                    AND proc.attribute = 'Processor Type1'
+                LEFT JOIN Parent_Stock ps
+                    ON ps.parent = TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, '')))
+                LEFT JOIN Item_Stock isq ON isq.item_code = i.item_code
+                WHERE i.item_group IN ({item_group_placeholders})
+            )
+
+            SELECT
+                shopify_variant_id,
+                item_code,
+                item_group,
+                total_actual_qty_for_itemcode AS actual_qty,
+                parent,
+                total_actual_qty_for_parent
+            FROM Main_Data
+            ORDER BY shopify_variant_id, item_code
+        """
+
+        params = (
+            item_groups_list + warehouses_list
+            + item_groups_list + warehouses_list
+            + item_groups_list
+        )
+        inventory_data = frappe.db.sql(query, tuple(params), as_dict=True)
+        fqc_stock_by_item = {
+            row.get("item_code"): _safe_int(row.get("actual_qty"), 0)
+            for row in inventory_data
+            if row.get("item_code")
+        }
+
+        rows = frappe.get_all(
+            "SO Quantity Check",
+            fields=["name", "item_code", "pending_allocation_qty"],
+        )
+
+        for row in rows:
+            fqc_stock = max(fqc_stock_by_item.get(row.item_code, 0), 0)
+            pending_qty = _safe_int(row.pending_allocation_qty, 0)
+            pre_order_qty = min(abs(pending_qty), fqc_stock) if pending_qty < 0 else fqc_stock
+
+            frappe.db.set_value(
+                "SO Quantity Check",
+                row.name,
+                "pre_order_qty",
+                pre_order_qty,
+                update_modified=False,
+            )
+
+        frappe.db.commit()
+        log_error(
+            f"SO Quantity Check pre-order quantity updated for {len(rows)} items",
+            "update_pre_order_qty",
+            "Info",
+        )
+        return True
+
+    except pymysql.err.OperationalError:
+        return False
+
+    except Exception:
+        log_error(frappe.get_traceback(), "update_pre_order_qty")
         return False
 
 

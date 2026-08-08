@@ -312,21 +312,29 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                 INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
                 LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
                 LEFT JOIN `tabItem` it ON it.item_code = pb.item_code
+                LEFT JOIN `tabItem` main_it ON main_it.item_code = soi.item_code
                 WHERE
                     so.status NOT IN ('Closed', 'Completed', 'Cancelled')
                     AND so.docstatus = 1
-                    AND so.creation > CURDATE() - INTERVAL 50 DAY
-                    AND soi.item_group IN ('Laptops','Chromebooks')
+                    AND so.creation > CURDATE() - INTERVAL 100 DAY
                     AND so.sale_type != 'Amazon'
-                    AND (pb.item_code IS NULL OR it.item_group IN ('Laptops', 'Chromebooks'))
+                    AND (
+                        soi.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                    )
             ) AS so_data
             LEFT JOIN (
                 SELECT dni.against_sales_order, dni.item_code, SUM(dni.qty) AS qty
                 FROM `tabDelivery Note Item` dni
+                LEFT JOIN `tabItem` main_it ON main_it.item_code = dni.item_code
                 WHERE
                     dni.docstatus = 1 AND dni.qty > 0
-                    AND dni.creation >= CURDATE() - INTERVAL 50 DAY
-                    AND dni.item_group IN ('Laptops', 'Chromebooks')
+                    AND dni.creation >= CURDATE() - INTERVAL 100 DAY
+                    AND (
+                        dni.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                    )
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data
                 ON so_data.sales_order = dn_data.against_sales_order

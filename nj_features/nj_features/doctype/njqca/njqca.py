@@ -8139,3 +8139,56 @@ def link_ext_to_nj_serial(ext_serial_no, nj_serial_no, njqca_name):
     )
 
     return {"success": True}
+
+
+
+@frappe.whitelist()
+def get_my_rfq_options():
+    """
+    Called by the Flutter app right after login.
+
+    Checks the Employee's own Supplier field (map_to):
+      - If set: this employee is currently marked for external QC.
+        mode="external", supplier=<locked-in value>, rfqs=<that supplier's RFQs>
+      - If not set: normal NewJaisa employee.
+        mode="internal", suppliers=[...] for them to pick from
+    """
+    user = frappe.session.user
+
+    supplier = frappe.db.get_value(
+        "Employee", {"user_id": user, "status": "Active"}, "map_to"
+    )
+
+    if supplier:
+        rows = frappe.get_all(
+            "Request for Quotation Supplier",
+            filters={"supplier": supplier},
+            fields=["parent"]
+        )
+        rfqs = [r.parent for r in rows]
+        return {"allowed": True, "mode": "external", "supplier": supplier, "rfqs": rfqs}
+
+    rows = frappe.get_all(
+        "Request for Quotation Supplier",
+        fields=["supplier"],
+        distinct=True
+    )
+    suppliers = sorted(set(r.supplier for r in rows if r.supplier))
+    return {"allowed": True, "mode": "internal", "suppliers": suppliers}
+
+
+@frappe.whitelist()
+def get_rfqs_for_supplier(supplier):
+    """
+    Called after an internal (NewJaisa) user picks a Supplier from the
+    dropdown. Returns that supplier's RFQ list.
+    """
+    if not supplier:
+        return {"rfqs": []}
+
+    rows = frappe.get_all(
+        "Request for Quotation Supplier",
+        filters={"supplier": supplier},
+        fields=["parent"]
+    )
+    return {"rfqs": [r.parent for r in rows]}

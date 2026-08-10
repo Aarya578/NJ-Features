@@ -17,6 +17,7 @@ from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
+from nj_features.nj_features.api.qr_code import create_serial_no
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
 
@@ -2383,6 +2384,73 @@ def get_info_from_component_serial_no(doc=None):
         log_error(traceback.format_exc(), "Error on get_info_component_serial_no in NJQCA")
         return f"Error while getting component serial info: {str(e)}"
 
+def _ensure_rfq_serial_no(doc):
+    """
+    FIX (traced from real NJQCA sessions: RFQ-tagged records staying
+    stuck with no Serial No / QI / QR — the whole point of tagging a
+    record with an RFQ is that it's a brand-new external device with
+    no existing ERP inventory record yet, so open_draft_qi's serial
+    resolution has nothing to find and everything downstream of it
+    quietly never happens):
+
+    This exact two-step flow (generate an EXT-prefixed serial number
+    via create_serial_no(item_code, rfq=True), then create the actual
+    Serial No document from it via create_serial_no_based_on_rfq)
+    already existed — but ONLY inside njqca.js, the Desk FORM's
+    client-side script. It only ever ran if a human's browser happened
+    to load this exact record in Desk afterward. NJQCA.exe tries to
+    trigger exactly that by opening the record in Chrome once a
+    session finishes, but that's a bare shell command (Start-Process
+    chrome.exe) with no guarantee it succeeds on every machine —
+    confirmed failing outright in a real session ("Start-Process :
+    ... The system cannot find the file specified."), which silently
+    skipped this whole step with zero indication to the technician.
+
+    Doing the same two steps here instead means an RFQ/external
+    device gets its Serial No the moment NJQCA.exe submits the
+    record server-side, not conditionally on whether some browser tab
+    happened to load afterward. Mirrors njqca.js's own guard
+    conditions exactly (rfq_id set, item_code already resolved,
+    serial_no not already set), so this and the Desk-side trigger
+    can never double-create the same thing.
+    """
+    if not doc.rfq_id or doc.serial_no or not doc.item_code:
+        return
+
+    generated = create_serial_no(item_code=doc.item_code, rfq=True)
+    if not generated:
+        njqca_qi_trace("rfq_serial_generation_failed", doc.name, {
+            "item_code": doc.item_code,
+            "rfq_id": doc.rfq_id
+        }, error=True)
+        return
+
+    doc.db_set("serial_no", generated, update_modified=False)
+
+    serial_info = {
+        "serial_no": generated,
+        "rfq_id": doc.rfq_id,
+        "model": doc.model,
+        "doctype": doc.doctype,
+        "item_code": doc.item_code,
+        "item_group": doc.item_group,
+        "bios_serialno": doc.bios_serialno,
+        "name": doc.name,
+    }
+    try:
+        create_serial_no_based_on_rfq(serial_info)
+        njqca_qi_trace("rfq_serial_created", doc.name, {"serial_no": generated})
+    except Exception:
+        # Soft-fail: leave doc.serial_no set (already db_set above) so
+        # a retry/manual fix later doesn't need to regenerate it, but
+        # don't let a Serial No creation problem here block whatever
+        # else after_save_njqca can still do below.
+        njqca_qi_trace("rfq_serial_create_failed", doc.name, {
+            "serial_no": generated,
+            "traceback": frappe.get_traceback()
+        }, error=True)
+
+
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     njqca_qi_trace("after_save_njqca_start", docname, {
@@ -2393,6 +2461,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     })
     
     doc = frappe.get_doc("NJQCA", docname)
+    _ensure_rfq_serial_no(doc)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
     if not int(ignore_part_validation):

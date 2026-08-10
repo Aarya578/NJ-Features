@@ -624,42 +624,11 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 )
                 priority_per_dept[dept_name] += 1
 
-            # Validate & Enrich Healthy Serials for Order / Forecast Allocation
-            healthy_serials = []
-            for row in serial_rows:
-                sn_id = row['name']
-                wh = row['warehouse']
-                if not row.get("item_wizard"):
-                    plan_doc.append("missing_serial_nos", {
-                        "serial_no": sn_id,
-                        "current_department": dept_name,
-                        "current_warehouse": wh,
-                        "reason": "Item Wizard not found"
-                    })
-                    continue
-                if row.get("part_list_status") != "Completed" or row.get("iw_docstatus") != 1:
-                    reason = "Item Wizard not Completed" if row.get("part_list_status") != "Completed" else "Item Wizard not Submitted"
-                    plan_doc.append("missing_serial_nos", {
-                        "serial_no": sn_id,
-                        "current_department": dept_name,
-                        "current_warehouse": wh,
-                        "reason": reason
-                    })
-                    continue
-                healthy_serials.append(row)
-
             serial_map = []
-            for row in healthy_serials:
+            for row in serial_rows:
                 enriched = _enrich_serial_from_attrs(row)
                 if not enriched.get("fallback_pb_item_code"):
-                    pb_reason = _get_pb_missing_reason(row['item_code'])
-                    plan_doc.append("missing_serial_nos", {
-                        "serial_no": row['name'],
-                        "current_department": dept_name,
-                        "current_warehouse": row['warehouse'],
-                        "reason": pb_reason
-                    })
-                    continue
+                    enriched["fallback_pb_item_code"] = row["item_code"]
                 serial_map.append(enriched)
 
             avail_serials_by_dept[dept_name] = serial_map
@@ -701,8 +670,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             for s in p1_matches[:needed_qty]:
                 dept_pool.remove(s)
                 needed_qty -= 1
-                if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                    _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                 _append_plan_row(
                     plan_doc,
                     serial_no=s["serial_no"],
@@ -1123,8 +1090,8 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
     No filtering on soi.delivery_date.
     """
-    LOOKBACK_DAYS_B2C = 50
-    LOOKBACK_DAYS_B2B = 100
+    LOOKBACK_DAYS_B2C = 120
+    LOOKBACK_DAYS_B2B = 120
 
     rows = frappe.db.sql(
         """

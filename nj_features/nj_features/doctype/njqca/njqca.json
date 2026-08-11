@@ -47,6 +47,8 @@
   "manufacturer_model",
   "column_break_qzvyk",
   "model",
+  "change_model",
+  "model_changed_using_change_model",
   "model_description",
   "column_break_w1v6n",
   "item_code",
@@ -529,11 +531,24 @@
    "fieldtype": "Table",
    "label": "Execution Check Status",
    "options": "NJQCA Execution Check Status"
+  },
+  {
+   "fieldname": "change_model",
+   "fieldtype": "Button",
+   "label": "Change Model"
+  },
+  {
+   "fieldname": "model_changed_using_change_model",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Model Changed Using Change Model",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-29 13:19:09.055454",
+ "modified": "2026-08-01 15:31:53.369750",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJQCA",

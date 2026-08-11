@@ -836,30 +836,39 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             warehouse_sla_days = int(warehouse_sla)
             warehouse_aging = frappe.db.sql(
                 f"""
-                SELECT
-                    s.name AS serial_no,
-                    s.warehouse,
-                    FLOOR(
-                        (
+                    SELECT
+                        s.name AS serial_no,
+                        s.warehouse,
+                        GREATEST(
                             TIMESTAMPDIFF(
-                                HOUR,
+                                DAY,
                                 TIMESTAMP(s.purchase_date, s.purchase_time),
                                 NOW()
-                            )
-                            -
-                            (
-                                (
-                                    DATEDIFF(CURDATE(), s.purchase_date)
-                                    + WEEKDAY(s.purchase_date) + 1
-                                ) DIV 7
-                            ) * 24
-                        ) / 24
-                    ) AS max_age_days
-                FROM `tabSerial No` s
-                WHERE s.warehouse = %s
-                    AND s.item_group IN ({sla_item_group_placeholders})
-                ORDER BY max_age_days DESC
-                LIMIT 1
+                            ) - COUNT(DISTINCT h.holiday_date),
+                            0
+                        ) AS max_age_days
+
+                    FROM tabSerial No s
+
+                    LEFT JOIN tabHoliday h
+                        ON h.parent = 'Holiday List 2026'
+                        AND h.holiday_date > DATE(TIMESTAMP(s.purchase_date, s.purchase_time))
+                        AND h.holiday_date <= CURDATE()
+
+                    WHERE
+                        s.warehouse = %s
+                        AND s.item_group IN ({sla_item_group_placeholders})
+
+                    GROUP BY
+                        s.name,
+                        s.warehouse,
+                        s.purchase_date,
+                        s.purchase_time
+
+                    ORDER BY
+                        max_age_days DESC
+
+                    LIMIT 1
                 """,
                 tuple([t_warehouse] + sla_item_groups),
                 as_dict=True

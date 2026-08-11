@@ -1,0 +1,57 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Customer Quotation") }}{% endblock %}
+
+{% block page_content %}
+<div class="customer-quotation-page">
+	<div class="quotation-header">
+		<div>
+			<h1>{{ _("Request for Quotation") }}</h1>
+			<p class="text-muted">{{ _("Enter your rate for each requested item.") }}</p>
+		</div>
+	</div>
+
+	<div class="quotation-info d-none" id="quotation-info">
+		<div>
+			<span class="quotation-label">{{ _("RFQ") }}</span>
+			<strong id="quotation-rfq"></strong>
+		</div>
+		<div>
+			<span class="quotation-label">{{ _("Supplier") }}</span>
+			<strong id="quotation-supplier"></strong>
+		</div>
+		<div>
+			<label class="quotation-label" for="quotation-lead-date">{{ _("Lead Date") }}</label>
+			<input class="form-control quotation-lead-date" form="quotation-form" id="quotation-lead-date" required type="date">
+		</div>
+	</div>
+
+	<div class="quotation-message" id="quotation-message">
+		{{ _("Validating quotation link...") }}
+	</div>
+
+	<form class="d-none" id="quotation-form">
+		<div class="table-responsive">
+			<table class="table table-bordered quotation-table">
+				<thead>
+					<tr>
+						<th>{{ _("Item Code") }}</th>
+						<th>{{ _("Required Date") }}</th>
+						<th class="text-right">{{ _("Quantity") }}</th>
+						<th>{{ _("Availability") }}</th>
+						<th class="text-right">{{ _("Available Qty") }}</th>
+						<th class="text-right">{{ _("Rate") }}</th>
+					</tr>
+				</thead>
+				<tbody id="quotation-items"></tbody>
+			</table>
+		</div>
+
+		<div class="quotation-actions">
+			<button class="btn btn-primary" id="submit-quotation" type="submit">
+				{{ _("Submit Quotation") }}
+			</button>
+		</div>
+	</form>
+</div>
+{% endblock %}

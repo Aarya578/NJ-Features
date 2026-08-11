@@ -1122,6 +1122,19 @@ class NJQCA(Document):
         })
 
         try:
+            if (
+                self.get("model_changed_using_change_model")
+                and self.serial_no
+                and frappe.db.exists("Serial No", self.serial_no)
+            ):
+                frappe.db.set_value(
+                    "Serial No",
+                    self.serial_no,
+                    "model_changed_from_njqca",
+                    1,
+                    update_modified=False,
+                )
+
             # self.performance_reports_update()
             self.check_for_repack_access()
             # self.updating_njqca_child_in_serial_no()
@@ -3649,6 +3662,116 @@ def get_model(manufacturer_model=None, item_group=None, brand=None):
         frappe.msgprint(f"Manufacturer Model: <strong>{manufacturer_model}</strong> not found. Please contact <strong>NPD department</strong> for mapping the model.")
 
     return model_list
+
+
+def _get_change_model_candidates(item_group=None):
+    return frappe.get_all(
+        "Models", filters={"active": 1}, pluck="name", order_by="name"
+    )
+
+
+def _get_model_parameter_rows(models):
+    if not models:
+        return []
+
+    return frappe.get_all(
+        "Parameter Specification",
+        filters={
+            "parent": ["in", models],
+            "parenttype": "Models",
+            "parentfield": "parameter_specification",
+        },
+        fields=["parent", "parameter", "value", "idx"],
+        order_by="parent, idx",
+    )
+
+
+@frappe.whitelist()
+def get_model_configuration_for_change(model, item_group=None):
+    if not model or not frappe.db.exists("Models", model):
+        frappe.throw(_("Please select a valid current Model."))
+
+    current_rows = _get_model_parameter_rows([model])
+    if not current_rows:
+        return []
+
+    candidates = _get_change_model_candidates(item_group)
+    if model not in candidates:
+        candidates.append(model)
+
+    candidate_rows = _get_model_parameter_rows(candidates)
+    options_by_parameter = {}
+    for row in candidate_rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if parameter and value:
+            options_by_parameter.setdefault(parameter, set()).add(value)
+
+    value_field = frappe.get_meta("Parameter Specification").get_field("value")
+    configured_options = {
+        option.strip()
+        for option in (value_field.options or "").splitlines()
+        if option.strip()
+    }
+
+    configuration = []
+    seen_parameters = set()
+    for row in current_rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if not parameter or parameter in seen_parameters:
+            continue
+        seen_parameters.add(parameter)
+        options = set(options_by_parameter.get(parameter, set()))
+        options.update(configured_options)
+        if value:
+            options.add(value)
+        configuration.append({
+            "parameter": parameter,
+            "value": value,
+            "options": [value] + sorted(option for option in options if option != value),
+        })
+
+    return configuration
+
+
+@frappe.whitelist()
+def find_models_by_configuration(configuration, item_group=None):
+    if isinstance(configuration, str):
+        configuration = frappe.parse_json(configuration)
+    if not isinstance(configuration, list) or not configuration:
+        frappe.throw(_("Parameter configuration is required."))
+
+    selected = {}
+    for row in configuration:
+        parameter = (row.get("parameter") or "").strip()
+        value = (row.get("value") or "").strip()
+        if not parameter or not value:
+            frappe.throw(_("Every parameter must have a value."))
+        if parameter in selected:
+            frappe.throw(_("Duplicate parameter found: {0}").format(parameter))
+        selected[parameter] = value
+
+    candidates = _get_change_model_candidates(item_group)
+    rows = _get_model_parameter_rows(candidates)
+    configurations_by_model = {model: {} for model in candidates}
+    duplicate_parameters = set()
+    for row in rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if not parameter or not value:
+            continue
+        model_configuration = configurations_by_model[row.parent]
+        if parameter in model_configuration:
+            duplicate_parameters.add(row.parent)
+        model_configuration[parameter] = value
+
+    return [
+        model
+        for model in candidates
+        if model not in duplicate_parameters
+        and configurations_by_model.get(model) == selected
+    ]
 
 @frappe.whitelist()
 def get_part_item_code_filtered_data(item_group):

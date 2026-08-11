@@ -4,11 +4,48 @@ import frappe
 import pymysql
 import requests
 import traceback
+from functools import wraps
+from urllib.parse import urlparse
 from nj_features import verify_domain_matches_server_ip
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import *
 logger = frappe.logger("new_shopify_inv_sync", allow_site=True, file_count=10)
+
+INVENTORY_SYNC_LOCK_KEY = "nj_shopify_inventory_sync_execution"
+INVENTORY_SYNC_LOCK_TIMEOUT = 1800
+
+
+def inventory_sync_execution_lock(func):
+    """Prevent staging and Shopify inventory writes from overlapping."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        cache = frappe.cache()
+        lock = cache.lock(
+            cache.make_key(INVENTORY_SYNC_LOCK_KEY),
+            timeout=INVENTORY_SYNC_LOCK_TIMEOUT,
+        )
+        if not lock.acquire(blocking=False):
+            logger.warning(
+                f"Skipped {func.__name__}: another inventory sync operation is running"
+            )
+            return {
+                "status": "skipped",
+                "reason": "inventory_sync_already_running",
+                "method": func.__name__,
+            }
+        try:
+            return func(*args, **kwargs)
+        finally:
+            try:
+                lock.release()
+            except Exception:
+                logger.exception(
+                    f"Unable to release inventory sync lock for {func.__name__}"
+                )
+
+    return wrapper
+
 
 def get_shopify_settings():
     settings = frappe.get_single("NJ Inventory Settings")
@@ -26,7 +63,6 @@ def get_shopify_settings():
             "departments": settings.departments,
         }
     return None
-
 def safe_float(value):
     try:
         return float(value)
@@ -274,6 +310,7 @@ def fetch_and_stage_inventory_sync():
 #                 except Exception:
 #                     log_error(f"Error in fetching & staging inventory sync: {frappe.get_traceback()}", "fetch_and_stage_inventory_sync")
 #                     return str(traceback.format_exc())
+@inventory_sync_execution_lock
 def create_rq_doc():
     run_id = frappe.generate_hash(length=8)
     started_at = time.monotonic()
@@ -297,16 +334,16 @@ def create_rq_doc():
     logger.info(f"[{run_id}] Shopify settings loaded for shop={settings.get('shop')}")
 
     def run_stage(stage_number, stage_name, method):
-        logger.info(f"[{run_id}] stage {stage_number}/3 started: {stage_name}")
+        logger.info(f"[{run_id}] stage {stage_number}/4 started: {stage_name}")
         try:
             stage_result = method()
         except Exception:
-            logger.exception(f"[{run_id}] stage {stage_number}/3 raised an exception: {stage_name}")
+            logger.exception(f"[{run_id}] stage {stage_number}/4 raised an exception: {stage_name}")
             return False
         if not stage_result:
-            logger.error(f"[{run_id}] stage {stage_number}/3 returned false: {stage_name}")
+            logger.error(f"[{run_id}] stage {stage_number}/4 returned false: {stage_name}")
             return False
-        logger.info(f"[{run_id}] stage {stage_number}/3 completed: {stage_name}")
+        logger.info(f"[{run_id}] stage {stage_number}/4 completed: {stage_name}")
         return True
 
     # =========================================================
@@ -343,6 +380,9 @@ def create_rq_doc():
     if not run_stage(3, "update_proportional_qty_and_updt_qty", update_proportional_qty_and_updt_qty):
         return {"run_id": run_id, "status": "failed", "stage": "update_proportional_qty_and_updt_qty"}
 
+    if not run_stage(4, "update_pre_order_qty", lambda: update_pre_order_qty(settings)):
+        return {"run_id": run_id, "status": "failed", "stage": "update_pre_order_qty"}
+
     try:
         # =========================================================
         # 🔹 Main Aggregation Query (Item-Level Qty)
@@ -354,7 +394,8 @@ def create_rq_doc():
                 MAX(COALESCE(iva.attribute_value, '')) AS processor,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
+                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
+                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty
             FROM 
                 `tabProduct Bundle` pb
             JOIN 
@@ -367,6 +408,8 @@ def create_rq_doc():
                 `tabItem Variant Attribute` iva
                 ON iva.parent = i.item_code
                 AND iva.attribute = 'Processor Type1'
+            WHERE
+                COALESCE(pb.disable, 0) = 0
             GROUP BY 
                 pb.shopify_variant_id
             ORDER BY 
@@ -397,8 +440,54 @@ def create_rq_doc():
         logger.debug(f"parent_qty_dict================== {parent_qty_dict}")
 
         updated_doc_names = set()
-        product_ids = [row.shopify_variant_id for row in results]
+        all_product_ids = [
+            str(row.shopify_variant_id or "").strip()
+            for row in results
+        ]
+        product_ids = [variant_id for variant_id in all_product_ids if variant_id.isdigit()]
+        invalid_product_ids = {
+            variant_id for variant_id in all_product_ids if not variant_id.isdigit()
+        }
+        stats["shopify_invalid"] = len(invalid_product_ids)
         logger.debug(f"product_ids================== {product_ids}")
+        if invalid_product_ids:
+            logger.warning(
+                f"[{run_id}] excluded invalid Shopify variant IDs from lookup: "
+                f"count={len(invalid_product_ids)}, values={sorted(invalid_product_ids)}"
+            )
+
+        # Fetch fresh Shopify quantities before deciding which records need a
+        # stock update. The comparison must use the configured location's
+        # available quantity, not ProductVariant.inventoryQuantity (all sites).
+        shopify_data = (
+            get_shopify_variants(
+                product_ids,
+                settings["shop"],
+                settings["token"],
+                location_id=settings["location_id"],
+            )
+            if product_ids else []
+        )
+        if shopify_data is None:
+            logger.error(f"[{run_id}] stopped: fresh Shopify inventory lookup failed")
+            return {
+                "run_id": run_id,
+                "status": "failed",
+                "stage": "fetch_fresh_shopify_inventory",
+            }
+
+        shopify_by_variant = {
+            str(data["variant_id"]).strip(): data
+            for data in shopify_data
+            if data.get("variant_id")
+        }
+        found_variant_ids = set(shopify_by_variant)
+        stats["shopify_found"] = len(found_variant_ids)
+        stats["shopify_missing"] = len(set(product_ids) - found_variant_ids)
+        logger.info(
+            f"[{run_id}] fresh Shopify lookup completed: "
+            f"found={stats['shopify_found']}, missing={stats['shopify_missing']}"
+        )
 
         # =========================================================
         # 🔁 MAIN LOOP
@@ -407,6 +496,7 @@ def create_rq_doc():
             stats["processed"] = row_number
             update_status = ''
             row.total_actual_qty = safe_float(row.total_actual_qty)
+            row.total_pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
             if row.total_actual_qty is None:
                 stats["skipped"] += 1
@@ -469,6 +559,27 @@ def create_rq_doc():
                     update_status += "[WarrantyApplied] "
                     logger.debug(f"update_status================== {update_status}")
 
+            variant_id = str(row.shopify_variant_id).strip()
+            shopify_row = shopify_by_variant.get(variant_id)
+            fresh_shopify_qty = (
+                safe_float(shopify_row.get("location_quantity"))
+                if shopify_row else None
+            )
+            desired_qty = float(row.total_actual_qty)
+            quantity_matches = (
+                fresh_shopify_qty is not None
+                and desired_qty == fresh_shopify_qty
+            )
+
+            if not variant_id.isdigit():
+                lookup_error = "Invalid or missing Shopify variant ID mapping"
+            elif not shopify_row:
+                lookup_error = "Variant ID not found in Shopify"
+            elif fresh_shopify_qty is None:
+                lookup_error = "Inventory level not found at configured Shopify location"
+            else:
+                lookup_error = ""
+
             # =====================================================
             # 🔹 UPSERT INTO NJ Inventory Sync Main
             # =====================================================
@@ -495,35 +606,48 @@ def create_rq_doc():
                 logger.debug(f"existing_doc================== {existing_doc}")
                 updated_doc_names.add(existing_doc.name)
 
-                existing_qty = safe_float(existing_doc.actual_qty) or 0
-                shopify_qty = safe_float(existing_doc.shopify_quantity)
-                logger.debug(f"existing_qty================== {existing_qty}, shopify_qty================== {shopify_qty}")
+                values = {
+                    "is_active": 1,
+                    "actual_qty": row.total_actual_qty,
+                    "updated_qty": row.total_actual_qty,
+                    "shopify_pre_order_qty": row.total_pre_order_qty,
+                    "modified": frappe.utils.now(),
+                }
 
-                is_not_found = (
-                    existing_doc.status == "Error" 
-                    and existing_doc.sync_error 
-                    and "Not Found" in existing_doc.sync_error
-                )
+                if shopify_row:
+                    values["inventory_item_id"] = shopify_row.get("inventory_item_id")
+                if fresh_shopify_qty is not None:
+                    values["shopify_quantity"] = fresh_shopify_qty
 
-                if not is_not_found:
-                    if (
-                        (float(row.total_actual_qty) != existing_qty)
-                        or (existing_doc.status != "Completed")
-                        or (shopify_qty is not None and float(row.total_actual_qty) != shopify_qty)
-                    ):
-                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                            "is_active": 1,
-                            "sync_error": update_status,
-                            "status": "Queued",
-                            "actual_qty": row.total_actual_qty,
-                            "updated_qty": row.total_actual_qty,
-                            "modified": frappe.utils.now(),
-                        })
-                        stats["updated"] += 1
-                    else:
-                        stats["unchanged"] += 1
-                else:
+                if lookup_error:
+                    values["status"] = "Error"
+                    values["sync_error"] = lookup_error
                     stats["skipped"] += 1
+                elif quantity_matches:
+                    values["status"] = "Completed"
+                    # Keep the last successful Shopify response/details when
+                    # a later staging run confirms that quantity is unchanged.
+                    # A non-completed record must not retain an old error.
+                    values["sync_error"] = (
+                        existing_doc.sync_error or update_status
+                        if existing_doc.status == "Completed"
+                        else update_status
+                    )
+                    stats["unchanged"] += 1
+                else:
+                    values["status"] = "Queued"
+                    queue_reason = (
+                        f"[QueuedForSync ERP={desired_qty:g} "
+                        f"Shopify={fresh_shopify_qty:g}]"
+                    )
+                    values["sync_error"] = f"{update_status}{queue_reason}".strip()
+                    stats["updated"] += 1
+
+                frappe.db.set_value(
+                    "NJ Inventory Sync Main",
+                    existing_doc.name,
+                    values,
+                )
             else:
                 doc = frappe.new_doc("NJ Inventory Sync Main")
                 logger.debug(f"doc================== {doc}")
@@ -535,23 +659,45 @@ def create_rq_doc():
                 logger.debug(f"doc.is_active================== {doc.is_active}")
                 doc.actual_qty = qty
                 logger.debug(f"doc.actual_qty================== {doc.actual_qty}")
-                doc.status = "Queued"
+                doc.status = (
+                    "Error" if lookup_error
+                    else "Completed" if quantity_matches
+                    else "Queued"
+                )
                 logger.debug(f"doc.status================== {doc.status}")
                 doc.updated_qty = qty
                 logger.debug(f"doc.updated_qty================== {doc.updated_qty}")
+                doc.shopify_pre_order_qty = row.total_pre_order_qty
+                logger.debug(f"doc.shopify_pre_order_qty================== {doc.shopify_pre_order_qty}")
                 doc.item_code = row.item_codes
                 logger.debug(f"doc.item_code================== {doc.item_code}")
                 doc.item_group = row.item_groups
                 logger.debug(f"doc.item_group================== {doc.item_group}")
                 doc.shopify_variant_id = row.shopify_variant_id
                 logger.debug(f"doc.shopify_variant_id================== {doc.shopify_variant_id}")
-                doc.sync_error = update_status
+                doc.inventory_item_id = (
+                    shopify_row.get("inventory_item_id") if shopify_row else None
+                )
+                doc.shopify_quantity = fresh_shopify_qty
+                queue_reason = (
+                    f"[QueuedForSync ERP={desired_qty:g} Shopify={fresh_shopify_qty:g}]"
+                    if not lookup_error and not quantity_matches
+                    else ""
+                )
+                doc.sync_error = (
+                    lookup_error
+                    or f"{update_status}{queue_reason}".strip()
+                )
                 logger.debug(f"doc.sync_error================== {doc.sync_error}")
 
                 try:
                     doc.insert()
                     updated_doc_names.add(doc.name)
                     stats["inserted"] += 1
+                    if lookup_error:
+                        stats["skipped"] += 1
+                    elif quantity_matches:
+                        stats["unchanged"] += 1
                 except Exception:
                     stats["failed"] += 1
                     logger.exception(
@@ -572,35 +718,20 @@ def create_rq_doc():
                 )
 
         # =========================================================
-        # 🔹 Shopify Variant Sync (unchanged)
+        # 🔹 Shopify Pre-Order Policy Sync (independent from stock)
         # =========================================================
-        shopify_data = get_shopify_variants(product_ids, settings["shop"], settings["token"])
-        logger.debug(f"shopify_data================== {shopify_data}")
-
-        found_variant_ids = set()
         if shopify_data:
-            for data in shopify_data:
-                found_variant_ids.add(str(data["variant_id"]).strip())
-                frappe.db.sql("""
-                    UPDATE `tabNJ Inventory Sync Main`
-                    SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW()
-                    WHERE shopify_variant_id = %s
-                """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
-
-        missing_variant_ids = set(product_ids) - found_variant_ids
-        stats["shopify_found"] = len(found_variant_ids)
-        stats["shopify_missing"] = len(missing_variant_ids)
-        logger.info(
-            f"[{run_id}] Shopify lookup completed: found={stats['shopify_found']}, "
-            f"missing={stats['shopify_missing']}"
-        )
-        if missing_variant_ids:
-            for m_vid in missing_variant_ids:
-                frappe.db.sql("""
-                    UPDATE `tabNJ Inventory Sync Main`
-                    SET status = 'Error', sync_error = 'Variant ID not found in Shopify', modified = NOW()
-                    WHERE shopify_variant_id = %s AND status = 'Queued'
-                """, (m_vid,))
+            # Pre-order policy sync is intentionally independent from stock sync.
+            # A policy error must not block inventory quantity processing.
+            pre_order_policy_result = sync_shopify_pre_order_policies(
+                shopify_data,
+                settings["shop"],
+                settings["token"],
+            )
+            logger.info(
+                f"[{run_id}] Shopify pre-order policy sync completed: "
+                f"{pre_order_policy_result}"
+            )
 
         elapsed = time.monotonic() - started_at
         logger.info(
@@ -631,20 +762,55 @@ def start_shopify_inventory_sync():
     )
 
 @frappe.whitelist()
+@inventory_sync_execution_lock
 def create_shopify_inventory_sync():
+    """Send queued inventory quantities to Shopify in GraphQL batches."""
     try:
-        start = 0
         batch_size = 50
         settings = get_shopify_settings()
-        
+
         if not settings:
             log_error("Shopify settings not found", "create_shopify_inventory_sync")
-            return
-        
+            return "Shopify settings not found"
+
         headers = {
             "X-Shopify-Access-Token": settings["token"],
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
+        # Use Shopify's current stable Admin API. Its inventorySetQuantities
+        # contract requires changeFromQuantity and an idempotent field call.
+        graphql_url = f"{settings['shop']}/admin/api/2026-07/graphql.json"
+        location_id = str(settings["location_id"]).strip()
+        location_gid = (
+            location_id
+            if location_id.startswith("gid://shopify/Location/")
+            else f"gid://shopify/Location/{location_id}"
+        )
+        mutation = """
+            mutation SetInventoryQuantities(
+                $input: InventorySetQuantitiesInput!,
+                $idempotencyKey: String!
+            ) {
+                inventorySetQuantities(input: $input)
+                    @idempotent(key: $idempotencyKey) {
+                    inventoryAdjustmentGroup {
+                        createdAt
+                        reason
+                        changes {
+                            name
+                            delta
+                            quantityAfterChange
+                        }
+                    }
+                    userErrors {
+                        field
+                        message
+                        code
+                    }
+                }
+            }
+        """
+        totals = {"completed": 0, "errored": 0, "skipped": 0, "batches": 0}
 
         while True:
             completed_docs = []
@@ -652,96 +818,303 @@ def create_shopify_inventory_sync():
             skipped_docs = []
 
             queued = frappe.db.sql("""
-                SELECT name, item_code, actual_qty, shopify_variant_id, updated_qty, inventory_item_id
+                SELECT name, item_code, actual_qty, shopify_variant_id,
+                       updated_qty, inventory_item_id, shopify_quantity, sync_error
                 FROM `tabNJ Inventory Sync Main`
-                WHERE status = 'Queued' AND is_active = 1 AND 
-                (inventory_item_id IS NOT NULL OR inventory_item_id != '') 
+                WHERE status = 'Queued'
+                  AND is_active = 1
+                  AND inventory_item_id IS NOT NULL
+                  AND inventory_item_id != ''
                 LIMIT %s
             """, (batch_size,), as_dict=True)
 
             if not queued:
                 break
 
+            batch_number = totals["batches"] + 1
+            batch_id = frappe.generate_hash(length=32)
+            selected_count = len(queued)
+            variant_id_by_doc = {
+                row.name: str(row.shopify_variant_id or "").strip()
+                for row in queued
+            }
+            valid_rows = []
+            quantities = []
+
             for row in queued:
-                try:
-                    updated_qty = safe_float(row.updated_qty)
-                    if updated_qty is None or updated_qty < 0:
-                        skipped_docs.append(row.name)
-                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "status": "Error",
-                            "sync_error": "Skipped: Invalid or negative updated_qty",
-                            "modified": frappe.utils.now()
-                        })
-                        continue
-
-                    available = int(updated_qty)
-                    update_url = f"{settings['shop']}/admin/api/2023-01/inventory_levels/set.json"
-                    payload = {
-                        "location_id": settings["location_id"],
-                        "inventory_item_id": row.inventory_item_id,
-                        "available": available,
-                    }
-
-                    try:
-                        update_resp = post_shopify_api(update_url, headers, payload)
-                        variant_data = update_resp.json()
-                        error_msg = variant_data.get("error") or variant_data.get("errors") or "Unknown error"
-                    except requests.exceptions.Timeout:
-                        log_error(f"Timeout (>200s) while syncing {row.name} - Skipping record.", "Shopify Inventory Sync Timeout")
-                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "status": "Error",
-                            "sync_error": "Timeout while updating inventory to Shopify (200+ sec)",
-                            "modified": frappe.utils.now()
-                        })
-                        errored_docs.append(row.name)
-                        continue
-                    except Exception as e:
-                        log_error(f"Error while syncing {row.name} - Skipping record.", "Shopify Inventory Sync Error")
-                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "status": "Error",
-                            "sync_error": f"Unknown error while updating inventory to Shopify + {e}",
-                            "modified": frappe.utils.now()
-                        })
-                        errored_docs.append(row.name)
-                        continue
-
-                    if update_resp.status_code == 200:
-                        updated_available = None
-                        if "inventory_level" in variant_data and "available" in variant_data["inventory_level"]:
-                            updated_available = variant_data["inventory_level"]["available"]
-
-                        if updated_available == available:
-                            frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                                "status": "Completed",
-                                "is_active": 1,
-                                "shopify_quantity": updated_available,
-                                "sync_error": f"{row.sync_error or ''} {str(variant_data['inventory_level'])}".strip(),
-                                "modified": frappe.utils.now()
-                            })
-                            completed_docs.append(row.name)
-                        else:
-                            frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                                "status": "Error",
-                                "sync_error": f"Available qty mismatch. Expected {available}, got {updated_available}",
-                                "modified": frappe.utils.now()
-                            })
-                            errored_docs.append(row.name)
-                    else:
-                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
-                            "status": "Error",
-                            "sync_error": f"API response: {error_msg}",
-                            "modified": frappe.utils.now()
-                        })
-                        errored_docs.append(row.name)
-
-                    time.sleep(0.5)
-
-                except Exception as e:
-                    log_error(f"Exception in {row.name}: {str(e)}\n{frappe.get_traceback()}", "Shopify Inventory Sync")
-                    errored_docs.append(row.name)
+                updated_qty = safe_float(row.updated_qty)
+                current_shopify_qty = safe_float(row.shopify_quantity)
+                if updated_qty is None or updated_qty < 0:
+                    skipped_docs.append(row.name)
+                    frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                        "status": "Error",
+                        "sync_error": str({
+                            "result": "skipped",
+                            "reason": "Invalid or negative updated_qty",
+                            "batch_id": batch_id,
+                            "batch_number": batch_number,
+                            "selected_count": selected_count,
+                            "shopify_variant_id": variant_id_by_doc[row.name],
+                        }),
+                        "modified": frappe.utils.now(),
+                    })
+                    continue
+                if current_shopify_qty is None:
+                    skipped_docs.append(row.name)
+                    frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                        "status": "Error",
+                        "sync_error": str({
+                            "result": "skipped",
+                            "reason": "Missing fresh Shopify quantity",
+                            "batch_id": batch_id,
+                            "batch_number": batch_number,
+                            "selected_count": selected_count,
+                            "shopify_variant_id": variant_id_by_doc[row.name],
+                        }),
+                        "modified": frappe.utils.now(),
+                    })
                     continue
 
+                available = int(updated_qty)
+                inventory_item_id = str(row.inventory_item_id).strip()
+                inventory_item_gid = (
+                    inventory_item_id
+                    if inventory_item_id.startswith("gid://shopify/InventoryItem/")
+                    else f"gid://shopify/InventoryItem/{inventory_item_id}"
+                )
+                valid_rows.append((row, available))
+                quantities.append({
+                    "inventoryItemId": inventory_item_gid,
+                    "locationId": location_gid,
+                    "quantity": available,
+                    "changeFromQuantity": int(current_shopify_qty),
+                })
+
+            if valid_rows:
+                totals["batches"] += 1
+                batch_error = None
+                batch_updated_at = None
+                indexed_user_errors = {}
+
+                try:
+                    response = post_shopify_api(
+                        graphql_url,
+                        headers=headers,
+                        json_payload={
+                            "query": mutation,
+                            "variables": {
+                                "idempotencyKey": batch_id,
+                                "input": {
+                                    "name": "available",
+                                    "reason": "correction",
+                                    "quantities": quantities,
+                                }
+                            },
+                        },
+                    )
+
+                    if response.status_code != 200:
+                        batch_error = f"Shopify GraphQL HTTP {response.status_code}: {response.text}"
+                    else:
+                        response_data = response.json()
+                        graphql_errors = response_data.get("errors") or []
+                        payload = (
+                            response_data.get("data", {})
+                            .get("inventorySetQuantities")
+                        ) or {}
+                        user_errors = payload.get("userErrors") or []
+                        adjustment_group = payload.get("inventoryAdjustmentGroup") or {}
+                        batch_updated_at = adjustment_group.get("createdAt")
+
+                        for user_error in user_errors:
+                            field_path = user_error.get("field") or []
+                            if isinstance(field_path, str):
+                                field_path = field_path.split(".")
+                            quantity_index = next(
+                                (
+                                    int(part) for part in field_path
+                                    if str(part).isdigit()
+                                ),
+                                None,
+                            )
+                            if quantity_index is not None:
+                                indexed_user_errors.setdefault(quantity_index, []).append(user_error)
+
+                        if graphql_errors or user_errors:
+                            batch_error = (
+                                f"Shopify GraphQL errors={graphql_errors}; "
+                                f"userErrors={user_errors}"
+                            )
+                except requests.exceptions.Timeout:
+                    batch_error = "Timeout while updating inventory batch to Shopify (200+ sec)"
+                except Exception as exc:
+                    batch_error = f"Unknown error while updating inventory batch to Shopify: {exc}"
+
+                # Verify every record against Shopify after the mutation. This
+                # makes the final status per-record even when Shopify returns a
+                # batch-level error or only part of a request is applied.
+                verification_data = None
+                verification_error = None
+                try:
+                    verification_data = get_shopify_variants(
+                        [row.shopify_variant_id for row, _available in valid_rows],
+                        settings["shop"],
+                        settings["token"],
+                        location_id=settings["location_id"],
+                    )
+                    if verification_data is None:
+                        verification_error = "Post-batch Shopify verification failed"
+                except Exception as exc:
+                    verification_error = (
+                        f"Post-batch Shopify verification raised an error: {exc}"
+                    )
+
+                verified_by_variant = {
+                    str(data.get("variant_id") or "").strip(): data
+                    for data in (verification_data or [])
+                    if data.get("variant_id")
+                }
+                verified_results = []
+
+                for row_index, (row, available) in enumerate(valid_rows):
+                    variant_id = variant_id_by_doc[row.name]
+                    verified_row = verified_by_variant.get(variant_id)
+                    verified_qty = (
+                        safe_float(verified_row.get("location_quantity"))
+                        if verified_row else None
+                    )
+                    is_verified = (
+                        verified_qty is not None
+                        and int(verified_qty) == available
+                    )
+
+                    if is_verified:
+                        completed_docs.append(row.name)
+                        verified_results.append(
+                            ("completed", row, available, int(verified_qty), None)
+                        )
+                        continue
+
+                    record_errors = indexed_user_errors.get(row_index)
+                    if record_errors:
+                        record_error = f"Shopify userErrors={record_errors}"
+                    elif verification_error:
+                        record_error = verification_error
+                    elif verified_qty is None:
+                        record_error = "Variant or inventory level missing during verification"
+                    elif batch_error:
+                        record_error = batch_error
+                    else:
+                        record_error = (
+                            f"Shopify quantity verification mismatch: "
+                            f"expected={available}, verified={verified_qty:g}"
+                        )
+
+                    errored_docs.append(row.name)
+                    verified_results.append(
+                        ("error", row, available, verified_qty, record_error)
+                    )
+
+                batch_result = {
+                    "completed": len(completed_docs),
+                    "errored": len(errored_docs),
+                    "skipped": len(skipped_docs),
+                }
+
+                for result, row, available, verified_qty, record_error in verified_results:
+                    variant_id = variant_id_by_doc[row.name]
+                    result_details = {
+                        "result": result,
+                        "inventory_item_id": str(row.inventory_item_id),
+                        "location_id": str(settings["location_id"]),
+                        "expected_quantity": available,
+                        "verified_shopify_quantity": verified_qty,
+                        "updated_at": batch_updated_at or frappe.utils.now(),
+                        "sync_method": "GraphQL batch with post-verification",
+                        "batch_id": batch_id,
+                        "batch_number": batch_number,
+                        "batch_size": selected_count,
+                        "shopify_variant_id": variant_id,
+                        "batch_result": batch_result,
+                    }
+
+                    if result == "completed":
+                        previous_message = (row.sync_error or "").strip()
+                        preserved_rules = []
+                        for message_part in previous_message.split("]"):
+                            message_part = message_part.strip()
+                            if message_part.startswith("[ParentOverride"):
+                                preserved_rules.append(f"{message_part}]")
+                            elif message_part.startswith("[WarrantyApplied"):
+                                preserved_rules.append(f"{message_part}]")
+                        success_message = " ".join(
+                            preserved_rules + [str(result_details)]
+                        ).strip()
+                        frappe.db.set_value("NJ Inventory Sync Main", row.name, {
+                            "status": "Completed",
+                            "is_active": 1,
+                            "shopify_quantity": verified_qty,
+                            "sync_error": success_message,
+                            "modified": frappe.utils.now(),
+                        })
+                    else:
+                        result_details["error"] = record_error
+                        values = {
+                            "status": "Error",
+                            "sync_error": str(result_details),
+                            "modified": frappe.utils.now(),
+                        }
+                        if verified_qty is not None:
+                            values["shopify_quantity"] = verified_qty
+                        frappe.db.set_value(
+                            "NJ Inventory Sync Main",
+                            row.name,
+                            values,
+                        )
+
+            batch_summary = {
+                "batch_id": batch_id,
+                "batch_number": batch_number,
+                "batch_size": selected_count,
+                "completed_count": len(completed_docs),
+                "completed_variant_ids": [
+                    variant_id_by_doc[name] for name in completed_docs
+                ],
+                "error_count": len(errored_docs),
+                "error_variant_ids": [
+                    variant_id_by_doc[name] for name in errored_docs
+                ],
+                "skipped_count": len(skipped_docs),
+                "skipped_variant_ids": [
+                    variant_id_by_doc[name] for name in skipped_docs
+                ],
+            }
+            classified_count = (
+                batch_summary["completed_count"]
+                + batch_summary["error_count"]
+                + batch_summary["skipped_count"]
+            )
+            if classified_count != selected_count:
+                logger.error(
+                    f"Shopify inventory batch classification mismatch: "
+                    f"batch_id={batch_id}, selected={selected_count}, "
+                    f"classified={classified_count}"
+                )
+
+            batch_summary_json = json.dumps(batch_summary, separators=(",", ":"))
+            for row in queued:
+                frappe.db.set_value(
+                    "NJ Inventory Sync Main",
+                    row.name,
+                    "batch_summary",
+                    batch_summary_json,
+                    update_modified=False,
+                )
+
             frappe.db.commit()
+            totals["completed"] += len(completed_docs)
+            totals["errored"] += len(errored_docs)
+            totals["skipped"] += len(skipped_docs)
 
             if completed_docs:
                 log_error(
@@ -762,41 +1135,226 @@ def create_shopify_inventory_sync():
                     "Info"
                 )
 
-            # Batch complete
-
-        return "Inventory sync batches processed1"
+        logger.info(f"Shopify GraphQL inventory sync completed: {totals}")
+        return {"status": "completed", **totals}
 
     except Exception as e:
         log_error(f"Error in start_shopify_inventory_sync: {str(e)}\n{frappe.get_traceback()}", "Shopify Inventory Sync", "Error")
-        return str(traceback.format_exc())
+        return {"status": "failed", "error": str(e)}
+
+def sync_shopify_pre_order_policies(shopify_data, shop, token):
+    """Synchronize Shopify inventoryPolicy without affecting inventory quantities."""
+    stats = {"checked": 0, "updated": 0, "unchanged": 0, "failed": 0}
+
+    try:
+        variant_ids = [
+            str(data.get("variant_id") or "").strip()
+            for data in shopify_data
+            if data.get("variant_id")
+        ]
+        if not variant_ids:
+            return stats
+
+        sync_rows = frappe.get_all(
+            "NJ Inventory Sync Main",
+            filters={"shopify_variant_id": ["in", variant_ids]},
+            fields=["name", "shopify_variant_id", "shopify_pre_order_qty"],
+        )
+        sync_row_by_variant = {
+            str(row.shopify_variant_id).strip(): row for row in sync_rows
+        }
+
+        variants_by_product = {}
+
+        for data in shopify_data:
+            variant_id = str(data.get("variant_id") or "").strip()
+            product_id = str(data.get("product_id") or "").strip()
+            current_policy = str(data.get("inventory_policy") or "").upper()
+            sync_row = sync_row_by_variant.get(variant_id)
+
+            if not variant_id or not product_id or not sync_row:
+                continue
+
+            stats["checked"] += 1
+            pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
+            desired_policy = "CONTINUE" if pre_order_qty > 100 else "DENY"
+
+            if current_policy == desired_policy:
+                frappe.db.set_value(
+                    "NJ Inventory Sync Main",
+                    sync_row.name,
+                    "shopify_pre_order_enabled",
+                    1 if current_policy == "CONTINUE" else 0,
+                    update_modified=False,
+                )
+                stats["unchanged"] += 1
+                continue
+
+            variants_by_product.setdefault(product_id, []).append({
+                "id": f"gid://shopify/ProductVariant/{variant_id}",
+                "inventoryPolicy": desired_policy,
+            })
+
+        if not variants_by_product:
+            frappe.db.commit()
+            return stats
+
+        url = f"{shop}/admin/api/2026-10/graphql.json"
+        headers = {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json",
+        }
+        mutation = """
+            mutation UpdatePreOrderPolicies(
+                $productId: ID!,
+                $variants: [ProductVariantsBulkInput!]!
+            ) {
+                productVariantsBulkUpdate(
+                    productId: $productId,
+                    variants: $variants
+                ) {
+                    productVariants {
+                        id
+                        inventoryPolicy
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+        """
+
+        for product_id, variants in variants_by_product.items():
+            response = post_shopify_api(
+                url,
+                headers=headers,
+                json_payload={
+                    "query": mutation,
+                    "variables": {
+                        "productId": f"gid://shopify/Product/{product_id}",
+                        "variants": variants,
+                    },
+                },
+            )
+
+            if response.status_code != 200:
+                stats["failed"] += len(variants)
+                log_error(
+                    f"Shopify pre-order policy HTTP error for product {product_id}: {response.text}",
+                    "Shopify Pre-Order Policy Sync",
+                )
+                continue
+
+            response_data = response.json()
+            graphql_errors = response_data.get("errors") or []
+            payload = (
+                response_data.get("data", {})
+                .get("productVariantsBulkUpdate")
+            ) or {}
+            user_errors = payload.get("userErrors") or []
+
+            if graphql_errors or user_errors:
+                stats["failed"] += len(variants)
+                log_error(
+                    f"Shopify pre-order policy error for product {product_id}: "
+                    f"graphql_errors={graphql_errors}, user_errors={user_errors}",
+                    "Shopify Pre-Order Policy Sync",
+                )
+                continue
+
+            updated_variants = payload.get("productVariants") or []
+            updated_variant_ids = set()
+
+            for updated_variant in updated_variants:
+                variant_gid = updated_variant.get("id") or ""
+                variant_id = variant_gid.split("/")[-1]
+                confirmed_policy = str(
+                    updated_variant.get("inventoryPolicy") or ""
+                ).upper()
+                sync_row = sync_row_by_variant.get(variant_id)
+
+                if not sync_row or confirmed_policy not in ("CONTINUE", "DENY"):
+                    continue
+
+                frappe.db.set_value(
+                    "NJ Inventory Sync Main",
+                    sync_row.name,
+                    "shopify_pre_order_enabled",
+                    1 if confirmed_policy == "CONTINUE" else 0,
+                    update_modified=False,
+                )
+                updated_variant_ids.add(variant_id)
+                stats["updated"] += 1
+
+            stats["failed"] += max(len(variants) - len(updated_variant_ids), 0)
+
+        frappe.db.commit()
+        return stats
+
+    except Exception:
+        stats["failed"] += 1
+        log_error(
+            f"Error syncing Shopify pre-order policies: {frappe.get_traceback()}",
+            "Shopify Pre-Order Policy Sync",
+        )
+        return stats
+
 
 @frappe.whitelist()
-def get_shopify_variants(product_ids, shop, token):
+def get_shopify_variants(product_ids, shop, token, location_id=None):
     try:
-        url = f"{shop}/admin/api/2025-04/graphql.json"
+        url = f"{shop}/admin/api/2026-10/graphql.json"
         headers = {
             "X-Shopify-Access-Token": token,
             "Content-Type": "application/json"
         }
 
-        gids = [f"gid://shopify/ProductVariant/{pid}" for pid in product_ids]
+        normalized_product_ids = []
+        for product_id in product_ids or []:
+            product_id = str(product_id or "").strip()
+            if product_id.startswith("gid://shopify/ProductVariant/"):
+                product_id = product_id.rsplit("/", 1)[-1]
+            if product_id.isdigit():
+                normalized_product_ids.append(product_id)
+
+        gids = [
+            f"gid://shopify/ProductVariant/{product_id}"
+            for product_id in normalized_product_ids
+        ]
+        location_gid = None
+        if location_id:
+            location_id = str(location_id).strip()
+            location_gid = (
+                location_id
+                if location_id.startswith("gid://shopify/Location/")
+                else f"gid://shopify/Location/{location_id}"
+            )
         batch_size = 50
         result = []
 
         for i in range(0, len(gids), batch_size):
             batch = gids[i:i + batch_size]
-            batch_ids = ',\n'.join([f'"{gid}"' for gid in batch])
+            inventory_level_fields = """
+                    inventoryLevel(locationId: $locationId) {
+                        quantities(names: ["available"]) {
+                            name
+                            quantity
+                        }
+                    }
+            """ if location_gid else ""
+            location_variable = ", $locationId: ID!" if location_gid else ""
 
             graphql_query = f"""
-            {{
-            nodes(ids: [
-                {batch_ids}
-            ]) {{
+            query GetShopifyVariants($ids: [ID!]!{location_variable}) {{
+            nodes(ids: $ids) {{
                 ... on ProductVariant {{
                 id
                 inventoryQuantity
+                inventoryPolicy
                 inventoryItem {{
                     id
+                    {inventory_level_fields}
                 }}
                 product {{
                     id
@@ -806,23 +1364,51 @@ def get_shopify_variants(product_ids, shop, token):
             }}
             """
 
-            response = post_shopify_api(url, headers=headers, json_payload={"query": graphql_query})
+            variables = {"ids": batch}
+            if location_gid:
+                variables["locationId"] = location_gid
+
+            response = post_shopify_api(
+                url,
+                headers=headers,
+                json_payload={"query": graphql_query, "variables": variables},
+            )
 
             if response.status_code == 200:
                 data = response.json()
+                if data.get("errors"):
+                    log_error(
+                        f"Shopify GraphQL errors: {data['errors']}",
+                        "Error in get_shopify_variants_method",
+                    )
+                    return None
+
                 for node in data.get("data", {}).get("nodes", []):
                     if node:
                         inventory_quantity = node.get("inventoryQuantity", 0)
                         variant_gid = node.get("id", "")
                         variant_id = variant_gid.split("/")[-1]
 
-                        inventory_item_gid = node.get("inventoryItem", {}).get("id", "")
+                        inventory_item = node.get("inventoryItem") or {}
+                        inventory_item_gid = inventory_item.get("id", "")
                         inventory_item_id = inventory_item_gid.split("/")[-1] if inventory_item_gid else None
+                        product_gid = node.get("product", {}).get("id", "")
+                        product_id = product_gid.split("/")[-1] if product_gid else None
+                        location_quantity = None
+                        inventory_level = inventory_item.get("inventoryLevel")
+                        if inventory_level:
+                            for quantity in inventory_level.get("quantities") or []:
+                                if quantity.get("name") == "available":
+                                    location_quantity = quantity.get("quantity")
+                                    break
 
                         result.append({
                             "variant_id": variant_id,
                             "inventory_item_id": inventory_item_id,
-                            "inventory_quantity": inventory_quantity
+                            "inventory_quantity": inventory_quantity,
+                            "location_quantity": location_quantity,
+                            "inventory_policy": node.get("inventoryPolicy"),
+                            "product_id": product_id,
                         })
             else:
                 log_error(f"Shopify API error: {response.text}", "Error in get_shopify_variants_method")

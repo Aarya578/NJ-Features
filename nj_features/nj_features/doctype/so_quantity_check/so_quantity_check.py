@@ -10,6 +10,20 @@ logger = frappe.logger('nj_so_quanity', allow_site=True, file_count=1)
 class SOQuantityCheck(Document):
         pass
 
+SOQC_ITEM_GROUPS = [
+    'Laptops(Bundle)',
+    'Chromebooks(Bundle)',
+    'MacBooks(Bundle)',
+    'MacBooks',
+    'Laptops',
+    'Chromebooks',
+    'Full Set Desktops',
+    'Desktops',
+    'AIO',
+    'Chromeboxes'
+]
+
+
 
 def _safe_int(v, default=0) -> int:
     if v is None:
@@ -45,14 +59,16 @@ def update_so_quantity_check(settings):
 
         if warehouses is not None:
             warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
-        item_groups_list = [i.strip() for i in item_groups.split(',') if i.strip()]
+        settings_item_groups = [i.strip() for i in item_groups.split(',') if i.strip()]
+        item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
         departments_list = [d.strip() for d in departments.split(',') if d.strip()]
 
         warehouse_placeholders = ', '.join(['%s'] * len(warehouses_list))
         item_group_placeholders = ', '.join(['%s'] * len(item_groups_list))
         department_placeholders = ', '.join(['%s'] * len(departments_list))
 
-        warehouse_clause = f"OR b.warehouse IN item_group_placeholders({warehouse_placeholders})" if warehouses_list else ""
+        parent_warehouse_clause = f"OR b.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
+        item_warehouse_clause = f"OR s.warehouse IN ({warehouse_placeholders})" if warehouses_list else ""
         # Step 1: Get inventory data from first query
 
         query = f"""
@@ -84,7 +100,7 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {warehouse_clause}
+                        {parent_warehouse_clause}
                     GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
                 ),
 
@@ -113,7 +129,7 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {warehouse_clause}
+                        {item_warehouse_clause}
                     GROUP BY s.item_code
                 ),
 
@@ -210,7 +226,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                     AND so.sale_type != 'Amazon'
                     AND (
                         pb.item_code IS NULL 
@@ -219,7 +239,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                     )
             ) AS so_data
 
@@ -236,7 +260,11 @@ def update_so_quantity_check(settings):
                                         'MacBooks(Bundle)',
                                         'MacBooks',
                                         'Laptops',
-                                        'Chromebooks')
+                                        'Chromebooks',
+                                        'Full Set Desktops',
+                                        'Desktops',
+                                        'AIO',
+                                        'Chromeboxes')
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data 
             ON so_data.sales_order = dn_data.against_sales_order 
@@ -279,7 +307,9 @@ def update_so_quantity_check(settings):
         ]
 
         values = []
-        for item_code, data in stock_map.items():
+        all_item_codes = set(stock_map.keys()) | set(pending_qty_by_item.keys())
+        for item_code in all_item_codes:
+            data = stock_map.get(item_code, {})
             parent1 = data.get('parent1', '')
 
             # Ensure we have numeric values for calculation
@@ -484,6 +514,9 @@ def update_pre_order_qty(settings):
 
         warehouses_list = [value.strip() for value in warehouses.split(",") if value.strip()]
         item_groups_list = [value.strip() for value in item_groups.split(",") if value.strip()]
+
+        settings_item_groups = [value.strip() for value in item_groups.split(",") if value.strip()]
+        item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
 
         if not item_groups_list:
             log_error(

@@ -55,6 +55,10 @@ frappe.ui.form.on('Stock Movement', {
         frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
     },
 
+    on_submit: function(frm) {
+        frm.reload_doc();
+    },
+
     refresh: function(frm) {
         handleScannerInput(frm, 'scan_barcode');
 

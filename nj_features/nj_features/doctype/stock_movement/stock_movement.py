@@ -1552,7 +1552,28 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
     if serial_doc and department_doc.get("check_for_bag_list"):
         bag_list = serial_doc.get("bag_list", [])
         
-        valid_items = [item for item in bag_list if item.get("quantity", 0) > 0]
+        valid_items = []
+        for item in bag_list:
+            if not (item.get("quantity", 0) > 0 and frappe.parse_json(item.get("is_available")) in [1, True, "1"]):
+                continue
+            
+            comp_sn = item.get("serial_no")
+            if comp_sn:
+                status, wh = frappe.db.get_value("Serial No", comp_sn, ["status", "warehouse"]) or (None, None)
+                if status != "Active" or not wh:
+                    if item.get("name"):
+                        frappe.db.set_value("Bag List", item.get("name"), {"is_available": 0, "quantity": 0}, update_modified=False)
+                    continue
+            else:
+                laptop_wh = serial_doc.get("warehouse")
+                if laptop_wh and item.get("item"):
+                    avail = frappe.db.get_value("Bin", {"item_code": item.get("item"), "warehouse": laptop_wh}, "actual_qty") or 0.0
+                    if avail < (item.get("quantity") or 1):
+                        if item.get("name"):
+                            frappe.db.set_value("Bag List", item.get("name"), {"is_available": 0, "quantity": 0}, update_modified=False)
+                        continue
+
+            valid_items.append(item)
         
         if valid_items:
             item_groups = list({item.get("item_group") for item in valid_items if item.get("item_group")})

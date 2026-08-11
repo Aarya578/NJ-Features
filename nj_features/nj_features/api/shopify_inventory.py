@@ -387,7 +387,16 @@ def create_rq_doc():
         # =========================================================
         # 🔹 Main Aggregation Query (Item-Level Qty)
         # =========================================================
-        query = """
+        settings_item_groups = [ig.strip() for ig in settings.get('item_groups', '').split(',') if ig.strip()]
+        if settings_item_groups:
+            ig_placeholders = ', '.join(['%s'] * len(settings_item_groups))
+            where_item_group = f"AND i.item_group IN ({ig_placeholders})"
+            query_params = tuple(settings_item_groups)
+        else:
+            where_item_group = ""
+            query_params = ()
+
+        query = f"""
             SELECT 
                 pb.shopify_variant_id,
                 MAX(i.variant_of) AS parent1,
@@ -410,6 +419,7 @@ def create_rq_doc():
                 AND iva.attribute = 'Processor Type1'
             WHERE
                 COALESCE(pb.disable, 0) = 0
+                {where_item_group}
             GROUP BY 
                 pb.shopify_variant_id
             ORDER BY 
@@ -417,7 +427,7 @@ def create_rq_doc():
         """
         logger.debug(f"query================== {query}")
 
-        results = frappe.db.sql(query, as_dict=True)
+        results = frappe.db.sql(query, query_params, as_dict=True) if query_params else frappe.db.sql(query, as_dict=True)
         stats["total"] = len(results)
         logger.info(f"[{run_id}] aggregation completed: {stats['total']} variants to process")
 

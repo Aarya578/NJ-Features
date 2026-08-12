@@ -4473,6 +4473,44 @@ def get_item_code_from_rfq_id(rfq_id):
     item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
     return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
 
+@frappe.whitelist()
+def get_rfq_item_availability(rfq_id):
+    """
+    Returns each RFQ line's item_code + qty + how many Serial Nos
+    already exist against that (rfq_id, item_code) pair -- i.e. the
+    qty-vs-used math NJQCA.exe and the Flutter picker both need.
+
+    This has to be a proper whitelisted method rather than a generic
+    client API call (frappe.client.get_list, /api/resource/<doctype>)
+    because "Request for Quotation Item" is a child-table doctype
+    (istable=1) -- Frappe blocks list queries against child tables
+    through every generic client-facing API by design, since child
+    rows are only meant to be read as part of their parent document.
+    frappe.get_list() works fine here because this runs server-side,
+    with no API layer in between -- same reason get_item_code_from_rfq_id
+    right above this already works via frappe.db.sql instead of a
+    generic list call.
+    """
+    lines = frappe.get_all(
+        "Request for Quotation Item",
+        filters={"parent": rfq_id},
+        fields=["item_code", "qty"],
+    )
+    result = []
+    for line in lines:
+        used = frappe.db.count(
+            "Serial No",
+            filters={"rfq_id": rfq_id, "item_code": line.item_code},
+        )
+        qty = line.qty or 0
+        result.append({
+            "item_code": line.item_code,
+            "qty": qty,
+            "used": used,
+            "remaining": qty - used,
+        })
+    return result
+
 # Configuration for parameter type detection
 PARAMETER_TYPE_MAPPING = {
     'time': [

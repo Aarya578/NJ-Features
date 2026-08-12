@@ -93,6 +93,16 @@ doc_events = {
             "nj_features.nj_features.doctype.njqca.njqca.previous_njqca_failed_result_validation",
         ] ,
     },
+    # Blocks a Serial No from being saved if it would push the count
+    # of Serial Nos against its (rfq_id, item_code) combination past
+    # that RFQ Item line's qty. Runs alongside nj_p1_features's
+    # CustomSerialNo.validate() (override_doctype_class), not instead
+    # of it -- doc_events and class overrides are complementary, not
+    # exclusive, so this doesn't touch or conflict with that app's own
+    # BIOS-uniqueness checks there.
+    "Serial No": {
+        "validate": "nj_features.overrides.serial_no.validate_rfq_qty",
+    },
     "NJ Quality Inspection": {
         "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",
         "on_submit": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",

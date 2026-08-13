@@ -2426,9 +2426,20 @@ def _ensure_rfq_serial_no(doc):
     conditions exactly (rfq_id set, item_code already resolved,
     serial_no not already set), so this and the Desk-side trigger
     can never double-create the same thing.
+
+    Returns the newly generated serial number string if this call
+    actually created one, or None otherwise (guard bailed, or
+    create_serial_no itself failed) -- so after_save_njqca knows
+    whether a fresh RFQ quota slot was just consumed this call, as
+    opposed to doc.serial_no already having a prior value from an
+    earlier successful call. That distinction matters for the
+    QI-creation-failure rollback in after_save_njqca's except block:
+    only a serial number THIS call created should ever get rolled
+    back -- one that already existed represents a real prior
+    success and must never be touched here.
     """
     if not doc.rfq_id or doc.serial_no or not doc.item_code:
-        return
+        return None
 
     generated = create_serial_no(item_code=doc.item_code, rfq=True)
     if not generated:
@@ -2436,7 +2447,7 @@ def _ensure_rfq_serial_no(doc):
             "item_code": doc.item_code,
             "rfq_id": doc.rfq_id
         }, error=True)
-        return
+        return None
 
     doc.db_set("serial_no", generated, update_modified=False)
 
@@ -2462,6 +2473,45 @@ def _ensure_rfq_serial_no(doc):
             "serial_no": generated,
             "traceback": frappe.get_traceback()
         }, error=True)
+        return None
+
+    return generated
+
+
+def _release_rfq_serial_no(docname, serial_no):
+    """
+    Rollback for _ensure_rfq_serial_no: called from after_save_njqca's
+    except block when a Serial No was just created THIS call but QI
+    creation then failed -- i.e. an RFQ quota slot got consumed for a
+    session that produced nothing usable. Deletes the Serial No and
+    clears the NJQCA doc's serial_no field back to empty, so:
+
+      1. validate_rfq_qty (nj_features overrides/serial_no.py) sees
+         one fewer used unit against that (rfq_id, item_code) the
+         next time anyone checks remaining quota -- the slot is
+         genuinely freed, not just cosmetically hidden.
+      2. A retry of the same session can regenerate a fresh serial
+         via _ensure_rfq_serial_no's normal guard (serial_no is empty
+         again, so it won't skip).
+
+    Deliberately its own function rather than inlined in the except
+    block, so it can fail safely on its own (best-effort cleanup,
+    logged either way) without masking the original exception that's
+    about to be re-raised regardless of whether this rollback itself
+    succeeds.
+    """
+    try:
+        if frappe.db.exists("Serial No", serial_no):
+            frappe.delete_doc("Serial No", serial_no, force=True, ignore_permissions=True)
+        frappe.db.set_value("NJQCA", docname, "serial_no", "", update_modified=False)
+        njqca_qi_trace("rfq_serial_released_after_qi_failure", docname, {
+            "serial_no": serial_no
+        })
+    except Exception:
+        njqca_qi_trace("rfq_serial_release_failed", docname, {
+            "serial_no": serial_no,
+            "traceback": frappe.get_traceback()
+        }, error=True)
 
 
 @frappe.whitelist()
@@ -2474,7 +2524,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     })
     
     doc = frappe.get_doc("NJQCA", docname)
-    _ensure_rfq_serial_no(doc)
+    newly_created_rfq_serial_no = _ensure_rfq_serial_no(doc)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
     if not int(ignore_part_validation):
@@ -2585,6 +2635,15 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         njqca_qi_trace("after_save_njqca_exception", docname, {
             "traceback": frappe.get_traceback()
         }, error=True)
+
+        # QI creation failed after we consumed an RFQ quota slot this
+        # call -- release it rather than leaving a phantom Serial No
+        # sitting against a session that produced no usable QI. Only
+        # fires when THIS call created the serial (see
+        # _ensure_rfq_serial_no's docstring) -- a serial that already
+        # existed from an earlier successful call is never touched.
+        if newly_created_rfq_serial_no:
+            _release_rfq_serial_no(docname, newly_created_rfq_serial_no)
 
         frappe.throw(f"Error in after_save_njqca: {frappe.get_traceback()}")
 

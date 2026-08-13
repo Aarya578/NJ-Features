@@ -2427,19 +2427,41 @@ def _ensure_rfq_serial_no(doc):
     serial_no not already set), so this and the Desk-side trigger
     can never double-create the same thing.
 
+    REUSE RULE (not qty-based): a given physical machine (identified
+    by bios_serialno) should only ever get ONE EXT serial against a
+    given RFQ, no matter how many NJQCA sessions get run against it
+    -- retests, a failed QI followed by a retry, re-running after a
+    fix, etc. are all expected and never blocked; only a SECOND
+    serial for the same (bios, rfq) pair is. So before minting a new
+    one, check whether this exact machine already has one against
+    this RFQ and reuse it if so.
+
     Returns the newly generated serial number string if this call
-    actually created one, or None otherwise (guard bailed, or
-    create_serial_no itself failed) -- so after_save_njqca knows
-    whether a fresh RFQ quota slot was just consumed this call, as
-    opposed to doc.serial_no already having a prior value from an
-    earlier successful call. That distinction matters for the
-    QI-creation-failure rollback in after_save_njqca's except block:
-    only a serial number THIS call created should ever get rolled
-    back -- one that already existed represents a real prior
-    success and must never be touched here.
+    actually MINTED a new one, or None otherwise -- guard bailed, an
+    existing serial got REUSED (not created), or create_serial_no
+    itself failed. That distinction matters for the QI-creation-
+    failure rollback in after_save_njqca's except block: only a
+    serial number THIS call freshly created should ever get rolled
+    back -- a reused one represents a real prior success (this
+    machine's actual serial) and must never be touched or deleted.
     """
     if not doc.rfq_id or doc.serial_no or not doc.item_code:
         return None
+
+    if doc.bios_serialno:
+        existing = frappe.db.get_value(
+            "Serial No",
+            {"rfq_id": doc.rfq_id, "bios_serial_no": doc.bios_serialno},
+            "name",
+        )
+        if existing:
+            doc.db_set("serial_no", existing, update_modified=False)
+            njqca_qi_trace("rfq_serial_reused", doc.name, {
+                "serial_no": existing,
+                "bios_serialno": doc.bios_serialno,
+                "rfq_id": doc.rfq_id
+            })
+            return None
 
     generated = create_serial_no(item_code=doc.item_code, rfq=True)
     if not generated:
@@ -4535,39 +4557,36 @@ def get_item_code_from_rfq_id(rfq_id):
 @frappe.whitelist()
 def get_rfq_item_availability(rfq_id):
     """
-    Returns each RFQ line's item_code + qty + how many Serial Nos
-    already exist against that (rfq_id, item_code) pair -- i.e. the
-    qty-vs-used math NJQCA.exe and the Flutter picker both need.
+    Returns each distinct item_code on this RFQ -- for the multi-spec
+    picker (RfqItemSelectScreen) to let a technician choose which spec
+    this machine matches when an RFQ has more than one. No qty/used/
+    remaining math anymore: serial creation is deduplicated per
+    (bios_serialno, rfq_id) instead (see _ensure_rfq_serial_no and
+    overrides/serial_no.py's validate_rfq_qty), not gated on quantity,
+    so every item_code here is always a valid choice regardless of
+    how many machines have already been tested against this RFQ.
 
-    This has to be a proper whitelisted method rather than a generic
-    client API call (frappe.client.get_list, /api/resource/<doctype>)
-    because "Request for Quotation Item" is a child-table doctype
-    (istable=1) -- Frappe blocks list queries against child tables
-    through every generic client-facing API by design, since child
-    rows are only meant to be read as part of their parent document.
-    frappe.get_list() works fine here because this runs server-side,
-    with no API layer in between -- same reason get_item_code_from_rfq_id
-    right above this already works via frappe.db.sql instead of a
-    generic list call.
+    Proper whitelisted method rather than a generic client API call
+    (frappe.client.get_list, /api/resource/<doctype>) because "Request
+    for Quotation Item" is a child-table doctype (istable=1) -- Frappe
+    blocks list queries against child tables through every generic
+    client-facing API by design. frappe.get_list() works fine here
+    because this runs server-side, with no API layer in between --
+    same reason get_item_code_from_rfq_id right above this already
+    works via frappe.db.sql instead of a generic list call.
     """
     lines = frappe.get_all(
         "Request for Quotation Item",
         filters={"parent": rfq_id},
-        fields=["item_code", "qty"],
+        fields=["item_code"],
     )
+    seen = set()
     result = []
     for line in lines:
-        used = frappe.db.count(
-            "Serial No",
-            filters={"rfq_id": rfq_id, "item_code": line.item_code},
-        )
-        qty = line.qty or 0
-        result.append({
-            "item_code": line.item_code,
-            "qty": qty,
-            "used": used,
-            "remaining": qty - used,
-        })
+        if not line.item_code or line.item_code in seen:
+            continue
+        seen.add(line.item_code)
+        result.append({"item_code": line.item_code})
     return result
 
 # Configuration for parameter type detection

@@ -2426,9 +2426,42 @@ def _ensure_rfq_serial_no(doc):
     conditions exactly (rfq_id set, item_code already resolved,
     serial_no not already set), so this and the Desk-side trigger
     can never double-create the same thing.
+
+    REUSE RULE (not qty-based): a given physical machine (identified
+    by bios_serialno) should only ever get ONE EXT serial against a
+    given RFQ, no matter how many NJQCA sessions get run against it
+    -- retests, a failed QI followed by a retry, re-running after a
+    fix, etc. are all expected and never blocked; only a SECOND
+    serial for the same (bios, rfq) pair is. So before minting a new
+    one, check whether this exact machine already has one against
+    this RFQ and reuse it if so.
+
+    Returns the newly generated serial number string if this call
+    actually MINTED a new one, or None otherwise -- guard bailed, an
+    existing serial got REUSED (not created), or create_serial_no
+    itself failed. That distinction matters for the QI-creation-
+    failure rollback in after_save_njqca's except block: only a
+    serial number THIS call freshly created should ever get rolled
+    back -- a reused one represents a real prior success (this
+    machine's actual serial) and must never be touched or deleted.
     """
     if not doc.rfq_id or doc.serial_no or not doc.item_code:
-        return
+        return None
+
+    if doc.bios_serialno:
+        existing = frappe.db.get_value(
+            "Serial No",
+            {"rfq_id": doc.rfq_id, "bios_serial_no": doc.bios_serialno},
+            "name",
+        )
+        if existing:
+            doc.db_set("serial_no", existing, update_modified=False)
+            njqca_qi_trace("rfq_serial_reused", doc.name, {
+                "serial_no": existing,
+                "bios_serialno": doc.bios_serialno,
+                "rfq_id": doc.rfq_id
+            })
+            return None
 
     generated = create_serial_no(item_code=doc.item_code, rfq=True)
     if not generated:
@@ -2436,7 +2469,7 @@ def _ensure_rfq_serial_no(doc):
             "item_code": doc.item_code,
             "rfq_id": doc.rfq_id
         }, error=True)
-        return
+        return None
 
     doc.db_set("serial_no", generated, update_modified=False)
 
@@ -2462,6 +2495,45 @@ def _ensure_rfq_serial_no(doc):
             "serial_no": generated,
             "traceback": frappe.get_traceback()
         }, error=True)
+        return None
+
+    return generated
+
+
+def _release_rfq_serial_no(docname, serial_no):
+    """
+    Rollback for _ensure_rfq_serial_no: called from after_save_njqca's
+    except block when a Serial No was just created THIS call but QI
+    creation then failed -- i.e. an RFQ quota slot got consumed for a
+    session that produced nothing usable. Deletes the Serial No and
+    clears the NJQCA doc's serial_no field back to empty, so:
+
+      1. validate_rfq_qty (nj_features overrides/serial_no.py) sees
+         one fewer used unit against that (rfq_id, item_code) the
+         next time anyone checks remaining quota -- the slot is
+         genuinely freed, not just cosmetically hidden.
+      2. A retry of the same session can regenerate a fresh serial
+         via _ensure_rfq_serial_no's normal guard (serial_no is empty
+         again, so it won't skip).
+
+    Deliberately its own function rather than inlined in the except
+    block, so it can fail safely on its own (best-effort cleanup,
+    logged either way) without masking the original exception that's
+    about to be re-raised regardless of whether this rollback itself
+    succeeds.
+    """
+    try:
+        if frappe.db.exists("Serial No", serial_no):
+            frappe.delete_doc("Serial No", serial_no, force=True, ignore_permissions=True)
+        frappe.db.set_value("NJQCA", docname, "serial_no", "", update_modified=False)
+        njqca_qi_trace("rfq_serial_released_after_qi_failure", docname, {
+            "serial_no": serial_no
+        })
+    except Exception:
+        njqca_qi_trace("rfq_serial_release_failed", docname, {
+            "serial_no": serial_no,
+            "traceback": frappe.get_traceback()
+        }, error=True)
 
 
 @frappe.whitelist()
@@ -2474,7 +2546,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     })
     
     doc = frappe.get_doc("NJQCA", docname)
-    _ensure_rfq_serial_no(doc)
+    newly_created_rfq_serial_no = _ensure_rfq_serial_no(doc)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
     if not int(ignore_part_validation):
@@ -2585,6 +2657,15 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         njqca_qi_trace("after_save_njqca_exception", docname, {
             "traceback": frappe.get_traceback()
         }, error=True)
+
+        # QI creation failed after we consumed an RFQ quota slot this
+        # call -- release it rather than leaving a phantom Serial No
+        # sitting against a session that produced no usable QI. Only
+        # fires when THIS call created the serial (see
+        # _ensure_rfq_serial_no's docstring) -- a serial that already
+        # existed from an earlier successful call is never touched.
+        if newly_created_rfq_serial_no:
+            _release_rfq_serial_no(docname, newly_created_rfq_serial_no)
 
         frappe.throw(f"Error in after_save_njqca: {frappe.get_traceback()}")
 
@@ -4472,6 +4553,41 @@ def set_fail_for_empty_reliability_params(doc):
 def get_item_code_from_rfq_id(rfq_id):
     item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
     return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
+
+@frappe.whitelist()
+def get_rfq_item_availability(rfq_id):
+    """
+    Returns each distinct item_code on this RFQ -- for the multi-spec
+    picker (RfqItemSelectScreen) to let a technician choose which spec
+    this machine matches when an RFQ has more than one. No qty/used/
+    remaining math anymore: serial creation is deduplicated per
+    (bios_serialno, rfq_id) instead (see _ensure_rfq_serial_no and
+    overrides/serial_no.py's validate_rfq_qty), not gated on quantity,
+    so every item_code here is always a valid choice regardless of
+    how many machines have already been tested against this RFQ.
+
+    Proper whitelisted method rather than a generic client API call
+    (frappe.client.get_list, /api/resource/<doctype>) because "Request
+    for Quotation Item" is a child-table doctype (istable=1) -- Frappe
+    blocks list queries against child tables through every generic
+    client-facing API by design. frappe.get_list() works fine here
+    because this runs server-side, with no API layer in between --
+    same reason get_item_code_from_rfq_id right above this already
+    works via frappe.db.sql instead of a generic list call.
+    """
+    lines = frappe.get_all(
+        "Request for Quotation Item",
+        filters={"parent": rfq_id},
+        fields=["item_code"],
+    )
+    seen = set()
+    result = []
+    for line in lines:
+        if not line.item_code or line.item_code in seen:
+            continue
+        seen.add(line.item_code)
+        result.append({"item_code": line.item_code})
+    return result
 
 # Configuration for parameter type detection
 PARAMETER_TYPE_MAPPING = {

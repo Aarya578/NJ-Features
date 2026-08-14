@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "autoname": "AUTO-RFQ-.YYYY.-.MM.-.DD.-.####",
+ "creation": "2026-08-11 15:06:59.457271",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "rfq_creation",
+  "auto_rfq_serial_no",
+  "section_break_3hwpr",
+  "auto_rfq_open_mr_data",
+  "calculation_section_part",
+  "auto_rfq_calculation_details",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "rfq_creation",
+   "fieldtype": "Date",
+   "label": "RFQ Creation"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Auto RFQ Creation",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "auto_rfq_serial_no",
+   "fieldtype": "Table",
+   "label": "Auto RFQ Serial No",
+   "options": "Auto RFQ Serial No"
+  },
+  {
+   "fieldname": "section_break_3hwpr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "auto_rfq_open_mr_data",
+   "fieldtype": "Table",
+   "label": "Auto RFQ Open MR Data",
+   "options": "Auto RFQ Open MR Data"
+  },
+  {
+   "fieldname": "calculation_section_part",
+   "fieldtype": "Section Break",
+   "label": "Calculation Section Part"
+  },
+  {
+   "fieldname": "auto_rfq_calculation_details",
+   "fieldtype": "Table",
+   "label": "Auto RFQ Calculation Details",
+   "options": "Auto RFQ Calculation Detail",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-11 17:18:48.404854",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Auto RFQ Creation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

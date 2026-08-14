@@ -214,6 +214,53 @@ def _get_access(token):
     return access
 
 
+def _make_supplier_quotation_from_rfq(rfq_name, supplier):
+    """Map a validated public RFQ submission without granting Guest desk permissions."""
+    from erpnext.accounts.party import get_party_account_currency, get_party_details
+    from erpnext.stock.doctype.material_request.material_request import set_missing_values
+    from frappe.model.mapper import get_mapped_doc
+
+    def postprocess(source, target_doc):
+        target_doc.flags.ignore_permissions = True
+        target_doc.supplier = supplier
+        party_details = get_party_details(
+            supplier,
+            party_type="Supplier",
+            ignore_permissions=True,
+        )
+        target_doc.currency = party_details.currency or get_party_account_currency(
+            "Supplier",
+            supplier,
+            source.company,
+        )
+        target_doc.buying_price_list = party_details.buying_price_list or frappe.db.get_value(
+            "Buying Settings",
+            None,
+            "buying_price_list",
+        )
+        set_missing_values(source, target_doc)
+
+    return get_mapped_doc(
+        "Request for Quotation",
+        rfq_name,
+        {
+            "Request for Quotation": {
+                "doctype": "Supplier Quotation",
+                "validation": {"docstatus": ["=", 1]},
+            },
+            "Request for Quotation Item": {
+                "doctype": "Supplier Quotation Item",
+                "field_map": {
+                    "name": "request_for_quotation_item",
+                    "parent": "request_for_quotation",
+                },
+            },
+        },
+        postprocess=postprocess,
+        ignore_permissions=True,
+    )
+
+
 @frappe.whitelist()
 def generate_customer_quotation_link(
     source_rfq,
@@ -283,6 +330,7 @@ def generate_customer_quotation_links(source_rfq, valid_days=7, one_time_use=0):
 def get_customer_quotation(token):
     access = _get_access(token)
     rfq = frappe.get_doc("Request for Quotation", access.rfq)
+    default_lead_date = add_days(nowdate(), 3)
 
     if rfq.docstatus == 2:
         frappe.throw(_("This Request for Quotation has been cancelled."), frappe.PermissionError)
@@ -293,7 +341,6 @@ def get_customer_quotation(token):
     return {
         "rfq": rfq.name,
         "supplier": access.supplier,
-        "lead_date": rfq.get("lead_date") or "",
         "expires_on": access.expires_on,
         "items": [
             {
@@ -304,6 +351,7 @@ def get_customer_quotation(token):
                 "rate": row.get("rate") or 0,
                 "availability": row.get("availability") or "",
                 "available_qty": row.get("available_qty") or 0,
+                "lead_date": default_lead_date,
             }
             for row in rfq.items
         ],
@@ -311,7 +359,7 @@ def get_customer_quotation(token):
 
 
 @frappe.whitelist(allow_guest=True)
-def submit_customer_quotation(token, items, lead_date=None):
+def submit_customer_quotation(token, items):
     access = _get_access(token)
 
     if access.supplier_quotation:
@@ -340,14 +388,6 @@ def submit_customer_quotation(token, items, lead_date=None):
     submitted_row_names = set()
     validated_items = {}
 
-    if not lead_date:
-        frappe.throw(_("Please enter the Lead Date."))
-
-    try:
-        lead_date = getdate(lead_date)
-    except (TypeError, ValueError):
-        frappe.throw(_("Please enter a valid Lead Date."))
-
     for submitted_row in submitted_items:
         row_name = submitted_row.get("row_name")
         item_code = submitted_row.get("item_code")
@@ -363,6 +403,7 @@ def submit_customer_quotation(token, items, lead_date=None):
         rate = flt(submitted_row.get("rate"))
         availability = submitted_row.get("availability")
         available_qty_value = flt(submitted_row.get("available_qty"))
+        lead_date = submitted_row.get("lead_date")
 
         if rate < 0:
             frappe.throw(_("Rate cannot be negative for item {0}.").format(frappe.bold(item_code)))
@@ -381,25 +422,34 @@ def submit_customer_quotation(token, items, lead_date=None):
                 )
             )
 
+        if not lead_date:
+            frappe.throw(
+                _("Please enter the Lead Date for item {0}.").format(frappe.bold(item_code))
+            )
+
+        try:
+            lead_date = getdate(lead_date)
+        except (TypeError, ValueError):
+            frappe.throw(
+                _("Please enter a valid Lead Date for item {0}.").format(
+                    frappe.bold(item_code)
+                )
+            )
+
         validated_items[row_name] = {
             "rate": rate,
             "availability": availability,
             "available_qty": int(available_qty_value),
+            "lead_date": lead_date,
         }
 
     if submitted_row_names != set(rfq_rows):
         frappe.throw(_("Rates must be submitted for all RFQ items."))
 
-    from erpnext.buying.doctype.request_for_quotation.request_for_quotation import (
-        make_supplier_quotation_from_rfq,
-    )
-
-    supplier_quotation = make_supplier_quotation_from_rfq(
+    supplier_quotation = _make_supplier_quotation_from_rfq(
         rfq.name,
-        for_supplier=access.supplier,
+        access.supplier,
     )
-    supplier_quotation.lead_date = lead_date
-
     quotation_rows = {
         row.request_for_quotation_item: row for row in supplier_quotation.items
     }
@@ -411,6 +461,7 @@ def submit_customer_quotation(token, items, lead_date=None):
         quotation_row.rate = values["rate"]
         quotation_row.availability = values["availability"]
         quotation_row.available_qty = values["available_qty"]
+        quotation_row.lead_date = values["lead_date"]
         quotation_row.request_for_quotation = rfq.name
 
     supplier_quotation.insert(ignore_permissions=True)

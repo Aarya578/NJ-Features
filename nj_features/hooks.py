@@ -252,9 +252,12 @@ scheduler_events = {
         "50 23 * * *": [
             "nj_features.overrides.product_bundle.update_variant_status",
         ],
+        "40 21 * * *":[
+            "nj_features.nj_features.doctype.auto_rfq_creation.auto_rfq_creation.auto_rfq_creation",
+
+        ],
     }
 }
-
 # ========== Fixtures ==========
 # Workflow fixtures removed — approval flow handled via custom Python methods
 fixtures = [

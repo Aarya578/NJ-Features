@@ -298,6 +298,17 @@ def generate_purchase_orders(rfq, verdict):
             "status": purchase_order.status,
         })
 
+    if created:
+        frappe.db.sql(
+            """
+            UPDATE `tabRFQ Customer Quotation Access`
+            SET enabled = 0
+            WHERE rfq = %(rfq)s
+              AND enabled = 1
+            """,
+            {"rfq": rfq},
+        )
+
     return {"created": created, "skipped": skipped}
 
 

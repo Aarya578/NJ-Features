@@ -5,7 +5,6 @@
 	const info = document.getElementById("quotation-info");
 	const rfqName = document.getElementById("quotation-rfq");
 	const supplierName = document.getElementById("quotation-supplier");
-	const leadDate = document.getElementById("quotation-lead-date");
 	const message = document.getElementById("quotation-message");
 	const form = document.getElementById("quotation-form");
 	const itemBody = document.getElementById("quotation-items");
@@ -46,12 +45,11 @@
 		return body.message || {};
 	};
 
-	const submitQuotation = async (items, selectedLeadDate) => {
+	const submitQuotation = async (items) => {
 		const url = `/api/method/${methodPath}.submit_customer_quotation`;
 		const requestBody = new URLSearchParams({
 			token,
-			items: JSON.stringify(items),
-			lead_date: selectedLeadDate
+			items: JSON.stringify(items)
 		});
 		const headers = {
 			Accept: "application/json",
@@ -84,6 +82,15 @@
 					<tr>
 						<td>${escapeHtml(row.item_code)}</td>
 						<td>${escapeHtml(row.schedule_date)}</td>
+						<td>
+							<input
+								class="form-control quotation-item-lead-date"
+								data-index="${String(index)}"
+								type="date"
+								value="${escapeHtml(row.lead_date || "")}"
+								required
+							>
+						</td>
 						<td class="text-right">${escapeHtml(row.qty)}</td>
 						<td>
 							<select
@@ -135,7 +142,6 @@
 			quotationItems = data.items || [];
 			rfqName.textContent = data.rfq || "";
 			supplierName.textContent = data.supplier || "";
-			leadDate.value = data.lead_date || "";
 			renderItems(quotationItems);
 			info.classList.remove("d-none");
 			message.classList.add("d-none");
@@ -150,10 +156,6 @@
 		submitButton.disabled = true;
 
 		try {
-			if (!leadDate.value) {
-				throw new Error("Please enter the Lead Date.");
-			}
-
 			const items = quotationItems.map((row, index) => {
 				const rateField = document.querySelector(
 					`.quotation-rate[data-index="${String(index)}"]`
@@ -164,8 +166,11 @@
 				const availableQtyField = document.querySelector(
 					`.quotation-available-qty[data-index="${String(index)}"]`
 				);
+				const leadDateField = document.querySelector(
+					`.quotation-item-lead-date[data-index="${String(index)}"]`
+				);
 
-				if (!rateField || !availabilityField || !availableQtyField) {
+				if (!rateField || !availabilityField || !availableQtyField || !leadDateField) {
 					throw new Error(`Quotation fields were not found for item ${row.item_code}.`);
 				}
 
@@ -174,10 +179,11 @@
 					item_code: row.item_code,
 					rate: rateField.value,
 					availability: availabilityField.value,
-					available_qty: availableQtyField.value
+					available_qty: availableQtyField.value,
+					lead_date: leadDateField.value
 				};
 			});
-			const data = await submitQuotation(items, leadDate.value);
+			const data = await submitQuotation(items);
 			form.classList.add("d-none");
 			showMessage(data.message || "Supplier Quotation created successfully", "success");
 		} catch (error) {

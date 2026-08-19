@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import add_days, flt, nowdate
+from frappe.utils import add_days, flt, getdate, nowdate
 from frappe.model.document import Document
 
 class AutoRFQCreation(Document):
@@ -117,6 +117,8 @@ def _get_open_mr_data(serial_nos):
 		LEFT JOIN `tabItem` item ON item.name = mri.item_code
 		WHERE mri.serial_no IN %(serial_nos)s
 			AND mr.docstatus = 1
+			AND COALESCE(TRIM(mr.post_order_status), '') = ''
+			AND COALESCE(TRIM(mri.post_order_status), '') != 'Completed'
 			AND IFNULL(mr.status, '') NOT IN (
 				'Stopped', 'Cancelled', 'Ordered', 'Issued',
 				'Transferred', 'Received', 'Completed'
@@ -197,7 +199,7 @@ def _print_inventory_comparison(open_mr_data):
 
 
 def _print_wip_part_list_comparison(shortage_by_item):
-	wip_department = "WIP - NJ"
+	wip_department = "WIP  - NJ"
 	eligible_wip_serials = frappe.db.sql(
 		"""
 		SELECT
@@ -502,9 +504,23 @@ def _print_open_po_comparison(shortage_after_grade_inventory):
 
 
 def _set_rfq_inclusion_details(auto_rfq_doc):
+	item_codes = list(
+		dict.fromkeys(
+			row.item_code
+			for row in auto_rfq_doc.auto_rfq_calculation_details
+			if row.item_code
+		)
+	)
+	item_details = {
+		item.name: item
+		for item in frappe.get_all(
+			"Item",
+			filters={"name": ["in", item_codes]},
+			fields=["name", "item_group", "end_of_life", "disabled"],
+		)
+	} if item_codes else {}
 	item_groups = {
-		row.item_code: frappe.db.get_value("Item", row.item_code, "item_group")
-		for row in auto_rfq_doc.auto_rfq_calculation_details
+		item_code: item.item_group for item_code, item in item_details.items()
 	}
 	requested_item_groups = tuple({group for group in item_groups.values() if group})
 	supplier_rows = []
@@ -534,10 +550,30 @@ def _set_rfq_inclusion_details(auto_rfq_doc):
 		suppliers_by_group.setdefault(supplier.item_group, set()).add(supplier.supplier)
 
 	for row in auto_rfq_doc.auto_rfq_calculation_details:
+		item = item_details.get(row.item_code)
 		row.item_group = item_groups.get(row.item_code)
+		row.end_of_life_item_code = ""
 		if flt(row.final_rfq_quantity) <= 0:
 			row.rfq_inclusion_status = "Skipped"
 			row.skip_reason = "Final RFQ Quantity is zero after all deductions."
+		elif (
+			item
+			and item.end_of_life
+			and str(item.end_of_life) != "0000-00-00"
+			and getdate(item.end_of_life) <= getdate(nowdate())
+		):
+			row.rfq_inclusion_status = "Skipped"
+			row.end_of_life_item_code = row.item_code
+			row.skip_reason = (
+				f"Item reached its end of life on {item.end_of_life}."
+			)
+			print(
+				f"[Auto RFQ Creation] Skipping Item Code: {row.item_code} | "
+				f"End of Life Date: {item.end_of_life}"
+			)
+		elif item and item.disabled:
+			row.rfq_inclusion_status = "Skipped"
+			row.skip_reason = "Item is disabled."
 		elif not row.item_group:
 			row.rfq_inclusion_status = "Skipped"
 			row.skip_reason = "Item Group is not configured in the Item master."

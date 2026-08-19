@@ -78,7 +78,10 @@
 	const renderItems = (items) => {
 		itemBody.innerHTML = items
 			.map(
-				(row, index) => `
+				(row, index) => {
+					const availability = Number(row.available_qty) > 0 ? "Yes" : "No";
+
+					return `
 					<tr>
 						<td>${escapeHtml(row.item_code)}</td>
 						<td>${escapeHtml(row.schedule_date)}</td>
@@ -98,9 +101,8 @@
 								data-index="${String(index)}"
 								required
 							>
-								<option value="">Select Availability</option>
-								<option value="Yes" ${row.availability === "Yes" ? "selected" : ""}>Yes</option>
-								<option value="No" ${row.availability === "No" ? "selected" : ""}>No</option>
+								<option value="Yes" ${availability === "Yes" ? "selected" : ""}>Yes</option>
+								<option value="No" ${availability === "No" ? "selected" : ""}>No</option>
 							</select>
 						</td>
 						<td>
@@ -126,10 +128,41 @@
 							>
 						</td>
 					</tr>
-				`
+				`;
+				}
 			)
 			.join("");
 	};
+
+	itemBody.addEventListener("input", (event) => {
+		if (!event.target.matches(".quotation-available-qty")) {
+			return;
+		}
+
+		const index = event.target.dataset.index;
+		const availabilityField = itemBody.querySelector(
+			`.quotation-availability[data-index="${String(index)}"]`
+		);
+
+		if (availabilityField && Number(event.target.value) > 0) {
+			availabilityField.value = "Yes";
+		}
+	});
+
+	itemBody.addEventListener("change", (event) => {
+		if (!event.target.matches(".quotation-availability") || event.target.value !== "No") {
+			return;
+		}
+
+		const index = event.target.dataset.index;
+		const availableQtyField = itemBody.querySelector(
+			`.quotation-available-qty[data-index="${String(index)}"]`
+		);
+
+		if (availableQtyField) {
+			availableQtyField.value = 0;
+		}
+	});
 
 	const initialize = async () => {
 		if (!token) {

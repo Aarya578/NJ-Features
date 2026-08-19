@@ -422,6 +422,15 @@ def submit_customer_quotation(token, items):
                 )
             )
 
+        if availability == "No":
+            available_qty_value = 0
+        elif available_qty_value <= 0:
+            frappe.throw(
+                _("Available Qty must be greater than zero when Availability is Yes for item {0}.").format(
+                    frappe.bold(item_code)
+                )
+            )
+
         if not lead_date:
             frappe.throw(
                 _("Please enter the Lead Date for item {0}.").format(frappe.bold(item_code))
@@ -459,6 +468,10 @@ def submit_customer_quotation(token, items):
     for row_name, values in validated_items.items():
         quotation_row = quotation_rows[row_name]
         quotation_row.rate = values["rate"]
+        quotation_row.price_list_rate = values["rate"]
+        quotation_row.discount_percentage = 0
+        quotation_row.discount_amount = 0
+        quotation_row.pricing_rules = ""
         quotation_row.availability = values["availability"]
         quotation_row.available_qty = values["available_qty"]
         quotation_row.lead_date = values["lead_date"]

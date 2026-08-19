@@ -4680,6 +4680,19 @@
    "translatable": 1,
    "unique": 0,
    "width": null
+  },
+  {
+   "allow_on_submit": 1,
+   "dt": "Delivery Note",
+   "fieldname": "delhivery_label",
+   "fieldtype": "Attach",
+   "hidden": 0,
+   "insert_after": "shiprocket_image",
+   "label": "Delhivery Label",
+   "name": "Delivery Note-delhivery_label",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
   }
   ],
   "custom_perms": [

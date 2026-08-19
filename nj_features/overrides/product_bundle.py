@@ -10,7 +10,7 @@ from erpnext.selling.doctype.product_bundle.product_bundle import ProductBundle
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 
 SHOPIFY_SHOP_URL = "https://newjaisa.myshopify.com"
-SHOPIFY_ACCESS_TOKEN = "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"
+SHOPIFY_ACCESS_TOKEN = "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"
 SHOPIFY_API_VERSION = "2025-07"
 
 class CustomProductBundle(ProductBundle):

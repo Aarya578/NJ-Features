@@ -24,6 +24,7 @@
   "final_rfq_quantity"
   ,"item_group"
   ,"rfq_inclusion_status"
+  ,"end_of_life_item_code"
   ,"skip_reason"
  ],
  "fields": [
@@ -47,6 +48,7 @@
   {"fieldname": "final_rfq_quantity", "fieldtype": "Float", "in_list_view": 1, "label": "Final RFQ Quantity", "read_only": 1},
   {"fieldname": "item_group", "fieldtype": "Link", "in_list_view": 1, "label": "Item Group", "options": "Item Group", "read_only": 1},
   {"fieldname": "rfq_inclusion_status", "fieldtype": "Select", "in_list_view": 1, "label": "RFQ Inclusion Status", "options": "\nIncluded\nSkipped", "read_only": 1},
+  {"fieldname": "end_of_life_item_code", "fieldtype": "Link", "in_list_view": 1, "label": "End of Life Item Code", "options": "Item", "read_only": 1},
   {"fieldname": "skip_reason", "fieldtype": "Small Text", "label": "Skip Reason", "read_only": 1}
  ],
  "istable": 1,

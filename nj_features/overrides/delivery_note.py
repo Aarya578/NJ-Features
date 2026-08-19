@@ -28,7 +28,7 @@ from erpnext.controllers.status_updater import OverAllowanceError
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
-TOKEN = "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"
+TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 

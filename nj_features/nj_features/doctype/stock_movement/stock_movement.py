@@ -848,9 +848,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                             0
                         ) AS max_age_days
 
-                    FROM tabSerial No s
+                    FROM `tabSerial No` s
 
-                    LEFT JOIN tabHoliday h
+                    LEFT JOIN `tabHoliday` h
                         ON h.parent = 'Holiday List 2026'
                         AND h.holiday_date > DATE(TIMESTAMP(s.purchase_date, s.purchase_time))
                         AND h.holiday_date <= CURDATE()

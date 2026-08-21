@@ -162,6 +162,78 @@ frappe.ui.form.on('Delivery Note', {
                 });
                 shiprocket_btn.addClass('btn-primary');
             }
+
+
+            if (!frm.doc.tracking_id && frm.doc.courier_service !== 'Delhivery') {
+                let delhivery_btn = frm.add_custom_button(__('Delhivery'), function() {
+                    let dialog = new frappe.ui.Dialog({
+                        title: __('Create Delhivery Order'),
+                        fields: [{
+                            label: __('Shipping Mode'),
+                            fieldname: 'shipping_mode',
+                            fieldtype: 'Select',
+                            options: ['Surface', 'Express'],
+                            default: 'Surface',
+                            reqd: 1
+                        }],
+                        primary_action_label: __('Create Order'),
+                        primary_action(values) {
+                            dialog.hide();
+                            frappe.show_alert({ message: __('Creating Delhivery order...'), indicator: 'blue' });
+                            frappe.call({
+                                method: 'nj_features.nj_features.api.delhivery_api.create_delhivery_order',
+                                args: {
+                                    doc: JSON.stringify(frm.doc),
+                                    shipping_mode: values.shipping_mode
+                                },
+                                freeze: true,
+                                freeze_message: __('Creating Delhivery order...'),
+                                callback(response) {
+                                    if (response.message && response.message.success) {
+                                        frm.reload_doc();
+                                        frappe.show_alert({
+                                            message: __('Delhivery order created. Waybill: {0}', [response.message.waybill]),
+                                            indicator: 'green'
+                                        }, 7);
+                                        if (response.message.label_error) {
+                                            frappe.msgprint({
+                                                title: __('Label Generation Pending'),
+                                                message: __('The order was created successfully, but its label could not be generated. Use Refresh Delhivery Label to retry.'),
+                                                indicator: 'orange'
+                                            });
+                                        }
+                                    } else if (response.message && response.message.serviceable === false) {
+                                        frappe.show_alert({
+                                            message: __('Pincode {0} is not serviceable by Delhivery.', [response.message.pincode]),
+                                            indicator: 'red'
+                                        }, 7);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    dialog.show();
+                });
+                delhivery_btn.addClass('btn-primary');
+            }
+
+        }
+
+        if (frm.doc.tracking_id && frm.doc.courier_service === 'Delhivery') {
+            frm.add_custom_button(__('Refresh Delhivery Label'), function() {
+                frappe.call({
+                    method: 'nj_features.nj_features.api.delhivery_api.generate_delhivery_label',
+                    args: { delivery_note_name: frm.doc.name },
+                    freeze: true,
+                    freeze_message: __('Refreshing Delhivery label...'),
+                    callback(response) {
+                        if (response.message && response.message.file_url) {
+                            frm.reload_doc();
+                            window.open(frappe.urllib.get_full_url(response.message.file_url), '_blank');
+                        }
+                    }
+                });
+            });
         }
 
         if (frm.doc.docstatus === 0) {

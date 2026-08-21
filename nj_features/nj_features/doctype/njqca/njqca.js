@@ -35,6 +35,10 @@ const brandScoreMap = {
 };
 
 frappe.ui.form.on("NJQCA", {
+  change_model: function (frm) {
+    openChangeModelDialog(frm);
+  },
+
   onload: function (frm) {
     if (frm.doc.manufacturer_model && frm.doc.docstatus == 0) {
       frappe.call({
@@ -1329,6 +1333,10 @@ frappe.ui.form.on("NJQCA", {
                         dialog.hide();
                         return;
                       } else {
+                        let btn = dialog.get_primary_btn();
+                        if (btn) btn.prop('disabled', true);
+                        dialog.hide();
+
                         let material_transfer_items = [
                           {
                             serial_no: frm_serial_no,
@@ -1361,14 +1369,18 @@ frappe.ui.form.on("NJQCA", {
                               $(".primary-action").show();
                               frm.set_value("warehouse", workWarehouse);
                               frm.refresh_field("warehouse");
+                            } else {
+                              if (btn) btn.prop('disabled', false);
+                              dialog.show();
                             }
                           },
                           error: function (err) {
                             console.error(err);
                             $(".primary-action").hide();
+                            if (btn) btn.prop('disabled', false);
+                            dialog.show();
                           },
                         });
-                        dialog.hide();
                       }
                     }
                   }
@@ -1630,6 +1642,134 @@ frappe.ui.form.on("NJQCA", {
   },
 });
 
+async function openChangeModelDialog(frm) {
+  if (!frm.doc.model) {
+    frappe.msgprint(__("Please select the current Model first."));
+    return;
+  }
+
+  const response = await frappe.call({
+    method:
+      "nj_features.nj_features.doctype.njqca.njqca.get_model_configuration_for_change",
+    args: {
+      model: frm.doc.model,
+      item_group: frm.doc.item_group,
+    },
+    freeze: true,
+    freeze_message: __("Loading model configuration..."),
+  });
+  const parameters = response.message || [];
+
+  if (!parameters.length) {
+    frappe.msgprint(
+      __(
+        "No Parameter Specification is configured for model {0}.",
+        [frm.doc.model],
+      ),
+    );
+    return;
+  }
+
+  const parameterFields = parameters.map((row, index) => ({
+    fieldname: `model_parameter_${index}`,
+    fieldtype: "Select",
+    label: row.parameter,
+    options: row.options,
+    default: row.value,
+    reqd: 1,
+  }));
+
+  const dialog = new frappe.ui.Dialog({
+    title: __("Change Model Configuration"),
+    fields: [
+      ...parameterFields,
+      {
+        fieldname: "matching_model_section",
+        fieldtype: "Section Break",
+        label: __("Matching Models"),
+        hidden: 1,
+      },
+      {
+        fieldname: "matching_model",
+        fieldtype: "Select",
+        label: __("Model"),
+        hidden: 1,
+        reqd: 0,
+      },
+    ],
+    primary_action_label: __("Find Models"),
+    primary_action: async function (values) {
+      if (dialog._selecting_matching_model) {
+        await applyChangedModel(frm, dialog, values.matching_model);
+        return;
+      }
+
+      const configuration = parameters.map((row, index) => ({
+        parameter: row.parameter,
+        value: values[`model_parameter_${index}`],
+      }));
+      const result = await frappe.call({
+        method:
+          "nj_features.nj_features.doctype.njqca.njqca.find_models_by_configuration",
+        args: {
+          configuration: JSON.stringify(configuration),
+          item_group: frm.doc.item_group,
+        },
+        freeze: true,
+        freeze_message: __("Finding matching models..."),
+      });
+      const models = result.message || [];
+
+      if (!models.length) {
+        frappe.msgprint(
+          __("No model was found matching the selected configuration."),
+        );
+        return;
+      }
+
+      if (models.length === 1) {
+        await applyChangedModel(frm, dialog, models[0]);
+        return;
+      }
+
+      dialog._selecting_matching_model = true;
+      dialog.set_df_property("matching_model_section", "hidden", 0);
+      dialog.set_df_property("matching_model", "hidden", 0);
+      dialog.set_df_property("matching_model", "reqd", 1);
+      dialog.set_df_property("matching_model", "options", ["", ...models]);
+      dialog.set_value("matching_model", "");
+      dialog.get_primary_btn().text(__("Apply Model"));
+    },
+  });
+
+  dialog.show();
+}
+
+async function applyChangedModel(frm, dialog, model) {
+  if (!model) {
+    frappe.msgprint(__("Please select a Model."));
+    return;
+  }
+
+  if (model === frm.doc.model) {
+    dialog.hide();
+    frappe.show_alert({
+      message: __("Model {0} is already selected.", [model]),
+      indicator: "blue",
+    });
+    return;
+  }
+
+  await frm.set_value("model", model);
+  await frm.set_value("model_changed_using_change_model", 1);
+  frm.refresh_field("model");
+  dialog.hide();
+  frappe.show_alert({
+    message: __("Model changed to {0}.", [model]),
+    indicator: "green",
+  });
+}
+
 function getNJQCACurrentUserEmail() {
   return (frappe.session.user_email || frappe.session.user || "")
     .trim()
@@ -1830,6 +1970,10 @@ async function promptNJQCATransferForCreatedUser(frm) {
     static: true,
     primary_action_label: "Yes",
     primary_action: function () {
+      let btn = dialog.get_primary_btn();
+      if (btn) btn.prop('disabled', true);
+      dialog.hide();
+
       const materialTransferItems = [
         {
           serial_no: serialNo,
@@ -1861,6 +2005,9 @@ async function promptNJQCATransferForCreatedUser(frm) {
             $(".primary-action").show();
             frm.set_value("warehouse", workWarehouse);
             frm.refresh_field("warehouse");
+          } else {
+            if (btn) btn.prop('disabled', false);
+            dialog.show();
           }
         },
         error: function (err) {
@@ -1869,10 +2016,10 @@ async function promptNJQCATransferForCreatedUser(frm) {
             err,
           );
           $(".primary-action").hide();
+          if (btn) btn.prop('disabled', false);
+          dialog.show();
         },
       });
-
-      dialog.hide();
     },
     secondary_action_label: "No",
     secondary_action: function () {
@@ -2835,7 +2982,7 @@ function generateStorageItemCode(frm, cdt, cdn, child) {
           } else {
             frappe.model.set_value(cdt, cdn, "calculated_item_code", r.message);
             if (r.message) {
-              frm.set_value("merged_storage_item_code", 1);
+              frm.set_value("merged_storage_item_code", 0);
               frm.refresh_field("merged_storage_item_code");
             }
           }
@@ -3032,7 +3179,7 @@ function generateRamItemCode(frm, cdt, cdn, child) {
           } else {
             frappe.model.set_value(cdt, cdn, "calculated_item_code", r.message);
             if (r.message) {
-              frm.set_value("merged_ram_item_code", 1);
+              frm.set_value("merged_ram_item_code", 0);
               frm.refresh_field("merged_ram_item_code");
             }
           }
@@ -4229,11 +4376,11 @@ async function handle_merge(frm, selected_rows, child_name) {
   );
 
   if (child_name == "njqca_laptop_ram") {
-    frm.set_value("merged_ram_item_code", 1);
+    frm.set_value("merged_ram_item_code", 0);
     frm.refresh_field("merged_ram_item_code");
   }
   if (child_name == "njqca_laptop_storage") {
-    frm.set_value("merged_storage_item_code", 1);
+    frm.set_value("merged_storage_item_code", );
     frm.refresh_field("merged_storage_item_code");
   }
 }

@@ -17,6 +17,7 @@ from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
+from nj_features.nj_features.api.qr_code import create_serial_no
 from nj_p1_features.nj_p1_features.doctype.nj_quality_inspection.nj_quality_inspection import validation_for_nj_readings_in_nj_qi
 from nj_lib.utils.common_utils import get_active_emp, get_latest_item_wizard,check_item_code_vs_model_validation,get_item_wizard,get_item_wizard_data
 
@@ -533,6 +534,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     ORDER BY idx
                 """, check_name, as_dict=True)
 
+                option_found = False
                 if check_options and score not in (None, ""):
                     try:
                         score_value = float(score)
@@ -541,9 +543,13 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                             if opt_score not in (None, "") and score_value == float(opt_score):
                                 resolved_option = opt.get("check_options") or value
                                 resolved_score = float(opt_score)
+                                option_found = True
                                 break
                     except Exception:
                         pass
+
+                if check_options and not option_found:
+                    continue
 
                 # Get all QI reading rows for this item group.
                 # This is the important fix for repeated Laptop RAM / LAPTOP STORAGE rows.
@@ -572,7 +578,7 @@ def open_draft_qi(self, component_serial_no=None, brand=None, model=None, is_def
                     child.item_group = target_item_group
                     child.check_name = check_name
                     child.options = resolved_option
-                    child.automated_check_name = resolved_option
+                    child.automated_check_name = value if value else resolved_option
                     child.score = resolved_score
                     child.item_group_idx = item_group_idx
 
@@ -1124,6 +1130,19 @@ class NJQCA(Document):
         })
 
         try:
+            if (
+                self.get("model_changed_using_change_model")
+                and self.serial_no
+                and frappe.db.exists("Serial No", self.serial_no)
+            ):
+                frappe.db.set_value(
+                    "Serial No",
+                    self.serial_no,
+                    "model_changed_from_njqca",
+                    1,
+                    update_modified=False,
+                )
+
             # self.performance_reports_update()
             self.check_for_repack_access()
             # self.updating_njqca_child_in_serial_no()
@@ -2380,6 +2399,145 @@ def get_info_from_component_serial_no(doc=None):
         log_error(traceback.format_exc(), "Error on get_info_component_serial_no in NJQCA")
         return f"Error while getting component serial info: {str(e)}"
 
+def _ensure_rfq_serial_no(doc):
+    """
+    FIX (traced from real NJQCA sessions: RFQ-tagged records staying
+    stuck with no Serial No / QI / QR — the whole point of tagging a
+    record with an RFQ is that it's a brand-new external device with
+    no existing ERP inventory record yet, so open_draft_qi's serial
+    resolution has nothing to find and everything downstream of it
+    quietly never happens):
+
+    This exact two-step flow (generate an EXT-prefixed serial number
+    via create_serial_no(item_code, rfq=True), then create the actual
+    Serial No document from it via create_serial_no_based_on_rfq)
+    already existed — but ONLY inside njqca.js, the Desk FORM's
+    client-side script. It only ever ran if a human's browser happened
+    to load this exact record in Desk afterward. NJQCA.exe tries to
+    trigger exactly that by opening the record in Chrome once a
+    session finishes, but that's a bare shell command (Start-Process
+    chrome.exe) with no guarantee it succeeds on every machine —
+    confirmed failing outright in a real session ("Start-Process :
+    ... The system cannot find the file specified."), which silently
+    skipped this whole step with zero indication to the technician.
+
+    Doing the same two steps here instead means an RFQ/external
+    device gets its Serial No the moment NJQCA.exe submits the
+    record server-side, not conditionally on whether some browser tab
+    happened to load afterward. Mirrors njqca.js's own guard
+    conditions exactly (rfq_id set, item_code already resolved,
+    serial_no not already set), so this and the Desk-side trigger
+    can never double-create the same thing.
+
+    REUSE RULE (not qty-based): a given physical machine (identified
+    by bios_serialno) should only ever get ONE EXT serial against a
+    given RFQ, no matter how many NJQCA sessions get run against it
+    -- retests, a failed QI followed by a retry, re-running after a
+    fix, etc. are all expected and never blocked; only a SECOND
+    serial for the same (bios, rfq) pair is. So before minting a new
+    one, check whether this exact machine already has one against
+    this RFQ and reuse it if so.
+
+    Returns the newly generated serial number string if this call
+    actually MINTED a new one, or None otherwise -- guard bailed, an
+    existing serial got REUSED (not created), or create_serial_no
+    itself failed. That distinction matters for the QI-creation-
+    failure rollback in after_save_njqca's except block: only a
+    serial number THIS call freshly created should ever get rolled
+    back -- a reused one represents a real prior success (this
+    machine's actual serial) and must never be touched or deleted.
+    """
+    if not doc.rfq_id or doc.serial_no or not doc.item_code:
+        return None
+
+    if doc.bios_serialno:
+        existing = frappe.db.get_value(
+            "Serial No",
+            {"rfq_id": doc.rfq_id, "bios_serial_no": doc.bios_serialno},
+            "name",
+        )
+        if existing:
+            doc.db_set("serial_no", existing, update_modified=False)
+            njqca_qi_trace("rfq_serial_reused", doc.name, {
+                "serial_no": existing,
+                "bios_serialno": doc.bios_serialno,
+                "rfq_id": doc.rfq_id
+            })
+            return None
+
+    generated = create_serial_no(item_code=doc.item_code, rfq=True)
+    if not generated:
+        njqca_qi_trace("rfq_serial_generation_failed", doc.name, {
+            "item_code": doc.item_code,
+            "rfq_id": doc.rfq_id
+        }, error=True)
+        return None
+
+    doc.db_set("serial_no", generated, update_modified=False)
+
+    serial_info = {
+        "serial_no": generated,
+        "rfq_id": doc.rfq_id,
+        "model": doc.model,
+        "doctype": doc.doctype,
+        "item_code": doc.item_code,
+        "item_group": doc.item_group,
+        "bios_serialno": doc.bios_serialno,
+        "name": doc.name,
+    }
+    try:
+        create_serial_no_based_on_rfq(serial_info)
+        njqca_qi_trace("rfq_serial_created", doc.name, {"serial_no": generated})
+    except Exception:
+        # Soft-fail: leave doc.serial_no set (already db_set above) so
+        # a retry/manual fix later doesn't need to regenerate it, but
+        # don't let a Serial No creation problem here block whatever
+        # else after_save_njqca can still do below.
+        njqca_qi_trace("rfq_serial_create_failed", doc.name, {
+            "serial_no": generated,
+            "traceback": frappe.get_traceback()
+        }, error=True)
+        return None
+
+    return generated
+
+
+def _release_rfq_serial_no(docname, serial_no):
+    """
+    Rollback for _ensure_rfq_serial_no: called from after_save_njqca's
+    except block when a Serial No was just created THIS call but QI
+    creation then failed -- i.e. an RFQ quota slot got consumed for a
+    session that produced nothing usable. Deletes the Serial No and
+    clears the NJQCA doc's serial_no field back to empty, so:
+
+      1. validate_rfq_qty (nj_features overrides/serial_no.py) sees
+         one fewer used unit against that (rfq_id, item_code) the
+         next time anyone checks remaining quota -- the slot is
+         genuinely freed, not just cosmetically hidden.
+      2. A retry of the same session can regenerate a fresh serial
+         via _ensure_rfq_serial_no's normal guard (serial_no is empty
+         again, so it won't skip).
+
+    Deliberately its own function rather than inlined in the except
+    block, so it can fail safely on its own (best-effort cleanup,
+    logged either way) without masking the original exception that's
+    about to be re-raised regardless of whether this rollback itself
+    succeeds.
+    """
+    try:
+        if frappe.db.exists("Serial No", serial_no):
+            frappe.delete_doc("Serial No", serial_no, force=True, ignore_permissions=True)
+        frappe.db.set_value("NJQCA", docname, "serial_no", "", update_modified=False)
+        njqca_qi_trace("rfq_serial_released_after_qi_failure", docname, {
+            "serial_no": serial_no
+        })
+    except Exception:
+        njqca_qi_trace("rfq_serial_release_failed", docname, {
+            "serial_no": serial_no,
+            "traceback": frappe.get_traceback()
+        }, error=True)
+
+
 @frappe.whitelist()
 def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, qi_type=None):
     njqca_qi_trace("after_save_njqca_start", docname, {
@@ -2390,6 +2548,7 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
     })
     
     doc = frappe.get_doc("NJQCA", docname)
+    newly_created_rfq_serial_no = _ensure_rfq_serial_no(doc)
 
     ignore_part_validation = frappe.db.get_value('Inspection Type', doc.inspection_type, 'ignore_part_validation')
     if not int(ignore_part_validation):
@@ -2500,6 +2659,15 @@ def after_save_njqca(docname, component_serial_no=None, brand=None, model=None, 
         njqca_qi_trace("after_save_njqca_exception", docname, {
             "traceback": frappe.get_traceback()
         }, error=True)
+
+        # QI creation failed after we consumed an RFQ quota slot this
+        # call -- release it rather than leaving a phantom Serial No
+        # sitting against a session that produced no usable QI. Only
+        # fires when THIS call created the serial (see
+        # _ensure_rfq_serial_no's docstring) -- a serial that already
+        # existed from an earlier successful call is never touched.
+        if newly_created_rfq_serial_no:
+            _release_rfq_serial_no(docname, newly_created_rfq_serial_no)
 
         frappe.throw(f"Error in after_save_njqca: {frappe.get_traceback()}")
 
@@ -3652,6 +3820,116 @@ def get_model(manufacturer_model=None, item_group=None, brand=None):
 
     return model_list
 
+
+def _get_change_model_candidates(item_group=None):
+    return frappe.get_all(
+        "Models", filters={"active": 1}, pluck="name", order_by="name"
+    )
+
+
+def _get_model_parameter_rows(models):
+    if not models:
+        return []
+
+    return frappe.get_all(
+        "Parameter Specification",
+        filters={
+            "parent": ["in", models],
+            "parenttype": "Models",
+            "parentfield": "parameter_specification",
+        },
+        fields=["parent", "parameter", "value", "idx"],
+        order_by="parent, idx",
+    )
+
+
+@frappe.whitelist()
+def get_model_configuration_for_change(model, item_group=None):
+    if not model or not frappe.db.exists("Models", model):
+        frappe.throw(_("Please select a valid current Model."))
+
+    current_rows = _get_model_parameter_rows([model])
+    if not current_rows:
+        return []
+
+    candidates = _get_change_model_candidates(item_group)
+    if model not in candidates:
+        candidates.append(model)
+
+    candidate_rows = _get_model_parameter_rows(candidates)
+    options_by_parameter = {}
+    for row in candidate_rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if parameter and value:
+            options_by_parameter.setdefault(parameter, set()).add(value)
+
+    value_field = frappe.get_meta("Parameter Specification").get_field("value")
+    configured_options = {
+        option.strip()
+        for option in (value_field.options or "").splitlines()
+        if option.strip()
+    }
+
+    configuration = []
+    seen_parameters = set()
+    for row in current_rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if not parameter or parameter in seen_parameters:
+            continue
+        seen_parameters.add(parameter)
+        options = set(options_by_parameter.get(parameter, set()))
+        options.update(configured_options)
+        if value:
+            options.add(value)
+        configuration.append({
+            "parameter": parameter,
+            "value": value,
+            "options": [value] + sorted(option for option in options if option != value),
+        })
+
+    return configuration
+
+
+@frappe.whitelist()
+def find_models_by_configuration(configuration, item_group=None):
+    if isinstance(configuration, str):
+        configuration = frappe.parse_json(configuration)
+    if not isinstance(configuration, list) or not configuration:
+        frappe.throw(_("Parameter configuration is required."))
+
+    selected = {}
+    for row in configuration:
+        parameter = (row.get("parameter") or "").strip()
+        value = (row.get("value") or "").strip()
+        if not parameter or not value:
+            frappe.throw(_("Every parameter must have a value."))
+        if parameter in selected:
+            frappe.throw(_("Duplicate parameter found: {0}").format(parameter))
+        selected[parameter] = value
+
+    candidates = _get_change_model_candidates(item_group)
+    rows = _get_model_parameter_rows(candidates)
+    configurations_by_model = {model: {} for model in candidates}
+    duplicate_parameters = set()
+    for row in rows:
+        parameter = (row.parameter or "").strip()
+        value = (row.value or "").strip()
+        if not parameter or not value:
+            continue
+        model_configuration = configurations_by_model[row.parent]
+        if parameter in model_configuration:
+            duplicate_parameters.add(row.parent)
+        model_configuration[parameter] = value
+
+    return [
+        model
+        for model in candidates
+        if model not in duplicate_parameters
+        and configurations_by_model.get(model) == selected
+    ]
+
 @frappe.whitelist()
 def get_part_item_code_filtered_data(item_group):
     get_part_item_code_query = """SELECT name FROM `tabItem` 
@@ -4277,6 +4555,41 @@ def set_fail_for_empty_reliability_params(doc):
 def get_item_code_from_rfq_id(rfq_id):
     item_code_from_rfq_id_query = """SELECT item_code FROM `tabRequest for Quotation Item` where parent = %s"""
     return frappe.db.sql(item_code_from_rfq_id_query, rfq_id, as_dict=1)
+
+@frappe.whitelist()
+def get_rfq_item_availability(rfq_id):
+    """
+    Returns each distinct item_code on this RFQ -- for the multi-spec
+    picker (RfqItemSelectScreen) to let a technician choose which spec
+    this machine matches when an RFQ has more than one. No qty/used/
+    remaining math anymore: serial creation is deduplicated per
+    (bios_serialno, rfq_id) instead (see _ensure_rfq_serial_no and
+    overrides/serial_no.py's validate_rfq_qty), not gated on quantity,
+    so every item_code here is always a valid choice regardless of
+    how many machines have already been tested against this RFQ.
+
+    Proper whitelisted method rather than a generic client API call
+    (frappe.client.get_list, /api/resource/<doctype>) because "Request
+    for Quotation Item" is a child-table doctype (istable=1) -- Frappe
+    blocks list queries against child tables through every generic
+    client-facing API by design. frappe.get_list() works fine here
+    because this runs server-side, with no API layer in between --
+    same reason get_item_code_from_rfq_id right above this already
+    works via frappe.db.sql instead of a generic list call.
+    """
+    lines = frappe.get_all(
+        "Request for Quotation Item",
+        filters={"parent": rfq_id},
+        fields=["item_code"],
+    )
+    seen = set()
+    result = []
+    for line in lines:
+        if not line.item_code or line.item_code in seen:
+            continue
+        seen.add(line.item_code)
+        result.append({"item_code": line.item_code})
+    return result
 
 # Configuration for parameter type detection
 PARAMETER_TYPE_MAPPING = {
@@ -8389,3 +8702,56 @@ def link_ext_to_nj_serial(ext_serial_no, nj_serial_no, njqca_name):
     )
 
     return {"success": True}
+
+
+
+@frappe.whitelist()
+def get_my_rfq_options():
+    """
+    Called by the Flutter app right after login.
+
+    Checks the Employee's own Supplier field (map_to):
+      - If set: this employee is currently marked for external QC.
+        mode="external", supplier=<locked-in value>, rfqs=<that supplier's RFQs>
+      - If not set: normal NewJaisa employee.
+        mode="internal", suppliers=[...] for them to pick from
+    """
+    user = frappe.session.user
+
+    supplier = frappe.db.get_value(
+        "Employee", {"user_id": user, "status": "Active"}, "map_to"
+    )
+
+    if supplier:
+        rows = frappe.get_all(
+            "Request for Quotation Supplier",
+            filters={"supplier": supplier},
+            fields=["parent"]
+        )
+        rfqs = [r.parent for r in rows]
+        return {"allowed": True, "mode": "external", "supplier": supplier, "rfqs": rfqs}
+
+    rows = frappe.get_all(
+        "Request for Quotation Supplier",
+        fields=["supplier"],
+        distinct=True
+    )
+    suppliers = sorted(set(r.supplier for r in rows if r.supplier))
+    return {"allowed": True, "mode": "internal", "suppliers": suppliers}
+
+
+@frappe.whitelist()
+def get_rfqs_for_supplier(supplier):
+    """
+    Called after an internal (NewJaisa) user picks a Supplier from the
+    dropdown. Returns that supplier's RFQ list.
+    """
+    if not supplier:
+        return {"rfqs": []}
+
+    rows = frappe.get_all(
+        "Request for Quotation Supplier",
+        filters={"supplier": supplier},
+        fields=["parent"]
+    )
+    return {"rfqs": [r.parent for r in rows]}

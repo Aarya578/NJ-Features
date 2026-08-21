@@ -77,6 +77,7 @@ class CustomSalesInvoice(SalesInvoice):
                 frappe.msgprint(f"Sales Order {so.name} is closed as full qty refunded.")
 
     def validate(self):
+        self.set_linked_sales_order_advances()
         super(CustomSalesInvoice, self).validate()
         # if self.is_return==1 and frappe.db.get_value("Sales Invoice",self.return_against,"status")!="Paid":
         #     frappe.throw(f"Sales Invoice:{self.return_against} is not paid")
@@ -86,6 +87,53 @@ class CustomSalesInvoice(SalesInvoice):
             self.validate_einvoice_fields()
         else:
             return  # Skip validation if e-invoicing is not enabled
+
+    def set_linked_sales_order_advances(self):
+        """Fetch submitted advances linked to the Sales Orders in this invoice."""
+        if self.is_return or self.is_pos:
+            return
+
+        sales_orders = {item.sales_order for item in self.items if item.sales_order}
+        if not sales_orders:
+            return
+
+        advance_entries = self.get_advance_entries(include_unallocated=False)
+        if not advance_entries:
+            return
+
+        existing_rows = {
+            (row.reference_type, row.reference_name, row.reference_row)
+            for row in self.advances
+        }
+        allocated_amount = sum(flt(row.allocated_amount) for row in self.advances)
+        if self.party_account_currency == self.company_currency:
+            invoice_amount = flt(self.base_rounded_total or self.base_grand_total)
+        else:
+            invoice_amount = flt(self.rounded_total or self.grand_total)
+
+        for entry in advance_entries:
+            entry_key = (entry.reference_type, entry.reference_name, entry.reference_row)
+            if entry.against_order not in sales_orders or entry_key in existing_rows:
+                continue
+
+            remaining_amount = max(invoice_amount - allocated_amount, 0)
+            if not remaining_amount:
+                break
+
+            amount = flt(entry.amount)
+            amount_to_allocate = min(amount, remaining_amount)
+            self.append("advances", {
+                "reference_type": entry.reference_type,
+                "reference_name": entry.reference_name,
+                "reference_row": entry.reference_row,
+                "remarks": entry.remarks,
+                "advance_amount": amount,
+                "allocated_amount": amount_to_allocate,
+                "ref_exchange_rate": flt(entry.exchange_rate),
+            })
+            existing_rows.add(entry_key)
+            allocated_amount += amount_to_allocate
+
     def before_submit(self):
         """ Prevent stock update on submission, but retain packed items """
         self.update_stock = False
@@ -1046,6 +1094,64 @@ def deviding_tax_chargese(doc, method=None):
             tax_amount = flt(allocated_tax_by_account[tax.account_head])
             tax.tax_amount = tax_amount
             tax.base_tax_amount = round(tax_amount * conversion_rate, 2)
+
+
+SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE = (
+    "Standard Shipping - NJ",
+    "PG Surcharge - NJ",
+)
+
+
+def add_missing_sales_order_tax_accounts(doc, method=None):
+    """Restore selected tax rows that are present in a linked SO but missing in the SI."""
+    if cint(doc.is_return):
+        return
+
+    sales_orders = list(dict.fromkeys(
+        item.sales_order for item in doc.items if item.sales_order
+    ))
+    if not sales_orders:
+        return
+
+    existing_accounts = {
+        tax.account_head for tax in doc.taxes if tax.account_head
+    }
+    missing_accounts = set(SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE) - existing_accounts
+    if not missing_accounts:
+        return
+
+    rows_to_add = {}
+    for sales_order in sales_orders:
+        for tax in frappe.get_doc("Sales Order", sales_order).taxes:
+            if tax.account_head in missing_accounts and tax.account_head not in rows_to_add:
+                rows_to_add[tax.account_head] = tax
+
+        if missing_accounts.issubset(rows_to_add):
+            break
+
+    if not rows_to_add:
+        return
+
+    child_table_fields = frappe.get_meta("Sales Invoice").get_field("taxes").options
+    valid_fields = set(frappe.get_meta(child_table_fields).get_valid_columns())
+    excluded_fields = {
+        "name", "owner", "creation", "modified", "modified_by",
+        "parent", "parentfield", "parenttype", "idx", "docstatus",
+    }
+
+    for account_head in SALES_ORDER_TAX_ACCOUNTS_TO_RESTORE:
+        source_tax = rows_to_add.get(account_head)
+        if not source_tax:
+            continue
+
+        tax_values = {
+            fieldname: value
+            for fieldname, value in source_tax.as_dict().items()
+            if fieldname in valid_fields and fieldname not in excluded_fields
+        }
+        doc.append("taxes", tax_values)
+
+    doc.calculate_taxes_and_totals()
 
 
 def send_invoice_email(doc, method=None):

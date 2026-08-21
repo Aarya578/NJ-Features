@@ -158,7 +158,10 @@ def criticalog_awb_number_tracking_status():
                 
                 # Update remark_status
                 if remark:
-                    frappe.db.set_value("Delivery Charges", doc.name, "remark_status", remark, update_modified=False)
+                    values = {"remark_status": remark}
+                    if remark != doc.remark_status:
+                        values["shopify_status_synced"] = 0
+                    frappe.db.set_value("Delivery Charges", doc.name, values, update_modified=False)
                     print(f"[{doc.name}] Updated remark_status to: {remark}")
                 
                 # Get traversal data
@@ -218,26 +221,77 @@ def criticalog_awb_number_tracking_status():
         except Exception as e:
             print(f"[{doc.name}] Error: {str(e)}")
             frappe.log_error(frappe.get_traceback(), f"Tracking Status Error - {doc.name}")
+
+
+AWB_TRACKING_BATCH_SIZE = 20
+AWB_TRACKING_JOB_TIMEOUT = 1200
+AWB_TRACKING_RUNNING_KEY = "awb_number_tracking_status_running"
+
+
 @frappe.whitelist()
 def awb_number_tracking_status():
+    """Scheduler entry point: start one non-overlapping tracking batch chain."""
+    cache = frappe.cache()
+    if cache.get_value(AWB_TRACKING_RUNNING_KEY):
+        print("AWB tracking is already queued or running; skipping this scheduler run.")
+        return {"queued": False, "reason": "already_running"}
+
+    # The expiry is a crash safeguard. Each batch refreshes it while the chain is active.
+    cache.set_value(AWB_TRACKING_RUNNING_KEY, 1, expires_in_sec=12 * 60 * 60)
+    try:
+        frappe.enqueue(
+            method="nj_features.nj_features.doctype.delivery_charges.delivery_charges.process_awb_tracking_batch",
+            queue="long",
+            timeout=AWB_TRACKING_JOB_TIMEOUT,
+            job_name="shiprocket_awb_tracking_batch",
+            cursor=None,
+            batch_size=AWB_TRACKING_BATCH_SIZE,
+        )
+    except Exception:
+        cache.delete_value(AWB_TRACKING_RUNNING_KEY)
+        raise
+
+    return {"queued": True, "batch_size": AWB_TRACKING_BATCH_SIZE}
+
+
+def process_awb_tracking_batch(cursor=None, batch_size=AWB_TRACKING_BATCH_SIZE):
+    """Process one batch and enqueue the next batch using the document-name cursor."""
     import time
     from datetime import datetime, timedelta
     import requests
 
+    batch_size = max(1, min(int(batch_size), 100))
+    filters = {
+        "awb_number": ["!=", ""],
+        "remark_status": ["!=", "Delivered"],
+        "courier_service": ["!=", "CriticaLog"]
+    }
+    if cursor:
+        filters["name"] = [">", cursor]
+
     docs = frappe.get_all(
         "Delivery Charges",
-        filters={
-            "awb_number": ["!=", ""],
-            "remark_status": ["!=", "Delivered"],
-            "courier_service": ["!=", "CriticaLog"]
-        },
-        fields=["name", "awb_number", "remark_status", "courier_service"]
+        filters=filters,
+        fields=["name", "awb_number", "remark_status", "courier_service"],
+        order_by="name asc",
+        limit_page_length=batch_size,
     )
 
-    print(f"Total records to process: {len(docs)}")
+    print(f"AWB tracking batch: {len(docs)} records after cursor {cursor or '<start>'}")
 
-    auth_token = get_auth_token().get("token")
+    if not docs:
+        frappe.cache().delete_value(AWB_TRACKING_RUNNING_KEY)
+        return {"success": 0, "errors": 0, "rate_limits": 0, "total": 0, "complete": True}
+
+    try:
+        auth_response = get_auth_token() or {}
+        auth_token = auth_response.get("token")
+    except Exception:
+        frappe.cache().delete_value(AWB_TRACKING_RUNNING_KEY)
+        raise
+
     if not auth_token:
+        frappe.cache().delete_value(AWB_TRACKING_RUNNING_KEY)
         frappe.throw("Authentication token could not be retrieved from Shiprocket.")
 
     headers = {
@@ -304,11 +358,15 @@ def awb_number_tracking_status():
             print(f"[{doc.name}] API Data - current_status: {current_status}, latest_activity: {latest_activity}, latest_location: {latest_location}")
 
             delivery_doc = frappe.get_doc("Delivery Charges", doc.name)
+            previous_status = delivery_doc.remark_status
 
             if current_status:
                 delivery_doc.remark_status = current_status
             elif latest_activity:
                 delivery_doc.remark_status = latest_activity
+
+            if delivery_doc.remark_status != previous_status:
+                delivery_doc.shopify_status_synced = 0
 
             if delivered_date:
                 delivery_doc.delivered_date = delivered_date
@@ -437,16 +495,34 @@ def awb_number_tracking_status():
             error_count += 1
             continue
 
-    print(f"Processing completed. Success: {success_count}, Errors: {error_count}, Rate Limits: {rate_limit_count}, Total: {len(docs)}")
-    return {
+    result = {
         "success": success_count,
         "errors": error_count,
         "rate_limits": rate_limit_count,
-        "total": len(docs)
+        "total": len(docs),
+        "complete": len(docs) < batch_size,
     }
 
+    if len(docs) == batch_size:
+        frappe.cache().set_value(AWB_TRACKING_RUNNING_KEY, 1, expires_in_sec=12 * 60 * 60)
+        frappe.enqueue(
+            method="nj_features.nj_features.doctype.delivery_charges.delivery_charges.process_awb_tracking_batch",
+            queue="long",
+            timeout=AWB_TRACKING_JOB_TIMEOUT,
+            job_name="shiprocket_awb_tracking_batch",
+            cursor=docs[-1].name,
+            batch_size=batch_size,
+            enqueue_after_commit=True,
+        )
+        result["next_cursor"] = docs[-1].name
+    else:
+        frappe.cache().delete_value(AWB_TRACKING_RUNNING_KEY)
+
+    print(f"AWB tracking batch completed: {result}")
+    return result
+
 # def update_status_in_shopify():
-#     token = "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"
+#     token = "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"
 #     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 
 #     # Fetch all Delivery Charges
@@ -578,7 +654,7 @@ def awb_number_tracking_status():
 #         dc = frappe.get_doc("Delivery Charges", dc_name)
 
 #         # 🔴 Hardcoded token (testing only)
-#         token = "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"
+#         token = "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"
 
 #         base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 
@@ -712,22 +788,66 @@ def awb_number_tracking_status():
 #     except Exception as e:
 #         print(f"[{dc_name}] Unexpected error: {str(e)}")
 #         frappe.logger().error(f"[{dc_name}] Unexpected error: {str(e)}")
-def update_status_in_shopify():
-    token = "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"
-    base_url = "https://newjaisa.myshopify.com/admin/api/2025-07"
+SHOPIFY_STATUS_BATCH_SIZE = 20
+SHOPIFY_STATUS_JOB_TIMEOUT = 1200
+SHOPIFY_STATUS_RUNNING_KEY = "update_status_in_shopify_running"
 
-    BATCH_SIZE = 50
+
+def update_status_in_shopify():
+    """Scheduler entry point: queue one non-overlapping Shopify sync chain."""
+    cache = frappe.cache()
+    if cache.get_value(SHOPIFY_STATUS_RUNNING_KEY):
+        print("Shopify status sync is already queued or running; skipping this scheduler run.")
+        return {"queued": False, "reason": "already_running"}
+
+    cache.set_value(SHOPIFY_STATUS_RUNNING_KEY, 1, expires_in_sec=12 * 60 * 60)
+    try:
+        frappe.enqueue(
+            method="nj_features.nj_features.doctype.delivery_charges.delivery_charges.process_shopify_status_batch",
+            queue="long",
+            timeout=SHOPIFY_STATUS_JOB_TIMEOUT,
+            job_name="delivery_charges_shopify_status_batch",
+            cursor=None,
+            batch_size=SHOPIFY_STATUS_BATCH_SIZE,
+        )
+    except Exception:
+        cache.delete_value(SHOPIFY_STATUS_RUNNING_KEY)
+        raise
+
+    return {"queued": True, "batch_size": SHOPIFY_STATUS_BATCH_SIZE}
+
+
+def process_shopify_status_batch(cursor=None, batch_size=SHOPIFY_STATUS_BATCH_SIZE):
+    shopify_settings = frappe.get_single("NJ Inventory Settings")
+    token = shopify_settings.token
+    shop = (shopify_settings.shop or "").strip().rstrip("/")
+    if not token or not shop:
+        frappe.cache().delete_value(SHOPIFY_STATUS_RUNNING_KEY)
+        frappe.throw("Shopify shop or access token is missing in NJ Inventory Settings.")
+
+    if not shop.startswith(("http://", "https://")):
+        shop = f"https://{shop}"
+    base_url = f"{shop}/admin/api/2026-10"
+
+    batch_size = max(1, min(int(batch_size), 100))
     ALREADY_DONE_STATUSES = {"delivered"}
+    filters = {"remark_status": ["!=", ""], "shopify_status_synced": 0}
+    if cursor:
+        filters["name"] = [">", cursor]
 
     delivery_charges = frappe.get_all(
         "Delivery Charges",
-        filters={"remark_status": ["!=", ""], "shopify_status_synced": 0},
+        filters=filters,
         fields=["name", "sales_order", "remark_status"],
-        limit=BATCH_SIZE,
-        order_by="modified asc"
+        limit_page_length=batch_size,
+        order_by="name asc"
     )
 
-    print(f"Total Delivery Charges to process: {len(delivery_charges)}")
+    print(f"Shopify status batch: {len(delivery_charges)} records after cursor {cursor or '<start>'}")
+
+    if not delivery_charges:
+        frappe.cache().delete_value(SHOPIFY_STATUS_RUNNING_KEY)
+        return {"processed": 0, "complete": True}
 
     # Pre-fetch all Shopify status mappings ONCE
     logistics_settings = frappe.get_doc("Logistics Settings")
@@ -843,4 +963,24 @@ def update_status_in_shopify():
             frappe.logger().error(f"[{dc.name}] Request error: {str(e)}")
             continue
 
-    print(f"\n=== update_status_in_shopify completed ===")
+    result = {
+        "processed": len(delivery_charges),
+        "complete": len(delivery_charges) < batch_size,
+    }
+    if len(delivery_charges) == batch_size:
+        frappe.cache().set_value(SHOPIFY_STATUS_RUNNING_KEY, 1, expires_in_sec=12 * 60 * 60)
+        frappe.enqueue(
+            method="nj_features.nj_features.doctype.delivery_charges.delivery_charges.process_shopify_status_batch",
+            queue="long",
+            timeout=SHOPIFY_STATUS_JOB_TIMEOUT,
+            job_name="delivery_charges_shopify_status_batch",
+            cursor=delivery_charges[-1].name,
+            batch_size=batch_size,
+            enqueue_after_commit=True,
+        )
+        result["next_cursor"] = delivery_charges[-1].name
+    else:
+        frappe.cache().delete_value(SHOPIFY_STATUS_RUNNING_KEY)
+
+    print(f"Shopify status batch completed: {result}")
+    return result

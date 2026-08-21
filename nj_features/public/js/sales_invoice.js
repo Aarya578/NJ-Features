@@ -234,11 +234,6 @@ function apply_allocated(frm) {
     const gt = flt(frm.doc.grand_total);
     let remaining = gt;
 
-    // Prevent server-side validate from recalculating advances and overriding manual allocation.
-    if (Object.prototype.hasOwnProperty.call(frm.doc, "allocate_advances_automatically")) {
-        frm.doc.allocate_advances_automatically = 0;
-    }
-
     (frm.doc.advances || []).forEach(row => {
         const max_alloc = flt(row.advance_amount || 0);
         const next_alloc = Math.max(0, Math.min(max_alloc, remaining));

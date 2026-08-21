@@ -55,8 +55,8 @@ def trigger_inventory_sync_from_sales_order(doc, method=None):
 
         enqueue(
             method=create_rq_doc_by_item_codes,
-            queue="long",
-            timeout=1200,
+            queue="short",
+            timeout=300,
             job_name=f"shopify_inventory_sync_so_{doc.name}",
             item_codes=list(item_codes),
             sales_order=doc.name
@@ -312,21 +312,29 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                 INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
                 LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
                 LEFT JOIN `tabItem` it ON it.item_code = pb.item_code
+                LEFT JOIN `tabItem` main_it ON main_it.item_code = soi.item_code
                 WHERE
                     so.status NOT IN ('Closed', 'Completed', 'Cancelled')
                     AND so.docstatus = 1
-                    AND so.creation > CURDATE() - INTERVAL 50 DAY
-                    AND soi.item_group IN ('Laptops','Chromebooks')
+                    AND so.creation > CURDATE() - INTERVAL 100 DAY
                     AND so.sale_type != 'Amazon'
-                    AND (pb.item_code IS NULL OR it.item_group IN ('Laptops', 'Chromebooks'))
+                    AND (
+                        soi.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                    )
             ) AS so_data
             LEFT JOIN (
                 SELECT dni.against_sales_order, dni.item_code, SUM(dni.qty) AS qty
                 FROM `tabDelivery Note Item` dni
+                LEFT JOIN `tabItem` main_it ON main_it.item_code = dni.item_code
                 WHERE
                     dni.docstatus = 1 AND dni.qty > 0
-                    AND dni.creation >= CURDATE() - INTERVAL 50 DAY
-                    AND dni.item_group IN ('Laptops', 'Chromebooks')
+                    AND dni.creation >= CURDATE() - INTERVAL 100 DAY
+                    AND (
+                        dni.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                    )
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data
                 ON so_data.sales_order = dn_data.against_sales_order
@@ -539,6 +547,7 @@ def stage_targeted_variants(variant_ids, settings):
                 pb.shopify_variant_id,
                 MAX(i.variant_of) AS parent1,
                 MAX(COALESCE(iva.attribute_value, '')) AS processor,
+                GROUP_CONCAT(DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) SEPARATOR '||') AS parent_keys,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
@@ -578,12 +587,12 @@ def stage_targeted_variants(variant_ids, settings):
                 continue
 
             # Rule 1: Parent Override
-            if flags["enable_parent_override"] and row.total_actual_qty < flags["parent_threshold"]:
-                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
-                parent_qty = parent_qty_dict.get(combined_key)
-                if parent_qty is not None and parent_qty > flags["parent_threshold"]:
-                    row.total_actual_qty = parent_qty
-                    update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "
+            if flags["enable_parent_override"] and row.total_actual_qty <= flags["parent_threshold"]:
+                parent_keys = [k.strip().lower() for k in (getattr(row, "parent_keys", "") or "").split("||") if k.strip()]
+                combined_parent_qty = sum(parent_qty_dict.get(k, 0.0) or 0.0 for k in set(parent_keys))
+                if combined_parent_qty > flags["parent_threshold"]:
+                    row.total_actual_qty = combined_parent_qty
+                    update_status += f"[ParentOverride<={flags['parent_threshold']}→{combined_parent_qty}] "
 
             # Rule 2: Warranty Rule
             if flags["enable_warranty"] and 0 <= row.total_actual_qty <= flags["warranty_threshold"]:
@@ -594,9 +603,9 @@ def stage_targeted_variants(variant_ids, settings):
                         LEFT JOIN `tabProduct Bundle Item` pdi ON pdi.parent = pd.name
                         WHERE pd.shopify_variant_id = %s
                         GROUP BY pdi.parent HAVING COUNT(pdi.parent) > 0
-                    ) AND item_code LIKE '%%additional%%'
-                    AND item_code != 'Additional 6 Months warranty';
+                    ) AND item_code LIKE '%%additional%%';
                 """, (row.shopify_variant_id,), as_dict=True)
+
 
                 if add_item:
                     row.total_actual_qty = 0
@@ -746,7 +755,7 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
                 }
 
                 resp = post_shopify_api(update_url, headers, payload)
-                data = resp.json()
+                data = resp.json()  
 
                 if resp.status_code == 200:
                     frappe.db.set_value("NJ Inventory Sync Main", row.name, {

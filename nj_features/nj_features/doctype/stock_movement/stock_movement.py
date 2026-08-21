@@ -82,7 +82,7 @@ class StockMovement(Document):
     def on_submit(self):
         try:
             # self.deparement_qty_check()
-            # check_warehouse_qty(self.name)
+            check_warehouse_qty(self.name)
             self.time_stamp_update()
             if self.get("make_supplier_return"):
                 self.validate_supplier_return()
@@ -836,30 +836,39 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             warehouse_sla_days = int(warehouse_sla)
             warehouse_aging = frappe.db.sql(
                 f"""
-                SELECT
-                    s.name AS serial_no,
-                    s.warehouse,
-                    FLOOR(
-                        (
+                    SELECT
+                        s.name AS serial_no,
+                        s.warehouse,
+                        GREATEST(
                             TIMESTAMPDIFF(
-                                HOUR,
+                                DAY,
                                 TIMESTAMP(s.purchase_date, s.purchase_time),
                                 NOW()
-                            )
-                            -
-                            (
-                                (
-                                    DATEDIFF(CURDATE(), s.purchase_date)
-                                    + WEEKDAY(s.purchase_date) + 1
-                                ) DIV 7
-                            ) * 24
-                        ) / 24
-                    ) AS max_age_days
-                FROM `tabSerial No` s
-                WHERE s.warehouse = %s
-                    AND s.item_group IN ({sla_item_group_placeholders})
-                ORDER BY max_age_days DESC
-                LIMIT 1
+                            ) - COUNT(DISTINCT h.holiday_date),
+                            0
+                        ) AS max_age_days
+
+                    FROM `tabSerial No` s
+
+                    LEFT JOIN `tabHoliday` h
+                        ON h.parent = 'Holiday List 2026'
+                        AND h.holiday_date > DATE(TIMESTAMP(s.purchase_date, s.purchase_time))
+                        AND h.holiday_date <= CURDATE()
+
+                    WHERE
+                        s.warehouse = %s
+                        AND s.item_group IN ({sla_item_group_placeholders})
+
+                    GROUP BY
+                        s.name,
+                        s.warehouse,
+                        s.purchase_date,
+                        s.purchase_time
+
+                    ORDER BY
+                        max_age_days DESC
+
+                    LIMIT 1
                 """,
                 tuple([t_warehouse] + sla_item_groups),
                 as_dict=True
@@ -898,7 +907,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     AND h.holiday_date <= CURDATE()
                 WHERE
                     w.department = %s
-                    AND w.warehouse_type != 'Employee Personal Warehouse'
+                    AND (w.warehouse_type IS NULL
+                        OR w.warehouse_type = ''
+                        OR w.warehouse_type != 'Employee Personal Warehouse')
                     AND sn.item_group IN ({sla_item_group_placeholders})
                     AND sn.stock_enty_date_and_time IS NOT NULL
                 GROUP BY
@@ -1130,8 +1141,9 @@ def validate_all_item_groups_sla(
                 AND holiday.holiday_date <= CURDATE()
             WHERE
                 warehouse.department = %s
-                AND warehouse.warehouse_type !=
-                    'Employee Personal Warehouse'
+                AND (w.warehouse_type IS NULL
+                    OR w.warehouse_type = ''
+                    OR w.warehouse_type != 'Employee Personal Warehouse')
                 AND sn.item_group = %s
                 AND sn.status = 'Active'
                 AND sn.stock_enty_date_and_time IS NOT NULL
@@ -1540,7 +1552,28 @@ def check_bag_list_validation(serial_doc, error_messages, department_doc):
     if serial_doc and department_doc.get("check_for_bag_list"):
         bag_list = serial_doc.get("bag_list", [])
         
-        valid_items = [item for item in bag_list if item.get("quantity", 0) > 0]
+        valid_items = []
+        for item in bag_list:
+            if not (item.get("quantity", 0) > 0 and frappe.parse_json(item.get("is_available")) in [1, True, "1"]):
+                continue
+            
+            comp_sn = item.get("serial_no")
+            if comp_sn:
+                status, wh = frappe.db.get_value("Serial No", comp_sn, ["status", "warehouse"]) or (None, None)
+                if status != "Active" or not wh:
+                    if item.get("name"):
+                        frappe.db.set_value("Bag List", item.get("name"), {"is_available": 0, "quantity": 0}, update_modified=False)
+                    continue
+            else:
+                laptop_wh = serial_doc.get("warehouse")
+                if laptop_wh and item.get("item"):
+                    avail = frappe.db.get_value("Bin", {"item_code": item.get("item"), "warehouse": laptop_wh}, "actual_qty") or 0.0
+                    if avail < (item.get("quantity") or 1):
+                        if item.get("name"):
+                            frappe.db.set_value("Bag List", item.get("name"), {"is_available": 0, "quantity": 0}, update_modified=False)
+                        continue
+
+            valid_items.append(item)
         
         if valid_items:
             item_groups = list({item.get("item_group") for item in valid_items if item.get("item_group")})

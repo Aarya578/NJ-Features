@@ -524,7 +524,7 @@ def create_rq_doc():
             # =====================================================
             if (
                 flags["enable_parent_override"]
-                and row.total_actual_qty < flags["parent_threshold"]
+                and row.total_actual_qty <= flags["parent_threshold"]
             ):
                 combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
                 parent_qty = parent_qty_dict.get(combined_key)
@@ -532,7 +532,7 @@ def create_rq_doc():
 
                 if (
                     parent_qty is not None
-                    and parent_qty > flags["parent_threshold"]
+                    and parent_qty >= flags["parent_threshold"]
                 ):
                     row.total_actual_qty = parent_qty
                     logger.debug(f"row.total_actual_qty================== {row.total_actual_qty}")

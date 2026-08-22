@@ -1,3 +1,5 @@
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import flt
@@ -46,9 +48,12 @@ def get_supplier_rfq_dashboard(supplier, rfq):
         """
         SELECT
             rfq.name AS rfq,
+            rfq.company,
             rfq.transaction_date,
             rfq.status,
             rfq_item.item_codes,
+            rfq_item.required_date,
+            rfq_item.total_items,
             rfq_item.total_qty,
             COALESCE(njqca.submitted_count, 0) AS submitted_count,
             COALESCE(njqca.serial_nos, '') AS serial_nos,
@@ -61,6 +66,8 @@ def get_supplier_rfq_dashboard(supplier, rfq):
             SELECT
                 parent,
                 GROUP_CONCAT(DISTINCT item_code ORDER BY item_code SEPARATOR ', ') AS item_codes,
+                MAX(schedule_date) AS required_date,
+                COUNT(name) AS total_items,
                 SUM(qty) AS total_qty
             FROM `tabRequest for Quotation Item`
             WHERE parent = %(rfq)s
@@ -78,8 +85,6 @@ def get_supplier_rfq_dashboard(supplier, rfq):
                 docstatus = 1
                 AND rfq_id IS NOT NULL
                 AND rfq_id != ''
-                AND serial_no IS NOT NULL
-                AND serial_no != ''
                 AND rfq_id = %(rfq)s
             GROUP BY rfq_id
         ) njqca
@@ -106,16 +111,205 @@ def get_supplier_rfq_dashboard(supplier, rfq):
         total_submitted += row.submitted_count
 
     quality_rows = get_supplier_quality_summary(rfq)
+    model_rows = get_rfq_model_rows(rfq)
+    function_tested = frappe.db.sql(
+        """
+        SELECT COUNT(DISTINCT qi.name)
+        FROM `tabNJQCA` njqca
+        INNER JOIN `tabNJ Quality Inspection` qi
+            ON qi.name = njqca.qi_name
+        WHERE njqca.rfq_id = %(rfq)s
+          AND njqca.docstatus = 1
+          AND qi.docstatus = 1
+        """,
+        {"rfq": rfq},
+    )[0][0]
+    rfq_detail = rfq_rows[0] if rfq_rows else frappe._dict()
+    currency = (
+        frappe.get_cached_value("Company", rfq_detail.company, "default_currency")
+        if rfq_detail.company
+        else frappe.defaults.get_global_default("currency")
+    )
 
     return {
         "supplier": supplier,
+        "rfq": rfq_detail.rfq,
+        "company": rfq_detail.company,
+        "status": rfq_detail.status,
+        "rfq_date": rfq_detail.transaction_date,
+        "required_date": rfq_detail.required_date,
+        "total_items": rfq_detail.total_items or 0,
+        "currency": currency,
         "total_rfqs": len(rfq_rows),
         "total_qty": total_qty,
         "total_submitted": total_submitted,
+        "function_tested": function_tested,
         "completion_percent": flt((total_submitted / total_qty) * 100, 2) if total_qty else 0,
         "rows": rfq_rows,
         "quality_rows": quality_rows,
+        "model_rows": model_rows,
     }
+
+
+def get_rfq_model_rows(rfq):
+    rfq_items = frappe.get_all(
+        "Request for Quotation Item",
+        filters={"parent": rfq, "parenttype": "Request for Quotation"},
+        fields=["name", "item_code", "qty"],
+        order_by="idx asc",
+    )
+    rows = []
+    deductions_by_group = get_deductions_by_item(rfq)
+    submitted_njqca_items = set(frappe.get_all(
+        "NJQCA",
+        filters={"rfq_id": rfq, "docstatus": 1},
+        pluck="item_code",
+    ))
+
+    for rfq_item in rfq_items:
+        item = frappe.db.get_value(
+            "Item",
+            rfq_item.item_code,
+            ["item_group", "variant_of"],
+            as_dict=True,
+        ) or frappe._dict()
+        item_template = item.variant_of or rfq_item.item_code
+        item_wizards = frappe.get_all(
+            "Item Wizards",
+            filters={"item_template": item_template},
+            fields=["name", "brand", "model"],
+            order_by="docstatus desc, modified desc",
+            limit_page_length=1,
+        )
+        item_wizard = item_wizards[0] if item_wizards else frappe._dict()
+
+        attribute_rows = frappe.get_all(
+            "Item Variant Attribute",
+            filters={"parent": rfq_item.item_code},
+            fields=["attribute", "attribute_value"],
+            order_by="idx asc",
+        )
+        attributes = {
+            (row.attribute or "").strip().lower(): row.attribute_value or ""
+            for row in attribute_rows
+        }
+        display_size = ""
+        if item_wizard.name:
+            display_size = frappe.db.get_value(
+                "Items Attribute",
+                {"parent": item_wizard.name, "item_attribute": "Display Size"},
+                "attribute_value",
+            ) or ""
+        numeric_display = re.search(r"\d+(?:\.\d+)?", display_size)
+        model = " ".join(
+            value.strip()
+            for value in [item_wizard.brand or "", item_wizard.model or ""]
+            if value and value.strip()
+        )
+        qty = flt(rfq_item.qty)
+        grade_a_rate = get_grade_a_rate(attribute_rows, item.item_group)
+        deduction_per_unit = deductions_by_group.get(item.item_group, 0)
+        final_rate = (
+            flt(grade_a_rate) - flt(deduction_per_unit)
+            if grade_a_rate is not None else None
+        )
+
+        rows.append({
+            "rfq_item": rfq_item.name,
+            "item_code": rfq_item.item_code,
+            "type": item.item_group or "",
+            "model": model,
+            "processor": attributes.get("processor type1") or attributes.get("processor type") or "",
+            "ram": attributes.get("ram capacity") or "",
+            "ssd": attributes.get("storage capacity") or "",
+            "screen": numeric_display.group(0) if numeric_display else "",
+            "status": "Working" if rfq_item.item_code in submitted_njqca_items else "Not Working",
+            "qty": qty,
+            "grade_a_rate": grade_a_rate,
+            "deduction_per_unit": deduction_per_unit,
+            "final_rate": final_rate,
+            "line_total": qty * final_rate if final_rate is not None else None,
+        })
+
+    return rows
+
+
+def get_deductions_by_item(rfq):
+    """Return the average Grade D deduction for each RFQ item group.
+
+    Every submitted inspection linked through a submitted NJQCA contributes its
+    Grade D difference rates. The sum is averaged across the distinct serial
+    numbers that have at least one Grade D reading in that item group.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT
+            njqca.item_group,
+            COUNT(DISTINCT CASE
+                WHEN LOWER(TRIM(COALESCE(reading.grade, ''))) = 'grade d'
+                THEN NULLIF(TRIM(COALESCE(njqca.serial_no, qi.barcode)), '')
+            END) AS serial_count,
+            SUM(
+                CASE
+                    WHEN LOWER(TRIM(COALESCE(reading.grade, ''))) = 'grade d'
+                    THEN COALESCE(reading.difference_rate, 0)
+                    ELSE 0
+                END
+            ) AS total_difference_rate
+        FROM `tabNJQCA` njqca
+        INNER JOIN `tabNJ Quality Inspection` qi
+            ON qi.name = njqca.qi_name
+            AND qi.docstatus = 1
+        LEFT JOIN `tabNj Quality Readings` reading
+            ON reading.parent = qi.name
+        WHERE njqca.rfq_id = %(rfq)s
+          AND njqca.docstatus = 1
+          AND njqca.item_group IS NOT NULL
+          AND njqca.item_group != ''
+        GROUP BY njqca.item_group
+        """,
+        {"rfq": rfq},
+        as_dict=True,
+    )
+
+    return {
+        row.item_group: flt(row.total_difference_rate) / row.serial_count
+        if row.serial_count else 0
+        for row in rows
+    }
+
+
+def get_grade_a_rate(attribute_rows, item_group):
+    normalized_group = (item_group or "").strip().lower()
+    if "desktop" in normalized_group:
+        price_field = "desktop_value"
+    elif "laptop" in normalized_group:
+        price_field = "laptop_value"
+    else:
+        return None
+
+    total = 0
+    for attribute in attribute_rows:
+        attribute_name = (attribute.attribute or "").strip()
+        attribute_value = (attribute.attribute_value or "").strip()
+        if not attribute_name or not attribute_value:
+            continue
+
+        price = frappe.db.sql(
+            """
+            SELECT `{price_field}` AS price
+            FROM `tabItem Attribute Value`
+            WHERE LOWER(TRIM(parent)) = LOWER(TRIM(%(attribute)s))
+              AND LOWER(TRIM(attribute_value)) = LOWER(TRIM(%(attribute_value)s))
+            LIMIT 1
+            """.format(price_field=price_field),
+            {"attribute": attribute_name, "attribute_value": attribute_value},
+            as_dict=True,
+        )
+        if price:
+            total += flt(price[0].price)
+
+    return total
 
 
 def is_supplier_rfq(supplier, rfq):

@@ -58,10 +58,10 @@ class NJProductionPlanning(Document):
     pass
 
 
-# =========================
-# Tunables / Constants
-# =========================
-SELLABLE_ITEM_GROUPS = {"Laptops", "Chromebooks", "MacBooks", "Laptops(Bundle)", "Chromebooks(Bundle)", "MacBooks(Bundle)"}
+SELLABLE_ITEM_GROUPS = {
+    "Laptops", "Chromebooks", "MacBooks", "Desktops", "AIO", "Full Set Desktops", "Chromeboxes",
+    "Laptops(Bundle)", "Chromebooks(Bundle)", "MacBooks(Bundle)", "Desktops(Bundle)", "AIO(Bundle)", "Full Set Desktops(Bundle)", "Chromeboxes(Bundle)"
+}
 
 # Take only the last 15 days for sales rate calc
 RECENCY_WINDOW_DAYS = 15
@@ -80,6 +80,10 @@ UPDATE_SERIAL_TO_MAKE = True  # set to True if you really want to update Serial 
 
 # Control whether planner writes to Serial No.reserved_sales_order
 UPDATE_SERIAL_RESERVED_SO = True
+
+# Control whether planner writes to Serial No.remarks
+UPDATE_SERIAL_REMARKS = True
+
 
 
 # =========================
@@ -142,7 +146,7 @@ def _get_variant_bundle_item_codes(variant_id: str) -> List[str]:
         INNER JOIN `tabProduct Bundle Item` tpbi ON tpb.name = tpbi.parent
         INNER JOIN `tabItem` ti ON tpbi.item_code = ti.name
         WHERE tpb.shopify_variant_id = %s
-          AND ti.item_group IN ('Laptops', 'Chromebooks')
+          AND ti.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
         """,
         (variant_id_str,)
     )
@@ -191,6 +195,7 @@ _PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock i
 _PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
 _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
 _SERIAL_TO_MR_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
+_SERIAL_TO_BAG_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
 
 
 # =========================
@@ -263,6 +268,25 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
         )
     except Exception as e:
         logger.warning("Could not update Serial No.reserved_sales_order for %s: %s", serial_no, e)
+
+
+@log_io
+def _update_serial_remarks(serial_no: str, remarks: str) -> None:
+    """Update Serial No.remarks (lightweight db write)."""
+    if not UPDATE_SERIAL_REMARKS or not serial_no:
+        return
+
+    remarks_val = (remarks or "").strip()
+    try:
+        frappe.db.set_value(
+            "Serial No",
+            serial_no,
+            "remarks",
+            remarks_val if remarks_val else None,
+            update_modified=False,
+        )
+    except Exception as e:
+        logger.warning("Could not update Serial No.remarks for %s: %s", serial_no, e)
 
 
 def _round_half_up(value) -> int:
@@ -369,46 +393,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     print("Running unified production plan...=============")
 
     # -------------------------------------------------------
-    # CLEANUP: Clear stale reserved_sales_order on Serial Nos
-    # where the linked Sales Order is Closed/Cancelled/Completed.
-    # This prevents serials from being permanently invisible to
-    # the planner after their SO closes without clearing the field.
-    # -------------------------------------------------------
-    stale_cleared = frappe.db.sql("""
-        UPDATE `tabSerial No` sn
-        INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
-        SET sn.reserved_sales_order = NULL
-        WHERE so.status IN ('Closed', 'Cancelled', 'Completed')
-          AND sn.reserved_sales_order IS NOT NULL
-          AND sn.reserved_sales_order != ''
-    """)
-    frappe.db.commit()
-    logger.debug("[CLEANUP] Cleared stale reserved_sales_order for serials linked to Closed/Cancelled/Completed SOs.")
+    # CLEANUP: Release any over-allocated or invalid serial reservations
+    try:
+        from nj_features.overrides.sales_order import trim_over_allocated_serials
+        trim_over_allocated_serials()
+    except Exception as e:
+        logger.warning("[CLEANUP] trim_over_allocated_serials failed during plan startup: %s", e)
 
-    # CLEANUP 2: Release reservations for any serials in sequence 0 departments
-    # or Employee Personal Warehouses
-    invalid_serials = frappe.db.sql_list("""
-        SELECT sn.name
-        FROM `tabSerial No` sn
-        INNER JOIN `tabDepartment` dp ON sn.department = dp.name
-        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-        WHERE sn.reserved_sales_order IS NOT NULL
-          AND sn.reserved_sales_order != ''
-          AND sn.status = 'Active'
-          AND (
-              (IFNULL(dp.department_sequence, 0) = 0)
-              OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
-          )
-    """)
-    if invalid_serials:
-        frappe.db.sql("""
-            UPDATE `tabSerial No`
-            SET reserved_sales_order = NULL,
-                to_make = NULL
-            WHERE name IN %s
-        """, (tuple(invalid_serials),))
-        frappe.db.commit()
-        logger.info("[CLEANUP] Released %s invalid serials in sequence 0 departments or Employee Personal Warehouses", len(invalid_serials))
 
     depts = frappe.get_all(
         "Department",
@@ -548,6 +539,28 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         for row in mr_rows:
             _SERIAL_TO_MR_ITEMS[row["serial_no"]].append(row)
 
+    # Batch fetch all Bag List items for all serials to avoid N+1 queries
+    _SERIAL_TO_BAG_ITEMS.clear()
+    if all_serial_ids:
+        bag_rows = frappe.db.sql(
+            """
+            SELECT
+                bl.parent AS serial_no,
+                bl.item,
+                bl.item_group,
+                bl.serial_no AS part_serial_no,
+                bl.quantity,
+                bl.is_available
+            FROM `tabBag List` bl
+            WHERE bl.parent IN %(serial_list)s
+              AND bl.is_available = 1
+            """,
+            {"serial_list": tuple(all_serial_ids)},
+            as_dict=True,
+        )
+        for row in bag_rows:
+            _SERIAL_TO_BAG_ITEMS[row["serial_no"]].append(row)
+
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
     # -------------------------------------------------------------
@@ -571,11 +584,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 wh = res_row['warehouse']
 
                 if not res_row.get("item_wizard"):
+                    skip_reason = "Reserved for SO - Item Wizard not found"
+                    _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
                         "current_department": dept_name,
                         "current_warehouse": wh,
-                        "reason": "Reserved for SO - Item Wizard not found"
+                        "reason": skip_reason
                     })
                     continue
 
@@ -585,6 +600,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         if res_row.get("part_list_status") != "Completed"
                         else "Reserved for SO - Item Wizard not Submitted"
                     )
+                    _update_serial_remarks(sn_id, f"Not Allocated: {reason}")
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
                         "current_department": dept_name,
@@ -595,11 +611,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
                 item_code_to_make = res_row.get("to_make") or _get_fallback_pb_item_code(res_row["item_code"])
                 if not item_code_to_make:
+                    skip_reason = "Reserved for SO - Product Bundle not found"
+                    _update_serial_remarks(sn_id, f"Not Allocated: {skip_reason}")
                     plan_doc.append("missing_serial_nos", {
                         "serial_no": sn_id,
                         "current_department": dept_name,
                         "current_warehouse": wh,
-                        "reason": "Reserved for SO - Product Bundle not found"
+                        "reason": skip_reason
                     })
                     continue
 
@@ -608,6 +626,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 base_date = frappe.utils.getdate(purchase_date or creation or frappe.utils.nowdate())
                 age_days = (_today - base_date).days if base_date else 0
 
+                remarks_text = f"Allocated: Pre-reserved for Sales Order {res_row['reserved_sales_order']} | to_make: {item_code_to_make}"
                 _append_plan_row(
                     plan_doc,
                     serial_no=sn_id,
@@ -621,14 +640,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     reason="Order",
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=age_days,
+                    remarks=remarks_text,
                 )
                 priority_per_dept[dept_name] += 1
 
             serial_map = []
             for row in serial_rows:
                 enriched = _enrich_serial_from_attrs(row)
-                if not enriched.get("fallback_pb_item_code"):
-                    enriched["fallback_pb_item_code"] = row["item_code"]
                 serial_map.append(enriched)
 
             avail_serials_by_dept[dept_name] = serial_map
@@ -670,6 +688,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             for s in p1_matches[:needed_qty]:
                 dept_pool.remove(s)
                 needed_qty -= 1
+                remarks_text = f"Allocated to SO {so_name} (Priority 1: Exact Item Code match '{target_ic}') | to_make: {target_ic}"
                 _append_plan_row(
                     plan_doc,
                     serial_no=s["serial_no"],
@@ -683,6 +702,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     reason="Order",
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=s.get("age_days"),
+                    remarks=remarks_text,
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -709,6 +729,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     needed_qty -= 1
                     if _DEPT_ALLOCATE_PARTS.get(dept_name):
                         _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                    curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
+                    remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {target_ic}"
                     _append_plan_row(
                         plan_doc,
                         serial_no=s["serial_no"],
@@ -722,6 +744,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         reason="Order",
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=s.get("age_days"),
+                        remarks=remarks_text,
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -754,6 +777,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         needed_qty -= 1
                         if _DEPT_ALLOCATE_PARTS.get(dept_name):
                             _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                        remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}') | to_make: {target_ic}"
                         _append_plan_row(
                             plan_doc,
                             serial_no=s["serial_no"],
@@ -767,6 +791,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                             reason="Order",
                             priority_rank=priority_per_dept[dept_name],
                             serial_age_days=s.get("age_days"),
+                            remarks=remarks_text,
                         )
                         priority_per_dept[dept_name] += 1
 
@@ -796,6 +821,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                             needed_qty -= 1
                             if _DEPT_ALLOCATE_PARTS.get(dept_name):
                                 _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                            curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
+                            remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {target_ic}"
                             _append_plan_row(
                                 plan_doc,
                                 serial_no=s["serial_no"],
@@ -809,6 +836,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                                 reason="Order",
                                 priority_rank=priority_per_dept[dept_name],
                                 serial_age_days=s.get("age_days"),
+                                remarks=remarks_text,
                             )
                             priority_per_dept[dept_name] += 1
 
@@ -856,6 +884,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 k = alloc["forward_key"]
                 rate_display = float(sales_rate.get(k, 1.0))
                 doi_display = float(alloc.get("doi", 0.0))
+                remarks_text = f"Allocated for Forecast Replenishment (Target: {alloc['target_item_code']} to balance DOI | Sales Rate: {rate_display:.2f}/day, DOI: {doi_display:.1f} days) | to_make: {alloc['target_item_code']}"
                 _append_plan_row(
                     plan_doc,
                     serial_no=alloc["serial_no"],
@@ -869,6 +898,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     reason="Forecast",
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=alloc.get("age_days"),
+                    remarks=remarks_text,
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -880,36 +910,75 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             dropped_in_forecast = set(serials_before_forecast.keys()) - allocated_in_forecast - remaining_after_forecast
             for sn in dropped_in_forecast:
                 info = serials_before_forecast[sn]
+                reason_text = "Part allocation failed (Forecast)"
+                _update_serial_remarks(sn, f"Not Allocated: {reason_text}")
                 plan_doc.append("missing_serial_nos", {
                     "serial_no": sn,
                     "current_department": dept_name,
                     "current_warehouse": info['warehouse'],
-                    "reason": "Part allocation failed (Forecast)"
+                    "reason": reason_text
                 })
 
             for sn in remaining_after_forecast:
                 info = serials_before_forecast[sn]
                 ic = info.get("item_code")
-                sn_reason = "No matching order or forecast demand found"
+                sn_reason = None
 
-                if not info.get("fallback_pb_item_code"):
+                fallback_pb = info.get("fallback_pb_item_code")
+                if not fallback_pb or fallback_pb not in _SELLABLE_ITEM_CODES:
                     sn_reason = _get_pb_missing_reason(ic)
-                elif not allow_reconfig and info.get("forward_key_config") not in forward_keys:
-                    sn_reason = "No matching order & Reconfiguration disabled for department"
-                else:
-                    k = info.get("forward_key_config") or info.get("forward_key_model")
-                    s_rate = float(sales_rate.get(k, 0.0)) if sales_rate else 0.0
-                    if s_rate == 0.0:
-                        sn_reason = "No matching order or sales demand in last 15 days (0 Sales Rate)"
-                    else:
-                        sn_reason = "No matching order or forecast demand found (Forward inventory sufficient)"
 
-                plan_doc.append("missing_serial_nos", {
-                    "serial_no": sn,
-                    "current_department": dept_name,
-                    "current_warehouse": info['warehouse'],
-                    "reason": sn_reason
-                })
+                if sn_reason:
+                    _update_serial_remarks(sn, f"Not Allocated: {sn_reason}")
+                    plan_doc.append("missing_serial_nos", {
+                        "serial_no": sn,
+                        "current_department": dept_name,
+                        "current_warehouse": info['warehouse'],
+                        "reason": sn_reason
+                    })
+                else:
+                    target_item_code = fallback_pb or ic
+
+                    if _DEPT_ALLOCATE_PARTS.get(dept_name):
+                        ok = _maybe_allocate_parts_for_serial(sn, dept_name)
+                        if not ok:
+                            _update_serial_to_make(sn, target_item_code)
+                            reason_text = "Part allocation failed (Forecast)"
+                            _update_serial_remarks(sn, f"Not Allocated: {reason_text}")
+                            plan_doc.append("missing_serial_nos", {
+                                "serial_no": sn,
+                                "current_department": dept_name,
+                                "current_warehouse": info['warehouse'],
+                                "reason": reason_text
+                            })
+                            continue
+
+                    fb_ic = target_item_code
+                    k = None
+                    if fb_ic and fb_ic in _ITEM_KEYS:
+                        k = _ITEM_KEYS[fb_ic].get("config_key") or _ITEM_KEYS[fb_ic].get("model_key")
+                    if not k:
+                        k = info.get("forward_key_config") or info.get("forward_key_model")
+                    rate_display = float(sales_rate.get(k, 1.0)) if (sales_rate and k) else 1.0
+                    doi_display = float(doi_snapshot.get(k, 0.0)) if (doi_snapshot and k) else 0.0
+                    remarks_text = f"Allocated for Forecast Replenishment (Target: {target_item_code} | Sales Rate: {rate_display:.2f}/day, DOI: {doi_display:.1f} days) | to_make: {target_item_code}"
+
+                    _append_plan_row(
+                        plan_doc,
+                        serial_no=sn,
+                        current_warehouse=info['warehouse'],
+                        current_department=dept_name,
+                        sales_rate=rate_display,
+                        doi=doi_display,
+                        sales_order_number=None,
+                        delivery_date=None,
+                        item_code_to_make=target_item_code,
+                        reason="Forecast",
+                        priority_rank=priority_per_dept[dept_name],
+                        serial_age_days=info.get("age_days"),
+                        remarks=remarks_text,
+                    )
+                    priority_per_dept[dept_name] += 1
 
             consumed_serial_nos = {row.serial_no for row in plan_doc.lines if row.current_department == dept_name}
             
@@ -1011,6 +1080,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     k = alloc["forward_key"]
                     rate_display = float(sales_rate.get(k, 1.0))
                     doi_display = float(alloc.get("doi", 0.0))
+                    remarks_text = f"Allocated for Reconfig Rescue (Stale stock dwelling >{reconfig_aging_days} days in {dept_name}) | to_make: {alloc['target_item_code']}"
                     _append_plan_row(
                         plan_doc,
                         serial_no=alloc["serial_no"],
@@ -1024,6 +1094,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         reason="Reconfig",
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=alloc.get("dwell_days"),
+                        remarks=remarks_text,
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1031,11 +1102,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 allocated_sns = {a["serial_no"] for a in reconfig_allocs}
                 for serial in stale_serials:
                     if serial["serial_no"] not in allocated_sns:
+                        skip_reason = "Part allocation failed (Reconfig)" if _DEPT_ALLOCATE_PARTS.get(dept_name) else "No matching reconfig target found"
+                        _update_serial_remarks(serial["serial_no"], f"Not Allocated: {skip_reason}")
                         plan_doc.append("missing_serial_nos", {
                             "serial_no": serial["serial_no"],
                             "current_department": serial.get("source_department", ""),
                             "current_warehouse": serial["warehouse"],
-                            "reason": "Part allocation failed (Reconfig)" if _DEPT_ALLOCATE_PARTS.get(dept_name) else "No matching reconfig target found",
+                            "reason": skip_reason,
                         })
 
                 logger.debug(
@@ -1158,7 +1231,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 ON it_so.name = soi.item_code
 
             LEFT JOIN `tabProduct Bundle` pb
-                ON pb.new_item_code = soi.item_code
+                ON (pb.new_item_code = soi.item_code OR pb.name = soi.item_code)
             LEFT JOIN `tabProduct Bundle Item` pbi
                 ON pbi.parent = pb.name
             LEFT JOIN `tabItem` it_comp
@@ -1167,13 +1240,21 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
             WHERE
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
+                AND so.name NOT IN (
+                    SELECT DISTINCT sales_order 
+                    FROM `tabNJ Refund` 
+                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
+                      AND docstatus = 1 
+                      AND sales_order IS NOT NULL 
+                      AND sales_order != ''
+                )
                 AND (
                     (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
                     OR
                     (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B', 'Distributor', 'Franchisee', 'Educational Institutes') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
                 )
 
-                AND soi.item_group IN ('Laptops','Chromebooks', 'MacBooks', 'Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)')
+                AND soi.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes', 'Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'AIO(Bundle)', 'Full Set Desktops(Bundle)', 'Chromeboxes(Bundle)')
                 AND so.customer != 'King Technologies'
 
                 AND (
@@ -1183,7 +1264,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
 
                 AND (
                     IFNULL(it_so.is_stock_item, 0) = 1
-                    OR it_comp.item_group IN ('Laptops','Chromebooks', 'MacBooks')
+                    OR it_comp.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
                 )
                 AND IFNULL(it_so.disabled, 0) = 0
                 AND (IFNULL(it_so.is_stock_item, 0) = 1 OR IFNULL(it_comp.disabled, 0) = 0)
@@ -1196,14 +1277,20 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                     ELSE pbi.item_code
                 END                           AS item_code,
-                SUM(dni.qty)                  AS dn_qty
+                SUM(
+                    CASE
+                        WHEN IFNULL(dn.is_return, 0) = 0 THEN dni.qty
+                        WHEN dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Replace') THEN dni.qty
+                        ELSE 0
+                    END
+                )                             AS dn_qty
             FROM `tabDelivery Note Item` dni
+            INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
             INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
-            LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+            LEFT JOIN `tabProduct Bundle` pb ON (pb.new_item_code = soi.item_code OR pb.name = soi.item_code)
                 AND IFNULL(it_so.is_stock_item, 0) = 0
             LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-                AND pbi.item_code = dni.item_code
             WHERE
                 dni.docstatus = 1
                 AND dni.creation >= CURDATE() - INTERVAL %(lookback_max)s DAY
@@ -1227,7 +1314,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                         SELECT pbi.item_code 
                         FROM `tabProduct Bundle Item` pbi 
                         INNER JOIN `tabProduct Bundle` pb ON pbi.parent = pb.name 
-                        WHERE pb.new_item_code = sn.to_make 
+                        WHERE (pb.new_item_code = sn.to_make OR pb.name = sn.to_make)
                         LIMIT 1
                     ),
                     NULLIF(sn.to_make, ''),
@@ -1249,7 +1336,7 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                         SELECT pbi.item_code 
                         FROM `tabProduct Bundle Item` pbi 
                         INNER JOIN `tabProduct Bundle` pb ON pbi.parent = pb.name 
-                        WHERE pb.new_item_code = sn.to_make 
+                        WHERE (pb.new_item_code = sn.to_make OR pb.name = sn.to_make)
                         LIMIT 1
                     ),
                     NULLIF(sn.to_make, ''),
@@ -1385,6 +1472,7 @@ def _get_sellable_items() -> List[Dict]:
             {"igroups": tuple(SELLABLE_ITEM_GROUPS)},
             as_dict=True,
         )
+        
 
     sellable = [{"name": r["item_code"]} for r in (rows or [])]
     _SELLABLE_ITEM_CODES = {r["name"] for r in sellable}
@@ -2193,6 +2281,14 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
           AND sn.reserved_sales_order IS NOT NULL
           AND sn.reserved_sales_order != ''
           AND so.status NOT IN ('Closed', 'Cancelled', 'Completed')
+          AND so.name NOT IN (
+              SELECT DISTINCT sales_order 
+              FROM `tabNJ Refund` 
+              WHERE refund_status IN ('Paid', 'Refunded') 
+                AND docstatus = 1 
+                AND sales_order IS NOT NULL 
+                AND sales_order != ''
+          )
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
         """,
@@ -2249,6 +2345,13 @@ def _prime_item_cache(item_codes: List[str]):
         d = _ITEM_ATTRS.setdefault(r["item_code"], {})
         d[r["attribute"]] = r["attribute_value"]
 
+    def _normalize_proc_val(proc: Optional[str]) -> Optional[str]:
+        if not proc or not isinstance(proc, str):
+            return proc
+        p = re.sub(r"\s+", " ", proc.strip().upper())
+        p_norm = re.sub(r"^(AMD|INTEL)\s+", "", p)
+        return p_norm if p_norm else p
+
     for ic in needed:
         core = _ITEM_CORE.get(ic) or {}
         template = core.get("variant_of") or ic
@@ -2257,7 +2360,7 @@ def _prime_item_cache(item_codes: List[str]):
         ram = attrs.get(RAM_ATTR)
         sto = attrs.get(STORAGE_ATTR)
 
-        proc_clean = proc.strip().upper() if isinstance(proc, str) else proc
+        proc_clean = _normalize_proc_val(proc)
         template_clean = template.strip() if isinstance(template, str) else template
         ram_clean = ram.strip().upper() if isinstance(ram, str) else ram
         sto_clean = sto.strip().upper() if isinstance(sto, str) else sto
@@ -2266,6 +2369,14 @@ def _prime_item_cache(item_codes: List[str]):
             "model_key": ("MODEL", template_clean, proc_clean),
             "config_key": ("CONFIG", template_clean, proc_clean, ram_clean, sto_clean),
         }
+
+
+def _normalize_processor(proc: Optional[str]) -> Optional[str]:
+    if not proc or not isinstance(proc, str):
+        return proc
+    p = re.sub(r"\s+", " ", proc.strip().upper())
+    p_norm = re.sub(r"^(AMD|INTEL)\s+", "", p)
+    return p_norm if p_norm else p
 
 
 @log_io
@@ -2344,7 +2455,7 @@ def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
 
     Priority:
     1. exact config match among sellable items
-    2. same model with real RAM + real Storage
+    2. same model with matching RAM + real Storage
     3. same model, alphabetically stable
     """
     if not item_code:
@@ -2356,8 +2467,15 @@ def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
     model_key = _ITEM_KEYS[item_code]["model_key"]
     config_key = _ITEM_KEYS[item_code]["config_key"]
 
-    candidates = _MODEL_TO_SELLABLE_ITEMS.get(model_key, [])
-    
+    candidates = list(_MODEL_TO_SELLABLE_ITEMS.get(model_key, []))
+
+    # Fallback to same template if exact model_key yielded no candidates
+    if not candidates and model_key and len(model_key) > 1:
+        template_clean = model_key[1]
+        for mk, c_list in _MODEL_TO_SELLABLE_ITEMS.items():
+            if mk and len(mk) > 1 and mk[1] == template_clean:
+                candidates.extend(c_list)
+
     # Ensure candidates are primed
     unprimed = [ic for ic in candidates if ic not in _ITEM_KEYS]
     if unprimed:
@@ -2370,17 +2488,25 @@ def _get_fallback_pb_item_code(item_code: str) -> Optional[str]:
         if _ITEM_KEYS.get(ic, {}).get("config_key") == config_key:
             return ic
 
+    sn_attrs = _ITEM_ATTRS.get(item_code, {})
+    sn_ram = (sn_attrs.get(RAM_ATTR) or "").strip().upper()
+    sn_proc = _normalize_processor(sn_attrs.get(PROCESSOR_ATTR))
+
     def _rank(ic: str):
         attrs = _ITEM_ATTRS.get(ic, {})
-        ram = attrs.get(RAM_ATTR)
+        ram = (attrs.get(RAM_ATTR) or "").strip().upper()
         sto = attrs.get(STORAGE_ATTR)
-        proc = attrs.get(PROCESSOR_ATTR)
+        proc = _normalize_processor(attrs.get(PROCESSOR_ATTR))
 
+        same_proc = 1 if (sn_proc and proc == sn_proc) else 0
+        same_ram = 1 if (sn_ram and ram == sn_ram and not _is_blankish_attr(ram)) else 0
         good_ram = 0 if _is_blankish_attr(ram) else 1
         good_sto = 0 if _is_blankish_attr(sto) else 1
         good_proc = 0 if _is_blankish_attr(proc) else 1
 
         return (
+            same_proc,
+            same_ram,
             good_ram + good_sto + good_proc,
             good_ram,
             good_sto,
@@ -2397,6 +2523,10 @@ def _get_pb_missing_reason(item_code: str) -> str:
     if not item_code:
         return "Product Bundle not found"
 
+    item_status = frappe.db.get_value("Item", item_code, ["disabled"], as_dict=True)
+    if item_status and item_status.get("disabled"):
+        return "Item is Disabled"
+
     pb_rows = frappe.db.sql("""
         SELECT pb.name, pb.disable, i.shopify_product_id, i.disabled AS item_disabled, ci.disabled AS comp_disabled
         FROM `tabProduct Bundle` pb
@@ -2406,6 +2536,19 @@ def _get_pb_missing_reason(item_code: str) -> str:
         WHERE pb.new_item_code = %s OR pbi.item_code = %s
         LIMIT 5
     """, (item_code, item_code), as_dict=True)
+
+    if not pb_rows:
+        template = _ITEM_CORE.get(item_code, {}).get("variant_of")
+        if template:
+            pb_rows = frappe.db.sql("""
+                SELECT pb.name, pb.disable, i.shopify_product_id, i.disabled AS item_disabled, ci.disabled AS comp_disabled
+                FROM `tabProduct Bundle` pb
+                INNER JOIN `tabItem` i ON i.name = pb.new_item_code
+                INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                INNER JOIN `tabItem` ci ON pbi.item_code = ci.name
+                WHERE ci.variant_of = %s
+                LIMIT 5
+            """, (template,), as_dict=True)
 
     if not pb_rows:
         return "Product Bundle not found"
@@ -2431,7 +2574,18 @@ def _find_variant_by_attributes(template_item: str, attr_map: Dict) -> Union[str
     _prime_item_cache(variants)
     for v in variants:
         attrs = _ITEM_ATTRS.get(v, {})
-        if all(attrs.get(k) == v2 for k, v2 in attr_map.items()):
+        match = True
+        for k, v2 in attr_map.items():
+            val = attrs.get(k)
+            if k == PROCESSOR_ATTR:
+                if _normalize_processor(val) != _normalize_processor(v2):
+                    match = False
+                    break
+            else:
+                if (val or "").strip().upper() != (v2 or "").strip().upper():
+                    match = False
+                    break
+        if match:
             return v
     return None
 
@@ -2475,10 +2629,11 @@ def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
 @log_io
 def _build_initial_part_stock():
     """
-    Build initial virtual stock for parts from all warehouses under department 'Stores - NJ'.
+    Build initial virtual stock for parts from all warehouses under department 'Stores - NJ',
+    excluding any parts that are already packed in an active Bag List (tabBag List).
 
-    - For serialized items: COUNT(Serial No)
-    - For non-serialized items: SUM(Bin.actual_qty)
+    - For serialized items: COUNT(Serial No) excluding serials in tabBag List (is_available=1)
+    - For non-serialized items: SUM(Bin.actual_qty) minus non-serialized quantities in tabBag List (is_available=1)
     """
     warehouses = frappe.get_all(
         "Warehouse",
@@ -2492,6 +2647,7 @@ def _build_initial_part_stock():
 
     wh_tuple = tuple(warehouses)
 
+    # 1. Serialized stock in Stores, EXCLUDING serials already in an active Bag List
     serial_stock_rows = frappe.db.sql(
         """
         SELECT
@@ -2500,6 +2656,11 @@ def _build_initial_part_stock():
         FROM `tabSerial No` sn
         WHERE sn.warehouse IN %(warehouses)s
           AND (sn.status IS NULL OR sn.status NOT IN ('Delivered','Scrapped','Inactive'))
+          AND sn.name NOT IN (
+              SELECT DISTINCT bl.serial_no
+              FROM `tabBag List` bl
+              WHERE bl.serial_no IS NOT NULL AND bl.serial_no != '' AND bl.is_available = 1
+          )
         GROUP BY sn.item_code
         """,
         {"warehouses": wh_tuple},
@@ -2509,6 +2670,7 @@ def _build_initial_part_stock():
     serial_stock = {row["item_code"]: flt(row["qty"] or 0) for row in (serial_stock_rows or [])}
     serialized_set = set(serial_stock.keys())
 
+    # 2. Non-serialized stock in Stores
     bin_rows = frappe.db.sql(
         """
         SELECT
@@ -2524,7 +2686,27 @@ def _build_initial_part_stock():
         as_dict=True,
     )
 
-    bin_stock = {row["item_code"]: flt(row["total_qty"] or 0) for row in (bin_rows or [])}
+    # 3. Subtract non-serialized quantities currently in active Bag Lists
+    bagged_bin_rows = frappe.db.sql(
+        """
+        SELECT
+            bl.item AS item_code,
+            SUM(IFNULL(bl.quantity, 1)) AS bagged_qty
+        FROM `tabBag List` bl
+        INNER JOIN `tabItem` i ON i.name = bl.item
+        WHERE (bl.serial_no IS NULL OR bl.serial_no = '')
+          AND bl.is_available = 1
+          AND IFNULL(i.has_serial_no, 0) = 0
+        GROUP BY bl.item
+        """,
+        as_dict=True,
+    )
+    bagged_bin_map = {r["item_code"]: flt(r["bagged_qty"] or 0) for r in (bagged_bin_rows or [])}
+
+    bin_stock = {
+        row["item_code"]: max(0.0, flt(row["total_qty"] or 0) - bagged_bin_map.get(row["item_code"], 0.0))
+        for row in (bin_rows or [])
+    }
 
     virtual_stock: Dict[str, float] = {}
     for ic, qty in serial_stock.items():
@@ -2556,11 +2738,12 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
         return True
 
     mr_items = _SERIAL_TO_MR_ITEMS.get(serial_no, [])
+    bag_items = _SERIAL_TO_BAG_ITEMS.get(serial_no, [])
 
     mr_names = sorted({row["material_request"] for row in mr_items}) if mr_items else []
     logger.debug(
         f"\n[MR_INFO] serial_no={serial_no}, dept={current_department}, "
-        f"mr_count={len(mr_items)}, mr_list={mr_names}"
+        f"mr_count={len(mr_items)}, mr_list={mr_names}, bag_count={len(bag_items)}"
     )
 
     if not mr_items:
@@ -2578,6 +2761,7 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
 
     for row in mr_items:
         item_code = row["item_code"]
+        item_group = row.get("item_group")
         involved_item_codes.add(item_code)
 
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
@@ -2585,29 +2769,44 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
             logger.debug(f"\n[MR_SKIP_ZERO_QTY] serial_no={serial_no}, item_code={item_code}, mr_qty={mr_qty}")
             continue
 
+        # Check if this part is ALREADY fulfilled in this laptop's own Bag List
+        bagged_qty_for_serial = sum(
+            flt(b.get("quantity") or 1)
+            for b in bag_items
+            if b.get("item") == item_code or (item_group and b.get("item_group") == item_group)
+        )
+
+        needed_from_stores = max(0.0, mr_qty - bagged_qty_for_serial)
+        if needed_from_stores <= 0:
+            logger.debug(
+                f"\n[LINE_CHECK_BAG_FULFILLED] serial_no={serial_no}, MR={row['material_request']}, "
+                f"item_code={item_code}, required={mr_qty}, already_in_bag={bagged_qty_for_serial}"
+            )
+            continue
+
         already_planned = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0))
         virtual_stock = flt(_PART_VIRTUAL_STOCK.get(item_code, 0.0))
 
         available_before = float(virtual_stock - already_planned - to_reserve[item_code])
 
-        if available_before >= mr_qty:
-            to_reserve[item_code] += mr_qty
+        if available_before >= needed_from_stores:
+            to_reserve[item_code] += needed_from_stores
             logger.debug(
                 f"\n[LINE_CHECK_OK] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
-                f"required={mr_qty}, available_before={available_before}, would_reserve_total={to_reserve[item_code]}"
+                f"required={needed_from_stores} (after bag {bagged_qty_for_serial}), available_before={available_before}, would_reserve_total={to_reserve[item_code]}"
             )
         else:
             unallocated_lines.append(
                 {
                     "material_request": row["material_request"],
                     "item_code": item_code,
-                    "required": mr_qty,
+                    "required": needed_from_stores,
                     "available": available_before,
                 }
             )
             logger.debug(
                 f"\n[LINE_CHECK_BLOCKED] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
-                f"required={mr_qty}, available={available_before} (insufficient stock)"
+                f"required={needed_from_stores} (after bag {bagged_qty_for_serial}), available={available_before} (insufficient stock)"
             )
 
     remaining_virtual_stock = {
@@ -2626,12 +2825,22 @@ def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) ->
     alloc_rows = []
     for row in mr_items:
         item_code = row["item_code"]
+        item_group = row.get("item_group")
         mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
         if mr_qty <= 0:
             continue
 
-        _PART_PLANNED_ALLOCATION[item_code] = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0)) + mr_qty
-        alloc_rows.append({"material_request": row["material_request"], "item_code": item_code, "allocated_qty": mr_qty})
+        bagged_qty_for_serial = sum(
+            flt(b.get("quantity") or 1)
+            for b in bag_items
+            if b.get("item") == item_code or (item_group and b.get("item_group") == item_group)
+        )
+        needed_from_stores = max(0.0, mr_qty - bagged_qty_for_serial)
+        if needed_from_stores <= 0:
+            continue
+
+        _PART_PLANNED_ALLOCATION[item_code] = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0)) + needed_from_stores
+        alloc_rows.append({"material_request": row["material_request"], "item_code": item_code, "allocated_qty": needed_from_stores})
 
     remaining_virtual_stock_after = {
         item_code: float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - _PART_PLANNED_ALLOCATION.get(item_code, 0.0))
@@ -2664,6 +2873,7 @@ def _append_plan_row(
     reason: str,
     priority_rank: int,
     serial_age_days: Optional[int] = None,
+    remarks: Optional[str] = None,
 ):
     # Log each serial number being processed
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
@@ -2671,6 +2881,9 @@ def _append_plan_row(
 
     if reason == "Order" and sales_order_number:
         _update_serial_reserved_sales_order(serial_no, sales_order_number)
+
+    if remarks:
+        _update_serial_remarks(serial_no, remarks)
 
     plan_doc.append(
         "lines",
@@ -3308,8 +3521,10 @@ def _adjust_pp_shortage_qty_for_existing_mrs(shortage_items, material_request_ty
             ON mr.name = mri.parent
         WHERE
             mr.material_request_type = %(material_request_type)s
-            AND mr.docstatus < 2
+            AND mr.docstatus = 1
+            AND mr.status NOT IN ('Stopped', 'Cancelled', 'Completed')
             AND mri.item_code IN %(item_codes)s
+            AND IFNULL(mri.post_order_status, '') != 'Completed'
         GROUP BY
             mri.item_code
     """, {
@@ -3555,6 +3770,7 @@ def cosumables_material_issue_mr(doc=None, method=None):
         AND mr.status NOT IN ('Stopped', 'Cancelled', 'Completed')
         AND mri.item_code IS NOT NULL
         AND mri.item_code != ''
+        AND IFNULL(mri.post_order_status, '') != 'Completed'
         AND IFNULL(mri.create_reference, '') LIKE 'All Departments%%'
     """, as_dict=True , debug=True)
 
@@ -4667,16 +4883,10 @@ def get_laptop_adaptor_serial_nos(production_plan):
             ON sn.name = fppd.serial_no
         WHERE fppd.parent = %(production_plan)s
             AND IFNULL(fppd.serial_no, '') != ''
-            AND d.department_sequence IN (
+            AND d.department_sequence < (
                 SELECT department_sequence
                 FROM `tabDepartment`
-                WHERE name = 'BG - Adaptor QC - NJ'
-
-                UNION
-
-                SELECT department_sequence - 1
-                FROM `tabDepartment`
-                WHERE name = 'BG - Adaptor QC - NJ'
+                WHERE name = 'BG - Adaptor QC - NJ'           
             )
             AND NOT EXISTS (
                 SELECT 1
@@ -5018,6 +5228,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         AND i.item_group IN ('Laptop Adaptors', 'Laptop RAM', 'Laptop Storage')
         AND mri.item_code IS NOT NULL
         AND mri.item_code != ''
+        AND IFNULL(mri.post_order_status, '') != 'Completed'
         AND mri.item_code LIKE '%%GRADE A%%'
         AND (
             IFNULL(mri.create_reference, '') LIKE 'Laptop Storage%%'
@@ -7500,28 +7711,39 @@ def laptop_storage_mr_via_production_plan(doc=None, method=None):
 
 @frappe.whitelist()
 def nj_clear_stale_reservations():
-    """Clear stale reserved_sales_order on Serial Nos linked to Closed/Cancelled/Completed Sales Orders."""
-    stale_cleared = frappe.db.sql("""
-        UPDATE `tabSerial No` sn
+    """Clear stale reserved_sales_order on Serial Nos linked to Closed/Cancelled/Completed/Refunded Sales Orders."""
+    stale_serials = frappe.db.sql_list("""
+        SELECT sn.name
+        FROM `tabSerial No` sn
         INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
-        SET sn.reserved_sales_order = NULL
-        WHERE so.status IN ('Closed', 'Cancelled', 'Completed')
+        LEFT JOIN `tabNJ Refund` njr ON njr.sales_order = so.name AND njr.refund_status IN ('Paid', 'Refunded') AND njr.docstatus = 1
+        WHERE (so.status IN ('Closed', 'Cancelled', 'Completed') OR njr.name IS NOT NULL)
           AND sn.reserved_sales_order IS NOT NULL
           AND sn.reserved_sales_order != ''
     """)
-    frappe.db.commit()
-    print(f"Stale cleared count: {stale_cleared}")
-    return stale_cleared
+    if stale_serials:
+        frappe.db.sql("""
+            UPDATE `tabSerial No`
+            SET reserved_sales_order = NULL,
+                remarks = NULL
+            WHERE name IN %(serials)s
+        """, {"serials": tuple(stale_serials)})
+        frappe.db.commit()
+    print(f"Stale cleared count: {len(stale_serials)}")
+    return len(stale_serials)
 
 
 @frappe.whitelist()
 def nj_check_stale_reservations():
     """Check for remaining stale reserved_sales_order on Serial Nos."""
     results = frappe.db.sql("""
-        select sn.name, sn.reserved_sales_order, so.status 
+        select sn.name, sn.reserved_sales_order, so.status, njr.refund_status 
         from `tabSerial No` sn 
         inner join `tabSales Order` so on sn.reserved_sales_order = so.name  
-        where so.status in ('Closed', 'Cancelled', 'Completed')
+        left join `tabNJ Refund` njr on njr.sales_order = so.name and njr.refund_status in ('Paid', 'Refunded') and njr.docstatus = 1
+        where (so.status in ('Closed', 'Cancelled', 'Completed') or njr.name is not null)
+          and sn.reserved_sales_order is not null
+          and sn.reserved_sales_order != ''
     """, as_dict=True)
     print("STALE RESERVATIONS REMAINING:", results)
     return results
@@ -7651,14 +7873,20 @@ def nj_check_over_allocations():
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                     ELSE pbi.item_code
                 END AS item_code,
-                SUM(dni.qty) AS dn_qty
+                SUM(
+                    CASE
+                        WHEN IFNULL(dn.is_return, 0) = 0 THEN dni.qty
+                        WHEN dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Replace') THEN dni.qty
+                        ELSE 0
+                    END
+                ) AS dn_qty
             FROM `tabDelivery Note Item` dni 
+            INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
             INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
             LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
                 AND IFNULL(it_so.is_stock_item, 0) = 0
             LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-                AND pbi.item_code = dni.item_code
             WHERE dni.docstatus = 1
             GROUP BY dni.against_sales_order, 
                 CASE 
@@ -7737,14 +7965,20 @@ def nj_check_over_allocations_fast():
                     WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                     ELSE pbi.item_code
                 END AS item_code,
-                SUM(dni.qty) AS dn_qty
+                SUM(
+                    CASE
+                        WHEN IFNULL(dn.is_return, 0) = 0 THEN dni.qty
+                        WHEN dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Replace') THEN dni.qty
+                        ELSE 0
+                    END
+                ) AS dn_qty
             FROM `tabDelivery Note Item` dni 
+            INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
             INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
             INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
             LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
                 AND IFNULL(it_so.is_stock_item, 0) = 0
             LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-                AND pbi.item_code = dni.item_code
             WHERE dni.docstatus = 1 AND dni.against_sales_order IN ({so_list_str})
             GROUP BY dni.against_sales_order, 
                 CASE 
@@ -7808,14 +8042,20 @@ def nj_detailed_allocation_audit():
                 WHEN IFNULL(it_so.is_stock_item, 0) = 1 THEN soi.item_code
                 ELSE pbi.item_code
             END AS item_code,
-            SUM(dni.qty) AS dn_qty
+            SUM(
+                CASE
+                    WHEN IFNULL(dn.is_return, 0) = 0 THEN dni.qty
+                    WHEN dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Replace') THEN dni.qty
+                    ELSE 0
+                END
+            ) AS dn_qty
         FROM `tabDelivery Note Item` dni 
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
         INNER JOIN `tabSales Order Item` soi ON dni.so_detail = soi.name
         INNER JOIN `tabItem` it_so ON it_so.name = soi.item_code
         LEFT JOIN `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
             AND IFNULL(it_so.is_stock_item, 0) = 0
         LEFT JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            AND pbi.item_code = dni.item_code
         WHERE dni.docstatus = 1 AND dni.against_sales_order IN ({so_list_str})
         GROUP BY dni.against_sales_order, 
             CASE 

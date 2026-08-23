@@ -1,196 +1,284 @@
 frappe.pages["inventory_dashboard_"].on_page_load = function(wrapper) {
-	frappe.require(
-		[
-			"/assets/nj_features/js/rfq_dashboard_renderer.js",
-			"/assets/nj_features/css/rfq_dashboard_shared.css"
-		],
-		() => {
-			const page = frappe.ui.make_app_page({
-				parent: wrapper,
-				title: "RFQ QC Dashboard",
-				single_column: true
-			});
-
-			new RFQQCDashboard(page);
-		}
-	);
+	const page = frappe.ui.make_app_page({ parent: wrapper, title: __("RFQ Quotation Workbench"), single_column: true });
+	new RFQQuotationWorkbench(page);
 };
 
-class RFQQCDashboard {
+class RFQQuotationWorkbench {
 	constructor(page) {
 		this.page = page;
-		this.makeFilters();
 		this.makeBody();
-		this.renderer.showMessage(__("Select a supplier to generate the RFQ QC dashboard."));
-	}
-
-	makeFilters() {
-		this.supplierField = this.page.add_field({
-			fieldname: "supplier",
-			label: __("Select Supplier"),
-			fieldtype: "Link",
-			options: "Supplier",
-			change: () => {
-				const supplier = this.supplierField.get_value();
-				if (supplier) {
-					this.loadSupplierRfqs(supplier);
-				} else {
-					this.clearRfqField();
-					this.renderer.showMessage(
-						__("Select a supplier to generate the RFQ QC dashboard.")
-					);
-				}
-			}
-		});
-
-		this.rfqField = this.page.add_field({
-			fieldname: "rfq",
-			label: __("Select RFQ"),
-			fieldtype: "Select",
-			options: "",
-			change: () => {
-				const supplier = this.supplierField.get_value();
-				const rfq = this.rfqField.get_value();
-
-				if (supplier && rfq) {
-					this.clearRfqMandatoryState();
-					this.loadData(supplier, rfq);
-				} else if (supplier) {
-					this.showRfqMandatoryState();
-					this.renderer.showMessage(__("Please select RFQ name to generate dashboard."));
-				}
-			}
-		});
-
-		this.page.add_inner_button(__("Create RFQ Engine"), () => {
-			this.createRfqEngine();
-		});
-
-		this.page.set_primary_action(__("Refresh"), () => {
-			const supplier = this.supplierField.get_value();
-			const rfq = this.rfqField.get_value();
-
-			if (!supplier) {
-				frappe.msgprint(__("Please select a supplier first."));
-				return;
-			}
-
-			if (!rfq) {
-				this.showRfqMandatoryState();
-				frappe.msgprint(__("Please select RFQ name."));
-				return;
-			}
-
-			this.loadData(supplier, rfq);
-		});
+		this.makeFilters();
+		this.resetWorkbench();
 	}
 
 	makeBody() {
-		this.addControlStyles();
-		this.body = document.createElement("div");
-		this.page.body.append(this.body);
-		this.renderer = new RFQDashboardRenderer(this.body);
+		this.addStyles();
+		this.page.main.addClass("rfq-workbench-page");
+		this.$body = $(`<div class="rfq-workbench">
+			<header class="rfq-workbench-topbar">
+				<div class="rfq-brand">NEWJAISA</div>
+				<div class="rfq-breadcrumb">${__("Buying")} › ${__("RFQ")} › <strong class="rfq-breadcrumb-name">—</strong> › ${__("Quotation Workbench")}</div>
+				<div class="rfq-top-actions">
+					<button class="btn rfq-ui-only">${__("Recalculate from QC")}</button>
+					<button class="btn rfq-ui-only">${__("Export XLSX")}</button>
+					<button class="btn btn-light rfq-ui-only">${__("Generate Quotation")}</button>
+				</div>
+			</header>
+			<div class="rfq-workbench-content">
+				<section class="rfq-filter-panel">
+					<div><label>${__("Supplier")}</label><div class="rfq-supplier-control"></div></div>
+					<div><label>${__("Request for Quotation")}</label><div class="rfq-control"></div></div>
+				</section>
+				<section class="rfq-overview-card">
+					<div class="rfq-overview-head">
+						<div class="rfq-title-block">
+							<div><h2 data-value="rfq_name">${__("Select an RFQ")}</h2><span class="rfq-status-pill" data-value="status">—</span></div>
+							<p><strong data-value="supplier">—</strong> · <span data-value="company">—</span></p>
+						</div>
+						<div class="rfq-overview-meta">
+							<div><span>${__("RFQ Date")}</span><strong data-value="rfq_date">—</strong></div>
+							<div><span>${__("Required Date")}</span><strong data-value="required_date">—</strong></div>
+							<div><span>${__("Total Items")}</span><strong data-value="total_items">—</strong></div>
+							<div><span>${__("Currency")}</span><strong data-value="currency">—</strong></div>
+						</div>
+					</div>
+					<div class="rfq-kpi-grid">
+						<div class="rfq-kpi"><span>${__("Units in Lot")}</span><strong data-value="units_in_lot">0</strong><small data-value="models">0 ${__("models")}</small></div>
+						<div class="rfq-kpi"><span>${__("Units Inspected")}</span><strong data-value="units_inspected">0</strong><small>${__("Submitted NJQCA")}</small></div>
+						<div class="rfq-kpi"><span>${__("Function-Tested")}</span><strong data-value="function_tested">0</strong><small>${__("Submitted quality inspections")}</small></div>
+						<div class="rfq-kpi"><span>${__("Grade A Value")}</span><strong data-value="grade_a_value">₹0.00</strong><small>${__("before deduction")}</small></div>
+						<div class="rfq-kpi rfq-kpi-negative"><span>${__("Deductions")}</span><strong data-value="deductions">₹0.00</strong><small data-value="deduction_percent">0% ${__("of Grade A")}</small></div>
+						<div class="rfq-kpi"><span>${__("Manual Overrides")}</span><strong>3</strong><small>${__("models edited")}</small></div>
+						<div class="rfq-kpi rfq-kpi-offer"><span>${__("Net Lot Offer")}</span><strong data-value="net_lot_offer">₹0.00</strong><small data-value="net_unit_average">₹0.00 / ${__("unit avg")}</small></div>
+					</div>
+				</section>
+				<section class="rfq-model-summary-card">
+					<div class="rfq-model-summary-head">
+						<span class="rfq-section-number">01</span>
+						<div><h3>${__("Model summary & final rates")}</h3><p>${__("Deduction per unit is computed from the component matrix. Edit values there; this table reflects the roll-up.")}</p></div>
+						<div class="rfq-read-only">🔒 ${__("Read-only roll-up")}</div>
+						<button class="btn btn-default btn-sm rfq-ui-only">${__("Go to matrix")}</button>
+					</div>
+					<div class="rfq-model-toolbar">
+						<input class="form-control rfq-model-search" placeholder="${__("Search model or processor")}">
+						<button class="btn btn-xs rfq-type-filter is-active" data-type="all">${__("All types")}</button>
+						<button class="btn btn-xs rfq-type-filter" data-type="laptop">${__("Laptop")}</button>
+						<button class="btn btn-xs rfq-type-filter" data-type="desktop">${__("Desktop")}</button>
+						<button class="btn btn-xs rfq-type-filter" data-type="mac">${__("Mac")}</button>
+						<button class="btn btn-xs rfq-placeholder-filter">${__("Non-working only")}</button>
+						<button class="btn btn-xs rfq-placeholder-filter">${__("Overridden only")}</button>
+					</div>
+					<div class="rfq-model-table-scroll"><table class="rfq-model-table">
+						<thead><tr><th>${__("Type")}</th><th>${__("Model")}</th><th>${__("Processor")}</th><th>${__("RAM")}</th><th>${__("SSD")}</th><th>${__("Screen")}</th><th>${__("Segment")}</th><th>${__("Status")}</th><th>${__("Qty")}</th><th>${__("Grade A Rate")}</th><th>${__("Deduction / Unit")}</th><th>${__("Final Rate")}</th><th>${__("Line Total")}</th></tr></thead>
+						<tbody></tbody>
+						<tfoot></tfoot>
+					</table></div>
+				</section>
+			</div>
+		</div>`).appendTo(this.page.body);
+
+		this.$body.find(".rfq-ui-only").on("click", (event) => {
+			event.preventDefault();
+			frappe.show_alert({ message: __("This functionality will be added in the next phase."), indicator: "blue" });
+		});
+		this.modelRows = [];
+		this.activeType = "all";
+		this.$body.find(".rfq-model-search").on("input", () => this.renderModelRows());
+		this.$body.find(".rfq-type-filter").on("click", (event) => {
+			event.preventDefault();
+			this.activeType = $(event.currentTarget).attr("data-type");
+			this.$body.find(".rfq-type-filter").removeClass("is-active");
+			$(event.currentTarget).addClass("is-active");
+			this.renderModelRows();
+		});
+		this.$body.find(".rfq-placeholder-filter").on("click", (event) => event.preventDefault());
 	}
 
-	addControlStyles() {
-		if (document.getElementById("rfq-dashboard-control-style")) {
-			return;
-		}
+	makeFilters() {
+		this.supplierField = frappe.ui.form.make_control({
+			parent: this.$body.find(".rfq-supplier-control"),
+			df: { fieldname: "supplier", fieldtype: "Link", options: "Supplier", placeholder: __("Select Supplier"), onchange: () => {
+				this.clearRfqOptions();
+				this.resetWorkbench();
+				const supplier = this.supplierField.get_value();
+				if (supplier) this.loadSupplierRfqs(supplier);
+			}}, render_input: true
+		});
+		this.supplierField.refresh();
 
-		const style = document.createElement("style");
-		style.id = "rfq-dashboard-control-style";
-		style.textContent = `
-			.rfq-mandatory-blink .form-control {
-				animation: rfq-mandatory-pulse 1s ease-in-out infinite;
-				border-color: var(--red-500, #ff5858) !important;
-				box-shadow: 0 0 0 1px rgba(255, 88, 88, 0.25);
-			}
-			@keyframes rfq-mandatory-pulse {
-				0%, 100% { box-shadow: 0 0 0 1px rgba(255, 88, 88, 0.2); }
-				50% { box-shadow: 0 0 0 4px rgba(255, 88, 88, 0.35); }
-			}
-		`;
-		document.head.append(style);
+		this.rfqField = frappe.ui.form.make_control({
+			parent: this.$body.find(".rfq-control"),
+			df: { fieldname: "rfq", fieldtype: "Select", options: "", placeholder: __("Select RFQ"), onchange: () => {
+				const supplier = this.supplierField.get_value();
+				const rfq = this.rfqField.get_value();
+				supplier && rfq ? this.loadWorkbench(supplier, rfq) : this.resetWorkbench();
+			}}, render_input: true
+		});
+		this.rfqField.refresh();
 	}
 
 	loadSupplierRfqs(supplier) {
-		this.clearRfqField();
-		this.renderer.clear();
-
 		frappe.call({
 			method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.get_supplier_rfqs",
 			args: { supplier },
 			callback: (response) => {
-				const rfqs = response.message || [];
-
-				if (!rfqs.length) {
-					frappe.msgprint(__("No RFQ name found for this supplier."));
-					this.renderer.showMessage(__("No RFQ name found for this supplier."));
-					return;
-				}
-
-				this.rfqField.df.options = ["", ...rfqs.map((row) => row.name)].join("\n");
+				const rows = response.message || [];
+				this.rfqField.df.options = ["", ...rows.map((row) => row.name)].join("\n");
 				this.rfqField.refresh();
-				this.rfqField.set_value("");
-				this.showRfqMandatoryState();
-				this.renderer.showMessage(__("Please select RFQ name to generate dashboard."));
+				if (!rows.length) frappe.show_alert({ message: __("No RFQs found for this supplier."), indicator: "orange" });
 			}
 		});
 	}
 
-	loadData(supplier, rfq) {
-		this.renderer.showLoading();
-
-		frappe.call({
-			method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.get_supplier_rfq_dashboard",
-			args: { supplier, rfq },
-			callback: (response) => {
-				this.renderer.render(response.message || {});
-			}
-		});
-	}
-
-	createRfqEngine() {
-		const supplier = this.supplierField.get_value();
-		const rfq = this.rfqField.get_value();
-
-		if (!supplier) {
-			frappe.msgprint(__("Please select a supplier first."));
-			return;
-		}
-
-		if (!rfq) {
-			this.showRfqMandatoryState();
-			frappe.msgprint(__("Please select RFQ name."));
-			return;
-		}
-
-		frappe.call({
-			method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.create_rfq_price_estimation_engine",
-			args: { supplier, rfq },
-			freeze: true,
-			freeze_message: __("Creating RFQ Price Estimation Engine..."),
-			callback: (response) => {
-				const data = response.message || {};
-				if (data.name) {
-					frappe.set_route("Form", "RFQ Price Estimation Engine", data.name);
-				}
-			}
-		});
-	}
-
-	clearRfqField() {
+	clearRfqOptions() {
+		if (!this.rfqField) return;
 		this.rfqField.df.options = "";
 		this.rfqField.refresh();
 		this.rfqField.set_value("");
-		this.clearRfqMandatoryState();
 	}
 
-	showRfqMandatoryState() {
-		this.rfqField.$wrapper.addClass("rfq-mandatory-blink");
+	loadWorkbench(supplier, rfq) {
+		this.$body.find(".rfq-overview-card").addClass("is-loading");
+		frappe.call({
+			method: "nj_features.nj_features.page.inventory_dashboard_.inventory_dashboard_.get_supplier_rfq_dashboard",
+			args: { supplier, rfq },
+			callback: (response) => this.renderWorkbench(response.message || {}),
+			always: () => this.$body.find(".rfq-overview-card").removeClass("is-loading")
+		});
 	}
 
-	clearRfqMandatoryState() {
-		this.rfqField.$wrapper.removeClass("rfq-mandatory-blink");
+	renderWorkbench(data) {
+		const date = (value) => value ? frappe.datetime.str_to_user(value) : "—";
+		const number = (value) => format_number(value || 0, null, 2);
+		this.setValue("rfq_name", data.rfq || "—");
+		this.setValue("status", String(data.status || "Draft").toUpperCase());
+		this.setValue("supplier", data.supplier || "—");
+		this.setValue("company", data.company || "—");
+		this.setValue("rfq_date", date(data.rfq_date));
+		this.setValue("required_date", date(data.required_date));
+		this.setValue("total_items", format_number(data.total_items || 0));
+		this.setValue("currency", data.currency || "—");
+		this.currency = data.currency || "INR";
+		this.setValue("units_in_lot", number(data.total_qty));
+		this.setValue("models", `${format_number(data.total_items || 0)} ${__("models")}`);
+		this.setValue("units_inspected", format_number(data.total_submitted || 0));
+		this.setValue("function_tested", format_number(data.function_tested || 0));
+		this.$body.find(".rfq-breadcrumb-name").text(data.rfq || "—");
+		this.modelRows = data.model_rows || [];
+		const gradeAValue = this.modelRows.reduce((total, row) => total + Number(row.qty || 0) * Number(row.grade_a_rate || 0), 0);
+		const deductions = this.modelRows.reduce((total, row) => total + Number(row.qty || 0) * Number(row.deduction_per_unit || 0), 0);
+		const netLotOffer = this.modelRows.reduce((total, row) => total + Number(row.line_total || 0), 0);
+		const pricedQty = this.modelRows.reduce((total, row) => row.final_rate === null || row.final_rate === undefined ? total : total + Number(row.qty || 0), 0);
+		const deductionPercent = gradeAValue ? deductions / gradeAValue * 100 : 0;
+		this.setValue("grade_a_value", format_currency(gradeAValue, this.currency));
+		this.setValue("deductions", format_currency(-deductions, this.currency));
+		this.setValue("deduction_percent", `${format_number(deductionPercent, null, 2)}% ${__("of Grade A")}`);
+		this.setValue("net_lot_offer", format_currency(netLotOffer, this.currency));
+		this.setValue("net_unit_average", `${format_currency(pricedQty ? netLotOffer / pricedQty : 0, this.currency)} / ${__("unit avg")}`);
+		this.activeType = "all";
+		this.$body.find(".rfq-model-search").val("");
+		this.$body.find(".rfq-type-filter").removeClass("is-active").filter('[data-type="all"]').addClass("is-active");
+		this.renderModelRows();
+	}
+
+	resetWorkbench() {
+		["supplier", "company", "rfq_date", "required_date", "total_items", "currency"].forEach((field) => this.setValue(field, "—"));
+		this.setValue("rfq_name", __("Select an RFQ"));
+		this.setValue("status", "—");
+		this.setValue("units_in_lot", "0");
+		this.setValue("models", `0 ${__("models")}`);
+		this.setValue("units_inspected", "0");
+		this.setValue("function_tested", "0");
+		this.setValue("grade_a_value", format_currency(0, this.currency || "INR"));
+		this.setValue("deductions", format_currency(0, this.currency || "INR"));
+		this.setValue("deduction_percent", `0% ${__("of Grade A")}`);
+		this.setValue("net_lot_offer", format_currency(0, this.currency || "INR"));
+		this.setValue("net_unit_average", `${format_currency(0, this.currency || "INR")} / ${__("unit avg")}`);
+		this.$body.find(".rfq-breadcrumb-name").text("—");
+		this.modelRows = [];
+		this.renderModelRows();
+	}
+
+	normalizeType(value) {
+		const type = String(value || "").toLowerCase();
+		if (type.includes("laptop")) return "laptop";
+		if (type.includes("desktop")) return "desktop";
+		if (type.includes("mac")) return "mac";
+		return type;
+	}
+
+	renderModelRows() {
+		const escape = frappe.utils.escape_html;
+		const search = String(this.$body.find(".rfq-model-search").val() || "").trim().toLowerCase();
+		const rows = (this.modelRows || []).filter((row) => {
+			const matchesType = this.activeType === "all" || this.normalizeType(row.type) === this.activeType;
+			const matchesSearch = !search || `${row.model || ""} ${row.processor || ""}`.toLowerCase().includes(search);
+			return matchesType && matchesSearch;
+		});
+		const body = rows.map((row) => `<tr>
+			<td><span class="rfq-type-pill rfq-type-${this.normalizeType(row.type)}">${escape(row.type || "")}</span></td>
+			<td class="rfq-model-name">${escape(row.model || "")}</td>
+			<td>${escape(row.processor || "")}</td><td>${escape(row.ram || "")}</td><td>${escape(row.ssd || "")}</td><td>${escape(row.screen || "")}</td>
+			<td></td><td><span class="rfq-status-badge ${row.status === "Working" ? "is-working" : "is-not-working"}">${escape(row.status || "")}</span></td><td class="rfq-model-qty">${format_number(row.qty || 0, null, 2)}</td><td class="rfq-grade-a-rate">${row.grade_a_rate === null || row.grade_a_rate === undefined ? "" : format_currency(row.grade_a_rate, this.currency)}</td><td class="rfq-deduction-rate">${format_currency(row.deduction_per_unit || 0, this.currency)}</td><td class="rfq-final-rate">${row.final_rate === null || row.final_rate === undefined ? "" : format_currency(row.final_rate, this.currency)}</td><td class="rfq-line-total">${row.line_total === null || row.line_total === undefined ? "" : format_currency(row.line_total, this.currency)}</td>
+		</tr>`).join("");
+		this.$body.find(".rfq-model-table tbody").html(body || `<tr><td colspan="13" class="rfq-model-empty">${__("No matching RFQ items found.")}</td></tr>`);
+		const totalQty = rows.reduce((total, row) => total + Number(row.qty || 0), 0);
+		const pricedQty = rows.reduce((total, row) => row.final_rate === null || row.final_rate === undefined ? total : total + Number(row.qty || 0), 0);
+		const gradeATotal = rows.reduce((total, row) => total + Number(row.qty || 0) * Number(row.grade_a_rate || 0), 0);
+		const deductionTotal = rows.reduce((total, row) => total + Number(row.qty || 0) * Number(row.deduction_per_unit || 0), 0);
+		const lineTotal = rows.reduce((total, row) => total + Number(row.line_total || 0), 0);
+		const averageFinalRate = pricedQty ? lineTotal / pricedQty : 0;
+		this.$body.find(".rfq-model-table tfoot").html(`<tr>
+			<td colspan="8"><strong>${__("Total — {0} models", [rows.length])}</strong></td>
+			<td><strong>${format_number(totalQty, null, 2)}</strong></td>
+			<td><strong>${format_currency(gradeATotal, this.currency)}</strong></td>
+			<td class="rfq-total-deduction"><strong>${format_currency(-deductionTotal, this.currency)}</strong></td>
+			<td><strong>${format_currency(averageFinalRate, this.currency)}</strong> <small>${__("avg")}</small></td>
+			<td><strong>${format_currency(lineTotal, this.currency)}</strong></td>
+		</tr>`);
+	}
+
+	setValue(field, value) { this.$body.find(`[data-value="${field}"]`).text(value); }
+
+	addStyles() {
+		if (document.getElementById("rfq-quotation-workbench-style")) return;
+		$("<style id=\"rfq-quotation-workbench-style\">\
+			.rfq-workbench-page .page-body .container, .rfq-workbench-page .page-body .container-fluid { max-width:none; width:100%; }\
+			.rfq-workbench-page .layout-main-section-wrapper, .rfq-workbench-page .layout-main-section { width:100%; }\
+			.rfq-workbench-page .layout-main-section { background:var(--bg-color); padding:0 !important; }\
+			.rfq-workbench { background:var(--bg-color); color:var(--text-color); min-height:calc(100vh - 150px); width:100%; }\
+			.rfq-workbench-topbar { align-items:center; background:#087db9; color:#fff; display:flex; gap:18px; min-height:48px; padding:7px 24px; }\
+			.rfq-brand { font-size:13px; font-weight:800; letter-spacing:2px; } .rfq-breadcrumb { font-size:11px; opacity:.9; }\
+			.rfq-top-actions { display:flex; gap:12px; margin-left:auto; } .rfq-top-actions .btn { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.45); color:#fff; font-size:11px; min-height:30px; padding:5px 15px; }\
+			.rfq-top-actions .btn-light { background:var(--card-bg); color:var(--primary); font-weight:600; }\
+			.rfq-workbench-content { padding:16px 0 24px; width:100%; }\
+			.rfq-filter-panel { background:var(--card-bg); border:1px solid var(--border-color); border-radius:4px; display:grid; gap:16px; grid-template-columns:minmax(240px,.8fr) minmax(280px,1.2fr); margin-bottom:14px; padding:12px 18px; }\
+			.rfq-filter-panel label { color:var(--text-muted); display:block; font-size:9px; font-weight:700; letter-spacing:.6px; margin-bottom:5px; text-transform:uppercase; } .rfq-filter-panel .form-group { margin:0; } .rfq-filter-panel .control-label { display:none; }\
+			.rfq-filter-panel .form-control { background:var(--control-bg); border-color:var(--border-color); color:var(--text-color); }\
+			.rfq-overview-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:4px; border-top:3px solid var(--primary); padding:16px 20px; transition:opacity .15s; } .rfq-overview-card.is-loading { opacity:.55; pointer-events:none; }\
+			.rfq-overview-head { align-items:flex-start; display:flex; gap:30px; justify-content:space-between; margin-bottom:16px; } .rfq-title-block > div { align-items:center; display:flex; gap:12px; }\
+			.rfq-title-block h2 { color:var(--heading-color); font-size:22px; font-weight:750; margin:0; } .rfq-title-block p { color:var(--text-muted); font-size:11px; margin:4px 0 0; }\
+			.rfq-status-pill { background:var(--orange-100,rgba(245,158,11,.14)); border-radius:3px; color:var(--orange-600,#b46b08); font-size:9px; font-weight:700; letter-spacing:.7px; padding:4px 10px; }\
+			.rfq-overview-meta { display:flex; gap:30px; } .rfq-overview-meta div { min-width:90px; } .rfq-overview-meta span, .rfq-overview-meta strong { display:block; }\
+			.rfq-overview-meta span, .rfq-kpi > span { color:var(--text-muted); font-size:9px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; } .rfq-overview-meta strong { color:var(--text-color); font-size:11px; margin-top:3px; }\
+			.rfq-kpi-grid { border:1px solid var(--border-color); border-radius:3px; display:grid; grid-template-columns:repeat(7,minmax(130px,1fr)); overflow:hidden; } .rfq-kpi { background:var(--card-bg); border-right:1px solid var(--border-color); min-height:82px; padding:12px 14px; } .rfq-kpi:last-child { border-right:0; }\
+			.rfq-kpi span, .rfq-kpi strong, .rfq-kpi small { display:block; } .rfq-kpi strong { color:var(--text-color); font-size:18px; margin:6px 0 4px; white-space:nowrap; } .rfq-kpi small { color:var(--text-muted); font-size:9px; }\
+			.rfq-kpi-negative strong { color:var(--red-500,#d12d22); } .rfq-kpi-offer { background:var(--control-bg); } .rfq-kpi-offer strong { color:var(--primary); }\
+			.rfq-model-summary-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:4px; margin-top:14px; overflow:hidden; }\
+			.rfq-model-summary-head { align-items:center; border-bottom:1px solid var(--border-color); display:flex; gap:12px; min-height:62px; padding:10px 16px; }\
+			.rfq-section-number { border:1px solid var(--primary); border-radius:3px; color:var(--primary); font-size:10px; font-weight:700; padding:3px 6px; }\
+			.rfq-model-summary-head h3 { color:var(--heading-color); font-size:14px; font-weight:700; margin:0; } .rfq-model-summary-head p { color:var(--text-muted); font-size:9px; margin:3px 0 0; }\
+			.rfq-read-only { color:var(--text-muted); font-size:9px; margin-left:auto; white-space:nowrap; }\
+			.rfq-model-toolbar { align-items:center; display:flex; flex-wrap:wrap; gap:8px; padding:9px 16px; } .rfq-model-search { background:var(--control-bg); border-color:var(--border-color); color:var(--text-color); font-size:10px; height:29px; width:210px; }\
+			.rfq-type-filter, .rfq-placeholder-filter { background:var(--card-bg); border:1px solid var(--border-color); border-radius:15px; color:var(--text-color); font-size:9px; padding:4px 11px; } .rfq-type-filter.is-active { background:var(--primary); border-color:var(--primary); color:#fff; }\
+			.rfq-model-table-scroll { overflow-x:auto; } .rfq-model-table { border-collapse:collapse; min-width:1500px; table-layout:fixed; width:100%; }\
+			.rfq-model-table th { background:var(--primary); color:#fff; font-size:9px; font-weight:700; letter-spacing:.5px; padding:9px 10px; text-align:left; text-transform:uppercase; white-space:nowrap; }\
+			.rfq-model-table td { border-bottom:1px solid var(--border-color); color:var(--text-color); font-size:10px; height:41px; padding:8px 10px; vertical-align:middle; } .rfq-model-table tbody tr:nth-child(even) td { background:var(--control-bg); }\
+			.rfq-model-table th:nth-child(1) { width:85px; } .rfq-model-table th:nth-child(2) { width:205px; } .rfq-model-table th:nth-child(3) { width:140px; } .rfq-model-table th:nth-child(4), .rfq-model-table th:nth-child(5), .rfq-model-table th:nth-child(6) { width:80px; } .rfq-model-table th:nth-child(7), .rfq-model-table th:nth-child(8) { width:90px; } .rfq-model-table th:nth-child(9) { width:70px; }\
+			.rfq-model-name { font-weight:600; } .rfq-model-qty { font-weight:600; } .rfq-type-pill { background:var(--control-bg); border-radius:3px; color:var(--primary); display:inline-block; font-size:9px; font-weight:600; padding:2px 5px; } .rfq-status-badge { border-radius:3px; display:inline-block; font-size:9px; font-weight:600; padding:2px 6px; white-space:nowrap; } .rfq-status-badge.is-working { background:var(--green-100,rgba(34,197,94,.12)); color:var(--green-600,#16823b); } .rfq-status-badge.is-not-working { background:var(--red-100,rgba(239,68,68,.12)); color:var(--red-500,#d12d22); }\
+			.rfq-model-table tfoot td { background:var(--control-bg); border-bottom:0; border-top:2px solid var(--primary); white-space:nowrap; } .rfq-model-table tfoot small { color:var(--text-muted); font-size:8px; margin-left:3px; } .rfq-model-table tfoot .rfq-total-deduction strong { color:var(--red-500,#d12d22); } .rfq-model-empty { color:var(--text-muted) !important; padding:22px !important; text-align:center; }\
+			@media (max-width:1200px) { .rfq-kpi-grid { grid-template-columns:repeat(4,1fr); } .rfq-kpi { border-bottom:1px solid var(--border-color); } .rfq-overview-head { flex-direction:column; } }\
+			@media (max-width:767px) { .rfq-workbench-topbar { align-items:flex-start; flex-wrap:wrap; } .rfq-top-actions { margin-left:0; width:100%; } .rfq-filter-panel { grid-template-columns:1fr; } .rfq-kpi-grid { grid-template-columns:repeat(2,1fr); } .rfq-overview-meta { flex-wrap:wrap; gap:14px; } }\
+		</style>").appendTo("head");
 	}
 }

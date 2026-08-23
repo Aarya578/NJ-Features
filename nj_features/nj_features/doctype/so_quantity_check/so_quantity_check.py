@@ -651,6 +651,8 @@ def update_pre_order_qty(settings):
         item_groups = settings.get("item_groups") or ""
 
         warehouses_list = [value.strip() for value in warehouses.split(",") if value.strip()]
+        item_groups_list = [value.strip() for value in item_groups.split(",") if value.strip()]
+
         settings_item_groups = [value.strip() for value in item_groups.split(",") if value.strip()]
         item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
 

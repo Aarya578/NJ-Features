@@ -1,117 +1,129 @@
 {
-    "actions": [],
-    "creation": "2025-05-21 10:43:26.968341",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-        "item_code",
-        "parent1",
-        "actual_qty",
-        "so_quantity",
-        "remaining_qty",
-        "column_break_kqvru",
-        "update_qty",
-        "need_to_reduce",
-        "remove_parent_qty",
-        "update_qty2",
-        "sla",
-        "estimated_time_of_dispatch"
-    ],
-    "fields": [
-        {
-            "fieldname": "item_code",
-            "fieldtype": "Link",
-            "in_list_view": 1,
-            "label": "Item Code",
-            "options": "Item",
-            "read_only": 1
-        },
-        {
-            "fieldname": "parent1",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Parent",
-            "read_only": 1
-        },
-        {
-            "fieldname": "actual_qty",
-            "fieldtype": "Data",
-            "label": "Actual Qty",
-            "read_only": 1
-        },
-        {
-            "fieldname": "so_quantity",
-            "fieldtype": "Data",
-            "label": "SO Quantity",
-            "read_only": 1
-        },
-        {
-            "fieldname": "remaining_qty",
-            "fieldtype": "Data",
-            "label": "Remaining Qty",
-            "read_only": 1
-        },
-        {
-            "fieldname": "update_qty",
-            "fieldtype": "Data",
-            "label": "Update Qty",
-            "read_only": 1
-        },
-        {
-            "fieldname": "need_to_reduce",
-            "fieldtype": "Data",
-            "label": "Need To Reduce",
-            "read_only": 1
-        },
-        {
-            "default": "0",
-            "fieldname": "remove_parent_qty",
-            "fieldtype": "Data",
-            "label": "Remove Parent Qty",
-            "read_only": 1
-        },
-        {
-            "default": "0",
-            "fieldname": "update_qty2",
-            "fieldtype": "Data",
-            "label": "Update Qty2",
-            "read_only": 1
-        },
-        {
-            "fieldname": "column_break_kqvru",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "sla",
-            "fieldtype": "Int",
-            "label": "SLA"
-        },
-        {
-            "fieldname": "estimated_time_of_dispatch",
-            "fieldtype": "Data",
-            "label": "Estimated Time Of Dispatch"
-        }
-    ],
-    "in_create": 1,
-    "links": [],
-    "modified": "2025-10-07 14:30:05.849342",
-    "modified_by": "Administrator",
-    "module": "NJ Features",
-    "name": "SO Quantity Check",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "select": 1,
-            "share": 1,
-            "write": 1
-        }
-    ],
-    "sort_field": "modified",
-    "sort_order": "DESC"
+ "actions": [],
+ "creation": "2025-05-21 10:43:26.968341",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "parent1",
+  "actual_qty",
+  "so_quantity",
+  "remaining_qty",
+  "pending_allocation_qty",
+  "column_break_kqvru",
+  "update_qty",
+  "need_to_reduce",
+  "remove_parent_qty",
+  "update_qty2",
+  "sla",
+  "estimated_time_of_dispatch",
+  "pre_order_qty"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "parent1",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Parent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_qty",
+   "fieldtype": "Data",
+   "label": "Actual Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "so_quantity",
+   "fieldtype": "Data",
+   "label": "SO Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remaining_qty",
+   "fieldtype": "Data",
+   "label": "Remaining Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pending_allocation_qty",
+   "fieldtype": "Int",
+   "label": "Pending Allocation Qty"
+  },
+  {
+   "fieldname": "column_break_kqvru",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "update_qty",
+   "fieldtype": "Data",
+   "label": "Update Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "need_to_reduce",
+   "fieldtype": "Data",
+   "label": "Need To Reduce",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "remove_parent_qty",
+   "fieldtype": "Data",
+   "label": "Remove Parent Qty",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "update_qty2",
+   "fieldtype": "Data",
+   "label": "Update Qty2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sla",
+   "fieldtype": "Int",
+   "label": "SLA"
+  },
+  {
+   "fieldname": "estimated_time_of_dispatch",
+   "fieldtype": "Data",
+   "label": "Estimated Time Of Dispatch"
+  },
+  {
+   "fieldname": "pre_order_qty",
+   "fieldtype": "Int",
+   "label": "Pre Order Qty"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-07-27 17:30:52.068767",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "SO Quantity Check",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
 }

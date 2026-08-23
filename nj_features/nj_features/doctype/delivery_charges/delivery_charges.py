@@ -522,7 +522,7 @@ def process_awb_tracking_batch(cursor=None, batch_size=AWB_TRACKING_BATCH_SIZE):
     return result
 
 # def update_status_in_shopify():
-#     token = "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"
+#     token = "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"
 #     base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 
 #     # Fetch all Delivery Charges
@@ -654,7 +654,7 @@ def process_awb_tracking_batch(cursor=None, batch_size=AWB_TRACKING_BATCH_SIZE):
 #         dc = frappe.get_doc("Delivery Charges", dc_name)
 
 #         # 🔴 Hardcoded token (testing only)
-#         token = "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"
+#         token = "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"
 
 #         base_url = "https://newjaisa.myshopify.com/admin/api/2023-10"
 

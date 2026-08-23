@@ -12,7 +12,7 @@ from nj_features.nj_features.api.shiprocket_api import get_auth_token, generate_
 
 logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
-TOKEN = "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"
+TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 
@@ -1229,7 +1229,7 @@ def fetch_payment_id_from_shopify(doc):
     if isinstance(doc, str):
         doc = json.loads(doc)
 
-    token = "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"
+    token = "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"
     base_url = "https://newjaisa.myshopify.com/admin/api/2025-01/orders"
 
     shopify_order_number = doc.get("shopify_order_number")

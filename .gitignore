@@ -4,3 +4,5 @@
 *.swp
 tags
 nj_features/docs/current
+__pycache__/
+*.py[cod]

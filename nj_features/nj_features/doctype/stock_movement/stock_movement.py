@@ -769,7 +769,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
 
     core_item_groups = get_warehouse_and_department_sla_core_item_groups()
-    row_item_group = (
+    row_item_group = serial_doc.get("item_group") or (
         frappe.db.get_value("Item", row.get("item_code"), "item_group")
         if row.get("item_code")
         else None
@@ -813,23 +813,49 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
     should_validate_sla = row_item_group in core_item_groups
 
 
-    all_item_group_sla_checked = (
-        qty_check_cache or {}
-    ).setdefault(
+    validation_cache = qty_check_cache if qty_check_cache is not None else {}
+    all_item_group_sla_checked = validation_cache.setdefault(
         "all_item_group_sla_checked",
         set(),
     )
+    part_level_sla_item_groups = get_part_level_sla_item_groups(department)
+    combined_sla_restriction = is_combined_sla_restriction_enabled()
+
+    combined_sla_checked = validation_cache.setdefault(
+        "combined_sla_checked",
+        set(),
+    )
+    combined_sla_cache_key = (department, "combined_core_and_part_sla")
+
+    if (
+        combined_sla_restriction
+        and department
+        and department != s_department
+        and combined_sla_cache_key not in combined_sla_checked
+    ):
+        combined_sla_checked.add(combined_sla_cache_key)
+
+        if not validate_combined_core_and_part_level_sla(
+            department=department,
+            source_department=s_department,
+            target_warehouse=t_warehouse,
+            core_sla_item_groups=sla_item_groups,
+            part_level_sla_item_groups=part_level_sla_item_groups,
+            error_messages=error_messages,
+        ):
+            return False
 
     sla_cache_key = (
         department,
-        t_warehouse,
-        row_item_group,
+        "part_level_sla",
     )
 
     if (
-        department
+        not combined_sla_restriction
+        and department
         and department != s_department
         and row_item_group not in core_item_groups
+        and row_item_group in part_level_sla_item_groups
         and sla_cache_key not in all_item_group_sla_checked
     ):
         all_item_group_sla_checked.add(sla_cache_key)
@@ -839,6 +865,7 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             source_department=s_department,
             target_warehouse=t_warehouse,
             item_group=row_item_group,
+            part_level_sla_item_groups=part_level_sla_item_groups,
             error_messages=error_messages,
         ):
             return False
@@ -901,7 +928,12 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
                     f"Serial No <b>{max_age_serial_no}</b> "
                     f"but max aging in warehouse <b>{t_warehouse}</b> is <b>{int(max_age_days)}</b> days."
                 )
-        if should_validate_sla and sla_item_groups and department_sla:
+        if (
+            not combined_sla_restriction
+            and should_validate_sla
+            and sla_item_groups
+            and department_sla
+        ):
             department_sla_days = int(department_sla)
             department_aging = frappe.db.sql(
                 f"""
@@ -1005,206 +1037,253 @@ def get_warehouse_and_department_sla_core_item_groups():
 def get_warehouse_and_department_sla_item_groups():
     return get_nj_settings_comma_separated_values("warehouse_and_department_sla_item_groups")
 
-def get_component_sla_for_department(
-    department,
-    item_group,
-):
-    if not department or not item_group:
-        return None
 
-    return frappe.db.get_value(
-        "Department Component SLA",
-        {
-            "parent": department,
-            "parenttype": "Department",
-            "parentfield": "component_sla",
-            "item_group": item_group,
-            "enabled": 1,
-        },
-        [
-            "warehouse_sla",
-            "department_sla",
-        ],
+def get_part_level_sla_item_groups(department):
+    if not department:
+        return []
+
+    return frappe.get_all(
+        "Part Level SLA",
+        filters={"parent": department, "parenttype": "Department"},
+        pluck="item_group",
+    )
+
+
+def is_combined_sla_restriction_enabled():
+    value = frappe.db.get_value(
+        "NJ Settings",
+        {"parameter": "part_level_and_core_item_groups_restriction"},
+        "value",
+    )
+    return str(value or "").strip() == "1"
+
+
+def validate_combined_core_and_part_level_sla(
+    department,
+    source_department,
+    target_warehouse,
+    core_sla_item_groups,
+    part_level_sla_item_groups,
+    error_messages,
+):
+    """Run both target Department SLA checks and collect all failures."""
+
+    core_sla_valid = validate_core_item_groups_department_sla(
+        department=department,
+        core_sla_item_groups=core_sla_item_groups,
+        error_messages=error_messages,
+    )
+    part_level_sla_valid = validate_all_item_groups_sla(
+        department=department,
+        source_department=source_department,
+        target_warehouse=target_warehouse,
+        item_group=None,
+        part_level_sla_item_groups=part_level_sla_item_groups,
+        error_messages=error_messages,
+        validate_moving_item_group=False,
+    )
+
+    return core_sla_valid and part_level_sla_valid
+
+
+def validate_core_item_groups_department_sla(
+    department,
+    core_sla_item_groups,
+    error_messages,
+):
+    """Report all core-item serials exceeding the target Department SLA."""
+
+    department_sla = frappe.db.get_value(
+        "Department",
+        department,
+        "department_sla",
+    )
+    if not department_sla or not core_sla_item_groups:
+        return True
+
+    department_sla_days = int(department_sla)
+    item_group_placeholders = ", ".join(
+        ["%s"] * len(core_sla_item_groups)
+    )
+    department_aging = frappe.db.sql(
+        f"""
+        SELECT
+            sn.name AS serial_no,
+            sn.item_group,
+            GREATEST(
+                TIMESTAMPDIFF(
+                    DAY,
+                    sn.stock_enty_date_and_time,
+                    DATE_ADD(NOW(), INTERVAL 330 MINUTE)
+                ) - COUNT(DISTINCT holiday.holiday_date),
+                0
+            ) AS department_age
+        FROM `tabSerial No` sn
+        INNER JOIN `tabWarehouse` w
+            ON w.name = sn.warehouse
+        LEFT JOIN `tabHoliday` holiday
+            ON holiday.parent = %s
+            AND holiday.holiday_date > DATE(sn.stock_enty_date_and_time)
+            AND holiday.holiday_date <= CURDATE()
+        WHERE
+            w.department = %s
+            AND (
+                w.warehouse_type IS NULL
+                OR w.warehouse_type = ''
+                OR w.warehouse_type != 'Employee Personal Warehouse'
+            )
+            AND sn.item_group IN ({item_group_placeholders})
+            AND sn.stock_enty_date_and_time IS NOT NULL
+        GROUP BY
+            sn.name,
+            sn.item_group,
+            sn.stock_enty_date_and_time
+        ORDER BY department_age DESC
+        """,
+        tuple(
+            [DEPARTMENT_SLA_HOLIDAY_LIST, department]
+            + core_sla_item_groups
+        ),
         as_dict=True,
     )
+
+    overdue_serials = [
+        row
+        for row in department_aging
+        if row.get("department_age") is not None
+        and int(row.get("department_age")) > department_sla_days
+    ]
+
+    for overdue_serial in overdue_serials:
+        error_messages.append(
+            f"Core SLA | Serial No <b>{overdue_serial.get('serial_no')}</b> | "
+            f"Item Group <b>{overdue_serial.get('item_group')}</b> | "
+            f"Department <b>{department}</b> | "
+            f"SLA <b>{department_sla_days}</b> days | "
+            f"Department Aging "
+            f"<b>{int(overdue_serial.get('department_age'))}</b> days | "
+            f"Status <b>Overdue</b>."
+        )
+
+    return not overdue_serials
+
 
 def validate_all_item_groups_sla(
     department,
     source_department,
     target_warehouse,
     item_group,
+    part_level_sla_item_groups,
     error_messages,
+    validate_moving_item_group=True,
 ):
-    """
-    Apply warehouse and department SLA to any serialized item group.
-
-    Each movement checks SLA only against existing Serial Nos belonging
-    to the same item group.
-    """
+    """Report every overdue serial covered by the target Department's part SLA."""
 
     if not department or department == source_department:
         return True
 
-    if not target_warehouse or not item_group:
+    if not target_warehouse or not source_department:
         return True
 
-    component_sla = get_component_sla_for_department(
-        department=department,
-        item_group=item_group,
+    if not part_level_sla_item_groups:
+        return True
+
+    if validate_moving_item_group and item_group not in part_level_sla_item_groups:
+        return True
+
+    item_group_placeholders = ", ".join(
+        ["%s"] * len(part_level_sla_item_groups)
     )
+    department_aging = frappe.db.sql(
+        f"""
+        SELECT
+            sn.name AS serial_no,
+            sn.item_group,
+            sn.stock_enty_date_and_time AS department_entry_date,
 
-    # No component SLA row configured for this department/item group
-    if not component_sla:
-        return True
+            GREATEST(
+                TIMESTAMPDIFF(
+                    DAY,
+                    sn.stock_enty_date_and_time,
+                    DATE_ADD(NOW(), INTERVAL 330 MINUTE)
+                ) - COUNT(DISTINCT holiday.holiday_date),
+                0
+            ) AS department_age,
 
-    warehouse_sla = component_sla.get("warehouse_sla")
-    department_sla = component_sla.get("department_sla")
+            dal.sla,
 
-    # Warehouse SLA
-    if warehouse_sla is not None:
-        warehouse_sla_days = int(warehouse_sla)
-
-        warehouse_aging = frappe.db.sql(
-            """
-            SELECT
-                sn.name AS serial_no,
-                sn.warehouse,
-                FLOOR(
-                    (
-                        TIMESTAMPDIFF(
-                            HOUR,
-                            TIMESTAMP(
-                                sn.purchase_date,
-                                COALESCE(sn.purchase_time, '00:00:00')
-                            ),
-                            NOW()
-                        )
-                        -
-                        (
-                            (
-                                DATEDIFF(CURDATE(), sn.purchase_date)
-                                + WEEKDAY(sn.purchase_date)
-                                + 1
-                            ) DIV 7
-                        ) * 24
-                    ) / 24
-                ) AS max_age_days
-            FROM `tabSerial No` sn
-            WHERE
-                sn.warehouse = %s
-                AND sn.item_group = %s
-                AND sn.status = 'Active'
-                AND sn.purchase_date IS NOT NULL
-            ORDER BY max_age_days DESC
-            LIMIT 1
-            """,
-            (
-                target_warehouse,
-                item_group,
-            ),
-            as_dict=True,
-        )
-
-        max_age_days = (
-            warehouse_aging[0].get("max_age_days")
-            if warehouse_aging
-            else None
-        )
-
-        max_age_serial_no = (
-            warehouse_aging[0].get("serial_no")
-            if warehouse_aging
-            else None
-        )
-
-        if (
-            max_age_days is not None
-            and int(max_age_days) > warehouse_sla_days
-        ):
-            error_messages.append(
-                f"SLA exceeded for Item Group <b>{item_group}</b> "
-                f"in Department <b>{department}</b>. "
-                f"Warehouse SLA is <b>{warehouse_sla_days}</b> days, "
-                f"but Serial No <b>{max_age_serial_no}</b> has aging of "
-                f"<b>{int(max_age_days)}</b> days in warehouse "
-                f"<b>{target_warehouse}</b>."
-            )
-            return False
-
-    # Department SLA
-    if department_sla is not None:
-        department_sla_days = int(department_sla)
-
-        department_aging = frappe.db.sql(
-            """
-            SELECT
-                sn.name AS serial_no,
-                sn.stock_enty_date_and_time AS department_entry_date,
-                GREATEST(
+            CASE
+                WHEN GREATEST(
                     TIMESTAMPDIFF(
                         DAY,
                         sn.stock_enty_date_and_time,
                         DATE_ADD(NOW(), INTERVAL 330 MINUTE)
-                    )
-                    - COUNT(DISTINCT holiday.holiday_date),
+                    ) - COUNT(DISTINCT holiday.holiday_date),
                     0
-                ) AS department_age
-            FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` warehouse
-                ON warehouse.name = sn.warehouse
-            LEFT JOIN `tabHoliday` holiday
-                ON holiday.parent = %s
-                AND holiday.holiday_date >
-                    DATE(sn.stock_enty_date_and_time)
-                AND holiday.holiday_date <= CURDATE()
-            WHERE
-                warehouse.department = %s
-                AND (w.warehouse_type IS NULL
-                    OR w.warehouse_type = ''
-                    OR w.warehouse_type != 'Employee Personal Warehouse')
-                AND sn.item_group = %s
-                AND sn.status = 'Active'
-                AND sn.stock_enty_date_and_time IS NOT NULL
-            GROUP BY
-                sn.name,
-                sn.stock_enty_date_and_time
-            ORDER BY department_age DESC
-            LIMIT 1
-            """,
-            (
-                DEPARTMENT_SLA_HOLIDAY_LIST,
-                department,
-                item_group,
-            ),
-            as_dict=True,
-        )
+                ) > dal.sla
+                THEN 'Overdue'
+                ELSE 'Within Limit'
+            END AS age_status
 
-        department_age = (
-            department_aging[0].get("department_age")
-            if department_aging
-            else None
-        )
+        FROM `tabSerial No` sn
 
-        department_age_serial = (
-            department_aging[0].get("serial_no")
-            if department_aging
-            else None
-        )
+        INNER JOIN `tabWarehouse` w
+            ON w.name = sn.warehouse
 
-        if (
-            department_age is not None
-            and int(department_age) > department_sla_days
-        ):
-            error_messages.append(
-                f"SLA exceeded for Item Group <b>{item_group}</b> "
-                f"in Department <b>{department}</b>. "
-                f"Department SLA is <b>{department_sla_days}</b> days, "
-                f"but Serial No <b>{department_age_serial}</b> has "
-                f"department aging of <b>{int(department_age)}</b> days."
+        LEFT JOIN `tabHoliday` holiday
+            ON holiday.parent = %s
+            AND holiday.holiday_date > DATE(sn.stock_enty_date_and_time)
+            AND holiday.holiday_date <= DATE(DATE_ADD(NOW(), INTERVAL 330 MINUTE))
+
+        LEFT JOIN `tabPart Level SLA` dal
+            ON dal.parent = w.department
+            AND dal.parenttype = 'Department'
+            AND dal.item_group = sn.item_group
+
+        WHERE
+            w.department = %s
+
+            AND (
+                w.warehouse_type IS NULL
+                OR w.warehouse_type = ''
+                OR w.warehouse_type != 'Employee Personal Warehouse'
             )
-            return False
 
-    return True
+            AND sn.item_group IN ({item_group_placeholders})
+            AND sn.status = 'Active'
+            AND sn.stock_enty_date_and_time IS NOT NULL
+
+        GROUP BY
+            sn.name,
+            sn.item_group,
+            sn.stock_enty_date_and_time,
+            dal.sla
+
+        ORDER BY
+            department_age DESC
+        """,
+        tuple(
+            [DEPARTMENT_SLA_HOLIDAY_LIST, department]
+            + part_level_sla_item_groups
+        ),
+        as_dict=True,
+    )
+
+    overdue_serials = [
+        row for row in department_aging if row.get("age_status") == "Overdue"
+    ]
+
+    for overdue_serial in overdue_serials:
+        error_messages.append(
+            f"Part Level SLA | Serial No <b>{overdue_serial.get('serial_no')}</b> | "
+            f"Item Group <b>{overdue_serial.get('item_group')}</b> | "
+            f"Department <b>{department}</b> | "
+            f"SLA <b>{int(overdue_serial.get('sla'))}</b> days | "
+            f"Department Aging <b>{int(overdue_serial.get('department_age'))}</b> days | "
+            f"Status <b>Overdue</b>."
+        )
+
+    return not overdue_serials
 
 def get_nj_settings_comma_separated_values(parameter):
     value = frappe.db.get_value(
@@ -1865,7 +1944,6 @@ def validate_allowed_serial_component_grades(serial_doc, department_doc, error_m
             defects = [d.strip() for d in entry.get("defects_type", "").split(",") if d.strip()]
             allowed_defective_checks[ig].update(defects)
 
-    print("allowed_defective_checks ===============", dict(allowed_defective_checks))
 
     if all_must_match:
         for ig, allowed_grades in allowed_map.items():

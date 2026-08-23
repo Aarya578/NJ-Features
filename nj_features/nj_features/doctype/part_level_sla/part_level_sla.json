@@ -1,0 +1,37 @@
+{
+ "actions": [],
+ "creation": "2026-08-22 11:18:17.100884",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "sla"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group"
+  },
+  {
+   "fieldname": "sla",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "SLA"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-22 11:28:09.830574",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Part Level SLA",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

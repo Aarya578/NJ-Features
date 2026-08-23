@@ -20,6 +20,12 @@
   "return_reason",
   "shiprocketcourier_name_block_list",
   "shiprocket_courier_names",
+  "delhivery_settings_section",
+  "delhivery_api_token",
+  "delhivery_serviceability_url",
+  "delhivery_order_url",
+  "delhivery_label_url",
+  "delhivery_product_type",
   "critical_log_settings_section",
   "surface_auth",
   "air_auth",
@@ -77,6 +83,41 @@
    "fieldtype": "Table",
    "label": "Shiprocket Courier Names",
    "options": "Shiprocket Courier Names"
+  },
+  {
+   "fieldname": "delhivery_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Delhivery Settings"
+  },
+  {
+   "fieldname": "delhivery_api_token",
+   "fieldtype": "Password",
+   "label": "API Token",
+   "reqd": 1
+  },
+  {
+   "default": "https://track.delhivery.com/api/dc/fetch/serviceability/pincode",
+   "fieldname": "delhivery_serviceability_url",
+   "fieldtype": "Data",
+   "label": "Serviceability URL"
+  },
+  {
+   "default": "https://staging-express.delhivery.com/api/cmu/create.json",
+   "fieldname": "delhivery_order_url",
+   "fieldtype": "Data",
+   "label": "Order URL"
+  },
+  {
+   "default": "https://track.delhivery.com/api/p/packing_slip",
+   "fieldname": "delhivery_label_url",
+   "fieldtype": "Data",
+   "label": "Label URL"
+  },
+  {
+   "default": "Heavy",
+   "fieldname": "delhivery_product_type",
+   "fieldtype": "Data",
+   "label": "Product Type"
   },
   {
    "fieldname": "critical_log_settings_section",

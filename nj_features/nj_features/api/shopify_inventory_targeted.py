@@ -780,7 +780,7 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
                 }
 
                 resp = post_shopify_api(update_url, headers, payload)
-                data = resp.json()
+                data = resp.json()  
 
                 if resp.status_code == 200:
                     frappe.db.set_value("NJ Inventory Sync Main", row.name, {

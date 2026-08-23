@@ -42,7 +42,13 @@
   "eway_url",
   "section_break_reijd",
   "coupon_codes",
-  "scan_barcode"
+  "scan_barcode",
+  "section_break_39",
+  "delhivery_api_token",
+  "delhivery_serviceability_url",
+  "delhivery_order_url",
+  "delhivery_label_url",
+  "delhivery_product_type"
  ],
  "fields": [
   {
@@ -239,11 +245,41 @@
    "fieldtype": "Data",
    "label": "Scan barcode",
    "options": "Barcode"
+  },
+  {
+   "fieldname": "section_break_39",
+   "fieldtype": "Section Break",
+   "label": "Delhivery Settings"
+  },
+  {
+   "fieldname": "delhivery_api_token",
+   "fieldtype": "Password",
+   "label": "Delhivery Api Token"
+  },
+  {
+   "fieldname": "delhivery_serviceability_url",
+   "fieldtype": "Data",
+   "label": "Delhivery Serviceability Url"
+  },
+  {
+   "fieldname": "delhivery_order_url",
+   "fieldtype": "Data",
+   "label": "Delhivery Order Url"
+  },
+  {
+   "fieldname": "delhivery_label_url",
+   "fieldtype": "Data",
+   "label": "Delhivery Label Url"
+  },
+  {
+   "fieldname": "delhivery_product_type",
+   "fieldtype": "Data",
+   "label": "Delhivery Product Type"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-09-08 14:59:16.756776",
+ "modified": "2026-08-18 14:51:29.117308",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Logistics Settings",

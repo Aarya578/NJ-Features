@@ -383,6 +383,9 @@ def create_rq_doc():
     if not run_stage(4, "update_pre_order_qty", lambda: update_pre_order_qty(settings)):
         return {"run_id": run_id, "status": "failed", "stage": "update_pre_order_qty"}
 
+    if not run_stage(5, "updting_sla_department", updting_sla_department):
+        return {"run_id": run_id, "status": "failed", "stage": "updting_sla_department"}
+
     try:
         # =========================================================
         # 🔹 Main Aggregation Query (Item-Level Qty)
@@ -404,7 +407,12 @@ def create_rq_doc():
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
-                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty
+                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
+                CASE 
+                    WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
+                    WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
+                    ELSE CONCAT(MIN(NULLIF(soqc.sla, 0)), ' Days')
+                END AS estimated_time_of_dispatch
             FROM 
                 `tabProduct Bundle` pb
             JOIN 
@@ -520,7 +528,7 @@ def create_rq_doc():
             # =====================================================
             if (
                 flags["enable_parent_override"]
-                and row.total_actual_qty < flags["parent_threshold"]
+                and row.total_actual_qty <= flags["parent_threshold"]
             ):
                 combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
                 parent_qty = parent_qty_dict.get(combined_key)
@@ -528,7 +536,7 @@ def create_rq_doc():
 
                 if (
                     parent_qty is not None
-                    and parent_qty > flags["parent_threshold"]
+                    and parent_qty >= flags["parent_threshold"]
                 ):
                     row.total_actual_qty = parent_qty
                     logger.debug(f"row.total_actual_qty================== {row.total_actual_qty}")
@@ -621,6 +629,7 @@ def create_rq_doc():
                     "actual_qty": row.total_actual_qty,
                     "updated_qty": row.total_actual_qty,
                     "shopify_pre_order_qty": row.total_pre_order_qty,
+                    "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
                     "modified": frappe.utils.now(),
                 }
 
@@ -679,6 +688,7 @@ def create_rq_doc():
                 logger.debug(f"doc.updated_qty================== {doc.updated_qty}")
                 doc.shopify_pre_order_qty = row.total_pre_order_qty
                 logger.debug(f"doc.shopify_pre_order_qty================== {doc.shopify_pre_order_qty}")
+                doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 doc.item_code = row.item_codes
                 logger.debug(f"doc.item_code================== {doc.item_code}")
                 doc.item_group = row.item_groups
@@ -728,7 +738,7 @@ def create_rq_doc():
                 )
 
         # =========================================================
-        # 🔹 Shopify Pre-Order Policy Sync (independent from stock)
+        # 🔹 Shopify Pre-Order Policy & ETD Metafield Sync (independent from stock)
         # =========================================================
         if shopify_data:
             # Pre-order policy sync is intentionally independent from stock sync.
@@ -741,6 +751,17 @@ def create_rq_doc():
             logger.info(
                 f"[{run_id}] Shopify pre-order policy sync completed: "
                 f"{pre_order_policy_result}"
+            )
+
+            # Synchronize estimated_time_of_dispatch variant metafields to Shopify
+            etd_metafield_result = sync_shopify_etd_metafields(
+                shopify_data,
+                settings["shop"],
+                settings["token"],
+            )
+            logger.info(
+                f"[{run_id}] Shopify ETD metafield sync completed: "
+                f"{etd_metafield_result}"
             )
 
         elapsed = time.monotonic() - started_at
@@ -1187,7 +1208,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
             stats["checked"] += 1
             pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-            desired_policy = "CONTINUE" if pre_order_qty > 100 else "DENY"
+            desired_policy = "CONTINUE" if pre_order_qty > 2 else "DENY"
 
             if current_policy == desired_policy:
                 frappe.db.set_value(
@@ -1312,7 +1333,137 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
 
 @frappe.whitelist()
-def get_shopify_variants(product_ids, shop, token, location_id=None):
+def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
+    """Synchronize variant-level estimated_time_of_dispatch metafields to Shopify."""
+    stats = {"checked": 0, "updated": 0, "unchanged": 0, "failed": 0}
+
+    try:
+        if not shop or not token:
+            settings = get_shopify_settings()
+            if not settings:
+                log_error("Shopify settings not found", "sync_shopify_etd_metafields")
+                return stats
+            shop = settings["shop"]
+            token = settings["token"]
+
+        variant_ids = [
+            str(data.get("variant_id") or "").strip()
+            for data in shopify_data
+            if data.get("variant_id")
+        ]
+        if not variant_ids:
+            return stats
+
+        sync_rows = frappe.get_all(
+            "NJ Inventory Sync Main",
+            filters={"shopify_variant_id": ["in", variant_ids]},
+            fields=["name", "shopify_variant_id", "estimated_time_of_dispatch"],
+        )
+        sync_row_by_variant = {
+            str(row.shopify_variant_id).strip(): row for row in sync_rows
+        }
+
+        metafields_to_set = []
+        for variant_id in variant_ids:
+            sync_row = sync_row_by_variant.get(variant_id)
+            if not sync_row:
+                continue
+
+            stats["checked"] += 1
+            etd_val = str(sync_row.get("estimated_time_of_dispatch") or "").strip()
+            metafields_to_set.append({
+                "ownerId": f"gid://shopify/ProductVariant/{variant_id}",
+                "namespace": "custom",
+                "key": "estimated_time_of_dispatch",
+                "type": "single_line_text_field",
+                "value": etd_val,
+            })
+
+        if not metafields_to_set:
+            return stats
+
+        url = f"{shop}/admin/api/2026-10/graphql.json"
+        headers = {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json",
+        }
+        mutation = """
+            mutation SetVariantETDMetafields($metafields: [MetafieldsSetInput!]!) {
+                metafieldsSet(metafields: $metafields) {
+                    metafields {
+                        id
+                        namespace
+                        key
+                        value
+                    }
+                    userErrors {
+                        field
+                        message
+                        code
+                    }
+                }
+            }
+        """
+
+        # Shopify allows up to 25 metafields per metafieldsSet mutation call
+        batch_size = 25
+        for i in range(0, len(metafields_to_set), batch_size):
+            batch = metafields_to_set[i:i + batch_size]
+            response = post_shopify_api(
+                url,
+                headers=headers,
+                json_payload={
+                    "query": mutation,
+                    "variables": {"metafields": batch},
+                },
+            )
+
+            if response.status_code != 200:
+                stats["failed"] += len(batch)
+                log_error(
+                    f"Shopify ETD metafield HTTP error: {response.text}",
+                    "Shopify ETD Metafield Sync",
+                )
+                continue
+
+            response_data = response.json()
+            graphql_errors = response_data.get("errors") or []
+            payload = (
+                response_data.get("data", {})
+                .get("metafieldsSet")
+            ) or {}
+            user_errors = payload.get("userErrors") or []
+
+            if graphql_errors or user_errors:
+                stats["failed"] += len(batch)
+                log_error(
+                    f"Shopify ETD metafield error: graphql_errors={graphql_errors}, user_errors={user_errors}",
+                    "Shopify ETD Metafield Sync",
+                )
+                continue
+
+            updated_metafields = payload.get("metafields") or []
+            stats["updated"] += len(updated_metafields)
+
+        return stats
+
+    except Exception:
+        stats["failed"] += 1
+        log_error(
+            f"Error syncing Shopify ETD metafields: {frappe.get_traceback()}",
+            "Shopify ETD Metafield Sync",
+        )
+        return stats
+
+
+@frappe.whitelist()
+def get_shopify_variants(
+    product_ids,
+    shop,
+    token,
+    location_id=None,
+    retry_missing=True,
+):
     try:
         url = f"{shop}/admin/api/2026-10/graphql.json"
         headers = {
@@ -1321,12 +1472,14 @@ def get_shopify_variants(product_ids, shop, token, location_id=None):
         }
 
         normalized_product_ids = []
+        seen_product_ids = set()
         for product_id in product_ids or []:
             product_id = str(product_id or "").strip()
             if product_id.startswith("gid://shopify/ProductVariant/"):
                 product_id = product_id.rsplit("/", 1)[-1]
-            if product_id.isdigit():
+            if product_id.isdigit() and product_id not in seen_product_ids:
                 normalized_product_ids.append(product_id)
+                seen_product_ids.add(product_id)
 
         gids = [
             f"gid://shopify/ProductVariant/{product_id}"
@@ -1340,11 +1493,9 @@ def get_shopify_variants(product_ids, shop, token, location_id=None):
                 if location_id.startswith("gid://shopify/Location/")
                 else f"gid://shopify/Location/{location_id}"
             )
-        batch_size = 50
         result = []
 
-        for i in range(0, len(gids), batch_size):
-            batch = gids[i:i + batch_size]
+        def fetch_batch(batch):
             inventory_level_fields = """
                     inventoryLevel(locationId: $locationId) {
                         quantities(names: ["available"]) {
@@ -1384,47 +1535,148 @@ def get_shopify_variants(product_ids, shop, token, location_id=None):
                 json_payload={"query": graphql_query, "variables": variables},
             )
 
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("errors"):
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Shopify API HTTP {response.status_code}: {response.text}"
+                )
+
+            data = response.json()
+            if data.get("errors"):
+                raise RuntimeError(f"Shopify GraphQL errors: {data['errors']}")
+
+            batch_result = []
+            for node in data.get("data", {}).get("nodes", []):
+                if not node:
+                    continue
+
+                inventory_quantity = node.get("inventoryQuantity", 0)
+                variant_gid = node.get("id", "")
+                variant_id = variant_gid.split("/")[-1]
+
+                inventory_item = node.get("inventoryItem") or {}
+                inventory_item_gid = inventory_item.get("id", "")
+                inventory_item_id = (
+                    inventory_item_gid.split("/")[-1]
+                    if inventory_item_gid else None
+                )
+                product_gid = node.get("product", {}).get("id", "")
+                product_id = product_gid.split("/")[-1] if product_gid else None
+                location_quantity = None
+                inventory_level = inventory_item.get("inventoryLevel")
+                if inventory_level:
+                    for quantity in inventory_level.get("quantities") or []:
+                        if quantity.get("name") == "available":
+                            location_quantity = quantity.get("quantity")
+                            break
+
+                batch_result.append({
+                    "variant_id": variant_id,
+                    "inventory_item_id": inventory_item_id,
+                    "inventory_quantity": inventory_quantity,
+                    "location_quantity": location_quantity,
+                    "inventory_policy": node.get("inventoryPolicy"),
+                    "product_id": product_id,
+                })
+
+            return batch_result
+
+        def fetch_in_batches(batch_gids, batch_size, fail_entire_lookup):
+            fetched = []
+            for i in range(0, len(batch_gids), batch_size):
+                batch = batch_gids[i:i + batch_size]
+                try:
+                    fetched.extend(fetch_batch(batch))
+                except Exception as exc:
                     log_error(
-                        f"Shopify GraphQL errors: {data['errors']}",
+                        f"Shopify variant lookup batch failed: {exc}",
                         "Error in get_shopify_variants_method",
                     )
-                    return None
+                    if fail_entire_lookup:
+                        return None
+            return fetched
 
-                for node in data.get("data", {}).get("nodes", []):
-                    if node:
-                        inventory_quantity = node.get("inventoryQuantity", 0)
-                        variant_gid = node.get("id", "")
-                        variant_id = variant_gid.split("/")[-1]
+        initial_result = fetch_in_batches(gids, 50, fail_entire_lookup=True)
+        if initial_result is None:
+            return None
+        result.extend(initial_result)
 
-                        inventory_item = node.get("inventoryItem") or {}
-                        inventory_item_gid = inventory_item.get("id", "")
-                        inventory_item_id = inventory_item_gid.split("/")[-1] if inventory_item_gid else None
-                        product_gid = node.get("product", {}).get("id", "")
-                        product_id = product_gid.split("/")[-1] if product_gid else None
-                        location_quantity = None
-                        inventory_level = inventory_item.get("inventoryLevel")
-                        if inventory_level:
-                            for quantity in inventory_level.get("quantities") or []:
-                                if quantity.get("name") == "available":
-                                    location_quantity = quantity.get("quantity")
-                                    break
+        if retry_missing:
+            found_ids = {
+                str(row.get("variant_id") or "").strip() for row in result
+            }
+            missing_ids = [
+                product_id for product_id in normalized_product_ids
+                if product_id not in found_ids
+            ]
 
-                        result.append({
-                            "variant_id": variant_id,
-                            "inventory_item_id": inventory_item_id,
-                            "inventory_quantity": inventory_quantity,
-                            "location_quantity": location_quantity,
-                            "inventory_policy": node.get("inventoryPolicy"),
-                            "product_id": product_id,
-                        })
-            else:
-                log_error(f"Shopify API error: {response.text}", "Error in get_shopify_variants_method")
-                return None
+            if missing_ids:
+                logger.warning(
+                    f"Shopify bulk lookup missed {len(missing_ids)} variants; "
+                    "retrying in batches of 10"
+                )
+                retry_gids = [
+                    f"gid://shopify/ProductVariant/{product_id}"
+                    for product_id in missing_ids
+                ]
+                retry_result = fetch_in_batches(
+                    retry_gids,
+                    10,
+                    fail_entire_lookup=False,
+                )
+                result.extend(retry_result or [])
 
-        return result
+                found_ids = {
+                    str(row.get("variant_id") or "").strip() for row in result
+                }
+                still_missing_ids = [
+                    product_id for product_id in missing_ids
+                    if product_id not in found_ids
+                ]
+
+                # Existing records with an inventory_item_id were previously
+                # confirmed by Shopify. Retry those IDs individually before a
+                # transient bulk omission is treated as "not found".
+                known_variant_ids = set()
+                if still_missing_ids:
+                    known_rows = frappe.get_all(
+                        "NJ Inventory Sync Main",
+                        filters={
+                            "shopify_variant_id": ["in", still_missing_ids],
+                        },
+                        fields=["shopify_variant_id", "inventory_item_id"],
+                    )
+                    known_variant_ids = {
+                        str(row.shopify_variant_id or "").strip()
+                        for row in known_rows
+                        if str(row.inventory_item_id or "").strip()
+                    }
+
+                if known_variant_ids:
+                    logger.warning(
+                        f"Individually retrying {len(known_variant_ids)} "
+                        "previously known Shopify variants"
+                    )
+                    individual_gids = [
+                        f"gid://shopify/ProductVariant/{product_id}"
+                        for product_id in still_missing_ids
+                        if product_id in known_variant_ids
+                    ]
+                    individual_result = fetch_in_batches(
+                        individual_gids,
+                        1,
+                        fail_entire_lookup=False,
+                    )
+                    result.extend(individual_result or [])
+
+        # A retry may return an ID that was already present in the first pass.
+        # Keep one authoritative result per Shopify variant.
+        result_by_variant = {
+            str(row.get("variant_id") or "").strip(): row
+            for row in result
+            if row.get("variant_id")
+        }
+
+        return list(result_by_variant.values())
 
     except Exception as e:
         log_error(f"Error in get_shopify_variants_method: {str(e)}\n{frappe.get_traceback()}", "Error in get_shopify_variants_method")

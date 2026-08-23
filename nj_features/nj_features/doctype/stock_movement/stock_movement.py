@@ -767,31 +767,49 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         and department != s_department
     ):
         frappe.db.set_value('Serial No', serial_no, 'stock_enty_date_and_time', now_datetime())
+
+    core_item_groups = get_warehouse_and_department_sla_core_item_groups()
+    row_item_group = (
+        frappe.db.get_value("Item", row.get("item_code"), "item_group")
+        if row.get("item_code")
+        else None
+    )
     allow_model_change = frappe.db.get_value("Department", department, "allow_model_change")
 
-    if department != s_department and not allow_model_change:
+    if (
+        department != s_department
+        and not allow_model_change
+        and row_item_group in core_item_groups
+    ):
         item_code = serial_doc.get("item_code")
         to_make = serial_doc.get("to_make")
-        
-        item_code_model= frappe.db.get_value("Item", item_code, "item_model")
-        to_make_model= frappe.db.get_value("Item", to_make, "item_model")
+
+        item_code_model = (
+            frappe.db.get_value("Item", item_code, "item_model")
+            if item_code
+            else None
+        )
+        to_make_model = (
+            frappe.db.get_value("Item", to_make, "item_model")
+            if to_make
+            else None
+        )
 
         if item_code_model and to_make_model and item_code_model != to_make_model:
             frappe.db.set_value("Serial No", serial_no, "to_make", item_code)
             to_make = item_code
             to_make_model = item_code_model
 
-        if item_code and to_make and item_code != to_make:
+        # Show error if To Make is empty or doesn't match Item Code
+        if item_code and (not to_make or item_code != to_make):
             error_messages.append(
                 f"Reconfiguration not allowed for Department <b>{department}</b>. "
-                f"Item Code <b>{item_code}</b> and To Make <b>{to_make}</b> must be same."
+                f"Item Code <b>{item_code}</b> and "
+                f"To Make <b>{to_make or 'Empty'}</b> must be same."
             )
             return False
 
-
-    core_item_groups = get_warehouse_and_department_sla_core_item_groups()
     sla_item_groups = get_warehouse_and_department_sla_item_groups()
-    row_item_group = frappe.db.get_value("Item", row.get("item_code"), "item_group") if row.get("item_code") else None
     should_validate_sla = row_item_group in core_item_groups
 
 
@@ -836,30 +854,39 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
             warehouse_sla_days = int(warehouse_sla)
             warehouse_aging = frappe.db.sql(
                 f"""
-                SELECT
-                    s.name AS serial_no,
-                    s.warehouse,
-                    FLOOR(
-                        (
+                    SELECT
+                        s.name AS serial_no,
+                        s.warehouse,
+                        GREATEST(
                             TIMESTAMPDIFF(
-                                HOUR,
+                                DAY,
                                 TIMESTAMP(s.purchase_date, s.purchase_time),
                                 NOW()
-                            )
-                            -
-                            (
-                                (
-                                    DATEDIFF(CURDATE(), s.purchase_date)
-                                    + WEEKDAY(s.purchase_date) + 1
-                                ) DIV 7
-                            ) * 24
-                        ) / 24
-                    ) AS max_age_days
-                FROM `tabSerial No` s
-                WHERE s.warehouse = %s
-                    AND s.item_group IN ({sla_item_group_placeholders})
-                ORDER BY max_age_days DESC
-                LIMIT 1
+                            ) - COUNT(DISTINCT h.holiday_date),
+                            0
+                        ) AS max_age_days
+
+                    FROM `tabSerial No` s
+
+                    LEFT JOIN `tabHoliday` h
+                        ON h.parent = 'Holiday List 2026'
+                        AND h.holiday_date > DATE(TIMESTAMP(s.purchase_date, s.purchase_time))
+                        AND h.holiday_date <= CURDATE()
+
+                    WHERE
+                        s.warehouse = %s
+                        AND s.item_group IN ({sla_item_group_placeholders})
+
+                    GROUP BY
+                        s.name,
+                        s.warehouse,
+                        s.purchase_date,
+                        s.purchase_time
+
+                    ORDER BY
+                        max_age_days DESC
+
+                    LIMIT 1
                 """,
                 tuple([t_warehouse] + sla_item_groups),
                 as_dict=True

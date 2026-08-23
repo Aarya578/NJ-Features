@@ -28,7 +28,7 @@ from erpnext.controllers.status_updater import OverAllowanceError
 # from nj_features.nj_features.api.shiprocket_api import generate_awb,check_courie_service , generate_label
 
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name=" 
-TOKEN = "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"
+TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
 MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillments.json"
 
@@ -356,6 +356,9 @@ class CustomDeliveryNote(DeliveryNote):
                     with log_time("_process_serial_numbers", self.name):
                         self._process_serial_numbers()
 
+                    with log_time("fix_stale_delivery_details_on_return", self.name):
+                        self.fix_stale_delivery_details_on_return()
+
                 # ------------------------------------------------------------------
                 # Total timing
                 # ------------------------------------------------------------------
@@ -389,6 +392,31 @@ class CustomDeliveryNote(DeliveryNote):
 
         for serial_no in serial_nos:
             qty_update_based_on_parent_item(serial_no=serial_no)
+
+    def fix_stale_delivery_details_on_return(self):
+        """Clear an original DN reference left behind after a serial is returned."""
+        if not self.is_return or not self.return_against:
+            return
+
+        serial_nos = set()
+        for child_table in ("items", "packed_items"):
+            for row in self.get(child_table) or []:
+                serial_nos.update(self.get_serial_list(row.get("serial_no")))
+
+        for serial_no in serial_nos:
+            serial_doc = frappe.get_doc("Serial No", serial_no)
+
+            # A returned serial must be back in a warehouse. Also avoid touching
+            # references that no longer point to this return's original DN.
+            if not serial_doc.warehouse or serial_doc.delivery_document_no != self.return_against:
+                continue
+
+            serial_doc.delivery_document_type = None
+            serial_doc.delivery_document_no = None
+            serial_doc.delivery_date = None
+            serial_doc.delivery_time = None
+            serial_doc.set_status()
+            serial_doc.db_update()
 
     def _process_customer_details(self):
         
@@ -765,7 +793,8 @@ class CustomDeliveryNote(DeliveryNote):
                         sn,
                         {
                             "reserved_sales_order": against_sales_order,
-                            "to_make": item_code
+                            "to_make": item_code,
+                            "remarks": f"Allocated to SO {against_sales_order} (Return) | to_make: {item_code}"
                         },
                         update_modified=True
                     )
@@ -855,7 +884,8 @@ class CustomDeliveryNote(DeliveryNote):
                                 replacement_sn,
                                 {
                                     "reserved_sales_order": against_sales_order,
-                                    "to_make": item_code
+                                    "to_make": item_code,
+                                    "remarks": f"Allocated to SO {against_sales_order} (Return Replacement) | to_make: {item_code}"
                                 },
                                 update_modified=True
                             )

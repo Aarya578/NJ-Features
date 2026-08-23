@@ -1093,6 +1093,8 @@ class NJQCA(Document):
         apply_reliability_test_changes_to_doc(self)
         # Read Autopilot file and save Autopilot_status = PASS / FAIL
         apply_autopilot_status_to_doc(self)
+        # NEW: Adapter failure reason + charging gain percentage
+        apply_adapter_failure_reason_and_gain_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
         
@@ -3687,7 +3689,58 @@ def construct_item_code(item_template, args_list):
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
-def get_model(manufacturer_model=None, item_group=None, brand=None):
+def check_manufacturer_model_exceptions(manufacturer_model, components=None):
+    if not manufacturer_model:
+        return None
+
+    m_model_clean = (manufacturer_model or "").strip()
+
+    # Exception case: Latitude 3590 + variant_2/variant_3 matching target list or BASE BOARD -> Model 3490
+    if m_model_clean.lower() in ("latitude 3590", "3590"):
+        if isinstance(components, str):
+            try:
+                components = json.loads(components)
+            except Exception:
+                components = []
+
+        if isinstance(components, list):
+            target_values = {
+                "0T485T", "0YYJ8V", "0G9KR8", "08M4FC", "1D6B", "0BDA", "8087", "781",
+                "REALTEK SEMICONDUCTOR CO., LTD.", "DELL INC.", "053X82", "1BCF",
+                "0CF3", "03F0", "043YKY", "0Y2FDT", "04TWG5", "0C45", "32C2", "0VD68F",
+                "046D", "09GV6M", "349C", "0C49", "461", "06RR0X", "1124", "06NMX7",
+                "1B3F", "214B", "10C4", "1A2C", "17EF", "413C", "0A05", "048D", "FFFF",
+                "26F1", "18EC", "806"
+            }
+            # Add versions without leading zero for 6-character DP/N part numbers (e.g. 0YYJ8V -> YYJ8V)
+            for val in list(target_values):
+                if val.startswith("0") and len(val) == 6:
+                    target_values.add(val[1:])
+
+            for row in components:
+                if not isinstance(row, dict) and hasattr(row, "as_dict"):
+                    row = row.as_dict()
+                if isinstance(row, dict):
+                    v2 = (row.get("variant_2") or "").strip().upper()
+                    v3 = (row.get("variant_3") or "").strip().upper()
+
+                    # If variant_2 contains BASE BOARD or matches target list
+                    if "BASE BOARD" in v2 or "BASEBOARD" in v2:
+                        return "3490"
+
+                    for val in (v2, v3):
+                        if not val:
+                            continue
+                        if val in target_values:
+                            return "3490"
+                        for target in target_values:
+                            if len(target) > 2 and target in val:
+                                return "3490"
+
+    return None
+
+@frappe.whitelist()
+def get_model(manufacturer_model=None, item_group=None, brand=None, components=None):
     query, model_list = '', []
 
     if _is_desktop_item_group(item_group):
@@ -3711,6 +3764,10 @@ def get_model(manufacturer_model=None, item_group=None, brand=None):
 
     if not manufacturer_model:
         return model_list
+
+    model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+    if model_override:
+        return [{'model': model_override}]
 
     query = """SELECT DISTINCT mmc.parent AS model
                FROM `tabManufacturer Model Child` AS mmc
@@ -5979,9 +6036,12 @@ def create_serial_no_based_on_rfq(serial_info):
         
 
 @frappe.whitelist()
-def validate_model(model,manufacturer_model):
+def validate_model(model, manufacturer_model, components=None):
     try:
         if manufacturer_model and model:
+            model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+            if model_override and model_override == model:
+                return "1"
             query = """
                 select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
             """
@@ -6194,7 +6254,238 @@ def check_charging_gain(wattage: int, initial_percentage: int, final_percentage:
     return "Pass" if gain >= min_gain else "Fail"
 
 
+def _upsert_adapter_result_parameter(doc, parameter, value):
+    """
+    Add/update an informational Adapter result parameter
+    without creating duplicate rows.
+    """
+    target_row = None
 
+    for row in doc.get("njqca_result_parameters") or []:
+        item_group = str(row.get("item_group") or "").strip().lower()
+        row_parameter = str(row.get("parameter") or "").strip().lower()
+
+        if (
+            item_group == "laptop adaptors"
+            and row_parameter == parameter.lower()
+        ):
+            target_row = row
+            break
+
+    if target_row:
+        target_row.value = str(value)
+        target_row.score = 0
+    else:
+        doc.append("njqca_result_parameters", {
+            "item_group": "Laptop Adaptors",
+            "parameter": parameter,
+            "value": str(value),
+            "score": 0,
+            "part_config_id": 0
+        })
+
+
+def apply_adapter_failure_reason_and_gain_to_doc(doc):
+    """
+    ERP-side Adapter result enrichment.
+
+    Creates:
+        charging_gain_percentage
+        Adapterbattery_failure_reason
+
+    No NJQCA/C++ change required.
+    """
+
+    adapter_rows = [
+        row
+        for row in (doc.get("njqca_result_parameters") or [])
+        if str(row.get("item_group") or "").strip().lower()
+        == "laptop adaptors"
+    ]
+
+    if not adapter_rows:
+        return
+
+    # Build parameter map
+    param_map = {}
+
+    for row in adapter_rows:
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        if parameter:
+            param_map[parameter] = row
+
+    status_row = param_map.get("adapterbattery_status")
+
+    if not status_row:
+        # Adapter test has not completed yet
+        return
+
+    adapter_status = str(status_row.get("value") or "").strip().upper()
+
+    initial_percentage = None
+    final_percentage = None
+    charging_gain = None
+
+    # STEP 1: Calculate charging gain
+    try:
+        initial_row = param_map.get("initial_percentage")
+        final_row = param_map.get("final_percentage")
+
+        if initial_row and final_row:
+            initial_value = initial_row.get("value")
+            final_value = final_row.get("value")
+
+            if initial_value not in (None, "") and final_value not in (None, ""):
+                initial_percentage = int(float(initial_value))
+                final_percentage = int(float(final_value))
+
+                charging_gain = final_percentage - initial_percentage
+
+                _upsert_adapter_result_parameter(
+                    doc,
+                    "charging_gain_percentage",
+                    charging_gain
+                )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Adapter charging gain calculation failed"
+        )
+
+    # If Adapter passed, there is no failure reason.
+    # Clear an old reason if one exists.
+    if adapter_status != "FAIL":
+        old_reason_row = param_map.get("adapterbattery_failure_reason")
+
+        if old_reason_row:
+            old_reason_row.value = ""
+            old_reason_row.score = 0
+
+        return
+
+    failure_reasons = []
+
+    # STEP 2: Read exact Issues generated by existing C++ test
+    #
+    # Value columns:
+    # 0 Brand
+    # 1 Battery %
+    # 2 Charging Status
+    # 3 Voltage
+    # 4 Charge Rate
+    # 5 Wattage
+    # 6 Current
+    # 7 CPU Load
+    # 8 Issues
+    for row in adapter_rows:
+        raw_value = str(row.get("value") or "").strip()
+
+        if not raw_value:
+            continue
+
+        try:
+            parsed = next(csv.reader([raw_value]))
+        except Exception:
+            continue
+
+        if len(parsed) < 9:
+            continue
+
+        issues = str(parsed[8] or "").strip()
+
+        if not issues:
+            continue
+
+        for issue in issues.split(";"):
+            issue = issue.strip()
+
+            if issue and issue not in failure_reasons:
+                failure_reasons.append(issue)
+
+    # STEP 3: Check charging-gain failure
+    wattage = None
+
+    try:
+        wattage_row = param_map.get("repacked_adapter_wattage")
+
+        if wattage_row:
+            wattage_text = str(wattage_row.get("value") or "")
+            wattage_numbers = re.findall(r"\d+", wattage_text)
+
+            if wattage_numbers:
+                wattage = int(wattage_numbers[0])
+
+        # Fallback for standalone Laptop Adaptor NJQCA
+        if (
+            wattage is None
+            and str(doc.get("item_group") or "").strip().lower()
+            == "laptop adaptors"
+            and doc.get("serial_no")
+        ):
+            item_code = frappe.db.get_value(
+                "Serial No",
+                doc.get("serial_no"),
+                "item_code"
+            )
+
+            if item_code:
+                wattage_value = frappe.db.get_value(
+                    "Item Variant Attribute",
+                    {
+                        "parent": item_code,
+                        "attribute": "Wattage Capacity"
+                    },
+                    "attribute_value"
+                )
+
+                wattage_numbers = re.findall(
+                    r"\d+",
+                    str(wattage_value or "")
+                )
+
+                if wattage_numbers:
+                    wattage = int(wattage_numbers[0])
+
+        if (
+            not failure_reasons
+            and wattage is not None
+            and initial_percentage is not None
+            and final_percentage is not None
+        ):
+            gain_status = check_charging_gain(
+                wattage,
+                initial_percentage,
+                final_percentage
+            )
+
+            if (
+                str(gain_status).strip().lower() == "fail"
+                and "Insufficient charging gain" not in failure_reasons
+            ):
+                failure_reasons.append("Insufficient charging gain")
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Adapter charging gain status check failed"
+        )
+
+    # STEP 4: Save final failure reason
+    if failure_reasons:
+        failure_reason = "; ".join(failure_reasons)
+    else:
+        failure_reason = "Failure reason unavailable"
+
+    failure_reason = failure_reason[:140]
+
+    _upsert_adapter_result_parameter(
+        doc,
+        "Adapterbattery_failure_reason",
+        failure_reason
+    )
+    
 @frappe.whitelist()
 def get_last_quality_status_from_bios(njqca_name):
     # Validate NJQCA

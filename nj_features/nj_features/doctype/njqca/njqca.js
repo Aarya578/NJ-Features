@@ -300,6 +300,7 @@ frappe.ui.form.on("NJQCA", {
           isDesktopNJQCA(frm.doc) ? null : frm.doc.manufacturer_model,
           frm.doc.item_group,
           frm.doc.brand,
+          frm.doc.njqca_item_component,
         );
       }
 
@@ -1197,7 +1198,12 @@ frappe.ui.form.on("NJQCA", {
       return;
     }
 
-    njqca.get_model(frm.doc.manufacturer_model);
+    njqca.get_model(
+      frm.doc.manufacturer_model,
+      frm.doc.item_group,
+      frm.doc.brand,
+      frm.doc.njqca_item_component
+    );
   },
 
   brand: function (frm) {
@@ -1413,6 +1419,7 @@ frappe.ui.form.on("NJQCA", {
         args: {
           model: frm.doc.model,
           manufacturer_model: frm.doc.manufacturer_model,
+          components: frm.doc.njqca_item_component,
         },
         callback: function (r) {
           if (r.message && r.message == "0") {
@@ -2667,6 +2674,7 @@ njqca.get_model = function (
   manufacturer_model,
   item_group = null,
   brand = null,
+  components = null,
 ) {
   const isDesktop = (item_group || "").trim().toLowerCase() === "desktops";
 
@@ -2676,6 +2684,7 @@ njqca.get_model = function (
       manufacturer_model: manufacturer_model,
       item_group: item_group,
       brand: brand,
+      components: components || (cur_frm ? cur_frm.doc.njqca_item_component : null),
     },
     callback: function (r) {
       const model_list = Array.isArray(r.message) ? r.message : [];

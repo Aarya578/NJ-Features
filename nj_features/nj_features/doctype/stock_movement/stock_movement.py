@@ -21,10 +21,6 @@ def _split_department_names(departments):
 
 
 class StockMovement(Document):
-    def before_submit(self):
-        pass
-        # self.prevent_duplicate_stock_movements()
-
     def prevent_duplicate_stock_movements(self):
         current_items = sorted([
             (row.item_code, row.qty, row.s_warehouse, row.t_warehouse)
@@ -753,7 +749,9 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
-    if not validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
+    if not validate_serial_no_in_latest_nj_production_plan(
+        serial_no, serial_doc, s_department, error_messages, doc, row
+    ):
         return False
     if not validate_serial_no_gen_wise(serial_no, serial_doc, department, s_department, error_messages):
         return False
@@ -1297,7 +1295,13 @@ def get_nj_settings_comma_separated_values(parameter):
         if item_group and item_group.strip()
     ]
 
-def validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_department, error_messages):
+def validate_serial_no_in_latest_nj_production_plan(
+    serial_no, serial_doc, s_department, error_messages, doc=None, transfer_row=None
+):
+    stock_entry_type = doc.get("stock_entry_type") if doc else None
+    if stock_entry_type != "Material Transfer":
+        return True
+
     nj_value = frappe.db.get_value('NJ Settings', {'parameter': 'stock_movement_function_restriction'}, 'value')
     if (nj_value or "").strip().lower() != "enable":
         return True
@@ -1316,11 +1320,11 @@ def validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_dep
     if not nj_production_name:
         error_messages.append(
             "Latest NJ Production Planning not found. "
-            f"Serial No <b>{serial_no}</b> cannot be validated."
+            f"Serial No <b>{serial_no}</b> cannot be validated. Please contact the NPD team."
         )
         return False
 
-    serial_exists = frappe.db.exists(
+    production_plan_row = frappe.db.get_value(
         "Final Production Planning Data",
         {
             "parent": nj_production_name,
@@ -1328,16 +1332,243 @@ def validate_serial_no_in_latest_nj_production_plan(serial_no, serial_doc, s_dep
             "parentfield": "lines",
             "serial_no": serial_no,
         },
+        ["priority_rank", "current_department", "current_warehouse", "part_allocation"],
+        as_dict=True,
     )
 
-    if not serial_exists:
+    if production_plan_row:
+        return _validate_production_plan_rank_for_transfer(
+            serial_no=serial_no,
+            production_plan_name=nj_production_name,
+            production_plan_row=production_plan_row,
+            transfer_row=transfer_row,
+            transfer_doc=doc,
+            core_item_groups=stock_movement_item_groups,
+            error_messages=error_messages,
+        )
+
+    missing_serial_row = frappe.db.get_value(
+        "Missing Serial Nos",
+        {
+            "parent": nj_production_name,
+            "parenttype": "NJ Production Planning",
+            "parentfield": "missing_serial_nos",
+            "serial_no": serial_no,
+        },
+        ["name", "reason"],
+        as_dict=True,
+    )
+
+    if missing_serial_row:
+        safe_reason = frappe.utils.escape_html(
+            str(missing_serial_row.get("reason") or "Reason not available")
+        )
         error_messages.append(
-            f"Serial No <b>{serial_no}</b> does not exist in Latest NJ Production Planning "
-            f"<b>{nj_production_name}</b>."
+            f"Serial No <b>{serial_no}</b> is missing from the latest NJ Production Planning "
+            f"<b>{nj_production_name}</b>. Reason: <b>{safe_reason}</b>."
         )
         return False
 
-    return True
+    error_messages.append(
+        f"Serial No <b>{serial_no}</b> was not found in either Final Production Planning Data "
+        f"or Missing Serial Nos of the latest NJ Production Planning "
+        f"<b>{nj_production_name}</b>. Please contact the NPD team."
+    )
+    return False
+
+
+def _get_transfer_serial_nos(transfer_doc):
+    serial_nos = set()
+    if not transfer_doc:
+        return serial_nos
+
+    for item_row in transfer_doc.get("items", []):
+        serial_value = item_row.get("serial_no")
+        if not serial_value:
+            continue
+
+        for value in str(serial_value).replace(",", "\n").split("\n"):
+            value = value.strip()
+            if value:
+                serial_nos.add(value)
+
+    return serial_nos
+
+
+def _validate_production_plan_rank_for_transfer(
+    serial_no,
+    production_plan_name,
+    production_plan_row,
+    transfer_row,
+    transfer_doc,
+    core_item_groups,
+    error_messages,
+):
+    rank = production_plan_row.get("priority_rank")
+    try:
+        selected_rank = int(flt(rank))
+    except (TypeError, ValueError, OverflowError):
+        selected_rank = 0
+
+    if selected_rank <= 0:
+        error_messages.append(
+            f"Serial No <b>{serial_no}</b> does not have a valid Priority Rank in the latest "
+            f"NJ Production Planning <b>{production_plan_name}</b>. Movement is not allowed."
+        )
+        return False
+
+    source_warehouse = transfer_row.get("s_warehouse") if transfer_row else None
+    target_warehouse = transfer_row.get("t_warehouse") if transfer_row else None
+    if not source_warehouse or not target_warehouse:
+        error_messages.append(
+            f"Source Warehouse and Target Warehouse are required to validate the Priority Rank "
+            f"for Serial No <b>{serial_no}</b>."
+        )
+        return False
+
+    source_warehouse_type = frappe.db.get_value("Warehouse", source_warehouse, "warehouse_type")
+    target_warehouse_type = frappe.db.get_value("Warehouse", target_warehouse, "warehouse_type")
+    allowed_warehouse_types = {"Rack", "Operation Warehouse"}
+
+    if (
+        source_warehouse_type not in allowed_warehouse_types
+        or target_warehouse_type not in allowed_warehouse_types
+    ):
+        error_messages.append(
+            f"Priority Rank validation is not configured for movement from "
+            f"<b>{source_warehouse}</b> ({source_warehouse_type or 'Warehouse Type missing'}) to "
+            f"<b>{target_warehouse}</b> ({target_warehouse_type or 'Warehouse Type missing'}) "
+            f"for Serial No <b>{serial_no}</b>."
+        )
+        return False
+
+    query_filters = {
+        "production_plan": production_plan_name,
+        "core_item_groups": tuple(core_item_groups),
+    }
+
+    if source_warehouse_type == "Rack":
+        rank_scope = "Department"
+        current_department = production_plan_row.get("current_department")
+        if not current_department:
+            error_messages.append(
+                f"Current Department is missing for Serial No <b>{serial_no}</b> in the latest "
+                f"NJ Production Planning <b>{production_plan_name}</b>."
+            )
+            return False
+
+        scope_condition = """
+            AND FPPD.current_department = %(current_department)s
+            AND WH.warehouse_type = 'Rack'
+        """
+        query_filters["current_department"] = current_department
+        scope_label = current_department
+    else:
+        rank_scope = "Warehouse"
+        scope_condition = """
+            AND SN.warehouse = %(source_warehouse)s
+            AND WH.warehouse_type = 'Operation Warehouse'
+        """
+        query_filters["source_warehouse"] = source_warehouse
+        scope_label = source_warehouse
+
+    available_rows = frappe.db.sql(
+        f"""
+        SELECT
+            FPPD.serial_no,
+            FPPD.priority_rank,
+            IFNULL(FPPD.part_allocation, 0) AS part_allocation,
+            SN.warehouse
+        FROM `tabFinal Production Planning Data` FPPD
+        INNER JOIN `tabSerial No` SN ON SN.name = FPPD.serial_no
+        INNER JOIN `tabWarehouse` WH ON WH.name = SN.warehouse
+        WHERE FPPD.parent = %(production_plan)s
+          AND FPPD.parenttype = 'NJ Production Planning'
+          AND FPPD.parentfield = 'lines'
+          AND SN.warehouse IS NOT NULL
+          AND SN.item_group IN %(core_item_groups)s
+          {scope_condition}
+        """,
+        query_filters,
+        as_dict=True,
+    )
+
+    selected_serial_nos = _get_transfer_serial_nos(transfer_doc)
+    selected_part_allocation = bool(int(flt(production_plan_row.get("part_allocation") or 0)))
+    part_allocated_rows = [
+        row for row in available_rows
+        if bool(int(flt(row.get("part_allocation") or 0)))
+    ]
+
+    if selected_part_allocation:
+        priority_rows = part_allocated_rows
+        priority_label = "Part Allocation"
+    else:
+        pending_part_allocated_rows = [
+            row for row in part_allocated_rows
+            if row.get("serial_no") not in selected_serial_nos
+        ]
+        if pending_part_allocated_rows:
+            pending_part_allocated_rows.sort(
+                key=lambda row: (
+                    int(flt(row.get("priority_rank") or 0)),
+                    row.get("serial_no") or "",
+                )
+            )
+            pending_details = "<br>".join(
+                f"{row.get('serial_no')} (Rank: {int(flt(row.get('priority_rank') or 0))}, "
+                f"Warehouse: {row.get('warehouse')})"
+                for row in pending_part_allocated_rows
+            )
+            error_messages.append(
+                f"Serial No <b>{serial_no}</b> cannot be moved because Part Allocation Serial Nos "
+                f"are still pending in the {rank_scope}-wise priority scope "
+                f"<b>{scope_label}</b>:<br>{pending_details}"
+            )
+            return False
+
+        priority_rows = [
+            row for row in available_rows
+            if not bool(int(flt(row.get("part_allocation") or 0)))
+        ]
+        priority_label = "normal"
+
+    lower_ranked_rows = []
+
+    for available_row in priority_rows:
+        available_serial_no = available_row.get("serial_no")
+        if available_serial_no in selected_serial_nos:
+            continue
+
+        try:
+            available_rank = int(flt(available_row.get("priority_rank")))
+        except (TypeError, ValueError, OverflowError):
+            continue
+
+        if available_rank < selected_rank:
+            lower_ranked_rows.append(
+                {
+                    "serial_no": available_serial_no,
+                    "rank": available_rank,
+                    "warehouse": available_row.get("warehouse"),
+                }
+            )
+
+    if not lower_ranked_rows:
+        return True
+
+    lower_ranked_rows.sort(key=lambda row: (row["rank"], row["serial_no"] or ""))
+    pending_details = "<br>".join(
+        f"{row['serial_no']} (Rank: {row['rank']}, Warehouse: {row['warehouse']})"
+        for row in lower_ranked_rows
+    )
+    error_messages.append(
+        f"Serial No <b>{serial_no}</b> with Rank <b>{selected_rank}</b> cannot be moved. "
+        f"Lower-ranked {priority_label} Serial Nos are still available in the "
+        f"{rank_scope}-wise priority scope "
+        f"<b>{scope_label}</b>:<br>{pending_details}"
+    )
+    return False
 
 def _get_latest_nj_production_plan_name():
     latest_plan = frappe.get_all(

@@ -727,8 +727,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 for s in p2_matches[:needed_qty]:
                     dept_pool.remove(s)
                     needed_qty -= 1
+                    part_allocation = False
                     if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                        _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                        part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                     curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
                     remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {target_ic}"
                     _append_plan_row(
@@ -745,6 +746,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=s.get("age_days"),
                         remarks=remarks_text,
+                        part_allocation=part_allocation,
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -775,8 +777,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     for s in p3_candidates[:needed_qty]:
                         dept_pool.remove(s)
                         needed_qty -= 1
+                        part_allocation = False
                         if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                            _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                            part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                         remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}') | to_make: {target_ic}"
                         _append_plan_row(
                             plan_doc,
@@ -792,6 +795,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                             priority_rank=priority_per_dept[dept_name],
                             serial_age_days=s.get("age_days"),
                             remarks=remarks_text,
+                            part_allocation=part_allocation,
                         )
                         priority_per_dept[dept_name] += 1
 
@@ -819,8 +823,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         for s in p4_matches[:needed_qty]:
                             dept_pool.remove(s)
                             needed_qty -= 1
+                            part_allocation = False
                             if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                                _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                                part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                             curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
                             remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {target_ic}"
                             _append_plan_row(
@@ -837,6 +842,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                                 priority_rank=priority_per_dept[dept_name],
                                 serial_age_days=s.get("age_days"),
                                 remarks=remarks_text,
+                                part_allocation=part_allocation,
                             )
                             priority_per_dept[dept_name] += 1
 
@@ -899,6 +905,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=alloc.get("age_days"),
                     remarks=remarks_text,
+                    part_allocation=alloc.get("part_allocation", False),
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -939,9 +946,10 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 else:
                     target_item_code = fallback_pb or ic
 
+                    part_allocation = False
                     if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                        ok = _maybe_allocate_parts_for_serial(sn, dept_name)
-                        if not ok:
+                        part_allocation = _maybe_allocate_parts_for_serial(sn, dept_name)
+                        if not part_allocation:
                             _update_serial_to_make(sn, target_item_code)
                             reason_text = "Part allocation failed (Forecast)"
                             _update_serial_remarks(sn, f"Not Allocated: {reason_text}")
@@ -977,6 +985,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=info.get("age_days"),
                         remarks=remarks_text,
+                        part_allocation=part_allocation,
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1095,6 +1104,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=alloc.get("dwell_days"),
                         remarks=remarks_text,
+                        part_allocation=alloc.get("part_allocation", False),
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1869,9 +1879,10 @@ def _allocate_forecast_to_balance_doi(
         if not target_item_code:
             target_item_code = pb_fallback
 
+        part_allocation = False
         if _DEPT_ALLOCATE_PARTS.get(current_department):
-            ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-            if not ok:
+            part_allocation = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+            if not part_allocation:
                 _update_serial_to_make(chosen["serial_no"], target_item_code)
 
                 remaining_serials[:] = [x for x in remaining_serials if x["serial_no"] != chosen["serial_no"]]
@@ -1902,6 +1913,7 @@ def _allocate_forecast_to_balance_doi(
                 "forward_key": target,
                 "doi": new_doi,
                 "age_days": chosen.get("age_days"),
+                "part_allocation": part_allocation,
             }
         )
 
@@ -2143,9 +2155,10 @@ def _allocate_reconfig_serials(
             continue
 
         # Part allocation check
+        part_allocation = False
         if _DEPT_ALLOCATE_PARTS.get(current_department):
-            ok = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
-            if not ok:
+            part_allocation = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
+            if not part_allocation:
                 _update_serial_to_make(serial["serial_no"], target_item_code)
                 logger.debug(
                     f"[RECONFIG_SKIP] serial_no={serial['serial_no']} - "
@@ -2168,6 +2181,7 @@ def _allocate_reconfig_serials(
             "dwell_days": serial.get("dwell_days", 0),
             "source_department": serial.get("source_department"),
             "age_days": serial.get("age_days"),
+            "part_allocation": part_allocation,
         })
 
         logger.debug(
@@ -2874,6 +2888,7 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,
     remarks: Optional[str] = None,
+    part_allocation: bool = False,
 ):
     # Log each serial number being processed
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
@@ -2899,7 +2914,7 @@ def _append_plan_row(
             "reason": reason,
             "priority_rank": int(priority_rank),
             "serial_age_days": serial_age_days,
-            "allocate_parts": 1,
+            "part_allocation": int(bool(part_allocation)),
         },
     )
 

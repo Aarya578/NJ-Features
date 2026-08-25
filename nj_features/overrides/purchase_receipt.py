@@ -267,7 +267,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 self.name,
                 start,
                 self.is_return,
-                "updating_parent_qty_for_new_generated_serial_no", self.name, start
             )
             start = time.perf_counter()
             self.set_registry_no_on_submit()

@@ -793,7 +793,8 @@ class CustomDeliveryNote(DeliveryNote):
                         sn,
                         {
                             "reserved_sales_order": against_sales_order,
-                            "to_make": item_code
+                            "to_make": item_code,
+                            "remarks": f"Allocated to SO {against_sales_order} (Return) | to_make: {item_code}"
                         },
                         update_modified=True
                     )
@@ -883,7 +884,8 @@ class CustomDeliveryNote(DeliveryNote):
                                 replacement_sn,
                                 {
                                     "reserved_sales_order": against_sales_order,
-                                    "to_make": item_code
+                                    "to_make": item_code,
+                                    "remarks": f"Allocated to SO {against_sales_order} (Return Replacement) | to_make: {item_code}"
                                 },
                                 update_modified=True
                             )

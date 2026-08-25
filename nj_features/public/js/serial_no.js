@@ -7,6 +7,8 @@ frappe.ui.form.on('Serial No', {
         if (frappe.user_roles.includes('NPD Manager')) {
             console.log('User has NPD Manager role, making to_make field editable.');
             frm.set_df_property('to_make', 'read_only', 0);
+            frm.set_df_property('item_wizard', 'read_only', 0);
+
         }
 
         // Get the current user id from the session

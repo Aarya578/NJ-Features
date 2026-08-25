@@ -408,7 +408,11 @@ def create_rq_doc():
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
                 CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
-                MAX(COALESCE(soqc.estimated_time_of_dispatch, '')) AS estimated_time_of_dispatch
+                CASE 
+                    WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
+                    WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
+                    ELSE CONCAT(MIN(NULLIF(soqc.sla, 0)), ' Days')
+                END AS estimated_time_of_dispatch
             FROM 
                 `tabProduct Bundle` pb
             JOIN 
@@ -1204,7 +1208,7 @@ def sync_shopify_pre_order_policies(shopify_data, shop, token):
 
             stats["checked"] += 1
             pre_order_qty = safe_float(sync_row.shopify_pre_order_qty) or 0
-            desired_policy = "CONTINUE" if pre_order_qty > 100 else "DENY"
+            desired_policy = "CONTINUE" if pre_order_qty > 2 else "DENY"
 
             if current_policy == desired_policy:
                 frappe.db.set_value(

@@ -1093,7 +1093,7 @@ class NJQCA(Document):
         apply_reliability_test_changes_to_doc(self)
         # Read Autopilot file and save Autopilot_status = PASS / FAIL
         apply_autopilot_status_to_doc(self)
-         # NEW: Adapter failure reason + charging gain percentage
+        # NEW: Adapter failure reason + charging gain percentage
         apply_adapter_failure_reason_and_gain_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
@@ -3783,7 +3783,58 @@ def construct_item_code(item_template, args_list):
         log_error(f"An error occurred at construct_item_code: {str(traceback.format_exc())}", "Error in construct_item_code NJQCA")
 
 @frappe.whitelist()
-def get_model(manufacturer_model=None, item_group=None, brand=None):
+def check_manufacturer_model_exceptions(manufacturer_model, components=None):
+    if not manufacturer_model:
+        return None
+
+    m_model_clean = (manufacturer_model or "").strip()
+
+    # Exception case: Latitude 3590 + variant_2/variant_3 matching target list or BASE BOARD -> Model 3490
+    if m_model_clean.lower() in ("latitude 3590", "3590"):
+        if isinstance(components, str):
+            try:
+                components = json.loads(components)
+            except Exception:
+                components = []
+
+        if isinstance(components, list):
+            target_values = {
+                "0T485T", "0YYJ8V", "0G9KR8", "08M4FC", "1D6B", "0BDA", "8087", "781",
+                "REALTEK SEMICONDUCTOR CO., LTD.", "DELL INC.", "053X82", "1BCF",
+                "0CF3", "03F0", "043YKY", "0Y2FDT", "04TWG5", "0C45", "32C2", "0VD68F",
+                "046D", "09GV6M", "349C", "0C49", "461", "06RR0X", "1124", "06NMX7",
+                "1B3F", "214B", "10C4", "1A2C", "17EF", "413C", "0A05", "048D", "FFFF",
+                "26F1", "18EC", "806"
+            }
+            # Add versions without leading zero for 6-character DP/N part numbers (e.g. 0YYJ8V -> YYJ8V)
+            for val in list(target_values):
+                if val.startswith("0") and len(val) == 6:
+                    target_values.add(val[1:])
+
+            for row in components:
+                if not isinstance(row, dict) and hasattr(row, "as_dict"):
+                    row = row.as_dict()
+                if isinstance(row, dict):
+                    v2 = (row.get("variant_2") or "").strip().upper()
+                    v3 = (row.get("variant_3") or "").strip().upper()
+
+                    # If variant_2 contains BASE BOARD or matches target list
+                    if "BASE BOARD" in v2 or "BASEBOARD" in v2:
+                        return "3490"
+
+                    for val in (v2, v3):
+                        if not val:
+                            continue
+                        if val in target_values:
+                            return "3490"
+                        for target in target_values:
+                            if len(target) > 2 and target in val:
+                                return "3490"
+
+    return None
+
+@frappe.whitelist()
+def get_model(manufacturer_model=None, item_group=None, brand=None, components=None):
     query, model_list = '', []
 
     if _is_desktop_item_group(item_group):
@@ -3807,6 +3858,10 @@ def get_model(manufacturer_model=None, item_group=None, brand=None):
 
     if not manufacturer_model:
         return model_list
+
+    model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+    if model_override:
+        return [{'model': model_override}]
 
     query = """SELECT DISTINCT mmc.parent AS model
                FROM `tabManufacturer Model Child` AS mmc
@@ -6220,9 +6275,12 @@ def create_serial_no_based_on_rfq(serial_info):
         
 
 @frappe.whitelist()
-def validate_model(model,manufacturer_model):
+def validate_model(model, manufacturer_model, components=None):
     try:
         if manufacturer_model and model:
+            model_override = check_manufacturer_model_exceptions(manufacturer_model, components)
+            if model_override and model_override == model:
+                return "1"
             query = """
                 select parent from `tabManufacturer Model Child` where manufacturer_model=%s and parent=%s;
             """
@@ -6688,7 +6746,7 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
         "Adapterbattery_failure_reason",
         failure_reason
     )
-
+    
 @frappe.whitelist()
 def get_last_quality_status_from_bios(njqca_name):
     # Validate NJQCA

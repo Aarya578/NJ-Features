@@ -5,6 +5,7 @@ import requests
 import time
 from frappe.utils.background_jobs import enqueue
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
+from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import updting_sla_department
 from nj_features.nj_features.api.shopify_inventory import (
     get_shopify_settings,
     get_shopify_variants,
@@ -110,11 +111,28 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
         log_error("Targeted proportional qty update failed", "create_rq_doc_by_item_codes")
         return
 
+    # Step 4b: Update SLA & Estimated Time of Dispatch
+    try:
+        updting_sla_department()
+    except Exception:
+        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - updting_sla_department")
+
     # Step 5: Stage into NJ Inventory Sync Main
     stage_targeted_variants(variant_ids, settings)
 
     # Step 6: Immediate Push to Shopify
     push_targeted_variants_to_shopify(variant_ids, settings)
+
+    # Step 7: Push ETD Variant Metafield to Shopify
+    try:
+        from nj_features.nj_features.api.shopify_inventory import sync_shopify_etd_metafields
+        sync_shopify_etd_metafields(
+            [{"variant_id": vid} for vid in variant_ids],
+            shop=settings.get("shop"),
+            token=settings.get("token")
+        )
+    except Exception:
+        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - sync_shopify_etd_metafields")
 
     log_error(
         f"[Targeted Sync] Completed for SO={sales_order}, variants={variant_ids}",
@@ -319,9 +337,9 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     AND so.creation > CURDATE() - INTERVAL 100 DAY
                     AND so.sale_type != 'Amazon'
                     AND (
-                        soi.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
-                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
-                        OR it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        soi.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
+                        OR it.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
                     )
             ) AS so_data
             LEFT JOIN (
@@ -332,8 +350,8 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     dni.docstatus = 1 AND dni.qty > 0
                     AND dni.creation >= CURDATE() - INTERVAL 100 DAY
                     AND (
-                        dni.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
-                        OR main_it.item_group IN ('Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks')
+                        dni.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
+                        OR main_it.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
                     )
                 GROUP BY dni.against_sales_order, dni.item_code
             ) AS dn_data
@@ -550,7 +568,12 @@ def stage_targeted_variants(variant_ids, settings):
                 GROUP_CONCAT(DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) SEPARATOR '||') AS parent_keys,
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty
+                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
+                CASE 
+                    WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
+                    WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
+                    ELSE CONCAT(MIN(NULLIF(soqc.sla, 0)), ' Days')
+                END AS estimated_time_of_dispatch
             FROM `tabProduct Bundle` pb
             JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
             JOIN `tabItem` i ON pbi.item_code = i.item_code
@@ -648,6 +671,7 @@ def stage_targeted_variants(variant_ids, settings):
                             "status": "Queued",
                             "actual_qty": row.total_actual_qty,
                             "updated_qty": row.total_actual_qty,
+                            "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
                             "modified": frappe.utils.now(),
                         })
             else:
@@ -657,6 +681,7 @@ def stage_targeted_variants(variant_ids, settings):
                 new_doc.actual_qty = qty
                 new_doc.status = "Queued"
                 new_doc.updated_qty = qty
+                new_doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 new_doc.item_code = row.item_codes
                 new_doc.item_group = row.item_groups
                 new_doc.shopify_variant_id = row.shopify_variant_id

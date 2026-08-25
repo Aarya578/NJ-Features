@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "employee",
+  "full_name",
   "department",
   "expense_date",
   "expense_category",
@@ -37,13 +38,14 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "employee",
    "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "in_list_view": 1,
    "label": "Employee",
    "options": "Employee",
-   "reqd": 1,
-   "ignore_user_permissions": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
    "fieldname": "department",
@@ -54,9 +56,9 @@
   {
    "fieldname": "expense_date",
    "fieldtype": "Date",
+   "in_list_view": 1,
    "label": "Expense Date",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
    "fieldname": "expense_category",
@@ -81,8 +83,7 @@
    "fieldname": "expense_credit_account",
    "fieldtype": "Link",
    "label": "Expense Credit Account",
-   "options": "Account",
-   "in_list_view": 0
+   "options": "Account"
   },
   {
    "fieldname": "mode",
@@ -94,9 +95,9 @@
   {
    "fieldname": "amount",
    "fieldtype": "Currency",
+   "in_list_view": 1,
    "label": "Amount",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
    "default": "0",
@@ -127,7 +128,8 @@
   {
    "fieldname": "receipt_upload",
    "fieldtype": "Attach",
-   "label": "Receipt Upload"
+   "label": "Receipt Upload",
+   "reqd": 1
   },
   {
    "fieldname": "multiple_receipts",
@@ -194,11 +196,10 @@
   {
    "fieldname": "current_status",
    "fieldtype": "Select",
-   "label": "Current Status",
-   "options": "Draft\nSubmitted\nManager Approved\nAccounts Approved\nRejected\nPosted",
-   "read_only": 0,
+   "in_list_view": 1,
    "in_standard_filter": 1,
-   "in_list_view": 1
+   "label": "Current Status",
+   "options": "Draft\nSubmitted\nManager Approved\nAccounts Approved\nRejected\nPosted"
   },
   {
    "fieldname": "amended_from",
@@ -208,12 +209,20 @@
    "options": "Cash Expense Request",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fetch_from": "employee.first_name",
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Full Name"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-06 00:00:00.000000",
+ "modified": "2026-08-11 12:32:48.840510",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Cash Expense Request",
@@ -256,6 +265,7 @@
    "write": 1
   },
   {
+   "cancel": 1,
    "create": 1,
    "email": 1,
    "export": 1,
@@ -265,9 +275,8 @@
    "role": "Accounts User",
    "select": 1,
    "share": 1,
-   "write": 1,
    "submit": 1,
-   "cancel": 1
+   "write": 1
   },
   {
    "amend": 1,

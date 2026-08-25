@@ -20,6 +20,7 @@
   "column_break_jlzc3",
   "shopify_quantity",
   "status",
+  "estimated_time_of_dispatch",
   "section_break_m3tvl",
   "sync_error",
   "batch_summary"
@@ -119,16 +120,20 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "shopify_pre_order_enabled",
+   "fieldtype": "Check",
+   "label": "Shopify Pre Order Enabled"
+  },
+  {
    "fieldname": "shopify_pre_order_qty",
    "fieldtype": "Int",
    "label": "Shopify Pre Order Qty"
   },
   {
-   "default": "0",
-   "fieldname": "shopify_pre_order_enabled",
-   "fieldtype": "Check",
-   "label": "Shopify Pre Order Enabled",
-   "read_only": 1
+   "fieldname": "estimated_time_of_dispatch",
+   "fieldtype": "Data",
+   "label": "Estimated Time Of Dispatch"
   },
   {
    "fieldname": "batch_summary",
@@ -139,7 +144,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-08-03 13:22:42.234099",
+ "modified": "2026-08-13 14:21:26.417253",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Sync Main",

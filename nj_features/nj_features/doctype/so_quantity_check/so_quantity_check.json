@@ -12,11 +12,12 @@
   "remaining_qty",
   "pending_allocation_qty",
   "column_break_kqvru",
+  "update_qty",
   "need_to_reduce",
   "remove_parent_qty",
   "update_qty2",
   "sla",
-  "update_qty",
+  "estimated_time_of_dispatch",
   "pre_order_qty"
  ],
  "fields": [
@@ -54,6 +55,15 @@
    "read_only": 1
   },
   {
+   "fieldname": "pending_allocation_qty",
+   "fieldtype": "Int",
+   "label": "Pending Allocation Qty"
+  },
+  {
+   "fieldname": "column_break_kqvru",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "update_qty",
    "fieldtype": "Data",
    "label": "Update Qty",
@@ -80,18 +90,14 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_kqvru",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "sla",
    "fieldtype": "Int",
    "label": "SLA"
   },
   {
-   "fieldname": "pending_allocation_qty",
-   "fieldtype": "Int",
-   "label": "Pending Allocation Qty"
+   "fieldname": "estimated_time_of_dispatch",
+   "fieldtype": "Data",
+   "label": "Estimated Time Of Dispatch"
   },
   {
    "fieldname": "pre_order_qty",

@@ -40,7 +40,31 @@ frappe.ui.form.on('Role Profile', {
         // the bug entirely.
         if (frm.fields_dict['repair_config']) {
             frm.fields_dict['repair_config'].grid.get_field('default_value').get_data = function(doc, cdt, cdn) {
-                let row = locals[cdt][cdn];
+                // Frappe calls get_data differently depending on whether
+                // the row is being edited inline in the grid vs. via the
+                // expanded "Editing Row" side panel. In the inline grid,
+                // cdt/cdn reliably identify the row and locals[cdt][cdn]
+                // works. In the expanded row panel, cdt/cdn can come
+                // through as undefined (crashing locals[undefined]
+                // [undefined]), and the row's document may instead be
+                // passed directly as the first argument, or be available
+                // on the control instance itself via `this.doc`. Try
+                // all three in order rather than assuming one; never
+                // throw -- worst case, return no choices yet.
+                let row = null;
+
+                if (cdt && cdn && locals[cdt] && locals[cdt][cdn]) {
+                    row = locals[cdt][cdn];
+                } else if (doc && typeof doc === 'object' && 'repair_options' in doc) {
+                    row = doc;
+                } else if (this && this.doc) {
+                    row = this.doc;
+                }
+
+                if (!row) {
+                    return [];
+                }
+
                 let tagged_options = (row.repair_options || '')
                     .split(',')
                     .map(function(v) { return v.trim(); })

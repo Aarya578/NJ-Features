@@ -1,54 +1,75 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
+ "autoname": "field:item_group",
  "creation": "2026-08-26 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "category",
+  "item_group",
   "options",
   "default_value",
   "mandatory"
  ],
  "fields": [
   {
-   "fieldname": "category",
-   "fieldtype": "Data",
+   "fieldname": "item_group",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Category",
-   "reqd": 1
+   "label": "Item Group",
+   "options": "Item Group",
+   "reqd": 1,
+   "unique": 1
   },
   {
    "fieldname": "options",
-   "fieldtype": "Small Text",
+   "fieldtype": "Table MultiSelect",
    "in_list_view": 1,
    "label": "Options",
-   "description": "Comma-separated dropdown values. Leave blank to render as mandatory free text."
+   "options": "Repair Category Option Link",
+   "description": "Type a word and press Enter to add it as a tag. Leave empty to render this category as mandatory free text at capture time."
   },
   {
    "fieldname": "default_value",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Default Value"
+   "label": "Default Value",
+   "description": "Should match one of the Options above, if any are set."
   },
   {
    "default": "0",
    "fieldname": "mandatory",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Mandatory"
+   "label": "Mandatory",
+   "description": "Only applies when Options are set. If Options is empty, this category is always mandatory free text."
   }
  ],
  "index_web_pages_for_search": 1,
- "istable": 1,
+ "istable": 0,
  "links": [],
  "modified": "2026-08-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Repair Category Config",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
- "permissions": [],
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
  "sort_field": "modified",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "track_changes": 1
 }

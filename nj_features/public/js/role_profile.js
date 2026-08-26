@@ -17,6 +17,20 @@ frappe.ui.form.on('Role Profile', {
                 };
             }
         };
+
+        // Repair Category Config: "Default Value" is an Autocomplete
+        // whose choices are the Options tagged on that same row -- not
+        // a static list. get_data is Autocomplete's per-row equivalent
+        // of get_query (which only applies to Link fields).
+        if (frm.fields_dict['repair_config']) {
+            frm.fields_dict['repair_config'].grid.get_field('default_value').get_data = function(doc, cdt, cdn) {
+                let row = locals[cdt][cdn];
+                let tagged_options = (row.options || [])
+                    .map(function(r) { return r.option; })
+                    .filter(function(v) { return !!v; });
+                return tagged_options;
+            };
+        }
         
     },
 

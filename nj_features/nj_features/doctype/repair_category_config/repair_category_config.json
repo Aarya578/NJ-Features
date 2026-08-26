@@ -22,11 +22,10 @@
   },
   {
    "fieldname": "repair_options",
-   "fieldtype": "Table MultiSelect",
+   "fieldtype": "Small Text",
    "in_list_view": 1,
    "label": "Options",
-   "options": "Repair Category Option Link",
-   "description": "Type a word and press Enter to add it as a tag. Leave empty to render this category as mandatory free text at capture time."
+   "description": "Comma-separated dropdown values (e.g. Aesthetic, Technical). Leave blank to render this category as mandatory free text at capture time."
   },
   {
    "fieldname": "default_value",

@@ -22,6 +22,7 @@ doctype_js = {
     "Warehouse": "public/js/warehouse.js",
     "Department": "public/js/department.js",
     "Role Profile": "public/js/role_profile.js",
+    "Repair Category Option": "public/js/repair_category_option.js",
     "Delivery Note": "public/js/delivery_note.js",
     "Sales Invoice": "public/js/sales_invoice.js",
     "Purchase Order": "public/js/purchase_order.js",

@@ -35,10 +35,19 @@ frappe.ui.form.on('Role Profile', {
         // whose choices are the Options tagged on that same row -- not
         // a static list. get_data is Autocomplete's per-row equivalent
         // of get_query (which only applies to Link fields).
+        //
+        // The tag field itself is named "repair_options" (not "options")
+        // deliberately -- a nested Table MultiSelect field literally
+        // named "options" was found to collide with Frappe's own
+        // internal use of that property name during grid-row-dialog
+        // save, corrupting the parent Role Profile document with a
+        // spurious top-level "options" key and crashing on save with
+        // "'NoneType' object has no attribute 'options'". Renaming the
+        // field resolved it; the label is still "Options" in the UI.
         if (frm.fields_dict['repair_config']) {
             frm.fields_dict['repair_config'].grid.get_field('default_value').get_data = function(doc, cdt, cdn) {
                 let row = locals[cdt][cdn];
-                let tagged_options = (row.options || [])
+                let tagged_options = (row.repair_options || [])
                     .map(function(r) { return r.option; })
                     .filter(function(v) { return !!v; });
                 return tagged_options;

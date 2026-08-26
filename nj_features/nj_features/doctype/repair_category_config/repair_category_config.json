@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "item_group",
-  "options",
+  "repair_options",
   "default_value",
   "mandatory"
  ],
@@ -21,7 +21,7 @@
    "reqd": 1
   },
   {
-   "fieldname": "options",
+   "fieldname": "repair_options",
    "fieldtype": "Table MultiSelect",
    "in_list_view": 1,
    "label": "Options",

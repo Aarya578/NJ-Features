@@ -1,5 +1,18 @@
 frappe.ui.form.on('Role Profile', {
     refresh: function(frm) {
+        // Frappe's automatic dependent-doctype preload fetches metadata
+        // for a form's own doctype and its direct child tables, but does
+        // not reliably reach a Table MultiSelect field nested INSIDE a
+        // child table row (Repair Category Config -> its own "Options"
+        // field -> Repair Category Option Link). Without this, the grid
+        // can throw "Cannot read properties of undefined (reading
+        // 'fields')" the first time that column tries to render, because
+        // frappe.get_meta('Repair Category Option Link') comes back
+        // undefined. Forcing the fetch here guarantees it's cached
+        // before the grid needs it, regardless of load order.
+        frappe.model.with_doctype('Repair Category Option Link');
+        frappe.model.with_doctype('Repair Category Option');
+
         frm.fields_dict['productivity_profile_table'].grid.get_field('target_profile').get_query = function(doc, cdt, cdn) {
             let department = doc.department;
             

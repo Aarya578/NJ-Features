@@ -3,15 +3,27 @@ frappe.ui.form.on('Role Profile', {
         // Frappe's automatic dependent-doctype preload fetches metadata
         // for a form's own doctype and its direct child tables, but does
         // not reliably reach a Table MultiSelect field nested INSIDE a
-        // child table row (Repair Category Config -> its own "Options"
-        // field -> Repair Category Option Link). Without this, the grid
-        // can throw "Cannot read properties of undefined (reading
-        // 'fields')" the first time that column tries to render, because
-        // frappe.get_meta('Repair Category Option Link') comes back
-        // undefined. Forcing the fetch here guarantees it's cached
-        // before the grid needs it, regardless of load order.
-        frappe.model.with_doctype('Repair Category Option Link');
-        frappe.model.with_doctype('Repair Category Option');
+        // child table row (Repair Category Config -> its own
+        // "repair_options" field -> Repair Category Option Link).
+        //
+        // An async with_doctype() call alone isn't enough: the grid can
+        // attempt to render that nested column in response to more than
+        // just the initial page load -- e.g. resetting grid columns via
+        // the column picker also triggers a re-render -- and there's no
+        // guarantee an async fetch has completed before that happens,
+        // causing an intermittent "Cannot read properties of undefined
+        // (reading 'fields')" crash. Forcing a SYNCHRONOUS fetch (third
+        // arg = false) guarantees the metadata is in the client cache
+        // before this handler returns, no matter what triggers the next
+        // render. The get_meta() guard means this only actually blocks
+        // once per page load -- after that it's cached and this is a
+        // no-op check.
+        if (!frappe.get_meta('Repair Category Option Link')) {
+            frappe.model.with_doctype('Repair Category Option Link', null, false);
+        }
+        if (!frappe.get_meta('Repair Category Option')) {
+            frappe.model.with_doctype('Repair Category Option', null, false);
+        }
 
         frm.fields_dict['productivity_profile_table'].grid.get_field('target_profile').get_query = function(doc, cdt, cdn) {
             let department = doc.department;

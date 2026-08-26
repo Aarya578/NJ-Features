@@ -29,10 +29,10 @@
   },
   {
    "fieldname": "default_value",
-   "fieldtype": "Autocomplete",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Default Value",
-   "description": "Choices are populated from the Options entered on this row (see role_profile.js)."
+   "description": "Should match one of the Options entered on this row, if any are set."
   },
   {
    "default": "0",

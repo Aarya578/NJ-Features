@@ -104,6 +104,10 @@ class StockMovement(Document):
                         "transfer_status": self.transfer_status,
                         "stock_entry_type": "Material Transfer",
                         "material_transfer_items": material_transfer_items,
+                        "repair_details": [
+                            {"serial_no": row.serial_no, "category": row.category, "value": row.value}
+                            for row in (self.repair_details or [])
+                        ],
                     }
                     stock_entry = stock_entry_using_nj_lib(stock_entry_data)
                     self.updating_mr_qty_with_status()

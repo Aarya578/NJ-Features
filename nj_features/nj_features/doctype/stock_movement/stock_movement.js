@@ -731,3 +731,21 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
         });
     }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// REPAIR DETAILS CAPTURE
+// Same "Repair Details Required" popup as Stock Entry, triggered here
+// off each row's own Source Warehouse -- Stock Movement submits create
+// their Material Transfer Stock Entry server-side (see stock_movement.py
+// on_submit -> stock_entry_using_nj_lib), so there's no Stock Entry form
+// for the original popup to fire on. Captured rows are tagged with the
+// row's first serial and carried through in on_submit via self.repair_details.
+// ─────────────────────────────────────────────────────────────────
+frappe.ui.form.on('Stock Movement Detail', {
+    s_warehouse: function(frm, cdt, cdn) {
+        var row = locals[cdt][cdn];
+        if (!row.s_warehouse) return;
+        var first_serial = (row.serial_no || '').split('\n').map(function(s) { return s.trim(); }).filter(Boolean)[0] || null;
+        nj_repair_popup.check(frm, row.s_warehouse, 'repair_details', { serial_no: first_serial });
+    }
+});

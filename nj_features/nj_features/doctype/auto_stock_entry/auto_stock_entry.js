@@ -43,25 +43,56 @@ serial_no: function(frm) {
 		}
 		if (isAutoStockEntryDuplicateScan(frm, 'serial_no')) return;
 		frm.is_submitting = true;
-        frappe.call({
-            method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.submit_ste',
-            args: { serial_no: frm.doc.serial_no, t_warehouse: frm.doc.default_target_warehouse },
-            freeze: true,
-            freeze_message: `<div style="text-align: center;">
-                <i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i> 
-                <br>Transferring Stock... Please Wait
-            </div>`,
-            callback: function(r) {
+
+		var scanned_serial = frm.doc.serial_no;
+		var target_warehouse = frm.doc.default_target_warehouse;
+
+		// Repair Details popup needs the serial's SOURCE warehouse (same
+		// resolution submit_ste does server-side) to check whether that
+		// warehouse's owner's Role Profile has repair capture enabled --
+		// resolve it first via get_repair_check_context, then only call
+		// submit_ste once the popup (if any) has been answered.
+		frappe.call({
+			method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.get_repair_check_context',
+			args: { serial_no: scanned_serial },
+			callback: function(ctx_r) {
+				var ctx = ctx_r.message || {};
+
+				nj_repair_popup.check(frm, ctx.warehouse, 'repair_details', {
+					serial_no: ctx.serial_no || scanned_serial,
+					on_done: function(repair_rows) {
+						frappe.call({
+							method: 'nj_features.nj_features.doctype.auto_stock_entry.auto_stock_entry.submit_ste',
+							args: {
+								serial_no: scanned_serial,
+								t_warehouse: target_warehouse,
+								repair_details: JSON.stringify(repair_rows)
+							},
+							freeze: true,
+							freeze_message: `<div style="text-align: center;">
+								<i class="fa fa-spinner fa-spin" style="font-size: 24px;"></i>
+								<br>Transferring Stock... Please Wait
+							</div>`,
+							callback: function(r) {
+								frm.is_submitting = false;
+								if (r && r.message) {
+									frappe.utils.play_sound('submit')
+								}
+							},
+							error: function(err) {
+								frm.is_submitting = false;
+								frappe.utils.play_sound('error')
+							}
+						})
+					}
+				});
+			},
+			error: function(err) {
 				frm.is_submitting = false;
-                if (r && r.message) {
-                    frappe.utils.play_sound('submit')
-                }
-            },
-            error: function(err) {
-				frm.is_submitting = false;
-                frappe.utils.play_sound('error')
-            }
-        })
+				frappe.utils.play_sound('error')
+			}
+		});
+
         frm.set_value('serial_no', '')
         frm.refresh_field('serial_no')
         $('[data-fieldname="serial_no"]').focus();

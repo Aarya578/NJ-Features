@@ -8,7 +8,8 @@
  "field_order": [
   "default_target_warehouse",
   "column_break_xpwx6",
-  "serial_no"
+  "serial_no",
+  "repair_details"
  ],
  "fields": [
   {
@@ -27,6 +28,12 @@
   {
    "fieldname": "column_break_xpwx6",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "repair_details",
+   "fieldtype": "Table",
+   "label": "Repair Details",
+   "options": "Repair Detail"
   }
  ],
  "hide_toolbar": 1,

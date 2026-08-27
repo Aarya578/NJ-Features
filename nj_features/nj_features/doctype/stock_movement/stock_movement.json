@@ -23,6 +23,7 @@
   "scan_warehouse",
   "section_break_cw37t",
   "items",
+  "repair_details",
   "amended_from"
  ],
  "fields": [
@@ -87,6 +88,12 @@
    "fieldtype": "Table",
    "label": "items",
    "options": "Stock Movement Detail"
+  },
+  {
+   "fieldname": "repair_details",
+   "fieldtype": "Table",
+   "label": "Repair Details",
+   "options": "Repair Detail"
   },
   {
    "fieldname": "amended_from",

@@ -60,8 +60,9 @@ frappe.ui.form.on('Repack For Non Serialised', {
 							frappe.call({
 								method: "nj_features.nj_features.doctype.repack_for_non_serialised.repack_for_non_serialised.get_valuation_rate",
 								args: {
-									item_code: r.message,
-									grade: frm.doc.new_grade
+					item_code: r.message,
+					grade: frm.doc.new_grade,
+					warehouse: frm.doc.warehouse
 								},
 								callback: function(r) {
 									if (r.message) {

@@ -1029,6 +1029,24 @@ def validate_njqca_status_completed_before_submit(doc):
             _("NJQCA was not completed. Please re-run the script before submitting.")
         )
 
+def update_battery_health_score(doc):
+    for row in doc.get("njqca_result_parameters") or []:
+
+        item_group = str(row.get("item_group") or "").strip().upper()
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        try:
+            score = int(float(row.get("score")))
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            item_group == "BATTERY"
+            and parameter == "health"
+            and score in (1, 41)
+        ):
+            row.score = 50
+
 class NJQCA(Document):
     def onload(self):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
@@ -1098,6 +1116,7 @@ class NJQCA(Document):
         apply_adapter_failure_reason_and_gain_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
+        update_battery_health_score(self)
         
          # External/RFQ NJQCA should never self-link.
         # linked_ext should only be set on internal NJQCA after linking to EXT serial.

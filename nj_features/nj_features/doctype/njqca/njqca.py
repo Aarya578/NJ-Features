@@ -6590,6 +6590,19 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     charging_gain = None
 
     # ---------------------------------------------------------
+    # Check whether Item Template belongs to Chromebooks
+    # ---------------------------------------------------------
+    part_item_group = None
+
+    item_template = doc.get("item_template")
+
+    if item_template:
+        part_item_group = frappe.db.get_value(
+            "Item",
+            {"name": item_template},
+            "item_group"
+        )
+    # ---------------------------------------------------------
     # STEP 1: Calculate charging gain
     # ---------------------------------------------------------
     try:
@@ -6750,7 +6763,39 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
             frappe.get_traceback(),
             "Adapter charging gain status check failed"
         )
+    # ---------------------------------------------------------
+    # CHROMEBOOK SLOW CHARGING OVERRIDE
+    #
+    # If:
+    # 1. Item Template belongs to Chromebooks
+    # 2. C++ Adapterbattery_status = FAIL
+    # 3. Failure reason is ONLY "Insufficient charging gain"
+    # 4. Actual gain is >= 1%
+    #
+    # Then change FAIL -> PASS
+    # ---------------------------------------------------------
+    if (
+        part_item_group == "Chromebooks"
+        and adapter_status == "FAIL"
+        and charging_gain is not None
+        and charging_gain >= 1
+        and len(failure_reasons) == 1
+        and str(failure_reasons[0]).strip().lower()
+            == "insufficient charging gain"
+    ):
+        status_row.value = "PASS"
+        status_row.score = 0
 
+        # Clear old failure reason if it already exists
+        old_reason_row = param_map.get(
+            "adapterbattery_failure_reason"
+        )
+
+        if old_reason_row:
+            old_reason_row.value = ""
+            old_reason_row.score = 0
+
+        return
     # ---------------------------------------------------------
     # STEP 4: Save final failure reason
     # ---------------------------------------------------------

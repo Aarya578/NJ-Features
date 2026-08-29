@@ -319,6 +319,23 @@ def create_sales_order(shopify_order, setting, company=None):
 
     payment_id = shopify_order.get("source_identifier")
 
+    # Shopify product properties normally belong to individual line items.
+    # Set the Sales Order checkbox only when at least one property explicitly
+    # identifies the purchase as an NM pre-order.
+    property_groups = [shopify_order.get("properties") or []]
+    property_groups.extend(
+        line_item.get("properties") or []
+        for line_item in (shopify_order.get("line_items") or [])
+    )
+    is_pre_order = int(any(
+        str(prop.get("name") or "").strip() == "_purchase_type"
+        and str(prop.get("value") or "").strip() == "NM-preorder"
+        for properties in property_groups
+        for prop in properties
+        if isinstance(prop, dict)
+    ))
+
+
     if is_snapmint and snapmint_id:
         payment_id = snapmint_id
 
@@ -359,7 +376,8 @@ def create_sales_order(shopify_order, setting, company=None):
         "sale_type": shopify_order.get("sale_type") or "NJ-Website-B2C",
         "total_outstanding": str(shopify_order.get("total_outstanding", "")),
         "sales_channel": "Shopify",
-        "is_cod": is_cod
+        "is_cod": is_cod,
+        "pre_order": is_pre_order
     }
 
     if latest_addresses.get("billing_address"):

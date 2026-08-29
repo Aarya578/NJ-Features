@@ -6,18 +6,17 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "item_group",
+  "category",
   "repair_options",
   "default_value",
   "mandatory"
  ],
  "fields": [
   {
-   "fieldname": "item_group",
-   "fieldtype": "Link",
+   "fieldname": "category",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Item Group",
-   "options": "Item Group",
+   "label": "Category",
    "reqd": 1
   },
   {

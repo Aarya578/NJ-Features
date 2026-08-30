@@ -267,7 +267,6 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 self.name,
                 start,
                 self.is_return,
-                "updating_parent_qty_for_new_generated_serial_no", self.name, start
             )
             start = time.perf_counter()
             self.set_registry_no_on_submit()
@@ -1726,8 +1725,8 @@ def uppeding_item_to_items(doc):
     source_by_item_code = {}
     for item in source_items:
         item_code = item.get("item_code")
-        if item_code and item_code not in source_by_item_code:
-            source_by_item_code[item_code] = item
+        if item_code:
+            source_by_item_code.setdefault(item_code, []).append(item)
 
         for serial_no in _split_return_serial_nos(item.get("serial_no")):
             source_by_serial[(item_code, serial_no)] = item
@@ -1762,8 +1761,37 @@ def uppeding_item_to_items(doc):
             frappe.throw(_("Row {0}: Qty is required for item {1}.").format(row.get("idx"), item_code))
 
         if not serialized_item_map.get(item_code):
-            source_item = source_by_item_code.get(item_code) or {}
-            return_items.append(_make_return_item_row(source_item, row, "", qty))
+            remaining_qty = abs(qty)
+            return_sign = -1 if qty < 0 else 1
+
+            for source_item in source_by_item_code.get(item_code, []):
+                source_qty = abs(flt(source_item.get("qty") or 0))
+                allocated_qty = min(remaining_qty, source_qty)
+                if allocated_qty <= 0:
+                    continue
+
+                return_items.append(
+                    _make_return_item_row(
+                        source_item,
+                        row,
+                        "",
+                        return_sign * allocated_qty,
+                    )
+                )
+                remaining_qty -= allocated_qty
+                if remaining_qty <= 0:
+                    break
+
+            if remaining_qty > 0:
+                frappe.throw(
+                    _(
+                        "Return quantity exceeds the available source quantity "
+                        "for item {0} by {1}."
+                    ).format(
+                        frappe.bold(item_code),
+                        frappe.bold(remaining_qty),
+                    )
+                )
             continue
 
         abs_qty = abs(qty)
@@ -1780,7 +1808,10 @@ def uppeding_item_to_items(doc):
 
         unit_qty = -1 if qty < 0 else 1
         for serial_no in serial_nos:
-            source_item = source_by_serial.get((item_code, serial_no)) or source_by_item_code.get(item_code) or {}
+            source_candidates = source_by_item_code.get(item_code, [])
+            source_item = source_by_serial.get((item_code, serial_no)) or (
+                source_candidates[0] if source_candidates else {}
+            )
             return_items.append(_make_return_item_row(source_item, row, serial_no, unit_qty))
 
     return return_items

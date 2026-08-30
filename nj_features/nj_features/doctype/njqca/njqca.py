@@ -1027,6 +1027,24 @@ def validate_njqca_status_completed_before_submit(doc):
         frappe.throw(
             _("NJQCA was not completed. Please re-run the script before submitting.")
         )
+def update_battery_health_score(doc):
+    for row in doc.get("njqca_result_parameters") or []:
+
+        item_group = str(row.get("item_group") or "").strip().upper()
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        try:
+            score = int(float(row.get("score")))
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            item_group == "BATTERY"
+            and parameter == "health"
+            and score in (1, 41)
+        ):
+            row.score = 50
+
 
 class NJQCA(Document):
     def onload(self):
@@ -1097,6 +1115,7 @@ class NJQCA(Document):
         apply_adapter_failure_reason_and_gain_to_doc(self)
         set_fail_for_empty_reliability_params(self)
         apply_latest_reliability_status_to_doc(self)
+        update_battery_health_score(self)
         
          # External/RFQ NJQCA should never self-link.
         # linked_ext should only be set on internal NJQCA after linking to EXT serial.
@@ -6566,7 +6585,28 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     initial_percentage = None
     final_percentage = None
     charging_gain = None
+    # ---------------------------------------------------------
+    # Check whether system is a Chromebook
+    #
+    # Some Chromebook Windows models are stored under
+    # Item Group = "Laptops", so Item Group alone cannot
+    # identify them.
+    # ---------------------------------------------------------
+    part_item_group = None
 
+    item_template = str(doc.get("item_template") or "").strip()
+
+    if item_template:
+        part_item_group = frappe.db.get_value(
+            "Item",
+            {"name": item_template},
+            "item_group"
+        )
+
+    is_chromebook = (
+        str(part_item_group or "").strip().lower() == "chromebooks"
+        or "chromebook" in item_template.lower()
+    )
     # ---------------------------------------------------------
     # STEP 1: Calculate charging gain
     # ---------------------------------------------------------
@@ -6728,7 +6768,39 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
             frappe.get_traceback(),
             "Adapter charging gain status check failed"
         )
+    # ---------------------------------------------------------
+    # CHROMEBOOK SLOW CHARGING OVERRIDE
+    #
+    # If:
+    # 1. Item Template belongs to Chromebooks
+    # 2. C++ Adapterbattery_status = FAIL
+    # 3. Failure reason is ONLY "Insufficient charging gain"
+    # 4. Actual gain is >= 1%
+    #
+    # Then change FAIL -> PASS
+    # ---------------------------------------------------------
+    if (
+        is_chromebook
+        and adapter_status == "FAIL"
+        and charging_gain is not None
+        and charging_gain >= 1
+        and len(failure_reasons) == 1
+        and str(failure_reasons[0]).strip().lower()
+            == "insufficient charging gain"
+    ):
+        status_row.value = "PASS"
+        status_row.score = 0
 
+        # Clear old failure reason if it already exists
+        old_reason_row = param_map.get(
+            "adapterbattery_failure_reason"
+        )
+
+        if old_reason_row:
+            old_reason_row.value = ""
+            old_reason_row.score = 0
+
+        return
     # ---------------------------------------------------------
     # STEP 4: Save final failure reason
     # ---------------------------------------------------------

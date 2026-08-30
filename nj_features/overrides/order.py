@@ -1,8 +1,8 @@
 # nj_features/overrides/order.py
 import json
 import frappe
-from frappe.utils import cstr
-from ecommerce_integrations.shopify.utils import create_shopify_log
+from frappe import _
+from ecommerce_integrations.shopify import utils as shopify_utils
 from frappe.utils import cint, cstr, flt, get_datetime, getdate, nowdate
 # from ecommerce_integrations.shopify.product import create_items_if_not_exist
 
@@ -28,7 +28,7 @@ def sync_sales_order(payload, request_id=None):
     frappe.flags.request_id = request_id
 
     if frappe.db.get_value("Sales Order", filters={ORDER_ID_FIELD: cstr(order["id"])}):
-        create_shopify_log(status="Invalid", message="Sales order already exists, not synced")
+        shopify_utils.create_shopify_log(status="Invalid", message="Sales order already exists, not synced")
         return
     try:
         shopify_customer = order.get("customer", {})
@@ -47,9 +47,9 @@ def sync_sales_order(payload, request_id=None):
         setting = frappe.get_doc(SETTING_DOCTYPE)
         create_order(order, setting)
     except Exception as e:
-        create_shopify_log(status="Error", exception=e, rollback=True)
+        shopify_utils.create_shopify_log(status="Error", exception=e, rollback=True)
     else:
-        create_shopify_log(status="Success")
+        shopify_utils.create_shopify_log(status="Success")
 
 def create_order(order, setting, company=None):
     from ecommerce_integrations.shopify.fulfillment import create_delivery_note
@@ -309,7 +309,7 @@ def create_sales_order(shopify_order, setting, company=None):
             "Following items exist in the Shopify order but relevant records were "
             "not found in the Shopify Product Master"
         )
-        create_shopify_log(status="Error", exception=message, rollback=True)
+        shopify_utils.create_shopify_log(status="Error", exception=message, rollback=True)
         return ""
 
     taxes = get_order_taxes(shopify_order, setting, items)
@@ -318,6 +318,23 @@ def create_sales_order(shopify_order, setting, company=None):
     is_cod = 1 if shopify_order.get("financial_status") == "partially_paid" else 0
 
     payment_id = shopify_order.get("source_identifier")
+
+    # Shopify product properties normally belong to individual line items.
+    # Set the Sales Order checkbox only when at least one property explicitly
+    # identifies the purchase as an NM pre-order.
+    property_groups = [shopify_order.get("properties") or []]
+    property_groups.extend(
+        line_item.get("properties") or []
+        for line_item in (shopify_order.get("line_items") or [])
+    )
+    is_pre_order = int(any(
+        str(prop.get("name") or "").strip() == "_purchase_type"
+        and str(prop.get("value") or "").strip() == "NM-preorder"
+        for properties in property_groups
+        for prop in properties
+        if isinstance(prop, dict)
+    ))
+
 
     if is_snapmint and snapmint_id:
         payment_id = snapmint_id
@@ -357,11 +374,10 @@ def create_sales_order(shopify_order, setting, company=None):
         "taxes": taxes,
         "payment_id": payment_id,
         "sale_type": shopify_order.get("sale_type") or "NJ-Website-B2C",
-        "shopify_order_id": str(shopify_order.get("order_number", "")),
         "total_outstanding": str(shopify_order.get("total_outstanding", "")),
-        "shopify_order_number": str(shopify_order.get("id", "")),
         "sales_channel": "Shopify",
-        "is_cod": is_cod
+        "is_cod": is_cod,
+        "pre_order": is_pre_order
     }
 
     if latest_addresses.get("billing_address"):

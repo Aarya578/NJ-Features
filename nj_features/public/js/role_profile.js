@@ -17,6 +17,28 @@ frappe.ui.form.on('Role Profile', {
                 };
             }
         };
+
+        // Repair Category Config: "Options" is a plain comma-separated
+        // Small Text field, and "Default Value" is a plain Data field --
+        // deliberately NOT dynamic/interactive widgets (Table MultiSelect
+        // for Options, Autocomplete-with-custom-get_data for Default
+        // Value). Both were tried and found unreliable in this Frappe
+        // version (13.34.0) specifically inside a child table's own row:
+        // - Table MultiSelect nested two levels deep bled its value onto
+        //   the top-level Role Profile doc on save, crashing with
+        //   "'NoneType' object has no attribute 'options'" (happened
+        //   under two different field names, so it's structural, not
+        //   naming -- Table MultiSelect only works reliably one level
+        //   deep, e.g. this doctype's own "item_group" field, directly
+        //   on Role Profile, which has always worked fine).
+        // - Autocomplete's get_data, even made defensive against the
+        //   inline-grid-vs-expanded-row-panel calling difference, still
+        //   left typed input not sticking at all in the expanded panel.
+        // Plain text fields have no such widget-level behavior to break,
+        // and are reliable in both the inline grid and the expanded row
+        // panel. The trade-off is no auto-suggest dropdown on Default
+        // Value -- its description just asks the user to match one of
+        // the Options manually.
         
     },
 

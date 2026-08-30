@@ -15,6 +15,7 @@ from frappe.utils import get_url
 from frappe.model.document import Document
 from nj_lib.nj_lib.doctype.nj_log.nj_log import log_error
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
+from nj_lib.utils.grade_valuation import is_grade_conversion
 from nj_p1_features.overrides.serial_no import update_component_in_serial_no
 from nj_features.nj_features.doctype.inward.inward import get_item_template,has_item_wizards
 from nj_features.nj_features.api.qr_code import create_serial_no
@@ -1046,6 +1047,24 @@ def update_battery_health_score(doc):
             row.score = 50
 
 
+def update_battery_health_score(doc):
+    for row in doc.get("njqca_result_parameters") or []:
+
+        item_group = str(row.get("item_group") or "").strip().upper()
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        try:
+            score = int(float(row.get("score")))
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            item_group == "BATTERY"
+            and parameter == "health"
+            and score in (1, 41)
+        ):
+            row.score = 50
+
 class NJQCA(Document):
     def onload(self):
         is_component=frappe.db.get_value('Item Group', self.item_group, 'is_component')
@@ -1871,6 +1890,7 @@ def get_repack_items(self):
         "unpack_item_base_price": self.base_price,
         "unpack_item_target_warehouse": self.warehouse,
         "unpack_item_code": self.manual_repack_item_code,
+        "apply_grade_valuation": is_grade_conversion(self.item_code, self.manual_repack_item_code),
     }
     get_repack_items_list.append(get_unpack_items_dict)
 
@@ -2877,6 +2897,7 @@ def update_part_item_code_from_child(doc):
                         "unpack_serial_no": component_serial_no,
                         "unpack_item_target_warehouse": comp_warehouse,
                         "unpack_item_base_price": comp_val,
+                        "apply_grade_valuation": 1,
                     },
                     {
                         "unpack_item_code": parent_item,

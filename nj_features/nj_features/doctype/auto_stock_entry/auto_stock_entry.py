@@ -13,7 +13,22 @@ class AutoStockEntry(Document):
 	pass
 
 @frappe.whitelist()
-def submit_ste(t_warehouse, serial_no):
+def get_repair_check_context(serial_no):
+    """
+    Resolve a scanned Serial No's current warehouse so the client can
+    check repair-popup config (get_repair_popup_config in
+    nj_p1_features.overrides.stock_entry) *before* creating the actual
+    Material Transfer via submit_ste. Mirrors the same lookup submit_ste
+    already does server-side, just without the side effects.
+    """
+    nj_serial_no = search_for_serial_or_batch_or_barcode_no(serial_no, raise_exp=True)
+    resolved_serial_no = (nj_serial_no or {}).get('serial_no') or serial_no
+    warehouse = frappe.db.get_value('Serial No', resolved_serial_no, 'warehouse')
+    return {"serial_no": resolved_serial_no, "warehouse": warehouse}
+
+
+@frappe.whitelist()
+def submit_ste(t_warehouse, serial_no, repair_details=None):
     try:
         nj_serial_no = search_for_serial_or_batch_or_barcode_no(serial_no, raise_exp=True)
         if nj_serial_no and nj_serial_no.get('serial_no') is None:
@@ -37,6 +52,7 @@ def submit_ste(t_warehouse, serial_no):
             "doctype": "Auto Stock Entry",
             "stock_entry_type": "Material Transfer",
             "material_transfer_items": material_transfer_items,
+            "repair_details": frappe.parse_json(repair_details) if repair_details else [],
         }
 
         material_transfer_items.append({

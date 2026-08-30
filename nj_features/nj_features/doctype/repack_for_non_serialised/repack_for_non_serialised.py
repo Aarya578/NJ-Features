@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from erpnext.controllers.item_variant import get_variant
 from nj_lib.utils.stock_entry import stock_entry_using_nj_lib
 from nj_lib.utils.common_utils import get_active_emp, get_active_item_code
+from nj_lib.utils.grade_valuation import get_grade_valuation_rate
 
 
 class RepackForNonSerialised(Document):
@@ -36,7 +37,8 @@ def get_repack_items(self):
         "qty": self.quantity,
         "unpack_item_code": self.repack_item_code,
         "unpack_item_target_warehouse": self.warehouse,
-        "unpack_item_base_price": self.repack_item_code_price
+        "unpack_item_base_price": self.repack_item_code_price,
+        "apply_grade_valuation": 1,
     }
     get_repack_items_list.append(get_unpack_items_dict)
 
@@ -48,7 +50,9 @@ def get_item_code_and_warehouse(item_code):
     grade = frappe.db.get_value("Item Variant Attribute", {"parent": item_code, "attribute": "Grade"}, "attribute_value")
     if not grade:
         frappe.throw("No 'Grade' found for the given Item Code: <b>" + item_code + "</b>")
-    valuation_rate_for_item_code = get_valuation_rate(item_code,grade)
+    valuation_rate_for_item_code = get_grade_valuation_rate(
+        item_code, emp_data.get("work_warehouse")
+    ).valuation_rate
     return {
         "grade": grade,
         "warehouse": emp_data.get("work_warehouse"),
@@ -120,20 +124,5 @@ def get_new_grade(doctype, txt, searchfield, start, page_len, filters):
     )
 
 @frappe.whitelist()
-def get_valuation_rate(item_code,grade):
-    grade_a_item_code = get_repack_item_code_with_new_grade(item_code, 'Grade A')
-    valuation_rate_for_grade_a = 0
-    valuation_rate_for_grade_a = frappe.db.get_value('Stock Ledger Entry', {'item_code': grade_a_item_code}, 'valuation_rate')
-
-    if not valuation_rate_for_grade_a:
-        valuation_rate_for_grade_a = frappe.db.get_value('Purchase Receipt Item',{'item_code': grade_a_item_code}, 'valuation_rate')
-        if not valuation_rate_for_grade_a:
-            valuation_rate_for_grade_a = frappe.db.get_value('Item',{'name': grade_a_item_code}, 'valuation_rate')
-
-    item_group_of_grade_a = frappe.db.get_value('Item', {'name': grade_a_item_code}, 'item_group')
-
-    part_percentage = frappe.db.sql("""select grade,part_value_percentage from `tabItem group Grades` where parent = %s""", (item_group_of_grade_a), as_dict=1)
-
-    for part in part_percentage:
-        if part.get('grade') == grade:
-            return valuation_rate_for_grade_a * (int(part.get('part_value_percentage'))/100)
+def get_valuation_rate(item_code,grade,warehouse=None):
+    return get_grade_valuation_rate(item_code, warehouse).valuation_rate

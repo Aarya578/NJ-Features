@@ -106,11 +106,11 @@ def fetch_and_save_productivity_data():
                     c.item_group,
                     b.item_code,
                     b.qty,
-                    LAG(b.t_warehouse) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Src_warehouse,
+                    LAG(b.t_warehouse) OVER (PARTITION BY CAST(b.serial_no AS CHAR(140)) ORDER BY a.creation) AS Src_warehouse,
                     b.t_warehouse,
-                    LAG(b.target_department) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_dept,
+                    LAG(b.target_department) OVER (PARTITION BY CAST(b.serial_no AS CHAR(140)) ORDER BY a.creation) AS Source_dept,
                     b.target_department AS Target_Dept,
-                    LAG(b.target_role_profile) OVER (PARTITION BY b.serial_no ORDER BY a.creation) AS Source_Profile,
+                    LAG(b.target_role_profile) OVER (PARTITION BY CAST(b.serial_no AS CHAR(140)) ORDER BY a.creation) AS Source_Profile,
                     b.target_role_profile AS Target_Profile
                 FROM
                     `tabStock Entry` a

@@ -117,22 +117,38 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
     except Exception:
         log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - updting_sla_department")
 
+    # Step 4c: Update Pre-Order Quantity
+    try:
+        from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import update_pre_order_qty
+        update_pre_order_qty(settings)
+    except Exception:
+        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - update_pre_order_qty")
+
     # Step 5: Stage into NJ Inventory Sync Main
-    stage_targeted_variants(variant_ids, settings)
+    shopify_data = stage_targeted_variants(variant_ids, settings)
 
     # Step 6: Immediate Push to Shopify
     push_targeted_variants_to_shopify(variant_ids, settings)
 
-    # Step 7: Push ETD Variant Metafield to Shopify
+    # Step 7: Push Pre-Order Policies & ETD Variant Metafield to Shopify
     try:
-        from nj_features.nj_features.api.shopify_inventory import sync_shopify_etd_metafields
-        sync_shopify_etd_metafields(
-            [{"variant_id": vid} for vid in variant_ids],
+        from nj_features.nj_features.api.shopify_inventory import (
+            sync_shopify_pre_order_policies,
+            sync_shopify_etd_metafields,
+        )
+        sync_data = shopify_data or [{"variant_id": vid} for vid in variant_ids]
+        sync_shopify_pre_order_policies(
+            sync_data,
             shop=settings.get("shop"),
-            token=settings.get("token")
+            token=settings.get("token"),
+        )
+        sync_shopify_etd_metafields(
+            sync_data,
+            shop=settings.get("shop"),
+            token=settings.get("token"),
         )
     except Exception:
-        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - sync_shopify_etd_metafields")
+        log_error(frappe.get_traceback(), "create_rq_doc_by_item_codes - pre_order_and_etd_sync")
 
     log_error(
         f"[Targeted Sync] Completed for SO={sales_order}, variants={variant_ids}",
@@ -164,6 +180,7 @@ def get_affected_variant_ids(item_codes, sales_order=None):
                 pbi.item_code IN ({placeholders})
                 AND pb.shopify_variant_id IS NOT NULL
                 AND pb.shopify_variant_id != ''
+                AND COALESCE(pb.disable, 0) = 0
         """, tuple(item_codes), as_dict=True)
 
         found_item_codes = {row.get("item_code") for row in rows}
@@ -236,6 +253,8 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     b.item_group IN ({item_group_placeholders})
                     AND w.department IN ({department_placeholders})
                     AND b.is_replace = 0
+                    AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+                    AND (b.sales_order IS NULL OR b.sales_order = '')
                     AND (
                         b.return_reason IS NULL OR b.return_reason = ''
                         OR b.return_reason != 'Repair'
@@ -258,6 +277,8 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     i.item_group IN ({item_group_placeholders})
                     AND w.department IN ({department_placeholders})
                     AND s.is_replace = 0
+                    AND (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
+                    AND (s.sales_order IS NULL OR s.sales_order = '')
                     AND (
                         s.return_reason IS NULL OR s.return_reason = ''
                         OR s.return_reason != 'Repair'
@@ -569,6 +590,7 @@ def stage_targeted_variants(variant_ids, settings):
                 GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
                 GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
                 CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
+                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
                 CASE 
                     WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
                     WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
@@ -581,6 +603,7 @@ def stage_targeted_variants(variant_ids, settings):
             LEFT JOIN `tabItem Variant Attribute` iva
                 ON iva.parent = i.item_code AND iva.attribute = 'Processor Type1'
             WHERE pb.shopify_variant_id IN ({vp})
+              AND COALESCE(pb.disable, 0) = 0
             GROUP BY pb.shopify_variant_id
             ORDER BY total_actual_qty DESC
         """
@@ -605,6 +628,7 @@ def stage_targeted_variants(variant_ids, settings):
         for row in results:
             update_status = ''
             row.total_actual_qty = safe_float(row.total_actual_qty)
+            row.total_pre_order_qty = safe_float(row.total_pre_order_qty) or 0
 
             if row.total_actual_qty is None:
                 continue
@@ -661,19 +685,23 @@ def stage_targeted_variants(variant_ids, settings):
                 )
 
                 if not is_not_found:
+                    update_payload = {
+                        "is_active": 1,
+                        "shopify_pre_order_qty": row.total_pre_order_qty,
+                        "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
+                        "modified": frappe.utils.now(),
+                    }
                     if (
                         float(row.total_actual_qty) != existing_qty
                         or (shopify_qty is not None and float(row.total_actual_qty) != shopify_qty)
                     ):
-                        frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, {
-                            "is_active": 1,
+                        update_payload.update({
                             "sync_error": update_status,
                             "status": "Queued",
                             "actual_qty": row.total_actual_qty,
                             "updated_qty": row.total_actual_qty,
-                            "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
-                            "modified": frappe.utils.now(),
                         })
+                    frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, update_payload)
             else:
                 new_doc = frappe.new_doc("NJ Inventory Sync Main")
                 qty = safe_float(row.total_actual_qty)
@@ -681,6 +709,7 @@ def stage_targeted_variants(variant_ids, settings):
                 new_doc.actual_qty = qty
                 new_doc.status = "Queued"
                 new_doc.updated_qty = qty
+                new_doc.shopify_pre_order_qty = row.total_pre_order_qty
                 new_doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 new_doc.item_code = row.item_codes
                 new_doc.item_group = row.item_groups
@@ -721,9 +750,11 @@ def stage_targeted_variants(variant_ids, settings):
             "stage_targeted_variants",
             "Info"
         )
+        return shopify_data
 
     except Exception:
         log_error(frappe.get_traceback(), "stage_targeted_variants")
+        return []
 
 
 def push_targeted_variants_to_shopify(variant_ids, settings):

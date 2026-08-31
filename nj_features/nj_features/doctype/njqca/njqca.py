@@ -1028,6 +1028,24 @@ def validate_njqca_status_completed_before_submit(doc):
         frappe.throw(
             _("NJQCA was not completed. Please re-run the script before submitting.")
         )
+def update_battery_health_score(doc):
+    for row in doc.get("njqca_result_parameters") or []:
+
+        item_group = str(row.get("item_group") or "").strip().upper()
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        try:
+            score = int(float(row.get("score")))
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            item_group == "BATTERY"
+            and parameter == "health"
+            and score in (1, 41)
+        ):
+            row.score = 50
+
 
 def update_battery_health_score(doc):
     for row in doc.get("njqca_result_parameters") or []:
@@ -6588,13 +6606,16 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     initial_percentage = None
     final_percentage = None
     charging_gain = None
-
     # ---------------------------------------------------------
-    # Check whether Item Template belongs to Chromebooks
+    # Check whether system is a Chromebook
+    #
+    # Some Chromebook Windows models are stored under
+    # Item Group = "Laptops", so Item Group alone cannot
+    # identify them.
     # ---------------------------------------------------------
     part_item_group = None
 
-    item_template = doc.get("item_template")
+    item_template = str(doc.get("item_template") or "").strip()
 
     if item_template:
         part_item_group = frappe.db.get_value(
@@ -6602,6 +6623,11 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
             {"name": item_template},
             "item_group"
         )
+
+    is_chromebook = (
+        str(part_item_group or "").strip().lower() == "chromebooks"
+        or "chromebook" in item_template.lower()
+    )
     # ---------------------------------------------------------
     # STEP 1: Calculate charging gain
     # ---------------------------------------------------------
@@ -6775,7 +6801,7 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     # Then change FAIL -> PASS
     # ---------------------------------------------------------
     if (
-        part_item_group == "Chromebooks"
+        is_chromebook
         and adapter_status == "FAIL"
         and charging_gain is not None
         and charging_gain >= 1

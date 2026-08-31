@@ -15,8 +15,37 @@ SHOPIFY_API_VERSION = "2025-07"
 
 class CustomProductBundle(ProductBundle):
 	def validate(self):
+		self.handle_product_bundle_disable()
 		self.deleting_rerord__if_table_modified()
 		self.validating_pd_shopify_variant_id_and_item_shopify_variant_id()
+
+	def handle_product_bundle_disable(self):
+		shopify_variant_id = (getattr(self, 'shopify_variant_id', '') or '').strip()
+		if not shopify_variant_id:
+			return
+
+		if getattr(self, "disable", 0) == 1:
+			from frappe.utils import flt, now
+			sync_docs = frappe.get_all(
+				"NJ Inventory Sync Main",
+				filters={"shopify_variant_id": shopify_variant_id},
+				fields=["name", "shopify_quantity"]
+			)
+			for s in sync_docs:
+				current_shopify_qty = flt(s.get("shopify_quantity") or 0)
+				status = "Queued" if current_shopify_qty > 0 else "Completed"
+				frappe.db.set_value("NJ Inventory Sync Main", s.name, {
+					"actual_qty": 0,
+					"updated_qty": 0,
+					"shopify_pre_order_qty": 0,
+					"shopify_pre_order_enabled": 0,
+					"estimated_time_of_dispatch": "",
+					"status": status,
+					"is_active": 1 if status == "Queued" else 0,
+					"sync_error": "[Disabled Bundle - Queued to 0]" if status == "Queued" else "[Disabled Bundle]",
+					"modified": now(),
+				})
+
 
 
 

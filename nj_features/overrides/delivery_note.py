@@ -35,6 +35,20 @@ MAKE_FULLFILMENT = "https://newjaisa.myshopify.com/admin/api/2025-01/fulfillment
 
 logger = frappe.logger("deliverynotetimelog", allow_site=1, file_count=1)
 
+
+def update_sales_order_delivery_dates(sales_orders, delivery_date):
+    """Update SO dates after the Return DN submit transaction has committed."""
+    for sales_order in set(sales_orders or []):
+        if sales_order:
+            frappe.db.set_value(
+                "Sales Order",
+                sales_order,
+                "delivery_date",
+                delivery_date,
+                update_modified=False,
+            )
+
+
 @contextmanager
 def log_time(label, docname=None):
     """Context manager to log execution time of code blocks."""
@@ -52,6 +66,31 @@ class CustomDeliveryNote(DeliveryNote):
         super().validate()
         self.validate_is_service_serials()
         self.apply_patch()
+
+    def updating_couse_or_return_from_bold_desk(self):
+        print("inside the function=================")
+        """Extend linked SO dates for Repair/Replace Return Delivery Notes."""
+        if not self.is_return:
+            return
+
+        cause_of_return = str(self.cause_of_return or "").strip()
+        if cause_of_return not in {"Repair", "Replace"}:
+            return
+
+        delivery_date = add_days(nowdate(), 5)
+        sales_orders = {
+            item.get("against_sales_order")
+            for item in self.get("items") or []
+            if item.get("against_sales_order")
+        }
+        if sales_orders:
+            frappe.enqueue(
+                "nj_features.overrides.delivery_note.update_sales_order_delivery_dates",
+                queue="short",
+                enqueue_after_commit=True,
+                sales_orders=list(sales_orders),
+                delivery_date=delivery_date,
+            )
         
 
     def validate_is_service_serials(self):
@@ -312,8 +351,8 @@ class CustomDeliveryNote(DeliveryNote):
                 with log_time("approve_unchecking_for_cod_orders", self.name):
                     self.approve_unchecking_for_cod_orders()
 
-                with log_time("return_dn_validation", self.name):
-                    self.return_dn_validation()
+                # with log_time("return_dn_validation", self.name):
+                #     self.return_dn_validation()
 
                 with log_time("couse_of_return_validation", self.name):
                     self.couse_of_return_validation()
@@ -358,6 +397,11 @@ class CustomDeliveryNote(DeliveryNote):
 
                     with log_time("fix_stale_delivery_details_on_return", self.name):
                         self.fix_stale_delivery_details_on_return()
+
+                # Keep this last because earlier submit handlers can save the
+                # linked Sales Order with its previously loaded delivery date.
+                with log_time("updating_couse_or_return_from_bold_desk", self.name):
+                    self.updating_couse_or_return_from_bold_desk()
 
                 # ------------------------------------------------------------------
                 # Total timing

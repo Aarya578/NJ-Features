@@ -125,12 +125,25 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
     if item_code in _SHOPIFY_VARIANT_ID_CACHE:
         return _SHOPIFY_VARIANT_ID_CACHE[item_code]
 
-    # 1. Check tabNJ Inventory Sync Main
-    variant_id = frappe.db.get_value(
-        "NJ Inventory Sync Main",
-        {"item_code": item_code},
-        "shopify_variant_id"
-    )
+    variant_id = None
+    # 0. Check if item_code is SKU with embedded /ID-<variant_id>
+    if "/ID-" in item_code:
+        variant_id = item_code.split("/ID-")[-1].strip()
+
+    if not variant_id:
+        # 1. Check tabNJ Inventory Sync Main
+        res = frappe.db.sql(
+            """
+            SELECT shopify_variant_id FROM `tabNJ Inventory Sync Main`
+            WHERE item_code LIKE %s
+            LIMIT 1
+            """,
+            (f"%{item_code}%",),
+            as_dict=False,
+        )
+        if res and res[0] and res[0][0]:
+            variant_id = str(res[0][0]).strip()
+
     if not variant_id:
         # 2. Check tabProduct Bundle
         res = frappe.db.sql(
@@ -141,38 +154,110 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
               AND shopify_variant_id IS NOT NULL AND shopify_variant_id != ''
             LIMIT 1
             """,
-            (item_code, item_code)
+            (item_code, item_code),
         )
-        if res and res[0]:
-            variant_id = res[0][0]
+        if res and res[0] and res[0][0]:
+            variant_id = str(res[0][0]).strip()
+
+    if not variant_id:
+        # 3. Check tabItem
+        res_item = frappe.db.get_value("Item", item_code, "shopify_variant_id")
+        if res_item:
+            variant_id = str(res_item).strip()
 
     variant_id_str = str(variant_id).strip() if variant_id else None
     _SHOPIFY_VARIANT_ID_CACHE[item_code] = variant_id_str
     return variant_id_str
 
 
+_EQUIVALENT_PARENT_MODELS_CACHE: Dict[str, Set[str]] = {}
+
+
+def _get_equivalent_parent_models(template_name: str) -> Set[str]:
+    """Retrieve all equivalent parent templates grouped together in tabNJ Inventory Sync Main."""
+    if not template_name:
+        return set()
+    if template_name in _EQUIVALENT_PARENT_MODELS_CACHE:
+        return _EQUIVALENT_PARENT_MODELS_CACHE[template_name]
+
+    sync_rows = frappe.db.sql(
+        """
+        SELECT item_code FROM `tabNJ Inventory Sync Main`
+        WHERE item_code LIKE %s
+        """,
+        (f"%{template_name}%",),
+        as_dict=True
+    )
+    equivalent = {template_name}
+    for r in sync_rows:
+        raw = r.get("item_code") or ""
+        for code in raw.split(","):
+            code = code.strip()
+            if code:
+                v_of = frappe.db.get_value("Item", code, "variant_of")
+                if v_of:
+                    equivalent.add(v_of)
+    _EQUIVALENT_PARENT_MODELS_CACHE[template_name] = equivalent
+    return equivalent
+
+
 def _get_variant_bundle_item_codes(variant_id: str) -> List[str]:
-    """Retrieve all Laptop/Chromebook item_codes under a shopify_variant_id."""
+    """Retrieve all Laptop/Chromebook item_codes under a shopify_variant_id from Product Bundles, Items, and Sync Main."""
     if not variant_id:
         return []
     variant_id_str = str(variant_id).strip()
     if variant_id_str in _SHOPIFY_VARIANT_ITEMS_CACHE:
         return _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str]
 
+    item_codes = set()
+    # 1. Product Bundle
     rows = frappe.db.sql(
         """
         SELECT DISTINCT tpbi.item_code
         FROM `tabProduct Bundle` tpb
         INNER JOIN `tabProduct Bundle Item` tpbi ON tpb.name = tpbi.parent
         INNER JOIN `tabItem` ti ON tpbi.item_code = ti.name
-        WHERE tpb.shopify_variant_id = %s
+        WHERE TRIM(tpb.shopify_variant_id) = %s
           AND ti.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
         """,
         (variant_id_str,)
     )
-    item_codes = [str(r[0]).strip() for r in (rows or []) if r and r[0]]
-    _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str] = item_codes
-    return item_codes
+    for r in (rows or []):
+        if r and r[0]:
+            item_codes.add(str(r[0]).strip())
+
+    # 2. tabItem shopify_variant_id
+    rows2 = frappe.db.sql(
+        """
+        SELECT name FROM `tabItem`
+        WHERE TRIM(shopify_variant_id) = %s
+          AND item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
+        """,
+        (variant_id_str,)
+    )
+    for r in (rows2 or []):
+        if r and r[0]:
+            item_codes.add(str(r[0]).strip())
+
+    # 3. tabNJ Inventory Sync Main
+    sync_rows = frappe.db.sql(
+        """
+        SELECT item_code FROM `tabNJ Inventory Sync Main`
+        WHERE TRIM(shopify_variant_id) = %s
+        """,
+        (variant_id_str,),
+        as_dict=True
+    )
+    for s in sync_rows:
+        raw = s.get("item_code") or ""
+        for code in raw.split(","):
+            c = code.strip()
+            if c:
+                item_codes.add(c)
+
+    res = sorted(list(item_codes))
+    _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str] = res
+    return res
 
 
 def _is_dept_applicable(dept_row, item_grp):
@@ -389,10 +474,36 @@ def _cfg_tuple_from_item(item_code: str) -> tuple:
     """
     Return (template, processor, ram, storage) so we NEVER cross processor.
     """
-    if item_code not in _ITEM_KEYS:
-        _prime_item_cache([item_code])
-    _, template, proc, ram, sto = _ITEM_KEYS[item_code]["config_key"]
-    return (template, proc, ram, sto)
+    if not item_code:
+        return (None, None, None, None)
+
+    lookup_code = item_code
+    # If item_code is a Product Bundle / SKU, resolve to the laptop item
+    bundle_items = frappe.db.sql(
+        """
+        SELECT pbi.item_code FROM `tabProduct Bundle Item` pbi
+        INNER JOIN `tabItem` ti ON pbi.item_code = ti.name
+        WHERE pbi.parent = %s
+          AND ti.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
+        LIMIT 1
+        """,
+        (item_code,)
+    )
+    if bundle_items and bundle_items[0] and bundle_items[0][0]:
+        lookup_code = bundle_items[0][0]
+    else:
+        var_id = _get_shopify_variant_id(item_code)
+        if var_id:
+            vcodes = _get_variant_bundle_item_codes(var_id)
+            if vcodes:
+                lookup_code = vcodes[0]
+
+    if lookup_code not in _ITEM_KEYS:
+        _prime_item_cache([lookup_code])
+    if lookup_code in _ITEM_KEYS and "config_key" in _ITEM_KEYS[lookup_code]:
+        _, template, proc, ram, sto = _ITEM_KEYS[lookup_code]["config_key"]
+        return (template, proc, ram, sto)
+    return (lookup_code, None, None, None)
 
 
 # =========================
@@ -612,8 +723,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     for s in sorted(sequences, reverse=True):
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
-            if not dept.get("run_production_planning"):
-                continue
 
             serial_rows = inward_serials_per_dept.get(dept_name, [])
 
@@ -696,7 +805,11 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     # -------------------------------------------------------------
     _SHOPIFY_VARIANT_ID_CACHE.clear()
     _SHOPIFY_VARIANT_ITEMS_CACHE.clear()
+    _EQUIVALENT_PARENT_MODELS_CACHE.clear()
 
+    # For SO allocation, search ALL departments with department_sequence > 0
+    all_eligible_depts = [d for d in depts if int(d.get("department_sequence") or 0) > 0]
+    # For DOI/Forecast, only use departments with run_production_planning enabled
     active_depts = [d for d in depts if d.get("run_production_planning")]
 
     for order_row in pending_orders:
@@ -710,7 +823,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         original_needed_qty = needed_qty
         item_grp = frappe.db.get_value("Item", target_ic, "item_group")
-        search_order = _get_sla_department_search_order(active_depts, deliv_date, today, item_grp=item_grp)
+        search_order = _get_sla_department_search_order(all_eligible_depts, deliv_date, today, item_grp=item_grp)
 
         variant_id = _get_shopify_variant_id(target_ic)
         p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {target_ic} if variant_id else set()
@@ -801,11 +914,15 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     priority_per_dept[dept_name] += 1
 
             # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
-            if needed_qty > 0 and model_key:
-                p3_matches = [
-                    s for s in dept_pool
-                    if s.get("forward_key_model") == model_key
-                ]
+            if needed_qty > 0 and target_cfg_tuple:
+                target_tmpl, target_proc = target_cfg_tuple[0], target_cfg_tuple[1]
+                equiv_templates = _get_equivalent_parent_models(target_tmpl)
+                p3_matches = []
+                for s in dept_pool:
+                    fkm = s.get("forward_key_model")
+                    if fkm and fkm[0] == "MODEL":
+                        if fkm[2] == target_proc and fkm[1] in equiv_templates:
+                            p3_matches.append(s)
                 p3_matches = _oldest_first(p3_matches)
 
                 for s in p3_matches[:needed_qty]:
@@ -1158,6 +1275,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     plan_doc.save(ignore_permissions=True)
     total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
+
+    # Safely refresh dispatch ETAs for all newly allocated serials and sales orders
+    try:
+        from nj_features.overrides.sales_order import calculate_dispatch_eta_for_sales_order
+        calculate_dispatch_eta_for_sales_order()
+    except Exception as eta_err:
+        logger.warning("Dispatch ETA recalculation after production plan failed: %s", eta_err)
 
     return {
         "total_departments": 1,
@@ -2390,7 +2514,12 @@ def _prime_item_cache(item_codes: List[str]):
 
     for ic in needed:
         core = _ITEM_CORE.get(ic) or {}
-        template = core.get("variant_of") or ic
+        # Derive accurate model prefix from item_code if formatted as Model-CPU-...
+        model_match = re.split(r"-(CORE|RYZEN|CELERON|ATHLON|PENTIUM|AMD|INTEL|M1|M2|M3|I3|I5|I7|I9|XEON)", ic, maxsplit=1, flags=re.IGNORECASE)
+        if model_match and len(model_match) > 1 and model_match[0].strip():
+            template = model_match[0].strip()
+        else:
+            template = core.get("variant_of") or ic
         attrs = _ITEM_ATTRS.get(ic, {})
         proc = attrs.get(PROCESSOR_ATTR)
         ram = attrs.get(RAM_ATTR)

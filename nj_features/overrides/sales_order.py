@@ -42,8 +42,22 @@ class CustomSalesOrder(SalesOrder):
 
         try:
             calculate_dispatch_eta_for_sales_order(self.name)
-            calc_dd = compute_sales_order_delivery_date(self.name)
-            frappe.db.set_value("Sales Order", self.name, "delivery_date", calc_dd, update_modified=False)
+            calc_res = compute_sales_order_delivery_date(self.name, return_reason=True)
+            if isinstance(calc_res, (list, tuple)):
+                calc_dd, reason_text = calc_res
+            else:
+                calc_dd, reason_text = calc_res, str(calc_res)
+
+            so_updates = {
+                "delivery_date": calc_dd,
+                "estimated_delivery_date": reason_text
+            }
+            if frappe.db.has_column("Sales Order", "committed_delivery_date"):
+                committed_val = frappe.db.get_value("Sales Order", self.name, "committed_delivery_date")
+                if not committed_val:
+                    so_updates["committed_delivery_date"] = calc_dd
+
+            frappe.db.set_value("Sales Order", self.name, so_updates, update_modified=False)
             frappe.db.sql("""
                 UPDATE `tabSales Order Item`
                 SET delivery_date = %s
@@ -762,6 +776,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         _get_shopify_variant_id,
         _get_variant_bundle_item_codes,
         _cfg_tuple_from_item,
+        _get_equivalent_parent_models,
     )
 
     allocated_count = 0
@@ -857,11 +872,13 @@ def assign_serials(so_name, item_code, to_allocate, departments):
 
         # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
         if needed_qty > 0 and target_model:
+            target_tmpl, target_proc = target_model[0], target_model[1]
+            equiv_templates = _get_equivalent_parent_models(target_tmpl)
             p3_matches = []
             for s in pool:
                 try:
                     scfg = _cfg_tuple_from_item(s.get("item_code"))
-                    if scfg and (scfg[0], scfg[1]) == target_model:
+                    if scfg and scfg[1] == target_proc and scfg[0] in equiv_templates:
                         p3_matches.append(s)
                 except Exception:
                     pass
@@ -1136,15 +1153,16 @@ def get_sales_order_eta_breakdown(so_name):
     return result
 
 
-def compute_sales_order_delivery_date(so_name):
+def compute_sales_order_delivery_date(so_name, return_reason=False):
     """
     Calculate Delivery Date for a Sales Order based on allocated serials' department SLA.
     - Packing & Dispatch (Seq 20) -> SLA = 1 (curdate + 1).
     - Upstream department -> cumulative SLA from that department to Packing & Dispatch.
     - 10% buffer applied to cumulative SLA (rounded up).
     - If reconfigured item (Priority 2, 3, 4) -> adds +2 days extra.
-    - Multiple units -> takes the min SLA across units.
-    - If unallocated -> falls back to SO Quantity Check SLA.
+    - Updates individual Serial No.estimated_delivery_date for each reserved serial.
+    - Multiple units -> takes the MAX SLA across units (bottleneck logic).
+    - Returns target delivery date (and formatted explanatory reason if return_reason=True).
     """
     try:
         depts_data = frappe.db.sql("""
@@ -1155,7 +1173,9 @@ def compute_sales_order_delivery_date(so_name):
         """, as_dict=True)
 
         if not depts_data:
-            return add_days(nowdate(), 1)
+            fallback_date = add_days(nowdate(), 1)
+            reason = f"{fallback_date} (Default SLA: 1d)"
+            return (fallback_date, reason) if return_reason else fallback_date
 
         for d in depts_data:
             if "packing & dispatch" in (d.get("name") or "").lower():
@@ -1215,13 +1235,19 @@ def compute_sales_order_delivery_date(so_name):
         """, so_name))
         so_all_target_items = so_direct_items | bundle_items
 
+        has_serial_eta_col = frappe.db.has_column("Serial No", "estimated_delivery_date")
+
         if reserved_serials:
             sla_list = []
+            serial_reasons = []
             for s in reserved_serials:
                 curr_ic = s.get("item_code")
                 to_make = s.get("to_make")
                 remarks = s.get("remarks") or ""
                 item_grp = s.get("item_group")
+                dept_name = s.get("dept_name") or "Unknown"
+                dept_seq = s.get("department_sequence") or 1
+
                 # Check if exact match or reconfigured
                 is_reconfig = False
                 if to_make and to_make != curr_ic:
@@ -1231,10 +1257,36 @@ def compute_sales_order_delivery_date(so_name):
                 elif "Priority 2" in remarks or "Priority 3" in remarks or "Priority 4" in remarks or "Reconfig" in remarks:
                     is_reconfig = True
 
-                sla_list.append(_dept_sla(s.get("dept_name"), s.get("department_sequence"), item_grp=item_grp, is_reconfig=is_reconfig))
+                sn_sla = _dept_sla(dept_name, dept_seq, item_grp=item_grp, is_reconfig=is_reconfig)
+                sn_est_date = add_days(nowdate(), sn_sla)
+                sla_list.append(sn_sla)
 
-            selected_sla = min(sla_list) if sla_list else 1
-            return add_days(nowdate(), selected_sla)
+                reconfig_tag = " [Reconfig +2d]" if is_reconfig else ""
+                day_unit = "day" if sn_sla == 1 else "days"
+
+                # Standard format for Serial No: YYYY-MM-DD | Department: <dept> (SLA: <N> days)
+                sn_reason_str = f"{sn_est_date} | Department: {dept_name} (SLA: {sn_sla} {day_unit}){reconfig_tag}"
+                if len(sn_reason_str) > 250:
+                    sn_reason_str = sn_reason_str[:247] + "..."
+
+                # Update individual Serial No's estimated_delivery_date
+                if has_serial_eta_col:
+                    frappe.db.set_value("Serial No", s.get("name"), "estimated_delivery_date", sn_reason_str, update_modified=False)
+
+                serial_reasons.append(f"SN: {s.get('name')} in {dept_name}{reconfig_tag} (SLA: {sn_sla}d -> {sn_est_date})")
+
+            # Delivery date takes MIN SLA; Estimated delivery date takes MAX SLA
+            min_sla = min(sla_list) if sla_list else 1
+            max_sla = max(sla_list) if sla_list else 1
+
+            delivery_date = add_days(nowdate(), min_sla)
+            max_est_date = add_days(nowdate(), max_sla)
+
+            reason_str = f"{max_est_date} | " + "; ".join(serial_reasons)
+            if len(reason_str) > 250:
+                reason_str = reason_str[:247] + "..."
+
+            return (delivery_date, reason_str) if return_reason else delivery_date
 
         # Fallback: check tabSO Quantity Check SLA for items in this SO
         if so_all_target_items:
@@ -1242,12 +1294,24 @@ def compute_sales_order_delivery_date(so_name):
                 SELECT sla FROM `tabSO Quantity Check` WHERE item_code IN %s AND sla > 0
             """, (tuple(so_all_target_items),))
             if soqc_slas:
-                return add_days(nowdate(), min(soqc_slas))
+                min_sla = min(soqc_slas)
+                max_sla = max(soqc_slas)
+                delivery_date = add_days(nowdate(), min_sla)
+                max_est_date = add_days(nowdate(), max_sla)
+                reason_str = f"{max_est_date} (Unallocated - SO Quantity Check SLA: {max_sla}d)"
+                if len(reason_str) > 250:
+                    reason_str = reason_str[:247] + "..."
+                return (delivery_date, reason_str) if return_reason else delivery_date
 
-        return add_days(nowdate(), 1)
+        fallback_date = add_days(nowdate(), 1)
+        reason_str = f"{fallback_date} (Default SLA: 1d)"
+        return (fallback_date, reason_str) if return_reason else fallback_date
+
     except Exception:
         frappe.log_error(title=f"compute_sales_order_delivery_date failed for {so_name}", message=frappe.get_traceback())
-        return add_days(nowdate(), 1)
+        fallback_date = add_days(nowdate(), 1)
+        reason_str = f"{fallback_date} (Fallback on error: 1d)"
+        return (fallback_date, reason_str) if return_reason else fallback_date
 
 
 def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
@@ -1257,13 +1321,18 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
 
     for so_name, eta in so_eta_map.items():
         update_values = {}
-        calc_delivery_date = compute_sales_order_delivery_date(so_name)
+        calc_res = compute_sales_order_delivery_date(so_name, return_reason=True)
+        if isinstance(calc_res, (list, tuple)):
+            calc_delivery_date, reason_text = calc_res
+        else:
+            calc_delivery_date, reason_text = calc_res, str(calc_res)
+
         update_values["delivery_date"] = calc_delivery_date
 
         if eta is None:
             update_values["eta_for_dispatch"] = "No Stock"
             if has_eta_date_col:
-                update_values["estimated_delivery_date"] = None
+                update_values["estimated_delivery_date"] = reason_text or "No Stock"
         else:
             try:
                 eta_days = int(eta) if eta is not None else 0
@@ -1272,7 +1341,7 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
 
             update_values["eta_for_dispatch"] = eta
             if has_eta_date_col:
-                update_values["estimated_delivery_date"] = calc_delivery_date
+                update_values["estimated_delivery_date"] = reason_text
 
         if so_breakdown_map and breakdown_fieldname:
             update_values[breakdown_fieldname] = "\n\n".join(

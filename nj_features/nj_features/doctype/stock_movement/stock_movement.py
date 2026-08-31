@@ -1606,11 +1606,15 @@ def validate_serial_no_in_latest_nj_production_plan(
     if not int(dept_restriction or 0):
         return True
 
+    skipping_departments = get_nj_settings_comma_separated_values("skipping_department_for_rank_validation")
+    if s_department in skipping_departments:
+        return True
     stock_movement_item_groups = get_nj_settings_comma_separated_values("stock_movement_item_groups")
     serial_item_group = serial_doc.get("item_group")
 
     if not stock_movement_item_groups or serial_item_group not in stock_movement_item_groups:
         return True
+
 
     nj_production_name = _get_latest_nj_production_plan_name()
     if not nj_production_name:

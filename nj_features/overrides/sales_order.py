@@ -779,10 +779,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         _get_equivalent_parent_models,
     )
 
-    allocated_count = 0
-    needed_qty = to_allocate
-
-    def _do_assign(sn_name, remarks_text=None):
+    def _do_assign(sn_name, remarks_text=None, sn_dict=None, dept_name=None):
         nonlocal allocated_count, needed_qty
         try:
             update_data = {
@@ -794,6 +791,21 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             frappe.db.set_value("Serial No", sn_name, update_data, update_modified=False)
             allocated_count += 1
             needed_qty -= 1
+
+            curr_ic = sn_dict.get("item_code") if sn_dict else frappe.db.get_value("Serial No", sn_name, "item_code")
+            curr_wh = sn_dict.get("warehouse") if sn_dict else frappe.db.get_value("Serial No", sn_name, "warehouse")
+            curr_dept = dept_name or (sn_dict.get("department") if sn_dict else frappe.db.get_value("Serial No", sn_name, "department"))
+
+            log_msg = (
+                f"Sales Order: {so_name}\n"
+                f"Target Order Item Code: {item_code}\n"
+                f"Allocated Serial No: {sn_name}\n"
+                f"Serial Current Item Code: {curr_ic}\n"
+                f"Department: {curr_dept}\n"
+                f"Warehouse: {curr_wh}\n"
+                f"Detailed Reason: {remarks_text}"
+            )
+            frappe.log_error(title="ALlocation log for debug", message=log_msg)
         except Exception as e:
             frappe.log_error(title=f"Serial reservation failed {sn_name}", message=str(e))
 
@@ -859,7 +871,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         for s in matches_p1[:needed_qty]:
             pool.remove(s)
             remarks_text = f"Allocated to SO {so_name} (Priority 1: Exact Item Code match '{item_code}') | to_make: {item_code}"
-            _do_assign(s["name"], remarks_text=remarks_text)
+            _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
         # --- Priority 2: Same Shopify Variant ID Item Codes in THIS department ---
         if needed_qty > 0 and p2_codes:
@@ -868,7 +880,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 pool.remove(s)
                 curr_ic = s.get("item_code")
                 remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {item_code}"
-                _do_assign(s["name"], remarks_text=remarks_text)
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
         # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
         if needed_qty > 0 and target_model:
@@ -886,7 +898,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 pool.remove(s)
                 curr_ic = s.get("item_code")
                 remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}', current '{curr_ic}') | to_make: {item_code}"
-                _do_assign(s["name"], remarks_text=remarks_text)
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
         # --- Priority 4: Parent's Shopify Variant ID Item Codes in THIS department ---
         if needed_qty > 0 and p4_codes:
@@ -895,7 +907,7 @@ def assign_serials(so_name, item_code, to_allocate, departments):
                 pool.remove(s)
                 curr_ic = s.get("item_code")
                 remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {item_code}"
-                _do_assign(s["name"], remarks_text=remarks_text)
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
     frappe.db.commit()
     return allocated_count

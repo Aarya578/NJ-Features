@@ -3046,6 +3046,15 @@ def _append_plan_row(
 
     if reason == "Order" and sales_order_number:
         _update_serial_reserved_sales_order(serial_no, sales_order_number)
+        log_msg = (
+            f"Sales Order: {sales_order_number}\n"
+            f"Target Item Code (Order): {item_code_to_make}\n"
+            f"Allocated Serial No: {serial_no}\n"
+            f"Department: {current_department}\n"
+            f"Warehouse: {current_warehouse}\n"
+            f"Detailed Reason: {remarks}"
+        )
+        frappe.log_error(title="ALlocation log for debug", message=log_msg)
 
     if remarks:
         _update_serial_remarks(serial_no, remarks)

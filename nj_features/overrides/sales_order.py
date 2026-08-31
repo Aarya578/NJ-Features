@@ -779,6 +779,9 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         _get_equivalent_parent_models,
     )
 
+    allocated_count = 0
+    needed_qty = to_allocate
+
     def _do_assign(sn_name, remarks_text=None, sn_dict=None, dept_name=None):
         nonlocal allocated_count, needed_qty
         try:

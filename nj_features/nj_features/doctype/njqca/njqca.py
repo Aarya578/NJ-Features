@@ -5566,6 +5566,15 @@ def update_performance_criteria(doc):
         doc,
         criteria_rows
     )
+    # Save the criteria profile used for Performance + Heavy Load calculation
+    if criteria_name:
+        result.setdefault("changes", []).append({
+            "parameter": "Performance_HeavyLoad_Criteria",
+            "value": criteria_name,
+            "score": 0,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        })
 
     # Debug info for bench console
     result["criteria_source"] = criteria_source
@@ -6590,11 +6599,15 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     charging_gain = None
 
     # ---------------------------------------------------------
-    # Check whether Item Template belongs to Chromebooks
+    # Check whether system is a Chromebook
+    #
+    # Some Chromebook Windows models are stored under
+    # Item Group = "Laptops", so Item Group alone cannot
+    # identify them.
     # ---------------------------------------------------------
     part_item_group = None
 
-    item_template = doc.get("item_template")
+    item_template = str(doc.get("item_template") or "").strip()
 
     if item_template:
         part_item_group = frappe.db.get_value(
@@ -6602,6 +6615,11 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
             {"name": item_template},
             "item_group"
         )
+
+    is_chromebook = (
+        str(part_item_group or "").strip().lower() == "chromebooks"
+        or "chromebook" in item_template.lower()
+    )
     # ---------------------------------------------------------
     # STEP 1: Calculate charging gain
     # ---------------------------------------------------------
@@ -6775,7 +6793,7 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     # Then change FAIL -> PASS
     # ---------------------------------------------------------
     if (
-        part_item_group == "Chromebooks"
+        is_chromebook
         and adapter_status == "FAIL"
         and charging_gain is not None
         and charging_gain >= 1

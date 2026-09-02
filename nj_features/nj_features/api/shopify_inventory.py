@@ -738,6 +738,51 @@ def create_rq_doc():
                 )
 
         # =========================================================
+        # 🔹 Deactivate / Zero-out Inactive or Disabled Bundle Records
+        # =========================================================
+        try:
+            if updated_doc_names:
+                stale_docs = frappe.get_all(
+                    "NJ Inventory Sync Main",
+                    filters={"name": ["not in", list(updated_doc_names)]},
+                    fields=["name", "actual_qty", "updated_qty", "shopify_quantity", "shopify_pre_order_qty", "status", "is_active"]
+                )
+            else:
+                stale_docs = []
+
+            for stale in stale_docs:
+                current_shop_qty = safe_float(stale.get("shopify_quantity")) or 0
+                has_stock = (safe_float(stale.get("actual_qty")) or 0) > 0 or (safe_float(stale.get("updated_qty")) or 0) > 0
+                has_preorder = (safe_float(stale.get("shopify_pre_order_qty")) or 0) > 0
+                is_active = stale.get("is_active")
+
+                if current_shop_qty > 0:
+                    frappe.db.set_value("NJ Inventory Sync Main", stale.name, {
+                        "actual_qty": 0,
+                        "updated_qty": 0,
+                        "shopify_pre_order_qty": 0,
+                        "estimated_time_of_dispatch": "",
+                        "status": "Queued",
+                        "is_active": 1,
+                        "sync_error": "[Inactive/Disabled Bundle - Queued to 0]",
+                        "modified": frappe.utils.now(),
+                    })
+                elif has_stock or has_preorder or is_active == 1 or stale.get("status") != "Completed":
+                    frappe.db.set_value("NJ Inventory Sync Main", stale.name, {
+                        "actual_qty": 0,
+                        "updated_qty": 0,
+                        "shopify_pre_order_qty": 0,
+                        "estimated_time_of_dispatch": "",
+                        "status": "Completed",
+                        "is_active": 0,
+                        "sync_error": "[Inactive/Disabled Bundle]",
+                        "modified": frappe.utils.now(),
+                    })
+        except Exception:
+            logger.exception(f"[{run_id}] Error during stale inventory cleanup")
+            log_error(frappe.get_traceback(), "Stale Inventory Cleanup Error")
+
+        # =========================================================
         # 🔹 Shopify Pre-Order Policy & ETD Metafield Sync (independent from stock)
         # =========================================================
         if shopify_data:

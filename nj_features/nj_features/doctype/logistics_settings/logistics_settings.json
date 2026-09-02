@@ -54,7 +54,11 @@
   "delhivery_serviceability_url",
   "delhivery_order_url",
   "delhivery_label_url",
-  "delhivery_product_type"
+  "delhivery_product_type",
+  "bold_desk_settings_section",
+  "enabled",
+  "bolddesk_domain",
+  "bold_desk_key"
  ],
  "fields": [
   {
@@ -316,6 +320,30 @@
    "fieldname": "delhivery_product_type",
    "fieldtype": "Data",
    "label": "Delhivery Product Type"
+  },
+  {
+   "fieldname": "bold_desk_settings_section",
+   "fieldtype": "Section Break",
+   "label": "BoldDesk Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable BoldDesk Hourly Sync"
+  },
+  {
+   "description": "Example: support.example.com or https://support.example.com",
+   "fieldname": "bolddesk_domain",
+   "fieldtype": "Data",
+   "label": "BoldDesk Domain",
+   "reqd": 1
+  },
+  {
+   "fieldname": "bold_desk_key",
+   "fieldtype": "Password",
+   "label": "BoldDesk API Key",
+   "reqd": 1
   }
  ],
  "issingle": 1,

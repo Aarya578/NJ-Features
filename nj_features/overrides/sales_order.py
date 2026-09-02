@@ -1,6 +1,7 @@
 import re
 import json
 import time
+import math
 import uuid
 import base64
 import frappe, requests
@@ -41,14 +42,29 @@ class CustomSalesOrder(SalesOrder):
 
         try:
             calculate_dispatch_eta_for_sales_order(self.name)
-            calc_dd = compute_sales_order_delivery_date(self.name)
-            frappe.db.set_value("Sales Order", self.name, "delivery_date", calc_dd, update_modified=False)
+            calc_res = compute_sales_order_delivery_date(self.name, return_reason=True)
+            if isinstance(calc_res, (list, tuple)):
+                calc_dd, reason_text = calc_res
+            else:
+                calc_dd, reason_text = calc_res, str(calc_res)
+
+            so_updates = {
+                "delivery_date": calc_dd,
+                "estimated_delivery_date": reason_text
+            }
+            if frappe.db.has_column("Sales Order", "committed_delivery_date"):
+                committed_val = frappe.db.get_value("Sales Order", self.name, "committed_delivery_date")
+                if not committed_val:
+                    so_updates["committed_delivery_date"] = calc_dd
+
+            frappe.db.set_value("Sales Order", self.name, so_updates, update_modified=False)
             frappe.db.sql("""
                 UPDATE `tabSales Order Item`
                 SET delivery_date = %s
                 WHERE parent = %s
             """, (calc_dd, self.name))
             frappe.db.commit()
+            push_delivery_date_to_shopify_order(self.name, calc_dd)
             self.reload()
         except Exception:
             frappe.log_error(
@@ -422,6 +438,25 @@ def trim_over_allocated_serials():
 
 
 
+def _is_dept_applicable(dept_row, item_grp):
+    """
+    Checks if a department SLA applies to the given item group.
+    - Packing & Dispatch always applies (SLA = 1).
+    - If sla_item_groups is empty / None / blank -> False (Ignored).
+    - Otherwise, item_grp must be explicitly listed in sla_item_groups.
+    """
+    dept_name = str(dept_row.get("name") or "").lower()
+    if "packing & dispatch" in dept_name:
+        return True
+    if not item_grp:
+        return False
+    groups_str = str(dept_row.get("sla_item_groups") or "").strip()
+    if not groups_str or groups_str.lower() in ("none", "null"):
+        return False  # Strictly ignore if empty
+    allowed = [g.strip().lower() for g in groups_str.split(",") if g.strip()]
+    return item_grp.strip().lower() in allowed
+
+
 @frappe.whitelist(allow_guest=True)
 def calculate_dispatch_eta_for_sales_order(so_name=None):
     """Calculate dispatch ETA.
@@ -465,14 +500,17 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
                 item_errors.append(msg)
                 continue
 
+            item_group = frappe.db.get_value("Item", item_code, "item_group")
+            item_depts = [d for d in departments if _is_dept_applicable(d, item_group)]
+
             days_to_deliver = (getdate(delivery_date) - getdate(nowdate())).days
 
             eligible_depts, remaining_depts = get_eligible_departments(
-                departments, days_to_deliver
+                item_depts, days_to_deliver
             )
 
-            display_item_eta = calculate_item_eta(item_code, net_pending, departments)
-            display_breakdown = get_item_eta_breakdown(item_code, net_pending, departments)
+            display_item_eta = calculate_item_eta(item_code, net_pending, item_depts)
+            display_breakdown = get_item_eta_breakdown(item_code, net_pending, item_depts)
             display_breakdown_text = format_eta_breakdown_text(
                 item_code=item_code,
                 required_qty=net_pending,
@@ -492,7 +530,7 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
                 if current_eta is None or display_item_eta is None:
                     so_eta_map[so_name_local] = None
                 else:
-                    so_eta_map[so_name_local] = max(int(current_eta), int(display_item_eta))
+                    so_eta_map[so_name_local] = min(int(current_eta), int(display_item_eta))
 
             so_breakdown_map.setdefault(so_name_local, [])
             so_breakdown_map[so_name_local].append(display_breakdown_text)
@@ -526,19 +564,20 @@ def calculate_dispatch_eta_for_sales_order(so_name=None):
 
 
 def get_departments():
-    """Get all departments with aging information"""
+    """Get all departments with aging information (excludes Inward sequence <= 1)"""
     return frappe.db.sql("""
-        SELECT name, min_aging_days, department_sequence
+        SELECT name, min_aging_days, department_sequence, sla_item_groups
         FROM `tabDepartment`
-        WHERE department_sequence >= 1
+        WHERE department_sequence > 1
         ORDER BY department_sequence DESC
     """, as_dict=True)
 
 
 def get_eligible_departments(departments, days_to_deliver):
     """
-    Determine eligible departments based on delivery date SLA
-    Returns: (eligible_departments_reversed, remaining_departments)
+    Determine eligible departments based on delivery date SLA.
+    Returns: (eligible_departments, remaining_departments) in downstream-first order
+    (Packing & Dispatch -> Adaptor QC -> FQC -> upstream).
     """
     if days_to_deliver <= 0:
         return list(departments), []
@@ -552,12 +591,10 @@ def get_eligible_departments(departments, days_to_deliver):
         if cumulative_days >= days_to_deliver:
             break
 
-    eligible_depts_reversed = list(reversed(eligible_depts))
-
     eligible_names = {d.name for d in eligible_depts}
     remaining_depts = [d for d in departments if d.name not in eligible_names]
 
-    return eligible_depts_reversed, remaining_depts
+    return eligible_depts, remaining_depts
 
 
 def get_open_sales_orders(so_name=None):
@@ -566,71 +603,107 @@ def get_open_sales_orders(so_name=None):
     """
     condition_direct = ""
     condition_bundle = ""
-    params = []
+    params_direct = []
+    params_bundle = []
 
     if so_name:
         condition_direct = " AND so.name = %s "
         condition_bundle = " AND so.name = %s "
-        params.extend([so_name, so_name])
+        params_direct.append(so_name)
+        params_bundle.append(so_name)
 
-    query = f"""
-        SELECT *
-        FROM (
-            SELECT
-                so.name AS sales_order,
-                soi.item_code,
-                SUM(soi.qty) AS ordered_qty,
-                so.delivery_date
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON soi.parent = so.name
-            INNER JOIN
-                `tabItem` i ON soi.item_code = i.item_code
-            WHERE
-                so.docstatus = 1
-                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
-                AND i.is_stock_item = 1
-                AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
-                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
-                {condition_direct}
-            GROUP BY
-                so.name, soi.item_code, so.delivery_date
-
-            UNION ALL
-
-            SELECT
-                so.name AS sales_order,
-                pbi.item_code,
-                pbi.qty * soi.qty AS ordered_qty,
-                so.delivery_date
-            FROM
-                `tabSales Order` so
-            INNER JOIN
-                `tabSales Order Item` soi ON soi.parent = so.name
-            INNER JOIN
-                `tabProduct Bundle` pb ON (pb.new_item_code = soi.item_code OR pb.name = soi.item_code)
-            INNER JOIN
-                `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
-            INNER JOIN
-                `tabItem` i ON pbi.item_code = i.item_code
-            INNER JOIN
-                `tabItem` soi_item ON soi.item_code = soi_item.item_code
-            WHERE
-                so.docstatus = 1
-                AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
-                AND soi_item.is_stock_item = 0
-                AND i.is_stock_item = 1
-                AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
-                AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
-                {condition_bundle}
-        ) AS combined
-        ORDER BY combined.delivery_date ASC
+    # 1. Direct stock items
+    query_direct = f"""
+        SELECT
+            so.name AS sales_order,
+            soi.item_code,
+            SUM(soi.qty) AS ordered_qty,
+            so.delivery_date
+        FROM
+            `tabSales Order` so
+        INNER JOIN
+            `tabSales Order Item` soi ON soi.parent = so.name
+        INNER JOIN
+            `tabItem` i ON soi.item_code = i.item_code
+        WHERE
+            so.docstatus = 1
+            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
+            AND i.is_stock_item = 1
+            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
+            AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+            {condition_direct}
+        GROUP BY
+            so.name, soi.item_code, so.delivery_date
     """
+    direct_rows = frappe.db.sql(query_direct, tuple(params_direct), as_dict=True) if params_direct else frappe.db.sql(query_direct, as_dict=True) or []
 
-    if params:
-        return frappe.db.sql(query, tuple(params), as_dict=True)
-    return frappe.db.sql(query, as_dict=True)
+    # 2. Bundle items matched by pb.name = soi.item_code
+    query_bundle_name = f"""
+        SELECT
+            so.name AS sales_order,
+            pbi.item_code,
+            SUM(pbi.qty * soi.qty) AS ordered_qty,
+            so.delivery_date
+        FROM
+            `tabSales Order` so
+        INNER JOIN
+            `tabSales Order Item` soi ON soi.parent = so.name
+        INNER JOIN
+            `tabItem` soi_item ON soi.item_code = soi_item.item_code
+        INNER JOIN
+            `tabProduct Bundle Item` pbi ON pbi.parent = soi.item_code
+        INNER JOIN
+            `tabItem` i ON pbi.item_code = i.item_code
+        WHERE
+            so.docstatus = 1
+            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
+            AND soi_item.is_stock_item = 0
+            AND i.is_stock_item = 1
+            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
+            AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+            {condition_bundle}
+        GROUP BY
+            so.name, pbi.item_code, so.delivery_date
+    """
+    bundle_name_rows = frappe.db.sql(query_bundle_name, tuple(params_bundle), as_dict=True) if params_bundle else frappe.db.sql(query_bundle_name, as_dict=True) or []
+
+    # 3. Bundle items matched by pb.new_item_code = soi.item_code (avoid duplicates if already in bundle_name_rows)
+    matched_so_items = {(r["sales_order"], r["item_code"]) for r in bundle_name_rows}
+    query_bundle_new = f"""
+        SELECT
+            so.name AS sales_order,
+            pbi.item_code,
+            SUM(pbi.qty * soi.qty) AS ordered_qty,
+            so.delivery_date
+        FROM
+            `tabSales Order` so
+        INNER JOIN
+            `tabSales Order Item` soi ON soi.parent = so.name
+        INNER JOIN
+            `tabItem` soi_item ON soi.item_code = soi_item.item_code
+        INNER JOIN
+            `tabProduct Bundle` pb ON pb.new_item_code = soi.item_code
+        INNER JOIN
+            `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+        INNER JOIN
+            `tabItem` i ON pbi.item_code = i.item_code
+        WHERE
+            so.docstatus = 1
+            AND so.status NOT IN ('Completed', 'Closed', 'Cancelled', 'To Deliver')
+            AND soi_item.is_stock_item = 0
+            AND i.is_stock_item = 1
+            AND i.item_group IN ('Laptops', 'Chromebooks', 'Desktops', 'Chromeboxes', 'AIO', 'Full Set Desktops', 'MacBooks', 'Full Set Desktops(Bundle)', 'AIO(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'Laptops(Bundle)', 'Chromeboxes(Bundle)')
+            AND so.creation >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+            {condition_bundle}
+        GROUP BY
+            so.name, pbi.item_code, so.delivery_date
+    """
+    bundle_new_raw = frappe.db.sql(query_bundle_new, tuple(params_bundle), as_dict=True) if params_bundle else frappe.db.sql(query_bundle_new, as_dict=True) or []
+    bundle_new_rows = [r for r in bundle_new_raw if (r["sales_order"], r["item_code"]) not in matched_so_items]
+
+    combined = direct_rows + bundle_name_rows + bundle_new_rows
+    combined.sort(key=lambda r: str(r.get("delivery_date") or "9999-12-31"))
+    return combined
 
 
 def get_delivered_quantity(so_name, item_code):
@@ -694,7 +767,7 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
 
 
 def assign_serials(so_name, item_code, to_allocate, departments):
-    """Assign serial numbers using multi-pass priority across search_order departments."""
+    """Assign serial numbers using department-first multi-priority search across departments."""
     to_allocate = int(to_allocate or 0)
     if to_allocate <= 0 or not departments:
         return 0
@@ -703,12 +776,13 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         _get_shopify_variant_id,
         _get_variant_bundle_item_codes,
         _cfg_tuple_from_item,
+        _get_equivalent_parent_models,
     )
 
     allocated_count = 0
     needed_qty = to_allocate
 
-    def _do_assign(sn_name, remarks_text=None):
+    def _do_assign(sn_name, remarks_text=None, sn_dict=None, dept_name=None):
         nonlocal allocated_count, needed_qty
         try:
             update_data = {
@@ -720,6 +794,21 @@ def assign_serials(so_name, item_code, to_allocate, departments):
             frappe.db.set_value("Serial No", sn_name, update_data, update_modified=False)
             allocated_count += 1
             needed_qty -= 1
+
+            curr_ic = sn_dict.get("item_code") if sn_dict else frappe.db.get_value("Serial No", sn_name, "item_code")
+            curr_wh = sn_dict.get("warehouse") if sn_dict else frappe.db.get_value("Serial No", sn_name, "warehouse")
+            curr_dept = dept_name or (sn_dict.get("department") if sn_dict else frappe.db.get_value("Serial No", sn_name, "department"))
+
+            log_msg = (
+                f"Sales Order: {so_name}\n"
+                f"Target Order Item Code: {item_code}\n"
+                f"Allocated Serial No: {sn_name}\n"
+                f"Serial Current Item Code: {curr_ic}\n"
+                f"Department: {curr_dept}\n"
+                f"Warehouse: {curr_wh}\n"
+                f"Detailed Reason: {remarks_text}"
+            )
+            frappe.log_error(title="ALlocation log for debug", message=log_msg)
         except Exception as e:
             frappe.log_error(title=f"Serial reservation failed {sn_name}", message=str(e))
 
@@ -754,77 +843,74 @@ def assign_serials(so_name, item_code, to_allocate, departments):
         """, (tuple(wh_list),), as_dict=True)
         dept_candidates[dept_name] = serials or []
 
-    # --- Priority 1: Exact Item Code Match across search_order ---
+    variant_id = _get_shopify_variant_id(item_code)
+    p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {item_code} if variant_id else set()
+
+    target_cfg_tuple = None
+    target_model = None
+    try:
+        target_cfg_tuple = _cfg_tuple_from_item(item_code)
+        if target_cfg_tuple:
+            target_model = (target_cfg_tuple[0], target_cfg_tuple[1])
+    except Exception:
+        pass
+
+    parent_variant_id = _get_shopify_variant_id(item_code)
+    p4_codes = set()
+    if parent_variant_id:
+        p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {item_code} - p2_codes
+
+    # Department-First: Exhaust all 4 priorities within current department before moving to next
     for dept in departments:
         if needed_qty <= 0:
             break
         dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
         pool = dept_candidates.get(dept_name, [])
-        matches = [s for s in pool if s.get("item_code") == item_code or s.get("to_make") == item_code]
-        for s in matches[:needed_qty]:
+        if not pool:
+            continue
+
+        # --- Priority 1: Exact Item Code Match in THIS department ---
+        matches_p1 = [s for s in pool if s.get("item_code") == item_code or s.get("to_make") == item_code]
+        for s in matches_p1[:needed_qty]:
             pool.remove(s)
             remarks_text = f"Allocated to SO {so_name} (Priority 1: Exact Item Code match '{item_code}') | to_make: {item_code}"
-            _do_assign(s["name"], remarks_text=remarks_text)
+            _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
-    # --- Priority 2: Same Shopify Variant ID Item Codes across search_order ---
-    variant_id = _get_shopify_variant_id(item_code)
-    p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {item_code} if variant_id else set()
-    if needed_qty > 0 and p2_codes:
-        for dept in departments:
-            if needed_qty <= 0:
-                break
-            dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
-            pool = dept_candidates.get(dept_name, [])
-            matches = [s for s in pool if s.get("item_code") in p2_codes or s.get("to_make") in p2_codes]
-            for s in matches[:needed_qty]:
+        # --- Priority 2: Same Shopify Variant ID Item Codes in THIS department ---
+        if needed_qty > 0 and p2_codes:
+            matches_p2 = [s for s in pool if s.get("item_code") in p2_codes or s.get("to_make") in p2_codes]
+            for s in matches_p2[:needed_qty]:
                 pool.remove(s)
                 curr_ic = s.get("item_code")
                 remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {item_code}"
-                _do_assign(s["name"], remarks_text=remarks_text)
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
-    # --- Priority 3: Same Parent Reconfiguration (Model + Processor) across search_order ---
-    if needed_qty > 0:
-        try:
-            target_cfg_tuple = _cfg_tuple_from_item(item_code)
-            target_model = (target_cfg_tuple[0], target_cfg_tuple[1])
-            for dept in departments:
-                if needed_qty <= 0:
-                    break
-                dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
-                pool = dept_candidates.get(dept_name, [])
-                p3_matches = []
-                for s in pool:
-                    try:
-                        scfg = _cfg_tuple_from_item(s.get("item_code"))
-                        if (scfg[0], scfg[1]) == target_model:
-                            p3_matches.append(s)
-                    except Exception:
-                        pass
-                for s in p3_matches[:needed_qty]:
-                    pool.remove(s)
-                    curr_ic = s.get("item_code")
-                    remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}', current '{curr_ic}') | to_make: {item_code}"
-                    _do_assign(s["name"], remarks_text=remarks_text)
-        except Exception:
-            pass
+        # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
+        if needed_qty > 0 and target_model:
+            target_tmpl, target_proc = target_model[0], target_model[1]
+            equiv_templates = _get_equivalent_parent_models(target_tmpl)
+            p3_matches = []
+            for s in pool:
+                try:
+                    scfg = _cfg_tuple_from_item(s.get("item_code"))
+                    if scfg and scfg[1] == target_proc and scfg[0] in equiv_templates:
+                        p3_matches.append(s)
+                except Exception:
+                    pass
+            for s in p3_matches[:needed_qty]:
+                pool.remove(s)
+                curr_ic = s.get("item_code")
+                remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}', current '{curr_ic}') | to_make: {item_code}"
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
-    # --- Priority 4: Parent's Shopify Variant ID Item Codes across search_order ---
-    if needed_qty > 0:
-        parent_variant_id = _get_shopify_variant_id(item_code)
-        if parent_variant_id:
-            p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {item_code} - p2_codes
-            if p4_codes:
-                for dept in departments:
-                    if needed_qty <= 0:
-                        break
-                    dept_name = dept.get("name") if isinstance(dept, dict) else getattr(dept, "name", str(dept))
-                    pool = dept_candidates.get(dept_name, [])
-                    matches = [s for s in pool if s.get("item_code") in p4_codes or s.get("to_make") in p4_codes]
-                    for s in matches[:needed_qty]:
-                        pool.remove(s)
-                        curr_ic = s.get("item_code")
-                        remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {item_code}"
-                        _do_assign(s["name"], remarks_text=remarks_text)
+        # --- Priority 4: Parent's Shopify Variant ID Item Codes in THIS department ---
+        if needed_qty > 0 and p4_codes:
+            matches_p4 = [s for s in pool if s.get("item_code") in p4_codes or s.get("to_make") in p4_codes]
+            for s in matches_p4[:needed_qty]:
+                pool.remove(s)
+                curr_ic = s.get("item_code")
+                remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {item_code}"
+                _do_assign(s["name"], remarks_text=remarks_text, sn_dict=s, dept_name=dept_name)
 
     frappe.db.commit()
     return allocated_count
@@ -1065,8 +1151,11 @@ def get_sales_order_eta_breakdown(so_name):
         if net_pending <= 0:
             continue
 
-        predicted_eta = calculate_item_eta(item_code, net_pending, departments)
-        breakdown = get_item_eta_breakdown(item_code, net_pending, departments)
+        item_group = frappe.db.get_value("Item", item_code, "item_group")
+        item_depts = [d for d in departments if _is_dept_applicable(d, item_group)]
+
+        predicted_eta = calculate_item_eta(item_code, net_pending, item_depts)
+        breakdown = get_item_eta_breakdown(item_code, net_pending, item_depts)
 
         result.append({
             "sales_order": order.sales_order,
@@ -1079,84 +1168,165 @@ def get_sales_order_eta_breakdown(so_name):
     return result
 
 
-def compute_sales_order_delivery_date(so_name):
+def compute_sales_order_delivery_date(so_name, return_reason=False):
     """
     Calculate Delivery Date for a Sales Order based on allocated serials' department SLA.
     - Packing & Dispatch (Seq 20) -> SLA = 1 (curdate + 1).
     - Upstream department -> cumulative SLA from that department to Packing & Dispatch.
-    - Multiple units -> takes the max SLA (bottleneck unit).
-    - If unallocated -> falls back to SO Quantity Check SLA.
+    - 10% buffer applied to cumulative SLA (rounded up).
+    - If reconfigured item (Priority 2, 3, 4) -> adds +2 days extra.
+    - Updates individual Serial No.estimated_delivery_date for each reserved serial.
+    - Multiple units -> takes the MAX SLA across units (bottleneck logic).
+    - Returns target delivery date (and formatted explanatory reason if return_reason=True).
     """
     try:
         depts_data = frappe.db.sql("""
-            SELECT name, department_sequence, department_sla
+            SELECT name, department_sequence, department_sla, sla_item_groups
             FROM `tabDepartment`
-            WHERE department_sequence >= 1
+            WHERE department_sequence > 1
             ORDER BY department_sequence ASC
         """, as_dict=True)
 
         if not depts_data:
-            return add_days(nowdate(), 1)
+            fallback_date = add_days(nowdate(), 1)
+            reason = f"{fallback_date} (Default SLA: 1d)"
+            return (fallback_date, reason) if return_reason else fallback_date
 
         for d in depts_data:
             if "packing & dispatch" in (d.get("name") or "").lower():
                 d["department_sla"] = 1
 
-        seq_max_sla = {}
-        for d in depts_data:
-            seq = d.get("department_sequence")
-            sla = d.get("department_sla") or 0
-            if seq not in seq_max_sla or sla > seq_max_sla[seq]:
-                seq_max_sla[seq] = sla
-
-        max_seq = max(seq_max_sla.keys()) if seq_max_sla else 1
-
-        def _dept_sla(cand_dept_name, cand_dept_seq):
+        def _dept_sla(cand_dept_name, cand_dept_seq, item_grp=None, is_reconfig=False):
             if not cand_dept_name or not cand_dept_seq:
-                return 1
+                return 3 if is_reconfig else 1
             is_pd = "packing & dispatch" in (cand_dept_name or "").lower()
             cand_sla = 1 if is_pd else 0
             for d in depts_data:
                 if d.get("name") == cand_dept_name:
                     cand_sla = d.get("department_sla", 0)
                     break
+
+            app_depts = [d for d in depts_data if _is_dept_applicable(d, item_grp)]
+            seq_max_sla = {}
+            for d in app_depts:
+                seq = d.get("department_sequence")
+                sla = d.get("department_sla") or 0
+                if seq not in seq_max_sla or sla > seq_max_sla[seq]:
+                    seq_max_sla[seq] = sla
+
+            max_seq = max(seq_max_sla.keys()) if seq_max_sla else 1
+
             total = cand_sla
             for s in range(cand_dept_seq + 1, max_seq + 1):
                 if s in seq_max_sla:
                     total += seq_max_sla[s]
-            return total
+            sla_with_buffer = math.ceil(total * 1.10)
+            if is_reconfig:
+                sla_with_buffer += 2
+            return sla_with_buffer
 
         # Check reserved serials for this Sales Order
         reserved_serials = frappe.db.sql("""
             SELECT 
-                sn.name, sn.item_code,
-                dp.name AS dept_name, dp.department_sequence, dp.department_sla
+                sn.name, sn.item_code, sn.to_make, sn.remarks,
+                dp.name AS dept_name, dp.department_sequence, dp.department_sla,
+                i.item_group
             FROM `tabSerial No` sn
             INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
             INNER JOIN `tabDepartment` dp ON w.department = dp.name
+            LEFT JOIN `tabItem` i ON i.item_code = COALESCE(NULLIF(sn.to_make, ''), sn.item_code)
             WHERE sn.reserved_sales_order = %s
         """, (so_name,), as_dict=True)
 
+        # Get direct and bundle item codes for this SO
+        so_direct_items = set(frappe.db.sql_list("""
+            SELECT DISTINCT item_code FROM `tabSales Order Item` WHERE parent = %s
+        """, so_name))
+        bundle_items = set(frappe.db.sql_list("""
+            SELECT DISTINCT pbi.item_code
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = soi.item_code
+            WHERE soi.parent = %s
+        """, so_name))
+        so_all_target_items = so_direct_items | bundle_items
+
+        has_serial_eta_col = frappe.db.has_column("Serial No", "estimated_delivery_date")
+
         if reserved_serials:
-            sla_list = [_dept_sla(s.dept_name, s.department_sequence) for s in reserved_serials]
+            sla_list = []
+            serial_reasons = []
+            for s in reserved_serials:
+                curr_ic = s.get("item_code")
+                to_make = s.get("to_make")
+                remarks = s.get("remarks") or ""
+                item_grp = s.get("item_group")
+                dept_name = s.get("dept_name") or "Unknown"
+                dept_seq = s.get("department_sequence") or 1
+
+                # Check if exact match or reconfigured
+                is_reconfig = False
+                if to_make and to_make != curr_ic:
+                    is_reconfig = True
+                elif curr_ic not in so_all_target_items:
+                    is_reconfig = True
+                elif "Priority 2" in remarks or "Priority 3" in remarks or "Priority 4" in remarks or "Reconfig" in remarks:
+                    is_reconfig = True
+
+                sn_sla = _dept_sla(dept_name, dept_seq, item_grp=item_grp, is_reconfig=is_reconfig)
+                sn_est_date = add_days(nowdate(), sn_sla)
+                sla_list.append(sn_sla)
+
+                reconfig_tag = " [Reconfig +2d]" if is_reconfig else ""
+                day_unit = "day" if sn_sla == 1 else "days"
+
+                # Standard format for Serial No: YYYY-MM-DD | Department: <dept> (SLA: <N> days)
+                sn_reason_str = f"{sn_est_date} | Department: {dept_name} (SLA: {sn_sla} {day_unit}){reconfig_tag}"
+                if len(sn_reason_str) > 250:
+                    sn_reason_str = sn_reason_str[:247] + "..."
+
+                # Update individual Serial No's estimated_delivery_date
+                if has_serial_eta_col:
+                    frappe.db.set_value("Serial No", s.get("name"), "estimated_delivery_date", sn_reason_str, update_modified=False)
+
+                serial_reasons.append(f"SN: {s.get('name')} in {dept_name}{reconfig_tag} (SLA: {sn_sla}d -> {sn_est_date})")
+
+            # Delivery date takes MIN SLA; Estimated delivery date takes MAX SLA
+            min_sla = min(sla_list) if sla_list else 1
             max_sla = max(sla_list) if sla_list else 1
-            return add_days(nowdate(), max_sla)
+
+            delivery_date = add_days(nowdate(), min_sla)
+            max_est_date = add_days(nowdate(), max_sla)
+
+            reason_str = f"{max_est_date} | " + "; ".join(serial_reasons)
+            if len(reason_str) > 250:
+                reason_str = reason_str[:247] + "..."
+
+            return (delivery_date, reason_str) if return_reason else delivery_date
 
         # Fallback: check tabSO Quantity Check SLA for items in this SO
-        so_items = frappe.db.sql_list("""
-            SELECT DISTINCT item_code FROM `tabSales Order Item` WHERE parent = %s
-        """, so_name)
-        if so_items:
+        if so_all_target_items:
             soqc_slas = frappe.db.sql_list("""
                 SELECT sla FROM `tabSO Quantity Check` WHERE item_code IN %s AND sla > 0
-            """, (tuple(so_items),))
+            """, (tuple(so_all_target_items),))
             if soqc_slas:
-                return add_days(nowdate(), max(soqc_slas))
+                min_sla = min(soqc_slas)
+                max_sla = max(soqc_slas)
+                delivery_date = add_days(nowdate(), min_sla)
+                max_est_date = add_days(nowdate(), max_sla)
+                reason_str = f"{max_est_date} (Unallocated - SO Quantity Check SLA: {max_sla}d)"
+                if len(reason_str) > 250:
+                    reason_str = reason_str[:247] + "..."
+                return (delivery_date, reason_str) if return_reason else delivery_date
 
-        return add_days(nowdate(), 1)
+        fallback_date = add_days(nowdate(), 1)
+        reason_str = f"{fallback_date} (Default SLA: 1d)"
+        return (fallback_date, reason_str) if return_reason else fallback_date
+
     except Exception:
         frappe.log_error(title=f"compute_sales_order_delivery_date failed for {so_name}", message=frappe.get_traceback())
-        return add_days(nowdate(), 1)
+        fallback_date = add_days(nowdate(), 1)
+        reason_str = f"{fallback_date} (Fallback on error: 1d)"
+        return (fallback_date, reason_str) if return_reason else fallback_date
 
 
 def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
@@ -1166,13 +1336,18 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
 
     for so_name, eta in so_eta_map.items():
         update_values = {}
-        calc_delivery_date = compute_sales_order_delivery_date(so_name)
+        calc_res = compute_sales_order_delivery_date(so_name, return_reason=True)
+        if isinstance(calc_res, (list, tuple)):
+            calc_delivery_date, reason_text = calc_res
+        else:
+            calc_delivery_date, reason_text = calc_res, str(calc_res)
+
         update_values["delivery_date"] = calc_delivery_date
 
         if eta is None:
             update_values["eta_for_dispatch"] = "No Stock"
             if has_eta_date_col:
-                update_values["estimated_delivery_date"] = None
+                update_values["estimated_delivery_date"] = reason_text or "No Stock"
         else:
             try:
                 eta_days = int(eta) if eta is not None else 0
@@ -1181,7 +1356,7 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
 
             update_values["eta_for_dispatch"] = eta
             if has_eta_date_col:
-                update_values["estimated_delivery_date"] = calc_delivery_date
+                update_values["estimated_delivery_date"] = reason_text
 
         if so_breakdown_map and breakdown_fieldname:
             update_values[breakdown_fieldname] = "\n\n".join(
@@ -1201,7 +1376,56 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None):
             WHERE parent = %s
         """, (calc_delivery_date, so_name))
 
+        push_delivery_date_to_shopify_order(so_name, calc_delivery_date)
+
     frappe.db.commit()
+
+
+def push_delivery_date_to_shopify_order(so_name, delivery_date):
+    """Push confirmed Estimated Delivery Date back to Shopify Order note attributes."""
+    try:
+        shopify_order_number = frappe.db.get_value("Sales Order", so_name, "shopify_order_number")
+        if not shopify_order_number:
+            return
+
+        from nj_features.nj_features.api.shopify_inventory import get_shopify_settings
+        settings = get_shopify_settings()
+        if not settings:
+            return
+
+        shop = settings.get("shop")
+        token = settings.get("token")
+        if not shop or not token:
+            return
+
+        url = f"{shop}/admin/api/2025-01/orders/{shopify_order_number}.json"
+        headers = {
+            "X-Shopify-Access-Token": token,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "order": {
+                "id": int(shopify_order_number),
+                "note_attributes": [
+                    {
+                        "name": "Estimated Delivery Date",
+                        "value": str(delivery_date)
+                    }
+                ]
+            }
+        }
+        resp = requests.put(url, headers=headers, json=payload, timeout=10)
+        if resp.status_code != 200:
+            logger.warning(
+                "Could not push delivery date to Shopify order %s: %s",
+                shopify_order_number,
+                resp.text
+            )
+    except Exception as e:
+        frappe.log_error(
+            title=f"push_delivery_date_to_shopify_order failed for {so_name}",
+            message=str(e)
+        )
 
 
 """Ending of Laptop Allocations Functions"""

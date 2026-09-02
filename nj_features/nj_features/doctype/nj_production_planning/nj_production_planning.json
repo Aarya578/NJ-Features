@@ -10,6 +10,7 @@
   "plan_date",
   "lines",
   "missing_serial_nos",
+  "missing_sales_order",
   "amended_from"
  ],
  "fields": [
@@ -46,11 +47,17 @@
    "fieldtype": "Table",
    "label": "Missing Serial Nos",
    "options": "Missing Serial Nos"
+  },
+  {
+   "fieldname": "missing_sales_order",
+   "fieldtype": "Table",
+   "label": "Missing Sales Order",
+   "options": "Missing Sales Order"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-13 17:00:25.692600",
+ "modified": "2026-08-26 15:28:54.143615",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

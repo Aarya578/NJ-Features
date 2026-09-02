@@ -742,10 +742,25 @@ function autofill_warehouse(child_table, warehouse_field, warehouse) {
 // row's first serial and carried through in on_submit via self.repair_details.
 // ─────────────────────────────────────────────────────────────────
 frappe.ui.form.on('Stock Movement Detail', {
+    // Fires immediately (covers the expanded row panel) AND schedules a
+    // delayed re-check (covers the compact inline grid, where this
+    // event is not always reliable in this Frappe version -- see the
+    // matching note in nj_p1_features/public/js/stock_entry.js). The
+    // delayed call is safe even when the immediate one already worked:
+    // check()'s dedupe_key makes a repeat call for the same
+    // warehouse+serial resolve instantly with no duplicate popup.
     s_warehouse: function(frm, cdt, cdn) {
         var row = locals[cdt][cdn];
-        if (!row.s_warehouse) return;
-        var first_serial = (row.serial_no || '').split('\n').map(function(s) { return s.trim(); }).filter(Boolean)[0] || null;
-        nj_repair_popup.check(frm, row.s_warehouse, 'repair_details', { serial_no: first_serial });
+        if (row.s_warehouse) {
+            var first_serial = (row.serial_no || '').split('\n').map(function(s) { return s.trim(); }).filter(Boolean)[0] || null;
+            nj_repair_popup.check(frm, row.s_warehouse, 'repair_details', { serial_no: first_serial });
+        }
+        setTimeout(function() {
+            var current_row = locals[cdt][cdn];
+            if (current_row && current_row.s_warehouse) {
+                var current_first_serial = (current_row.serial_no || '').split('\n').map(function(s) { return s.trim(); }).filter(Boolean)[0] || null;
+                nj_repair_popup.check(frm, current_row.s_warehouse, 'repair_details', { serial_no: current_first_serial });
+            }
+        }, 1200);
     }
 });

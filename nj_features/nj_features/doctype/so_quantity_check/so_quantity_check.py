@@ -41,27 +41,16 @@ def _safe_int(v, default=0) -> int:
         return default
 
 
-def _safe_int(v, default=0) -> int:
-    if v is None:
-        return default
-    s = str(v).strip()
-    if s == "" or s.lower() == "none":
-        return default
-    try:
-        return int(float(s))
-    except Exception:
-        return default
-
 @frappe.whitelist()
 def update_so_quantity_check(settings):
     """Update SO Quantity Check DocType with data from inventory and pending sales orders"""
     try:
         warehouses_list = []
-        warehouses = settings['warehouses']
-        departments = settings['departments']
-        item_groups = settings['item_groups']
+        warehouses = settings.get('warehouses') or ''
+        departments = settings.get('departments') or ''
+        item_groups = settings.get('item_groups') or ''
 
-        if warehouses is not None:
+        if warehouses:
             warehouses_list = [i.strip() for i in warehouses.split(',') if i.strip()]
         settings_item_groups = [i.strip() for i in item_groups.split(',') if i.strip()]
         item_groups_list = list(dict.fromkeys(settings_item_groups + SOQC_ITEM_GROUPS))
@@ -79,18 +68,25 @@ def update_so_quantity_check(settings):
                WITH Parent_Stock AS (
                     SELECT 
                         TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
-                        COUNT(b.serial_no) AS total_actual_qty_for_parent
+                        COUNT(b.name) AS total_actual_qty_for_parent
                     FROM `tabItem` i
-                    LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                    LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
                     LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                     LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                     LEFT JOIN `tabItem Variant Attribute` proc
-                        ON proc.parent = i.item_code
+                        ON proc.parent = i.name
                         AND proc.attribute = 'Processor Type1'
                     WHERE 
-                        b.item_group IN ({item_group_placeholders})
-                        AND w.department IN ({department_placeholders})
+                        COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
+                        AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+                        AND b.status = 'Active'
                         AND b.is_replace = 0
+                        AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+                        AND (b.sales_order IS NULL OR b.sales_order = '')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM `tabDelivery Note Item` dni
+                            WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                        )
                         AND (
                             b.return_reason IS NULL
                             OR b.return_reason = ''
@@ -104,22 +100,28 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {parent_warehouse_clause}
                     GROUP BY i.variant_of, COALESCE(proc.attribute_value, '')
                 ),
 
                 Item_Stock AS (
                     SELECT 
                         s.item_code,
-                        COUNT(s.serial_no) AS total_actual_qty_for_itemcode
+                        COUNT(s.name) AS total_actual_qty_for_itemcode
                     FROM `tabSerial No` s
                     INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
-                    INNER JOIN `tabItem` i ON s.item_code = i.item_code
+                    INNER JOIN `tabItem` i ON (s.item_code = i.name OR s.item_code = i.item_code)
                     LEFT JOIN `tabSales Order` so ON s.sales_order_id = so.name
                     WHERE
-                        i.item_group IN ({item_group_placeholders})
-                        AND w.department IN ({department_placeholders})
+                        COALESCE(s.item_group, i.item_group) IN ({item_group_placeholders})
+                        AND (w.department IN ({department_placeholders}) {item_warehouse_clause})
+                        AND s.status = 'Active'
                         AND s.is_replace = 0
+                        AND (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
+                        AND (s.sales_order IS NULL OR s.sales_order = '')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM `tabDelivery Note Item` dni
+                            WHERE dni.serial_no = s.name AND dni.docstatus = 1
+                        )
                         AND (
                             s.return_reason IS NULL
                             OR s.return_reason = ''
@@ -133,7 +135,6 @@ def update_so_quantity_check(settings):
                                 )
                             )
                         )
-                        {item_warehouse_clause}
                     GROUP BY s.item_code
                 ),
 
@@ -296,15 +297,32 @@ def update_so_quantity_check(settings):
             ORDER BY so_data.sales_order, so_data.item_code;
         """, as_dict=True)
 
+        # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
+        # to prevent double-deduction (since allocated serials are already excluded from actual_qty)
+        allocated_serials = frappe.db.sql("""
+            SELECT 
+                reserved_sales_order,
+                IFNULL(NULLIF(to_make, ''), item_code) AS item_code,
+                COUNT(name) AS allocated_qty
+            FROM `tabSerial No`
+            WHERE reserved_sales_order IS NOT NULL 
+              AND reserved_sales_order != ''
+              AND status = 'Active'
+            GROUP BY reserved_sales_order, IFNULL(NULLIF(to_make, ''), item_code)
+        """, as_dict=True)
+        alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
+
         pending_qty_by_item = {}
         for row in pending_so_data:
+            so_name = row.get('sales_order')
             item_code = row.get('pb_code')
             if item_code:
-                pending_qty = row.get('pending_qty', 0)
-                if item_code in pending_qty_by_item:
-                    pending_qty_by_item[item_code] += pending_qty
-                else:
-                    pending_qty_by_item[item_code] = pending_qty
+                raw_pending = row.get('pending_qty', 0) or 0
+                allocated_qty = alloc_map.get((so_name, item_code), 0)
+                # Unallocated pending demand only
+                unallocated_pending = max(0, raw_pending - allocated_qty)
+                if unallocated_pending > 0:
+                    pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + unallocated_pending
 
         frappe.db.sql("DELETE FROM `tabSO Quantity Check`")
         frappe.db.commit()
@@ -322,8 +340,10 @@ def update_so_quantity_check(settings):
             "remove_parent_qty", "update_qty2", "proportional_remove_qty", "sla", "estimated_time_of_dispatch"
         ]
 
+        bundle_items = frappe.db.sql("SELECT DISTINCT item_code FROM `tabProduct Bundle Item`", as_dict=True)
+        all_bundle_item_codes = {r.item_code for r in bundle_items if r.get('item_code')}
+        all_item_codes = set(stock_map.keys()) | set(pending_qty_by_item.keys()) | all_bundle_item_codes
         values = []
-        all_item_codes = set(stock_map.keys()) | set(pending_qty_by_item.keys())
         for item_code in all_item_codes:
             data = stock_map.get(item_code, {})
             parent1 = data.get('parent1', '')
@@ -377,10 +397,10 @@ def update_so_quantity_check(settings):
 @frappe.whitelist()
 def updting_sla_department():
     try:
-        # 1. Fetch all pipeline departments (department_sequence >= 1)
+        # 1. Fetch all pipeline departments (department_sequence >= 1) including sla_item_groups
         min_seq = 1
         depts_data = frappe.db.sql("""
-            SELECT name, department_sequence, department_sla
+            SELECT name, department_sequence, department_sla, sla_item_groups
             FROM `tabDepartment`
             WHERE department_sequence >= %s
             ORDER BY department_sequence ASC
@@ -394,23 +414,35 @@ def updting_sla_department():
             if "packing & dispatch" in (d.get("name") or "").lower():
                 d["department_sla"] = 1
 
-        # Map sequence -> max SLA for downstream levels > cand_seq
-        seq_max_sla = {}
-        for d in depts_data:
-            seq = d.get("department_sequence")
-            sla = d.get("department_sla") or 0
-            if seq not in seq_max_sla or sla > seq_max_sla[seq]:
-                seq_max_sla[seq] = sla
+        def is_dept_applicable(dept_row, item_grp):
+            dept_name = str(dept_row.get("name") or "").lower()
+            if "packing & dispatch" in dept_name:
+                return True
+            if not item_grp:
+                return False
+            groups_str = str(dept_row.get("sla_item_groups") or "").strip()
+            if not groups_str or groups_str.lower() in ("none", "null"):
+                return False  # Strictly ignore if empty
+            allowed = [g.strip().lower() for g in groups_str.split(",") if g.strip()]
+            return item_grp.strip().lower() in allowed
 
-        max_seq = max(seq_max_sla.keys()) if seq_max_sla else min_seq
-
-        def calculate_total_sla(cand_dept_name, cand_dept_seq):
+        def calculate_total_sla(cand_dept_name, cand_dept_seq, item_grp=None):
             is_pd = "packing & dispatch" in (cand_dept_name or "").lower()
             cand_sla = 1 if is_pd else 0
             for d in depts_data:
                 if d.get("name") == cand_dept_name:
                     cand_sla = d.get("department_sla", 0)
                     break
+
+            app_depts = [d for d in depts_data if is_dept_applicable(d, item_grp)]
+            seq_max_sla = {}
+            for d in app_depts:
+                seq = d.get("department_sequence")
+                sla = d.get("department_sla") or 0
+                if seq not in seq_max_sla or sla > seq_max_sla[seq]:
+                    seq_max_sla[seq] = sla
+
+            max_seq = max(seq_max_sla.keys()) if seq_max_sla else min_seq
 
             total = cand_sla
             for s in range(cand_dept_seq + 1, max_seq + 1):
@@ -496,49 +528,69 @@ def updting_sla_department():
         # 1. Reset all rows
         frappe.db.sql("UPDATE `tabSO Quantity Check` SET sla = 0, estimated_time_of_dispatch = ''")
 
-        # 2. Priority 4: Apply Base Parent Model (variant_of)
-        for r in p4_rows:
-            sla_val = calculate_total_sla(r.cand_dept_name, r.cand_dept_seq)
-            etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
-            frappe.db.sql("""
-                UPDATE `tabSO Quantity Check` sqc
-                INNER JOIN `tabItem` i ON i.item_code = sqc.item_code
-                SET sqc.sla = %s, sqc.estimated_time_of_dispatch = %s 
-                WHERE i.variant_of = %s
-            """, (sla_val, etd_val, r.parent_item))
+        # Maps for quick lookup:
+        p4_map = {r.parent_item: (r.cand_dept_name, r.cand_dept_seq) for r in p4_rows if r.get("parent_item")}
+        p3_map = {r.parent_key: (r.cand_dept_name, r.cand_dept_seq) for r in p3_rows if r.get("parent_key")}
+        p2_map = {str(r.shopify_variant_id).strip(): (r.cand_dept_name, r.cand_dept_seq) for r in p2_rows if r.get("shopify_variant_id")}
+        p1_map = {r.item_code: (r.cand_dept_name, r.cand_dept_seq) for r in p1_rows if r.get("item_code")}
 
-        # 3. Priority 3: Apply Parent Model + Processor (parent1)
-        for r in p3_rows:
-            if r.parent_key:
-                sla_val = calculate_total_sla(r.cand_dept_name, r.cand_dept_seq)
+        # Map item_code -> shopify_variant_id
+        bundle_variant_rows = frappe.db.sql("""
+            SELECT pbi.item_code, pb.shopify_variant_id
+            FROM `tabProduct Bundle Item` pbi
+            INNER JOIN `tabProduct Bundle` pb ON pb.name = pbi.parent
+            WHERE pb.shopify_variant_id IS NOT NULL AND pb.shopify_variant_id != ''
+              AND COALESCE(pb.disable, 0) = 0
+        """, as_dict=True)
+        item_to_variant_map = {r.item_code: str(r.shopify_variant_id).strip() for r in bundle_variant_rows}
+
+        # Fetch all rows from tabSO Quantity Check to calculate department-specific SLA per item_group
+        soqc_rows = frappe.db.sql("""
+            SELECT sqc.name, sqc.item_code, i.item_group, sqc.parent1, i.variant_of
+            FROM `tabSO Quantity Check` sqc
+            LEFT JOIN `tabItem` i ON i.item_code = sqc.item_code
+        """, as_dict=True)
+
+        for row in soqc_rows:
+            item_code = row.get("item_code")
+            item_grp = row.get("item_group")
+            parent1 = row.get("parent1")
+            variant_of = row.get("variant_of")
+            variant_id = item_to_variant_map.get(item_code)
+
+            sla_val = 0
+
+            candidate_slas = []
+
+            # Priority 1: Exact Item Code (0 extra days)
+            if item_code in p1_map:
+                cand_name, cand_seq = p1_map[item_code]
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp))
+
+            # Priority 2: Same Shopify Variant ID (+2 extra days)
+            if variant_id and variant_id in p2_map:
+                cand_name, cand_seq = p2_map[variant_id]
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+
+            # Priority 3: Parent Model + Processor (+2 extra days)
+            if parent1 and parent1 in p3_map:
+                cand_name, cand_seq = p3_map[parent1]
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+
+            # Priority 4: Parent Base Model variant_of (+2 extra days)
+            if variant_of and variant_of in p4_map:
+                cand_name, cand_seq = p4_map[variant_of]
+                candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
+
+            sla_val = min(candidate_slas) if candidate_slas else 0
+
+            if sla_val > 0:
                 etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
                 frappe.db.sql("""
                     UPDATE `tabSO Quantity Check`
-                    SET sla = %s, estimated_time_of_dispatch = %s 
-                    WHERE parent1 = %s
-                """, (sla_val, etd_val, r.parent_key))
-
-        # 4. Priority 2: Apply Same Shopify Variant ID
-        for r in p2_rows:
-            sla_val = calculate_total_sla(r.cand_dept_name, r.cand_dept_seq)
-            etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
-            frappe.db.sql("""
-                UPDATE `tabSO Quantity Check` sqc
-                INNER JOIN `tabProduct Bundle Item` pbi ON pbi.item_code = sqc.item_code
-                INNER JOIN `tabProduct Bundle` pb ON pb.name = pbi.parent
-                SET sqc.sla = %s, sqc.estimated_time_of_dispatch = %s 
-                WHERE pb.shopify_variant_id = %s
-            """, (sla_val, etd_val, r.shopify_variant_id))
-
-        # 5. Priority 1: Apply Exact Item Code (overrides lower fallbacks)
-        for r in p1_rows:
-            sla_val = calculate_total_sla(r.cand_dept_name, r.cand_dept_seq)
-            etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
-            frappe.db.sql("""
-                UPDATE `tabSO Quantity Check` 
-                SET sla = %s, estimated_time_of_dispatch = %s 
-                WHERE item_code = %s
-            """, (sla_val, etd_val, r.item_code))
+                    SET sla = %s, estimated_time_of_dispatch = %s
+                    WHERE name = %s
+                """, (sla_val, etd_val, row.get("name")))
 
         frappe.db.commit()
         return True
@@ -664,20 +716,29 @@ def update_pre_order_qty(settings):
             )
             return False
 
-        # Fetch minimum sequence threshold dynamically from 'Part waiting' department (seq >= 10)
-        min_seq_row = frappe.db.sql("""
-            SELECT department_sequence 
-            FROM `tabDepartment` 
-            WHERE name LIKE '%Part waiting%' 
-            ORDER BY department_sequence ASC 
-            LIMIT 1
-        """, as_dict=True)
-        min_seq = min_seq_row[0].get("department_sequence", 10) if min_seq_row else 10
+        # Dynamically fetch sequence boundaries for 'Part waiting' and 'Adaptor' (no hardcoded sequence numbers)
+        part_waiting_seq = frappe.db.get_value(
+            "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
+        )
+        adaptor_seq = frappe.db.get_value(
+            "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
+        )
+
+        if part_waiting_seq is None or adaptor_seq is None:
+            log_error(
+                "Could not dynamically find sequence for Part waiting or Adaptor departments",
+                "update_pre_order_qty",
+                "Warning",
+            )
+            return False
+
+        min_bound = min(part_waiting_seq, adaptor_seq)
+        max_bound = max(part_waiting_seq, adaptor_seq)
 
         depts_list = frappe.db.sql_list("""
             SELECT name FROM `tabDepartment`
-            WHERE department_sequence >= %s
-        """, (min_seq,))
+            WHERE department_sequence > %s AND department_sequence < %s
+        """, (min_bound, max_bound))
 
         if not depts_list:
             return True
@@ -694,18 +755,25 @@ def update_pre_order_qty(settings):
             LEFT JOIN (
                 SELECT
                     TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
-                    COUNT(b.serial_no) AS total_actual_qty_for_parent
+                    COUNT(b.name) AS total_actual_qty_for_parent
                 FROM `tabItem` i
-                LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
                 LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                 LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                 LEFT JOIN `tabItem Variant Attribute` proc
-                    ON proc.parent = i.item_code
+                    ON proc.parent = i.name
                     AND proc.attribute = 'Processor Type1'
                 WHERE
-                    b.item_group IN ({item_group_placeholders})
+                    COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
                     AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+                    AND b.status = 'Active'
                     AND b.is_replace = 0
+                    AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
+                    AND (b.sales_order IS NULL OR b.sales_order = '')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM `tabDelivery Note Item` dni
+                        WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                    )
                     AND (
                         b.return_reason IS NULL
                         OR b.return_reason = ''

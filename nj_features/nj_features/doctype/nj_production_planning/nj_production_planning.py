@@ -20,7 +20,30 @@ from itertools import product
 # -------------------------
 # Logger setup
 # -------------------------
-logger = frappe.logger("new_Production_planning", allow_site=True, file_count=5)
+logger = frappe.logger("new_Production_planning", allow_site=True, max_size=10_000_000, file_count=5)
+
+# Ensure handlers gracefully handle rollover race conditions across concurrent processes
+for _h in getattr(logger, "handlers", []):
+    if isinstance(_h, logging.handlers.RotatingFileHandler):
+        _orig_rollover = _h.doRollover
+        def _make_safe_rollover(handler=_h, orig=_orig_rollover):
+            def _safe_rollover():
+                try:
+                    orig()
+                except (FileNotFoundError, OSError):
+                    if handler.stream:
+                        try:
+                            handler.stream.close()
+                        except Exception:
+                            pass
+                        handler.stream = None
+                    if not getattr(handler, "delay", False):
+                        try:
+                            handler.stream = handler._open()
+                        except Exception:
+                            pass
+            return _safe_rollover
+        _h.doRollover = _make_safe_rollover()
 
 
 
@@ -42,11 +65,8 @@ def _safe_repr(obj, maxlen: int = 4000):
 def log_io(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        # Log function inputs
-        logger.debug(f"Calling function {fn.__name__} with args: {args} and kwargs: {kwargs}")
         try:
-            result = fn(*args, **kwargs)
-            return result
+            return fn(*args, **kwargs)
         except Exception as e:
             logger.exception("ERROR %s: %s", fn.__name__, e)
             raise
@@ -105,12 +125,25 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
     if item_code in _SHOPIFY_VARIANT_ID_CACHE:
         return _SHOPIFY_VARIANT_ID_CACHE[item_code]
 
-    # 1. Check tabNJ Inventory Sync Main
-    variant_id = frappe.db.get_value(
-        "NJ Inventory Sync Main",
-        {"item_code": item_code},
-        "shopify_variant_id"
-    )
+    variant_id = None
+    # 0. Check if item_code is SKU with embedded /ID-<variant_id>
+    if "/ID-" in item_code:
+        variant_id = item_code.split("/ID-")[-1].strip()
+
+    if not variant_id:
+        # 1. Check tabNJ Inventory Sync Main
+        res = frappe.db.sql(
+            """
+            SELECT shopify_variant_id FROM `tabNJ Inventory Sync Main`
+            WHERE item_code LIKE %s
+            LIMIT 1
+            """,
+            (f"%{item_code}%",),
+            as_dict=False,
+        )
+        if res and res[0] and res[0][0]:
+            variant_id = str(res[0][0]).strip()
+
     if not variant_id:
         # 2. Check tabProduct Bundle
         res = frappe.db.sql(
@@ -121,49 +154,139 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
               AND shopify_variant_id IS NOT NULL AND shopify_variant_id != ''
             LIMIT 1
             """,
-            (item_code, item_code)
+            (item_code, item_code),
         )
-        if res and res[0]:
-            variant_id = res[0][0]
+        if res and res[0] and res[0][0]:
+            variant_id = str(res[0][0]).strip()
+
+    if not variant_id:
+        # 3. Check tabItem
+        res_item = frappe.db.get_value("Item", item_code, "shopify_variant_id")
+        if res_item:
+            variant_id = str(res_item).strip()
 
     variant_id_str = str(variant_id).strip() if variant_id else None
     _SHOPIFY_VARIANT_ID_CACHE[item_code] = variant_id_str
     return variant_id_str
 
 
+_EQUIVALENT_PARENT_MODELS_CACHE: Dict[str, Set[str]] = {}
+
+
+def _get_equivalent_parent_models(template_name: str) -> Set[str]:
+    """Retrieve all equivalent parent templates grouped together in tabNJ Inventory Sync Main."""
+    if not template_name:
+        return set()
+    if template_name in _EQUIVALENT_PARENT_MODELS_CACHE:
+        return _EQUIVALENT_PARENT_MODELS_CACHE[template_name]
+
+    sync_rows = frappe.db.sql(
+        """
+        SELECT item_code FROM `tabNJ Inventory Sync Main`
+        WHERE item_code LIKE %s
+        """,
+        (f"%{template_name}%",),
+        as_dict=True
+    )
+    equivalent = {template_name}
+    for r in sync_rows:
+        raw = r.get("item_code") or ""
+        for code in raw.split(","):
+            code = code.strip()
+            if code:
+                v_of = frappe.db.get_value("Item", code, "variant_of")
+                if v_of:
+                    equivalent.add(v_of)
+    _EQUIVALENT_PARENT_MODELS_CACHE[template_name] = equivalent
+    return equivalent
+
+
 def _get_variant_bundle_item_codes(variant_id: str) -> List[str]:
-    """Retrieve all Laptop/Chromebook item_codes under a shopify_variant_id."""
+    """Retrieve all Laptop/Chromebook item_codes under a shopify_variant_id from Product Bundles, Items, and Sync Main."""
     if not variant_id:
         return []
     variant_id_str = str(variant_id).strip()
     if variant_id_str in _SHOPIFY_VARIANT_ITEMS_CACHE:
         return _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str]
 
+    item_codes = set()
+    # 1. Product Bundle
     rows = frappe.db.sql(
         """
         SELECT DISTINCT tpbi.item_code
         FROM `tabProduct Bundle` tpb
         INNER JOIN `tabProduct Bundle Item` tpbi ON tpb.name = tpbi.parent
         INNER JOIN `tabItem` ti ON tpbi.item_code = ti.name
-        WHERE tpb.shopify_variant_id = %s
+        WHERE TRIM(tpb.shopify_variant_id) = %s
           AND ti.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
         """,
         (variant_id_str,)
     )
-    item_codes = [str(r[0]).strip() for r in (rows or []) if r and r[0]]
-    _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str] = item_codes
-    return item_codes
+    for r in (rows or []):
+        if r and r[0]:
+            item_codes.add(str(r[0]).strip())
+
+    # 2. tabItem shopify_variant_id
+    rows2 = frappe.db.sql(
+        """
+        SELECT name FROM `tabItem`
+        WHERE TRIM(shopify_variant_id) = %s
+          AND item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
+        """,
+        (variant_id_str,)
+    )
+    for r in (rows2 or []):
+        if r and r[0]:
+            item_codes.add(str(r[0]).strip())
+
+    # 3. tabNJ Inventory Sync Main
+    sync_rows = frappe.db.sql(
+        """
+        SELECT item_code FROM `tabNJ Inventory Sync Main`
+        WHERE TRIM(shopify_variant_id) = %s
+        """,
+        (variant_id_str,),
+        as_dict=True
+    )
+    for s in sync_rows:
+        raw = s.get("item_code") or ""
+        for code in raw.split(","):
+            c = code.strip()
+            if c:
+                item_codes.add(c)
+
+    res = sorted(list(item_codes))
+    _SHOPIFY_VARIANT_ITEMS_CACHE[variant_id_str] = res
+    return res
 
 
-def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date) -> List[Dict]:
+def _is_dept_applicable(dept_row, item_grp):
+    """Check if a department applies to an item based on its sla_item_groups configuration."""
+    dept_name = str(dept_row.get("name") or "").lower()
+    if "packing & dispatch" in dept_name:
+        return True
+    if not item_grp:
+        return False
+    groups_str = str(dept_row.get("sla_item_groups") or "").strip()
+    if not groups_str or groups_str.lower() in ("none", "null"):
+        return False  # Strictly ignore if empty
+    allowed = [g.strip().lower() for g in groups_str.split(",") if g.strip()]
+    return item_grp.strip().lower() in allowed
+
+
+def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_date, item_grp: str = None) -> List[Dict]:
     """
     Given active departments sorted by (department_sequence DESC, name ASC),
     compute Remaining Delivery Days and determine SLA-based department search order.
-    Phase A: Starting Department upward to Highest Sequence Final Department.
+    Phase A: Eligible departments downstream to upstream within remaining delivery days (Packing & Dispatch -> FQC -> ...).
     Phase B: Remaining lower-sequence departments (downward).
     """
     if not depts:
         return []
+
+    # Filter applicable departments by item_grp if provided
+    if item_grp:
+        depts = [d for d in depts if _is_dept_applicable(d, item_grp)]
 
     # Sort depts deterministically by sequence DESC, name ASC
     sorted_depts = sorted(depts, key=lambda d: (-int(d.get("department_sequence") or 0), d.get("name") or ""))
@@ -177,13 +300,13 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
     starting_dept_idx = len(sorted_depts) - 1  # Default to last (lowest sequence)
     cum_sla = 0
     for idx, d in enumerate(sorted_depts):
-        cum_sla += int(d.get("sla") or 0)
+        cum_sla += int(d.get("sla") or d.get("department_sla") or 0)
         if cum_sla >= rem_days:
             starting_dept_idx = idx
             break
 
-    # Phase A: Starting Dept upward to Top (index 0)
-    phase_a = sorted_depts[:starting_dept_idx + 1][::-1]
+    # Phase A: Downstream departments from Packing & Dispatch to starting dept
+    phase_a = sorted_depts[:starting_dept_idx + 1]
     # Phase B: Remaining lower sequence departments
     phase_b = sorted_depts[starting_dept_idx + 1:]
 
@@ -351,10 +474,36 @@ def _cfg_tuple_from_item(item_code: str) -> tuple:
     """
     Return (template, processor, ram, storage) so we NEVER cross processor.
     """
-    if item_code not in _ITEM_KEYS:
-        _prime_item_cache([item_code])
-    _, template, proc, ram, sto = _ITEM_KEYS[item_code]["config_key"]
-    return (template, proc, ram, sto)
+    if not item_code:
+        return (None, None, None, None)
+
+    lookup_code = item_code
+    # If item_code is a Product Bundle / SKU, resolve to the laptop item
+    bundle_items = frappe.db.sql(
+        """
+        SELECT pbi.item_code FROM `tabProduct Bundle Item` pbi
+        INNER JOIN `tabItem` ti ON pbi.item_code = ti.name
+        WHERE pbi.parent = %s
+          AND ti.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes')
+        LIMIT 1
+        """,
+        (item_code,)
+    )
+    if bundle_items and bundle_items[0] and bundle_items[0][0]:
+        lookup_code = bundle_items[0][0]
+    else:
+        var_id = _get_shopify_variant_id(item_code)
+        if var_id:
+            vcodes = _get_variant_bundle_item_codes(var_id)
+            if vcodes:
+                lookup_code = vcodes[0]
+
+    if lookup_code not in _ITEM_KEYS:
+        _prime_item_cache([lookup_code])
+    if lookup_code in _ITEM_KEYS and "config_key" in _ITEM_KEYS[lookup_code]:
+        _, template, proc, ram, sto = _ITEM_KEYS[lookup_code]["config_key"]
+        return (template, proc, ram, sto)
+    return (lookup_code, None, None, None)
 
 
 # =========================
@@ -408,6 +557,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             "name",
             "department_sequence",
             "sla",
+            "sla_item_groups",
             "allow_reconfig",
             "inwarded_model",
             "forwarded_model",
@@ -484,6 +634,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     plan_doc.name = f"NJ Production Plan - {now_stamp}"
     plan_doc.flags.ignore_mandatory = True
     plan_doc.set("lines", [])
+    plan_doc.set("missing_sales_order", [])
 
     desired_name = f"Unified-{plan_date}"
     try:
@@ -572,8 +723,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     for s in sorted(sequences, reverse=True):
         for dept in sorted(depts_by_seq[s], key=lambda x: x["name"]):
             dept_name = dept["name"]
-            if not dept.get("run_production_planning"):
-                continue
 
             serial_rows = inward_serials_per_dept.get(dept_name, [])
 
@@ -656,7 +805,11 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     # -------------------------------------------------------------
     _SHOPIFY_VARIANT_ID_CACHE.clear()
     _SHOPIFY_VARIANT_ITEMS_CACHE.clear()
+    _EQUIVALENT_PARENT_MODELS_CACHE.clear()
 
+    # For SO allocation, search ALL departments with department_sequence > 0
+    all_eligible_depts = [d for d in depts if int(d.get("department_sequence") or 0) > 0]
+    # For DOI/Forecast, only use departments with run_production_planning enabled
     active_depts = [d for d in depts if d.get("run_production_planning")]
 
     for order_row in pending_orders:
@@ -668,9 +821,28 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         if needed_qty <= 0:
             continue
 
-        search_order = _get_sla_department_search_order(active_depts, deliv_date, today)
+        original_needed_qty = needed_qty
+        item_grp = frappe.db.get_value("Item", target_ic, "item_group")
+        search_order = _get_sla_department_search_order(all_eligible_depts, deliv_date, today, item_grp=item_grp)
 
-        # --- Priority 1: Exact Item Code Match across ALL search departments ---
+        variant_id = _get_shopify_variant_id(target_ic)
+        p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {target_ic} if variant_id else set()
+
+        target_cfg_tuple = None
+        model_key = None
+        try:
+            target_cfg_tuple = _cfg_tuple_from_item(target_ic)
+            if target_cfg_tuple:
+                model_key = ("MODEL", target_cfg_tuple[0], target_cfg_tuple[1])
+        except Exception:
+            pass
+
+        parent_variant_id = _get_shopify_variant_id(target_ic)
+        p4_codes = set()
+        if parent_variant_id:
+            p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {target_ic} - p2_codes
+
+        # Department-First: Exhaust all 4 priorities within current department before moving to next
         for d in search_order:
             if needed_qty <= 0:
                 break
@@ -679,6 +851,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             if not dept_pool:
                 continue
 
+            # --- Priority 1: Exact Item Code Match in THIS department ---
             p1_matches = [
                 s for s in dept_pool
                 if s.get("item_code") == target_ic or s.get("fallback_pb_item_code") == target_ic
@@ -688,6 +861,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             for s in p1_matches[:needed_qty]:
                 dept_pool.remove(s)
                 needed_qty -= 1
+                if _DEPT_ALLOCATE_PARTS.get(dept_name):
+                    _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                 remarks_text = f"Allocated to SO {so_name} (Priority 1: Exact Item Code match '{target_ic}') | to_make: {target_ic}"
                 _append_plan_row(
                     plan_doc,
@@ -706,18 +881,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 )
                 priority_per_dept[dept_name] += 1
 
-        # --- Priority 2: Same Shopify Variant ID Item Codes across ALL search departments ---
-        variant_id = _get_shopify_variant_id(target_ic)
-        p2_codes = set(_get_variant_bundle_item_codes(variant_id)) - {target_ic} if variant_id else set()
-        if needed_qty > 0 and p2_codes:
-            for d in search_order:
-                if needed_qty <= 0:
-                    break
-                dept_name = d["name"]
-                dept_pool = avail_serials_by_dept.get(dept_name, [])
-                if not dept_pool:
-                    continue
-
+            # --- Priority 2: Same Shopify Variant ID Item Codes in THIS department ---
+            if needed_qty > 0 and p2_codes:
                 p2_matches = [
                     s for s in dept_pool
                     if s.get("item_code") in p2_codes or s.get("fallback_pb_item_code") in p2_codes
@@ -727,9 +892,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 for s in p2_matches[:needed_qty]:
                     dept_pool.remove(s)
                     needed_qty -= 1
-                    part_allocation = False
                     if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                        part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                        _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
                     curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
                     remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {target_ic}"
                     _append_plan_row(
@@ -746,105 +910,88 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=s.get("age_days"),
                         remarks=remarks_text,
-                        part_allocation=part_allocation,
                     )
                     priority_per_dept[dept_name] += 1
 
-        # --- Priority 3: Same Parent Reconfiguration (Model + Processor) across ALL search departments ---
+            # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
+            if needed_qty > 0 and target_cfg_tuple:
+                target_tmpl, target_proc = target_cfg_tuple[0], target_cfg_tuple[1]
+                equiv_templates = _get_equivalent_parent_models(target_tmpl)
+                p3_matches = []
+                for s in dept_pool:
+                    fkm = s.get("forward_key_model")
+                    if fkm and fkm[0] == "MODEL":
+                        if fkm[2] == target_proc and fkm[1] in equiv_templates:
+                            p3_matches.append(s)
+                p3_matches = _oldest_first(p3_matches)
+
+                for s in p3_matches[:needed_qty]:
+                    dept_pool.remove(s)
+                    needed_qty -= 1
+                    if _DEPT_ALLOCATE_PARTS.get(dept_name):
+                        _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                    curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
+                    remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}', current '{curr_ic}') | to_make: {target_ic}"
+                    _append_plan_row(
+                        plan_doc,
+                        serial_no=s["serial_no"],
+                        current_warehouse=s["warehouse"],
+                        current_department=dept_name,
+                        sales_rate=1.0,
+                        doi=0.0,
+                        sales_order_number=so_name,
+                        delivery_date=deliv_date,
+                        item_code_to_make=target_ic,
+                        reason="Order",
+                        priority_rank=priority_per_dept[dept_name],
+                        serial_age_days=s.get("age_days"),
+                        remarks=remarks_text,
+                    )
+                    priority_per_dept[dept_name] += 1
+
+            # --- Priority 4: Parent's Shopify Variant ID Item Codes in THIS department ---
+            if needed_qty > 0 and p4_codes:
+                p4_matches = [
+                    s for s in dept_pool
+                    if s.get("item_code") in p4_codes or s.get("fallback_pb_item_code") in p4_codes
+                ]
+                p4_matches = _oldest_first(p4_matches)
+
+                for s in p4_matches[:needed_qty]:
+                    dept_pool.remove(s)
+                    needed_qty -= 1
+                    if _DEPT_ALLOCATE_PARTS.get(dept_name):
+                        _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+                    curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
+                    remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {target_ic}"
+                    _append_plan_row(
+                        plan_doc,
+                        serial_no=s["serial_no"],
+                        current_warehouse=s["warehouse"],
+                        current_department=dept_name,
+                        sales_rate=1.0,
+                        doi=0.0,
+                        sales_order_number=so_name,
+                        delivery_date=deliv_date,
+                        item_code_to_make=target_ic,
+                        reason="Order",
+                        priority_rank=priority_per_dept[dept_name],
+                        serial_age_days=s.get("age_days"),
+                        remarks=remarks_text,
+                    )
+                    priority_per_dept[dept_name] += 1
+
+        # Track unallocated / shortage quantity in Missing Sales Order child table
         if needed_qty > 0:
-            target_cfg_tuple = _cfg_tuple_from_item(target_ic)
-            model_key = ("MODEL", target_cfg_tuple[0], target_cfg_tuple[1])
-            for d in search_order:
-                if needed_qty <= 0:
-                    break
-                dept_name = d["name"]
-                dept_pool = avail_serials_by_dept.get(dept_name, [])
-                if not dept_pool:
-                    continue
-
-                model_pool = [s for s in dept_pool if s.get("forward_key_model") == model_key]
-                if model_pool:
-                    exact = [s for s in model_pool if _same_config(s, target_cfg_tuple)]
-                    exact = _oldest_first(exact)
-
-                    near = [s for s in model_pool if s not in exact and _same_storage_diff_ram(s, target_cfg_tuple)]
-                    near = _oldest_first(near)
-
-                    rem_model = [s for s in model_pool if s not in exact and s not in near]
-                    rem_model = _oldest_first(rem_model)
-
-                    p3_candidates = exact + near + rem_model
-                    for s in p3_candidates[:needed_qty]:
-                        dept_pool.remove(s)
-                        needed_qty -= 1
-                        part_allocation = False
-                        if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                            part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
-                        remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}') | to_make: {target_ic}"
-                        _append_plan_row(
-                            plan_doc,
-                            serial_no=s["serial_no"],
-                            current_warehouse=s["warehouse"],
-                            current_department=dept_name,
-                            sales_rate=1.0,
-                            doi=0.0,
-                            sales_order_number=so_name,
-                            delivery_date=deliv_date,
-                            item_code_to_make=target_ic,
-                            reason="Order",
-                            priority_rank=priority_per_dept[dept_name],
-                            serial_age_days=s.get("age_days"),
-                            remarks=remarks_text,
-                            part_allocation=part_allocation,
-                        )
-                        priority_per_dept[dept_name] += 1
-
-        # --- Priority 4: Parent's Shopify Variant ID Item Codes across ALL search departments ---
-        if needed_qty > 0:
-            parent_ic = target_ic
-            parent_variant_id = _get_shopify_variant_id(parent_ic)
-            if parent_variant_id:
-                p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {target_ic} - p2_codes
-                if p4_codes:
-                    for d in search_order:
-                        if needed_qty <= 0:
-                            break
-                        dept_name = d["name"]
-                        dept_pool = avail_serials_by_dept.get(dept_name, [])
-                        if not dept_pool:
-                            continue
-
-                        p4_matches = [
-                            s for s in dept_pool
-                            if s.get("item_code") in p4_codes or s.get("fallback_pb_item_code") in p4_codes
-                        ]
-                        p4_matches = _oldest_first(p4_matches)
-
-                        for s in p4_matches[:needed_qty]:
-                            dept_pool.remove(s)
-                            needed_qty -= 1
-                            part_allocation = False
-                            if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                                part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
-                            curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
-                            remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {target_ic}"
-                            _append_plan_row(
-                                plan_doc,
-                                serial_no=s["serial_no"],
-                                current_warehouse=s["warehouse"],
-                                current_department=dept_name,
-                                sales_rate=1.0,
-                                doi=0.0,
-                                sales_order_number=so_name,
-                                delivery_date=deliv_date,
-                                item_code_to_make=target_ic,
-                                reason="Order",
-                                priority_rank=priority_per_dept[dept_name],
-                                serial_age_days=s.get("age_days"),
-                                remarks=remarks_text,
-                                part_allocation=part_allocation,
-                            )
-                            priority_per_dept[dept_name] += 1
+            allocated_qty = original_needed_qty - needed_qty
+            plan_doc.append("missing_sales_order", {
+                "sales_order": so_name,
+                "item_code": target_ic,
+                "delivery_date": deliv_date,
+                "ordered_qty": original_needed_qty,
+                "allocated_qty": allocated_qty,
+                "missing_qty": needed_qty,
+            })
 
     # -------------------------------------------------------------
     # 3. FORECAST / DOI BALANCE PHASE (Remaining Serials per Dept)
@@ -905,7 +1052,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=alloc.get("age_days"),
                     remarks=remarks_text,
-                    part_allocation=alloc.get("part_allocation", False),
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -946,10 +1092,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 else:
                     target_item_code = fallback_pb or ic
 
-                    part_allocation = False
                     if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                        part_allocation = _maybe_allocate_parts_for_serial(sn, dept_name)
-                        if not part_allocation:
+                        ok = _maybe_allocate_parts_for_serial(sn, dept_name)
+                        if not ok:
                             _update_serial_to_make(sn, target_item_code)
                             reason_text = "Part allocation failed (Forecast)"
                             _update_serial_remarks(sn, f"Not Allocated: {reason_text}")
@@ -985,7 +1130,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=info.get("age_days"),
                         remarks=remarks_text,
-                        part_allocation=part_allocation,
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1104,7 +1248,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=alloc.get("dwell_days"),
                         remarks=remarks_text,
-                        part_allocation=alloc.get("part_allocation", False),
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1132,6 +1275,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     plan_doc.save(ignore_permissions=True)
     total_rows = len(plan_doc.get("lines") or [])
     frappe.db.commit()
+
+    # Safely refresh dispatch ETAs for all newly allocated serials and sales orders
+    try:
+        from nj_features.overrides.sales_order import calculate_dispatch_eta_for_sales_order
+        calculate_dispatch_eta_for_sales_order()
+    except Exception as eta_err:
+        logger.warning("Dispatch ETA recalculation after production plan failed: %s", eta_err)
 
     return {
         "total_departments": 1,
@@ -1879,10 +2029,9 @@ def _allocate_forecast_to_balance_doi(
         if not target_item_code:
             target_item_code = pb_fallback
 
-        part_allocation = False
         if _DEPT_ALLOCATE_PARTS.get(current_department):
-            part_allocation = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-            if not part_allocation:
+            ok = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+            if not ok:
                 _update_serial_to_make(chosen["serial_no"], target_item_code)
 
                 remaining_serials[:] = [x for x in remaining_serials if x["serial_no"] != chosen["serial_no"]]
@@ -1913,7 +2062,6 @@ def _allocate_forecast_to_balance_doi(
                 "forward_key": target,
                 "doi": new_doi,
                 "age_days": chosen.get("age_days"),
-                "part_allocation": part_allocation,
             }
         )
 
@@ -2155,10 +2303,9 @@ def _allocate_reconfig_serials(
             continue
 
         # Part allocation check
-        part_allocation = False
         if _DEPT_ALLOCATE_PARTS.get(current_department):
-            part_allocation = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
-            if not part_allocation:
+            ok = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
+            if not ok:
                 _update_serial_to_make(serial["serial_no"], target_item_code)
                 logger.debug(
                     f"[RECONFIG_SKIP] serial_no={serial['serial_no']} - "
@@ -2181,7 +2328,6 @@ def _allocate_reconfig_serials(
             "dwell_days": serial.get("dwell_days", 0),
             "source_department": serial.get("source_department"),
             "age_days": serial.get("age_days"),
-            "part_allocation": part_allocation,
         })
 
         logger.debug(
@@ -2368,7 +2514,12 @@ def _prime_item_cache(item_codes: List[str]):
 
     for ic in needed:
         core = _ITEM_CORE.get(ic) or {}
-        template = core.get("variant_of") or ic
+        # Derive accurate model prefix from item_code if formatted as Model-CPU-...
+        model_match = re.split(r"-(CORE|RYZEN|CELERON|ATHLON|PENTIUM|AMD|INTEL|M1|M2|M3|I3|I5|I7|I9|XEON)", ic, maxsplit=1, flags=re.IGNORECASE)
+        if model_match and len(model_match) > 1 and model_match[0].strip():
+            template = model_match[0].strip()
+        else:
+            template = core.get("variant_of") or ic
         attrs = _ITEM_ATTRS.get(ic, {})
         proc = attrs.get(PROCESSOR_ATTR)
         ram = attrs.get(RAM_ATTR)
@@ -2888,7 +3039,6 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,
     remarks: Optional[str] = None,
-    part_allocation: bool = False,
 ):
     # Log each serial number being processed
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
@@ -2896,6 +3046,15 @@ def _append_plan_row(
 
     if reason == "Order" and sales_order_number:
         _update_serial_reserved_sales_order(serial_no, sales_order_number)
+        log_msg = (
+            f"Sales Order: {sales_order_number}\n"
+            f"Target Item Code (Order): {item_code_to_make}\n"
+            f"Allocated Serial No: {serial_no}\n"
+            f"Department: {current_department}\n"
+            f"Warehouse: {current_warehouse}\n"
+            f"Detailed Reason: {remarks}"
+        )
+        frappe.log_error(title="ALlocation log for debug", message=log_msg)
 
     if remarks:
         _update_serial_remarks(serial_no, remarks)
@@ -2914,7 +3073,7 @@ def _append_plan_row(
             "reason": reason,
             "priority_rank": int(priority_rank),
             "serial_age_days": serial_age_days,
-            "part_allocation": int(bool(part_allocation)),
+            "allocate_parts": 1,
         },
     )
 
@@ -5114,9 +5273,51 @@ def _get_all_purpose_item_match_keys(item_codes):
     return match_key_by_item
 
 
+def _get_pp_enabled_warehouse(warehouse):
+    if not warehouse:
+        return None
+
+    cache = getattr(_get_pp_enabled_warehouse, "_cache", {})
+    if warehouse in cache:
+        return cache[warehouse]
+
+    row = frappe.db.get_value(
+        "Warehouse",
+        warehouse,
+        ["name", "disabled"],
+        as_dict=True,
+    )
+    enabled_warehouse = row.name if row and not flt(row.disabled) else None
+    if not enabled_warehouse:
+        print("PP MR skipped disabled/missing warehouse:", warehouse)
+
+    cache[warehouse] = enabled_warehouse
+    _get_pp_enabled_warehouse._cache = cache
+    return enabled_warehouse
+
+
+def _get_first_pp_enabled_warehouse(*warehouses):
+    for warehouse in warehouses:
+        enabled_warehouse = _get_pp_enabled_warehouse(warehouse)
+        if enabled_warehouse:
+            return enabled_warehouse
+
+    return None
+
+
 def _add_all_purpose_shortage_item(shortage_by_item, item_code, qty, warehouse, source_item_code, material_issue_mrs, schedule_days, stock_warehouses=None):
     if flt(qty) <= PP_MR_MIN_QTY:
         return
+
+    warehouse = _get_pp_enabled_warehouse(warehouse)
+    stock_warehouses = {
+        enabled_warehouse
+        for enabled_warehouse in (
+            _get_pp_enabled_warehouse(stock_warehouse)
+            for stock_warehouse in (stock_warehouses or [])
+        )
+        if enabled_warehouse
+    }
 
     item = shortage_by_item.setdefault(item_code, {
         "item_code": item_code,
@@ -5200,6 +5401,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
             SELECT name
             FROM `tabDepartment`
         )
+        AND IFNULL(w.disabled, 0) = 0
         AND i.item_group IN ('Laptop Adaptors', 'Laptop RAM', 'Laptop Storage')
         AND NOT (
             i.item_group = 'Laptop Adaptors'
@@ -5229,7 +5431,8 @@ def collect_all_purpose_material_issue(doc=None, method=None):
             mri.schedule_date,
             mri.warehouse,
             i.item_group,
-            w.department AS source_department
+            w.department AS source_department,
+            w.disabled AS source_warehouse_disabled
         FROM `tabMaterial Request Item` mri
         INNER JOIN `tabMaterial Request` mr
             ON mr.name = mri.parent
@@ -5309,7 +5512,7 @@ def collect_all_purpose_material_issue(doc=None, method=None):
         issue_qty_by_item[row.item_code] += flt(row.qty)
         issue_mr_names_by_item[row.item_code].add(row.parent)
         issue_item_group_by_item[row.item_code] = row.item_group
-        if row.get("warehouse"):
+        if row.get("warehouse") and not flt(row.get("source_warehouse_disabled")):
             issue_warehouse_by_item.setdefault(row.item_code, row.warehouse)
 
         if row.get("source_department") and PP_MR_ALL_PURPOSE_STOCK_DEPARTMENT:
@@ -5417,7 +5620,10 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 manufacture_shortage_by_item,
                 grade_d_item_code,
                 manufacture_qty_from_grade_d,
-                stock_warehouse_by_item.get(grade_d_item_code) or default_target_warehouse,
+                _get_first_pp_enabled_warehouse(
+                    stock_warehouse_by_item.get(grade_d_item_code),
+                    default_target_warehouse,
+                ),
                 item_code,
                 issue_mr_names,
                 schedule_days,
@@ -5438,7 +5644,10 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 manufacture_shortage_by_item,
                 grade_b_item_code,
                 manufacture_qty_from_grade_b,
-                stock_warehouse_by_item.get(grade_b_item_code) or default_target_warehouse,
+                _get_first_pp_enabled_warehouse(
+                    stock_warehouse_by_item.get(grade_b_item_code),
+                    default_target_warehouse,
+                ),
                 item_code,
                 issue_mr_names,
                 schedule_days,
@@ -5459,10 +5668,10 @@ def collect_all_purpose_material_issue(doc=None, method=None):
                 purchase_shortage_by_item,
                 item_code,
                 purchase_qty,
-                (
-                    stock_warehouse_by_item.get(item_code)
-                    or issue_warehouse_by_item.get(item_code)
-                    or default_target_warehouse
+                _get_first_pp_enabled_warehouse(
+                    stock_warehouse_by_item.get(item_code),
+                    issue_warehouse_by_item.get(item_code),
+                    default_target_warehouse,
                 ),
                 item_code,
                 issue_mr_names,

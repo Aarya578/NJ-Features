@@ -1028,6 +1028,24 @@ def validate_njqca_status_completed_before_submit(doc):
         frappe.throw(
             _("NJQCA was not completed. Please re-run the script before submitting.")
         )
+def update_battery_health_score(doc):
+    for row in doc.get("njqca_result_parameters") or []:
+
+        item_group = str(row.get("item_group") or "").strip().upper()
+        parameter = str(row.get("parameter") or "").strip().lower()
+
+        try:
+            score = int(float(row.get("score")))
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            item_group == "BATTERY"
+            and parameter == "health"
+            and score in (1, 41)
+        ):
+            row.score = 50
+
 
 def update_battery_health_score(doc):
     for row in doc.get("njqca_result_parameters") or []:
@@ -6597,7 +6615,6 @@ def apply_adapter_failure_reason_and_gain_to_doc(doc):
     initial_percentage = None
     final_percentage = None
     charging_gain = None
-
     # ---------------------------------------------------------
     # Check whether system is a Chromebook
     #

@@ -4,10 +4,7 @@ frappe.listview_settings['NJQCA'] = {
     refresh: function(listview) {
         $('span.sidebar-toggle-btn').hide();
         $('.col-lg-2.layout-side-section').hide();
-	}
-};
-
-frappe.listview_settings['NJQCA'] = {
+	},
     onload(listview) {
         // Call server to check department of logged-in user
         frappe.call({

@@ -1,0 +1,220 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "CR-.####",
+ "creation": "2026-09-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "reference_doctype",
+  "reference_name",
+  "is_new_record",
+  "change_summary",
+  "priority",
+  "column_break_1",
+  "status",
+  "applied",
+  "department",
+  "section_break_dates",
+  "start_date",
+  "end_date",
+  "deadline_days",
+  "section_break_people",
+  "requested_by",
+  "column_break_2",
+  "approved_by",
+  "approved_on",
+  "rejection_reason",
+  "section_break_detail",
+  "change_detail",
+  "pending_payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Reference DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Reference Name",
+   "options": "reference_doctype",
+   "description": "Left blank until approval when Is New Record is checked."
+  },
+  {
+   "default": "0",
+   "description": "Set automatically by the capture hook when this Change Request represents a not-yet-created record rather than an edit to an existing one.",
+   "fieldname": "is_new_record",
+   "fieldtype": "Check",
+   "label": "Is New Record",
+   "read_only": 1
+  },
+  {
+   "fieldname": "change_summary",
+   "fieldtype": "Small Text",
+   "label": "Summary"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Priority",
+   "options": "\nLow\nMedium\nHigh"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nPending Approval\nApproved\nRejected\nApplied",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "applied",
+   "fieldtype": "Check",
+   "label": "Applied",
+   "read_only": 1
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "section_break_dates",
+   "fieldtype": "Section Break",
+   "label": "Timeline"
+  },
+  {
+   "fieldname": "start_date",
+   "fieldtype": "Date",
+   "label": "Start Date"
+  },
+  {
+   "fieldname": "end_date",
+   "fieldtype": "Date",
+   "label": "End Date"
+  },
+  {
+   "fieldname": "deadline_days",
+   "fieldtype": "Int",
+   "label": "Deadline (Days)"
+  },
+  {
+   "fieldname": "section_break_people",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "default": "__user",
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_detail",
+   "fieldtype": "Section Break",
+   "label": "Change Detail"
+  },
+  {
+   "fieldname": "change_detail",
+   "fieldtype": "Table",
+   "label": "Change Detail",
+   "options": "Change Request Detail",
+   "read_only": 1
+  },
+  {
+   "description": "Full serialized document payload, set only when Is New Record is checked. Used to insert() the real record on approval; not shown on the form.",
+   "fieldname": "pending_payload",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Pending Payload",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-09-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Change Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "select": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "title"
+}

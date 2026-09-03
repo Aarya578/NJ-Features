@@ -1,0 +1,37 @@
+{
+ "actions": [],
+ "creation": "2026-09-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "controlled_doctypes"
+ ],
+ "fields": [
+  {
+   "fieldname": "controlled_doctypes",
+   "fieldtype": "Table",
+   "label": "Controlled Doctypes",
+   "options": "Change Controlled Doctype"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Change Management Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

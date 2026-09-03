@@ -95,7 +95,7 @@ def capture_change(doc, method=None):
 	if (frappe.flags.in_migrate or frappe.flags.in_install
 			or frappe.flags.in_patch or frappe.flags.in_setup_wizard):
 		return
-	if not frappe.db.table_exists("Change Management Settings"):
+	if not frappe.db.exists("DocType", "Change Management Settings"):
 		return
 
 	controlled_row = get_controlled_doctype_row(doc.doctype)

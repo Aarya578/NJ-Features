@@ -85,6 +85,19 @@ def capture_change(doc, method=None):
 	if doc.doctype in _EXEMPT_DOCTYPES:
 		return
 
+	# Never intercept during bench-level bootstrapping -- doctypes (including
+	# our own Change Management Settings) may not be synced into this site's
+	# database yet mid-migrate/install/patch. This is exactly what broke a
+	# fresh migrate: sync_all() writes a Default Value doc before it has
+	# synced any doctype schemas, our wildcard hook fired on that write, and
+	# frappe.get_single("Change Management Settings") blew up because the
+	# DocType record for it didn't exist in the DB at that point.
+	if (frappe.flags.in_migrate or frappe.flags.in_install
+			or frappe.flags.in_patch or frappe.flags.in_setup_wizard):
+		return
+	if not frappe.db.table_exists("Change Management Settings"):
+		return
+
 	controlled_row = get_controlled_doctype_row(doc.doctype)
 	if not controlled_row:
 		return

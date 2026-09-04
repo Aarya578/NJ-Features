@@ -7,7 +7,48 @@ frappe.ui.form.on('Purchase Order', {
     },
 
     refresh: function(frm) {
-        // Set UOM query on refresh for existing rows (show all UOMs)
+
+        // Restrict NPD Approval and Is Sample fields
+        frappe.call({
+            method: "frappe.client.get_value",
+            args: {
+                doctype: "User",
+                filters: {
+                    name: frappe.session.user
+                },
+                fieldname: "role_profile_name"
+            },
+            callback: function(r) {
+
+                if (!r.message) {
+                    return;
+                }
+
+                let role_profile = (r.message && r.message.role_profile_name) || "";
+
+                let is_npd_manager = (
+                    role_profile === "NPD Manager"
+                );
+
+                frm.set_df_property(
+                    "npd_approval_",
+                    "read_only",
+                    !is_npd_manager
+                );
+
+                frm.set_df_property(
+                    "is_sample",
+                    "read_only",
+                    !is_npd_manager
+                );
+
+                frm.refresh_field("npd_approval_");
+                frm.refresh_field("is_sample");
+            }
+        });
+
+
+        // Existing UOM query
         frm.set_query('uom', 'items', function(doc, cdt, cdn) {
             var r = locals[cdt][cdn];
             if (!r.item_code) return {};

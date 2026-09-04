@@ -71,6 +71,7 @@ override_doctype_class = {
 doc_events = {
     "*": {
         "before_save": "nj_features.overrides.change_control.capture_change",
+        "before_update_after_submit": "nj_features.overrides.change_control.capture_change",
     },
     # "Item": {
     #     "after_insert": "nj_features.overrides.product.upload_erpnext_item",

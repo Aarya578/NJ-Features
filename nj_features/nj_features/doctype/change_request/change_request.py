@@ -30,15 +30,10 @@ def _current_user_role_profile():
 def _check_authorized(cr):
 	"""Shared authorization gate for approve/reject.
 
-	Self-approval is blocked per team decision: the requester can never
-	act on their own Change Request, whether approving or rejecting.
+	Anyone holding the Change Management Approver flag (on their Role
+	Profile) can approve or reject, including their own Change Requests --
+	self-approval is intentionally allowed.
 	"""
-	if cr.requested_by == frappe.session.user:
-		frappe.throw(
-			"You cannot approve or reject your own Change Request.",
-			frappe.PermissionError,
-		)
-
 	user_profile = _current_user_role_profile()
 	if not change_control.is_change_management_approver(user_profile):
 		frappe.throw(

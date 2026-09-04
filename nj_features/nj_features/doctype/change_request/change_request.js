@@ -19,9 +19,9 @@ function setup_action_buttons(frm) {
     const MODULE = "nj_features.nj_features.doctype.change_request.change_request";
 
     // ── Pending Approval → Approve / Reject ───────────────────
-    // Both buttons call the same server-side checks (self-approval
-    // block + Change Management Approver flag on the acting user's
-    // Role Profile) -- the button just saves a trip to dev console.
+    // Both buttons call the same server-side check (Change Management
+    // Approver flag on the acting user's Role Profile, self-approval
+    // allowed) -- the button just saves a trip to dev console.
     if (status === "Pending Approval") {
 
         frm.add_custom_button(__("Approve"), function() {

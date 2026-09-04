@@ -9,6 +9,8 @@ Change Management Settings, no code change required (per decision #1 / the
 "common toggle" requirement).
 """
 
+import json
+
 import frappe
 
 # Doctypes that must never be captured, even if someone fat-fingers them into
@@ -23,8 +25,7 @@ _EXEMPT_DOCTYPES = {
 }
 
 _IGNORE_FIELDTYPES = {
-	"Section Break", "Column Break", "Tab Break", "HTML", "Button",
-	"Table MultiSelect", "Heading",
+	"Section Break", "Column Break", "Tab Break", "HTML", "Button", "Heading",
 }
 
 
@@ -194,6 +195,9 @@ def _build_update_details(old_doc, new_doc):
 		if field.fieldtype == "Table":
 			rows.extend(_diff_table_field(old_doc, new_doc, field))
 			continue
+		if field.fieldtype == "Table MultiSelect":
+			rows.extend(_diff_multiselect_field(old_doc, new_doc, field))
+			continue
 		fieldname = field.fieldname
 		old_value = old_doc.get(fieldname)
 		new_value = new_doc.get(fieldname)
@@ -206,6 +210,47 @@ def _build_update_details(old_doc, new_doc):
 				"new_value": _stringify(new_value),
 			})
 	return rows
+
+
+_MULTISELECT_SKIP_FIELDS = {
+	"name", "parent", "parentfield", "parenttype", "idx", "doctype",
+	"creation", "modified", "modified_by", "owner", "docstatus", "amended_from",
+}
+
+
+def _multiselect_row_payload(row):
+	"""Strip a Table MultiSelect child row down to its real data -- whatever
+	fields the child doctype actually uses (varies per doctype, e.g. 'action_type'
+	for Sub Features), excluding standard Frappe bookkeeping fields."""
+	return {
+		k: v for k, v in row.as_dict().items()
+		if k not in _MULTISELECT_SKIP_FIELDS and v not in (None, "")
+	}
+
+
+def _diff_multiselect_field(old_doc, new_doc, field):
+	"""Table MultiSelect fields aren't a real editable child table (no per-row
+	cell edits, just add/remove whole selections) and can't be treated as a
+	simple string field either (Frappe rejects a raw string for this
+	fieldtype). Diff as a set of whole-row payloads; store the full new
+	selection as JSON so apply-on-approve can replay it exactly via
+	target.set(fieldname, parsed_list) rather than guessing a value field."""
+	fieldname = field.fieldname
+	old_rows = [_multiselect_row_payload(r) for r in (old_doc.get(fieldname) or [])]
+	new_rows = [_multiselect_row_payload(r) for r in (new_doc.get(fieldname) or [])]
+
+	old_key = sorted(json.dumps(r, sort_keys=True, default=str) for r in old_rows)
+	new_key = sorted(json.dumps(r, sort_keys=True, default=str) for r in new_rows)
+	if old_key == new_key:
+		return []
+
+	return [{
+		"fieldname": fieldname,
+		"field_label": field.label or fieldname,
+		"parent_row": "",
+		"old_value": json.dumps(old_rows, default=str),
+		"new_value": json.dumps(new_rows, default=str),
+	}]
 
 
 def _diff_table_field(old_doc, new_doc, table_field):
@@ -229,7 +274,7 @@ def _diff_table_field(old_doc, new_doc, table_field):
 			})
 			continue
 		for cf in new_child.meta.fields:
-			if cf.fieldtype in _IGNORE_FIELDTYPES:
+			if cf.fieldtype in _IGNORE_FIELDTYPES or cf.fieldtype == "Table MultiSelect":
 				continue
 			ov, nv = old_child.get(cf.fieldname), new_child.get(cf.fieldname)
 			if _normalize(ov) != _normalize(nv):
@@ -247,7 +292,7 @@ def _diff_table_field(old_doc, new_doc, table_field):
 	for new_child in new_local:
 		tag = f"NEW-{new_child.idx}"
 		for cf in new_child.meta.fields:
-			if cf.fieldtype in _IGNORE_FIELDTYPES:
+			if cf.fieldtype in _IGNORE_FIELDTYPES or cf.fieldtype == "Table MultiSelect":
 				continue
 			nv = new_child.get(cf.fieldname)
 			if nv in (None, "", 0, False):
@@ -277,7 +322,7 @@ def _build_new_record_details(doc):
 	exist purely so an approver can review what's being created."""
 	rows = []
 	for field in doc.meta.fields:
-		if field.fieldtype in _IGNORE_FIELDTYPES or field.fieldtype == "Table":
+		if field.fieldtype in _IGNORE_FIELDTYPES or field.fieldtype in ("Table", "Table MultiSelect"):
 			continue
 		value = doc.get(field.fieldname)
 		if value in (None, "", 0, False):
@@ -295,7 +340,7 @@ def _build_new_record_details(doc):
 		for child in (doc.get(field.fieldname) or []):
 			tag = f"NEW-{child.idx}"
 			for cf in child.meta.fields:
-				if cf.fieldtype in _IGNORE_FIELDTYPES:
+				if cf.fieldtype in _IGNORE_FIELDTYPES or cf.fieldtype == "Table MultiSelect":
 					continue
 				value = child.get(cf.fieldname)
 				if value in (None, "", 0, False):
@@ -316,7 +361,7 @@ def _revert_to_old_values(doc, old_doc):
 	for field in doc.meta.fields:
 		if field.fieldtype in _IGNORE_FIELDTYPES:
 			continue
-		if field.fieldtype == "Table":
+		if field.fieldtype in ("Table", "Table MultiSelect"):
 			doc.set(field.fieldname, [
 				d.as_dict() for d in (old_doc.get(field.fieldname) or [])
 			])
@@ -375,6 +420,10 @@ def _apply_update(cr):
 			bucket.setdefault((table_fieldname, row.parent_row), []).append(
 				(cell_fieldname, row.new_value)
 			)
+			continue
+		field_meta = target.meta.get_field(row.fieldname)
+		if field_meta and field_meta.fieldtype == "Table MultiSelect":
+			target.set(row.fieldname, json.loads(row.new_value))
 			continue
 		target.set(row.fieldname, _cast_value(target, row.fieldname, row.new_value))
 

@@ -27,6 +27,7 @@
   "deadline_days",
   "section_break_people",
   "requested_by",
+  "assigned_to",
   "column_break_2",
   "approved_by",
   "approved_on",
@@ -166,6 +167,15 @@
    "fieldname": "requested_by",
    "fieldtype": "Link",
    "label": "Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Set via the Assign button in the page header. Only users with the Change Management Approver flag can be assigned.",
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assigned To",
    "options": "User",
    "read_only": 1
   },

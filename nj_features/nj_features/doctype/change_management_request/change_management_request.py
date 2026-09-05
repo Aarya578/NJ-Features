@@ -1,7 +1,7 @@
 import frappe
 from frappe.desk.form.assign_to import add as add_assignment
 from frappe.model.document import Document
-from frappe.utils import cint, get_url_to_form, now_datetime
+from frappe.utils import cint, get_url_to_form, now_datetime, nowdate
 
 from nj_features.overrides import change_control
 
@@ -11,6 +11,8 @@ class ChangeManagementRequest(Document):
 	def before_insert(self):
 		if not self.status:
 			self.status = "Draft"
+		if not self.start_date:
+			self.start_date = nowdate()
 
 	def validate(self):
 		self._build_title()
@@ -57,6 +59,7 @@ def approve_change_request(name, reason=None):
 	cr.status = "Approved"
 	cr.approved_by = frappe.session.user
 	cr.approved_on = now_datetime()
+	cr.end_date = nowdate()
 	cr.applied = 1
 	cr.flags.ignore_change_control = True
 	cr.save(ignore_permissions=True)
@@ -151,14 +154,41 @@ def _notify_assignee(cr, user):
 	recipient = frappe.db.get_value("User", user, "email") or user
 	link = get_url_to_form("Change Management Request", cr.name)
 
+	def _row(label, value):
+		return f"""
+			<tr style="border-top:1px solid #e9ecef;">
+				<td style="padding:8px 12px 8px 0; color:#6c7680; white-space:nowrap; vertical-align:top;">{label}</td>
+				<td style="padding:8px 0; color:#1f272e;">{value}</td>
+			</tr>
+		"""
+
+	rows = "".join([
+		_row("Reference", f"{cr.reference_doctype} {cr.reference_name or '(new record)'}"),
+		_row("Summary", cr.change_summary or ""),
+		_row("Purpose", cr.purpose or ""),
+		_row("Impact", cr.impact or ""),
+		_row("Requested By", cr.requested_by),
+	])
+
 	message = f"""
-		<p>You have been assigned a Change Management Request for review.</p>
-		<p><b>Reference:</b> {cr.reference_doctype} {cr.reference_name or "(new record)"}</p>
-		<p><b>Summary:</b> {cr.change_summary or ""}</p>
-		<p><b>Purpose:</b> {cr.purpose or ""}</p>
-		<p><b>Impact:</b> {cr.impact or ""}</p>
-		<p><b>Requested By:</b> {cr.requested_by}</p>
-		<p><a href="{link}">Open Change Management Request {cr.name}</a></p>
+		<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; max-width:600px; margin:0 auto;">
+			<div style="background-color:#2490ef; padding:20px 24px; border-radius:6px 6px 0 0;">
+				<span style="color:#ffffff; font-size:18px; font-weight:600;">Change Management Request Assigned</span>
+			</div>
+			<div style="background-color:#ffffff; border:1px solid #d1d8dd; border-top:none; padding:24px; border-radius:0 0 6px 6px;">
+				<p style="color:#1f272e; font-size:14px; margin:0 0 16px;">
+					You have been assigned <b>{cr.name}</b> for review.
+				</p>
+				<table style="width:100%; border-collapse:collapse; font-size:13px;">
+					{rows}
+				</table>
+				<div style="margin-top:24px; text-align:center;">
+					<a href="{link}" style="background-color:#2490ef; color:#ffffff; text-decoration:none; padding:10px 24px; border-radius:4px; font-size:14px; font-weight:600; display:inline-block;">
+						Open {cr.name}
+					</a>
+				</div>
+			</div>
+		</div>
 	"""
 
 	frappe.sendmail(

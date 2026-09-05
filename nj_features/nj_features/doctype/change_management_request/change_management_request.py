@@ -97,16 +97,13 @@ def can_assign_change_request():
 
 @frappe.whitelist()
 def get_assignable_users(doctype=None, txt="", searchfield=None, start=0, page_len=20, filters=None):
-	"""Link-field query source for the Assign To dropdown -- only Users
-	whose Role Profile carries the Change Management Approver flag are
-	eligible to be assigned a Change Management Request."""
-	role_profiles = change_control.get_change_approver_role_profiles()
-	if not role_profiles:
-		return []
+	"""Link-field query source for the Assign To dropdown. Any enabled User
+	can be assigned -- the approval-access restriction applies to who can
+	perform the assignment (see can_assign_change_request /
+	assign_change_request), not to who can be assigned."""
 	return frappe.get_all(
 		"User",
 		filters={
-			"role_profile_name": ["in", role_profiles],
 			"enabled": 1,
 			"name": ["like", f"%{txt or ''}%"],
 		},
@@ -126,10 +123,6 @@ def assign_change_request(name, user):
 			"Only users with approval access can assign Change Management Requests.",
 			frappe.PermissionError,
 		)
-
-	assignee_role_profile = frappe.db.get_value("User", user, "role_profile_name")
-	if not change_control.is_change_management_approver(assignee_role_profile):
-		frappe.throw(f"{user} does not have Change Management approval access.")
 
 	cr = frappe.get_doc("Change Management Request", name)
 	cr.assigned_to = user

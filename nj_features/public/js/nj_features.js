@@ -1273,6 +1273,80 @@ function popUpWorkInventory() {
     dialog.show();
 }
 
+// ─────────────────────────────────────────────────────────────
+//  CHANGE MANAGEMENT -- Purpose/Impact justification popup
+// ─────────────────────────────────────────────────────────────
+//
+// Any doctype enabled in Change Management Settings gets captured
+// server-side (nj_features.overrides.change_control.capture_change, wired
+// to before_save on the "*" wildcard) and turned into a Change Management
+// Request instead of being saved directly. The controlled doctype itself
+// has no Purpose/Impact fields -- only Change Management Request does -- so
+// this collects them here, in the browser, before the save request goes
+// out, and stashes them onto frm.doc for the server hook to read off the
+// submitted doc.
+(function () {
+    let controlled_doctypes_promise = null;
+
+    function get_controlled_doctypes() {
+        if (!controlled_doctypes_promise) {
+            controlled_doctypes_promise = frappe.call({
+                method: "nj_features.overrides.change_control.get_controlled_doctypes",
+            }).then(r => r.message || []);
+        }
+        return controlled_doctypes_promise;
+    }
+
+    frappe.ui.form.on("*", {
+        before_save(frm) {
+            return get_controlled_doctypes().then(controlled_doctypes => {
+                if (!controlled_doctypes.includes(frm.doctype)) return;
+
+                return new Promise((resolve, reject) => {
+                    let settled = false;
+
+                    const dialog = new frappe.ui.Dialog({
+                        title: __("Change Justification Required"),
+                        fields: [
+                            {
+                                fieldname: "purpose",
+                                fieldtype: "Small Text",
+                                label: __("Purpose"),
+                                description: __("Why is this change being made?"),
+                                reqd: 1,
+                            },
+                            {
+                                fieldname: "impact",
+                                fieldtype: "Small Text",
+                                label: __("Impact"),
+                                description: __("What does this change affect?"),
+                                reqd: 1,
+                            },
+                        ],
+                        primary_action_label: __("Continue"),
+                        primary_action(values) {
+                            frm.doc.purpose = values.purpose;
+                            frm.doc.impact = values.impact;
+                            settled = true;
+                            dialog.hide();
+                            resolve();
+                        },
+                        on_hide() {
+                            if (!settled) {
+                                settled = true;
+                                frappe.validated = false;
+                                reject();
+                            }
+                        },
+                    });
+
+                    dialog.show();
+                });
+            });
+        },
+    });
+})();
+
 function toggle_checkboxes(field) {
     let row = $(field).closest('.grid-row');
     let yes_field = row.find('input[data-fieldname="yes"]');

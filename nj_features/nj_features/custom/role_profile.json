@@ -494,7 +494,7 @@
    "creation": "2026-09-03 00:00:00.000000",
    "default": "0",
    "depends_on": null,
-   "description": "If checked, users holding this Role Profile can approve or reject Change Requests for any controlled doctype.",
+   "description": "If checked, users holding this Role Profile can approve or reject Change Management Requests for any controlled doctype.",
    "docstatus": 0,
    "dt": "Role Profile",
    "fetch_from": null,

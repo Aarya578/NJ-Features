@@ -14,14 +14,13 @@ import json
 import frappe
 
 # Doctypes that must never be captured, even if someone fat-fingers them into
-# Change Management Settings -- capturing changes to the Change Request stack
-# itself would recurse.
+# Change Management Settings -- capturing changes to the Change Management
+# Request stack itself would recurse.
 _EXEMPT_DOCTYPES = {
-	"Change Request",
-	"Change Request Detail",
+	"Change Management Request",
+	"Change Management Request Detail",
 	"Change Management Settings",
-	"Change Controlled Doctype",
-	"Change Approver Rule",
+	"Change Management Controlled Doctype",
 }
 
 _IGNORE_FIELDTYPES = {
@@ -41,9 +40,21 @@ def get_controlled_doctype_row(doctype):
 	return None
 
 
+@frappe.whitelist()
+def get_controlled_doctypes():
+	"""Doctype names currently enabled in Change Management Settings.
+
+	Used by the client-side justification popup to decide, without a
+	hardcoded doctype list, whether a given form save needs to collect
+	Purpose/Impact before the change control hook fires.
+	"""
+	settings = frappe.get_single("Change Management Settings")
+	return [row.doctype_name for row in settings.controlled_doctypes if row.enabled]
+
+
 def get_change_approver_role_profiles():
 	"""Role Profiles flagged (Role Profile.change_management_approver) as
-	eligible to approve/reject Change Requests. Global, not scoped by
+	eligible to approve/reject Change Management Requests. Global, not scoped by
 	doctype or department -- the flag alone decides."""
 	return frappe.get_all(
 		"Role Profile",
@@ -105,8 +116,23 @@ def capture_change(doc, method=None):
 
 	department = _resolve_department(doc)
 
+	# The client-side justification popup (public/js/nj_features.js) stashes
+	# these as plain, non-meta keys on the submitted doc before save -- they
+	# aren't real fields on the controlled doctype itself, only on Change
+	# Management Request. A save that skips the popup (e.g. a raw API call)
+	# is refused here rather than surfacing a confusing mandatory-field error
+	# from the Change Management Request insert further down.
+	purpose = (doc.get("purpose") or "").strip()
+	impact = (doc.get("impact") or "").strip()
+	if not purpose or not impact:
+		frappe.throw(
+			"Purpose and Impact are required before this change can be "
+			"submitted for approval.",
+			title="Justification Required",
+		)
+
 	# Open question #3 resolved as "block/warn": refuse to create a Change
-	# Request that nothing can ever approve.
+	# Management Request that nothing can ever approve.
 	if not has_eligible_approver():
 		frappe.throw(
 			f"No active approver is configured for {doc.doctype}"
@@ -117,11 +143,11 @@ def capture_change(doc, method=None):
 
 	if doc.is_new():
 		# Open question #2 resolved as "new records need approval too".
-		_capture_new_record(doc, department)
+		_capture_new_record(doc, department, purpose, impact)
 		frappe.throw(
 			f"This {doc.doctype} requires approval before it can be created. "
-			"A Change Request has been raised for review and your entry was "
-			"not saved directly.",
+			"A Change Management Request has been raised for review and "
+			"your entry was not saved directly.",
 			title="Approval Required",
 		)
 	else:
@@ -131,6 +157,7 @@ def capture_change(doc, method=None):
 			return
 		_create_change_request(
 			doc, detail_rows, is_new_record=False, department=department,
+			purpose=purpose, impact=impact,
 		)
 		_revert_to_old_values(doc, old_doc)
 		frappe.msgprint(
@@ -141,13 +168,15 @@ def capture_change(doc, method=None):
 		)
 
 
-def _capture_new_record(doc, department):
+def _capture_new_record(doc, department, purpose, impact):
 	detail_rows = _build_new_record_details(doc)
-	cr = frappe.new_doc("Change Request")
+	cr = frappe.new_doc("Change Management Request")
 	cr.reference_doctype = doc.doctype
 	cr.reference_name = None
 	cr.is_new_record = 1
 	cr.change_summary = f"New {doc.doctype}"
+	cr.purpose = purpose
+	cr.impact = impact
 	cr.status = "Pending Approval"
 	cr.requested_by = frappe.session.user
 	cr.department = department
@@ -159,12 +188,14 @@ def _capture_new_record(doc, department):
 	return cr
 
 
-def _create_change_request(doc, detail_rows, is_new_record, department):
-	cr = frappe.new_doc("Change Request")
+def _create_change_request(doc, detail_rows, is_new_record, department, purpose, impact):
+	cr = frappe.new_doc("Change Management Request")
 	cr.reference_doctype = doc.doctype
 	cr.reference_name = doc.name
 	cr.is_new_record = 0
 	cr.change_summary = f"Update to {doc.doctype} {doc.name}"
+	cr.purpose = purpose
+	cr.impact = impact
 	cr.status = "Pending Approval"
 	cr.requested_by = frappe.session.user
 	cr.department = department

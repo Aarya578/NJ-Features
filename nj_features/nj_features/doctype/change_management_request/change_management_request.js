@@ -1,4 +1,4 @@
-frappe.ui.form.on('Change Request', {
+frappe.ui.form.on('Change Management Request', {
 
     refresh: function(frm) {
         setup_action_buttons(frm);
@@ -16,7 +16,7 @@ function setup_action_buttons(frm) {
     if (frm.is_new()) return;
 
     const status = frm.doc.status;
-    const MODULE = "nj_features.nj_features.doctype.change_request.change_request";
+    const MODULE = "nj_features.nj_features.doctype.change_management_request.change_management_request";
 
     // ── Pending Approval → Approve / Reject ───────────────────
     // Both buttons call the same server-side check (Change Management
@@ -26,7 +26,7 @@ function setup_action_buttons(frm) {
 
         frm.add_custom_button(__("Approve"), function() {
             frappe.confirm(
-                __("Approve this Change Request? The change will be applied to {0} {1} immediately.",
+                __("Approve this Change Management Request? The change will be applied to {0} {1} immediately.",
                     [frm.doc.reference_doctype, frm.doc.is_new_record ? __("(new record)") : frm.doc.reference_name]),
                 function() {
                     frappe.call({
@@ -36,7 +36,7 @@ function setup_action_buttons(frm) {
                         freeze_message: __("Applying change..."),
                         callback: function(r) {
                             if (r.message) {
-                                frappe.show_alert({ message: __("Change Request Approved"), indicator: "green" }, 5);
+                                frappe.show_alert({ message: __("Change Management Request Approved"), indicator: "green" }, 5);
                                 frm.reload_doc();
                             }
                         }
@@ -54,13 +54,13 @@ function setup_action_buttons(frm) {
                         args: { name: frm.doc.name, reason: values.reason },
                         callback: function(r) {
                             if (r.message) {
-                                frappe.show_alert({ message: __("Change Request Rejected"), indicator: "red" }, 4);
+                                frappe.show_alert({ message: __("Change Management Request Rejected"), indicator: "red" }, 4);
                                 frm.reload_doc();
                             }
                         }
                     });
                 },
-                __("Reject Change Request"), __("Reject")
+                __("Reject Change Management Request"), __("Reject")
             );
         }).addClass("btn-danger");
     }

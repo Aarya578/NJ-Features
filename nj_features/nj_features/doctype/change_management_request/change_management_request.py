@@ -5,7 +5,7 @@ from frappe.utils import now_datetime
 from nj_features.overrides import change_control
 
 
-class ChangeRequest(Document):
+class ChangeManagementRequest(Document):
 
 	def before_insert(self):
 		if not self.status:
@@ -31,20 +31,20 @@ def _check_authorized(cr):
 	"""Shared authorization gate for approve/reject.
 
 	Anyone holding the Change Management Approver flag (on their Role
-	Profile) can approve or reject, including their own Change Requests --
-	self-approval is intentionally allowed.
+	Profile) can approve or reject, including their own Change Management
+	Requests -- self-approval is intentionally allowed.
 	"""
 	user_profile = _current_user_role_profile()
 	if not change_control.is_change_management_approver(user_profile):
 		frappe.throw(
-			"You are not authorized to act on this Change Request.",
+			"You are not authorized to act on this Change Management Request.",
 			frappe.PermissionError,
 		)
 
 
 @frappe.whitelist()
 def approve_change_request(name, reason=None):
-	cr = frappe.get_doc("Change Request", name)
+	cr = frappe.get_doc("Change Management Request", name)
 
 	if cr.status != "Pending Approval":
 		frappe.throw(f"Cannot approve. Current status is {cr.status}.")
@@ -66,7 +66,7 @@ def approve_change_request(name, reason=None):
 
 @frappe.whitelist()
 def reject_change_request(name, reason=""):
-	cr = frappe.get_doc("Change Request", name)
+	cr = frappe.get_doc("Change Management Request", name)
 
 	if cr.status != "Pending Approval":
 		frappe.throw(f"Cannot reject. Current status is {cr.status}.")

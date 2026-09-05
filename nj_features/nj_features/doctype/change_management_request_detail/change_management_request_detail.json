@@ -55,7 +55,7 @@
  "modified": "2026-09-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
- "name": "Change Request Detail",
+ "name": "Change Management Request Detail",
  "owner": "Administrator",
  "permissions": [],
  "sort_field": "modified",

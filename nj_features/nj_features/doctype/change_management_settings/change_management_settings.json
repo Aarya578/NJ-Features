@@ -11,7 +11,7 @@
    "fieldname": "controlled_doctypes",
    "fieldtype": "Table",
    "label": "Controlled Doctypes",
-   "options": "Change Controlled Doctype"
+   "options": "Change Management Controlled Doctype"
   }
  ],
  "issingle": 1,

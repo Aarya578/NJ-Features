@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "CR-.####",
+ "autoname": "CMR-.####",
  "creation": "2026-09-03 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -12,6 +12,10 @@
   "reference_name",
   "is_new_record",
   "change_summary",
+  "section_break_justification",
+  "purpose",
+  "column_break_justification",
+  "impact",
   "priority",
   "column_break_1",
   "status",
@@ -59,7 +63,7 @@
   },
   {
    "default": "0",
-   "description": "Set automatically by the capture hook when this Change Request represents a not-yet-created record rather than an edit to an existing one.",
+   "description": "Set automatically by the capture hook when this Change Management Request represents a not-yet-created record rather than an edit to an existing one.",
    "fieldname": "is_new_record",
    "fieldtype": "Check",
    "label": "Is New Record",
@@ -69,6 +73,32 @@
    "fieldname": "change_summary",
    "fieldtype": "Small Text",
    "label": "Summary"
+  },
+  {
+   "fieldname": "section_break_justification",
+   "fieldtype": "Section Break",
+   "label": "Justification"
+  },
+  {
+   "description": "Why this change is being made. Collected from the user before the change is submitted for approval.",
+   "fieldname": "purpose",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Purpose",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_justification",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "What this change affects. Collected from the user before the change is submitted for approval.",
+   "fieldname": "impact",
+   "fieldtype": "Small Text",
+   "label": "Impact",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "priority",
@@ -171,7 +201,7 @@
    "fieldname": "change_detail",
    "fieldtype": "Table",
    "label": "Change Detail",
-   "options": "Change Request Detail",
+   "options": "Change Management Request Detail",
    "read_only": 1
   },
   {
@@ -188,7 +218,7 @@
  "modified": "2026-09-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
- "name": "Change Request",
+ "name": "Change Management Request",
  "owner": "Administrator",
  "permissions": [
   {

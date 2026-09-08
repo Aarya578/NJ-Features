@@ -81,6 +81,22 @@ def has_eligible_approver():
 	}))
 
 
+def has_settings_permission(doc=None, ptype=None, user=None, **kwargs):
+	"""has_permission hook for Change Management Settings (see hooks.py).
+	Grants full access to anyone whose Role Profile has the Change
+	Management Approver flag, on top of the base System Manager permission
+	already in the doctype's permission rows. Returns None (not False) when
+	the flag is absent so this never overrides/revokes the System Manager
+	grant -- only ever adds access, never removes it. **kwargs is a
+	defensive catch-all for whatever extra keyword args the permission
+	engine passes."""
+	user = user or frappe.session.user
+	role_profile = frappe.db.get_value("User", user, "role_profile_name")
+	if is_change_management_approver(role_profile):
+		return True
+	return None
+
+
 def _resolve_department(doc):
 	if doc.meta.has_field("department") and doc.get("department"):
 		return doc.get("department")

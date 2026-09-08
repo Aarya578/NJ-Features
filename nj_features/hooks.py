@@ -158,6 +158,12 @@ doc_events = {
     },
 }
 
+# ========== Permissions ==========
+
+has_permission = {
+    "Change Management Settings": "nj_features.overrides.change_control.has_settings_permission",
+}
+
 # ========== Override Whitelisted Methods ==========
 
 override_whitelisted_methods = {

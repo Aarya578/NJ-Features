@@ -6,7 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "doctype_name",
-  "enabled"
+  "enabled",
+  "assigned_to"
  ],
  "fields": [
   {
@@ -24,6 +25,14 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Enabled"
+  },
+  {
+   "description": "Change Management Requests raised for this doctype are automatically assigned to this user and emailed on creation. Leave blank to skip auto-assignment.",
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assigned To",
+   "options": "User"
   }
  ],
  "istable": 1,

@@ -171,7 +171,7 @@
    "read_only": 1
   },
   {
-   "description": "Set via the Assign button in the page header. Only users with the Change Management Approver flag can be assigned.",
+   "description": "Automatically set on creation from the Assigned To configured for the reference doctype in Change Management Settings.",
    "fieldname": "assigned_to",
    "fieldtype": "Link",
    "in_list_view": 1,

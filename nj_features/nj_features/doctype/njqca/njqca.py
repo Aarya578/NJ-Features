@@ -5135,6 +5135,13 @@ def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
         # If parameter is in NJ Settings but not in Criteria Child,
         # skip it instead of failing with blank actual/expected.
         if not criteria_row:
+            evaluation_results.append({
+                "parameter": parameter,
+                "njqca_value": "",
+                "expected_range": "",
+                "status": "Criteria Not Found",
+                "message": f"{parameter} criteria not configured"
+            })
             continue
 
         expected_value = criteria_row.get("parameter_value")
@@ -5338,21 +5345,41 @@ def build_status_reason(evaluation_results, status_name):
         reason += f" +{remaining} more"
 
     return reason[:MAX_LEN]
+def get_individual_parameter_status_results(evaluation_results, item_group):
+    """
+    For each evaluated parameter (from NJ Settings list), create a
+    SEPARATE PASS/FAIL row: <parameter_name>_status = PASS/FAIL
 
+    If criteria itself was not configured for this parameter
+    (status == "Criteria Not Found"), show that distinctly instead
+    of marking it FAIL, since it's a configuration gap, not a test failure.
+    """
+    results = []
+    for row in evaluation_results or []:
+        parameter = row.get("parameter")
+        if not parameter:
+            continue
+
+        status = str(row.get("status") or "").strip().lower()
+
+        if status == "criteria not found":
+            value = "NO CRITERIA"
+            score = None  # don't count this as pass or fail
+        else:
+            is_pass = status == "pass"
+            value = "PASS" if is_pass else "FAIL"
+            score = 0 if is_pass else 41
+
+        results.append({
+            "parameter": f"{parameter}_status",
+            "value": value,
+            "score": score,
+            "item_group": item_group,
+            "part_config_id": 0
+        })
+
+    return results
 def process_performance_and_heavyload_status(doc, criteria_rows):
-    """
-    Performance_status checks only:
-        NJ Settings -> performance_status_parameters
-
-    heavy_load_status checks only:
-        NJ Settings -> heavy_load_status_parameters
-
-    Important:
-    Do not depend only on direct DB update here.
-    This function must return all changes to JS, so JS can add rows into
-    frm.doc.njqca_result_parameters before save.
-    """
-
     performance_evaluation_results = evaluate_status_from_criteria(
         doc=doc,
         criteria_rows=criteria_rows,
@@ -5377,6 +5404,12 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "item_group": "Software Configuration",
         "part_config_id": 0
     }
+
+    # NEW: individual PASS/FAIL row for each parameter
+    performance_individual_results = get_individual_parameter_status_results(
+        performance_evaluation_results,
+        item_group="Software Configuration"
+    )
 
     heavyload_evaluation_results = evaluate_status_from_criteria(
         doc=doc,
@@ -5403,12 +5436,21 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "part_config_id": 0
     }
 
+    # NEW: individual PASS/FAIL row for each parameter
+    heavyload_individual_results = get_individual_parameter_status_results(
+        heavyload_evaluation_results,
+        item_group="LAPTOP STORAGE"
+    )
+
     results = [
         performance_result,
         performance_reason_result,
         heavyload_result,
-        heavyload_reason_result
+        heavyload_reason_result,
     ]
+
+    results.extend(performance_individual_results)
+    results.extend(heavyload_individual_results)
 
     return {
         "changes": results
@@ -5584,6 +5626,15 @@ def update_performance_criteria(doc):
         doc,
         criteria_rows
     )
+    # Save the criteria profile used for Performance + Heavy Load calculation
+    if criteria_name:
+        result.setdefault("changes", []).append({
+            "parameter": "Performance_HeavyLoad_Criteria",
+            "value": criteria_name,
+            "score": 0,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        })
 
     # Debug info for bench console
     result["criteria_source"] = criteria_source

@@ -381,11 +381,30 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
             ORDER BY so_data.sales_order, so_data.item_code;
         """, as_dict=True)
 
+        # Map allocated serials per (sales_order, item_code) to prevent double-deduction
+        allocated_serials = frappe.db.sql("""
+            SELECT 
+                reserved_sales_order,
+                IFNULL(NULLIF(to_make, ''), item_code) AS item_code,
+                COUNT(name) AS allocated_qty
+            FROM `tabSerial No`
+            WHERE reserved_sales_order IS NOT NULL 
+              AND reserved_sales_order != ''
+              AND status = 'Active'
+            GROUP BY reserved_sales_order, IFNULL(NULLIF(to_make, ''), item_code)
+        """, as_dict=True)
+        alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
+
         pending_qty_by_item = {}
         for row in pending_so_data:
+            so_name = row.get('sales_order')
             item_code = row.get('pb_code')
             if item_code:
-                pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + (row.get('pending_qty') or 0)
+                raw_pending = row.get('pending_qty') or 0
+                allocated_qty = alloc_map.get((so_name, item_code), 0)
+                unallocated_pending = max(0, raw_pending - allocated_qty)
+                if unallocated_pending > 0:
+                    pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + unallocated_pending
 
         # Delete ONLY affected item codes (not the full table)
         if stock_map:

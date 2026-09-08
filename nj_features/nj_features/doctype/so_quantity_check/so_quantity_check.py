@@ -68,20 +68,25 @@ def update_so_quantity_check(settings):
                WITH Parent_Stock AS (
                     SELECT 
                         TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
-                        COUNT(b.serial_no) AS total_actual_qty_for_parent
+                        COUNT(b.name) AS total_actual_qty_for_parent
                     FROM `tabItem` i
-                    LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                    LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
                     LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                     LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                     LEFT JOIN `tabItem Variant Attribute` proc
-                        ON proc.parent = i.item_code
+                        ON proc.parent = i.name
                         AND proc.attribute = 'Processor Type1'
                     WHERE 
-                        b.item_group IN ({item_group_placeholders})
+                        COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
                         AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+                        AND b.status = 'Active'
                         AND b.is_replace = 0
                         AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
                         AND (b.sales_order IS NULL OR b.sales_order = '')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM `tabDelivery Note Item` dni
+                            WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                        )
                         AND (
                             b.return_reason IS NULL
                             OR b.return_reason = ''
@@ -101,17 +106,22 @@ def update_so_quantity_check(settings):
                 Item_Stock AS (
                     SELECT 
                         s.item_code,
-                        COUNT(s.serial_no) AS total_actual_qty_for_itemcode
+                        COUNT(s.name) AS total_actual_qty_for_itemcode
                     FROM `tabSerial No` s
                     INNER JOIN `tabWarehouse` w ON w.name = s.warehouse
-                    INNER JOIN `tabItem` i ON s.item_code = i.item_code
+                    INNER JOIN `tabItem` i ON (s.item_code = i.name OR s.item_code = i.item_code)
                     LEFT JOIN `tabSales Order` so ON s.sales_order_id = so.name
                     WHERE
-                        i.item_group IN ({item_group_placeholders})
+                        COALESCE(s.item_group, i.item_group) IN ({item_group_placeholders})
                         AND (w.department IN ({department_placeholders}) {item_warehouse_clause})
+                        AND s.status = 'Active'
                         AND s.is_replace = 0
                         AND (s.reserved_sales_order IS NULL OR s.reserved_sales_order = '')
                         AND (s.sales_order IS NULL OR s.sales_order = '')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM `tabDelivery Note Item` dni
+                            WHERE dni.serial_no = s.name AND dni.docstatus = 1
+                        )
                         AND (
                             s.return_reason IS NULL
                             OR s.return_reason = ''
@@ -287,15 +297,32 @@ def update_so_quantity_check(settings):
             ORDER BY so_data.sales_order, so_data.item_code;
         """, as_dict=True)
 
+        # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
+        # to prevent double-deduction (since allocated serials are already excluded from actual_qty)
+        allocated_serials = frappe.db.sql("""
+            SELECT 
+                reserved_sales_order,
+                IFNULL(NULLIF(to_make, ''), item_code) AS item_code,
+                COUNT(name) AS allocated_qty
+            FROM `tabSerial No`
+            WHERE reserved_sales_order IS NOT NULL 
+              AND reserved_sales_order != ''
+              AND status = 'Active'
+            GROUP BY reserved_sales_order, IFNULL(NULLIF(to_make, ''), item_code)
+        """, as_dict=True)
+        alloc_map = {(r.reserved_sales_order, r.item_code): r.allocated_qty for r in allocated_serials}
+
         pending_qty_by_item = {}
         for row in pending_so_data:
+            so_name = row.get('sales_order')
             item_code = row.get('pb_code')
             if item_code:
-                pending_qty = row.get('pending_qty', 0)
-                if item_code in pending_qty_by_item:
-                    pending_qty_by_item[item_code] += pending_qty
-                else:
-                    pending_qty_by_item[item_code] = pending_qty
+                raw_pending = row.get('pending_qty', 0) or 0
+                allocated_qty = alloc_map.get((so_name, item_code), 0)
+                # Unallocated pending demand only
+                unallocated_pending = max(0, raw_pending - allocated_qty)
+                if unallocated_pending > 0:
+                    pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + unallocated_pending
 
         frappe.db.sql("DELETE FROM `tabSO Quantity Check`")
         frappe.db.commit()
@@ -689,20 +716,29 @@ def update_pre_order_qty(settings):
             )
             return False
 
-        # Fetch minimum sequence threshold dynamically from 'Part waiting' department (seq >= 10)
-        min_seq_row = frappe.db.sql("""
-            SELECT department_sequence 
-            FROM `tabDepartment` 
-            WHERE name LIKE '%Part waiting%' 
-            ORDER BY department_sequence ASC 
-            LIMIT 1
-        """, as_dict=True)
-        min_seq = min_seq_row[0].get("department_sequence", 10) if min_seq_row else 10
+        # Dynamically fetch sequence boundaries for 'Part waiting' and 'Adaptor' (no hardcoded sequence numbers)
+        part_waiting_seq = frappe.db.get_value(
+            "Department", {"name": ["like", "%Part waiting%"]}, "department_sequence"
+        )
+        adaptor_seq = frappe.db.get_value(
+            "Department", {"name": ["like", "%Adaptor%"]}, "department_sequence"
+        )
+
+        if part_waiting_seq is None or adaptor_seq is None:
+            log_error(
+                "Could not dynamically find sequence for Part waiting or Adaptor departments",
+                "update_pre_order_qty",
+                "Warning",
+            )
+            return False
+
+        min_bound = min(part_waiting_seq, adaptor_seq)
+        max_bound = max(part_waiting_seq, adaptor_seq)
 
         depts_list = frappe.db.sql_list("""
             SELECT name FROM `tabDepartment`
-            WHERE department_sequence >= %s
-        """, (min_seq,))
+            WHERE department_sequence > %s AND department_sequence < %s
+        """, (min_bound, max_bound))
 
         if not depts_list:
             return True
@@ -719,20 +755,25 @@ def update_pre_order_qty(settings):
             LEFT JOIN (
                 SELECT
                     TRIM(CONCAT(i.variant_of, ' ', COALESCE(proc.attribute_value, ''))) AS parent,
-                    COUNT(b.serial_no) AS total_actual_qty_for_parent
+                    COUNT(b.name) AS total_actual_qty_for_parent
                 FROM `tabItem` i
-                LEFT JOIN `tabSerial No` b ON i.item_code = b.item_code
+                LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
                 LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
                 LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                 LEFT JOIN `tabItem Variant Attribute` proc
-                    ON proc.parent = i.item_code
+                    ON proc.parent = i.name
                     AND proc.attribute = 'Processor Type1'
                 WHERE
-                    b.item_group IN ({item_group_placeholders})
+                    COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
                     AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+                    AND b.status = 'Active'
                     AND b.is_replace = 0
                     AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
                     AND (b.sales_order IS NULL OR b.sales_order = '')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM `tabDelivery Note Item` dni
+                        WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                    )
                     AND (
                         b.return_reason IS NULL
                         OR b.return_reason = ''

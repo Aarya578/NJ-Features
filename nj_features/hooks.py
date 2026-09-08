@@ -69,6 +69,10 @@ override_doctype_class = {
 # ========== Doc Events ==========
 
 doc_events = {
+    "*": {
+        "before_save": "nj_features.overrides.change_control.capture_change",
+        "before_update_after_submit": "nj_features.overrides.change_control.capture_change",
+    },
     # "Item": {
     #     "after_insert": "nj_features.overrides.product.upload_erpnext_item",
     #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
@@ -152,6 +156,12 @@ doc_events = {
     "Sales Order": {
         "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
     },
+}
+
+# ========== Permissions ==========
+
+has_permission = {
+    "Change Management Settings": "nj_features.overrides.change_control.has_settings_permission",
 }
 
 # ========== Override Whitelisted Methods ==========

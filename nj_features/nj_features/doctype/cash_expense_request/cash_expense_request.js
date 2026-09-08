@@ -78,6 +78,26 @@ frappe.ui.form.on('Cash Expense Request', {
 //  ACTION BUTTONS
 // ─────────────────────────────────────────────────────────────
 
+// Save-then-run helper shared by all action buttons.
+// If the doc has unsaved edits, save first so the server (which re-reads
+// from the DB by docname) sees current values — not a stale row.
+// On save failure (e.g. TimestampMismatchError from a concurrent edit by
+// another user), show a clean message and prompt a reload instead of
+// letting Frappe's raw error dialog appear or the button hang.
+function save_then(frm, action_fn) {
+    if (!frm.is_dirty()) {
+        action_fn();
+        return;
+    }
+    frm.save().then(action_fn).catch(function() {
+        frappe.msgprint({
+            title: __("Could Not Save"),
+            message: __("This record may have been updated by someone else. Please reload the page and try again."),
+            indicator: "red"
+        });
+    });
+}
+
 function setup_action_buttons(frm) {
 
     if (frm.is_new()) return;
@@ -94,15 +114,17 @@ function setup_action_buttons(frm) {
             frappe.confirm(
                 __("Submit this expense request for approval?"),
                 function() {
-                    frappe.call({
-                        method: MODULE + ".submit_request",
-                        args: { docname: frm.doc.name },
-                        callback: function(r) {
-                            if (r.message) {
-                                frappe.show_alert({ message: __("Submitted for Approval"), indicator: "blue" }, 4);
-                                frm.reload_doc();
+                    save_then(frm, function() {
+                        frappe.call({
+                            method: MODULE + ".submit_request",
+                            args: { docname: frm.doc.name },
+                            callback: function(r) {
+                                if (r.message) {
+                                    frappe.show_alert({ message: __("Submitted for Approval"), indicator: "blue" }, 4);
+                                    frm.reload_doc();
+                                }
                             }
-                        }
+                        });
                     });
                 }
             );
@@ -116,26 +138,28 @@ function setup_action_buttons(frm) {
             frappe.confirm(
                 __("Submit this expense and create the Journal Entry? This cannot be undone."),
                 function() {
-                    frappe.call({
-                        method: MODULE + ".post_request",
-                        args: { docname: frm.doc.name },
-                        callback: function(r) {
-                            if (!r.message) return;
+                    save_then(frm, function() {
+                        frappe.call({
+                            method: MODULE + ".post_request",
+                            args: { docname: frm.doc.name },
+                            callback: function(r) {
+                                if (!r.message) return;
 
-                            // Credit account missing on the form — point user to the field
-                            if (r.message.missing_credit_account) {
-                                frappe.msgprint({
-                                    title: __("Credit Account Missing"),
-                                    message: __("Please set the <b>Expense Credit Account</b> field on this form before posting."),
-                                    indicator: "orange"
-                                });
-                                return;
+                                // Credit account missing on the form — point user to the field
+                                if (r.message.missing_credit_account) {
+                                    frappe.msgprint({
+                                        title: __("Credit Account Missing"),
+                                        message: __("Please set the <b>Expense Credit Account</b> field on this form before posting."),
+                                        indicator: "orange"
+                                    });
+                                    return;
+                                }
+
+                                // Success
+                                frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
+                                frm.reload_doc();
                             }
-
-                            // Success
-                            frappe.show_alert({ message: __("Posted. Journal Entry created."), indicator: "green" }, 5);
-                            frm.reload_doc();
-                        }
+                        });
                     });
                 }
             );
@@ -145,15 +169,17 @@ function setup_action_buttons(frm) {
             frappe.prompt(
                 { fieldtype: "Small Text", fieldname: "reason", label: "Rejection Reason", reqd: 1 },
                 function(values) {
-                    frappe.call({
-                        method: MODULE + ".reject_request",
-                        args: { docname: frm.doc.name, reason: values.reason },
-                        callback: function(r) {
-                            if (r.message) {
-                                frappe.show_alert({ message: __("Expense Rejected"), indicator: "red" }, 4);
-                                frm.reload_doc();
+                    save_then(frm, function() {
+                        frappe.call({
+                            method: MODULE + ".reject_request",
+                            args: { docname: frm.doc.name, reason: values.reason },
+                            callback: function(r) {
+                                if (r.message) {
+                                    frappe.show_alert({ message: __("Expense Rejected"), indicator: "red" }, 4);
+                                    frm.reload_doc();
+                                }
                             }
-                        }
+                        });
                     });
                 },
                 __("Reject Expense"), __("Reject")
@@ -167,15 +193,17 @@ function setup_action_buttons(frm) {
             frappe.confirm(
                 __("Resubmit this expense request?"),
                 function() {
-                    frappe.call({
-                        method: MODULE + ".resubmit_request",
-                        args: { docname: frm.doc.name },
-                        callback: function(r) {
-                            if (r.message) {
-                                frappe.show_alert({ message: __("Resubmitted for Approval"), indicator: "blue" }, 4);
-                                frm.reload_doc();
+                    save_then(frm, function() {
+                        frappe.call({
+                            method: MODULE + ".resubmit_request",
+                            args: { docname: frm.doc.name },
+                            callback: function(r) {
+                                if (r.message) {
+                                    frappe.show_alert({ message: __("Resubmitted for Approval"), indicator: "blue" }, 4);
+                                    frm.reload_doc();
+                                }
                             }
-                        }
+                        });
                     });
                 }
             );

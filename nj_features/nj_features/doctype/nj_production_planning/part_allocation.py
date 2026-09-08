@@ -536,11 +536,33 @@ class PartAllocationRun:
         return rows
 
     def persist_to_plan_child(self, plan_doc, serial_nos=None):
-        """Replace the plan's Part Allocation Details child rows with this run's audit."""
+        """Replace the plan's Part Allocation Details child rows with this run's audit.
+
+        This writes the audit child table directly instead of saving the parent
+        NJ Production Planning document. Some historical plan rows can contain
+        links to cancelled Sales Orders; saving the parent revalidates those
+        existing links and can block allocation audit storage even though the
+        audit rows themselves are valid.
+        """
         child_rows = self.build_plan_child_rows(plan_doc, serial_nos=serial_nos)
-        plan_doc.set("part_allocation_details", [])
-        for row in child_rows:
-            plan_doc.append("part_allocation_details", row)
+        child_doctype = "NJ Production Planning Part Allocation Detail"
+        parent_filters = {
+            "parent": plan_doc.name,
+            "parenttype": "NJ Production Planning",
+            "parentfield": "part_allocation_details",
+        }
+
+        frappe.db.delete(child_doctype, parent_filters)
+        for idx, row in enumerate(child_rows, start=1):
+            child_doc = frappe.get_doc({
+                "doctype": child_doctype,
+                **parent_filters,
+                "idx": idx,
+                **row,
+            })
+            child_doc.flags.ignore_validate_update_after_submit = True
+            child_doc.insert(ignore_permissions=True)
+
         self.stock_snapshot["plan"] = plan_doc.name
         self.stock_snapshot["final_reserved_qty"] = dict(self.planned)
         return {"run_id": self.run_id, "child_rows": len(child_rows)}

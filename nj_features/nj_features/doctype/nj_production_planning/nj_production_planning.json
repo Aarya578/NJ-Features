@@ -14,6 +14,7 @@
   "missing_sales_order",
   "amended_from"
  ],
+ 
  "fields": [
   {
    "fieldname": "department",
@@ -87,3 +88,5 @@
  "sort_field": "modified",
  "sort_order": "DESC"
 }
+
+

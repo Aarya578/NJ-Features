@@ -30,6 +30,7 @@
   "candidate_checks_json",
   "combinations_json",
   "audit_json"
+  
  ],
  "fields": [
   {"fieldname": "allocation_run_id", "fieldtype": "Data", "label": "Allocation Run ID", "read_only": 1},

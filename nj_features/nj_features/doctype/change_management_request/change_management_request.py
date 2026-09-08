@@ -64,6 +64,8 @@ def approve_change_request(name, reason=None):
 	cr.save(ignore_permissions=True)
 	frappe.db.commit()
 
+	change_control.notify_approval(cr)
+
 	return "Approved"
 
 
@@ -78,8 +80,12 @@ def reject_change_request(name, reason=""):
 
 	cr.status = "Rejected"
 	cr.rejection_reason = reason
+	cr.rejected_by = frappe.session.user
+	cr.rejected_on = now_datetime()
 	cr.flags.ignore_change_control = True
 	cr.save(ignore_permissions=True)
 	frappe.db.commit()
+
+	change_control.notify_rejection(cr)
 
 	return "Rejected"

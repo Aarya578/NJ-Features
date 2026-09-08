@@ -285,6 +285,42 @@ def _email_row(label, value):
 	"""
 
 
+def _change_detail_rows_html(cr):
+	"""Field-by-field diff table for the CMR's change_detail child table.
+	Values come straight from user-editable doctype fields (not app-controlled
+	text like Purpose/Impact above), so every cell is escaped before going
+	into the HTML email -- same frappe.utils.escape_html(...) pattern already
+	used server-side in this app (see stock_movement.py)."""
+	if not cr.change_detail:
+		return ""
+
+	esc = frappe.utils.escape_html
+	body_rows = "".join([
+		f"""
+			<tr style="border-top:1px solid #e9ecef;">
+				<td style="padding:6px 10px 6px 0; color:#1f272e;">{esc(row.field_label or row.fieldname or "")}</td>
+				<td style="padding:6px 10px; color:#6c7680;">{esc(row.parent_row or "—")}</td>
+				<td style="padding:6px 10px; color:#6c7680;">{esc(row.old_value or "")}</td>
+				<td style="padding:6px 0; color:#1f272e;">{esc(row.new_value or "")}</td>
+			</tr>
+		"""
+		for row in cr.change_detail
+	])
+
+	return f"""
+		<p style="color:#1f272e; font-size:14px; font-weight:600; margin:20px 0 8px;">Change Detail</p>
+		<table style="width:100%; border-collapse:collapse; font-size:12px;">
+			<tr>
+				<th style="text-align:left; padding:6px 10px 6px 0; color:#6c7680; border-bottom:1px solid #d1d8dd;">Field</th>
+				<th style="text-align:left; padding:6px 10px; color:#6c7680; border-bottom:1px solid #d1d8dd;">Row</th>
+				<th style="text-align:left; padding:6px 10px; color:#6c7680; border-bottom:1px solid #d1d8dd;">Old Value</th>
+				<th style="text-align:left; padding:6px 0; color:#6c7680; border-bottom:1px solid #d1d8dd;">New Value</th>
+			</tr>
+			{body_rows}
+		</table>
+	"""
+
+
 def _change_request_email_body(cr, heading, intro_html):
 	rows = "".join([
 		_email_row("Reference", f"{cr.reference_doctype} {cr.reference_name or '(new record)'}"),
@@ -298,6 +334,11 @@ def _change_request_email_body(cr, heading, intro_html):
 		_email_row("Requested By", cr.requested_by),
 		_email_row("Employee ID", _requester_employee_id(cr) or "—"),
 		_email_row("Status", cr.status),
+		_email_row("Approved By", cr.approved_by) if cr.approved_by else "",
+		_email_row("Approved On", frappe.utils.format_datetime(cr.approved_on)) if cr.approved_on else "",
+		_email_row("Rejected By", cr.rejected_by) if cr.rejected_by else "",
+		_email_row("Rejected On", frappe.utils.format_datetime(cr.rejected_on)) if cr.rejected_on else "",
+		_email_row("Rejection Reason", cr.rejection_reason) if cr.rejection_reason else "",
 	])
 
 	link = get_url_to_form("Change Management Request", cr.name)
@@ -314,6 +355,7 @@ def _change_request_email_body(cr, heading, intro_html):
 				<table style="width:100%; border-collapse:collapse; font-size:13px;">
 					{rows}
 				</table>
+				{_change_detail_rows_html(cr)}
 				<div style="margin-top:24px; text-align:center;">
 					<a href="{link}" style="background-color:#2490ef; color:#ffffff; text-decoration:none; padding:10px 24px; border-radius:4px; font-size:14px; font-weight:600; display:inline-block;">
 						Open {cr.name}
@@ -354,6 +396,45 @@ def _notify_assignee(cr):
 		message=message,
 		now=True,
 	)
+
+
+_DECISION_INTROS = {
+	("Approved", "requester"): lambda cr: f"Your request <b>{cr.name}</b> has been approved by {cr.approved_by}.",
+	("Approved", "actor"): lambda cr: f"You approved <b>{cr.name}</b>.",
+	("Rejected", "requester"): lambda cr: f"Your request <b>{cr.name}</b> has been rejected by {cr.rejected_by}.",
+	("Rejected", "actor"): lambda cr: f"You rejected <b>{cr.name}</b>.",
+}
+
+
+def _send_decision_email(cr, recipient_user, decision, audience):
+	try:
+		recipient = frappe.db.get_value("User", recipient_user, "email") or recipient_user
+		message = _change_request_email_body(
+			cr,
+			heading=f"Change Management Request {decision}",
+			intro_html=_DECISION_INTROS[(decision, audience)](cr),
+		)
+		frappe.sendmail(
+			recipients=[recipient],
+			sender=_default_outgoing_email(),
+			subject=f"Change Management Request {decision}: {cr.title or cr.name}",
+			message=message,
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(title=f"Change Management Request: {audience} {decision.lower()} email failed")
+
+
+def notify_approval(cr):
+	_send_decision_email(cr, cr.requested_by, "Approved", "requester")
+	if cr.approved_by and cr.approved_by != cr.requested_by:
+		_send_decision_email(cr, cr.approved_by, "Approved", "actor")
+
+
+def notify_rejection(cr):
+	_send_decision_email(cr, cr.requested_by, "Rejected", "requester")
+	if cr.rejected_by and cr.rejected_by != cr.requested_by:
+		_send_decision_email(cr, cr.rejected_by, "Rejected", "actor")
 
 
 # ============================================================

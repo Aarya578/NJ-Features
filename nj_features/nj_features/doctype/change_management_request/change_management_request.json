@@ -32,6 +32,8 @@
   "approved_by",
   "approved_on",
   "rejection_reason",
+  "rejected_by",
+  "rejected_on",
   "section_break_detail",
   "change_detail",
   "pending_payload"
@@ -200,6 +202,19 @@
    "fieldname": "rejection_reason",
    "fieldtype": "Small Text",
    "label": "Rejection Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejected_by",
+   "fieldtype": "Link",
+   "label": "Rejected By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejected_on",
+   "fieldtype": "Datetime",
+   "label": "Rejected On",
    "read_only": 1
   },
   {

@@ -9,6 +9,7 @@
   "department",
   "plan_date",
   "lines",
+  "part_allocation_details",
   "missing_serial_nos",
   "missing_sales_order",
   "amended_from"
@@ -43,6 +44,13 @@
    "options": "Final Production Planning Data"
   },
   {
+   "fieldname": "part_allocation_details",
+   "fieldtype": "Table",
+   "label": "Part Allocation Details",
+   "options": "NJ Production Planning Part Allocation Detail",
+   "read_only": 1
+  },
+  {
    "fieldname": "missing_serial_nos",
    "fieldtype": "Table",
    "label": "Missing Serial Nos",
@@ -57,7 +65,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-26 15:28:54.143615",
+ "modified": "2026-09-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Production Planning",

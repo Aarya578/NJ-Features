@@ -680,7 +680,7 @@ def get_all_emp_warehouse(user):
         
     except Exception as e:
         return {'error in emp': str(e)}
-    
+
 def get_child_warehouses(parent_warehouse):
     all_emp_ware = []  
     child_warehouse_with_qty_query = """SELECT w.name, w.is_group,
@@ -834,14 +834,25 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         error_messages.append(f"Serial No <b>{serial_no}</b> does not exist.")
         return False
 
-    production_plan_result = validate_serial_no_in_latest_nj_production_plan(
-        serial_no,
-        serial_doc,
-        s_department,
-        error_messages,
-        doc,
-        row
+    current_doctype = (
+        doc.get("doctype")
+        if isinstance(doc, dict)
+        else getattr(doc, "doctype", None)
     )
+
+    # Rack Pick has its own production-plan priority validation. Skip only the
+    # shared NJ Production Plan validation here; all validations below continue.
+    if current_doctype == "Rack Pick":
+        production_plan_result = True
+    else:
+        production_plan_result = validate_serial_no_in_latest_nj_production_plan(
+            serial_no,
+            serial_doc,
+            s_department,
+            error_messages,
+            doc,
+            row
+        )
 
     print(
         "PRODUCTION PLAN VALIDATION RESULT:",
@@ -878,7 +889,6 @@ def validate_serial_no_and_department(row, doc, error_messages, model_mismatch_m
         print(">>> STOPPED AT GEN-WISE VALIDATION <<<")
         return False
 
-    current_doctype = doc.get("doctype") if isinstance(doc, dict) else doc.doctype
     if (
         current_doctype != "Stock Movement"
         and s_warehouse
@@ -1606,6 +1616,17 @@ def validate_serial_no_in_latest_nj_production_plan(
     if not int(dept_restriction or 0):
         return True
 
+    source_warehouse = transfer_row.get("s_warehouse") if transfer_row else None
+    source_warehouse_type = (
+        frappe.db.get_value("Warehouse", source_warehouse, "warehouse_type")
+        if source_warehouse
+        else None
+    )
+    if not source_warehouse_type or source_warehouse_type in (
+        "Employee Personal Warehouse",
+        "Department Asset Warehouse",
+    ):
+        return True
     skipping_departments = get_nj_settings_comma_separated_values("skipping_department_for_rank_validation")
     if s_department in skipping_departments:
         return True
@@ -1614,6 +1635,21 @@ def validate_serial_no_in_latest_nj_production_plan(
 
     if not stock_movement_item_groups or serial_item_group not in stock_movement_item_groups:
         return True
+
+    target_warehouse = transfer_row.get("t_warehouse") if transfer_row else None
+    target_warehouse_type = (
+        frappe.db.get_value("Warehouse", target_warehouse, "warehouse_type")
+        if target_warehouse
+        else None
+    )
+
+    # Stock leaving an Operation Warehouse must still pass all NJ Production
+    # Plan presence/missing-serial checks. Only Priority Rank and Part Allocation
+    # rank validation is skipped for the supported target warehouse types.
+    skip_rank_validation = (
+        source_warehouse_type == "Operation Warehouse"
+        and target_warehouse_type in ("Rack", "Transit", "Operation Warehouse")
+    )
 
 
     nj_production_name = _get_latest_nj_production_plan_name()
@@ -1637,6 +1673,9 @@ def validate_serial_no_in_latest_nj_production_plan(
     )
 
     if production_plan_row:
+        if skip_rank_validation:
+            return True
+
         return _validate_production_plan_rank_for_transfer(
             serial_no=serial_no,
             production_plan_name=nj_production_name,
@@ -1728,7 +1767,7 @@ def _validate_production_plan_rank_for_transfer(
 
     source_warehouse_type = frappe.db.get_value("Warehouse", source_warehouse, "warehouse_type")
     target_warehouse_type = frappe.db.get_value("Warehouse", target_warehouse, "warehouse_type")
-    allowed_warehouse_types = {"Rack", "Operation Warehouse"}
+    allowed_warehouse_types = {"Rack", "Transit", "Operation Warehouse"}
 
     if (
         source_warehouse_type not in allowed_warehouse_types
@@ -1747,7 +1786,7 @@ def _validate_production_plan_rank_for_transfer(
         "core_item_groups": tuple(core_item_groups),
     }
 
-    if source_warehouse_type == "Rack":
+    if source_warehouse_type in ("Rack", "Transit"):
         rank_scope = "Department"
         current_department = production_plan_row.get("current_department")
         if not current_department:
@@ -1759,7 +1798,7 @@ def _validate_production_plan_rank_for_transfer(
 
         scope_condition = """
             AND FPPD.current_department = %(current_department)s
-            AND WH.warehouse_type = 'Rack'
+            AND WH.warehouse_type IN ('Rack', 'Transit')
         """
         query_filters["current_department"] = current_department
         scope_label = current_department

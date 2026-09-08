@@ -222,6 +222,10 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
         ],
 
+        "15 0 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
+        ],
+
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync",
             # nj_features.nj_features.api.shopify_inventory.create_shopify_inventory_sync

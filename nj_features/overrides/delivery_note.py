@@ -37,14 +37,16 @@ logger = frappe.logger("deliverynotetimelog", allow_site=1, file_count=1)
 
 
 def update_sales_order_delivery_dates(sales_orders, delivery_date):
-    """Update SO dates after the Return DN submit transaction has committed."""
+
     for sales_order in set(sales_orders or []):
         if sales_order:
             frappe.db.set_value(
                 "Sales Order",
                 sales_order,
-                "delivery_date",
-                delivery_date,
+                {
+                    "delivery_date": delivery_date,
+                    "committed_delivery_date": delivery_date,
+                },
                 update_modified=False,
             )
 
@@ -382,8 +384,8 @@ class CustomDeliveryNote(DeliveryNote):
                 with log_time("approve_unchecking_for_cod_orders", self.name):
                     self.approve_unchecking_for_cod_orders()
 
-                # with log_time("return_dn_validation", self.name):
-                #     self.return_dn_validation()
+                with log_time("return_dn_validation", self.name):
+                    self.return_dn_validation()
 
                 with log_time("couse_of_return_validation", self.name):
                     self.couse_of_return_validation()

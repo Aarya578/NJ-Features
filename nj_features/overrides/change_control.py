@@ -12,6 +12,8 @@ Change Management Settings, no code change required (per decision #1 / the
 import json
 
 import frappe
+from frappe.desk.form.assign_to import add as add_assignment
+from frappe.utils import get_url_to_form
 
 # Doctypes that must never be captured, even if someone fat-fingers them into
 # Change Management Settings -- capturing changes to the Change Management
@@ -79,6 +81,22 @@ def has_eligible_approver():
 	}))
 
 
+def has_settings_permission(doc=None, ptype=None, user=None, **kwargs):
+	"""has_permission hook for Change Management Settings (see hooks.py).
+	Grants full access to anyone whose Role Profile has the Change
+	Management Approver flag, on top of the base System Manager permission
+	already in the doctype's permission rows. Returns None (not False) when
+	the flag is absent so this never overrides/revokes the System Manager
+	grant -- only ever adds access, never removes it. **kwargs is a
+	defensive catch-all for whatever extra keyword args the permission
+	engine passes."""
+	user = user or frappe.session.user
+	role_profile = frappe.db.get_value("User", user, "role_profile_name")
+	if is_change_management_approver(role_profile):
+		return True
+	return None
+
+
 def _resolve_department(doc):
 	if doc.meta.has_field("department") and doc.get("department"):
 		return doc.get("department")
@@ -143,7 +161,7 @@ def capture_change(doc, method=None):
 
 	if doc.is_new():
 		# Open question #2 resolved as "new records need approval too".
-		_capture_new_record(doc, department, purpose, impact)
+		_capture_new_record(doc, department, purpose, impact, controlled_row)
 		frappe.throw(
 			f"This {doc.doctype} requires approval before it can be created. "
 			"A Change Management Request has been raised for review and "
@@ -157,7 +175,7 @@ def capture_change(doc, method=None):
 			return
 		_create_change_request(
 			doc, detail_rows, is_new_record=False, department=department,
-			purpose=purpose, impact=impact,
+			purpose=purpose, impact=impact, controlled_row=controlled_row,
 		)
 		_revert_to_old_values(doc, old_doc)
 		frappe.msgprint(
@@ -168,7 +186,7 @@ def capture_change(doc, method=None):
 		)
 
 
-def _capture_new_record(doc, department, purpose, impact):
+def _capture_new_record(doc, department, purpose, impact, controlled_row):
 	detail_rows = _build_new_record_details(doc)
 	cr = frappe.new_doc("Change Management Request")
 	cr.reference_doctype = doc.doctype
@@ -180,15 +198,17 @@ def _capture_new_record(doc, department, purpose, impact):
 	cr.status = "Pending Approval"
 	cr.requested_by = frappe.session.user
 	cr.department = department
+	cr.assigned_to = controlled_row.assigned_to
 	cr.pending_payload = frappe.as_json(doc.as_dict())
 	for row in detail_rows:
 		cr.append("change_detail", row)
 	cr.insert(ignore_permissions=True)
 	frappe.db.commit()
+	_notify_on_creation(cr)
 	return cr
 
 
-def _create_change_request(doc, detail_rows, is_new_record, department, purpose, impact):
+def _create_change_request(doc, detail_rows, is_new_record, department, purpose, impact, controlled_row):
 	cr = frappe.new_doc("Change Management Request")
 	cr.reference_doctype = doc.doctype
 	cr.reference_name = doc.name
@@ -199,11 +219,238 @@ def _create_change_request(doc, detail_rows, is_new_record, department, purpose,
 	cr.status = "Pending Approval"
 	cr.requested_by = frappe.session.user
 	cr.department = department
+	cr.assigned_to = controlled_row.assigned_to
 	for row in detail_rows:
 		cr.append("change_detail", row)
 	cr.insert(ignore_permissions=True)
 	frappe.db.commit()
+	_notify_on_creation(cr)
 	return cr
+
+
+# ============================================================
+# NOTIFY -- requester confirmation + auto-assignee alert
+# ============================================================
+
+_PRIORITY_COLORS = {
+	"Low": "#2e844a",
+	"Medium": "#e9a23b",
+	"High": "#d1403f",
+}
+_PRIORITY_DEFAULT_COLOR = "#6c7680"
+
+
+def _notify_on_creation(cr):
+	"""Fires once, right after a Change Management Request is first created.
+	Each side effect is isolated in its own try/except -- a mail-server
+	hiccup here must never surface as an unhandled exception, since
+	_capture_new_record's caller throws deliberately right after this runs
+	to block the original save, and that throw must not be replaced by an
+	unrelated email failure."""
+	try:
+		_notify_requester(cr)
+	except Exception:
+		frappe.log_error(title="Change Management Request: requester email failed")
+
+	if not cr.assigned_to:
+		return
+
+	try:
+		add_assignment({
+			"doctype": "Change Management Request",
+			"name": cr.name,
+			"assign_to": [cr.assigned_to],
+			"description": cr.change_summary or cr.title,
+		})
+	except Exception:
+		frappe.log_error(title="Change Management Request: auto-assignment failed")
+
+	try:
+		_notify_assignee(cr)
+	except Exception:
+		frappe.log_error(title="Change Management Request: assignee email failed")
+
+
+def _default_outgoing_email():
+	default_account = frappe.get_all(
+		"Email Account", filters={"default_outgoing": 1}, fields=["email_id"], limit=1,
+	)
+	return default_account[0].email_id if default_account else None
+
+
+def _requester_employee_id(cr):
+	return frappe.db.get_value("Employee", {"user_id": cr.requested_by}, "emp_id")
+
+
+def _priority_badge(priority):
+	if not priority:
+		return "—"
+	color = _PRIORITY_COLORS.get(priority, _PRIORITY_DEFAULT_COLOR)
+	return (
+		f'<span style="background-color:{color}; color:#ffffff; padding:2px 10px; '
+		f'border-radius:12px; font-size:12px; font-weight:600;">{priority}</span>'
+	)
+
+
+def _email_row(label, value):
+	return f"""
+		<tr style="border-top:1px solid #e9ecef;">
+			<td style="padding:8px 12px 8px 0; color:#6c7680; white-space:nowrap; vertical-align:top;">{label}</td>
+			<td style="padding:8px 0; color:#1f272e;">{value}</td>
+		</tr>
+	"""
+
+
+def _change_detail_rows_html(cr):
+	"""Field-by-field diff table for the CMR's change_detail child table.
+	Values come straight from user-editable doctype fields (not app-controlled
+	text like Purpose/Impact above), so every cell is escaped before going
+	into the HTML email -- same frappe.utils.escape_html(...) pattern already
+	used server-side in this app (see stock_movement.py)."""
+	if not cr.change_detail:
+		return ""
+
+	esc = frappe.utils.escape_html
+	body_rows = "".join([
+		f"""
+			<tr style="border-top:1px solid #e9ecef;">
+				<td style="padding:6px 10px 6px 0; color:#1f272e;">{esc(row.field_label or row.fieldname or "")}</td>
+				<td style="padding:6px 10px; color:#6c7680;">{esc(row.parent_row or "—")}</td>
+				<td style="padding:6px 10px; color:#6c7680;">{esc(row.old_value or "")}</td>
+				<td style="padding:6px 0; color:#1f272e;">{esc(row.new_value or "")}</td>
+			</tr>
+		"""
+		for row in cr.change_detail
+	])
+
+	return f"""
+		<p style="color:#1f272e; font-size:14px; font-weight:600; margin:20px 0 8px;">Change Detail</p>
+		<table style="width:100%; border-collapse:collapse; font-size:12px;">
+			<tr>
+				<th style="text-align:left; padding:6px 10px 6px 0; color:#6c7680; border-bottom:1px solid #d1d8dd;">Field</th>
+				<th style="text-align:left; padding:6px 10px; color:#6c7680; border-bottom:1px solid #d1d8dd;">Row</th>
+				<th style="text-align:left; padding:6px 10px; color:#6c7680; border-bottom:1px solid #d1d8dd;">Old Value</th>
+				<th style="text-align:left; padding:6px 0; color:#6c7680; border-bottom:1px solid #d1d8dd;">New Value</th>
+			</tr>
+			{body_rows}
+		</table>
+	"""
+
+
+def _change_request_email_body(cr, heading, intro_html):
+	rows = "".join([
+		_email_row("Reference", f"{cr.reference_doctype} {cr.reference_name or '(new record)'}"),
+		_email_row("Summary", cr.change_summary or ""),
+		_email_row("Purpose", cr.purpose or ""),
+		_email_row("Impact", cr.impact or ""),
+		_email_row("Priority", _priority_badge(cr.priority)),
+		_email_row("Department", cr.department or ""),
+		_email_row("Start Date", frappe.utils.format_date(cr.start_date) if cr.start_date else ""),
+		_email_row("End Date", frappe.utils.format_date(cr.end_date) if cr.end_date else ""),
+		_email_row("Requested By", cr.requested_by),
+		_email_row("Employee ID", _requester_employee_id(cr) or "—"),
+		_email_row("Status", cr.status),
+		_email_row("Approved By", cr.approved_by) if cr.approved_by else "",
+		_email_row("Approved On", frappe.utils.format_datetime(cr.approved_on)) if cr.approved_on else "",
+		_email_row("Rejected By", cr.rejected_by) if cr.rejected_by else "",
+		_email_row("Rejected On", frappe.utils.format_datetime(cr.rejected_on)) if cr.rejected_on else "",
+		_email_row("Rejection Reason", cr.rejection_reason) if cr.rejection_reason else "",
+	])
+
+	link = get_url_to_form("Change Management Request", cr.name)
+
+	return f"""
+		<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; max-width:600px; margin:0 auto;">
+			<div style="background-color:#2490ef; padding:20px 24px; border-radius:6px 6px 0 0;">
+				<span style="color:#ffffff; font-size:18px; font-weight:600;">{heading}</span>
+			</div>
+			<div style="background-color:#ffffff; border:1px solid #d1d8dd; border-top:none; padding:24px; border-radius:0 0 6px 6px;">
+				<p style="color:#1f272e; font-size:14px; margin:0 0 16px;">
+					{intro_html}
+				</p>
+				<table style="width:100%; border-collapse:collapse; font-size:13px;">
+					{rows}
+				</table>
+				{_change_detail_rows_html(cr)}
+				<div style="margin-top:24px; text-align:center;">
+					<a href="{link}" style="background-color:#2490ef; color:#ffffff; text-decoration:none; padding:10px 24px; border-radius:4px; font-size:14px; font-weight:600; display:inline-block;">
+						Open {cr.name}
+					</a>
+				</div>
+			</div>
+		</div>
+	"""
+
+
+def _notify_requester(cr):
+	recipient = frappe.db.get_value("User", cr.requested_by, "email") or cr.requested_by
+	message = _change_request_email_body(
+		cr,
+		heading="Change Management Request Submitted",
+		intro_html=f"Your request <b>{cr.name}</b> has been submitted and is pending approval.",
+	)
+	frappe.sendmail(
+		recipients=[recipient],
+		sender=_default_outgoing_email(),
+		subject=f"Change Management Request Submitted: {cr.title or cr.name}",
+		message=message,
+		now=True,
+	)
+
+
+def _notify_assignee(cr):
+	recipient = frappe.db.get_value("User", cr.assigned_to, "email") or cr.assigned_to
+	message = _change_request_email_body(
+		cr,
+		heading="Change Management Request Assigned",
+		intro_html=f"You have been assigned <b>{cr.name}</b> for review.",
+	)
+	frappe.sendmail(
+		recipients=[recipient],
+		sender=_default_outgoing_email(),
+		subject=f"Change Management Request Assigned: {cr.title or cr.name}",
+		message=message,
+		now=True,
+	)
+
+
+_DECISION_INTROS = {
+	("Approved", "requester"): lambda cr: f"Your request <b>{cr.name}</b> has been approved by {cr.approved_by}.",
+	("Approved", "actor"): lambda cr: f"You approved <b>{cr.name}</b>.",
+	("Rejected", "requester"): lambda cr: f"Your request <b>{cr.name}</b> has been rejected by {cr.rejected_by}.",
+	("Rejected", "actor"): lambda cr: f"You rejected <b>{cr.name}</b>.",
+}
+
+
+def _send_decision_email(cr, recipient_user, decision, audience):
+	try:
+		recipient = frappe.db.get_value("User", recipient_user, "email") or recipient_user
+		message = _change_request_email_body(
+			cr,
+			heading=f"Change Management Request {decision}",
+			intro_html=_DECISION_INTROS[(decision, audience)](cr),
+		)
+		frappe.sendmail(
+			recipients=[recipient],
+			sender=_default_outgoing_email(),
+			subject=f"Change Management Request {decision}: {cr.title or cr.name}",
+			message=message,
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(title=f"Change Management Request: {audience} {decision.lower()} email failed")
+
+
+def notify_approval(cr):
+	_send_decision_email(cr, cr.requested_by, "Approved", "requester")
+	if cr.approved_by and cr.approved_by != cr.requested_by:
+		_send_decision_email(cr, cr.approved_by, "Approved", "actor")
+
+
+def notify_rejection(cr):
+	_send_decision_email(cr, cr.requested_by, "Rejected", "requester")
+	if cr.rejected_by and cr.rejected_by != cr.requested_by:
+		_send_decision_email(cr, cr.rejected_by, "Rejected", "actor")
 
 
 # ============================================================

@@ -207,6 +207,38 @@ class CustomDeliveryNote(DeliveryNote):
                 )
 
             # ------------------------------------------------------------------
+            # Early dispatch email for Pre-Order
+            # ------------------------------------------------------------------
+            if against_sales_order:
+                sales_order = frappe.db.get_value(
+                    "Sales Order",
+                    against_sales_order,
+                    ["pre_order", "committed_delivery_date"],
+                    as_dict=True,
+                )
+
+                if (
+                    not self.is_return
+                    sales_order
+                    and sales_order.pre_order
+                    and sales_order.committed_delivery_date
+                    and getdate(self.posting_date) < getdate(sales_order.committed_delivery_date)
+                ):
+
+                    if not frappe.db.exists(
+                        "Communication",
+                        {
+                            "reference_doctype": "Delivery Note",
+                            "reference_name": self.name,
+                            "subject": "Good news! Your NewJaisa order is being dispatched early 🎉"
+                        }
+                    ):
+                        frappe.get_doc(
+                            "Notification",
+                            "Customer Early Order Confirmation - Sales Order"
+                        ).send(self)
+
+            # ------------------------------------------------------------------
             # Basic validations
             # ------------------------------------------------------------------
             with log_time("tracking_id_validation", self.name):
@@ -696,7 +728,12 @@ class CustomDeliveryNote(DeliveryNote):
             return
 
         against_sales_order = frappe.db.get_value(
-            "Delivery Note Item", {"parent": self.name}, "against_sales_order"
+            "Delivery Note Item",
+            {
+                "parent": self.name,
+                "against_sales_order": ["is", "set"]
+            },
+            "against_sales_order",
         )
         if not against_sales_order:
             frappe.throw("No sales order found for this Delivery Note.")
@@ -2427,6 +2464,15 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
         courier_company = getattr(courier_doc, "courier_name", courier_service)
     except:
         courier_company = courier_service
+
+    if tracking_link:
+        frappe.db.set_value(
+            "Delivery Note",
+            dn_name,
+            "tracking_link",
+            tracking_link,
+            update_modified=False
+        )
 
     # ===========================================================
     # CASE 1: Already fulfilled → Update tracking only

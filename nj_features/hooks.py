@@ -35,6 +35,7 @@ doctype_js = {
     "Request for Quotation": "public/js/request_for_quotation.js",
     "Purchase Invoice": "public/js/purchase_invoice_override.js",
     "Purchase Receipt": "public/js/purchase_receipt.js",
+    "Item Attribute": "public/js/item_attribute.js",
 }
 
 doctype_list_js = {
@@ -70,6 +71,10 @@ override_doctype_class = {
 # ========== Doc Events ==========
 
 doc_events = {
+    "*": {
+        "before_save": "nj_features.overrides.change_control.capture_change",
+        "before_update_after_submit": "nj_features.overrides.change_control.capture_change",
+    },
     # "Item": {
     #     "after_insert": "nj_features.overrides.product.upload_erpnext_item",
     #     "on_update": "nj_features.overrides.product.upload_erpnext_item",
@@ -153,6 +158,18 @@ doc_events = {
     "Sales Order": {
         "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
     },
+    "Item Attribute": {
+        "before_save": [
+            "nj_features.overrides.item_attribute.update_item_attribute_price_info",
+            "nj_features.overrides.item_attribute.set_item_attribute_validity",
+        ]
+    },
+}
+
+# ========== Permissions ==========
+
+has_permission = {
+    "Change Management Settings": "nj_features.overrides.change_control.has_settings_permission",
 }
 
 # ========== Override Whitelisted Methods ==========
@@ -223,6 +240,10 @@ scheduler_events = {
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_unified_production_plan",
         ],
 
+        "15 0 * * *": [
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.run_latest_production_plan_part_allocation",
+        ],
+
         "20,40 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.start_shopify_inventory_sync",
             # nj_features.nj_features.api.shopify_inventory.create_shopify_inventory_sync
@@ -267,6 +288,10 @@ scheduler_events = {
             "nj_features.nj_features.doctype.auto_rfq_creation.auto_rfq_creation.auto_rfq_creation",
 
         ],
+        "0 21 * * *": [
+            "nj_features.overrides.item_attribute_scheduler.check_item_attribute_price_validity",
+        ],
+
     }
 }
 # ========== Fixtures ==========

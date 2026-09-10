@@ -16,6 +16,7 @@ from frappe.model.document import Document
 from datetime import timedelta
 from collections import defaultdict, Counter
 from itertools import product
+from .part_allocation import PartAllocationRun
 
 # -------------------------
 # Logger setup
@@ -377,6 +378,7 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
 # =========================
 _PART_VIRTUAL_STOCK: Dict[str, float] = {}       # item_code -> physical stock in Stores - NJ (virtual snapshot)
 _PART_PLANNED_ALLOCATION: Dict[str, float] = {}  # item_code -> qty already virtually allocated in this run
+_PART_ENGINE = None
 _DEPT_ALLOCATE_PARTS: Dict[str, bool] = {}       # department_name -> allocate_parts flag
 _SERIAL_TO_MR_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
 _SERIAL_TO_BAG_ITEMS: Dict[str, List[Dict]] = defaultdict(list)
@@ -677,15 +679,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
     sequences = sorted(depts_by_seq.keys())
     max_seq = max(sequences)
 
-    global _DEPT_ALLOCATE_PARTS, _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
-    _DEPT_ALLOCATE_PARTS = {d["name"]: bool(d.get("allocate_parts")) for d in depts}
-
-    if any(_DEPT_ALLOCATE_PARTS.values()):
-        _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION = _build_initial_part_stock()
-    else:
-        _PART_VIRTUAL_STOCK = {}
-        _PART_PLANNED_ALLOCATION = {}
-
     cum_sla = _build_cumulative_sla_multi(depts_by_seq, sequences)
 
     forward_grain_per_seq: Dict[int, str] = {}
@@ -757,59 +750,6 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             inward_serials_per_dept[dept_name] = rows
             all_serial_ids.extend([r["name"] for r in rows])
             logger.debug(f"has taken {len(rows)} serial no from the department {dept_name}")
-
-    # Batch fetch all MR items for all serials to avoid N+1 queries
-    _SERIAL_TO_MR_ITEMS.clear()
-    if all_serial_ids:
-        mr_rows = frappe.db.sql(
-            """
-            SELECT
-                MRI.item_code,
-                MRI.item_group,
-                MRI.creation,
-                MRI.parent AS material_request,
-                MRI.serial_no,
-                MRI.stock_qty,
-                MRI.qty AS mr_qty
-            FROM `tabMaterial Request Item` MRI
-            INNER JOIN `tabMaterial Request` MR
-                ON MR.name = MRI.parent
-                AND MR.status = 'Pending'
-                AND IFNULL(MR.post_order_status, '') != 'Completed'
-                AND MR.docstatus = 1
-            WHERE MRI.serial_no IN %(serial_list)s
-                AND IFNULL(MRI.post_order_status, '') IN ('Not Completed', '')
-                AND MRI.docstatus = 1
-                AND MRI.item_group IS NOT NULL
-            ORDER BY MRI.modified DESC
-            """,
-            {"serial_list": tuple(all_serial_ids)},
-            as_dict=True,
-        )
-        for row in mr_rows:
-            _SERIAL_TO_MR_ITEMS[row["serial_no"]].append(row)
-
-    # Batch fetch all Bag List items for all serials to avoid N+1 queries
-    _SERIAL_TO_BAG_ITEMS.clear()
-    if all_serial_ids:
-        bag_rows = frappe.db.sql(
-            """
-            SELECT
-                bl.parent AS serial_no,
-                bl.item,
-                bl.item_group,
-                bl.serial_no AS part_serial_no,
-                bl.quantity,
-                bl.is_available
-            FROM `tabBag List` bl
-            WHERE bl.parent IN %(serial_list)s
-              AND bl.is_available = 1
-            """,
-            {"serial_list": tuple(all_serial_ids)},
-            as_dict=True,
-        )
-        for row in bag_rows:
-            _SERIAL_TO_BAG_ITEMS[row["serial_no"]].append(row)
 
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
@@ -943,9 +883,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         def _try_assign_sn(s, dept_name, remarks_text):
             nonlocal needed_qty
-            part_allocation = 1
-            if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                part_allocation = _maybe_allocate_parts_for_serial(s["serial_no"], dept_name)
+            # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+            part_allocation = False
             success = _append_plan_row(
                 plan_doc,
                 serial_no=s["serial_no"],
@@ -1080,6 +1019,9 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     remarks_text = f"Allocated to SO {so_name} (C4: Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}' in {dept_name}) | to_make: {target_ic}"
                     _try_assign_sn(s, dept_name, remarks_text)
 
+            if needed_qty <= 0:
+                break
+
         # Track unallocated / shortage quantity in Missing Sales Order child table
         if needed_qty > 0:
             allocated_qty = original_needed_qty - needed_qty
@@ -1151,7 +1093,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                     priority_rank=priority_per_dept[dept_name],
                     serial_age_days=alloc.get("age_days"),
                     remarks=remarks_text,
-                    part_allocation=alloc.get("part_allocation", 1),
+                    part_allocation=alloc.get("part_allocation", False),
                 )
                 priority_per_dept[dept_name] += 1
 
@@ -1192,20 +1134,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 else:
                     target_item_code = fallback_pb or ic
 
-                    part_allocation = 1
-                    if _DEPT_ALLOCATE_PARTS.get(dept_name):
-                        part_allocation = _maybe_allocate_parts_for_serial(sn, dept_name)
-                        if not part_allocation:
-                            _update_serial_to_make(sn, target_item_code)
-                            reason_text = "Part allocation failed (Forecast)"
-                            _update_serial_remarks(sn, f"Not Allocated: {reason_text}")
-                            plan_doc.append("missing_serial_nos", {
-                                "serial_no": sn,
-                                "current_department": dept_name,
-                                "current_warehouse": info['warehouse'],
-                                "reason": reason_text
-                            })
-                            continue
+                    # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+                    part_allocation = False
 
                     fb_ic = target_item_code
                     k = None
@@ -1350,7 +1280,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                         priority_rank=priority_per_dept[dept_name],
                         serial_age_days=alloc.get("dwell_days"),
                         remarks=remarks_text,
-                        part_allocation=alloc.get("part_allocation", 1),
+                        part_allocation=alloc.get("part_allocation", False),
                     )
                     priority_per_dept[dept_name] += 1
 
@@ -1358,7 +1288,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
                 allocated_sns = {a["serial_no"] for a in reconfig_allocs}
                 for serial in stale_serials:
                     if serial["serial_no"] not in allocated_sns:
-                        skip_reason = "Part allocation failed (Reconfig)" if _DEPT_ALLOCATE_PARTS.get(dept_name) else "No matching reconfig target found"
+                        skip_reason = "No matching reconfig target found"
                         _update_serial_remarks(serial["serial_no"], f"Not Allocated: {skip_reason}")
                         plan_doc.append("missing_serial_nos", {
                             "serial_no": serial["serial_no"],
@@ -1391,6 +1321,8 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         logger.warning("Dispatch ETA recalculation after production plan failed: %s", eta_err)
 
     return {
+        "allocation_audit": None,
+        "audit_storage": "Deferred: run_latest_production_plan_part_allocation",
         "total_departments": 1,
         "total_rows": total_rows,
         "plans": [
@@ -2027,9 +1959,8 @@ def _match_inventory_to_order_queues_for_sequence(
             if not target_item_code:
                 target_item_code = order_ref.get("pb_code") or pb_fallback
 
-            part_allocation = 1
-            if _DEPT_ALLOCATE_PARTS.get(current_department):
-                part_allocation = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
+            # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+            part_allocation = False
 
             ref_list.pop(0)
 
@@ -2153,26 +2084,8 @@ def _allocate_forecast_to_balance_doi(
         if not target_item_code:
             target_item_code = pb_fallback
 
-        part_allocation = 1
-        if _DEPT_ALLOCATE_PARTS.get(current_department):
-            part_allocation = _maybe_allocate_parts_for_serial(chosen["serial_no"], current_department)
-            if not part_allocation:
-                _update_serial_to_make(chosen["serial_no"], target_item_code)
-
-                remaining_serials[:] = [x for x in remaining_serials if x["serial_no"] != chosen["serial_no"]]
-                if forward_grain == "config":
-                    kcfg = chosen["forward_key_config"]
-                    if kcfg in buckets:
-                        buckets[kcfg] = [x for x in buckets[kcfg] if x["serial_no"] != chosen["serial_no"]]
-                    mk = chosen["forward_key_model"]
-                    if mk in any_by_model:
-                        any_by_model[mk] = [x for x in any_by_model[mk] if x["serial_no"] != chosen["serial_no"]]
-                else:
-                    mk = chosen["forward_key_model"]
-                    if mk in buckets:
-                        buckets[mk] = [x for x in buckets[mk] if x["serial_no"] != chosen["serial_no"]]
-                logger.debug(f"Skipping serial_no: {chosen['serial_no']} - Reason: Part allocation failed for department {current_department} (Forecast)")
-                continue
+        # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+        part_allocation = False
 
         rate = max(1.0, float(sales_rate.get(target, 1.0)))
         inv_now = float(current_doi.get(target, 0.0)) * rate
@@ -2428,17 +2341,8 @@ def _allocate_reconfig_serials(
         if not target_item_code:
             continue
 
-        # Part allocation check
-        part_allocation = 1
-        if _DEPT_ALLOCATE_PARTS.get(current_department):
-            part_allocation = _maybe_allocate_parts_for_serial(serial["serial_no"], current_department)
-            if not part_allocation:
-                _update_serial_to_make(serial["serial_no"], target_item_code)
-                logger.debug(
-                    f"[RECONFIG_SKIP] serial_no={serial['serial_no']} - "
-                    f"Part allocation failed for department {current_department}"
-                )
-                continue
+        # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+        part_allocation = False
 
         # Update DOI after allocation
         rate = max(1.0, float(sales_rate.get(target_key, 1.0)))
@@ -2932,232 +2836,210 @@ def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
 # =========================
 @log_io
 def _build_initial_part_stock():
-    """
-    Build initial virtual stock for parts from all warehouses under department 'Stores - NJ',
-    excluding any parts that are already packed in an active Bag List (tabBag List).
-
-    - For serialized items: COUNT(Serial No) excluding serials in tabBag List (is_available=1)
-    - For non-serialized items: SUM(Bin.actual_qty) minus non-serialized quantities in tabBag List (is_available=1)
-    """
-    warehouses = frappe.get_all(
-        "Warehouse",
-        filters=[["department", "=", "Stores - NJ"], ["disabled", "!=", 1]],
-        pluck="name",
-    )
-
-    if not warehouses:
-        logger.warning("No warehouses found under 'Stores - NJ' department for part allocation.")
-        return {}, {}
-
-    wh_tuple = tuple(warehouses)
-
-    # 1. Serialized stock in Stores, EXCLUDING serials already in an active Bag List
-    serial_stock_rows = frappe.db.sql(
-        """
-        SELECT
-            sn.item_code,
-            COUNT(*) AS qty
-        FROM `tabSerial No` sn
-        WHERE sn.warehouse IN %(warehouses)s
-          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered','Scrapped','Inactive'))
-          AND sn.name NOT IN (
-              SELECT DISTINCT bl.serial_no
-              FROM `tabBag List` bl
-              WHERE bl.serial_no IS NOT NULL AND bl.serial_no != '' AND bl.is_available = 1
-          )
-        GROUP BY sn.item_code
-        """,
-        {"warehouses": wh_tuple},
-        as_dict=True,
-    )
-
-    serial_stock = {row["item_code"]: flt(row["qty"] or 0) for row in (serial_stock_rows or [])}
-    serialized_set = set(serial_stock.keys())
-
-    # 2. Non-serialized stock in Stores
-    bin_rows = frappe.db.sql(
-        """
-        SELECT
-            b.item_code,
-            SUM(b.actual_qty) AS total_qty
-        FROM `tabBin` b
-        INNER JOIN `tabItem` i ON i.name = b.item_code
-        WHERE b.warehouse IN %(warehouses)s
-          AND IFNULL(i.has_serial_no, 0) = 0
-        GROUP BY b.item_code
-        """,
-        {"warehouses": wh_tuple},
-        as_dict=True,
-    )
-
-    # 3. Subtract non-serialized quantities currently in active Bag Lists
-    bagged_bin_rows = frappe.db.sql(
-        """
-        SELECT
-            bl.item AS item_code,
-            SUM(IFNULL(bl.quantity, 1)) AS bagged_qty
-        FROM `tabBag List` bl
-        INNER JOIN `tabItem` i ON i.name = bl.item
-        WHERE (bl.serial_no IS NULL OR bl.serial_no = '')
-          AND bl.is_available = 1
-          AND IFNULL(i.has_serial_no, 0) = 0
-        GROUP BY bl.item
-        """,
-        as_dict=True,
-    )
-    bagged_bin_map = {r["item_code"]: flt(r["bagged_qty"] or 0) for r in (bagged_bin_rows or [])}
-
-    bin_stock = {
-        row["item_code"]: max(0.0, flt(row["total_qty"] or 0) - bagged_bin_map.get(row["item_code"], 0.0))
-        for row in (bin_rows or [])
-    }
-
-    virtual_stock: Dict[str, float] = {}
-    for ic, qty in serial_stock.items():
-        virtual_stock[ic] = qty
-
-    for ic, qty in bin_stock.items():
-        if ic in serialized_set:
-            continue
-        virtual_stock[ic] = qty
-
-    planned_alloc: Dict[str, float] = {}
-    return virtual_stock, planned_alloc
+    """Compatibility helper; main planning uses the run-owned stock snapshot."""
+    run = PartAllocationRun({"Stores - NJ": True})
+    return run.stock, run.planned
 
 
 @log_io
-def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str) -> bool:
+def _maybe_allocate_parts_for_serial(serial_no: str, current_department: str, planning_reason=None, target_item_code=None) -> bool:
+    if _PART_ENGINE is None:
+        raise RuntimeError("Part allocation must be initialized by the production planning run")
+    return _PART_ENGINE.allocate(serial_no, current_department, planning_reason, target_item_code)
+
+
+@frappe.whitelist()
+@log_io
+def run_latest_production_plan_part_allocation() -> Dict:
     """
-    Two-phase reservation:
-    - Phase 1: check all MR lines are feasible WITHOUT changing globals.
-    - Phase 2: only if feasible, commit reservation into _PART_PLANNED_ALLOCATION.
+    Recalculate Part Allocation checkboxes for the latest NJ Production Planning.
+
+    This runs after the production plan is already created. It only touches child
+    rows whose current Department has Allocate Parts enabled, and it processes
+    them by numeric Priority Rank so the virtual deductions follow the same
+    order visible in the plan.
     """
-    logger.debug(f"\n\n\n[ALLOCATE_STARTED] serial_no={serial_no}, dept={current_department}")
-
-    if not _DEPT_ALLOCATE_PARTS.get(current_department):
-        logger.debug(
-            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
-            f"result=ALLOCATED (bypassed, allocate_parts disabled for this dept)"
-        )
-        return True
-
-    mr_items = _SERIAL_TO_MR_ITEMS.get(serial_no, [])
-    bag_items = _SERIAL_TO_BAG_ITEMS.get(serial_no, [])
-
-    mr_names = sorted({row["material_request"] for row in mr_items}) if mr_items else []
-    logger.debug(
-        f"\n[MR_INFO] serial_no={serial_no}, dept={current_department}, "
-        f"mr_count={len(mr_items)}, mr_list={mr_names}, bag_count={len(bag_items)}"
+    latest_plan = frappe.db.get_value(
+        "NJ Production Planning",
+        filters={},
+        fieldname="name",
+        order_by="creation desc",
     )
+    print("[PART_ALLOC_SCHEDULE] Started latest production plan part allocation")
+    if not latest_plan:
+        print("[PART_ALLOC_SCHEDULE] No NJ Production Planning record found")
+        return {"status": "No NJ Production Planning found"}
+    print(f"[PART_ALLOC_SCHEDULE] Latest NJ Production Planning: {latest_plan}")
 
-    if not mr_items:
-        logger.debug(
-            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
-            f"result=ALLOCATED, reason='no pending Material Requests for this serial'"
+    allocate_parts_departments = _get_allocate_parts_department_names_from_settings()
+    allocate_parts_department_keys = tuple(
+        sorted({_compact_pp_name(dept) for dept in allocate_parts_departments if dept})
+    )
+    print(f"[PART_ALLOC_SCHEDULE] Allocate Parts departments from NJ Settings: {allocate_parts_departments}")
+    if not allocate_parts_department_keys:
+        print("[PART_ALLOC_SCHEDULE] No allocate_parts_departments configured in NJ Settings")
+        return {"status": "No Allocate Parts departments configured", "production_plan": latest_plan}
+
+    rows = frappe.db.sql(
+        """
+        SELECT
+            pp.name AS row_name,
+            pp.serial_no,
+            pp.current_department,
+            pp.item_code,
+            pp.reason,
+            pp.priority_rank,
+            CAST(IFNULL(NULLIF(pp.priority_rank, ''), '0') AS UNSIGNED) AS priority_rank_no
+        FROM `tabFinal Production Planning Data` pp
+        WHERE pp.parent = %(parent)s
+          AND LOWER(REPLACE(pp.current_department, ' ', '')) IN %(department_keys)s
+          AND IFNULL(pp.serial_no, '') != ''
+        ORDER BY priority_rank_no ASC, pp.idx ASC
+        """,
+        {"parent": latest_plan, "department_keys": allocate_parts_department_keys},
+        as_dict=True,
+    )
+    print(f"[PART_ALLOC_SCHEDULE] Allocate Parts child rows fetched: {len(rows)}")
+    if not rows:
+        print(f"[PART_ALLOC_SCHEDULE] No child rows found for Allocate Parts departments in plan {latest_plan}")
+        return {"status": "No Allocate Parts rows found", "production_plan": latest_plan}
+
+    department_flags = {
+        row.name: _is_allocate_parts_department(row.name, allocate_parts_departments)
+        for row in frappe.get_all("Department", fields=["name"])
+    }
+    enabled_departments = sorted([dept for dept, enabled in department_flags.items() if enabled])
+    print(f"[PART_ALLOC_SCHEDULE] Allocate Parts matched departments: {enabled_departments}")
+    run = PartAllocationRun(department_flags)
+    run.load_inputs([row.serial_no for row in rows])
+    print(f"[PART_ALLOC_SCHEDULE] Loaded serial input data for {len(run.serials)} serials")
+    print(f"[PART_ALLOC_SCHEDULE] Initial Stores stock item count: {len(run.stock)}")
+
+    for row in rows:
+        if row.serial_no in run.serials:
+            run.serials[row.serial_no]["planning_department"] = row.current_department
+
+    checked = 0
+    allocated = 0
+    failed = 0
+    for row in rows:
+        checked += 1
+        target_item_code = row.item_code or (run.serials.get(row.serial_no) or {}).get("item_code")
+        print(
+            "[PART_ALLOC_SCHEDULE] Checking "
+            f"priority={row.priority_rank} row={row.row_name} serial={row.serial_no} "
+            f"department={row.current_department} target={target_item_code} reason={row.reason}"
         )
-        return True
-
-    global _PART_VIRTUAL_STOCK, _PART_PLANNED_ALLOCATION
-
-    to_reserve = defaultdict(float)
-    unallocated_lines = []
-    involved_item_codes = set()
-
-    for row in mr_items:
-        item_code = row["item_code"]
-        item_group = row.get("item_group")
-        involved_item_codes.add(item_code)
-
-        mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
-        if mr_qty <= 0:
-            logger.debug(f"\n[MR_SKIP_ZERO_QTY] serial_no={serial_no}, item_code={item_code}, mr_qty={mr_qty}")
-            continue
-
-        # Check if this part is ALREADY fulfilled in this laptop's own Bag List
-        bagged_qty_for_serial = sum(
-            flt(b.get("quantity") or 1)
-            for b in bag_items
-            if b.get("item") == item_code or (item_group and b.get("item_group") == item_group)
+        success = run.allocate(
+            row.serial_no,
+            row.current_department,
+            row.reason or "Part Allocation",
+            target_item_code,
         )
-
-        needed_from_stores = max(0.0, mr_qty - bagged_qty_for_serial)
-        if needed_from_stores <= 0:
-            logger.debug(
-                f"\n[LINE_CHECK_BAG_FULFILLED] serial_no={serial_no}, MR={row['material_request']}, "
-                f"item_code={item_code}, required={mr_qty}, already_in_bag={bagged_qty_for_serial}"
-            )
-            continue
-
-        already_planned = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0))
-        virtual_stock = flt(_PART_VIRTUAL_STOCK.get(item_code, 0.0))
-
-        available_before = float(virtual_stock - already_planned - to_reserve[item_code])
-
-        if available_before >= needed_from_stores:
-            to_reserve[item_code] += needed_from_stores
-            logger.debug(
-                f"\n[LINE_CHECK_OK] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
-                f"required={needed_from_stores} (after bag {bagged_qty_for_serial}), available_before={available_before}, would_reserve_total={to_reserve[item_code]}"
+        frappe.db.set_value(
+            "Final Production Planning Data",
+            row.row_name,
+            "part_allocation",
+            1 if success else 0,
+            update_modified=False,
+        )
+        if success:
+            allocated += 1
+            print(
+                "[PART_ALLOC_SCHEDULE] ALLOCATED "
+                f"serial={row.serial_no} priority={row.priority_rank} checkbox=1"
             )
         else:
-            unallocated_lines.append(
-                {
-                    "material_request": row["material_request"],
-                    "item_code": item_code,
-                    "required": needed_from_stores,
-                    "available": available_before,
-                }
+            failed += 1
+            audit = run.audits.get(row.serial_no, {})
+            attempts = audit.get("attempts") or []
+            last_attempt = attempts[-1] if attempts else {}
+            print(
+                "[PART_ALLOC_SCHEDULE] NOT ALLOCATED "
+                f"serial={row.serial_no} priority={row.priority_rank} checkbox=0 "
+                f"result={last_attempt.get('result')} reason={last_attempt.get('reason')}"
             )
-            logger.debug(
-                f"\n[LINE_CHECK_BLOCKED] serial_no={serial_no}, MR={row['material_request']}, item_code={item_code}, "
-                f"required={needed_from_stores} (after bag {bagged_qty_for_serial}), available={available_before} (insufficient stock)"
-            )
+            for req in last_attempt.get("requirements") or []:
+                if flt(req.get("shortage")) <= 0:
+                    continue
+                required_item = req.get("requested_item")
+                print(
+                    "[PART_ALLOC_SCHEDULE] SHORTAGE "
+                    f"serial={row.serial_no} required_item={required_item} "
+                    f"required_qty={req.get('required_stock_qty')} bag_qty={req.get('bag_qty_used')} "
+                    f"shortage={req.get('shortage')}"
+                )
+                for candidate in req.get("candidate_checks") or []:
+                    print(
+                        "[PART_ALLOC_SCHEDULE] CANDIDATE "
+                        f"serial={row.serial_no} required_item={required_item} "
+                        f"candidate_item={candidate.get('item_code')} "
+                        f"initial_stock={candidate.get('initial_stock')} "
+                        f"earlier_reserved_qty={candidate.get('earlier_reserved_qty')} "
+                        f"available_before_serial={candidate.get('available_before_serial')} "
+                        f"tentative_qty={candidate.get('tentative_qty_for_requirement')}"
+                    )
+                combo = req.get("combination_search") or {}
+                if combo:
+                    print(
+                        "[PART_ALLOC_SCHEDULE] COMBINATIONS "
+                        f"serial={row.serial_no} required_item={required_item} "
+                        f"eligible_item_codes={combo.get('eligible_item_codes')} "
+                        f"reason={combo.get('reason')}"
+                    )
 
-    remaining_virtual_stock = {
-        item_code: float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - _PART_PLANNED_ALLOCATION.get(item_code, 0.0))
-        for item_code in sorted(involved_item_codes)
-    }
-
-    if unallocated_lines:
-        logger.debug(
-            f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
-            f"result=NOT_ALLOCATED, reason='insufficient stock for some MR lines', "
-            f"unallocated_lines={unallocated_lines}, remaining_virtual_stock={remaining_virtual_stock}"
+    plan_doc = frappe.get_doc("NJ Production Planning", latest_plan)
+    plan_doc.flags.ignore_validate_update_after_submit = True
+    allocation_audit = run.persist_to_plan_child(plan_doc, serial_nos=[row.serial_no for row in rows])
+    print(
+        "[PART_ALLOC_SCHEDULE] Part Allocation Details child rows stored "
+        f"run_id={allocation_audit.get('run_id')} "
+        f"child_rows={allocation_audit.get('child_rows')} "
+        f"plan={latest_plan}"
+    )
+    # Keep the visible plan checkbox synchronized with the persisted allocation
+    # detail rows.  The detail table is the source of truth for this standalone
+    # allocation run, so this also repairs any stale checkbox values if a run is
+    # repeated for the same plan.
+    detail_rows = frappe.get_all(
+        "NJ Production Planning Part Allocation Detail",
+        filters={
+            "parent": latest_plan,
+            "serial_no": ["in", [row.serial_no for row in rows]],
+        },
+        fields=["serial_no", "part_allocation"],
+    )
+    for detail in detail_rows:
+        frappe.db.sql(
+            """
+            UPDATE `tabFinal Production Planning Data`
+            SET part_allocation = %(part_allocation)s
+            WHERE parent = %(parent)s AND serial_no = %(serial_no)s
+            """,
+            {
+                "part_allocation": 1 if detail.part_allocation else 0,
+                "parent": latest_plan,
+                "serial_no": detail.serial_no,
+            },
         )
-        return False
-
-    alloc_rows = []
-    for row in mr_items:
-        item_code = row["item_code"]
-        item_group = row.get("item_group")
-        mr_qty = flt(row.get("mr_qty") or row.get("stock_qty") or 0)
-        if mr_qty <= 0:
-            continue
-
-        bagged_qty_for_serial = sum(
-            flt(b.get("quantity") or 1)
-            for b in bag_items
-            if b.get("item") == item_code or (item_group and b.get("item_group") == item_group)
-        )
-        needed_from_stores = max(0.0, mr_qty - bagged_qty_for_serial)
-        if needed_from_stores <= 0:
-            continue
-
-        _PART_PLANNED_ALLOCATION[item_code] = flt(_PART_PLANNED_ALLOCATION.get(item_code, 0.0)) + needed_from_stores
-        alloc_rows.append({"material_request": row["material_request"], "item_code": item_code, "allocated_qty": needed_from_stores})
-
-    remaining_virtual_stock_after = {
-        item_code: float(_PART_VIRTUAL_STOCK.get(item_code, 0.0) - _PART_PLANNED_ALLOCATION.get(item_code, 0.0))
-        for item_code in sorted(involved_item_codes)
-    }
-
-    logger.debug(
-        f"\n[ALLOCATE_RESULT] serial_no={serial_no}, dept={current_department}, "
-        f"result=ALLOCATED, reason='all MR lines fully allocatable from virtual stock', "
-        f"allocated_lines={alloc_rows}, remaining_virtual_stock={remaining_virtual_stock_after}"
+    print(
+        "[PART_ALLOC_SCHEDULE] Final Production Planning Data checkboxes synchronized "
+        f"from detail_rows={len(detail_rows)} plan={latest_plan}"
+    )
+    frappe.db.commit()
+    print(
+        "[PART_ALLOC_SCHEDULE] Completed "
+        f"plan={latest_plan} checked={checked} allocated={allocated} failed={failed}"
     )
 
-    return True
+    return {
+        "status": "Completed",
+        "production_plan": latest_plan,
+        "checked": checked,
+        "allocated": allocated,
+        "failed": failed,
+        "allocation_audit": allocation_audit,
+    }
 
 
 # =========================
@@ -3178,7 +3060,7 @@ def _append_plan_row(
     priority_rank: int,
     serial_age_days: Optional[int] = None,
     remarks: Optional[str] = None,
-    part_allocation: Union[int, bool] = 1,
+    part_allocation: Union[int, bool] = False,
 ):
     # Log each serial number being processed
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
@@ -3289,6 +3171,19 @@ def _get_pp_nj_setting_csv_values(parameter):
 
 def _normalize_pp_department_name(department):
     return " ".join(str(department or "").split())
+
+
+def _compact_pp_name(value):
+    return "".join(str(value or "").lower().split())
+
+
+def _get_allocate_parts_department_names_from_settings():
+    return _get_pp_nj_setting_csv_values("allocate_parts_departments")
+
+
+def _is_allocate_parts_department(current_department, configured_departments):
+    configured_keys = {_compact_pp_name(dept) for dept in configured_departments if dept}
+    return _compact_pp_name(current_department) in configured_keys
 
 
 def _get_pp_consumable_stock_department_map():

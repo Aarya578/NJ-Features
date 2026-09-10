@@ -785,14 +785,15 @@ frappe.ui.form.on("NJQCA", {
 
     // Check automated repack item code
     if (frm.doc.item_group == "Laptops" && !frm.doc.repack_item_code) {
-        frappe.msgprint({
-            title: "Missing Automated Item Code",
-            message: "Automated Repack Item Code is not generated. Please contact NPD team.",
-            indicator: "red"
-        });
+      frappe.msgprint({
+        title: "Missing Automated Item Code",
+        message:
+          "Automated Repack Item Code is not generated. Please contact NPD team.",
+        indicator: "red",
+      });
 
-        frappe.validated = false;
-        return;
+      frappe.validated = false;
+      return;
     }
   },
 
@@ -1216,7 +1217,7 @@ frappe.ui.form.on("NJQCA", {
       frm.doc.manufacturer_model,
       frm.doc.item_group,
       frm.doc.brand,
-      frm.doc.njqca_item_component
+      frm.doc.njqca_item_component,
     );
   },
 
@@ -1350,7 +1351,7 @@ frappe.ui.form.on("NJQCA", {
                         return;
                       } else {
                         let btn = dialog.get_primary_btn();
-                        if (btn) btn.prop('disabled', true);
+                        if (btn) btn.prop("disabled", true);
                         dialog.hide();
 
                         let material_transfer_items = [
@@ -1386,14 +1387,14 @@ frappe.ui.form.on("NJQCA", {
                               frm.set_value("warehouse", workWarehouse);
                               frm.refresh_field("warehouse");
                             } else {
-                              if (btn) btn.prop('disabled', false);
+                              if (btn) btn.prop("disabled", false);
                               dialog.show();
                             }
                           },
                           error: function (err) {
                             console.error(err);
                             $(".primary-action").hide();
-                            if (btn) btn.prop('disabled', false);
+                            if (btn) btn.prop("disabled", false);
                             dialog.show();
                           },
                         });
@@ -1679,10 +1680,9 @@ async function openChangeModelDialog(frm) {
 
   if (!parameters.length) {
     frappe.msgprint(
-      __(
-        "No Parameter Specification is configured for model {0}.",
-        [frm.doc.model],
-      ),
+      __("No Parameter Specification is configured for model {0}.", [
+        frm.doc.model,
+      ]),
     );
     return;
   }
@@ -1988,7 +1988,7 @@ async function promptNJQCATransferForCreatedUser(frm) {
     primary_action_label: "Yes",
     primary_action: function () {
       let btn = dialog.get_primary_btn();
-      if (btn) btn.prop('disabled', true);
+      if (btn) btn.prop("disabled", true);
       dialog.hide();
 
       const materialTransferItems = [
@@ -2023,7 +2023,7 @@ async function promptNJQCATransferForCreatedUser(frm) {
             frm.set_value("warehouse", workWarehouse);
             frm.refresh_field("warehouse");
           } else {
-            if (btn) btn.prop('disabled', false);
+            if (btn) btn.prop("disabled", false);
             dialog.show();
           }
         },
@@ -2033,7 +2033,7 @@ async function promptNJQCATransferForCreatedUser(frm) {
             err,
           );
           $(".primary-action").hide();
-          if (btn) btn.prop('disabled', false);
+          if (btn) btn.prop("disabled", false);
           dialog.show();
         },
       });
@@ -2396,10 +2396,12 @@ function processItemTemplate(frm) {
                 row.fetched_item_code,
               );
               frappe.model.set_value(
-                  newRow.doctype,
-                  newRow.name,
-                  "item_template",
-                  frm.doc.item_group === "Desktops" ? "Desktop Processors" : "LAPTOP PROCESSOR"
+                newRow.doctype,
+                newRow.name,
+                "item_template",
+                frm.doc.item_group === "Desktops"
+                  ? "Desktop Processors"
+                  : "LAPTOP PROCESSOR",
               );
               frappe.model.set_value(
                 newRow.doctype,
@@ -2826,7 +2828,8 @@ njqca.get_model = function (
       manufacturer_model: manufacturer_model,
       item_group: item_group,
       brand: brand,
-      components: components || (cur_frm ? cur_frm.doc.njqca_item_component : null),
+      components:
+        components || (cur_frm ? cur_frm.doc.njqca_item_component : null),
     },
     callback: function (r) {
       const model_list = Array.isArray(r.message) ? r.message : [];
@@ -4399,7 +4402,7 @@ async function handle_merge(frm, selected_rows, child_name) {
     frm.refresh_field("merged_ram_item_code");
   }
   if (child_name == "njqca_laptop_storage") {
-    frm.set_value("merged_storage_item_code", );
+    frm.set_value("merged_storage_item_code");
     frm.refresh_field("merged_storage_item_code");
   }
 }

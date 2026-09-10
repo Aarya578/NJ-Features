@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "creation": "2026-09-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "fieldname",
+  "field_label",
+  "parent_row",
+  "old_value",
+  "new_value"
+ ],
+ "fields": [
+  {
+   "description": "Simple fields: the field's fieldname. Child-table cells: '<table_fieldname>.<cell_fieldname>'.",
+   "fieldname": "fieldname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Field",
+   "read_only": 1
+  },
+  {
+   "fieldname": "field_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Field Label",
+   "read_only": 1
+  },
+  {
+   "description": "Existing child row's name, or 'NEW-<idx>' for an appended row (rows sharing the same tag belong to one appended row), or the deleted row's name when new_value = 'DELETED'. Blank for top-level fields.",
+   "fieldname": "parent_row",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Row Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_value",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Old Value",
+   "read_only": 1
+  },
+  {
+   "fieldname": "new_value",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "New Value",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Change Management Request Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

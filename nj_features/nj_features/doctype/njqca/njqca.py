@@ -5461,13 +5461,18 @@ def build_status_reason(evaluation_results, status_name):
         reason += f" +{remaining} more"
 
     return reason[:MAX_LEN]
-
 def get_individual_parameter_status_results(evaluation_results, item_group):
-    results = []
+    """
+    For each evaluated parameter (from NJ Settings list), create a
+    SEPARATE PASS/FAIL row: <parameter_name>_status = PASS/FAIL
 
+    If criteria itself was not configured for this parameter
+    (status == "Criteria Not Found"), show that distinctly instead
+    of marking it FAIL, since it's a configuration gap, not a test failure.
+    """
+    results = []
     for row in evaluation_results or []:
         parameter = row.get("parameter")
-
         if not parameter:
             continue
 
@@ -5475,10 +5480,11 @@ def get_individual_parameter_status_results(evaluation_results, item_group):
 
         if status == "criteria not found":
             value = "NO CRITERIA"
-            score = None
+            score = None  # don't count this as pass or fail
         else:
-            value = "PASS" if status == "pass" else "FAIL"
-            score = 0 if status == "pass" else 41
+            is_pass = status == "pass"
+            value = "PASS" if is_pass else "FAIL"
+            score = 0 if is_pass else 41
 
         results.append({
             "parameter": f"{parameter}_status",
@@ -5490,20 +5496,8 @@ def get_individual_parameter_status_results(evaluation_results, item_group):
 
     return results
 
+
 def process_performance_and_heavyload_status(doc, criteria_rows):
-    """
-    Performance_status checks only:
-        NJ Settings -> performance_status_parameters
-
-    heavy_load_status checks only:
-        NJ Settings -> heavy_load_status_parameters
-
-    Important:
-    Do not depend only on direct DB update here.
-    This function must return all changes to JS, so JS can add rows into
-    frm.doc.njqca_result_parameters before save.
-    """
-
     performance_evaluation_results = evaluate_status_from_criteria(
         doc=doc,
         criteria_rows=criteria_rows,
@@ -5528,9 +5522,11 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "item_group": "Software Configuration",
         "part_config_id": 0
     }
+
+    # NEW: individual PASS/FAIL row for each parameter
     performance_individual_results = get_individual_parameter_status_results(
         performance_evaluation_results,
-        "Software Configuration"
+        item_group="Software Configuration"
     )
 
     heavyload_evaluation_results = evaluate_status_from_criteria(
@@ -5557,15 +5553,17 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "item_group": "LAPTOP STORAGE",
         "part_config_id": 0
     }
+
+    # NEW: individual PASS/FAIL row for each parameter
     heavyload_individual_results = get_individual_parameter_status_results(
         heavyload_evaluation_results,
-        "LAPTOP STORAGE"
+        item_group="LAPTOP STORAGE"
     )
     results = [
         performance_result,
         performance_reason_result,
         heavyload_result,
-        heavyload_reason_result
+        heavyload_reason_result,
     ]
 
     results.extend(performance_individual_results)

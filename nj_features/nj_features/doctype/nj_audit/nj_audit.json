@@ -1,0 +1,178 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2024-08-07 17:12:35.021590",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "audit_interval",
+  "audit_warehouse",
+  "scan_rack",
+  "barcode",
+  "column_break_j74uu",
+  "stock_balance",
+  "rack_balance",
+  "serial_no_count",
+  "work_warehouse",
+  "scan_serial_no",
+  "section_break_dsalw",
+  "nj_audit_items",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "NJ-AD-.YYYY.-.MM.-.###",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "NJ-AD-.YYYY.-.MM.-.###",
+   "reqd": 1
+  },
+  {
+   "fieldname": "audit_interval",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Audit Interval",
+   "options": "\nWeekly\nMonthly",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_j74uu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "audit_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Audit Warehouse",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_dsalw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "nj_audit_items",
+   "fieldtype": "Table",
+   "label": "NJ Audit Items",
+   "options": "NJ Audit Items"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "NJ Audit",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "scan_serial_no",
+   "fieldtype": "Data",
+   "label": "Scan Serial No",
+   "options": "Barcode",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "work_warehouse",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Work Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "stock_balance",
+   "fieldtype": "Int",
+   "label": "Stock Balance",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "serial_no_count",
+   "fieldtype": "Int",
+   "label": "Scanned Serial No(s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scan_rack",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Scan Rack",
+   "options": "Barcode",
+   "reqd": 1
+  },
+  {
+   "fieldname": "rack_balance",
+   "fieldtype": "Data",
+   "label": "Rack Balance",
+   "read_only": 1
+  },
+  {
+   "fieldname": "barcode",
+   "fieldtype": "Data",
+   "label": "NJ Barcode",
+   "options": "Barcode"
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-08-08 12:53:11.535038",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "NJ Audit",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Tech MR & Transfer Access",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "NJ Audit Manager",
+   "select": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

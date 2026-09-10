@@ -223,6 +223,119 @@ def criticalog_awb_number_tracking_status():
             frappe.log_error(frappe.get_traceback(), f"Tracking Status Error - {doc.name}")
 
 
+DELHIVERY_TRACKING_URL = "https://track.delhivery.com/api/v1/packages/json/"
+
+
+@frappe.whitelist()
+def delhivery_awb_number_tracking_status():
+    """Poll Delhivery's tracking API and update remark_status + item_tracking_table."""
+    from nj_features.nj_features.api.delhivery_api import _get_delhivery_settings
+
+    docs = frappe.get_all(
+        "Delivery Charges",
+        filters={
+            "awb_number": ["!=", ""],
+            "courier_service": "Delhivery",
+            "remark_status": ["!=", "Delivered"]
+        },
+        fields=["name", "awb_number", "courier_service", "remark_status"]
+    )
+
+    print(f"Delhivery tracking: {len(docs)} records to process")
+
+    try:
+        settings = _get_delhivery_settings()
+    except Exception as e:
+        print(f"Could not load Delhivery settings: {str(e)}")
+        frappe.log_error(frappe.get_traceback(), "Delhivery Tracking Settings Error")
+        return
+
+    headers = {
+        "Authorization": f'Token {settings["api_token"]}',
+        "Content-Type": "application/json"
+    }
+
+    for doc in docs:
+        try:
+            params = {"waybill": doc.awb_number, "verbose": 2}
+            response = requests.get(DELHIVERY_TRACKING_URL, headers=headers, params=params, timeout=15)
+
+            if response.status_code != 200:
+                print(f"[{doc.name}] API returned status code: {response.status_code}")
+                continue
+
+            data = response.json()
+            shipment_data = data.get("ShipmentData", [])
+            if not shipment_data:
+                print(f"[{doc.name}] No ShipmentData found in response.")
+                continue
+
+            shipment = shipment_data[0].get("Shipment", {})
+            status = shipment.get("Status", {}).get("Status")
+
+            # Update remark_status
+            if status:
+                values = {"remark_status": status}
+                if status != doc.remark_status:
+                    values["shopify_status_synced"] = 0
+                frappe.db.set_value("Delivery Charges", doc.name, values, update_modified=False)
+                print(f"[{doc.name}] Updated remark_status to: {status}")
+            else:
+                print(f"[{doc.name}] No status found in response.")
+
+            # Update tracking table with scan history
+            scans = shipment.get("Scans", [])
+            if isinstance(scans, list) and scans:
+                delivery_charges_doc = frappe.get_doc("Delivery Charges", doc.name)
+
+                new_activities_added = 0
+                for scan_item in scans:
+                    scan_detail = scan_item.get("ScanDetail", {})
+                    activity = scan_detail.get("Scan")
+                    location = scan_detail.get("ScannedLocation")
+                    scan_datetime = scan_detail.get("ScanDateTime")
+
+                    if not activity or not location:
+                        continue
+
+                    # Check if this activity already exists
+                    exists = any(
+                        row.activity == activity and row.location == location
+                        for row in delivery_charges_doc.item_tracking_table
+                    )
+
+                    if not exists:
+                        timestamp = datetime.now()
+                        if scan_datetime:
+                            try:
+                                # Delhivery format: 2023-02-05T23:15:12.713000
+                                timestamp = datetime.strptime(
+                                    scan_datetime.split(".")[0], "%Y-%m-%dT%H:%M:%S"
+                                )
+                            except Exception as e:
+                                print(f"[{doc.name}] Error parsing scan date {scan_datetime}: {e}")
+
+                        delivery_charges_doc.append("item_tracking_table", {
+                            "activity": activity,
+                            "location": location,
+                            "timestamp": timestamp,
+                            "code_number": scan_detail.get("StatusCode", "")
+                        })
+                        new_activities_added += 1
+
+                if new_activities_added > 0:
+                    delivery_charges_doc.save(ignore_permissions=True)
+                    print(f"[{doc.name}] Added {new_activities_added} new tracking activities")
+                else:
+                    print(f"[{doc.name}] No new tracking activities to add")
+
+            frappe.db.commit()
+
+        except Exception as e:
+            print(f"[{doc.name}] Error: {str(e)}")
+            frappe.log_error(frappe.get_traceback(), f"Delhivery Tracking Status Error - {doc.name}")
+
+
 AWB_TRACKING_BATCH_SIZE = 20
 AWB_TRACKING_JOB_TIMEOUT = 1200
 AWB_TRACKING_RUNNING_KEY = "awb_number_tracking_status_running"
@@ -264,7 +377,7 @@ def process_awb_tracking_batch(cursor=None, batch_size=AWB_TRACKING_BATCH_SIZE):
     filters = {
         "awb_number": ["!=", ""],
         "remark_status": ["!=", "Delivered"],
-        "courier_service": ["!=", "CriticaLog"]
+        "courier_service": ["not in", ["CriticaLog", "Delhivery"]]
     }
     if cursor:
         filters["name"] = [">", cursor]

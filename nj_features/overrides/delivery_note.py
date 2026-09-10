@@ -2398,6 +2398,15 @@ def trigger_fulfillment(order_id, original_order_id=None, shopify_order_no=None,
     except:
         courier_company = courier_service
 
+    if tracking_link:
+        frappe.db.set_value(
+            "Delivery Note",
+            dn_name,
+            "tracking_link",
+            tracking_link,
+            update_modified=False
+        )
+
     # ===========================================================
     # CASE 1: Already fulfilled → Update tracking only
     # ===========================================================

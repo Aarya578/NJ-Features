@@ -218,6 +218,7 @@ class CustomDeliveryNote(DeliveryNote):
                 )
 
                 if (
+                    not self.is_return
                     sales_order
                     and sales_order.pre_order
                     and sales_order.committed_delivery_date

@@ -1011,6 +1011,7 @@ class CustomDeliveryNote(DeliveryNote):
                         "reserved_sales_order": "",
                         "to_make": "",
                         "return_reason": cause,
+                        "order_source": "",
                         "remarks": f"Unreserved via Return DN {self.name} ({cause})"
                     },
                     update_modified=True

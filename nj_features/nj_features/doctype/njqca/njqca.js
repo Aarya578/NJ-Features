@@ -784,6 +784,16 @@ frappe.ui.form.on("NJQCA", {
     }
 
     // Check automated repack item code
+    if (frm.doc.item_group == "Laptops" && !frm.doc.repack_item_code) {
+        frappe.msgprint({
+            title: "Missing Automated Item Code",
+            message: "Automated Repack Item Code is not generated. Please contact NPD team.",
+            indicator: "red"
+        });
+
+        frappe.validated = false;
+        return;
+    }
   },
 
   rfq_id: function (frm) {

@@ -13,7 +13,7 @@ function triggerUnifiedProductionPlanning() {
     });
 
     frappe.call({
-        method: "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
+        method: "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_unified_production_plan",
         callback: function () {},
         error: function () {
             frappe.msgprint({

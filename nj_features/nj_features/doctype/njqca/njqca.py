@@ -3096,6 +3096,7 @@ def update_part_item_code_from_child(doc):
 def get_item_code_for_each_part(doc):
     item_group, item_template = '', ''
     part_data, part_mapping, child_attr_data = [], [], []
+    normalize_cpu = []
 
     try:
         if isinstance(doc, str):
@@ -3103,6 +3104,24 @@ def get_item_code_for_each_part(doc):
                 doc = json.loads(doc)
             except json.JSONDecodeError:
                 frappe.throw("Invalid JSON string provided for doc.")
+
+        # Ensure NJ Settings parameters are available in globals with safe defaults
+        try:
+            nj_settings = frappe.get_all("NJ Settings", filters={"doc_type": "NJQCA Child"},
+                                fields=["parameter", "value"])
+            for param in nj_settings:
+                globals()[param.parameter] = param.value
+        except Exception:
+            pass
+
+        globals().setdefault('cpu', 'Laptop Processors')
+        globals().setdefault('ram', 'Laptop RAM')
+        globals().setdefault('ram_capacity', 'RAM CAPACITY')
+        globals().setdefault('storage', 'LAPTOP STORAGE')
+        globals().setdefault('unk_cpu', 'UNKNOWN PROCESSOR')
+        globals().setdefault('unk_ram', 'NO RAM')
+        globals().setdefault('unk_storage', 'No Disk')
+        globals().setdefault('Grade', 'UNKNOWN')
 
         parent_part_mapping = frappe.get_all( "Part Mapping",
             filters={"parent": doc.get('item_group')},
@@ -3269,7 +3288,22 @@ def get_item_code_for_each_part(doc):
                 item_template = doc.get('item_template')
                 repack_item_code = get_variant_from_value(item_template, consolidated)
 
-                if repack_item_code and 'error' in repack_item_code:
+                if (not repack_item_code or 'error' in str(repack_item_code)) and normalize_cpu:
+                    for alt_cpu in normalize_cpu:
+                        alt_attr = get_attribute_from_erp(alt_cpu, 'Processor Type1')
+                        if alt_attr:
+                            alt_consolidated = copy.deepcopy(consolidated)
+                            for arg in alt_consolidated:
+                                for k in list(arg.keys()):
+                                    if k.lower() == 'processor type1':
+                                        arg[k] = alt_attr
+                            alt_variant = get_variant_from_value(item_template, alt_consolidated)
+                            if alt_variant and 'error' not in str(alt_variant):
+                                repack_item_code = alt_variant
+                                consolidated = alt_consolidated
+                                break
+
+                if repack_item_code and 'error' in str(repack_item_code):
                     new_item = False
                     new_consolidated = copy.deepcopy(consolidated)
                     for arg in new_consolidated:
@@ -3309,6 +3343,14 @@ def get_item_code_for_each_part(doc):
         return {"error": f"An error occurred: {traceback.format_exc()}"}
     
 def get_attribute_from_erp(attribute_value, parent):
+    if not attribute_value:
+        return None
+    if isinstance(attribute_value, (list, tuple)):
+        for val in attribute_value:
+            res = get_attribute_from_erp(val, parent)
+            if res:
+                return res
+        return None
     erp_normalize_cpu_query = """SELECT attribute_value FROM `tabItem Attribute Value` WHERE attribute_value = %s AND parent = %s"""
     erp_normalize_cpu = frappe.db.sql(erp_normalize_cpu_query, (attribute_value, parent))
 
@@ -3590,6 +3632,9 @@ def consolidate_storage(data):
                     
 def normalize_gen(cpu_value, model, variant_7=None):
     match = None
+    if not cpu_value:
+        return []
+
     if 'core' in cpu_value.lower():
         match = re.search(r"(\bI\d+)-([A-Za-z0-9]+)", cpu_value, re.IGNORECASE)
 
@@ -3626,9 +3671,80 @@ def normalize_gen(cpu_value, model, variant_7=None):
             return [f"{core} - {gen_number} Gen"]
 
     if 'ryzen' in cpu_value.lower():
-        match = re.match(r"([\w\s]+)(?=\s\d)", cpu_value, re.IGNORECASE)
-        if match:
-            return [match.group(1).upper()]
+        cpu_clean = ' '.join(str(cpu_value or '').split())
+
+        tier_match = re.search(r'\bRYZEN\s*(?:PRO\s+)?([3579]|A\d+)\b', cpu_clean, re.IGNORECASE)
+        tier_num = tier_match.group(1).upper() if tier_match else ''
+
+        has_pro = bool(re.search(r'\bPRO\b', cpu_clean, re.IGNORECASE))
+
+        # Series number detection:
+        # 1. 4-digit number in cpu string (e.g. 2700U, 3500U, 5800H, 7730U, 2200G)
+        series_number = None
+        num_match = re.search(r'\b(\d{4})[A-Za-z]?\b', cpu_clean)
+        if num_match:
+            num = int(num_match.group(1))
+            if 1000 <= num <= 9999:
+                series_number = (num // 1000) * 1000
+
+        # 2. Check variant_7 (e.g. "2 GEN", "2", "3rd Gen", "7000", "2000 Series")
+        if not series_number and variant_7:
+            v7_str = str(variant_7).strip()
+            v7_nums = re.findall(r'\d+', v7_str)
+            if v7_nums:
+                v7_val = int(v7_nums[0])
+                if 1 <= v7_val <= 9:
+                    series_number = v7_val * 1000
+                elif 1000 <= v7_val <= 9999:
+                    series_number = (v7_val // 1000) * 1000
+
+        # 3. Check "X Gen" in cpu_clean
+        if not series_number:
+            gen_match = re.search(r'(\d+)\s*(?:th|st|nd|rd)?\s*gen', cpu_clean, re.IGNORECASE)
+            if gen_match:
+                g = int(gen_match.group(1))
+                if 1 <= g <= 9:
+                    series_number = g * 1000
+
+        candidates = []
+
+        base_parts = ['AMD', 'Ryzen']
+        if tier_num:
+            base_parts.append(tier_num)
+        if has_pro:
+            base_parts.append('PRO')
+        base_name = ' '.join(base_parts)
+
+        if series_number:
+            series_str = f"{series_number} Series"
+            candidates.append(f"{base_name} - {series_str}")
+            if has_pro:
+                base_no_pro = ' '.join([p for p in base_parts if p != 'PRO'])
+                candidates.append(f"{base_no_pro} - {series_str}")
+
+        if num_match and num_match.group(0):
+            candidates.append(f"{base_name} {num_match.group(0).upper()}")
+            candidates.append(f"{' '.join(base_parts[1:])} {num_match.group(0).upper()}")
+
+        candidates.append(base_name)
+        candidates.append(base_name.upper())
+        if has_pro:
+            base_no_pro = ' '.join([p for p in base_parts if p != 'PRO'])
+            candidates.append(base_no_pro)
+            candidates.append(base_no_pro.upper())
+
+        ryzen_only = ' '.join(base_parts[1:])
+        candidates.append(ryzen_only)
+        candidates.append(ryzen_only.upper())
+
+        seen = set()
+        unique_candidates = []
+        for c in candidates:
+            if c.lower() not in seen:
+                seen.add(c.lower())
+                unique_candidates.append(c)
+
+        return unique_candidates
 
     if 'amd' in cpu_value.lower() and 'ryzen' not in cpu_value.lower():
         match = re.match(r"([\w\s]+)-([\w\d]+)", cpu_value, re.IGNORECASE)
@@ -5135,6 +5251,13 @@ def evaluate_status_from_criteria(doc, criteria_rows, setting_parameter):
         # If parameter is in NJ Settings but not in Criteria Child,
         # skip it instead of failing with blank actual/expected.
         if not criteria_row:
+            evaluation_results.append({
+                "parameter": parameter,
+                "njqca_value": "",
+                "expected_range": "",
+                "status": "Criteria Not Found",
+                "message": f"{parameter} criteria not configured"
+            })
             continue
 
         expected_value = criteria_row.get("parameter_value")
@@ -5339,6 +5462,34 @@ def build_status_reason(evaluation_results, status_name):
 
     return reason[:MAX_LEN]
 
+def get_individual_parameter_status_results(evaluation_results, item_group):
+    results = []
+
+    for row in evaluation_results or []:
+        parameter = row.get("parameter")
+
+        if not parameter:
+            continue
+
+        status = str(row.get("status") or "").strip().lower()
+
+        if status == "criteria not found":
+            value = "NO CRITERIA"
+            score = None
+        else:
+            value = "PASS" if status == "pass" else "FAIL"
+            score = 0 if status == "pass" else 41
+
+        results.append({
+            "parameter": f"{parameter}_status",
+            "value": value,
+            "score": score,
+            "item_group": item_group,
+            "part_config_id": 0
+        })
+
+    return results
+
 def process_performance_and_heavyload_status(doc, criteria_rows):
     """
     Performance_status checks only:
@@ -5377,6 +5528,10 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "item_group": "Software Configuration",
         "part_config_id": 0
     }
+    performance_individual_results = get_individual_parameter_status_results(
+        performance_evaluation_results,
+        "Software Configuration"
+    )
 
     heavyload_evaluation_results = evaluate_status_from_criteria(
         doc=doc,
@@ -5402,13 +5557,19 @@ def process_performance_and_heavyload_status(doc, criteria_rows):
         "item_group": "LAPTOP STORAGE",
         "part_config_id": 0
     }
-
+    heavyload_individual_results = get_individual_parameter_status_results(
+        heavyload_evaluation_results,
+        "LAPTOP STORAGE"
+    )
     results = [
         performance_result,
         performance_reason_result,
         heavyload_result,
         heavyload_reason_result
     ]
+
+    results.extend(performance_individual_results)
+    results.extend(heavyload_individual_results)
 
     return {
         "changes": results
@@ -5584,6 +5745,15 @@ def update_performance_criteria(doc):
         doc,
         criteria_rows
     )
+    # Save the criteria profile used for Performance + Heavy Load calculation
+    if criteria_name:
+        result.setdefault("changes", []).append({
+            "parameter": "Performance_HeavyLoad_Criteria",
+            "value": criteria_name,
+            "score": 0,
+            "item_group": "Software Configuration",
+            "part_config_id": 0
+        })
 
     # Debug info for bench console
     result["criteria_source"] = criteria_source

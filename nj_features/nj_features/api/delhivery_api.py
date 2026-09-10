@@ -479,7 +479,8 @@ def create_delhivery_order(doc, shipping_mode):
 		"shipment_width": float(delivery_note.length or 0),
 		"shipment_height": float(delivery_note.height or 0),
 		"shipment_length": float(delivery_note.breadth or 0),
-		"weight": float(delivery_note.weight or 0),
+		# Delivery Note weight is maintained in kilograms; Delhivery expects grams.
+		"weight": int(round(float(delivery_note.weight or 0) * 1000)),
 		"shipping_mode": shipping_mode,
 		"address_type": "",
 	}

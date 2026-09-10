@@ -136,7 +136,7 @@ def create_rq_doc_by_item_codes(item_codes, sales_order=None):
             sync_shopify_pre_order_policies,
             sync_shopify_etd_metafields,
         )
-        sync_data = shopify_data or [{"variant_id": vid} for vid in variant_ids]
+        sync_data = [{"variant_id": vid} for vid in variant_ids]
         sync_shopify_pre_order_policies(
             sync_data,
             shop=settings.get("shop"),
@@ -198,7 +198,42 @@ def get_affected_variant_ids(item_codes, sales_order=None):
             for row in rows
             if row.get("shopify_variant_id")
         ))
-        
+
+        # Sibling expansion: find base parents and expand to all sibling variants
+        parent_rows = frappe.db.sql(f"""
+            SELECT DISTINCT i.variant_of, COALESCE(iva.attribute_value, '') AS processor
+            FROM `tabItem` i
+            LEFT JOIN `tabItem Variant Attribute` iva
+                ON iva.parent = i.item_code AND iva.attribute = 'Processor Type1'
+            WHERE i.item_code IN ({placeholders})
+              AND i.variant_of IS NOT NULL AND i.variant_of != ''
+        """, tuple(item_codes), as_dict=True)
+
+        if parent_rows:
+            parent_conditions = []
+            parent_params = []
+            for pr in parent_rows:
+                parent_conditions.append("(i2.variant_of = %s AND COALESCE(iva2.attribute_value, '') = %s)")
+                parent_params.extend([pr["variant_of"], pr["processor"]])
+
+            sibling_rows = frappe.db.sql(f"""
+                SELECT DISTINCT pb.shopify_variant_id
+                FROM `tabProduct Bundle` pb
+                JOIN `tabProduct Bundle Item` pbi ON pbi.parent = pb.name
+                JOIN `tabItem` i2 ON pbi.item_code = i2.item_code
+                LEFT JOIN `tabItem Variant Attribute` iva2
+                    ON iva2.parent = i2.item_code AND iva2.attribute = 'Processor Type1'
+                WHERE ({' OR '.join(parent_conditions)})
+                  AND pb.shopify_variant_id IS NOT NULL
+                  AND pb.shopify_variant_id != ''
+                  AND COALESCE(pb.disable, 0) = 0
+            """, tuple(parent_params), as_dict=True)
+
+            for sr in sibling_rows:
+                if sr.get("shopify_variant_id"):
+                    variant_ids.append(str(sr["shopify_variant_id"]).strip())
+
+        variant_ids = list(set(variant_ids))
         return variant_ids
 
     except Exception:
@@ -340,6 +375,7 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
         # Pending SO calculation (same as original - runs for all, but we only insert for affected)
         pending_so_data = frappe.db.sql("""
             SELECT
+                so_data.sales_order,
                 so_data.pb_code,
                 so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty
             FROM (
@@ -357,6 +393,23 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     AND so.docstatus = 1
                     AND so.creation > CURDATE() - INTERVAL 100 DAY
                     AND so.sale_type != 'Amazon'
+                    AND so.name NOT IN (
+                        SELECT DISTINCT sales_order 
+                        FROM `tabNJ Refund` 
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
+                          AND docstatus = 1 
+                          AND sales_order IS NOT NULL 
+                          AND sales_order != ''
+                    )
+                    AND (
+                        so.creation > CURDATE() - INTERVAL 100 DAY
+                        OR so.name IN (
+                            SELECT DISTINCT dni_ret.against_sales_order
+                            FROM `tabDelivery Note Item` dni_ret
+                            INNER JOIN `tabDelivery Note` dn_ret ON dn_ret.name = dni_ret.parent
+                            WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1 AND dn_ret.posting_date > CURDATE() - INTERVAL 100 DAY
+                        )
+                    )
                     AND (
                         soi.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
                         OR main_it.item_group IN ('Laptops(Bundle)', 'Desktops(Bundle)', 'Chromebooks(Bundle)', 'AIO(Bundle)', 'Chromeboxes(Bundle)', 'Full Set Desktops(Bundle)', 'MacBooks(Bundle)', 'MacBooks', 'Laptops', 'Chromebooks', 'Full Set Desktops', 'Desktops', 'AIO', 'Chromeboxes')
@@ -602,28 +655,40 @@ def stage_targeted_variants(variant_ids, settings):
         # Same aggregation query as create_rq_doc() but filtered by variant_ids
         query = f"""
             SELECT
-                pb.shopify_variant_id,
-                MAX(i.variant_of) AS parent1,
-                MAX(COALESCE(iva.attribute_value, '')) AS processor,
-                GROUP_CONCAT(DISTINCT TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) SEPARATOR '||') AS parent_keys,
-                GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-                GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
-                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
+                v.shopify_variant_id,
+                MAX(v.parent1) AS parent1,
+                MAX(v.processor) AS processor,
+                GROUP_CONCAT(DISTINCT v.parent_key SEPARATOR '||') AS parent_keys,
+                GROUP_CONCAT(DISTINCT v.item_code ORDER BY v.item_code SEPARATOR ', ') AS item_codes,
+                GROUP_CONCAT(DISTINCT v.item_group ORDER BY v.item_group SEPARATOR ', ') AS item_groups,
+                CAST(SUM(v.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
+                CAST(SUM(COALESCE(v.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
                 CASE 
-                    WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
-                    WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
-                    ELSE CONCAT(MIN(NULLIF(soqc.sla, 0)), ' Days')
+                    WHEN MIN(NULLIF(v.sla, 0)) IS NULL THEN ''
+                    WHEN MIN(NULLIF(v.sla, 0)) = 1 THEN '1 Day'
+                    ELSE CONCAT(MIN(NULLIF(v.sla, 0)), ' Days')
                 END AS estimated_time_of_dispatch
-            FROM `tabProduct Bundle` pb
-            JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-            JOIN `tabItem` i ON pbi.item_code = i.item_code
-            JOIN `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
-            LEFT JOIN `tabItem Variant Attribute` iva
-                ON iva.parent = i.item_code AND iva.attribute = 'Processor Type1'
-            WHERE pb.shopify_variant_id IN ({vp})
-              AND COALESCE(pb.disable, 0) = 0
-            GROUP BY pb.shopify_variant_id
+            FROM (
+                SELECT DISTINCT
+                    pb.shopify_variant_id,
+                    i.item_code,
+                    i.item_group,
+                    i.variant_of AS parent1,
+                    COALESCE(iva.attribute_value, '') AS processor,
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) AS parent_key,
+                    soqc.update_qty2,
+                    soqc.pre_order_qty,
+                    soqc.sla
+                FROM `tabProduct Bundle` pb
+                JOIN `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                JOIN `tabItem` i ON pbi.item_code = i.item_code
+                JOIN `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
+                LEFT JOIN `tabItem Variant Attribute` iva
+                    ON iva.parent = i.item_code AND iva.attribute = 'Processor Type1'
+                WHERE pb.shopify_variant_id IN ({vp})
+                  AND COALESCE(pb.disable, 0) = 0
+            ) v
+            GROUP BY v.shopify_variant_id
             ORDER BY total_actual_qty DESC
         """
         results = frappe.db.sql(query, tuple(variant_ids), as_dict=True)
@@ -685,7 +750,7 @@ def stage_targeted_variants(variant_ids, settings):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error, shopify_quantity
+                SELECT name, actual_qty, status, sync_error, shopify_quantity, estimated_time_of_dispatch, shopify_pre_order_qty
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -696,6 +761,8 @@ def stage_targeted_variants(variant_ids, settings):
                 existing_doc = existing[0]
                 existing_qty = safe_float(existing_doc.actual_qty) or 0
                 shopify_qty = safe_float(existing_doc.shopify_quantity)
+                existing_etd = str(existing_doc.get("estimated_time_of_dispatch") or "").strip()
+                new_etd = str(getattr(row, "estimated_time_of_dispatch", "") or "").strip()
 
                 is_not_found = (
                     existing_doc.status == "Error" 
@@ -707,7 +774,7 @@ def stage_targeted_variants(variant_ids, settings):
                     update_payload = {
                         "is_active": 1,
                         "shopify_pre_order_qty": row.total_pre_order_qty,
-                        "estimated_time_of_dispatch": getattr(row, "estimated_time_of_dispatch", "") or "",
+                        "estimated_time_of_dispatch": new_etd,
                         "modified": frappe.utils.now(),
                     }
                     if (

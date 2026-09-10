@@ -62,6 +62,7 @@ override_doctype_class = {
     "Stock Ledger Entry": "nj_features.overrides.stock_ledger_entry.CustomStockLedgerEntry",
     "Quotation": "nj_features.overrides.quotation.CustomQuotation",
     "Request for Quotation": "nj_features.overrides.request_for_quotation.CustomRequestForQuotation",
+    "Scheduled Job Log": "nj_features.overrides.scheduled_job_log.CustomScheduledJobLog",
     # "Journal Entry": "nj_features.overrides.journal_entry.CustomJournalEntry",
     "Purchase Invoice": "nj_features.overrides.purchase_invoice.CustomPurchaseInvoice",
 }
@@ -219,7 +220,7 @@ scheduler_events = {
 
         # Runs every 12 hours: 12 AM and 12 PM server time
         "0 */12 * * *": [
-            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.nj_run_unified_production_plan",
+            "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.enqueue_unified_production_plan",
         ],
 
         "20,40 * * * *": [

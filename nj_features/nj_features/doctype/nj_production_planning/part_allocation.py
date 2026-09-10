@@ -3,6 +3,7 @@
 Only existing item variants are considered; no Items, MRs or stock entries are
 created or changed here. Frappe imports are local so calculation tests need no DB.
 """
+import frappe
 import copy
 import itertools
 import json
@@ -13,12 +14,47 @@ from datetime import datetime
 
 EPSILON = 0.000001
 
+STORES_STOCK_EXCLUDED_WAREHOUSES = {
+    "L1 Store - NJ",
+    "Stores - NJ",
+    "L1. Desktop Team - NJ",
+    "L2-Stores Not Found - NJ",
+    "WIP - NJ",
+    "First Stores - NJ",
+    "L2 Store - NJ",
+    "BG - WIP - NJ",
+    "BG -  L1 Store - NJ",
+    "Procurement - NJ",
+    "WK-Santosh Kumar-EMP01180",
+    "WK-Amit Kumar Sah-EMP02051 - NJ",
+}
+
+MR_EXCLUDED_ITEM_GROUPS = {
+    "CAMERA LENS",
+    "CONSUMABLE",
+    "TRACK BALL CAP",
+    "DESKTOP SPARE PARTS",
+    "DESKTOP SMPS",
+    "DESKTOP PROCESSORS",
+    "SMPS",
+    "LAPTOP RAM",
+    "LAPTOP STORAGE",
+    "LAPTOP HARDDISK",
+}
+MR_EXCLUDED_ITEM_GROUP_CONTAINS = ("BUSH", "DESKT")
+
+
 def number(value):
     return float(value or 0)
 
 
 def normalized(value):
     return " ".join(str(value or "").strip().upper().split())
+
+
+def grade_a_item_code(value):
+    """Convert Item Wizard default component code from UNKNOWN to GRADE A."""
+    return re.sub(r"(?i)\bUNKNOWN\b", "GRADE A", str(value or "").strip())
 
 
 def attribute_key(attribute, value):
@@ -31,6 +67,8 @@ def attribute_key(attribute, value):
 
 
 def pending_reason(row):
+    if row.get("allocation_exclusion_reason"):
+        return row.get("allocation_exclusion_reason")
     if int(row.get("mr_docstatus") or 0) != 1:
         return "Material Request is not submitted"
     if row.get("mr_status") != "Pending":
@@ -43,6 +81,9 @@ def pending_reason(row):
         return "Material Request item is completed or not pending"
     if row.get("item_group") is None:
         return "Material Request item has no item group"
+    item_group_name = normalized(row.get("item_group"))
+    if item_group_name in MR_EXCLUDED_ITEM_GROUPS or any(token in item_group_name for token in MR_EXCLUDED_ITEM_GROUP_CONTAINS):
+        return "Material Request item group excluded by Google Sheet allocation rules"
     if not row.get("item_code"):
         return "Material Request item has no item code"
     if number(row.get("stock_qty")) <= 0:
@@ -198,19 +239,16 @@ class AllocationEngine:
         if not required:
             event.update(result="NO_PENDING_REQUIREMENTS", reason="No positive pending MR stock quantities to verify")
             return False, event
-        bagged = defaultdict(float)
-        for row in bag_rows:
-            if row.get("is_available"):
-                qty = row.get("quantity")
-                bagged[row.get("item")] += max(0, number(1 if qty is None else qty))
+        # Google Sheet matching mode: do not reduce requirements using this serial's own Bag List.
+        # Every pending MR quantity is checked against eligible Stores - NJ stock only.
         tentative = defaultdict(float)
         lines = {}
         deficits = {}
         choices = {}
         # Give every requirement first access to its exact item before fallback.
         for code, qty in required.items():
-            bag_qty = min(qty, bagged.get(code, 0))
-            needed = qty - bag_qty
+            bag_qty = 0
+            needed = qty
             available = max(0, number(self.stock.get(code)) - number(self.planned.get(code)))
             exact_qty = min(needed, available)
             tentative[code] += exact_qty
@@ -289,7 +327,9 @@ class PartAllocationRun:
 
     def build_stock(self):
         import frappe
-        warehouses = frappe.get_all("Warehouse", filters={"department": "Stores - NJ", "disabled": ["!=", 1]}, pluck="name")
+        all_store_warehouses = frappe.get_all("Warehouse", filters={"department": "Stores - NJ", "disabled": ["!=", 1]}, pluck="name")
+        warehouses = [wh for wh in all_store_warehouses if wh not in STORES_STOCK_EXCLUDED_WAREHOUSES]
+        self.stock_snapshot["excluded_warehouses"] = sorted(wh for wh in all_store_warehouses if wh in STORES_STOCK_EXCLUDED_WAREHOUSES)
         self.stock_snapshot["warehouses"] = sorted(warehouses)
         if not warehouses:
             return {}
@@ -311,6 +351,7 @@ class PartAllocationRun:
             SELECT b.item_code, b.warehouse, SUM(b.actual_qty) AS actual_qty
             FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
             WHERE b.warehouse IN %(warehouses)s AND IFNULL(i.has_serial_no,0)=0
+                AND b.actual_qty > 0
             GROUP BY b.item_code,b.warehouse
         """, params, as_dict=True)
         bagged = frappe.db.sql("""
@@ -325,7 +366,10 @@ class PartAllocationRun:
         serial_codes = set()
         for r in serialized:
             serial_codes.add(r.item_code)
-            qty = number(r.eligible_qty) - number(r.bagged_qty)
+            # Do not deduct global Bag List rows from the Stores stock snapshot.
+            # Priority-run virtual reservations below still prevent over-allocation
+            # inside the same production plan run.
+            qty = number(r.eligible_qty)
             stock[r.item_code] += qty
             d = details.setdefault(r.item_code, {"serialized": True, "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
             d["warehouses"].append({"warehouse": r.warehouse, "eligible_qty": number(r.eligible_qty), "bagged_qty": number(r.bagged_qty), "available_qty": qty})
@@ -339,10 +383,10 @@ class PartAllocationRun:
             d["eligible_qty"] += number(r.actual_qty)
             d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": number(r.actual_qty)})
         for code in stock:
-            if code not in serial_codes:
-                stock[code] = max(0, stock[code] - nonserial_bagged.get(code, 0))
             details[code]["initial_available_qty"] = stock[code]
-        self.stock_snapshot["bag_exclusion_scope"] = "All available Bag List rows; nonserialized bag totals deducted from the pooled Stores quantity"
+        self.stock_snapshot["warehouse_scope"] = "Stores - NJ enabled warehouses minus Google Sheet exclusion list"
+        self.stock_snapshot["nonserial_qty_scope"] = "Only positive Bin actual_qty rows are counted"
+        self.stock_snapshot["bag_exclusion_scope"] = "Skipped global Bag List deduction from pooled Stores quantity"
         return dict(stock)
 
     def load_items(self, item_codes):
@@ -363,18 +407,69 @@ class PartAllocationRun:
             batch = serial_nos
             for row in frappe.get_all("Serial No", filters={"name": ["in", batch]}, fields=["name", "item_code", "item_wizard", "warehouse"]):
                 self.serials[row.name] = dict(row)
+
+            wizard_names_for_defaults = sorted({s.get("item_wizard") for s in self.serials.values()} - {None, ""})
+            default_items_by_wizard_group = defaultdict(lambda: defaultdict(list))
+            for offset in range(0, len(wizard_names_for_defaults), 500):
+                batch_wizards = wizard_names_for_defaults[offset:offset+500]
+                if not batch_wizards:
+                    continue
+                for row in frappe.db.sql("""
+                    SELECT
+                        parent AS item_wizard,
+                        component_type AS item_group,
+                        default_item_code,
+                        idx
+                    FROM `tabComponent`
+                    WHERE parent IN %(wizards)s
+                      AND IFNULL(component_type, '') != ''
+                      AND IFNULL(default_item_code, '') != ''
+                    ORDER BY parent, idx ASC
+                """, {"wizards": tuple(batch_wizards)}, as_dict=True):
+                    item_group_key = normalized(row.item_group)
+                    if item_group_key:
+                        default_items_by_wizard_group[row.item_wizard][item_group_key].append({
+                            "item_group": row.item_group,
+                            "default_item_code": row.default_item_code,
+                            "grade_a_item_code": grade_a_item_code(row.default_item_code),
+                        })
+
             rows = frappe.db.sql("""
                 SELECT MRI.name AS mr_line, MRI.parent AS material_request,
-                    MRI.serial_no, MRI.item_code, MRI.item_group, MRI.qty AS mr_qty,
-                    MRI.stock_qty, MRI.uom, MRI.stock_uom, MRI.conversion_factor,
-                    MRI.docstatus AS row_docstatus, MRI.post_order_status AS row_post_order_status,
+                    MRI.serial_no, MRI.item_code, MRI.item_group, MRI.against_item_group,
+                    MRI.qty AS mr_qty, MRI.stock_qty, MRI.uom, MRI.stock_uom, MRI.conversion_factor,
                     MR.docstatus AS mr_docstatus, MR.status AS mr_status,
+                    MRI.docstatus AS row_docstatus, MRI.post_order_status AS row_post_order_status,
                     MR.post_order_status AS mr_post_order_status, MRI.modified
                 FROM `tabMaterial Request Item` MRI JOIN `tabMaterial Request` MR ON MR.name=MRI.parent
                 WHERE MRI.serial_no IN %(serials)s ORDER BY MRI.modified DESC, MRI.name
             """, {"serials": tuple(batch)}, as_dict=True)
             for row in rows:
-                self.mrs[row.serial_no].append(dict(row))
+                entry = dict(row)
+                effective_item_group = row.item_group or row.against_item_group
+                effective_stock_qty = number(row.stock_qty) or number(row.mr_qty)
+                entry["item_group"] = effective_item_group
+                entry["stock_qty"] = effective_stock_qty
+                entry["effective_item_group_source"] = "item_group" if row.item_group else "against_item_group"
+                entry["effective_qty_source"] = "stock_qty" if number(row.stock_qty) else "qty"
+                serial = self.serials.get(row.serial_no) or {}
+                wizard = serial.get("item_wizard")
+                component_defaults = (default_items_by_wizard_group.get(wizard) or {}).get(normalized(effective_item_group)) or []
+                component_default = component_defaults[0] if component_defaults else None
+                entry["mr_item_code"] = row.item_code
+                entry["requirement_source"] = "Material Request Item"
+                if component_default:
+                    entry["item_code"] = component_default.get("grade_a_item_code")
+                    entry["wizard_default_item_code"] = component_default.get("default_item_code")
+                    entry["wizard_component_item_group"] = component_default.get("item_group")
+                    entry["requirement_item_replaced_from_mr"] = 1
+                    entry["requirement_match_rule"] = "MR item group matched Item Wizard Component group; stock item uses Component default item code converted to Grade A"
+                else:
+                    entry["requirement_item_replaced_from_mr"] = 0
+                    entry["wizard_component_candidates"] = []
+                    entry["allocation_exclusion_reason"] = "Material Request item group does not match any Item Wizard Component group"
+                self.mrs[row.serial_no].append(entry)
+
             for row in frappe.get_all("Bag List", filters={"parent": ["in", batch]}, fields=["name", "parent", "item", "item_group", "serial_no", "quantity", "is_available"]):
                 self.bags[row.parent].append(dict(row))
         self.load_items([s["item_code"] for s in self.serials.values()] + [r["item_code"] for rows in self.mrs.values() for r in rows])
@@ -506,6 +601,9 @@ class PartAllocationRun:
                 )
                 for combo in combinations[:5]
             )
+            primary_shortage = shortages[0] if shortages else {}
+            primary_candidate = (primary_shortage.get("candidate_checks") or [{}])[0]
+            primary_combo = primary_shortage.get("combination_search") or {}
             plan_row = plan_rows[0] if plan_rows else {}
             rows.append({
                 "allocation_run_id": self.run_id,
@@ -527,6 +625,16 @@ class PartAllocationRun:
                 "bag_rows_count": len(event.get("bag_rows") or []),
                 "selected_items_summary": selected_summary,
                 "shortage_summary": shortage_summary,
+                "shortage_item": primary_shortage.get("requested_item"),
+                "required_qty": number(primary_shortage.get("required_stock_qty")),
+                "bag_qty_used": number(primary_shortage.get("bag_qty_used")),
+                "needed_from_stores": number(primary_shortage.get("needed_from_stores")),
+                "stores_stock": number(primary_candidate.get("initial_stock")),
+                "earlier_reserved_qty": number(primary_candidate.get("earlier_reserved_qty")),
+                "available_qty": number(primary_candidate.get("available_before_serial")),
+                "shortage_qty": number(primary_shortage.get("shortage")),
+                "combination_candidate_count": len(primary_combo.get("eligible_item_codes") or []),
+                "combination_failure_reason": primary_combo.get("reason"),
                 "combination_summary": combination_summary,
                 "requirements_json": json.dumps(requirements, indent=2, default=str, ensure_ascii=False),
                 "candidate_checks_json": json.dumps(candidate_checks, indent=2, default=str, ensure_ascii=False),

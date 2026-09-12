@@ -55,6 +55,36 @@
 	margin-bottom: 10px;
 }
 
+.section-heading-row {
+	align-items: flex-end;
+	display: flex;
+	justify-content: space-between;
+}
+
+.section-total,
+.table-total {
+	align-items: center;
+	display: flex;
+	gap: 12px;
+	justify-content: flex-end;
+}
+
+.section-total {
+	margin-bottom: 10px;
+}
+
+.table-total {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-top: 0;
+	padding: 12px 14px;
+}
+
+.section-total span,
+.table-total span {
+	color: var(--text-muted, #6c7680);
+}
+
 .response-table {
 	background: var(--card-bg, #fff);
 	margin-bottom: 0;

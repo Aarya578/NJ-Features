@@ -57,8 +57,16 @@
 	const render = (data) => {
 		document.getElementById("response-quotation").textContent = data.quotation || "";
 		document.getElementById("response-customer").textContent = data.customer || "";
+		document.getElementById("response-total").textContent = formatCurrency(
+			data.total,
+			data.currency
+		);
 		document.getElementById("response-grand-total").textContent = formatCurrency(
 			data.grand_total,
+			data.currency
+		);
+		document.getElementById("response-total-taxes").textContent = formatCurrency(
+			data.total_taxes_and_charges,
 			data.currency
 		);
 		document.getElementById("response-terms-name").textContent = data.tc_name || "-";
@@ -98,7 +106,6 @@
 				(row) => `<tr>
 					<td>${escapeHtml(row.payment_term)}</td>
 					<td>${escapeHtml(row.description)}</td>
-					<td>${escapeHtml(row.due_date)}</td>
 					<td class="text-right">${formatNumber(row.invoice_portion)}%</td>
 					<td class="text-right">${formatCurrency(row.payment_amount, data.currency)}</td>
 				</tr>`

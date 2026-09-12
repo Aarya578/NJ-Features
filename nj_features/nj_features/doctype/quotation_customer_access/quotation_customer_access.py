@@ -116,7 +116,9 @@ def get_quotation_response(token):
         "customer": quotation.customer_name or quotation.party_name,
         "customer_replay": quotation.customer_replay or "",
         "currency": quotation.currency,
+        "total": quotation.total,
         "grand_total": quotation.grand_total,
+        "total_taxes_and_charges": quotation.total_taxes_and_charges,
         "tc_name": quotation.tc_name or "",
         "terms": sanitize_html(quotation.terms or ""),
         "expires_on": access.expires_on,
@@ -144,7 +146,6 @@ def get_quotation_response(token):
             {
                 "payment_term": row.payment_term or "",
                 "description": row.description or "",
-                "due_date": row.due_date,
                 "invoice_portion": row.invoice_portion,
                 "payment_amount": row.payment_amount,
             }

@@ -329,7 +329,7 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
     """
     Given active departments sorted by (department_sequence DESC, name ASC),
     compute Remaining Delivery Days and determine SLA-based department search order.
-    Phase A: Eligible departments downstream to upstream within remaining delivery days (Packing & Dispatch -> FQC -> ...).
+    Phase A: Eligible departments starting from earliest eligible upstream department to Packing & Dispatch.
     Phase B: Remaining lower-sequence departments (downward).
     """
     if not depts:
@@ -348,16 +348,27 @@ def _get_sla_department_search_order(depts: List[Dict], delivery_date, current_d
     else:
         rem_days = 0
 
+    if rem_days > 50:
+        return []
+
     starting_dept_idx = len(sorted_depts) - 1  # Default to last (lowest sequence)
     cum_sla = 0
     for idx, d in enumerate(sorted_depts):
-        cum_sla += int(d.get("sla") or d.get("department_sla") or 0)
+        d_name = (d.get("name") or "").lower()
+        if "packing & dispatch" in d_name or "sales" in d_name:
+            sla_val = 1
+        elif "inward" in d_name:
+            sla_val = 45
+        else:
+            sla_val = min(max(int(d.get("sla") or d.get("department_sla") or 1), 1), 15)
+
+        cum_sla += sla_val
         if cum_sla >= rem_days:
             starting_dept_idx = idx
             break
 
-    # Phase A: Downstream departments from Packing & Dispatch to starting dept
-    phase_a = sorted_depts[:starting_dept_idx + 1]
+    # Phase A: Eligible departments reversed (earliest eligible upstream -> Packing & Dispatch)
+    phase_a = list(reversed(sorted_depts[:starting_dept_idx + 1]))
     # Phase B: Remaining lower sequence departments
     phase_b = sorted_depts[starting_dept_idx + 1:]
 
@@ -430,22 +441,38 @@ def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
 
 
 @log_io
-def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> None:
-    """Update Serial No.reserved_sales_order (lightweight db write)."""
+def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional[str]) -> bool:
+    """Update Serial No.reserved_sales_order atomically with checked result."""
     if not UPDATE_SERIAL_RESERVED_SO:
-        return
+        return True
 
     so_val = (sales_order_no or "").strip()
     try:
-        frappe.db.set_value(
-            "Serial No",
-            serial_no,
-            "reserved_sales_order",
-            so_val if so_val else None,
-            update_modified=False,
-        )
+        if so_val:
+            frappe.db.sql("""
+                UPDATE `tabSerial No`
+                SET reserved_sales_order = %s
+                WHERE name = %s
+                  AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
+                  AND status = 'Active'
+                  AND is_replace = 0
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
+            """, (so_val, serial_no))
+            if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
+                logger.warning("Could not reserve Serial No %s for %s: already reserved or ineligible", serial_no, so_val)
+                return False
+            return True
+        else:
+            frappe.db.sql("""
+                UPDATE `tabSerial No`
+                SET reserved_sales_order = NULL
+                WHERE name = %s
+                  AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
+            """, (serial_no,))
+            return True
     except Exception as e:
         logger.warning("Could not update Serial No.reserved_sales_order for %s: %s", serial_no, e)
+        return False
 
 
 @log_io
@@ -854,148 +881,146 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         if parent_variant_id:
             p4_codes = set(_get_variant_bundle_item_codes(parent_variant_id)) - {target_ic} - p2_codes
 
-        # Department-First: Exhaust all 4 priorities within current department before moving to next
-        for d in search_order:
+        def _try_assign_sn(s, dept_name, remarks_text):
+            nonlocal needed_qty
+            # Part allocation is recalculated by run_latest_production_plan_part_allocation.
+            part_allocation = False
+            success = _append_plan_row(
+                plan_doc,
+                serial_no=s["serial_no"],
+                current_warehouse=s["warehouse"],
+                current_department=dept_name,
+                sales_rate=1.0,
+                doi=0.0,
+                sales_order_number=so_name,
+                delivery_date=deliv_date,
+                item_code_to_make=target_ic,
+                reason="Order",
+                priority_rank=priority_per_dept[dept_name],
+                serial_age_days=s.get("age_days"),
+                remarks=remarks_text,
+                part_allocation=part_allocation,
+            )
+            dept_pool = avail_serials_by_dept.get(dept_name, [])
+            if s in dept_pool:
+                dept_pool.remove(s)
+            if success:
+                needed_qty -= 1
+                priority_per_dept[dept_name] += 1
+                return True
+            return False
+
+        # -------------------------------------------------------------------------
+        # ALLOCATION LOGIC: Department-first, condition-second.
+        #
+        # For each department (highest seq → lowest seq, i.e. closest to dispatch first):
+        #   Check condition 1 (exact item_code)
+        #   Check condition 1b (to_make == target_ic)
+        #   Check condition 2 (same Shopify variant)
+        #   Check condition 3 (same parent model + CPU)
+        #   Check condition 4 (parent's Shopify variant)
+        #   → If ANY condition found a serial → allocated. Move to next qty needed.
+        #   → If NOTHING found in this dept → move to next dept.
+        # -------------------------------------------------------------------------
+        downstream_search = sorted(search_order, key=lambda d: int(d.get("department_sequence") or 0), reverse=True)
+
+        target_tmpl, target_proc = None, None
+        equiv_templates = set()
+        if target_cfg_tuple:
+            target_tmpl, target_proc = target_cfg_tuple[0], target_cfg_tuple[1]
+            equiv_templates = _get_equivalent_parent_models(target_tmpl)
+
+        for d in downstream_search:
             if needed_qty <= 0:
                 break
+
             dept_name = d["name"]
             dept_pool = avail_serials_by_dept.get(dept_name, [])
             if not dept_pool:
                 continue
 
-            # --- Priority 1: Exact Item Code Match in THIS department ---
+            # -- Condition 1: Exact physical item_code match in THIS department --
             p1_matches = [
-                s for s in dept_pool
+                s for s in list(dept_pool)
                 if s.get("item_code") == target_ic or s.get("fallback_pb_item_code") == target_ic
             ]
             p1_matches = _oldest_first(p1_matches)
+            for s in p1_matches:
+                if needed_qty <= 0:
+                    break
+                remarks_text = f"Allocated to SO {so_name} (C1: Exact item_code match in {dept_name}) | to_make: {target_ic}"
+                _try_assign_sn(s, dept_name, remarks_text)
 
-            for s in p1_matches[:needed_qty]:
-                dept_pool.remove(s)
-                needed_qty -= 1
-                # Part allocation is recalculated by run_latest_production_plan_part_allocation.
-                part_allocation = False
-                remarks_text = f"Allocated to SO {so_name} (Priority 1: Exact Item Code match '{target_ic}') | to_make: {target_ic}"
-                _append_plan_row(
-                    plan_doc,
-                    serial_no=s["serial_no"],
-                    current_warehouse=s["warehouse"],
-                    current_department=dept_name,
-                    sales_rate=1.0,
-                    doi=0.0,
-                    sales_order_number=so_name,
-                    delivery_date=deliv_date,
-                    item_code_to_make=target_ic,
-                    reason="Order",
-                    priority_rank=priority_per_dept[dept_name],
-                    serial_age_days=s.get("age_days"),
-                    remarks=remarks_text,
-                    part_allocation=part_allocation,
-                )
-                priority_per_dept[dept_name] += 1
+            if needed_qty <= 0:
+                break
 
-            # --- Priority 2: Same Shopify Variant ID Item Codes in THIS department ---
-            if needed_qty > 0 and p2_codes:
+            # -- Condition 1b: Active WIP reconfig (to_make == target_ic) in THIS department --
+            p1b_matches = [
+                s for s in list(dept_pool)
+                if s.get("to_make") == target_ic
+            ]
+            p1b_matches = _oldest_first(p1b_matches)
+            for s in p1b_matches:
+                if needed_qty <= 0:
+                    break
+                remarks_text = f"Allocated to SO {so_name} (C1b: WIP reconfig to_make match in {dept_name}) | to_make: {target_ic}"
+                _try_assign_sn(s, dept_name, remarks_text)
+
+            if needed_qty <= 0:
+                break
+
+            # -- Condition 2: Same Shopify Variant ID in THIS department --
+            if p2_codes:
                 p2_matches = [
-                    s for s in dept_pool
-                    if s.get("item_code") in p2_codes or s.get("fallback_pb_item_code") in p2_codes
+                    s for s in list(dept_pool)
+                    if s.get("item_code") in p2_codes or s.get("fallback_pb_item_code") in p2_codes or s.get("to_make") in p2_codes
                 ]
                 p2_matches = _oldest_first(p2_matches)
-
-                for s in p2_matches[:needed_qty]:
-                    dept_pool.remove(s)
-                    needed_qty -= 1
-                    # Part allocation is recalculated by run_latest_production_plan_part_allocation.
-                    part_allocation = False
+                for s in p2_matches:
+                    if needed_qty <= 0:
+                        break
                     curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
-                    remarks_text = f"Allocated to SO {so_name} (Priority 2: Matched via Shopify Variant ID {variant_id}, current '{curr_ic}') | to_make: {target_ic}"
-                    _append_plan_row(
-                        plan_doc,
-                        serial_no=s["serial_no"],
-                        current_warehouse=s["warehouse"],
-                        current_department=dept_name,
-                        sales_rate=1.0,
-                        doi=0.0,
-                        sales_order_number=so_name,
-                        delivery_date=deliv_date,
-                        item_code_to_make=target_ic,
-                        reason="Order",
-                        priority_rank=priority_per_dept[dept_name],
-                        serial_age_days=s.get("age_days"),
-                        remarks=remarks_text,
-                        part_allocation=part_allocation,
-                    )
-                    priority_per_dept[dept_name] += 1
+                    remarks_text = f"Allocated to SO {so_name} (C2: Shopify Variant ID {variant_id}, current '{curr_ic}' in {dept_name}) | to_make: {target_ic}"
+                    _try_assign_sn(s, dept_name, remarks_text)
 
-            # --- Priority 3: Same Parent Reconfiguration (Model + Processor) in THIS department ---
-            if needed_qty > 0 and target_cfg_tuple:
-                target_tmpl, target_proc = target_cfg_tuple[0], target_cfg_tuple[1]
-                equiv_templates = _get_equivalent_parent_models(target_tmpl)
+            if needed_qty <= 0:
+                break
+
+            # -- Condition 3: Same Parent Reconfiguration (Model + Processor) in THIS department --
+            if target_cfg_tuple and equiv_templates:
                 p3_matches = []
-                for s in dept_pool:
+                for s in list(dept_pool):
                     fkm = s.get("forward_key_model")
                     if fkm and fkm[0] == "MODEL":
                         if fkm[2] == target_proc and fkm[1] in equiv_templates:
                             p3_matches.append(s)
                 p3_matches = _oldest_first(p3_matches)
-
-                for s in p3_matches[:needed_qty]:
-                    dept_pool.remove(s)
-                    needed_qty -= 1
-                    # Part allocation is recalculated by run_latest_production_plan_part_allocation.
-                    part_allocation = False
+                for s in p3_matches:
+                    if needed_qty <= 0:
+                        break
                     curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
-                    remarks_text = f"Allocated to SO {so_name} (Priority 3: Parent Reconfig match for Model '{target_cfg_tuple[0]}', CPU '{target_cfg_tuple[1]}', current '{curr_ic}') | to_make: {target_ic}"
-                    _append_plan_row(
-                        plan_doc,
-                        serial_no=s["serial_no"],
-                        current_warehouse=s["warehouse"],
-                        current_department=dept_name,
-                        sales_rate=1.0,
-                        doi=0.0,
-                        sales_order_number=so_name,
-                        delivery_date=deliv_date,
-                        item_code_to_make=target_ic,
-                        reason="Order",
-                        priority_rank=priority_per_dept[dept_name],
-                        serial_age_days=s.get("age_days"),
-                        remarks=remarks_text,
-                        part_allocation=part_allocation,
-                    )
-                    priority_per_dept[dept_name] += 1
+                    remarks_text = f"Allocated to SO {so_name} (C3: Parent model '{target_tmpl}' CPU '{target_proc}' match in {dept_name}, current '{curr_ic}') | to_make: {target_ic}"
+                    _try_assign_sn(s, dept_name, remarks_text)
 
-            # --- Priority 4: Parent's Shopify Variant ID Item Codes in THIS department ---
-            if needed_qty > 0 and p4_codes:
+            if needed_qty <= 0:
+                break
+
+            # -- Condition 4: Parent's Shopify Variant ID Item Codes in THIS department --
+            if p4_codes:
                 p4_matches = [
-                    s for s in dept_pool
-                    if s.get("item_code") in p4_codes or s.get("fallback_pb_item_code") in p4_codes
+                    s for s in list(dept_pool)
+                    if s.get("item_code") in p4_codes or s.get("fallback_pb_item_code") in p4_codes or s.get("to_make") in p4_codes
                 ]
                 p4_matches = _oldest_first(p4_matches)
-
-                for s in p4_matches[:needed_qty]:
-                    dept_pool.remove(s)
-                    needed_qty -= 1
-                    # Part allocation is recalculated by run_latest_production_plan_part_allocation.
-                    part_allocation = False
+                for s in p4_matches:
+                    if needed_qty <= 0:
+                        break
                     curr_ic = s.get("item_code") or s.get("fallback_pb_item_code") or ""
-                    remarks_text = f"Allocated to SO {so_name} (Priority 4: Matched via Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}') | to_make: {target_ic}"
-                    _append_plan_row(
-                        plan_doc,
-                        serial_no=s["serial_no"],
-                        current_warehouse=s["warehouse"],
-                        current_department=dept_name,
-                        sales_rate=1.0,
-                        doi=0.0,
-                        sales_order_number=so_name,
-                        delivery_date=deliv_date,
-                        item_code_to_make=target_ic,
-                        reason="Order",
-                        priority_rank=priority_per_dept[dept_name],
-                        serial_age_days=s.get("age_days"),
-                        remarks=remarks_text,
-                        part_allocation=part_allocation,
-                    )
-                    priority_per_dept[dept_name] += 1
+                    remarks_text = f"Allocated to SO {so_name} (C4: Parent Shopify Variant ID {parent_variant_id}, current '{curr_ic}' in {dept_name}) | to_make: {target_ic}"
+                    _try_assign_sn(s, dept_name, remarks_text)
+
+            if needed_qty <= 0:
+                break
 
         # Track unallocated / shortage quantity in Missing Sales Order child table
         if needed_qty > 0:
@@ -1422,10 +1447,25 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                       AND sales_order IS NOT NULL 
                       AND sales_order != ''
                 )
+                AND so.name NOT IN (
+                    SELECT DISTINCT dni.against_sales_order
+                    FROM `tabDelivery Note Item` dni
+                    JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+                    WHERE dn.docstatus = 1 AND dn.is_return = 1 
+                      AND (dn.cause_of_return IN ('Repair', 'Refund') OR dn.return_reason IN ('Repair', 'In-House Repair', 'Refund'))
+                      AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
+                )
                 AND (
                     (so.sale_type IN ('NJ-Website-B2C', 'NJ-Direct-B2C') AND so.creation > CURDATE() - INTERVAL %(lookback_b2c)s DAY)
                     OR
                     (so.sale_type IN ('NJ-Website-B2B', 'NJ-Direct-B2B', 'Distributor', 'Franchisee', 'Educational Institutes') AND so.creation > CURDATE() - INTERVAL %(lookback_b2b)s DAY)
+                    OR
+                    (so.name IN (
+                        SELECT DISTINCT dni.against_sales_order
+                        FROM `tabDelivery Note Item` dni
+                        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+                        WHERE dn.docstatus = 1 AND dn.is_return = 1 AND dn.posting_date > CURDATE() - INTERVAL %(lookback_max)s DAY
+                    ))
                 )
 
                 AND soi.item_group IN ('Laptops', 'Chromebooks', 'MacBooks', 'Desktops', 'AIO', 'Full Set Desktops', 'Chromeboxes', 'Laptops(Bundle)', 'Chromebooks(Bundle)', 'MacBooks(Bundle)', 'Desktops(Bundle)', 'AIO(Bundle)', 'Full Set Desktops(Bundle)', 'Chromeboxes(Bundle)')
@@ -2385,6 +2425,8 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+          AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
+          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
           -- after it has reached the reprocessed portion of the pipeline.
@@ -2785,6 +2827,7 @@ def _enrich_serial_from_attrs(snrow: Dict) -> Dict:
         "purchase_date": purchase_date,
         "creation": creation,
         "age_days": age_days,
+        "to_make": snrow.get("to_make"),
     }
 
 
@@ -3021,14 +3064,21 @@ def _append_plan_row(
 ):
     # Log each serial number being processed
     logger.debug(f"processing each and every serial no we need to mention got it: {serial_no}")
-    _update_serial_to_make(serial_no, item_code_to_make)
 
     if reason == "Order" and sales_order_number:
-        _update_serial_reserved_sales_order(serial_no, sales_order_number)
+        success = _update_serial_reserved_sales_order(serial_no, sales_order_number)
+        if not success:
+            logger.warning(
+                "[ALLOCATION_REJECTED] Serial %s could not be reserved for SO %s: already reserved or modified concurrently.",
+                serial_no, sales_order_number
+            )
+            return False
         logger.debug(
             "[ALLOCATION] SO: %s, Item: %s, Serial: %s, Dept: %s, Wh: %s, Reason: %s",
             sales_order_number, item_code_to_make, serial_no, current_department, current_warehouse, remarks
         )
+
+    _update_serial_to_make(serial_no, item_code_to_make)
 
     if remarks:
         _update_serial_remarks(serial_no, remarks)
@@ -3050,6 +3100,7 @@ def _append_plan_row(
             "part_allocation": int(bool(part_allocation)),
         },
     )
+    return True
 
 
 
@@ -3067,6 +3118,8 @@ _PP_MR_WHOLE_NUMBER_UOM_BY_ITEM = {}
 
 def _get_pp_default_mr_schedule_date():
     return add_days(frappe.utils.nowdate(), PP_MR_DEFAULT_SCHEDULE_DAYS)
+    from nj_features.overrides.sales_order import add_working_days
+    return add_working_days(frappe.utils.nowdate(), PP_MR_DEFAULT_SCHEDULE_DAYS)
 
 
 def _round_pp_qty_for_item_uom(item_code, qty):

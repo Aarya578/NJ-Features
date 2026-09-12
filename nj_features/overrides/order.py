@@ -362,8 +362,8 @@ def create_sales_order(shopify_order, setting, company=None):
     so_data = {
         "doctype": "Sales Order",
         "naming_series": naming_series,
-        ORDER_ID_FIELD: str(shopify_order.get("id")),
-        ORDER_NUMBER_FIELD: shopify_order.get("name"),
+        ORDER_ID_FIELD: str(shopify_order.get("name")),
+        ORDER_NUMBER_FIELD: shopify_order.get("id"),
         "customer": customer,
         "transaction_date": getdate(shopify_order.get("created_at")) or nowdate(),
         "delivery_date": getdate(shopify_order.get("created_at")) or nowdate(),

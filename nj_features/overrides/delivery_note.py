@@ -726,32 +726,52 @@ class CustomDeliveryNote(DeliveryNote):
         if not self.is_return and self.docstatus != 2:
             return
 
-        against_sales_order = frappe.db.get_value(
-            "Delivery Note Item",
-            {
-                "parent": self.name,
-                "against_sales_order": ["is", "set"]
-            },
-            "against_sales_order",
-        )
+        against_sales_order = None
+
+        # Get Sales Order directly from Delivery Note items
+        for item in self.items:
+            if item.against_sales_order:
+                against_sales_order = item.against_sales_order
+                break
+
+        # For return DN, fallback to original Delivery Note if needed
+        if not against_sales_order and self.is_return and self.return_against:
+            against_sales_order = frappe.db.get_value(
+                "Delivery Note Item",
+                {
+                    "parent": self.return_against,
+                    "against_sales_order": ["is", "set"]
+                },
+                "against_sales_order"
+            )
+
         if not against_sales_order:
             frappe.throw("No sales order found for this Delivery Note.")
 
         couse_of_return_values = frappe.db.get_value(
-            "NJ Settings", {"parameter": "couse_of_returns"}, "value"
+            "NJ Settings",
+            {"parameter": "couse_of_returns"},
+            "value"
         )
+
         if not couse_of_return_values:
             return
 
-        allowed_item_groups = [group.strip() for group in couse_of_return_values.split(",")]
+        allowed_item_groups = [
+            group.strip()
+            for group in couse_of_return_values.split(",")
+        ]
 
         if self.cause_of_return and self.cause_of_return in allowed_item_groups:
             so_doc = frappe.get_doc("Sales Order", against_sales_order)
+
             if so_doc.is_cod and so_doc.payment_received:
                 so_doc.payment_received = 0
                 so_doc.save(ignore_permissions=True)
-                
-                frappe.msgprint(f"Payment Received unchecked in Sales Order {against_sales_order}.")
+
+                frappe.msgprint(
+                    f"Payment Received unchecked in Sales Order {against_sales_order}."
+                )
 
     def approve_validation(self):
         if self.is_return == 1:

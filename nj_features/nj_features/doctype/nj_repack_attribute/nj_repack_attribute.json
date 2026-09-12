@@ -6,37 +6,47 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "attribute",
-  "attribute_value",
-  "check_button"
+  "serial_no",
+  "current_item_code",
+  "repack_item_code",
+  "check_button",
+  "remark"
  ],
  "fields": [
-  {
-   "fieldname": "attribute",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Attribute",
-   "options": "Item Attribute",
-   "read_only": 1
-  },
-  {
-   "fieldname": "attribute_value",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Attribute Value",
-   "read_only": 1
-  },
   {
    "fieldname": "check_button",
    "fieldtype": "Button",
    "in_list_view": 1,
    "label": "Check"
+  },
+  {
+   "fieldname": "serial_no",
+   "fieldtype": "Link",
+   "label": "Serial No",
+   "options": "Serial No"
+  },
+  {
+   "fieldname": "current_item_code",
+   "fieldtype": "Link",
+   "label": "Current Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "repack_item_code",
+   "fieldtype": "Link",
+   "label": "Repack Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "remark",
+   "fieldtype": "Small Text",
+   "label": "Remark"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-12 16:24:13.705942",
+ "modified": "2026-09-12 18:05:45.120366",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Repack Attribute",

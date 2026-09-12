@@ -36,6 +36,10 @@ frappe.ui.form.on('Quotation', {
             }, "Create");
         }
     },
+
+    before_submit: function(frm) {
+        return handle_customer_quotation_before_submit(frm);
+    },
     
     customer_reply: function(frm) {
         check_and_hide_sales_order_button(frm);
@@ -58,6 +62,90 @@ frappe.ui.form.on('Quotation', {
     //     });
     // }
 });
+
+async function handle_customer_quotation_before_submit(frm) {
+    if (!frm.fields_dict.customer_quotation) {
+        frappe.validated = false;
+        frappe.msgprint(__("Field Customer Quotation (customer_quotation) was not found."));
+        return;
+    }
+
+    if (frm.doc.customer_quotation) {
+        frappe.validated = true;
+        return;
+    }
+
+    frappe.validated = false;
+    const generated = await show_customer_quotation_link_dialog(frm);
+    if (generated) {
+        frappe.msgprint(__("Customer quotation link generated. Click Submit again to submit the Quotation."));
+    }
+}
+
+function show_customer_quotation_link_dialog(frm) {
+    return new Promise((resolve) => {
+        let generated = false;
+        const dialog = new frappe.ui.Dialog({
+            title: __("Generate Customer Quotation Link"),
+            fields: [
+                {
+                    fieldname: "valid_days",
+                    label: __("Valid For Days"),
+                    fieldtype: "Int",
+                    default: 7,
+                    reqd: 1
+                },
+                {
+                    fieldname: "one_time_use",
+                    label: __("One Time Use"),
+                    fieldtype: "Check",
+                    default: 0
+                }
+            ],
+            primary_action_label: __("Generate Link"),
+            async primary_action(values) {
+                if (values.valid_days < 1) {
+                    frappe.msgprint(__("Valid For Days must be at least 1."));
+                    return;
+                }
+
+                const primaryButton = dialog.get_primary_btn();
+                primaryButton.prop("disabled", true);
+                try {
+                    const response = await frappe.call({
+                        method:
+                            "nj_features.nj_features.doctype.quotation_customer_access.quotation_customer_access.generate_quotation_customer_link",
+                        args: {
+                            source_quotation: frm.doc.name,
+                            valid_days: values.valid_days,
+                            one_time_use: values.one_time_use
+                        },
+                        freeze: true,
+                        freeze_message: __("Generating customer quotation link...")
+                    });
+
+                    const result = response.message || {};
+                    if (!result.quotation_url) {
+                        primaryButton.prop("disabled", false);
+                        return;
+                    }
+
+                    await frm.set_value("customer_quotation", result.quotation_url);
+                    generated = true;
+                    resolve(true);
+                    dialog.hide();
+                } catch (error) {
+                    primaryButton.prop("disabled", false);
+                }
+            }
+        });
+
+        dialog.onhide = () => {
+            if (!generated) resolve(false);
+        };
+        dialog.show();
+    });
+}
 
 function check_and_hide_sales_order_button(frm) {
 

@@ -13,19 +13,28 @@ from nj_features.nj_features.doctype.so_quantity_check.so_quantity_check import 
 logger = frappe.logger("new_shopify_inv_sync", allow_site=True, file_count=10)
 
 INVENTORY_SYNC_LOCK_KEY = "nj_shopify_inventory_sync_execution"
-INVENTORY_SYNC_LOCK_TIMEOUT = 1800
+INVENTORY_SYNC_LOCK_TIMEOUT = 3600
+INVENTORY_ORDER_SYNC_TIMEOUT = 3000
+INVENTORY_SYNC_LOCK_WAIT = 1200
 
 
-def inventory_sync_execution_lock(func):
+def inventory_sync_execution_lock(func=None, *, wait=False):
     """Prevent staging and Shopify inventory writes from overlapping."""
+    if func is None:
+        return lambda method: inventory_sync_execution_lock(method, wait=wait)
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         cache = frappe.cache()
         lock = cache.lock(
             cache.make_key(INVENTORY_SYNC_LOCK_KEY),
             timeout=INVENTORY_SYNC_LOCK_TIMEOUT,
+            blocking_timeout=INVENTORY_SYNC_LOCK_WAIT,
         )
-        if not lock.acquire(blocking=False):
+        if not lock.acquire(blocking=wait):
+            if wait:
+                # A failed order job must be visible in the worker's failed queue.
+                raise TimeoutError("Timed out waiting for the Shopify inventory sync lock")
             logger.warning(
                 f"Skipped {func.__name__}: another inventory sync operation is running"
             )
@@ -35,7 +44,16 @@ def inventory_sync_execution_lock(func):
                 "method": func.__name__,
             }
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            if isinstance(result, dict) and result.get("status") == "failed":
+                frappe.db.rollback()
+            else:
+                # Commit before unlocking: the next worker must see these writes.
+                frappe.db.commit()
+            return result
+        except BaseException:
+            frappe.db.rollback()
+            raise
         finally:
             try:
                 lock.release()
@@ -312,6 +330,18 @@ def fetch_and_stage_inventory_sync():
 #                     return str(traceback.format_exc())
 @inventory_sync_execution_lock
 def create_rq_doc():
+    return _create_rq_doc()
+
+
+def _create_rq_doc(variant_ids=None):
+    """Shared calculation/staging engine; caller must hold the execution lock.
+
+    Refresh all quantity-check rows so parent availability uses fresh siblings.
+    An optional variant scope limits Shopify reads, staging and policy writes.
+    """
+    if variant_ids is not None and not variant_ids:
+        return {"status": "completed", "total": 0}
+
     run_id = frappe.generate_hash(length=8)
     started_at = time.monotonic()
     stats = {
@@ -399,37 +429,57 @@ def create_rq_doc():
             where_item_group = ""
             query_params = ()
 
+        where_variant = ""
+        if variant_ids is not None:
+            placeholders = ', '.join(['%s'] * len(variant_ids))
+            where_variant = f"AND pb.shopify_variant_id IN ({placeholders})"
+            query_params += tuple(variant_ids)
+
         query = f"""
             SELECT 
-                pb.shopify_variant_id,
-                MAX(i.variant_of) AS parent1,
-                MAX(COALESCE(iva.attribute_value, '')) AS processor,
-                GROUP_CONCAT(DISTINCT i.item_code ORDER BY i.item_code SEPARATOR ', ') AS item_codes,
-                GROUP_CONCAT(DISTINCT i.item_group ORDER BY i.item_group SEPARATOR ', ') AS item_groups,
-                CAST(SUM(soqc.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
-                CAST(SUM(COALESCE(soqc.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
+                v.shopify_variant_id,
+                MAX(v.parent1) AS parent1,
+                MAX(v.processor) AS processor,
+                GROUP_CONCAT(DISTINCT v.parent_key SEPARATOR '||') AS parent_keys,
+                GROUP_CONCAT(DISTINCT v.item_code ORDER BY v.item_code SEPARATOR ', ') AS item_codes,
+                GROUP_CONCAT(DISTINCT v.item_group ORDER BY v.item_group SEPARATOR ', ') AS item_groups,
+                CAST(SUM(v.update_qty2) AS DECIMAL(10, 2)) AS total_actual_qty,
+                CAST(SUM(COALESCE(v.pre_order_qty, 0)) AS DECIMAL(10, 2)) AS total_pre_order_qty,
                 CASE 
-                    WHEN MIN(NULLIF(soqc.sla, 0)) IS NULL THEN ''
-                    WHEN MIN(NULLIF(soqc.sla, 0)) = 1 THEN '1 Day'
-                    ELSE CONCAT(MIN(NULLIF(soqc.sla, 0)), ' Days')
+                    WHEN MIN(NULLIF(v.sla, 0)) IS NULL THEN ''
+                    WHEN MIN(NULLIF(v.sla, 0)) = 1 THEN '1 Day'
+                    ELSE CONCAT(MIN(NULLIF(v.sla, 0)), ' Days')
                 END AS estimated_time_of_dispatch
-            FROM 
-                `tabProduct Bundle` pb
-            JOIN 
-                `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
-            JOIN 
-                `tabItem` i ON pbi.item_code = i.item_code
-            JOIN 
-                `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
-            LEFT JOIN
-                `tabItem Variant Attribute` iva
-                ON iva.parent = i.item_code
-                AND iva.attribute = 'Processor Type1'
-            WHERE
-                COALESCE(pb.disable, 0) = 0
-                {where_item_group}
+            FROM (
+                SELECT DISTINCT
+                    pb.shopify_variant_id,
+                    i.item_code,
+                    i.item_group,
+                    i.variant_of AS parent1,
+                    COALESCE(iva.attribute_value, '') AS processor,
+                    TRIM(CONCAT(i.variant_of, ' ', COALESCE(iva.attribute_value, ''))) AS parent_key,
+                    soqc.update_qty2,
+                    soqc.pre_order_qty,
+                    soqc.sla
+                FROM 
+                    `tabProduct Bundle` pb
+                JOIN 
+                    `tabProduct Bundle Item` pbi ON pb.name = pbi.parent
+                JOIN 
+                    `tabItem` i ON pbi.item_code = i.item_code
+                JOIN 
+                    `tabSO Quantity Check` soqc ON i.item_code = soqc.item_code
+                LEFT JOIN
+                    `tabItem Variant Attribute` iva
+                    ON iva.parent = i.item_code
+                    AND iva.attribute = 'Processor Type1'
+                WHERE
+                    COALESCE(pb.disable, 0) = 0
+                    {where_item_group}
+                    {where_variant}
+            ) v
             GROUP BY 
-                pb.shopify_variant_id
+                v.shopify_variant_id
             ORDER BY 
                 total_actual_qty DESC
         """
@@ -530,17 +580,20 @@ def create_rq_doc():
                 flags["enable_parent_override"]
                 and row.total_actual_qty <= flags["parent_threshold"]
             ):
-                combined_key = f"{row.parent1} {row.processor or ''}".strip().lower()
-                parent_qty = parent_qty_dict.get(combined_key)
-                logger.debug(f"parent_qty================== {parent_qty}")
+                parent_keys = [
+                    k.strip().lower()
+                    for k in (getattr(row, "parent_keys", "") or "").split("||")
+                    if k.strip()
+                ]
+                if not parent_keys and row.parent1:
+                    parent_keys = [f"{row.parent1} {row.processor or ''}".strip().lower()]
+                combined_parent_qty = sum(parent_qty_dict.get(k, 0.0) or 0.0 for k in set(parent_keys))
+                logger.debug(f"parent_keys================== {parent_keys}, combined_parent_qty================== {combined_parent_qty}")
 
-                if (
-                    parent_qty is not None
-                    and parent_qty >= flags["parent_threshold"]
-                ):
-                    row.total_actual_qty = parent_qty
+                if combined_parent_qty > flags["parent_threshold"]:
+                    row.total_actual_qty = combined_parent_qty
                     logger.debug(f"row.total_actual_qty================== {row.total_actual_qty}")
-                    update_status += f"[ParentOverride<{flags['parent_threshold']}→{parent_qty}] "
+                    update_status += f"[ParentOverride<={flags['parent_threshold']}→{combined_parent_qty}] "
                     logger.debug(f"update_status================== {update_status}")
 
             # =====================================================
@@ -742,9 +795,12 @@ def create_rq_doc():
         # =========================================================
         try:
             if updated_doc_names:
+                stale_filters = {"name": ["not in", list(updated_doc_names)]}
+                if variant_ids is not None:
+                    stale_filters["shopify_variant_id"] = ["in", list(variant_ids)]
                 stale_docs = frappe.get_all(
                     "NJ Inventory Sync Main",
-                    filters={"name": ["not in", list(updated_doc_names)]},
+                    filters=stale_filters,
                     fields=["name", "actual_qty", "updated_qty", "shopify_quantity", "shopify_pre_order_qty", "status", "is_active"]
                 )
             else:
@@ -809,11 +865,20 @@ def create_rq_doc():
                 f"{etd_metafield_result}"
             )
 
+        if variant_ids is not None and product_ids:
+            sync_result = _create_shopify_inventory_sync(variant_ids=product_ids)
+            logger.info(
+                f"[{run_id}] targeted Shopify inventory push completed: {sync_result}"
+            )
+
         elapsed = time.monotonic() - started_at
         logger.info(
             f"[{run_id}] create_rq_doc completed successfully in {elapsed:.1f}s; stats={stats}"
         )
-        return {"run_id": run_id, "status": "completed", "elapsed_seconds": round(elapsed, 1), **stats}
+        return {
+            "run_id": run_id, "status": "completed",
+            "elapsed_seconds": round(elapsed, 1), "variant_ids": product_ids, **stats,
+        }
 
     except Exception:
         elapsed = time.monotonic() - started_at
@@ -840,14 +905,21 @@ def start_shopify_inventory_sync():
 @frappe.whitelist()
 @inventory_sync_execution_lock
 def create_shopify_inventory_sync():
-    """Send queued inventory quantities to Shopify in GraphQL batches."""
+    return _create_shopify_inventory_sync()
+
+
+def _create_shopify_inventory_sync(variant_ids=None):
+    """Send queued quantities in GraphQL batches under the caller's execution lock."""
+    if variant_ids is not None and not variant_ids:
+        return {"status": "completed", "completed": 0, "errored": 0, "skipped": 0}
+
     try:
         batch_size = 50
         settings = get_shopify_settings()
 
         if not settings:
             log_error("Shopify settings not found", "create_shopify_inventory_sync")
-            return "Shopify settings not found"
+            return {"status": "failed", "reason": "missing_settings"}
 
         headers = {
             "X-Shopify-Access-Token": settings["token"],
@@ -887,13 +959,19 @@ def create_shopify_inventory_sync():
             }
         """
         totals = {"completed": 0, "errored": 0, "skipped": 0, "batches": 0}
+        where_variant = ""
+        query_params = ()
+        if variant_ids is not None:
+            placeholders = ', '.join(['%s'] * len(variant_ids))
+            where_variant = f"AND shopify_variant_id IN ({placeholders})"
+            query_params = tuple(variant_ids)
 
         while True:
             completed_docs = []
             errored_docs = []
             skipped_docs = []
 
-            queued = frappe.db.sql("""
+            queued = frappe.db.sql(f"""
                 SELECT name, item_code, actual_qty, shopify_variant_id,
                        updated_qty, inventory_item_id, shopify_quantity, sync_error
                 FROM `tabNJ Inventory Sync Main`
@@ -901,8 +979,9 @@ def create_shopify_inventory_sync():
                   AND is_active = 1
                   AND inventory_item_id IS NOT NULL
                   AND inventory_item_id != ''
+                  {where_variant}
                 LIMIT %s
-            """, (batch_size,), as_dict=True)
+            """, query_params + (batch_size,), as_dict=True)
 
             if not queued:
                 break
@@ -1479,12 +1558,38 @@ def sync_shopify_etd_metafields(shopify_data, shop=None, token=None):
             ) or {}
             user_errors = payload.get("userErrors") or []
 
-            if graphql_errors or user_errors:
+            if graphql_errors:
                 stats["failed"] += len(batch)
                 log_error(
-                    f"Shopify ETD metafield error: graphql_errors={graphql_errors}, user_errors={user_errors}",
+                    f"Shopify ETD metafield GraphQL error: {graphql_errors}",
                     "Shopify ETD Metafield Sync",
                 )
+                continue
+
+            if user_errors:
+                # Isolate invalid variant indexes (e.g. Owner does not exist) and retry valid ones
+                invalid_indexes = set()
+                for err in user_errors:
+                    field = err.get("field") or []
+                    if len(field) >= 2 and str(field[1]).isdigit():
+                        invalid_indexes.add(int(field[1]))
+                
+                stats["failed"] += len(invalid_indexes)
+                valid_sub_batch = [item for idx, item in enumerate(batch) if idx not in invalid_indexes]
+                if valid_sub_batch:
+                    retry_resp = post_shopify_api(
+                        url,
+                        headers=headers,
+                        json_payload={
+                            "query": mutation,
+                            "variables": {"metafields": valid_sub_batch},
+                        },
+                    )
+                    if retry_resp.status_code == 200:
+                        retry_payload = retry_resp.json().get("data", {}).get("metafieldsSet", {})
+                        retry_updated = retry_payload.get("metafields") or []
+                        stats["updated"] += len(retry_updated)
+                        continue
                 continue
 
             updated_metafields = payload.get("metafields") or []

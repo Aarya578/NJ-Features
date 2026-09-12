@@ -55,7 +55,8 @@
   {
    "fieldname": "warehouses",
    "fieldtype": "Small Text",
-   "label": "Warehouses"
+   "label": "Warehouses",
+   "read_only": 1
   },
   {
    "default": "Packing & Dispatch, BG - Adaptor QC",
@@ -69,12 +70,13 @@
    "fieldname": "item_groups",
    "fieldtype": "Small Text",
    "label": "Item Groups",
-   "mandatory_depends_on": "eval: doc.enable == 1;"
+   "mandatory_depends_on": "eval: doc.enable == 1;",
+   "read_only": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2025-10-07 14:30:08.571650",
+ "modified": "2026-09-02 11:04:37.556578",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Inventory Settings",

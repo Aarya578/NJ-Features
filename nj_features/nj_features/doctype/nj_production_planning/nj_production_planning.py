@@ -2427,6 +2427,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
           AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
           AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
+          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%- Repair%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
           -- after it has reached the reprocessed portion of the pipeline.

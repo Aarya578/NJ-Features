@@ -85,7 +85,11 @@ def update_so_quantity_check(settings):
                         AND (b.sales_order IS NULL OR b.sales_order = '')
                         AND NOT EXISTS (
                             SELECT 1 FROM `tabDelivery Note Item` dni
+                            JOIN `tabDelivery Note` dn ON dn.name = dni.parent
                             WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                              AND dn.is_return = 0
+                              AND dn.status NOT IN ('Return Issued', 'Closed')
+                              AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                         )
                         AND (
                             b.return_reason IS NULL
@@ -120,7 +124,11 @@ def update_so_quantity_check(settings):
                         AND (s.sales_order IS NULL OR s.sales_order = '')
                         AND NOT EXISTS (
                             SELECT 1 FROM `tabDelivery Note Item` dni
+                            JOIN `tabDelivery Note` dn ON dn.name = dni.parent
                             WHERE dni.serial_no = s.name AND dni.docstatus = 1
+                              AND dn.is_return = 0
+                              AND dn.status NOT IN ('Return Issued', 'Closed')
+                              AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                         )
                         AND (
                             s.return_reason IS NULL
@@ -196,106 +204,105 @@ def update_so_quantity_check(settings):
         #             'actual_qty': actual_qty
         #         }
 
-        # Step 2: Get sales order pending quantities from second query
+        # Step 2: Get sales order pending quantities with line-level delivery matching,
+        hardware_groups_tuple = tuple(item_groups_list)
+
         pending_so_data = frappe.db.sql("""
-           SELECT 
-                so_data.sales_order, so_data.item_code,
-                so_data.pb_code, so_data.item_group,
-                so_data.qty AS so_qty, IFNULL(dn_data.qty, 0) AS dn_qty,
-                LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS min_so_dn_qty,
-                so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0)) AS pending_qty,
-                CONCAT(it2.variant_of, ' ', proc.attribute_value) AS variant_processor,
-
-                SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
-                    OVER (PARTITION BY CONCAT(it2.variant_of, ' ', proc.attribute_value)) AS total_pending_by_variant,
-
-                SUM(so_data.qty - LEAST(so_data.qty, IFNULL(dn_data.qty, 0))) 
-                    OVER (PARTITION BY so_data.pb_code) AS total_pending_by_pb_code
-
+            SELECT 
+                so_comp.sales_order,
+                so_comp.component_item_code,
+                SUM(GREATEST(0, so_comp.line_ordered_qty - IFNULL(dn_line.line_delivered_qty, 0) * so_comp.multiplier)) AS total_pending_qty
             FROM (
-                SELECT 
-                    soi.parent AS sales_order, soi.item_code,
-                    IFNULL(pb.item_code, soi.item_code) AS pb_code,
-                    soi.qty, soi.item_group,
-                    so.creation, soi.rate
+                -- Direct stock items
+                SELECT
+                    so.name AS sales_order,
+                    soi.name AS so_detail,
+                    soi.item_code AS component_item_code,
+                    soi.qty AS line_ordered_qty,
+                    1.0 AS multiplier
                 FROM `tabSales Order` so
                 INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
-                LEFT JOIN `tabProduct Bundle Item` pb ON soi.item_code = pb.parent
-                LEFT JOIN `tabItem` it ON it.item_code = pb.item_code
-                WHERE 
+                INNER JOIN `tabItem` it ON it.item_code = soi.item_code
+                WHERE
                     so.status NOT IN ('Closed', 'Completed', 'Cancelled')
                     AND so.docstatus = 1
-                    AND so.creation > CURDATE() - INTERVAL 50 DAY
-                    AND soi.item_group IN ('Laptops(Bundle)',
-                                        'Desktops(Bundle)',
-                                        'Chromebooks(Bundle)',
-                                        'AIO(Bundle)',
-                                        'Chromeboxes(Bundle)',
-                                        'Full Set Desktops(Bundle)',
-                                        'MacBooks(Bundle)',
-                                        'MacBooks',
-                                        'Laptops',
-                                        'Chromebooks',
-                                        'Full Set Desktops',
-                                        'Desktops',
-                                        'AIO',
-                                        'Chromeboxes')
+                    AND IFNULL(so.per_delivered, 0) < 100
                     AND so.sale_type != 'Amazon'
-                    AND (
-                        pb.item_code IS NULL 
-                        OR it.item_group IN ('Laptops(Bundle)',
-                                        'Desktops(Bundle)',
-                                        'Chromebooks(Bundle)',
-                                        'AIO(Bundle)',
-                                        'Chromeboxes(Bundle)',
-                                        'Full Set Desktops(Bundle)',
-                                        'MacBooks(Bundle)',
-                                        'MacBooks',
-                                        'Laptops',
-                                        'Chromebooks',
-                                        'Full Set Desktops',
-                                        'Desktops',
-                                        'AIO',
-                                        'Chromeboxes')
+                    AND IFNULL(it.is_stock_item, 0) = 1
+                    AND it.item_group IN %(hardware_groups)s
+                    AND so.name NOT IN (
+                        SELECT DISTINCT sales_order 
+                        FROM `tabNJ Refund` 
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
+                          AND docstatus = 1 
+                          AND sales_order IS NOT NULL 
+                          AND sales_order != ''
                     )
-            ) AS so_data
+                    AND (
+                        so.creation > CURDATE() - INTERVAL 100 DAY
+                        OR so.name IN (
+                            SELECT DISTINCT dni_ret.against_sales_order
+                            FROM `tabDelivery Note Item` dni_ret
+                            INNER JOIN `tabDelivery Note` dn_ret ON dn_ret.name = dni_ret.parent
+                            WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1 AND dn_ret.posting_date > CURDATE() - INTERVAL 100 DAY
+                        )
+                    )
+
+                UNION ALL
+
+                -- Product Bundle component items
+                SELECT
+                    so.name AS sales_order,
+                    soi.name AS so_detail,
+                    pbi.item_code AS component_item_code,
+                    (soi.qty * COALESCE(pbi.qty, 1)) AS line_ordered_qty,
+                    COALESCE(pbi.qty, 1) AS multiplier
+                FROM `tabSales Order` so
+                INNER JOIN `tabSales Order Item` soi ON so.name = soi.parent
+                INNER JOIN `tabItem` it_bundle ON it_bundle.item_code = soi.item_code
+                INNER JOIN `tabProduct Bundle Item` pbi ON pbi.parent = soi.item_code
+                INNER JOIN `tabItem` it_comp ON it_comp.item_code = pbi.item_code
+                WHERE
+                    so.status NOT IN ('Closed', 'Completed', 'Cancelled')
+                    AND so.docstatus = 1
+                    AND IFNULL(so.per_delivered, 0) < 100
+                    AND so.sale_type != 'Amazon'
+                    AND IFNULL(it_bundle.is_stock_item, 0) = 0
+                    AND it_comp.item_group IN %(hardware_groups)s
+                    AND so.name NOT IN (
+                        SELECT DISTINCT sales_order 
+                        FROM `tabNJ Refund` 
+                        WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
+                          AND docstatus = 1 
+                          AND sales_order IS NOT NULL 
+                          AND sales_order != ''
+                    )
+                    AND (
+                        so.creation > CURDATE() - INTERVAL 100 DAY
+                        OR so.name IN (
+                            SELECT DISTINCT dni_ret.against_sales_order
+                            FROM `tabDelivery Note Item` dni_ret
+                            INNER JOIN `tabDelivery Note` dn_ret ON dn_ret.name = dni_ret.parent
+                            WHERE dn_ret.docstatus = 1 AND dn_ret.is_return = 1 AND dn_ret.posting_date > CURDATE() - INTERVAL 100 DAY
+                        )
+                    )
+            ) AS so_comp
 
             LEFT JOIN (
-                SELECT 
-                    dni.against_sales_order,
-                    dni.item_code, SUM(dni.qty) AS qty
+                SELECT
+                    dni.so_detail,
+                    SUM(dni.qty) AS line_delivered_qty
                 FROM `tabDelivery Note Item` dni
-                WHERE 
-                    dni.docstatus = 1 AND dni.qty > 0
-                    AND dni.creation >= CURDATE() - INTERVAL 50 DAY
-                    AND dni.item_group IN ('Laptops(Bundle)',
-                                        'Desktops(Bundle)',
-                                        'Chromebooks(Bundle)',
-                                        'AIO(Bundle)',
-                                        'Chromeboxes(Bundle)',
-                                        'Full Set Desktops(Bundle)',
-                                        'MacBooks(Bundle)',
-                                        'MacBooks',
-                                        'Laptops',
-                                        'Chromebooks',
-                                        'Full Set Desktops',
-                                        'Desktops',
-                                        'AIO',
-                                        'Chromeboxes')
-                GROUP BY dni.against_sales_order, dni.item_code
-            ) AS dn_data 
-            ON so_data.sales_order = dn_data.against_sales_order 
-            AND so_data.item_code = dn_data.item_code
+                WHERE
+                    dni.docstatus = 1
+                    AND dni.so_detail IS NOT NULL
+                    AND dni.so_detail != ''
+                GROUP BY dni.so_detail
+            ) AS dn_line ON so_comp.so_detail = dn_line.so_detail
 
-            LEFT JOIN `tabItem` it2 
-                ON it2.item_code = so_data.pb_code
-
-            LEFT JOIN `tabItem Variant Attribute` proc 
-                ON proc.parent = it2.name
-                AND proc.attribute LIKE '%Processor%'
-
-            ORDER BY so_data.sales_order, so_data.item_code;
-        """, as_dict=True)
+            GROUP BY so_comp.sales_order, so_comp.component_item_code
+            HAVING total_pending_qty > 0
+        """, {"hardware_groups": hardware_groups_tuple}, as_dict=True)
 
         # Step 2.5: Map allocated/reserved serials per (sales_order, item_code)
         # to prevent double-deduction (since allocated serials are already excluded from actual_qty)
@@ -314,12 +321,12 @@ def update_so_quantity_check(settings):
 
         pending_qty_by_item = {}
         for row in pending_so_data:
-            so_name = row.get('sales_order')
-            item_code = row.get('pb_code')
+            so_name = row.get("sales_order")
+            item_code = row.get("component_item_code")
             if item_code:
-                raw_pending = row.get('pending_qty', 0) or 0
+                raw_pending = row.get("total_pending_qty", 0) or 0
                 allocated_qty = alloc_map.get((so_name, item_code), 0)
-                # Unallocated pending demand only
+                # Unallocated pending demand only, deducted once per (sales_order, component_item)
                 unallocated_pending = max(0, raw_pending - allocated_qty)
                 if unallocated_pending > 0:
                     pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + unallocated_pending
@@ -385,10 +392,8 @@ def update_so_quantity_check(settings):
         return True
 
     except pymysql.err.OperationalError as e:
-        if e.args[0] == 2013:
-            return False
-        else:
-            return False
+        log_error(f"OperationalError in update_so_quantity_check: {e}", "update_so_quantity_check")
+        return False
 
     except Exception:
         log_error(frappe.get_traceback(), "update_so_quantity_check")
@@ -409,14 +414,19 @@ def updting_sla_department():
         if not depts_data:
             return True
 
-        # Override Packing & Dispatch SLA to 1 (case-insensitive name match)
+        # Override in code: Packing & Dispatch = 1, Sales = 1, Inward = 45, intermediate depts capped at 15
         for d in depts_data:
-            if "packing & dispatch" in (d.get("name") or "").lower():
+            d_name = (d.get("name") or "").lower()
+            if "packing & dispatch" in d_name or "sales" in d_name:
                 d["department_sla"] = 1
+            elif "inward" in d_name:
+                d["department_sla"] = 45
+            else:
+                d["department_sla"] = min(max(int(d.get("department_sla") or 0), 0), 15)
 
         def is_dept_applicable(dept_row, item_grp):
             dept_name = str(dept_row.get("name") or "").lower()
-            if "packing & dispatch" in dept_name:
+            if "packing & dispatch" in dept_name or "sales" in dept_name:
                 return True
             if not item_grp:
                 return False
@@ -427,8 +437,13 @@ def updting_sla_department():
             return item_grp.strip().lower() in allowed
 
         def calculate_total_sla(cand_dept_name, cand_dept_seq, item_grp=None):
-            is_pd = "packing & dispatch" in (cand_dept_name or "").lower()
-            cand_sla = 1 if is_pd else 0
+            d_name_lower = (cand_dept_name or "").lower()
+            if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
+                return 1
+            if "inward" in d_name_lower:
+                return 45
+
+            cand_sla = 0
             for d in depts_data:
                 if d.get("name") == cand_dept_name:
                     cand_sla = d.get("department_sla", 0)
@@ -437,6 +452,8 @@ def updting_sla_department():
             app_depts = [d for d in depts_data if is_dept_applicable(d, item_grp)]
             seq_max_sla = {}
             for d in app_depts:
+                if "inward" in (d.get("name") or "").lower():
+                    continue
                 seq = d.get("department_sequence")
                 sla = d.get("department_sla") or 0
                 if seq not in seq_max_sla or sla > seq_max_sla[seq]:
@@ -448,8 +465,7 @@ def updting_sla_department():
             for s in range(cand_dept_seq + 1, max_seq + 1):
                 if s in seq_max_sla:
                     total += seq_max_sla[s]
-            # Apply 10% buffer (rounded up to the next full day)
-            return math.ceil(total * 1.10)
+            return min(math.ceil(total * 1.10), 45)
 
         # --- Priority 4: Parent Base Model (variant_of) ---
         p4_rows = frappe.db.sql("""
@@ -582,15 +598,20 @@ def updting_sla_department():
                 cand_name, cand_seq = p4_map[variant_of]
                 candidate_slas.append(calculate_total_sla(cand_name, cand_seq, item_grp=item_grp) + 2)
 
-            sla_val = min(candidate_slas) if candidate_slas else 0
+            if candidate_slas:
+                sla_val = min(candidate_slas)
+            else:
+                # Fallback to full pipeline lead time from Inward (Seq 1)
+                sla_val = calculate_total_sla("Inward  - NJ", min_seq, item_grp=item_grp)
+                if not sla_val or sla_val <= 0:
+                    sla_val = 14
 
-            if sla_val > 0:
-                etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
-                frappe.db.sql("""
-                    UPDATE `tabSO Quantity Check`
-                    SET sla = %s, estimated_time_of_dispatch = %s
-                    WHERE name = %s
-                """, (sla_val, etd_val, row.get("name")))
+            etd_val = f"{sla_val} Day" if sla_val == 1 else f"{sla_val} Days"
+            frappe.db.sql("""
+                UPDATE `tabSO Quantity Check`
+                SET sla = %s, estimated_time_of_dispatch = %s
+                WHERE name = %s
+            """, (sla_val, etd_val, row.get("name")))
 
         frappe.db.commit()
         return True
@@ -738,6 +759,7 @@ def update_pre_order_qty(settings):
         depts_list = frappe.db.sql_list("""
             SELECT name FROM `tabDepartment`
             WHERE department_sequence > %s AND department_sequence < %s
+              AND sla_item_groups IS NOT NULL AND sla_item_groups != ''
         """, (min_bound, max_bound))
 
         if not depts_list:
@@ -759,6 +781,7 @@ def update_pre_order_qty(settings):
                 FROM `tabItem` i
                 LEFT JOIN `tabSerial No` b ON (i.name = b.item_code OR i.item_code = b.item_code)
                 LEFT JOIN `tabWarehouse` w ON b.warehouse = w.name
+                INNER JOIN `tabDepartment` dp ON w.department = dp.name
                 LEFT JOIN `tabSales Order` so ON b.sales_order_id = so.name
                 LEFT JOIN `tabItem Variant Attribute` proc
                     ON proc.parent = i.name
@@ -766,13 +789,19 @@ def update_pre_order_qty(settings):
                 WHERE
                     COALESCE(b.item_group, i.item_group) IN ({item_group_placeholders})
                     AND (w.department IN ({department_placeholders}) {parent_warehouse_clause})
+                    AND dp.sla_item_groups IS NOT NULL AND dp.sla_item_groups != ''
+                    AND FIND_IN_SET(COALESCE(b.item_group, i.item_group), dp.sla_item_groups)
                     AND b.status = 'Active'
                     AND b.is_replace = 0
                     AND (b.reserved_sales_order IS NULL OR b.reserved_sales_order = '')
                     AND (b.sales_order IS NULL OR b.sales_order = '')
                     AND NOT EXISTS (
                         SELECT 1 FROM `tabDelivery Note Item` dni
+                        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
                         WHERE dni.serial_no = b.name AND dni.docstatus = 1
+                          AND dn.is_return = 0
+                          AND dn.status NOT IN ('Return Issued', 'Closed')
+                          AND dn.name NOT IN (SELECT return_against FROM `tabDelivery Note` WHERE is_return = 1 AND docstatus = 1 AND return_against IS NOT NULL AND return_against != '')
                     )
                     AND (
                         b.return_reason IS NULL

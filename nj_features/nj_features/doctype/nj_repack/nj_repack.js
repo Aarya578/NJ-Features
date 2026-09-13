@@ -278,13 +278,25 @@ frappe.ui.form.on("NJ Repack Attribute", {
                         });
                       });
                   } else {
-                    frappe.msgprint({
-                      title: "Repack Failed",
-                      indicator: "red",
-                      message:
-                        "Repack Item not found for selected attributes.<br><br>" +
-                        "Please contact <b>NPD team</b> for item creation.",
-                    });
+
+                        let selected_attributes = attributes
+                            .map(function(a) {
+                                return "<b>" + a.attribute + ":</b> " + a.attribute_value;
+                            })
+                            .join("<br>");
+
+                        frappe.msgprint({
+                            title: "Repack Item Not Found",
+                            indicator: "red",
+                            message:
+                                "Repack Item not found for selected attributes.<br><br>" +
+                                "<b>Selected Attributes:</b><br>" +
+                                selected_attributes +
+                                "<br><br>" +
+                                "Please contact <b>NPD team</b> for item creation."
+                        });
+
+                    }
                   }
                 },
 

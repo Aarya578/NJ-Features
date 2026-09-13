@@ -364,8 +364,11 @@ function show_checkbutton_for_field(frm, fieldname) {
 
     $checkButtonCell
       .find(".check-button")
-      .off("click")
-      .on("click", function () {
+      .off("click.nj_repack")
+      .on("click.nj_repack", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
         let cdn = $row.attr("data-name");
         let cdt = field.grid.doctype;
 

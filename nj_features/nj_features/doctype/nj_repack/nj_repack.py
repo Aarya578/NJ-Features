@@ -36,3 +36,17 @@ def validate(doc, method):
             frappe.throw(
                 "Please enter Remark for repack change"
             )
+
+def before_submit(doc):
+
+    if not doc.serial_no:
+        frappe.throw(
+            "Serial No is mandatory before submit"
+        )
+
+    for row in doc.repack_attributes:
+
+        if not row.repack_item_code:
+            frappe.throw(
+                "Repack Item Code is mandatory before submit"
+            )

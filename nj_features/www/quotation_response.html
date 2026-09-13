@@ -12,14 +12,16 @@
 	<div class="response-summary d-none" id="response-summary">
 		<div><span class="response-label">{{ _("Quotation") }}</span><strong id="response-quotation"></strong></div>
 		<div><span class="response-label">{{ _("Customer") }}</span><strong id="response-customer"></strong></div>
-		<div><span class="response-label">{{ _("Grand Total") }}</span><strong id="response-grand-total"></strong></div>
 	</div>
 
 	<div class="response-message" id="response-message">{{ _("Validating quotation link...") }}</div>
 
 	<form class="d-none" id="response-form">
 		<section class="response-section">
-			<h2>{{ _("Items") }}</h2>
+			<div class="section-heading-row">
+				<h2>{{ _("Items") }}</h2>
+				<div class="section-total"><span>{{ _("Total") }}</span><strong id="response-total"></strong></div>
+			</div>
 			<div class="table-responsive">
 				<table class="table table-bordered response-table">
 					<thead><tr>
@@ -32,6 +34,7 @@
 					<tbody id="response-items"></tbody>
 				</table>
 			</div>
+			<div class="table-total"><span>{{ _("Grand Total") }}</span><strong id="response-grand-total"></strong></div>
 		</section>
 
 		<section class="response-section" id="taxes-section">
@@ -48,6 +51,7 @@
 					<tbody id="response-taxes"></tbody>
 				</table>
 			</div>
+			<div class="table-total"><span>{{ _("Total Tax") }}</span><strong id="response-total-taxes"></strong></div>
 		</section>
 
 		<section class="response-section" id="payment-section">
@@ -57,7 +61,6 @@
 					<thead><tr>
 						<th>{{ _("Payment Term") }}</th>
 						<th>{{ _("Description") }}</th>
-						<th>{{ _("Due Date") }}</th>
 						<th class="text-right">{{ _("Invoice Portion") }}</th>
 						<th class="text-right">{{ _("Payment Amount") }}</th>
 					</tr></thead>

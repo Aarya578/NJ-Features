@@ -20,8 +20,10 @@
   {
    "fieldname": "serial_no",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Serial No",
-   "options": "Serial No"
+   "options": "Serial No",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_1",
@@ -30,14 +32,18 @@
   {
    "fieldname": "current_item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Current Item Code",
-   "options": "Item"
+   "options": "Item",
+   "reqd": 1
   },
   {
    "fieldname": "repack_item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Repack Item Code",
-   "options": "Item"
+   "options": "Item",
+   "reqd": 1
   },
   {
    "fieldname": "current_item_attributes_section",
@@ -74,7 +80,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-13 16:55:44.069462",
+ "modified": "2026-09-13 17:17:16.907892",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Repack",

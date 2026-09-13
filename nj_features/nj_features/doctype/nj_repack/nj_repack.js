@@ -281,7 +281,9 @@ frappe.ui.form.on("NJ Repack Attribute", {
                     frappe.msgprint({
                       title: "Repack Failed",
                       indicator: "red",
-                      message: "No Repack Item Mapping Found",
+                      message:
+                        "Repack Item not found for selected attributes.<br><br>" +
+                        "Please contact <b>NPD team</b> for item creation.",
                     });
                   }
                 },

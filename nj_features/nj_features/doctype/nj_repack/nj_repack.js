@@ -254,6 +254,7 @@ frappe.ui.form.on("NJ Repack Attribute", {
                           "repack_item_code",
                           repack_item_code,
                         );
+                        frm.set_value("repack_item_code", repack_item_code);
 
                         frappe.model.set_value(
                           cdt,
@@ -361,11 +362,14 @@ function show_checkbutton_for_field(frm, fieldname) {
             </button>`,
     );
 
-    $checkButtonCell.find(".check-button").click(function () {
-      let cdn = $row.attr("data-name");
-      let cdt = field.grid.doctype;
+    $checkButtonCell
+      .find(".check-button")
+      .off("click")
+      .on("click", function () {
+        let cdn = $row.attr("data-name");
+        let cdt = field.grid.doctype;
 
-      frm.script_manager.trigger("check_button", cdt, cdn);
-    });
+        frm.script_manager.trigger("check_button", cdt, cdn);
+      });
   });
 }

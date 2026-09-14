@@ -6,6 +6,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "scan_barcode",
   "serial_no",
   "column_break_1",
   "current_item_code",
@@ -13,14 +14,18 @@
   "current_item_attributes_section",
   "current_attributes",
   "repack_item_attributes_section",
-  "repack_attributes"
+  "repack_attributes",
+  "amended_from"
  ],
  "fields": [
   {
    "fieldname": "serial_no",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Serial No",
-   "options": "Serial No"
+   "options": "Serial No",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "column_break_1",
@@ -29,14 +34,20 @@
   {
    "fieldname": "current_item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Current Item Code",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "repack_item_code",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Repack Item Code",
-   "options": "Item"
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "current_item_attributes_section",
@@ -47,7 +58,8 @@
    "fieldname": "current_attributes",
    "fieldtype": "Table",
    "label": "Current Attributes",
-   "options": "Item Variant Attribute"
+   "options": "Item Variant Attribute",
+   "read_only": 1
   },
   {
    "fieldname": "repack_item_attributes_section",
@@ -59,11 +71,26 @@
    "fieldtype": "Table",
    "label": "Repack Attributes",
    "options": "NJ Repack Attribute"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "NJ Repack",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "scan_barcode",
+   "fieldtype": "Data",
+   "label": "Scan Barcode"
   }
  ],
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2026-09-12 17:58:37.559817",
+ "modified": "2026-09-14 12:27:04.296325",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Repack",
@@ -79,6 +106,7 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],

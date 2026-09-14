@@ -4,7 +4,32 @@ frappe.ui.form.on("NJ Repack", {
       show_checkbutton_for_field(frm, "repack_attributes");
     }, 1000);
   },
+  scan_barcode: function (frm) {
+    if (!frm.doc.scan_barcode) {
+      return;
+    }
 
+    frappe.call({
+      method:
+        "nj_features.nj_features.api.api_files.search_for_serial_or_batch_or_barcode_no",
+
+      args: {
+        search_value: frm.doc.scan_barcode,
+        raise_exp: 1,
+      },
+
+      callback: function (r) {
+        if (r.message && r.message.serial_no) {
+          frm.set_value("serial_no", r.message.serial_no);
+          frm.set_value("scan_barcode", "");
+        } else {
+          frappe.msgprint("Serial No not found for scanned barcode");
+
+          frm.set_value("serial_no", "");
+        }
+      },
+    });
+  },
   serial_no: function (frm) {
     // Clear everything if Serial No is removed
     if (!frm.doc.serial_no) {

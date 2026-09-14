@@ -50,3 +50,8 @@ def before_submit(doc):
             frappe.throw(
                 "Repack Item Code is mandatory before submit"
             )
+
+        if not frappe.db.exists("Item", row.repack_item_code):
+            frappe.throw(
+                f"Repack Item Code {row.repack_item_code} does not exist in Item Master"
+            )

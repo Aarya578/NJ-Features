@@ -110,10 +110,14 @@ doc_events = {
         "validate": "nj_features.overrides.serial_no.validate_rfq_qty",
     },
     "NJ Repack": {
-
         "validate":
-        "nj_features.nj_features.doctype.nj_repack.nj_repack.validate"
+            "nj_features.nj_features.doctype.nj_repack.nj_repack.validate",
 
+        "before_submit":
+            "nj_features.nj_features.doctype.nj_repack.nj_repack.before_submit",
+
+        "on_submit":
+            "nj_features.nj_features.doctype.nj_repack.nj_repack.on_submit",
     },
     "NJ Quality Inspection": {
         "on_update": "nj_features.nj_features.doctype.department_recommendation_engine.department_recommendation_engine.apply_recommendation_rules",

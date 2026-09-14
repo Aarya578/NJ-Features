@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:REPACK-{YYYY}-{#####}",
  "creation": "2026-09-12 16:05:22.684995",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -90,7 +91,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-14 12:27:04.296325",
+ "modified": "2026-09-14 17:01:10.549047",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "NJ Repack",

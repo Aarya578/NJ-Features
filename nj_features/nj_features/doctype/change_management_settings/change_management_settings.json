@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-09-03 00:00:00.000000",
+ "creation": "2026-09-03 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -16,7 +16,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-03 00:00:00.000000",
+ "modified": "2026-09-11 10:38:34.195183",
  "modified_by": "Administrator",
  "module": "NJ Features",
  "name": "Change Management Settings",
@@ -28,6 +28,16 @@
    "print": 1,
    "read": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Process Engineer",
    "share": 1,
    "write": 1
   }

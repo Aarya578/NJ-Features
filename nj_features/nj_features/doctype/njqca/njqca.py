@@ -3975,8 +3975,8 @@ def check_manufacturer_model_exceptions(manufacturer_model, components=None):
                     v3 = (row.get("variant_3") or "").strip().upper()
 
                     # If variant_2 contains BASE BOARD or matches target list
-                    if "BASE BOARD" in v2 or "BASEBOARD" in v2:
-                        return "3490"
+                    # if "BASE BOARD" in v2 or "BASEBOARD" in v2:
+                    #     return "3490"
 
                     for val in (v2, v3):
                         if not val:

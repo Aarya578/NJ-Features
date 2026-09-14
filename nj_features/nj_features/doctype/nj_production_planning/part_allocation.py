@@ -334,58 +334,54 @@ class PartAllocationRun:
         if not warehouses:
             return {}
         params = {"warehouses": tuple(warehouses)}
-        serialized = frappe.db.sql("""
-            SELECT sn.item_code, sn.warehouse, COUNT(*) AS eligible_qty,
-                SUM(CASE WHEN bag.serial_no IS NOT NULL THEN 1 ELSE 0 END) AS bagged_qty
+        # Match the Google Sheet stock query: serialized items are counted from
+        # tabSerial No, while non-serialized items are summed from positive Bin
+        # quantities.  Do not substitute Bin quantity for serialized stock;
+        # that can make ERP allocate a part which the sheet considers absent.
+        serialized_rows = frappe.db.sql("""
+            SELECT
+                sn.item_code,
+                sn.warehouse,
+                COUNT(sn.serial_no) AS qty
             FROM `tabSerial No` sn
-            JOIN `tabItem` i ON i.name=sn.item_code AND IFNULL(i.has_serial_no,0)=1
-            LEFT JOIN (
-                SELECT DISTINCT serial_no FROM `tabBag List`
-                WHERE is_available=1 AND serial_no IS NOT NULL AND serial_no!=''
-            ) bag ON bag.serial_no=sn.name
+            JOIN `tabItem` i ON i.item_code = sn.item_code
             WHERE sn.warehouse IN %(warehouses)s
-                AND (sn.status IS NULL OR sn.status NOT IN ('Delivered','Scrapped','Inactive'))
+                AND i.has_serial_no = 1
+                AND sn.warehouse IS NOT NULL
+                AND sn.warehouse <> ''
             GROUP BY sn.item_code, sn.warehouse
         """, params, as_dict=True)
         bins = frappe.db.sql("""
-            SELECT b.item_code, b.warehouse, SUM(b.actual_qty) AS actual_qty
-            FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
-            WHERE b.warehouse IN %(warehouses)s AND IFNULL(i.has_serial_no,0)=0
+            SELECT
+                b.item_code,
+                b.warehouse,
+                SUM(b.actual_qty) AS actual_qty,
+                IFNULL(i.has_serial_no, 0) AS has_serial_no
+            FROM `tabBin` b
+            JOIN `tabItem` i ON i.name = b.item_code
+            WHERE b.warehouse IN %(warehouses)s
+                AND i.has_serial_no = 0
                 AND b.actual_qty > 0
-            GROUP BY b.item_code,b.warehouse
+            GROUP BY b.item_code, b.warehouse
         """, params, as_dict=True)
-        bagged = frappe.db.sql("""
-            SELECT bl.item AS item_code, SUM(IFNULL(bl.quantity,1)) AS bagged_qty
-            FROM `tabBag List` bl JOIN `tabItem` i ON i.name=bl.item
-            WHERE (bl.serial_no IS NULL OR bl.serial_no='') AND bl.is_available=1
-                AND IFNULL(i.has_serial_no,0)=0 GROUP BY bl.item
-        """, as_dict=True)
-        nonserial_bagged = {r.item_code: number(r.bagged_qty) for r in bagged}
         stock = defaultdict(float)
         details = self.stock_snapshot["items"]
-        serial_codes = set()
-        for r in serialized:
-            serial_codes.add(r.item_code)
-            # Do not deduct global Bag List rows from the Stores stock snapshot.
-            # Priority-run virtual reservations below still prevent over-allocation
-            # inside the same production plan run.
-            qty = number(r.eligible_qty)
+        for r in serialized_rows:
+            qty = number(r.qty)
             stock[r.item_code] += qty
             d = details.setdefault(r.item_code, {"serialized": True, "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
-            d["warehouses"].append({"warehouse": r.warehouse, "eligible_qty": number(r.eligible_qty), "bagged_qty": number(r.bagged_qty), "available_qty": qty})
-            d["eligible_qty"] += number(r.eligible_qty)
-            d["bagged_qty"] += number(r.bagged_qty)
+            d["eligible_qty"] += qty
+            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": qty, "serialized_item": True, "source": "Serial No"})
         for r in bins:
-            if r.item_code in serial_codes:
-                continue
             stock[r.item_code] += number(r.actual_qty)
-            d = details.setdefault(r.item_code, {"serialized": False, "warehouses": [], "eligible_qty": 0, "bagged_qty": nonserial_bagged.get(r.item_code, 0)})
+            d = details.setdefault(r.item_code, {"serialized": False, "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
             d["eligible_qty"] += number(r.actual_qty)
-            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": number(r.actual_qty)})
+            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": number(r.actual_qty), "serialized_item": False, "source": "Bin"})
         for code in stock:
             details[code]["initial_available_qty"] = stock[code]
         self.stock_snapshot["warehouse_scope"] = "Stores - NJ enabled warehouses minus Google Sheet exclusion list"
-        self.stock_snapshot["nonserial_qty_scope"] = "Only positive Bin actual_qty rows are counted"
+        self.stock_snapshot["serialized_qty_scope"] = "Count of tabSerial No rows in eligible Stores - NJ warehouses"
+        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows are counted only for non-serialized items"
         self.stock_snapshot["bag_exclusion_scope"] = "Skipped global Bag List deduction from pooled Stores quantity"
         return dict(stock)
 

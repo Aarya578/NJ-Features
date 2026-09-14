@@ -177,6 +177,9 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
     return variant_id_str
 
 
+_TOUCH_SCREEN_MARKER_WORDS = {'touch', 'nt'}
+
+
 def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
     """Validate that two model templates belong strictly to the same brand and base model series."""
     if not tmpl_a or not tmpl_b:
@@ -198,16 +201,24 @@ def _is_same_model_family(tmpl_a: str, tmpl_b: str) -> bool:
         return False
     
     ignore_words = {
-        'touch', 'win', 'kbd', 'wtb', 'nt', 'sml', 'big', 'pir', 'ir', 'fba',
+        'win', 'kbd', 'wtb', 'sml', 'big', 'pir', 'ir', 'fba',
         'refurbished', 'sff', 'tiny', 'tower', 'fullset', 'full', 'set', 'pro',
         'elitebook', 'thinkpad', 'latitude', 'optiplex', 'workstation', 'eb', 'pb', 'thinkcentre'
     }
     tokens_a = [w for w in re.findall(r'[a-z0-9]+', clean_a) if w not in ignore_words and w != brand_a]
     tokens_b = [w for w in re.findall(r'[a-z0-9]+', clean_b) if w not in ignore_words and w != brand_b]
-    
+
     if not tokens_a or not tokens_b:
         return False
-    
+
+    # Touch and Non-Touch (NT) screens are physically different, incompatible
+    # parts - the token-position checks below don't examine every token, so
+    # this has to be an explicit hard gate rather than relying on them.
+    touch_markers_a = {t for t in tokens_a if t in _TOUCH_SCREEN_MARKER_WORDS}
+    touch_markers_b = {t for t in tokens_b if t in _TOUCH_SCREEN_MARKER_WORDS}
+    if touch_markers_a != touch_markers_b:
+        return False
+
     if tokens_a[0] != tokens_b[0]:
         return False
     
@@ -449,6 +460,9 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
     so_val = (sales_order_no or "").strip()
     try:
         if so_val:
+            current = frappe.db.get_value("Serial No", serial_no, "reserved_sales_order")
+            if (current or "").strip() == so_val:
+                return True
             frappe.db.sql("""
                 UPDATE `tabSerial No`
                 SET reserved_sales_order = %s
@@ -751,6 +765,22 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
             all_serial_ids.extend([r["name"] for r in rows])
             logger.debug(f"has taken {len(rows)} serial no from the department {dept_name}")
 
+            eligible_names = {r["name"] for r in rows}
+            excluded_rows = _get_return_excluded_serials_for_department(dept_doc, eligible_names)
+            for ex in excluded_rows:
+                reason_bits = []
+                if ex.get("return_reason"):
+                    reason_bits.append(f"return_reason={ex['return_reason']}")
+                if int(ex.get("is_replace") or 0) == 1:
+                    reason_bits.append("is_replace=1")
+                reason_text = "Excluded: " + (", ".join(reason_bits) if reason_bits else "not yet reprocessed")
+                plan_doc.append("missing_serial_nos", {
+                    "serial_no": ex["name"],
+                    "current_department": dept_name,
+                    "current_warehouse": ex.get("warehouse"),
+                    "reason": reason_text
+                })
+
     priority_per_dept: Dict[str, int] = defaultdict(lambda: 1)
 
     # -------------------------------------------------------------
@@ -922,7 +952,7 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
         #   → If ANY condition found a serial → allocated. Move to next qty needed.
         #   → If NOTHING found in this dept → move to next dept.
         # -------------------------------------------------------------------------
-        downstream_search = sorted(search_order, key=lambda d: int(d.get("department_sequence") or 0), reverse=True)
+        downstream_search = list(search_order)
 
         target_tmpl, target_proc = None, None
         equiv_templates = set()
@@ -1440,11 +1470,11 @@ def _get_pending_sales_orders(horizon_end=None) -> List[Dict]:
                 so.status NOT IN ('Closed', 'Completed', 'Draft', 'Cancelled')
                 AND so.docstatus = 1
                 AND so.name NOT IN (
-                    SELECT DISTINCT sales_order 
-                    FROM `tabNJ Refund` 
-                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated') 
-                      AND docstatus = 1 
-                      AND sales_order IS NOT NULL 
+                    SELECT DISTINCT sales_order
+                    FROM `tabNJ Refund`
+                    WHERE refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+                      AND docstatus = 1
+                      AND sales_order IS NOT NULL
                       AND sales_order != ''
                 )
                 AND so.name NOT IN (
@@ -2426,7 +2456,7 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
           AND IFNULL(dp.department_sequence, 0) != 0
           AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
           AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
-          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%- Repair%')
+          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
           -- Keep the SO candidate rule identical to assign_serials in
           -- overrides/sales_order.py. Returned/replacement stock is sellable only
           -- after it has reached the reprocessed portion of the pipeline.
@@ -2443,6 +2473,64 @@ def _get_inward_serials_for_department(dept_doc) -> List[Dict]:
 
     _prime_item_cache([r["item_code"] for r in rows])
     return rows
+
+
+@log_io
+def _get_return_excluded_serials_for_department(dept_doc, eligible_names) -> List[Dict]:
+    """
+    Reporting-only: serials that pass the same base filters as
+    _get_inward_serials_for_department() but are excluded by the return/replace
+    eligibility rule (return unit not yet reprocessed far enough downstream).
+    Lets a plan run log *why* a serial isn't included, instead of it silently
+    looking like a vanished/lost serial.
+    """
+    restricted_warehouse: List[str] = []
+    for row in dept_doc.get("inventory_details_child", []):
+        raw = (row.get("restricted_department_warehouse_list") or "").strip()
+        if raw:
+            restricted_warehouse.extend([w.strip() for w in raw.split(",") if w.strip()])
+
+    extra_where = ""
+    params = {
+        "dept": dept_doc.name,
+        "igroups": tuple(SELLABLE_ITEM_GROUPS)
+    }
+    if restricted_warehouse:
+        extra_where = " AND sn.warehouse NOT IN %(restricted_whs)s"
+        params["restricted_whs"] = tuple(restricted_warehouse)
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            sn.name,
+            sn.item_code,
+            sn.warehouse,
+            sn.return_reason,
+            sn.is_replace
+        FROM `tabSerial No` sn
+        INNER JOIN `tabItem` it
+            ON sn.item_code = it.name
+        INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
+        INNER JOIN `tabDepartment` dp ON w.department = dp.name
+        WHERE w.department = %(dept)s
+          AND (sn.status IS NULL OR sn.status NOT IN ('Delivered', 'Scrapped', 'Inactive'))
+          AND it.item_group IN %(igroups)s
+          AND (sn.reserved_sales_order IS NULL OR sn.reserved_sales_order = '')
+          AND IFNULL(dp.department_sequence, 0) != 0
+          AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
+          AND (sn.return_reason IS NULL OR sn.return_reason != 'Repair')
+          AND (sn.order_source IS NULL OR sn.order_source NOT LIKE '%%- Repair%%')
+          AND NOT (
+              (IFNULL(sn.is_replace, 0) = 0 AND (sn.return_reason IS NULL OR sn.return_reason = ''))
+              OR (sn.sales_order_id IS NOT NULL AND sn.sales_order_id != '')
+              OR IFNULL(dp.department_sequence, 0) >= 10
+          )
+          {extra_where}
+        """,
+        params,
+        as_dict=True,
+    )
+    return [r for r in rows if r["name"] not in eligible_names]
 
 
 @log_io
@@ -2484,11 +2572,11 @@ def _get_reserved_serials_for_department(dept_name: str) -> List[Dict]:
           AND sn.reserved_sales_order != ''
           AND so.status NOT IN ('Closed', 'Cancelled', 'Completed')
           AND so.name NOT IN (
-              SELECT DISTINCT sales_order 
-              FROM `tabNJ Refund` 
-              WHERE refund_status IN ('Paid', 'Refunded') 
-                AND docstatus = 1 
-                AND sales_order IS NOT NULL 
+              SELECT DISTINCT sales_order
+              FROM `tabNJ Refund`
+              WHERE refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+                AND docstatus = 1
+                AND sales_order IS NOT NULL
                 AND sales_order != ''
           )
           AND IFNULL(dp.department_sequence, 0) != 0
@@ -7980,7 +8068,7 @@ def nj_clear_stale_reservations():
         SELECT sn.name
         FROM `tabSerial No` sn
         INNER JOIN `tabSales Order` so ON so.name = sn.reserved_sales_order
-        LEFT JOIN `tabNJ Refund` njr ON njr.sales_order = so.name AND njr.refund_status IN ('Paid', 'Refunded') AND njr.docstatus = 1
+        LEFT JOIN `tabNJ Refund` njr ON njr.sales_order = so.name AND njr.refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned') AND njr.docstatus = 1
         WHERE (so.status IN ('Closed', 'Cancelled', 'Completed') OR njr.name IS NOT NULL)
           AND sn.reserved_sales_order IS NOT NULL
           AND sn.reserved_sales_order != ''
@@ -8004,7 +8092,7 @@ def nj_check_stale_reservations():
         select sn.name, sn.reserved_sales_order, so.status, njr.refund_status 
         from `tabSerial No` sn 
         inner join `tabSales Order` so on sn.reserved_sales_order = so.name  
-        left join `tabNJ Refund` njr on njr.sales_order = so.name and njr.refund_status in ('Paid', 'Refunded') and njr.docstatus = 1
+        left join `tabNJ Refund` njr on njr.sales_order = so.name and njr.refund_status in ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned') and njr.docstatus = 1
         where (so.status in ('Closed', 'Cancelled', 'Completed') or njr.name is not null)
           and sn.reserved_sales_order is not null
           and sn.reserved_sales_order != ''

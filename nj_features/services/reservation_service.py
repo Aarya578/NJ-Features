@@ -17,6 +17,86 @@ logger = logging.getLogger("nj_reservation_service")
 
 
 # ==============================================================================
+# 0. SHARED REFUND-BLOCKING CHECK (single source of truth)
+# ==============================================================================
+# Previously this existed as three separately hand-copied variants across the
+# codebase (two checking only ('Paid', 'Refunded'), one checking ('Paid',
+# 'Refunded', 'Initiated')), and two allocation entry points (get_open_sales_orders,
+# upgrade_order_reservations) had no refund check at all. That gap let a
+# refunded-then-reopened Sales Order get silently re-allocated a fresh serial on
+# every hourly cron run, only to have it released again by trim_over_allocated_serials
+# — an hourly allocate/release churn that briefly locked real inventory away from
+# genuine orders each cycle.
+#
+# 'Debit Failed' and 'Returned' are included here defensively (block-by-default):
+# the cost of wrongly holding back a legitimate order (an ops person notices and
+# clears it) is far lower than the cost of wrongly allocating a dead one (a real
+# unit ships to an already-refunded customer). Revisit if the refund team confirms
+# either status should NOT block allocation — this is the only place to change it.
+# 'Hold' (the default status on new refund records, and the vast majority of all
+# NJ Refund rows) and 'Rejected'/'Deleted' (refund didn't happen / was voided) are
+# deliberately NOT blocking.
+REFUND_BLOCKING_STATUSES = ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+
+REFUND_EXCLUSION_SQL = """
+    AND so.name NOT IN (
+        SELECT DISTINCT sales_order FROM `tabNJ Refund`
+        WHERE docstatus = 1
+          AND refund_status IN ('Paid', 'Refunded', 'Initiated', 'Debit Failed', 'Returned')
+          AND sales_order IS NOT NULL AND sales_order != ''
+    )
+    AND so.name NOT IN (
+        -- An NJ Refund record may never get created at all - the return itself
+        -- (Delivery Note, cause_of_return = 'Refund') is often the only signal
+        -- that this order shouldn't be refilled. Only the LATEST submitted
+        -- Delivery Note per order counts, so a genuine later re-delivery
+        -- (someone deliberately decided to replace instead of refund) naturally
+        -- un-blocks it again without needing a manual override.
+        SELECT DISTINCT dni.against_sales_order
+        FROM `tabDelivery Note Item` dni
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE dn.docstatus = 1
+          AND dn.is_return = 1
+          AND dn.cause_of_return = 'Refund'
+          AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
+          AND NOT EXISTS (
+              SELECT 1
+              FROM `tabDelivery Note Item` dni2
+              INNER JOIN `tabDelivery Note` dn2 ON dn2.name = dni2.parent
+              WHERE dni2.against_sales_order = dni.against_sales_order
+                AND dn2.docstatus = 1
+                AND dn2.creation > dn.creation
+          )
+    )
+"""
+
+
+def is_sales_order_refund_blocked(so_name):
+    """True if this SO has a submitted refund record, or its latest submitted
+    Delivery Note is a Refund-cause return, that should stop allocation."""
+    if frappe.db.exists("NJ Refund", {
+        "sales_order": so_name,
+        "docstatus": 1,
+        "refund_status": ["in", REFUND_BLOCKING_STATUSES],
+    }):
+        return True
+
+    latest_dn = frappe.db.sql("""
+        SELECT dn.is_return, dn.cause_of_return
+        FROM `tabDelivery Note Item` dni
+        INNER JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        WHERE dni.against_sales_order = %s AND dn.docstatus = 1
+        ORDER BY dn.creation DESC
+        LIMIT 1
+    """, (so_name,), as_dict=True)
+
+    if latest_dn and latest_dn[0].get("is_return") and latest_dn[0].get("cause_of_return") == "Refund":
+        return True
+
+    return False
+
+
+# ==============================================================================
 # 1. HARDENED ATOMIC RESERVATION SWAP
 # ==============================================================================
 
@@ -307,7 +387,7 @@ def compute_pure_sales_order_eta(so_name):
 # 3. CONTROLLED RESERVATION UPGRADES (ORDER-PRIORITY RESPECTING)
 # ==============================================================================
 
-def upgrade_order_reservations(target_item_code=None, dry_run=False):
+def upgrade_order_reservations(target_item_code=None, dry_run=False, so_name=None):
     """
     Scan open orders holding upstream reservations and upgrade them to available stock
     in higher departments (prioritizing Packing & Dispatch and departments closest to dispatch).
@@ -317,6 +397,15 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
     - Earliest customer promises receive first claim on downstream/ready stock.
     - Swaps are executed via `swap_order_reservation()`.
     - Supports Condition 1 (Exact), Condition 2 (Shopify Variant), Condition 3 (Model + CPU).
+
+    Pass `so_name` to scope the scan to a single Sales Order — used to actively
+    trigger an immediate reallocation attempt for one order (e.g. when its
+    estimated/committed delivery dates have drifted) instead of waiting for the
+    next full hourly pass over every open order.
+
+    A reservation is only eligible for upgrade once it's been stable 24h+
+    (sn.modified), so a unit briefly dipping out of Packing & Dispatch for
+    routine QC doesn't get endlessly re-swapped to fresh ready stock daily.
     """
     from collections import defaultdict
     from nj_features.nj_features.doctype.nj_production_planning.nj_production_planning import (
@@ -374,6 +463,10 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
     item_filter = "AND (sn.item_code = %s OR sn.to_make = %s)" if target_item_code else ""
     params = [target_item_code, target_item_code] if target_item_code else []
 
+    if so_name:
+        item_filter += " AND so.name = %s"
+        params.append(so_name)
+
     query = f"""
         SELECT so.name as so_name, so.committed_delivery_date, so.delivery_date, so.creation,
                sn.name as old_serial_no, sn.item_code, sn.to_make, sn.warehouse, dp.name as current_dept,
@@ -386,13 +479,14 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
           AND so.status IN ('To Deliver', 'To Deliver and Bill')
           AND sn.status = 'Active'
           AND IFNULL(dp.department_sequence, 0) < 20
+          AND sn.modified <= DATE_SUB(DATE_ADD(NOW(), INTERVAL 330 MINUTE), INTERVAL 24 HOUR)
           AND (sn.return_reason IS NULL OR sn.return_reason = '' OR sn.return_reason NOT IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
           AND (sn.order_source IS NULL OR (
-              sn.order_source NOT LIKE '%- Repair%'
-              AND sn.order_source NOT LIKE '%- Replace%'
-              AND sn.order_source NOT LIKE '%- RTO Customer%'
-              AND sn.order_source NOT LIKE '%- RTO Delivery Partner%'
-              AND sn.order_source NOT LIKE '%- Refund%'
+              sn.order_source NOT LIKE '%%- Repair%%'
+              AND sn.order_source NOT LIKE '%%- Replace%%'
+              AND sn.order_source NOT LIKE '%%- RTO Customer%%'
+              AND sn.order_source NOT LIKE '%%- RTO Delivery Partner%%'
+              AND sn.order_source NOT LIKE '%%- Refund%%'
           ))
           AND so.name NOT IN (
               SELECT DISTINCT dni.against_sales_order
@@ -401,6 +495,7 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
               WHERE dn.docstatus = 1 AND dn.is_return = 1 AND dn.cause_of_return IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner', 'Refund')
                 AND dni.against_sales_order IS NOT NULL AND dni.against_sales_order != ''
           )
+          {REFUND_EXCLUSION_SQL}
           {item_filter}
         ORDER BY IFNULL(so.committed_delivery_date, so.delivery_date) ASC, so.creation ASC
     """
@@ -431,15 +526,37 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
                 bundle_cache[target_sku] = pi[0]["item_code"] if pi else target_sku
         real_target = bundle_cache[target_sku]
 
+        # Pre-compute model+CPU equivalence once per target. Used both to validate
+        # to_make-based "exact" matches below (a candidate's to_make may have been
+        # set incorrectly by an earlier allocation pass, so it must be re-checked
+        # against the candidate's own physical spec) and for Condition 3.
+        if real_target not in cfg_cache:
+            target_cfg = _cfg_tuple_from_item(real_target)
+            target_tmpl, target_proc = (target_cfg[0], target_cfg[1]) if target_cfg else (None, None)
+            equiv_tmpls = _get_equivalent_parent_models(target_tmpl) if target_tmpl else set()
+            cfg_cache[real_target] = (target_tmpl, target_proc, equiv_tmpls)
+        else:
+            target_tmpl, target_proc, equiv_tmpls = cfg_cache[real_target]
+
         # Scan for best candidate with higher department sequence
         cand_found = None
         match_cond = None
 
         # 1. Exact Match in any higher department
         for cand in exact_index.get(real_target, []):
-            if cand["name"] not in claimed_serials and cand["department_sequence"] > curr_seq:
+            if cand["name"] in claimed_serials or cand["department_sequence"] <= curr_seq:
+                continue
+            if cand["item_code"] == real_target:
                 cand_found = cand
                 match_cond = f"C1 (Exact Match in {cand['department']} seq {cand['department_sequence']})"
+                break
+            # Matched only via to_make (candidate's own item_code differs) —
+            # don't trust to_make blindly, re-verify it's genuinely the same
+            # model+CPU family as the target before accepting it.
+            cand_cfg = _cfg_tuple_from_item(cand["item_code"])
+            if cand_cfg and target_proc and cand_cfg[1] == target_proc and cand_cfg[0] in equiv_tmpls:
+                cand_found = cand
+                match_cond = f"C1 (WIP to_make match, verified in {cand['department']} seq {cand['department_sequence']})"
                 break
 
         # 2. Shopify Variant match in any higher department
@@ -462,14 +579,6 @@ def upgrade_order_reservations(target_item_code=None, dry_run=False):
 
         # 3. Model + CPU match in any higher department
         if not cand_found:
-            if real_target not in cfg_cache:
-                target_cfg = _cfg_tuple_from_item(real_target)
-                target_tmpl, target_proc = (target_cfg[0], target_cfg[1]) if target_cfg else (None, None)
-                equiv_tmpls = _get_equivalent_parent_models(target_tmpl) if target_tmpl else set()
-                cfg_cache[real_target] = (target_tmpl, target_proc, equiv_tmpls)
-            else:
-                target_tmpl, target_proc, equiv_tmpls = cfg_cache[real_target]
-
             if target_proc and equiv_tmpls:
                 for eq_tmpl in equiv_tmpls:
                     for cand in model_cpu_index.get((eq_tmpl, target_proc), []):

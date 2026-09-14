@@ -3,7 +3,7 @@ import json
 import frappe
 from frappe import _
 from ecommerce_integrations.shopify import utils as shopify_utils
-from frappe.utils import add_days, cint, cstr, flt, get_datetime, getdate, nowdate
+from frappe.utils import cint, cstr, flt, get_datetime, getdate, nowdate
 # from ecommerce_integrations.shopify.product import create_items_if_not_exist
 
 # from ecommerce_integrations.shopify.product import create_items_if_not_exist
@@ -295,14 +295,11 @@ def create_sales_order(shopify_order, setting, company=None):
                 snapmint_id = tag.replace("snapmint_", "")
                 break
 
-    order_txn_date = getdate(shopify_order.get("created_at")) or nowdate()
-    default_delivery_date = add_days(order_txn_date, 4)
-
     # Get order items
     items = get_order_items(
         shopify_order.get("line_items"),
         setting,
-        default_delivery_date,
+        getdate(shopify_order.get("created_at")),
         taxes_inclusive=shopify_order.get("taxes_included"),
         shopify_response=shopify_order
     )
@@ -365,12 +362,11 @@ def create_sales_order(shopify_order, setting, company=None):
     so_data = {
         "doctype": "Sales Order",
         "naming_series": naming_series,
-        ORDER_ID_FIELD: str(shopify_order.get("id")),
-        ORDER_NUMBER_FIELD: shopify_order.get("name"),
+        ORDER_ID_FIELD: str(shopify_order.get("name")),
+        ORDER_NUMBER_FIELD: shopify_order.get("id"),
         "customer": customer,
-        "transaction_date": order_txn_date,
-        "delivery_date": default_delivery_date,
-        "committed_delivery_date": default_delivery_date,
+        "transaction_date": getdate(shopify_order.get("created_at")) or nowdate(),
+        "delivery_date": getdate(shopify_order.get("created_at")) or nowdate(),
         "company": setting.company,
         "selling_price_list": get_dummy_price_list(),
         "ignore_pricing_rule": 1,

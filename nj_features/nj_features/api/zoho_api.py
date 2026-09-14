@@ -115,6 +115,16 @@ def zoho_put(path, data):
 	return _handle_response(response, "PUT", path)
 
 
+def zoho_coql(select_query):
+	"""Run a COQL query (CRM Object Query Language) and return the matched rows."""
+	response = requests.post(
+		f"{_api_base()}/coql", headers=_headers(), json={"select_query": select_query}, timeout=30
+	)
+	if response.status_code == 204:
+		return []
+	return _handle_response(response, "POST", "coql").get("data", [])
+
+
 def _handle_response(response, method, path):
 	if response.status_code >= 300:
 		frappe.log_error(

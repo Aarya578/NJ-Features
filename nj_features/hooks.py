@@ -147,7 +147,8 @@ doc_events = {
         # ],
         "on_update": [
             "nj_features.overrides.delivery_note.set_cod_details_critical"
-        ]
+        ],
+        "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_submit",
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
@@ -166,7 +167,11 @@ doc_events = {
     # 🔹 Targeted Inventory Sync on Sales Order Submission
     # =========================================================
     "Sales Order": {
-        "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
+        "on_submit": [
+            "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_order_submit",
+        ],
+        "on_cancel": "nj_features.nj_features.api.zoho_status_sync.on_sales_order_cancel",
     },
     "Item Attribute": {
         "before_save": [
@@ -243,6 +248,12 @@ scheduler_events = {
         # Runs every hour
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
+            "nj_features.nj_features.api.zoho_sync.sync_customers_to_zoho",
+        ],
+
+        # Runs every minute
+        "*/1 * * * *": [
+            "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
         ],
 
         # Runs every 12 hours: 12 AM and 12 PM server time
@@ -289,6 +300,9 @@ scheduler_events = {
 
         "45 23 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
+        ],
+        "48 23 * * *": [
+            "UPDATE `tabSerial No` AS target",
         ],
 
         "50 23 * * *": [

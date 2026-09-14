@@ -167,6 +167,7 @@ class StockMovement(Document):
                                     self.make_stock_entry_using_nj_lib()
 
     def updating_mr_qty_with_status(self):
+        
         print("updating_mr_qty_with_status started for Stock Movement:", self.name)
         for item in self.items:
             target_department = frappe.db.get_value("Warehouse", item.t_warehouse, "department") if item.t_warehouse else None

@@ -5,6 +5,45 @@ $('.custom-actions.hidden-xs.hidden-md, .btn.btn-default.btn-sm[data-label="Canc
 var item_code_init = "";
 var default_ware = "";
 
+function configureEmployeeTargetWarehouses(frm) {
+    frappe.db.get_value(
+        'Employee',
+        {'user_id': frappe.session.user_email, 'status': 'Active'},
+        ['work_warehouse', 'employee_asset_warehouse']
+    ).then(function(r) {
+        const employee = r && r.message ? r.message : {};
+        const allowedWarehouses = [
+            employee.work_warehouse,
+            employee.employee_asset_warehouse
+        ].filter(function(warehouse, index, warehouses) {
+            return warehouse && warehouses.indexOf(warehouse) === index;
+        });
+
+        console.log(
+            'Stock Movement employee target warehouses:',
+            'work_warehouse:', employee.work_warehouse,
+            'employee_asset_warehouse:', employee.employee_asset_warehouse,
+            'allowed:', allowedWarehouses
+        );
+
+        frm.set_df_property(
+            'default_target_warehouse',
+            'options',
+            [''].concat(allowedWarehouses).join('\n')
+        );
+        frm.refresh_field('default_target_warehouse');
+
+        if (
+            frm.is_new()
+            && frm.doc.transfer_status === 'Stock Accept'
+            && !frm.doc.default_target_warehouse
+            && employee.work_warehouse
+        ) {
+            frm.set_value('default_target_warehouse', employee.work_warehouse);
+        }
+    });
+}
+
 function triggerUnifiedProductionPlanning() {
     frappe.msgprint({
         title: __("Production Planning"),
@@ -50,6 +89,7 @@ function showProductionPlanningConfirmDialog() {
 
 frappe.ui.form.on('Stock Movement', {
     onload: function(frm) {
+        configureEmployeeTargetWarehouses(frm);
         handleScannerInput(frm, 'scan_barcode');
         $('.col-lg-2.layout-side-section').hide();
         frm.toggle_display(['scan_grade', 'scan_warehouse'], false);
@@ -237,7 +277,13 @@ frappe.ui.form.on('Stock Movement', {
     },
 
     default_target_warehouse: function(frm) {
+        console.log(
+            'Stock Movement default target warehouse changed:',
+            frm.doc.default_target_warehouse,
+            'child row count:', (frm.doc.items || []).length
+        );
         autofill_warehouse(frm.doc.items, "t_warehouse", frm.doc.default_target_warehouse);
+        frm.refresh_field('items');
     },
     default_source_warehouse: function(frm) {
         autofill_warehouse(frm.doc.items, "s_warehouse", frm.doc.default_source_warehouse);
@@ -697,6 +743,7 @@ function set_scanned_values(row_to_modify, data) {
                 let values = {
                     item_code: data.item_code,
                     s_warehouse: data.warehouse,
+                    t_warehouse: cur_frm.doc.default_target_warehouse,
                     qty: quantity,
                     transfer_qty: 1
                 };

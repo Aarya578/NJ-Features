@@ -239,6 +239,12 @@ scheduler_events = {
         # Runs every hour
         "0 * * * *": [
             "nj_features.nj_features.api.shopify_inventory.fetch_and_stage_inventory_sync",
+            "nj_features.nj_features.api.zoho_sync.sync_customers_to_zoho",
+        ],
+
+        # Runs every minute
+        "*/1 * * * *": [
+            "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
         ],
 
         # Runs every 12 hours: 12 AM and 12 PM server time

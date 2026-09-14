@@ -49,11 +49,10 @@
   {
    "columns": 2,
    "fieldname": "default_target_warehouse",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Default Target Warehouse",
-   "read_only": 1
+   "label": "Default Target Warehouse"
   },
   {
    "fieldname": "section_break_vwv0s",

@@ -257,6 +257,15 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             super(CustomPurchaseReceipt, self).on_submit()
             log_pr_time("super().on_submit()", self.name, start, self.is_return)
 
+            start = time.perf_counter()
+            self.mr_closure_via_pr_to_laptop_adaptors()
+            log_pr_time(
+                "mr_closure_via_pr_to_laptop_adaptors",
+                self.name,
+                start,
+                self.is_return,
+            )
+
             # start = time.perf_counter()
             # self.auto_closure_mr_via_pr()
             # log_pr_time("auto_closure_mr_via_pr", self.name, start)
@@ -288,6 +297,139 @@ class CustomPurchaseReceipt(PurchaseReceipt):
                 self.is_return,
             )
     
+
+    def mr_closure_via_pr_to_laptop_adaptors(self):
+        print("Laptop Adaptor Purchase MR closure started: PR:", self.name)
+        if self.is_return:
+            print("Laptop Adaptor Purchase MR closure skipped: Purchase Receipt is a return:", self.name)
+            return
+
+        adaptor_items = [
+            item
+            for item in self.items
+            if str(item.get("item_group") or "").strip().lower() == "laptop adaptors"
+        ]
+        print(
+            "Laptop Adaptor Purchase MR closure PR item summary:",
+            "total_rows:", len(self.items),
+            "adaptor_rows:", len(adaptor_items),
+        )
+        if not adaptor_items:
+            print("Laptop Adaptor Purchase MR closure skipped: no Laptop Adaptors rows:", self.name)
+            return
+
+        for item in adaptor_items:
+            remaining_qty = flt(item.qty)
+            print(
+                "Laptop Adaptor Purchase MR closure checking PR row:",
+                "pr:", self.name,
+                "row:", item.idx,
+                "item_code:", item.item_code,
+                "accepted_qty:", remaining_qty,
+            )
+            if not item.item_code or remaining_qty <= 0:
+                print(
+                    "Laptop Adaptor Purchase MR closure row skipped:",
+                    "reason: missing item code or accepted qty is zero",
+                    "row:", item.idx,
+                )
+                continue
+
+            material_request_items = frappe.db.sql("""
+                SELECT
+                    mri.name,
+                    mri.parent,
+                    mri.qty,
+                    IFNULL(mri.received_qty, 0) AS received_qty,
+                    IFNULL(mri.post_order_status, '') AS post_order_status,
+                    mr.transaction_date,
+                    mr.creation
+                FROM `tabMaterial Request Item` AS mri
+                INNER JOIN `tabMaterial Request` AS mr
+                    ON mr.name = mri.parent
+                WHERE mr.docstatus = 1
+                    AND mr.material_request_type = 'Purchase'
+                    AND IFNULL(mr.status, '') NOT IN ('Stopped', 'Cancelled')
+                    AND mri.item_code = %(item_code)s
+                    AND IFNULL(mri.post_order_status, '') IN ('', 'Not Completed')
+                    AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
+                ORDER BY
+                    CASE
+                        WHEN IFNULL(mri.received_qty, 0) > 0
+                            AND IFNULL(mri.received_qty, 0) < IFNULL(mri.qty, 0)
+                        THEN 0
+                        ELSE 1
+                    END,
+                    mr.transaction_date ASC,
+                    mr.creation ASC,
+                    mri.idx ASC
+                FOR UPDATE
+            """, {
+                "item_code": item.item_code,
+            }, as_dict=True)
+
+            print(
+                "Laptop Adaptor Purchase MR closure matching MRI rows:",
+                "item_code:", item.item_code,
+                "count:", len(material_request_items),
+                "rows:", material_request_items,
+            )
+
+            for mr_item in material_request_items:
+                if remaining_qty <= 0:
+                    print(
+                        "Laptop Adaptor Purchase MR closure allocation stopped:",
+                        "item_code:", item.item_code,
+                        "reason: accepted qty fully allocated",
+                    )
+                    break
+
+                pending_qty = flt(mr_item.qty) - flt(mr_item.received_qty)
+                if pending_qty <= 0:
+                    print(
+                        "Laptop Adaptor Purchase MR closure MRI skipped:",
+                        "mr:", mr_item.parent,
+                        "mri:", mr_item.name,
+                        "pending_qty:", pending_qty,
+                    )
+                    continue
+
+                qty_to_update = min(remaining_qty, pending_qty)
+                new_received_qty = flt(mr_item.received_qty) + qty_to_update
+                values = {"received_qty": new_received_qty}
+                if new_received_qty >= flt(mr_item.qty):
+                    values["post_order_status"] = "Completed"
+
+                frappe.db.set_value(
+                    "Material Request Item",
+                    mr_item.name,
+                    values,
+                    update_modified=False,
+                )
+                print(
+                    "Laptop Adaptor Purchase MR closure MRI updated:",
+                    "pr:", self.name,
+                    "pr_row:", item.idx,
+                    "mr:", mr_item.parent,
+                    "mri:", mr_item.name,
+                    "item_code:", item.item_code,
+                    "mr_qty:", flt(mr_item.qty),
+                    "received_qty_before:", flt(mr_item.received_qty),
+                    "qty_allocated:", qty_to_update,
+                    "received_qty_after:", new_received_qty,
+                    "post_order_status:", values.get("post_order_status", "unchanged"),
+                    "remaining_pr_qty_before:", remaining_qty,
+                )
+                remaining_qty = flt(remaining_qty - qty_to_update)
+
+            print(
+                "Laptop Adaptor Purchase MR closure PR row completed:",
+                "pr:", self.name,
+                "row:", item.idx,
+                "item_code:", item.item_code,
+                "unallocated_accepted_qty:", remaining_qty,
+            )
+
 
 
     def updating_parent_qty_for_new_generated_serial_no(self):

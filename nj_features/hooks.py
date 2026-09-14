@@ -280,6 +280,9 @@ scheduler_events = {
         "45 23 * * *": [
             "nj_features.nj_features.doctype.nj_production_planning.nj_production_planning.laptop_storage_mr_via_production_plan",
         ],
+        "48 23 * * *": [
+            "UPDATE `tabSerial No` AS target",
+        ],
 
         "50 23 * * *": [
             "nj_features.overrides.product_bundle.update_variant_status",

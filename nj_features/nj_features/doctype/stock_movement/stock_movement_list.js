@@ -26,7 +26,11 @@ function viewButton(listview) {
 }
 
 function openStockEntryForm(stockType) {
-    frappe.db.get_value('Employee', {'user_id': frappe.session.user_email, 'status': 'Active'}, ['name', 'work_warehouse'], function(response) {
+    frappe.db.get_value(
+        'Employee',
+        {'user_id': frappe.session.user_email, 'status': 'Active'},
+        ['name', 'work_warehouse', 'employee_asset_warehouse'],
+        function(response) {
         if (!response || !response.name) {
             frappe.msgprint(`Employee not found for User: `+frappe.session.user_email+`.`);
             return;
@@ -38,7 +42,7 @@ function openStockEntryForm(stockType) {
                 doc.transfer_status = "Stock Accept";
                 doc.stock_entry_type = "Material Transfer"
                 doc.naming_series = "SMA-.YYYY.-.MM.-"
-                if (!response && !response.work_warehouse) {
+                if (!response || !response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist for User: '+frappe.session.user_email+'.');
                     return;
                 } else {
@@ -48,7 +52,7 @@ function openStockEntryForm(stockType) {
                 doc.transfer_status = "Racking";
                 doc.stock_entry_type = "Material Transfer"
                 doc.naming_series = "SMR-.YYYY.-.MM.-"
-                if (!response && !response.work_warehouse) {
+                if (!response || !response.work_warehouse) {
                     frappe.msgprint('Work Warehouse does not exist for User: '+frappe.session.user_email+'.');
                     return;
                 } else {

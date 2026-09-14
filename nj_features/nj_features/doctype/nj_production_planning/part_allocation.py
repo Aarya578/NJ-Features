@@ -334,10 +334,23 @@ class PartAllocationRun:
         if not warehouses:
             return {}
         params = {"warehouses": tuple(warehouses)}
-        # Use Bin.actual_qty as the Stores stock source for both serialized and
-        # non-serialized items.  Serialized items can have a larger Bin balance
-        # than the count of currently eligible Serial No rows, so counting only
-        # tabSerial No under-reports the stock that the warehouse query exposes.
+        # Match the Google Sheet stock query: serialized items are counted from
+        # tabSerial No, while non-serialized items are summed from positive Bin
+        # quantities.  Do not substitute Bin quantity for serialized stock;
+        # that can make ERP allocate a part which the sheet considers absent.
+        serialized_rows = frappe.db.sql("""
+            SELECT
+                sn.item_code,
+                sn.warehouse,
+                COUNT(sn.serial_no) AS qty
+            FROM `tabSerial No` sn
+            JOIN `tabItem` i ON i.item_code = sn.item_code
+            WHERE sn.warehouse IN %(warehouses)s
+                AND i.has_serial_no = 1
+                AND sn.warehouse IS NOT NULL
+                AND sn.warehouse <> ''
+            GROUP BY sn.item_code, sn.warehouse
+        """, params, as_dict=True)
         bins = frappe.db.sql("""
             SELECT
                 b.item_code,
@@ -347,20 +360,28 @@ class PartAllocationRun:
             FROM `tabBin` b
             JOIN `tabItem` i ON i.name = b.item_code
             WHERE b.warehouse IN %(warehouses)s
+                AND i.has_serial_no = 0
                 AND b.actual_qty > 0
-            GROUP BY b.item_code, b.warehouse, IFNULL(i.has_serial_no, 0)
+            GROUP BY b.item_code, b.warehouse
         """, params, as_dict=True)
         stock = defaultdict(float)
         details = self.stock_snapshot["items"]
+        for r in serialized_rows:
+            qty = number(r.qty)
+            stock[r.item_code] += qty
+            d = details.setdefault(r.item_code, {"serialized": True, "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
+            d["eligible_qty"] += qty
+            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": qty, "serialized_item": True, "source": "Serial No"})
         for r in bins:
             stock[r.item_code] += number(r.actual_qty)
-            d = details.setdefault(r.item_code, {"serialized": bool(r.has_serial_no), "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
+            d = details.setdefault(r.item_code, {"serialized": False, "warehouses": [], "eligible_qty": 0, "bagged_qty": 0})
             d["eligible_qty"] += number(r.actual_qty)
-            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": number(r.actual_qty), "serialized_item": bool(r.has_serial_no)})
+            d["warehouses"].append({"warehouse": r.warehouse, "actual_qty": number(r.actual_qty), "serialized_item": False, "source": "Bin"})
         for code in stock:
             details[code]["initial_available_qty"] = stock[code]
         self.stock_snapshot["warehouse_scope"] = "Stores - NJ enabled warehouses minus Google Sheet exclusion list"
-        self.stock_snapshot["bin_qty_scope"] = "Positive Bin actual_qty rows are counted for serialized and non-serialized items"
+        self.stock_snapshot["serialized_qty_scope"] = "Count of tabSerial No rows in eligible Stores - NJ warehouses"
+        self.stock_snapshot["bin_qty_scope"] = "Positive tabBin.actual_qty rows are counted only for non-serialized items"
         self.stock_snapshot["bag_exclusion_scope"] = "Skipped global Bag List deduction from pooled Stores quantity"
         return dict(stock)
 

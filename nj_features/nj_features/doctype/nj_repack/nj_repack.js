@@ -20,8 +20,42 @@ frappe.ui.form.on("NJ Repack", {
 
       callback: function (r) {
         if (r.message && r.message.serial_no) {
-          frm.set_value("serial_no", r.message.serial_no);
-          frm.set_value("scan_barcode", "");
+          frappe.db
+            .get_value("Serial No", r.message.serial_no, ["item_code"])
+            .then((res) => {
+              let item_code = res.message.item_code;
+
+              frappe.db
+                .get_value("Item", item_code, "item_group")
+                .then((item_res) => {
+                  let item_group = item_res.message.item_group;
+
+                  frappe.db
+                    .get_value("Item Group", item_group, "is_component")
+                    .then((group_res) => {
+                      if (!group_res.message.is_component) {
+                        frappe.msgprint({
+                          title: "Repack Not Allowed",
+                          message:
+                            "Repack is allowed only for Component Items.<br><br>" +
+                            "<b>Item Code:</b> " +
+                            item_code +
+                            "<br><b>Item Group:</b> " +
+                            item_group,
+                          indicator: "red",
+                        });
+
+                        frm.set_value("scan_barcode", "");
+                        frm.set_value("serial_no", "");
+
+                        return;
+                      }
+
+                      // Component item allowed
+                      frm.set_value("serial_no", r.message.serial_no);
+                    });
+                });
+            });
         } else {
           frappe.msgprint("Serial No not found for scanned barcode");
 
@@ -219,127 +253,126 @@ frappe.ui.form.on("NJ Repack Attribute", {
         });
 
         Promise.all(promises).then(function () {
-          frappe.prompt(
-            fields,
+          let d = new frappe.ui.Dialog({
+            title: __("Create Variant"),
+            fields: fields,
+          });
+          d.show();
+          d.set_primary_action(__("Create"), function () {
+            let values = d.get_values();
 
-            function (values) {
-              let attributes = [];
+            if (!values) {
+              return;
+            }
+            let attributes = [];
 
-              Object.keys(values).forEach(function (key) {
-                if (!values[key]) {
-                  return;
-                }
+            Object.keys(values).forEach(function (key) {
+              if (!values[key]) {
+                return;
+              }
 
-                let field = fields.find((f) => f.fieldname == key);
+              let field = fields.find((f) => f.fieldname == key);
 
-                if (!field) return;
+              if (!field) return;
 
-                attributes.push({
-                  attribute: field.label,
-                  attribute_value: values[key],
-                });
+              attributes.push({
+                attribute: field.label,
+                attribute_value: values[key],
               });
+            });
 
-              frappe.call({
-                method:
-                  "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
+            frappe.call({
+              method:
+                "nj_features.nj_features.doctype.njqca.njqca.get_variant_from_value",
 
-                args: {
-                  item_template: item.variant_of,
-                  args: JSON.stringify(
-                    attributes.map((a) => ({
-                      [a.attribute]: a.attribute_value,
-                    })),
-                  ),
-                },
+              args: {
+                item_template: item.variant_of,
+                args: JSON.stringify(
+                  attributes.map((a) => ({
+                    [a.attribute]: a.attribute_value,
+                  })),
+                ),
+              },
 
-                callback: function (r) {
-                  if (r.message) {
-                    let repack_item_code = r.message;
+              callback: function (r) {
+                if (r.message) {
+                  let repack_item_code = r.message;
 
-                    frappe.db
-                      .exists("Item", repack_item_code)
-                      .then(function (exists) {
-                        if (!exists) {
-                          frappe.msgprint({
-                            title: "Invalid Repack Item",
-                            indicator: "red",
-                            message:
-                              "Repack Item Code not found:<br><b>" +
-                              repack_item_code +
-                              "</b><br><br>Please contact NPD team for item creation.",
-                          });
-
-                          return;
-                        }
-
-                        frappe.model.set_value(
-                          cdt,
-                          cdn,
-                          "repack_item_code",
-                          repack_item_code,
-                        );
-
-                        frm.set_value("repack_item_code", repack_item_code);
-
-                        frappe.model.set_value(
-                          cdt,
-                          cdn,
-                          "remark",
-                          "Changed from " +
-                            row.current_item_code +
-                            " to " +
-                            repack_item_code,
-                        );
-
-                        frm.refresh_field("repack_attributes");
-
+                  frappe.db
+                    .exists("Item", repack_item_code)
+                    .then(function (exists) {
+                      if (!exists) {
                         frappe.msgprint({
-                          title: "Success",
-                          indicator: "green",
+                          title: "Invalid Repack Item",
+                          indicator: "red",
                           message:
-                            "Repack Item Generated: <b>" +
+                            "Repack Item Code not found:<br><b>" +
                             repack_item_code +
-                            "</b>",
+                            "</b><br><br>Please contact NPD team for item creation.",
                         });
-                      });
-                  } else {
-                    let selected_attributes = attributes
-                      .map(function (a) {
-                        return (
-                          "<b>" + a.attribute + ":</b> " + a.attribute_value
-                        );
-                      })
-                      .join("<br>");
 
-                    frappe.msgprint({
-                      title: "Repack Item Not Found",
-                      indicator: "red",
-                      message:
-                        "Repack Item not found for selected attributes.<br><br>" +
-                        "<b>Selected Attributes:</b><br>" +
-                        selected_attributes +
-                        "<br><br>" +
-                        "Please contact <b>NPD team</b> for item creation.",
+                        return;
+                      }
+
+                      frappe.model.set_value(
+                        cdt,
+                        cdn,
+                        "repack_item_code",
+                        repack_item_code,
+                      );
+
+                      frappe.model.set_value(
+                        cdt,
+                        cdn,
+                        "remark",
+                        "Changed from " +
+                          row.current_item_code +
+                          " to " +
+                          repack_item_code,
+                      );
+
+                      frm.refresh_field("repack_attributes");
+
+                      frappe.msgprint({
+                        title: "Success",
+                        indicator: "green",
+                        message:
+                          "Repack Item Generated: <b>" +
+                          repack_item_code +
+                          "</b>",
+                      });
+                      d.hide();
                     });
-                  }
-                },
-                error: function (err) {
-                  console.error(err);
+                } else {
+                  let selected_attributes = attributes
+                    .map(function (a) {
+                      return "<b>" + a.attribute + ":</b> " + a.attribute_value;
+                    })
+                    .join("<br>");
 
                   frappe.msgprint({
-                    title: "Repack Failed",
+                    title: "Repack Item Not Found",
                     indicator: "red",
-                    message: "Unable to generate Repack Item",
+                    message:
+                      "Repack Item not found for selected attributes.<br><br>" +
+                      "<b>Selected Attributes:</b><br>" +
+                      selected_attributes +
+                      "<br><br>" +
+                      "Please contact <b>NPD team</b> for item creation.",
                   });
-                },
-              });
-            },
+                }
+              },
+              error: function (err) {
+                console.error(err);
 
-            "Select Repack Attributes",
-
-            "Create",
-          );
+                frappe.msgprint({
+                  title: "Repack Failed",
+                  indicator: "red",
+                  message: "Unable to generate Repack Item",
+                });
+              },
+            });
+          });
         });
       },
     });

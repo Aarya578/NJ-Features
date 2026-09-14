@@ -143,7 +143,8 @@ doc_events = {
         # ],
         "on_update": [
             "nj_features.overrides.delivery_note.set_cod_details_critical"
-        ]
+        ],
+        "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_submit",
     },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
@@ -162,7 +163,11 @@ doc_events = {
     # 🔹 Targeted Inventory Sync on Sales Order Submission
     # =========================================================
     "Sales Order": {
-        "on_submit": "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
+        "on_submit": [
+            "nj_features.nj_features.api.shopify_inventory_targeted.trigger_inventory_sync_from_sales_order",
+            "nj_features.nj_features.api.zoho_status_sync.on_sales_order_submit",
+        ],
+        "on_cancel": "nj_features.nj_features.api.zoho_status_sync.on_sales_order_cancel",
     },
     "Item Attribute": {
         "before_save": [

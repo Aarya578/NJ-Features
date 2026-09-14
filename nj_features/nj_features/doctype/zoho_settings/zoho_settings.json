@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "creation": "2026-09-14 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "zoho_domain",
+  "column_break_1",
+  "client_id",
+  "client_secret",
+  "refresh_token",
+  "section_break_1",
+  "api_domain",
+  "last_sync"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "in",
+   "description": "The Zoho data center your CRM account is on (visible in the crm.zoho.<domain> URL).",
+   "fieldname": "zoho_domain",
+   "fieldtype": "Select",
+   "label": "Zoho Data Center",
+   "options": "in\ncom\neu\nau\njp"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID"
+  },
+  {
+   "fieldname": "client_secret",
+   "fieldtype": "Password",
+   "label": "Client Secret"
+  },
+  {
+   "fieldname": "refresh_token",
+   "fieldtype": "Password",
+   "label": "Refresh Token"
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break",
+   "label": "Sync State"
+  },
+  {
+   "description": "Set automatically from the token response; used as the base URL for CRM API calls.",
+   "fieldname": "api_domain",
+   "fieldtype": "Data",
+   "label": "API Domain",
+   "read_only": 1
+  },
+  {
+   "description": "Timestamp of the last successful customer/item sync run, used to pull only what changed since.",
+   "fieldname": "last_sync",
+   "fieldtype": "Datetime",
+   "label": "Last Sync",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "NJ Features",
+ "name": "Zoho Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -8512,3 +8512,246 @@ def nj_detailed_allocation_audit():
     print(f"========================================================\n")
 
     return so_map
+
+
+# ===============================================================
+# Laptop Storage MR section From Store Dept TO Packing & Dispatch
+# ===============================================================
+
+
+
+PP_MR_LAPTOP_STORAGE_BG_LOCATION = "BG"
+PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_ITEM_GROUP_SETTING = (
+    "store_to_packing_and_dispatch_serial_no_item_group"
+)
+PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_STOCK_DEPARTMENTS = (
+    "Stores - NJ",
+    "BG - Grade A Line - NJ",
+)
+
+
+def get_laptop_storage_diff_serials_store_to_packing():
+    print("Laptop Storage Store-to-Packing serial fetch started")
+    allowed_item_groups = _get_pp_nj_setting_csv_values(
+        PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_ITEM_GROUP_SETTING
+    )
+    print(
+        "Laptop Storage Store-to-Packing serial filters:",
+        "from_department:", "Stores - NJ",
+        "to_department:", "Packing & Dispatch - NJ",
+        "warehouse_location:", PP_MR_LAPTOP_STORAGE_BG_LOCATION,
+        "serial_status:", "Active",
+        "allowed_item_groups:", allowed_item_groups,
+        "condition:", "item_code != to_make",
+    )
+    if not allowed_item_groups:
+        print(
+            "Laptop Storage Store-to-Packing serial fetch skipped:",
+            "NJ Settings item groups not configured for parameter:",
+            PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_ITEM_GROUP_SETTING,
+        )
+        return []
+
+    serial_rows = frappe.db.sql("""
+        SELECT
+            sn.name AS serial_no,
+            sn.item_code,
+            sn.to_make,
+            sn.item_wizard,
+            w.name AS warehouse,
+            w.department AS current_department,
+            d.name AS current_department_name,
+            d.department_sequence AS current_department_sequence
+        FROM `tabSerial No` AS sn
+        INNER JOIN `tabItem` AS i
+            ON i.name = sn.item_code
+        INNER JOIN `tabWarehouse` AS w
+            ON w.name = sn.warehouse
+        INNER JOIN `tabDepartment` AS d
+            ON d.name = w.department
+        WHERE d.department_sequence BETWEEN
+            (SELECT department_sequence FROM `tabDepartment` WHERE name = 'Stores - NJ')
+            AND
+            (SELECT department_sequence FROM `tabDepartment` WHERE name = 'Packing & Dispatch - NJ')
+            AND w.location = %(location)s
+            AND sn.status = 'Active'
+            AND i.item_group IN %(allowed_item_groups)s
+            AND IFNULL(sn.item_code, '') != ''
+            AND IFNULL(sn.to_make, '') != ''
+            AND sn.item_code != sn.to_make
+        ORDER BY d.department_sequence, d.name, w.name, sn.name
+    """, {
+        "location": PP_MR_LAPTOP_STORAGE_BG_LOCATION,
+        "allowed_item_groups": tuple(allowed_item_groups),
+    }, as_dict=True)
+
+    serial_count_by_department = Counter(
+        row.current_department for row in serial_rows if row.current_department
+    )
+    serial_count_by_warehouse = Counter(
+        row.warehouse for row in serial_rows if row.warehouse
+    )
+    print("Laptop Storage Store-to-Packing diff serial count:", len(serial_rows))
+    print(
+        "Laptop Storage Store-to-Packing serial count by department:",
+        dict(serial_count_by_department),
+    )
+    print(
+        "Laptop Storage Store-to-Packing serial count by warehouse:",
+        dict(serial_count_by_warehouse),
+    )
+    for row in serial_rows:
+        print(
+            "Laptop Storage Store-to-Packing diff serial:",
+            "serial_no:", row.serial_no,
+            "current_item_code:", row.item_code,
+            "to_make:", row.to_make,
+            "item_wizard:", row.item_wizard,
+            "warehouse:", row.warehouse,
+            "warehouse_location:", PP_MR_LAPTOP_STORAGE_BG_LOCATION,
+            "current_department:", row.current_department,
+            "current_department_sequence:", row.current_department_sequence,
+        )
+
+    return serial_rows
+
+
+def get_laptop_storage_stock_store_to_packing():
+    print(
+        "Laptop Storage Store-to-Packing stock fetch started:",
+        "departments:", PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_STOCK_DEPARTMENTS,
+    )
+    stock_rows = frappe.db.sql("""
+        SELECT
+            b.item_code,
+            i.item_name,
+            i.item_group,
+            i.disabled,
+            i.end_of_life,
+            SUM(b.actual_qty) AS stock_qty,
+            b.warehouse,
+            w.department
+        FROM `tabBin` AS b
+        INNER JOIN `tabWarehouse` AS w
+            ON w.name = b.warehouse
+        INNER JOIN `tabItem` AS i
+            ON i.name = b.item_code
+        INNER JOIN `tabItem Variant Attribute` AS iva
+            ON iva.parent = i.name
+        WHERE w.department IN %(stock_departments)s
+            AND i.item_group = %(item_group)s
+            AND iva.attribute = 'Grade'
+            AND iva.attribute_value = %(grade)s
+            AND b.actual_qty > 0
+        GROUP BY
+            b.item_code,
+            i.item_name,
+            i.item_group,
+            i.disabled,
+            i.end_of_life,
+            b.warehouse,
+            w.department
+        ORDER BY b.item_code, w.department, b.warehouse
+    """, {
+        "stock_departments": PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_STOCK_DEPARTMENTS,
+        "item_group": PP_MR_LAPTOP_STORAGE_ITEM_GROUP,
+        "grade": PP_MR_LAPTOP_STORAGE_GRADE,
+    }, as_dict=True)
+
+    stock_qty_by_department = defaultdict(float)
+    stock_qty_by_item = defaultdict(float)
+    for row in stock_rows:
+        stock_qty_by_department[row.department] += flt(row.stock_qty)
+        stock_qty_by_item[row.item_code] += flt(row.stock_qty)
+
+    print("Laptop Storage Store-to-Packing stock row count:", len(stock_rows))
+    print(
+        "Laptop Storage Store-to-Packing stock qty by department:",
+        dict(stock_qty_by_department),
+    )
+    print(
+        "Laptop Storage Store-to-Packing stock qty by item:",
+        dict(stock_qty_by_item),
+    )
+    for row in stock_rows:
+        print(
+            "Laptop Storage Store-to-Packing stock row:",
+            "item_code:", row.item_code,
+            "stock_qty:", flt(row.stock_qty),
+            "warehouse:", row.warehouse,
+            "department:", row.department,
+        )
+
+    return stock_rows
+
+
+def laptop_storage_mr_store_to_packing(doc=None, method=None):
+    print("laptop_storage_mr_store_to_packing=======")
+    print(
+        "Laptop Storage Store-to-Packing configuration:",
+        "demand_department_range:", "Stores - NJ -> Packing & Dispatch - NJ",
+        "demand_warehouse_location:", PP_MR_LAPTOP_STORAGE_BG_LOCATION,
+        "stock_departments:", PP_MR_LAPTOP_STORAGE_STORE_TO_PACKING_STOCK_DEPARTMENTS,
+        "material_request_type:", "Material Issue",
+    )
+
+    diff_item_serials = get_laptop_storage_diff_serials_store_to_packing()
+    print("Laptop Storage Store-to-Packing diff item rows returned:", len(diff_item_serials))
+
+    diff_storage_serials = get_only_storage_diff_item_codes(diff_item_serials)
+    print("Laptop Storage Store-to-Packing filtered Storage diff rows returned:", len(diff_storage_serials))
+    print(
+        "Laptop Storage Store-to-Packing filtered Storage serials:",
+        [
+            {
+                "serial_no": row.get("serial_no"),
+                "item_code": row.get("item_code"),
+                "to_make": row.get("to_make"),
+                "required_storage_capacity": row.get("required_storage_capacity"),
+                "department": row.get("current_department"),
+                "warehouse": row.get("warehouse"),
+            }
+            for row in diff_storage_serials
+        ],
+    )
+
+    storage_stock_rows = get_laptop_storage_stock_store_to_packing()
+    print("Laptop Storage Store-to-Packing stock rows returned:", len(storage_stock_rows))
+
+    storage_wizard_combinations = build_laptop_storage_wizard_combinations(
+        diff_storage_serials,
+        storage_stock_rows,
+    )
+    print("Laptop Storage Store-to-Packing wizard combinations returned:", len(storage_wizard_combinations))
+
+    storage_shortage_items = build_laptop_storage_shortage_items(
+        diff_storage_serials,
+        storage_wizard_combinations,
+    )
+    print("Laptop Storage Store-to-Packing shortage items returned:", len(storage_shortage_items))
+    print(
+        "Laptop Storage Store-to-Packing final shortage items:",
+        storage_shortage_items,
+    )
+
+    laptop_storage_mr = create_laptop_storage_material_issue_mr(
+        "Store To Packing - BG",
+        storage_shortage_items,
+    )
+    print("Laptop Storage Store-to-Packing MR created name:", laptop_storage_mr)
+    print(
+        "Laptop Storage Store-to-Packing completed:",
+        "eligible_diff_serial_count:", len(diff_item_serials),
+        "storage_diff_serial_count:", len(diff_storage_serials),
+        "stock_row_count:", len(storage_stock_rows),
+        "shortage_item_count:", len(storage_shortage_items),
+        "material_request:", laptop_storage_mr or "Not Created",
+    )
+
+    return {
+        "diff_storage_serials": diff_storage_serials,
+        "storage_stock_rows": storage_stock_rows,
+        "storage_wizard_combinations": storage_wizard_combinations,
+        "storage_shortage_items": storage_shortage_items,
+        "laptop_storage_mr": laptop_storage_mr,
+    }

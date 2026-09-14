@@ -1,0 +1,143 @@
+.quotation-response-page {
+	margin: 24px auto 48px;
+	max-width: 1200px;
+}
+
+.response-header h1 {
+	font-size: 28px;
+	margin-bottom: 4px;
+}
+
+.response-summary {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	display: grid;
+	gap: 18px;
+	grid-template-columns: repeat(2, minmax(220px, 1fr));
+	margin: 20px 0 16px;
+	padding: 16px;
+}
+
+.response-label {
+	color: var(--text-muted, #6c7680);
+	display: block;
+	font-size: 12px;
+	margin-bottom: 4px;
+}
+
+.response-message {
+	border: 1px dashed var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	color: var(--text-muted, #6c7680);
+	padding: 28px;
+	text-align: center;
+}
+
+.response-message.success {
+	background: #f0fff4;
+	border-color: #38a169;
+	color: #237a3b;
+}
+
+.response-message.error {
+	background: #fff5f5;
+	border-color: #e24c4c;
+	color: #c53030;
+}
+
+.response-section {
+	margin-top: 24px;
+}
+
+.response-section h2 {
+	font-size: 18px;
+	margin-bottom: 10px;
+}
+
+.section-heading-row {
+	align-items: flex-end;
+	display: flex;
+	justify-content: space-between;
+}
+
+.section-total,
+.table-total {
+	align-items: center;
+	display: flex;
+	gap: 12px;
+	justify-content: flex-end;
+}
+
+.section-total {
+	margin-bottom: 10px;
+}
+
+.table-total {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-top: 0;
+	padding: 12px 14px;
+}
+
+.section-total span,
+.table-total span {
+	color: var(--text-muted, #6c7680);
+}
+
+.response-table {
+	background: var(--card-bg, #fff);
+	margin-bottom: 0;
+	min-width: 760px;
+}
+
+.terms-card {
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	padding: 16px;
+}
+
+.terms-name-row {
+	margin-bottom: 18px;
+}
+
+.terms-details {
+	background: var(--control-bg, #f4f5f6);
+	border-radius: 6px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+	padding: 14px;
+}
+
+.terms-details > :last-child {
+	margin-bottom: 0;
+}
+
+.response-action-card {
+	align-items: flex-end;
+	background: var(--card-bg, #fff);
+	border: 1px solid var(--border-color, #d1d8dd);
+	border-radius: 8px;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	margin-top: 24px;
+	padding: 16px;
+}
+
+.response-action-card > div {
+	max-width: 360px;
+	width: 100%;
+}
+
+@media (max-width: 767px) {
+	.response-summary {
+		grid-template-columns: 1fr;
+	}
+
+	.response-action-card {
+		align-items: stretch;
+		flex-direction: column;
+	}
+}

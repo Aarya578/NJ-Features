@@ -9074,3 +9074,22 @@ def get_rfqs_for_supplier(supplier):
         fields=["parent"]
     )
     return {"rfqs": [r.parent for r in rows]}
+
+@frappe.whitelist()
+def get_variant_attribute_options(item_template, attribute):
+
+    options = frappe.db.sql("""
+        SELECT DISTINCT
+            TRIM(iva.attribute_value) as attribute_value
+        FROM `tabItem Variant Attribute` iva
+        INNER JOIN `tabItem` i
+        ON i.name = iva.parent
+        WHERE i.variant_of = %s
+        AND iva.attribute = %s
+        AND iva.attribute_value IS NOT NULL
+        ORDER BY attribute_value
+    """,
+    (item_template, attribute),
+    as_dict=True)
+
+    return [x.attribute_value for x in options]

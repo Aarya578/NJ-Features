@@ -1,0 +1,99 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Customer Quotation") }}{% endblock %}
+
+{% block page_content %}
+<div class="quotation-response-page">
+	<div class="response-header">
+		<h1>{{ _("Customer Quotation") }}</h1>
+		<p class="text-muted">{{ _("Review the quotation and submit your response.") }}</p>
+	</div>
+
+	<div class="response-summary d-none" id="response-summary">
+		<div><span class="response-label">{{ _("Quotation") }}</span><strong id="response-quotation"></strong></div>
+		<div><span class="response-label">{{ _("Customer") }}</span><strong id="response-customer"></strong></div>
+	</div>
+
+	<div class="response-message" id="response-message">{{ _("Validating quotation link...") }}</div>
+
+	<form class="d-none" id="response-form">
+		<section class="response-section">
+			<div class="section-heading-row">
+				<h2>{{ _("Items") }}</h2>
+				<div class="section-total"><span>{{ _("Total") }}</span><strong id="response-total"></strong></div>
+			</div>
+			<div class="table-responsive">
+				<table class="table table-bordered response-table">
+					<thead><tr>
+						<th>{{ _("Item Code") }}</th>
+						<th class="text-right">{{ _("Quantity") }}</th>
+						<th class="text-right">{{ _("Rate") }}</th>
+						<th class="text-right">{{ _("Amount") }}</th>
+						<th>{{ _("HSN/SAC") }}</th>
+					</tr></thead>
+					<tbody id="response-items"></tbody>
+				</table>
+			</div>
+			<div class="table-total"><span>{{ _("Grand Total") }}</span><strong id="response-grand-total"></strong></div>
+		</section>
+
+		<section class="response-section" id="taxes-section">
+			<h2>{{ _("Sales Taxes and Charges") }}</h2>
+			<div class="table-responsive">
+				<table class="table table-bordered response-table">
+					<thead><tr>
+						<th>{{ _("Type") }}</th>
+						<th>{{ _("Account Head") }}</th>
+						<th class="text-right">{{ _("Rate") }}</th>
+						<th class="text-right">{{ _("Amount") }}</th>
+						<th class="text-right">{{ _("Total") }}</th>
+					</tr></thead>
+					<tbody id="response-taxes"></tbody>
+				</table>
+			</div>
+			<div class="table-total"><span>{{ _("Total Tax") }}</span><strong id="response-total-taxes"></strong></div>
+		</section>
+
+		<section class="response-section" id="payment-section">
+			<h2>{{ _("Payment Terms") }}</h2>
+			<div class="table-responsive">
+				<table class="table table-bordered response-table">
+					<thead><tr>
+						<th>{{ _("Payment Term") }}</th>
+						<th>{{ _("Description") }}</th>
+						<th class="text-right">{{ _("Invoice Portion") }}</th>
+						<th class="text-right">{{ _("Payment Amount") }}</th>
+					</tr></thead>
+					<tbody id="response-payments"></tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="response-section" id="terms-section">
+			<h2>{{ _("Terms and Conditions") }}</h2>
+			<div class="terms-card">
+				<div class="terms-name-row">
+					<span class="response-label">{{ _("Terms") }}</span>
+					<strong id="response-terms-name"></strong>
+				</div>
+				<div>
+					<span class="response-label">{{ _("Term Details") }}</span>
+					<div class="terms-details" id="response-terms-details"></div>
+				</div>
+			</div>
+		</section>
+
+		<div class="response-action-card">
+			<div>
+				<label for="customer-replay">{{ _("Customer Replay") }}</label>
+				<select class="form-control" id="customer-replay" required>
+					<option value="">{{ _("Select Response") }}</option>
+					<option value="Agree">{{ _("Agree") }}</option>
+					<option value="Dis Agree">{{ _("Dis Agree") }}</option>
+				</select>
+			</div>
+			<button class="btn btn-primary" id="submit-response" type="submit">{{ _("Submit Response") }}</button>
+		</div>
+	</form>
+</div>
+{% endblock %}

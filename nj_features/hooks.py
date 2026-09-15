@@ -261,6 +261,7 @@ scheduler_events = {
         # Runs every minute
         "*/1 * * * *": [
             "nj_features.nj_features.api.zoho_quotation_sync.poll_zoho_deals_and_create_quotations",
+            "nj_features.nj_features.api.zoho_quote_sync.poll_zoho_quotes_and_create_quotations",
         ],
 
         # Runs every 12 hours: 12 AM and 12 PM server time

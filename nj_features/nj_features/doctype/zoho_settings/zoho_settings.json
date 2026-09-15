@@ -11,6 +11,7 @@
   "client_id",
   "client_secret",
   "refresh_token",
+  "webhook_secret",
   "section_break_1",
   "api_domain",
   "last_sync"
@@ -48,6 +49,12 @@
    "fieldname": "refresh_token",
    "fieldtype": "Password",
    "label": "Refresh Token"
+  },
+  {
+   "description": "Shared secret Zoho's outbound webhook must send back (as a Custom Parameter -- this Zoho account's webhook UI has no way to add custom headers) for the price/tax preview endpoint to accept the request.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret"
   },
   {
    "fieldname": "section_break_1",

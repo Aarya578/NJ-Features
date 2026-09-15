@@ -206,6 +206,10 @@ override_whitelisted_methods = {
 
 scheduler_events = {
     "cron": {
+        "0 0 * * *": [
+            "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
+        ],
+
         "0 22 * * *": [
             "nj_features.nj_features.doctype.daily_individual_report.daily_individual_report.daily_report_not_submitted_warehouses_data",
             "njcompliance.nj_compliance.doctype.nj_non_compliance.nj_non_compliance.raise_nc_undone_daily_individual_report",
@@ -224,9 +228,12 @@ scheduler_events = {
             "nj_features.overrides.product_bundle.update_product_bundle_quantities",
         ],
 
-        "2 * * * *": [
-            "nj_features.overrides.product_bundle.update_zero_quantity_product_bundles",
-        ],
+        # update_zero_quantity_product_bundles removed - it overwrote the same
+        # Product Bundle.quantity field one minute after update_product_bundle_quantities
+        # with a different, family-wide (parent+CPU) total instead of this exact
+        # SKU's own stock, causing the Shopify-visible quantity to flap between
+        # the two every hour and letting many sibling SKUs claim the same unit
+        # as available simultaneously.
 
         "45 9 * * *": [
             "nj_features.nj_features.doctype.department_change_log.department_change_log.update_department_change_logs",

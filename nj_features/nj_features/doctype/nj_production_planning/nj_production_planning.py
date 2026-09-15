@@ -177,6 +177,8 @@ def _get_shopify_variant_id(item_code: str) -> Optional[str]:
     return variant_id_str
 
 
+from nj_features.services.model_compatibility import is_screen_type_compatible
+
 _TOUCH_SCREEN_MARKER_WORDS = {'touch', 'nt'}
 
 
@@ -432,19 +434,28 @@ _get_stock_item_code_from_to_make = _resolve_stock_item_from_pb_or_item
 
 
 @log_io
-def _update_serial_to_make(serial_no: str, item_code_to_make: str) -> None:
-    """Update Serial No.to_make (lightweight db write)."""
+def _update_serial_to_make(serial_no: str, item_code_to_make: str, expected_so: Optional[str] = None) -> None:
+    """Update Serial No.to_make (lightweight db write).
+
+    A serial already reserved to a DIFFERENT sales order may already have
+    physical rework (kitting) committed against its current to_make - this
+    must never be silently overwritten. Only write when the serial is
+    unreserved, or already reserved to the same order this call is for.
+    """
     if not UPDATE_SERIAL_TO_MAKE or not item_code_to_make:
         return
 
     item_code_to_make = _resolve_stock_item_from_pb_or_item(item_code_to_make)
+    so_val = (expected_so or "").strip()
     try:
-        frappe.db.set_value(
-            "Serial No",
-            serial_no,
-            "to_make",
-            item_code_to_make,
-            update_modified=False,
+        frappe.db.sql(
+            """
+            UPDATE `tabSerial No`
+            SET to_make = %s
+            WHERE name = %s
+              AND (reserved_sales_order IS NULL OR reserved_sales_order = '' OR reserved_sales_order = %s)
+            """,
+            (item_code_to_make, serial_no, so_val),
         )
     except Exception as e:
         logger.warning("Could not update Serial No.to_make for %s: %s", serial_no, e)
@@ -457,21 +468,47 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
     if not UPDATE_SERIAL_RESERVED_SO:
         return True
 
+    # Imported inside the function: reservation_service imports overrides.sales_order
+    # at module level, so a top-level import here risks an import cycle.
+    from nj_features.services.reservation_service import get_effective_order_source
+
     so_val = (sales_order_no or "").strip()
     try:
         if so_val:
-            current = frappe.db.get_value("Serial No", serial_no, "reserved_sales_order")
+            current, current_source = frappe.db.get_value(
+                "Serial No", serial_no, ["reserved_sales_order", "order_source"]
+            ) or (None, None)
+
+            # order_source has to be written here as well as in the Sales Order
+            # allocator. It is the only record of where a reservation came from,
+            # and a planner-made reservation that omits it is indistinguishable
+            # from one that was never attributed - which is exactly how a wrong
+            # reservation stayed untraceable.
+            effective_source = get_effective_order_source(so_val)
+
             if (current or "").strip() == so_val:
+                # Already reserved to this order. Backfill the attribution if an
+                # earlier run (before this wrote order_source) left it empty.
+                if effective_source and not (current_source or "").strip():
+                    frappe.db.sql("""
+                        UPDATE `tabSerial No`
+                        SET order_source = %s, modified = NOW()
+                        WHERE name = %s AND reserved_sales_order = %s
+                          AND (order_source IS NULL OR order_source = '')
+                    """, (effective_source, serial_no, so_val))
                 return True
+
             frappe.db.sql("""
                 UPDATE `tabSerial No`
-                SET reserved_sales_order = %s
+                SET reserved_sales_order = %s,
+                    order_source = %s,
+                    modified = NOW()
                 WHERE name = %s
                   AND (reserved_sales_order IS NULL OR reserved_sales_order = '')
                   AND status = 'Active'
                   AND is_replace = 0
                   AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
-            """, (so_val, serial_no))
+            """, (so_val, effective_source, serial_no))
             if getattr(frappe.db, "_cursor", None) and frappe.db._cursor.rowcount <= 0:
                 logger.warning("Could not reserve Serial No %s for %s: already reserved or ineligible", serial_no, so_val)
                 return False
@@ -479,7 +516,9 @@ def _update_serial_reserved_sales_order(serial_no: str, sales_order_no: Optional
         else:
             frappe.db.sql("""
                 UPDATE `tabSerial No`
-                SET reserved_sales_order = NULL
+                SET reserved_sales_order = NULL,
+                    order_source = NULL,
+                    modified = NOW()
                 WHERE name = %s
                   AND (return_reason IS NULL OR return_reason = '' OR return_reason != 'Repair')
             """, (serial_no,))
@@ -913,6 +952,13 @@ def nj_run_unified_production_plan(planning_horizon_days: int = 30, **kwargs) ->
 
         def _try_assign_sn(s, dept_name, remarks_text):
             nonlocal needed_qty
+            # A Non-Touch panel cannot be rebuilt into a Touch one. _is_same_model_family
+            # already enforces this for C3, but C1b matches on to_make and C2/C4 on
+            # Shopify variant grouping - none of them look at the screen, so all three
+            # can pair a Touch order with an NT machine.
+            if not is_screen_type_compatible(s.get("item_code"), target_ic):
+                return False
+
             # Part allocation is recalculated by run_latest_production_plan_part_allocation.
             part_allocation = False
             success = _append_plan_row(
@@ -3166,7 +3212,7 @@ def _append_plan_row(
             sales_order_number, item_code_to_make, serial_no, current_department, current_warehouse, remarks
         )
 
-    _update_serial_to_make(serial_no, item_code_to_make)
+    _update_serial_to_make(serial_no, item_code_to_make, expected_so=sales_order_number)
 
     if remarks:
         _update_serial_remarks(serial_no, remarks)

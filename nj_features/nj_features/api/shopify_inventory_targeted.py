@@ -54,11 +54,25 @@ def trigger_inventory_sync_from_sales_order(doc, method=None):
             "Info"
         )
 
+        # enqueue_after_commit is essential here, not optional.
+        #
+        # Sales Order.on_submit reserves serials via
+        # calculate_dispatch_eta_for_sales_order(..., do_commit=False), so the
+        # reservation is still UNCOMMITTED when this hook runs. Without
+        # enqueue_after_commit the job is pushed to Redis immediately and a
+        # worker - on its own DB connection - starts counting stock before that
+        # commit lands. It cannot see reserved_sales_order yet, so it counts the
+        # just-sold unit as still sellable and pushes the pre-sale quantity back
+        # to Shopify. That is the 0 -> 1 -> 0 -> 1 flap: Shopify drops available
+        # to 0 on the order, we immediately re-advertise 1, and because setting
+        # "available" makes Shopify recompute on_hand as available + committed,
+        # on_hand creeps up by one on every order.
         enqueue(
             method=create_rq_doc_by_item_codes,
             queue="short",
             timeout=300,
             job_name=f"shopify_inventory_sync_so_{doc.name}",
+            enqueue_after_commit=True,
             item_codes=list(item_codes),
             sales_order=doc.name
         )
@@ -459,16 +473,10 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                 if unallocated_pending > 0:
                     pending_qty_by_item[item_code] = pending_qty_by_item.get(item_code, 0) + unallocated_pending
 
-        # Delete ONLY affected item codes (not the full table)
+        # Delete and Re-insert ONLY affected item codes atomically with retry on deadlock
         if stock_map:
             affected_item_codes = list(stock_map.keys())
             ip = ', '.join(['%s'] * len(affected_item_codes))
-            frappe.db.sql(f"DELETE FROM `tabSO Quantity Check` WHERE item_code IN ({ip})", tuple(affected_item_codes))
-            frappe.db.commit()
-
-        # Re-insert for affected items only using bulk_insert
-        count = 0
-        if stock_map:
             now_time = frappe.utils.now()
             user = frappe.session.user or "Administrator"
             fields = [
@@ -490,21 +498,35 @@ def update_so_quantity_check_for_variant_ids(settings, variant_ids):
                     str(so_quantity), str(remaining_qty), str(update_qty), str(need_to_reduce),
                     "0", "0", None, 0
                 ))
-                count += 1
-            frappe.db.bulk_insert("SO Quantity Check", fields, values)
 
-        frappe.db.commit()
-        log_error(
-            f"Targeted SO Quantity Check: updated {count} items for variants={variant_ids}",
-            "update_so_quantity_check_for_variant_ids",
-            "Info"
-        )
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    frappe.db.sql(f"DELETE FROM `tabSO Quantity Check` WHERE item_code IN ({ip})", tuple(affected_item_codes))
+                    frappe.db.bulk_insert("SO Quantity Check", fields, values)
+                    frappe.db.commit()
+                    break
+                except (pymysql.err.OperationalError, frappe.QueryDeadlockError) as e:
+                    frappe.db.rollback()
+                    err_code = e.args[0] if getattr(e, 'args', None) else None
+                    if (err_code in (1213, 1205) or isinstance(e, frappe.QueryDeadlockError)) and attempt < max_retries - 1:
+                        time.sleep(0.5 * (attempt + 1))
+                        continue
+                    log_error(f"OperationalError in update_so_quantity_check_for_variant_ids (attempt {attempt+1}): {e}", "update_so_quantity_check_for_variant_ids")
+                    return False
+                except Exception:
+                    frappe.db.rollback()
+                    log_error(frappe.get_traceback(), "update_so_quantity_check_for_variant_ids")
+                    return False
+
+            count = len(values)
+            log_error(
+                f"Targeted SO Quantity Check: updated {count} items for variants={variant_ids}",
+                "update_so_quantity_check_for_variant_ids",
+                "Info"
+            )
         return True
 
-    except pymysql.err.OperationalError as e:
-        if e.args and e.args[0] == 2013:
-            return False
-        return False
     except Exception:
         log_error(frappe.get_traceback(), "update_so_quantity_check_for_variant_ids")
         return False
@@ -709,6 +731,20 @@ def stage_targeted_variants(variant_ids, settings):
 
         flags = get_inventory_sync_flags()
 
+        # Pre-fetch live Shopify quantities and inventory_item_ids so the queueing
+        # decision is based on actual live store state, not stale DB records.
+        shopify_data = get_shopify_variants(
+            variant_ids,
+            settings["shop"],
+            settings["token"],
+            location_id=settings.get("location_id")
+        ) or []
+        shopify_by_variant = {
+            str(d["variant_id"]).strip(): d
+            for d in shopify_data
+            if d and d.get("variant_id")
+        }
+
         for row in results:
             update_status = ''
             row.total_actual_qty = safe_float(row.total_actual_qty)
@@ -742,6 +778,28 @@ def stage_targeted_variants(variant_ids, settings):
                     row.total_actual_qty = 0
                     update_status += "[WarrantyApplied] "
 
+            variant_id = str(row.shopify_variant_id).strip()
+            shopify_row = shopify_by_variant.get(variant_id)
+            inventory_item_id = shopify_row.get("inventory_item_id") if shopify_row else None
+            fresh_shopify_qty = (
+                safe_float(shopify_row.get("location_quantity"))
+                if shopify_row and shopify_row.get("location_quantity") is not None
+                else (safe_float(shopify_row.get("inventory_quantity")) if shopify_row else None)
+            )
+            desired_qty = float(row.total_actual_qty)
+            quantity_matches = (
+                fresh_shopify_qty is not None
+                and desired_qty == fresh_shopify_qty
+            )
+
+            lookup_error = ""
+            if not variant_id.isdigit():
+                lookup_error = "Invalid or missing Shopify variant ID mapping"
+            elif not shopify_row:
+                lookup_error = "Variant ID not found in Shopify"
+            elif fresh_shopify_qty is None:
+                lookup_error = "Inventory level not found at configured Shopify location"
+
             # UPSERT into NJ Inventory Sync Main
             item_code_like_clauses = []
             params = [row.shopify_variant_id]
@@ -750,7 +808,7 @@ def stage_targeted_variants(variant_ids, settings):
                 params.append(f"%{code.strip()}%")
 
             existing = frappe.db.sql(f"""
-                SELECT name, actual_qty, status, sync_error, shopify_quantity, estimated_time_of_dispatch, shopify_pre_order_qty
+                SELECT name, actual_qty, status, sync_error, shopify_quantity, estimated_time_of_dispatch, shopify_pre_order_qty, inventory_item_id
                 FROM `tabNJ Inventory Sync Main`
                 WHERE shopify_variant_id = %s
                 AND ({' OR '.join(item_code_like_clauses)})
@@ -759,8 +817,6 @@ def stage_targeted_variants(variant_ids, settings):
 
             if existing:
                 existing_doc = existing[0]
-                existing_qty = safe_float(existing_doc.actual_qty) or 0
-                shopify_qty = safe_float(existing_doc.shopify_quantity)
                 existing_etd = str(existing_doc.get("estimated_time_of_dispatch") or "").strip()
                 new_etd = str(getattr(row, "estimated_time_of_dispatch", "") or "").strip()
 
@@ -773,34 +829,71 @@ def stage_targeted_variants(variant_ids, settings):
                 if not is_not_found:
                     update_payload = {
                         "is_active": 1,
+                        "actual_qty": row.total_actual_qty,
+                        "updated_qty": row.total_actual_qty,
                         "shopify_pre_order_qty": row.total_pre_order_qty,
                         "estimated_time_of_dispatch": new_etd,
                         "modified": frappe.utils.now(),
                     }
-                    if (
-                        float(row.total_actual_qty) != existing_qty
-                        or (shopify_qty is not None and float(row.total_actual_qty) != shopify_qty)
-                    ):
-                        update_payload.update({
-                            "sync_error": update_status,
-                            "status": "Queued",
-                            "actual_qty": row.total_actual_qty,
-                            "updated_qty": row.total_actual_qty,
-                        })
+                    if inventory_item_id:
+                        update_payload["inventory_item_id"] = inventory_item_id
+                    elif existing_doc.get("inventory_item_id"):
+                        inventory_item_id = existing_doc.get("inventory_item_id")
+
+                    if fresh_shopify_qty is not None:
+                        update_payload["shopify_quantity"] = fresh_shopify_qty
+
+                    if lookup_error:
+                        update_payload["status"] = "Error"
+                        update_payload["sync_error"] = lookup_error
+                    elif quantity_matches:
+                        update_payload["status"] = "Completed"
+                        update_payload["sync_error"] = (
+                            existing_doc.sync_error or update_status
+                            if existing_doc.status == "Completed"
+                            else update_status
+                        )
+                    else:
+                        update_payload["status"] = "Queued"
+                        queue_reason = (
+                            f"[QueuedForSync ERP={desired_qty:g} "
+                            f"Shopify={fresh_shopify_qty:g}]"
+                            if fresh_shopify_qty is not None else "[QueuedForSync]"
+                        )
+                        update_payload["sync_error"] = f"{update_status}{queue_reason}".strip()
+
                     frappe.db.set_value("NJ Inventory Sync Main", existing_doc.name, update_payload)
             else:
                 new_doc = frappe.new_doc("NJ Inventory Sync Main")
                 qty = safe_float(row.total_actual_qty)
                 new_doc.is_active = 1
                 new_doc.actual_qty = qty
-                new_doc.status = "Queued"
                 new_doc.updated_qty = qty
+                if inventory_item_id:
+                    new_doc.inventory_item_id = inventory_item_id
+                if fresh_shopify_qty is not None:
+                    new_doc.shopify_quantity = fresh_shopify_qty
+
+                if lookup_error:
+                    new_doc.status = "Error"
+                    new_doc.sync_error = lookup_error
+                elif quantity_matches:
+                    new_doc.status = "Completed"
+                    new_doc.sync_error = update_status
+                else:
+                    new_doc.status = "Queued"
+                    queue_reason = (
+                        f"[QueuedForSync ERP={desired_qty:g} "
+                        f"Shopify={fresh_shopify_qty:g}]"
+                        if fresh_shopify_qty is not None else "[QueuedForSync]"
+                    )
+                    new_doc.sync_error = f"{update_status}{queue_reason}".strip()
+
                 new_doc.shopify_pre_order_qty = row.total_pre_order_qty
                 new_doc.estimated_time_of_dispatch = getattr(row, "estimated_time_of_dispatch", "") or ""
                 new_doc.item_code = row.item_codes
                 new_doc.item_group = row.item_groups
                 new_doc.shopify_variant_id = row.shopify_variant_id
-                new_doc.sync_error = update_status
                 try:
                     new_doc.insert()
                 except Exception:
@@ -809,19 +902,8 @@ def stage_targeted_variants(variant_ids, settings):
                         "stage_targeted_variants"
                     )
 
-        # Update inventory_item_id and shopify_quantity from Shopify API
-        shopify_data = get_shopify_variants(variant_ids, settings["shop"], settings["token"])
-        found_variant_ids = set()
-        if shopify_data:
-            for data in shopify_data:
-                found_variant_ids.add(str(data["variant_id"]).strip())
-                frappe.db.sql("""
-                    UPDATE `tabNJ Inventory Sync Main`
-                    SET inventory_item_id = %s, shopify_quantity = %s, modified = NOW()
-                    WHERE shopify_variant_id = %s
-                """, (data["inventory_item_id"], data["inventory_quantity"], data["variant_id"]))
-
-        missing_variant_ids = set(variant_ids) - found_variant_ids
+        found_variant_ids = set(shopify_by_variant.keys())
+        missing_variant_ids = set(str(v).strip() for v in variant_ids) - found_variant_ids
         if missing_variant_ids:
             for m_vid in missing_variant_ids:
                 frappe.db.sql("""
@@ -865,16 +947,29 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
             AND shopify_variant_id IN ({vp})
         """, tuple(variant_ids), as_dict=True)
 
-        found_variants = {row.shopify_variant_id for row in queued}
-        
-        # Log variants that exist but are missing inventory_item_id or weren't staged
+        all_staged = frappe.db.sql(f"""
+            SELECT name, status, updated_qty, inventory_item_id, shopify_variant_id
+            FROM `tabNJ Inventory Sync Main`
+            WHERE is_active = 1 
+            AND shopify_variant_id IN ({vp})
+        """, tuple(variant_ids), as_dict=True)
+        staged_map = {row.shopify_variant_id: row for row in all_staged}
+
         for vid in variant_ids:
-            if vid not in found_variants:
+            if vid not in staged_map:
+                log_error(
+                    f"Variant {vid}: Skipping push. Reason: Variant not found in Staging table.",
+                    "sales_order_shopify_push",
+                    "Info"
+                )
+            elif not staged_map[vid].get("inventory_item_id"):
                 log_error(
                     f"Variant {vid}: Skipping push. Reason: Missing inventory_item_id in Staging table.",
                     "sales_order_shopify_push",
                     "Info"
                 )
+            elif staged_map[vid].get("status") != "Queued":
+                logger.debug(f"[Targeted Push] Variant {vid} status is '{staged_map[vid].get('status')}', not Queued (already matches Shopify or in error). Skipping push.")
 
         # Filter out records without inventory_item_id for the push loop
         sync_ready = [r for r in queued if r.inventory_item_id]
@@ -897,7 +992,7 @@ def push_targeted_variants_to_shopify(variant_ids, settings):
                 }
 
                 resp = post_shopify_api(update_url, headers, payload)
-                data = resp.json()  
+                data = resp.json()
 
                 if resp.status_code == 200:
                     frappe.db.set_value("NJ Inventory Sync Main", row.name, {

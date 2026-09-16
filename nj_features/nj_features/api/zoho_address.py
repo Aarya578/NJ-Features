@@ -54,7 +54,13 @@ def resolve_address(quote_row, customer_name, quote_id):
     address.country = "India"
     address.pincode = pincode
     address.email_id = quote_row["Customer_Email"]
-    address.gstin = quote_row.get("GSTIN")
+    # ERPNext's India Compliance validation rejects the whole Address save
+    # (and so the whole Quote) if GSTIN is present but not exactly 15
+    # characters -- since it's meant to be optional (unregistered
+    # customers won't have one), a mistyped/partial value should just be
+    # dropped rather than blocking everything else.
+    gstin = (quote_row.get("GSTIN") or "").strip()
+    address.gstin = gstin if len(gstin) == 15 else None
 
     if not existing_name:
         address.append("links", {"link_doctype": "Customer", "link_name": customer_name})

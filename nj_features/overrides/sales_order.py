@@ -22,6 +22,28 @@ logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 # committed_delivery_date or delivery_date, which are human-owned.
 # Change it here and it changes everywhere.
 RECONFIG_SLA_DAYS = 3
+
+# Once a serial is reserved to a Sales Order it stays on that order.
+#
+# The nightly job used to "upgrade" reservations: if any free machine sat in a
+# department even one step closer to dispatch, it swapped. That was the only test
+# - it never asked whether the order would have made its date anyway, never
+# required the gain to be worth anything, and never checked whether production had
+# already started rebuilding the unit it was taking away. Between 2026-09-09 and
+# 2026-09-16 it swapped 498 times across 12-89 orders a day; SO-2026-09-00088 went
+# through ten machines and SAL-ORD-2026-08447 through eight. A released unit keeps
+# its to_make, so the work is not lost, but the shop floor is left building for an
+# order that no longer owns the machine and no one downstream can plan.
+#
+# Reservations are still RELEASED when a machine genuinely cannot ship - it moved
+# to a department that is not sellable, into a personal warehouse, or the order is
+# over-allocated. That is trim_over_allocated_serials() / unassign_serials() and it
+# is cleanup, not reallocation. What stops here is trading a working reservation
+# for a marginally better one.
+#
+# Set True to restore the old behaviour; upgrade_order_reservations() is unchanged
+# and can still be called by hand for a single order.
+AUTO_UPGRADE_RESERVATIONS = False
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -2325,24 +2347,24 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
                 "Sales Order", so_name, "committed_delivery_date"
             )
 
-            # Drift check: if the estimated delivery date has pulled away from the
-            # committed customer promise by more than 2 days, trigger a targeted
-            # reallocation attempt for this order. Only runs once a day, from the
-            # dedicated midnight job (allow_reallocation=True) - the hourly
-            # ETA-refresh pass only recomputes display values, it never
-            # reallocates an already-allocated serial.
+            # Drift check. An order whose estimate has pulled more than 2 days away
+            # from the promise is at risk, and that is worth recording - but it is
+            # NOT a reason to take its machine away. Drift is reported; the
+            # reservation is left alone (see AUTO_UPGRADE_RESERVATIONS).
             if allow_reallocation and calc_delivery_date and target_committed:
                 drift_days = abs((getdate(calc_delivery_date) - getdate(target_committed)).days)
                 if drift_days > 2:
-                    frappe.enqueue(
-                        "nj_features.services.reservation_service.upgrade_order_reservations",
-                        queue="short",
-                        enqueue_after_commit=True,
-                        so_name=so_name,
-                    )
+                    if AUTO_UPGRADE_RESERVATIONS:
+                        frappe.enqueue(
+                            "nj_features.services.reservation_service.upgrade_order_reservations",
+                            queue="short",
+                            enqueue_after_commit=True,
+                            so_name=so_name,
+                        )
                     logger.info(
                         f"[ETA_DRIFT] {so_name}: estimated={calc_delivery_date} "
-                        f"committed={target_committed} drift={drift_days}d -> triggered reallocation"
+                        f"committed={target_committed} drift={drift_days}d "
+                        f"(reservation kept; swap={'on' if AUTO_UPGRADE_RESERVATIONS else 'off'})"
                     )
 
         frappe.db.set_value(

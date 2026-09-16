@@ -44,6 +44,45 @@ RECONFIG_SLA_DAYS = 3
 # Set True to restore the old behaviour; upgrade_order_reservations() is unchanged
 # and can still be called by hand for a single order.
 AUTO_UPGRADE_RESERVATIONS = False
+
+# Departments a unit only enters when something has gone wrong: a part is
+# missing, a QC step failed, a consumable ran out. They are holding states, not
+# steps every machine walks through.
+#
+# compute_sales_order_delivery_date() prices a unit by summing the SLA of every
+# applicable department between where it stands and dispatch. That charged each
+# of these to every unit upstream of them, whether or not it would ever go near
+# one. `Part waiting - NJ` alone carries the maximum 15-day SLA and sits at
+# sequence 10, so every laptop below it was billed 15 days for a queue it may
+# never join - a third of the whole ladder.
+#
+# That is why a Dell 3410 sitting in Chip Tech priced out at the 45-day cap, the
+# same number used for "we have no machine at all", and why SO-2026-09-00002 read
+# as 11-Nov against a 10-Sep promise while 19 of its 20 machines were nearly
+# ready. The 62-day gap it produced is what kept triggering reallocation.
+#
+# A unit ACTUALLY sitting in one of these still gets that department's own SLA
+# charged as its starting point - this only removes them from the forward ladder
+# of units that are somewhere else.
+#
+# Matched on the department name, lower-cased. Production should review this list;
+# it is a judgement about which steps are routine and which are exceptions.
+_CONTINGENT_DEPT_MARKERS = (
+    "part waiting",
+    "partwating",
+    "partwaiting",
+    "consumable hold",
+    "qc reject",
+    "rejection",
+    "screen repair",
+    "technician repair",
+)
+
+
+def _is_contingent_dept(dept_name):
+    """True for a holding/exception department (see _CONTINGENT_DEPT_MARKERS)."""
+    name = (dept_name or "").lower()
+    return any(marker in name for marker in _CONTINGENT_DEPT_MARKERS)
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -2029,6 +2068,11 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
             seq_max_sla = {}
             for d in app_depts:
                 if "inward" in (d.get("name") or "").lower():
+                    continue
+                # Exception/holding departments are not part of every unit's route -
+                # see _CONTINGENT_DEPT_MARKERS. The unit standing in one is still
+                # charged that department's SLA below, via cand_sla.
+                if _is_contingent_dept(d.get("name")):
                     continue
                 seq = d.get("department_sequence")
                 sla = d.get("department_sla") or 0

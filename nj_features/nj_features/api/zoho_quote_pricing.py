@@ -14,6 +14,14 @@ ERP_Product/Quantity fields -- those are no longer read by this code
 (left in place in Zoho, just unused, since removing fields someone
 manually created wasn't asked for).
 
+Negotiated price: a Quoted Items row may also carry a Negotiated_Price
+(custom field, separate from List_Price -- List_Price is system-
+computed output, mixing rep input into it would fight the idempotent
+write-skip in _preview_price_and_tax below). When set, it overrides
+that line's catalog rate before tax/total are computed, so a rep's
+negotiated number flows straight through to ERPNext's Quotation and
+Zoho's own List_Price/Grand_Total, without hand-computing tax.
+
 The real price/tax is also pushed onto Zoho's own native per-line
 List_Price/Tax fields, not just the custom ERP_Tax_Amount/
 ERP_Grand_Total fields -- confirmed by testing that Zoho's native
@@ -46,9 +54,13 @@ def build_priced_quotation(customer, address_name, line_items):
     rate/taxes/grand_total off it for a preview, or inserts + submits it
     for the real thing.
 
-    line_items: list of {"line_id", "item_code", "quantity"} dicts, at
-    least one. Appended to quotation.items in the same order, so
-    quotation.items[i] always corresponds to line_items[i].
+    line_items: list of {"line_id", "item_code", "quantity",
+    "negotiated_rate"} dicts, at least one. Appended to quotation.items
+    in the same order, so quotation.items[i] always corresponds to
+    line_items[i]. negotiated_rate is None for a line still at catalog
+    price, or the rep-entered override for a negotiated one -- applied
+    after the catalog price-list lookup so it wins, then taxes/totals
+    are computed fresh off it like any other rate.
     """
     quotation = frappe.new_doc("Quotation")
     quotation.quotation_to = "Customer"
@@ -64,6 +76,11 @@ def build_priced_quotation(customer, address_name, line_items):
         quotation.append("items", {"item_code": li["item_code"], "qty": flt(li["quantity"])})
 
     quotation.set_missing_values()
+
+    for li, item in zip(line_items, quotation.items):
+        if li.get("negotiated_rate"):
+            item.rate = li["negotiated_rate"]
+
     quotation.calculate_taxes_and_totals()
 
     return quotation
@@ -111,19 +128,28 @@ def resolve_item_code(product_field):
 
 def resolve_line_items(quoted_items):
     """quoted_items is the raw Quoted_Items subform list from a Zoho
-    Quote row. Returns [{"line_id", "item_code", "quantity"}, ...],
-    silently skipping any row that doesn't resolve to a real ERPNext
-    Item or has no quantity yet -- the rep may still be mid-edit on a
-    row. line_id is that subform row's own Zoho id, needed to update it
-    in place (rather than append a new row) when pushing List_Price/Tax
-    back.
+    Quote row. Returns [{"line_id", "item_code", "quantity",
+    "negotiated_rate"}, ...], silently skipping any row that doesn't
+    resolve to a real ERPNext Item or has no quantity yet -- the rep
+    may still be mid-edit on a row. line_id is that subform row's own
+    Zoho id, needed to update it in place (rather than append a new
+    row) when pushing List_Price/Tax back. negotiated_rate is None
+    unless the rep has typed a value into that row's Negotiated_Price
+    field.
     """
     line_items = []
     for row in quoted_items or []:
         item_code = resolve_item_code(row.get("Product_Name"))
         quantity = flt(row.get("Quantity"))
         if item_code and quantity > 0 and row.get("id"):
-            line_items.append({"line_id": row["id"], "item_code": item_code, "quantity": quantity})
+            line_items.append(
+                {
+                    "line_id": row["id"],
+                    "item_code": item_code,
+                    "quantity": quantity,
+                    "negotiated_rate": flt(row.get("Negotiated_Price")) or None,
+                }
+            )
     return line_items
 
 

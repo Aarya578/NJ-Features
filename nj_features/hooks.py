@@ -150,6 +150,9 @@ doc_events = {
         ],
         "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_delivery_note_submit",
     },
+    "Quotation": {
+        "on_submit": "nj_features.nj_features.api.zoho_status_sync.on_quotation_submit",
+    },
     "Employee": {
         "on_update": "nj_features.overrides.employee.update_item_group_and_max_qty_in_warehouse",
         "before_save": "nj_features.overrides.employee.updating_time_stamp",

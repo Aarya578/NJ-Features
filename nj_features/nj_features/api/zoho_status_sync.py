@@ -41,6 +41,24 @@ def _push(module, record_id, fields, context):
         )
 
 
+def on_quotation_submit(doc, method=None):
+    """Closes the visibility gap between "ERPNext created a draft
+    Quotation" and "ERPNext created a Sales Order from it" -- without
+    this, Zoho keeps showing ERP_Quotation_Status: Draft the whole time
+    Ops has the Quotation open for review, even after they've actually
+    submitted it, right up until someone separately makes and submits
+    the Sales Order.
+    """
+    if not _enabled():
+        return
+
+    if doc.zoho_deal_id:
+        _push("Deals", doc.zoho_deal_id, {"ERP_Quotation_Status": "Confirmed"}, "Quotation submit")
+
+    if doc.zoho_quote_id:
+        _push("Quotes", doc.zoho_quote_id, {"ERP_Quotation_Status": "Confirmed"}, "Quotation submit")
+
+
 def on_sales_order_submit(doc, method=None):
     if not _enabled():
         return

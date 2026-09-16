@@ -208,6 +208,10 @@ scheduler_events = {
     "cron": {
         "0 0 * * *": [
             "nj_features.overrides.sales_order.run_daily_eta_drift_reallocation",
+            # Releases serials whose Repair/Replace cycle is finished. Without it
+            # the flag is never cleared, and a repaired machine back in stock
+            # stays permanently invisible to the allocator.
+            "nj_features.services.return_flag_cleanup.clear_completed_return_flags",
         ],
 
         "0 22 * * *": [

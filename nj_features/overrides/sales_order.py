@@ -416,33 +416,32 @@ def trim_over_allocated_serials():
     hourly allocation cycle. Runs very fast by targeting only active reserved Sales Orders.
     """
     try:
-        # CLEANUP: Release reservations for any serials in sequence 0 departments
-        # or Employee Personal Warehouses
-        invalid_serials = frappe.db.sql_list("""
-            SELECT sn.name
-            FROM `tabSerial No` sn
-            INNER JOIN `tabWarehouse` w ON sn.warehouse = w.name
-            INNER JOIN `tabDepartment` dp ON w.department = dp.name
-            WHERE sn.reserved_sales_order IS NOT NULL
-              AND sn.reserved_sales_order != ''
-              AND sn.status = 'Active'
-              AND (
-                  IFNULL(dp.department_sequence, 0) = 0
-                  OR IFNULL(w.warehouse_type, '') = 'Employee Personal Warehouse'
-              )
-              AND (sn.return_reason IS NULL OR sn.return_reason NOT IN ('Repair', 'Replace'))
-        """)
-        if invalid_serials:
-            frappe.db.sql("""
-                UPDATE `tabSerial No`
-                SET reserved_sales_order = NULL,
-                    to_make = NULL,
-                    remarks = NULL,
-                    order_source = NULL
-                WHERE name IN %s
-            """, (tuple(invalid_serials),))
-            frappe.db.commit()
-            logger.info("Released %s invalid serials in sequence 0 departments or Employee Personal Warehouses", len(invalid_serials))
+        # A reserved serial is NOT released just because of where it is standing.
+        #
+        # This used to strip the reservation off any reserved serial sitting in a
+        # department with department_sequence = 0, or in an Employee Personal
+        # Warehouse, and it wiped to_make / remarks / order_source with it.
+        #
+        # department_sequence = 0 does not mean "not stock". It means "not on the
+        # sales pipeline", and that covers two completely different things:
+        # departments where a unit genuinely stops being sellable (Asset,
+        # Procurement, Admin, IT), and departments where a unit is actively being
+        # WORKED ON for the very order that reserved it - Reconfiguration - NJ,
+        # To Re-config - NJ, WIP - NJ, Stock Movement - NJ, Chip QC, BG - DR - a
+        # technician's own warehouse. This could not tell them apart, so sending a
+        # machine to be reconfigured destroyed its reservation within the hour, and
+        # wiping to_make deleted the instruction saying what to rebuild it into
+        # while it sat on the reconfig bench.
+        #
+        # The order then came up short and was given a different machine, while the
+        # original became invisible (allocation only searches department_sequence > 0)
+        # and came back later as untargeted free stock - to be allocated elsewhere and
+        # reconfigured a second time. That is the rework SO-2026-09-00002 was hit with:
+        # 20 units loaded with the 2M config, six re-allocated, the config work lost.
+        #
+        # Once a serial is reserved to an order it stays reserved to that order.
+        # Genuine over-allocation (more serials than the order still needs) is still
+        # trimmed below - that is counting, not a judgement about location.
 
         # Get active reserved Sales Orders to avoid querying the whole system history
         active_reserved_sos = frappe.db.sql_list("""

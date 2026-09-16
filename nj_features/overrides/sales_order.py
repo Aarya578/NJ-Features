@@ -124,12 +124,10 @@ class CustomSalesOrder(SalesOrder):
 
         # Initialize committed_delivery_date if not already set, BEFORE running ETA calculation.
         # Customer promise date is based on explicit future delivery date or standard SLA (transaction_date + 4d).
-        is_first_commit = False
         target_committed = None
         if frappe.db.has_column("Sales Order", "committed_delivery_date"):
             committed_val = frappe.db.get_value("Sales Order", self.name, "committed_delivery_date")
             if not committed_val:
-                is_first_commit = True
                 std_sla_date = add_working_days(self.transaction_date, 4) if self.transaction_date else add_working_days(nowdate(), 4)
                 orig_dd = self.delivery_date
                 max_item_dd = None
@@ -147,51 +145,30 @@ class CustomSalesOrder(SalesOrder):
                 else:
                     target_committed = std_sla_date
 
+                # committed_delivery_date is ESTABLISHED here, once, because it was
+                # empty - and is never written again by any code path.
+                #
+                # delivery_date is deliberately NOT touched. It belongs to the user:
+                # whatever the customer / Shopify / the sales team put there stays
+                # there. If a date has to move, a human moves it by hand. The system
+                # expresses its own opinion only through estimated_delivery_date.
                 self.committed_delivery_date = target_committed
-                self.delivery_date = target_committed
-                frappe.db.set_value("Sales Order", self.name, {
-                    "committed_delivery_date": target_committed,
-                    "delivery_date": target_committed
-                }, update_modified=False)
-                frappe.db.sql("""
-                    UPDATE `tabSales Order Item`
-                    SET delivery_date = %s
-                    WHERE parent = %s
-                """, (target_committed, self.name))
+                frappe.db.set_value(
+                    "Sales Order", self.name,
+                    {"committed_delivery_date": target_committed},
+                    update_modified=False,
+                )
             else:
                 target_committed = committed_val
-                if str(self.delivery_date) != str(target_committed):
-                    self.delivery_date = target_committed
-                    frappe.db.set_value("Sales Order", self.name, "delivery_date", target_committed, update_modified=False)
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (target_committed, self.name))
 
         calculate_dispatch_eta_for_sales_order(self.name, do_commit=False)
 
-        # If the unit matched during allocation above needs reconfiguring, bake the same
-        # +2-day reconfig SLA (used by compute_sales_order_delivery_date's estimated-date
-        # math) into the initial committed_delivery_date too. Otherwise the customer
-        # promise is structurally guaranteed to fall short as soon as the reconfig-aware
-        # estimated date is computed below, which was driving orders into a repeating
-        # reallocation loop.
-        if is_first_commit and target_committed and _sales_order_has_reconfig_match(self.name):
-            reconfig_committed = add_working_days(getdate(target_committed), 2)
-            if getdate(reconfig_committed) != getdate(target_committed):
-                target_committed = reconfig_committed
-                self.committed_delivery_date = target_committed
-                self.delivery_date = target_committed
-                frappe.db.set_value("Sales Order", self.name, {
-                    "committed_delivery_date": target_committed,
-                    "delivery_date": target_committed
-                }, update_modified=False)
-                frappe.db.sql("""
-                    UPDATE `tabSales Order Item`
-                    SET delivery_date = %s
-                    WHERE parent = %s
-                """, (target_committed, self.name))
+        # A reconfig unit needs ~2 extra days. That cost is applied where it belongs -
+        # in compute_sales_order_delivery_date(), which feeds estimated_delivery_date.
+        # It is NOT baked back into committed_delivery_date or delivery_date: the
+        # promise and the customer-facing date are human-owned and must not be moved
+        # by the system. The reconfig surcharge therefore shows up as the estimate
+        # pulling away from the promise, which is exactly the signal ops needs.
 
         calc_res = compute_sales_order_delivery_date(self.name, return_reason=True)
         if isinstance(calc_res, (list, tuple)):
@@ -1938,10 +1915,11 @@ def _get_so_all_target_items(so_name):
 def _sales_order_has_reconfig_match(so_name):
     """True if any serial currently reserved for so_name needs reconfiguring.
 
-    Used by CustomSalesOrder.on_submit() to bake the +2-day reconfig SLA into
-    the initial committed_delivery_date, so the promise pushed to Shopify isn't
-    structurally guaranteed to fall short of the reconfig-aware estimated date
-    computed by compute_sales_order_delivery_date().
+    NOTE: this no longer feeds committed_delivery_date. The system does not move
+    the customer promise or delivery_date under any circumstance - those are
+    human-owned. The +2-day reconfig cost is applied only inside
+    compute_sales_order_delivery_date(), i.e. to estimated_delivery_date.
+    Kept as a reporting/diagnostic helper.
     """
     reserved = frappe.db.sql("""
         SELECT sn.item_code, sn.to_make, sn.remarks
@@ -2302,10 +2280,11 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
             calc_delivery_date, reason_text = calc_res, str(calc_res)
 
         old_est_dd = frappe.db.get_value("Sales Order", so_name, "estimated_delivery_date")
-        old_dd = frappe.db.get_value("Sales Order", so_name, "delivery_date")
 
-        # delivery_date and committed_delivery_date stay locked to the initial customer promise date.
-        # Only estimated_delivery_date (and dispatch ETA / breakdown) is updated dynamically.
+        # This job updates the ESTIMATE and nothing else. The only fields it writes are
+        # estimated_delivery_date, eta_for_dispatch and the ETA breakdown text.
+        # delivery_date and committed_delivery_date are never written here - not to
+        # change them, and not to fill them in.
 
         if eta is None:
             update_values["eta_for_dispatch"] = "45"
@@ -2327,38 +2306,16 @@ def update_sales_order_etas(so_eta_map, so_breakdown_map=None, do_commit=True, a
             )
 
         if frappe.db.has_column("Sales Order", "committed_delivery_date"):
-            committed_val = frappe.db.get_value("Sales Order", so_name, "committed_delivery_date")
-            if not committed_val:
-                # If committed_delivery_date was never initialized, initialize strictly from
-                # standard SLA (transaction_date + 4 working days) or original delivery date if future.
-                # NEVER set to calc_delivery_date or curdate!
-                txn_date = frappe.db.get_value("Sales Order", so_name, "transaction_date") or nowdate()
-                std_sla_date = add_working_days(txn_date, 4)
-                if old_dd and getdate(old_dd) > getdate(std_sla_date):
-                    # This already-set incoming date never passed through
-                    # add_working_days(), so it can land on a Sunday or holiday -
-                    # nudge it forward before locking it in as the promise.
-                    target_committed = _snap_to_working_day(old_dd)
-                else:
-                    target_committed = std_sla_date
-                update_values["committed_delivery_date"] = target_committed
-                if str(old_dd) != str(target_committed):
-                    update_values["delivery_date"] = target_committed
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (target_committed, so_name))
-            else:
-                target_committed = committed_val
-                # Keep delivery_date equal to the immutable committed_delivery_date
-                if str(old_dd) != str(committed_val):
-                    update_values["delivery_date"] = committed_val
-                    frappe.db.sql("""
-                        UPDATE `tabSales Order Item`
-                        SET delivery_date = %s
-                        WHERE parent = %s
-                    """, (committed_val, so_name))
+            # Read only - used for the drift check below. This job no longer stamps a
+            # promise onto an order that never had one: reconstructing a customer
+            # promise after the fact (transaction_date + 4d) invents history, and once
+            # written nothing could ever correct it. An order with no committed date
+            # falls back to its delivery_date wherever that value is read
+            # (see get_open_sales_orders), and orders submitted from now on get their
+            # promise recorded once, in CustomSalesOrder.on_submit().
+            target_committed = frappe.db.get_value(
+                "Sales Order", so_name, "committed_delivery_date"
+            )
 
             # Drift check: if the estimated delivery date has pulled away from the
             # committed customer promise by more than 2 days, trigger a targeted

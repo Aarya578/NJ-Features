@@ -14,6 +14,14 @@ from nj_features.nj_features.api.shiprocket_api import get_auth_token, generate_
 from nj_features.services.model_compatibility import is_screen_type_compatible
 
 logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
+
+# Extra days a unit needs when it has to be reconfigured (to_make != item_code)
+# before it can ship. Production's route for a reconfig is Grade A -> Reliability
+# -> FQC, so a rebuild is never ready as fast as a unit that already matches the
+# order. Applied to estimated_delivery_date only - it must never be added to
+# committed_delivery_date or delivery_date, which are human-owned.
+# Change it here and it changes everywhere.
+RECONFIG_SLA_DAYS = 3
 SHOPIFY_URL = "https://newjaisa.myshopify.com/admin/api/2025-01/orders.json?name="
 TOKEN = "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"
 FULLFILMENT_ORDER_ID = "https://newjaisa.myshopify.com/admin/api/2025-01/orders/{shopify_order_id}/fulfillment_orders.json"
@@ -1917,7 +1925,7 @@ def _sales_order_has_reconfig_match(so_name):
 
     NOTE: this no longer feeds committed_delivery_date. The system does not move
     the customer promise or delivery_date under any circumstance - those are
-    human-owned. The +2-day reconfig cost is applied only inside
+    human-owned. The RECONFIG_SLA_DAYS cost is applied only inside
     compute_sales_order_delivery_date(), i.e. to estimated_delivery_date.
     Kept as a reporting/diagnostic helper.
     """
@@ -1946,7 +1954,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
     - Packing & Dispatch (Seq 20) -> SLA = 1 (curdate + 1).
     - Upstream department -> cumulative SLA from that department to Packing & Dispatch.
     - 10% buffer applied to cumulative SLA (rounded up).
-    - If reconfigured item (Priority 2, 3, 4) -> adds +2 days extra.
+    - If reconfigured item (Priority 2, 3, 4) -> adds RECONFIG_SLA_DAYS extra.
     - Updates individual Serial No.estimated_delivery_date for each reserved serial.
     - Multiple units -> takes the MAX SLA across units (bottleneck logic).
     - Returns target delivery date (and formatted explanatory reason if return_reason=True).
@@ -1976,10 +1984,10 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
 
         def _dept_sla(cand_dept_name, cand_dept_seq, item_grp=None, is_reconfig=False):
             if not cand_dept_name:
-                return 3 if is_reconfig else 1
+                return (1 + RECONFIG_SLA_DAYS) if is_reconfig else 1
             d_name_lower = (cand_dept_name or "").lower()
             if "packing & dispatch" in d_name_lower or "sales" in d_name_lower:
-                return 3 if is_reconfig else 1
+                return (1 + RECONFIG_SLA_DAYS) if is_reconfig else 1
             if "inward" in d_name_lower:
                 return 45
             if not cand_dept_seq:
@@ -2014,7 +2022,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
                     total += seq_max_sla[s]
             sla_with_buffer = min(math.ceil(total * 1.10), 45)
             if is_reconfig:
-                sla_with_buffer = min(sla_with_buffer + 2, 45)
+                sla_with_buffer = min(sla_with_buffer + RECONFIG_SLA_DAYS, 45)
             return sla_with_buffer
 
         # Check reserved serials for this Sales Order
@@ -2154,7 +2162,7 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
                 sn_est_date = add_working_days(nowdate(), sn_sla)
                 sla_list.append(sn_sla)
 
-                reconfig_tag = " [Reconfig +2d]" if is_reconfig else ""
+                reconfig_tag = f" [Reconfig +{RECONFIG_SLA_DAYS}d]" if is_reconfig else ""
                 day_unit = "day" if sn_sla == 1 else "days"
                 aging_note = f", present {dwell_days}d of {sn_sla_full}d SLA" if dwell_days > 0 else ""
 
@@ -2175,12 +2183,12 @@ def compute_sales_order_delivery_date(so_name, return_reason=False):
 
                 if "packing & dispatch" in dept_name.lower():
                     if is_reconfig:
-                        detail_remarks = f"Stock in Packing & Dispatch [Reconfiguration: +2 days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
+                        detail_remarks = f"Stock in Packing & Dispatch [Reconfiguration: +{RECONFIG_SLA_DAYS} days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
                     else:
                         detail_remarks = f"Ready stock in Packing & Dispatch (Exact item match, SLA: {sn_sla} {day_unit}{aging_detail})"
                 else:
                     if is_reconfig:
-                        detail_remarks = f"Allocated from {dept_name} [Reconfiguration: +2 days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
+                        detail_remarks = f"Allocated from {dept_name} [Reconfiguration: +{RECONFIG_SLA_DAYS} days, Total SLA: {sn_sla} {day_unit}; {match_desc}{aging_detail}]"
                     else:
                         detail_remarks = f"Allocated from {dept_name} [Exact item match, Total SLA: {sn_sla} {day_unit}{aging_detail}]"
 

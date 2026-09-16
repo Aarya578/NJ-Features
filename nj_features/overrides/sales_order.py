@@ -1183,10 +1183,18 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
     if not item_group or item_group not in HARDWARE_ITEM_GROUPS:
         return 0
 
-    # Count serials where either the current item_code matches OR the
-    # serial is being reconfigured into this item (to_make = item_code).
-    # This prevents over-allocation when the production planner has already
-    # reserved reconfig serials for this Sales Order.
+    # Count serials already committed to THIS line, keyed on where each serial is
+    # going - to_make when set, otherwise its current item_code. This is the same
+    # key the production planner and the Shopify quantity query use.
+    #
+    # It must not be "item_code = X OR to_make = X". A serial mid-rebuild satisfies
+    # both halves of that OR and is then counted against two different lines of the
+    # same order: the line it is actually becoming, and the line it happens to be
+    # sitting in today. On an order with several lines of one base model the counts
+    # add up to more serials than are reserved, each line looks full, and the
+    # allocator stops - leaving dispatch-ready machines untouched while the order
+    # runs late. Observed on SO-2026-04-00203-1 (GMIT): 9 machines double-counted,
+    # the 16-unit line read as full with only 7 serials behind it.
     allocated_count = frappe.db.sql("""
         SELECT COUNT(*)
         FROM `tabSerial No` sn
@@ -1194,14 +1202,11 @@ def adjust_serial_allocations(so_name, item_code, net_pending, eligible_depts, r
         INNER JOIN `tabDepartment` dp ON w.department = dp.name
         WHERE
             sn.reserved_sales_order = %s
-            AND (
-                sn.item_code = %s
-                OR (sn.to_make IS NOT NULL AND sn.to_make != '' AND sn.to_make = %s)
-            )
+            AND COALESCE(NULLIF(sn.to_make, ''), sn.item_code) = %s
             AND sn.status = 'Active'
             AND (IFNULL(dp.department_sequence, 0) != 0 OR sn.return_reason IN ('Repair', 'Replace', 'RTO Customer', 'RTO Delivery Partner'))
             AND IFNULL(w.warehouse_type, '') != 'Employee Personal Warehouse'
-    """, (so_name, item_code, item_code))[0][0] or 0
+    """, (so_name, item_code))[0][0] or 0
 
     to_allocate = int(net_pending - allocated_count)
     unallocated_qty = 0

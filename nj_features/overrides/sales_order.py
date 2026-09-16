@@ -21,7 +21,15 @@ logger = frappe.logger('SOLogger', allow_site=True, file_count=1)
 # order. Applied to estimated_delivery_date only - it must never be added to
 # committed_delivery_date or delivery_date, which are human-owned.
 # Change it here and it changes everywhere.
-RECONFIG_SLA_DAYS = 3
+RECONFIG_SLA_DAYS = 4
+
+# When an order is submitted and allocation cannot find a machine for every unit
+# on it, the missing units have to come through procurement. This is how long that
+# takes, in WORKING days - the same basis every other date in this file uses, and
+# the same figure compute_sales_order_delivery_date() already applies to the
+# estimate, so the promise and the estimate agree from the moment the order is
+# created instead of drifting apart on day one.
+UNALLOCATED_PROCUREMENT_DAYS = 45
 
 # Once a serial is reserved to a Sales Order it stays on that order.
 #
@@ -193,10 +201,12 @@ class CustomSalesOrder(SalesOrder):
 
         # Initialize committed_delivery_date if not already set, BEFORE running ETA calculation.
         # Customer promise date is based on explicit future delivery date or standard SLA (transaction_date + 4d).
+        is_first_commit = False
         target_committed = None
         if frappe.db.has_column("Sales Order", "committed_delivery_date"):
             committed_val = frappe.db.get_value("Sales Order", self.name, "committed_delivery_date")
             if not committed_val:
+                is_first_commit = True
                 std_sla_date = add_working_days(self.transaction_date, 4) if self.transaction_date else add_working_days(nowdate(), 4)
                 orig_dd = self.delivery_date
                 max_item_dd = None
@@ -232,12 +242,44 @@ class CustomSalesOrder(SalesOrder):
 
         calculate_dispatch_eta_for_sales_order(self.name, do_commit=False)
 
-        # A reconfig unit needs ~2 extra days. That cost is applied where it belongs -
-        # in compute_sales_order_delivery_date(), which feeds estimated_delivery_date.
-        # It is NOT baked back into committed_delivery_date or delivery_date: the
-        # promise and the customer-facing date are human-owned and must not be moved
-        # by the system. The reconfig surcharge therefore shows up as the estimate
-        # pulling away from the promise, which is exactly the signal ops needs.
+        # The promise has to be honest at the moment it is made. If allocation above
+        # could not find a machine for every hardware unit on this order, the missing
+        # ones come through procurement, so the date the customer is given reflects
+        # that now - once, while the promise is still being created.
+        #
+        # This is the ONLY circumstance in which the system writes delivery_date or
+        # moves committed_delivery_date, and it happens only on the first submit,
+        # when committed_delivery_date was empty. Afterwards neither field is ever
+        # written again: quoting four days for stock we do not have and then walking
+        # the date forward later is what the customer experiences as "the committed
+        # date changed again".
+        #
+        # A reconfig unit's extra days are NOT added here - that cost stays in
+        # compute_sales_order_delivery_date(), which feeds estimated_delivery_date,
+        # so a rebuild shows up as the estimate pulling away from a fixed promise.
+        if is_first_commit and target_committed:
+            unallocated_qty = _unallocated_hardware_qty(self.name)
+            if unallocated_qty > 0:
+                target_committed = add_working_days(
+                    target_committed, UNALLOCATED_PROCUREMENT_DAYS
+                )
+                self.committed_delivery_date = target_committed
+                self.delivery_date = target_committed
+                frappe.db.set_value("Sales Order", self.name, {
+                    "committed_delivery_date": target_committed,
+                    "delivery_date": target_committed,
+                }, update_modified=False)
+                frappe.db.sql("""
+                    UPDATE `tabSales Order Item`
+                    SET delivery_date = %s
+                    WHERE parent = %s
+                """, (target_committed, self.name))
+                logger.info(
+                    "[UNALLOCATED_PROMISE] %s: %d hardware unit(s) unallocated at submit "
+                    "-> committed_delivery_date and delivery_date set to %s (+%d working days)",
+                    self.name, unallocated_qty, target_committed, UNALLOCATED_PROCUREMENT_DAYS
+                )
+
 
         calc_res = compute_sales_order_delivery_date(self.name, return_reason=True)
         if isinstance(calc_res, (list, tuple)):
@@ -911,6 +953,37 @@ def is_serial_already_delivered(serial_no):
     except Exception as e:
         logger.warning("Delivered-check failed for serial %s: %s", serial_no, e)
         return False
+
+
+def _unallocated_hardware_qty(so_name):
+    """Hardware units on this order that allocation could not find a machine for.
+
+    Uses the same definition as compute_sales_order_delivery_date(): pending
+    serialised hardware quantity, less the serials actually reserved to the order.
+
+    Returns 0 if it cannot be determined. Failing closed matters here - the caller
+    pushes the customer promise out by UNALLOCATED_PROCUREMENT_DAYS on a non-zero
+    answer, and that date can never be corrected automatically afterwards.
+    """
+    try:
+        placeholders = ", ".join(["%s"] * len(HARDWARE_ITEM_GROUPS))
+        pending = frappe.db.sql(f"""
+            SELECT SUM(GREATEST(0, soi.qty - COALESCE(soi.delivered_qty, 0)))
+            FROM `tabSales Order Item` soi
+            INNER JOIN `tabItem` i ON i.item_code = soi.item_code
+            WHERE soi.parent = %s
+              AND i.has_serial_no = 1
+              AND i.item_group IN ({placeholders})
+        """, tuple([so_name] + list(HARDWARE_ITEM_GROUPS)))[0][0] or 0
+
+        reserved = frappe.db.sql("""
+            SELECT COUNT(*) FROM `tabSerial No` WHERE reserved_sales_order = %s
+        """, (so_name,))[0][0] or 0
+
+        return max(0, int(pending) - int(reserved))
+    except Exception as e:
+        logger.warning("Could not determine unallocated qty for %s: %s", so_name, e)
+        return 0
 
 
 def _get_dept_effective_sla(dept):
